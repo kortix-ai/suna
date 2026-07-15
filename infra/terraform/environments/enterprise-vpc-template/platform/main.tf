@@ -1,59 +1,17 @@
-# Platform stage (ECS model): the cluster stage builds the whole runtime plane,
-# including the shared ALB. Under EKS this stage installed Helm controllers,
-# External Secrets, and external-dns. On ECS none of that exists — the only
-# post-cluster step is aliasing the two application domains at the ALB, which
-# replaces what external-dns used to do.
+# Platform stage — retained as a no-op for backward compatibility.
+#
+# Under EKS this stage installed Helm controllers, External Secrets, and
+# external-dns. Under the ECS model it aliased the two application domains at the
+# shared ALB. The appliance has neither: there is one box with a stable Elastic
+# IP, and the application A records now live in the cluster stage (the module
+# creates them directly against the customer Route 53 zone, alongside the ACME
+# DNS-01 grant the on-box updater uses). Nothing remains for a separate
+# post-cluster stage to do.
+#
+# The stage is kept (empty) so `kortix self-host` keeps materializing a complete,
+# reviewed graph and any operator muscle-memory / automation that applies it is a
+# harmless no-op. Delete it only in a coordinated change with the CLI asset list.
 
-data "terraform_remote_state" "cluster" {
-  backend = "s3"
-  config = {
-    bucket         = var.state_bucket
-    key            = var.cluster_state_key
-    region         = var.aws_region
-    dynamodb_table = var.lock_table
-    encrypt        = true
-    kms_key_id     = var.state_kms_key_arn
-  }
-}
-
-locals {
-  instance = data.terraform_remote_state.cluster.outputs.instance
-  app_domains = {
-    api      = local.instance.api_domain
-    frontend = local.instance.frontend_domain
-  }
-}
-
-provider "aws" { region = var.aws_region }
-
-resource "aws_route53_record" "app_alias" {
-  for_each = local.app_domains
-
-  zone_id = local.instance.route53_zone_id
-  name    = each.value
-  type    = "A"
-
-  alias {
-    name                   = local.instance.alb_dns_name
-    zone_id                = local.instance.alb_zone_id
-    evaluate_target_health = true
-  }
-}
-
-resource "aws_route53_record" "app_alias_ipv6" {
-  for_each = local.app_domains
-
-  zone_id = local.instance.route53_zone_id
-  name    = each.value
-  type    = "AAAA"
-
-  alias {
-    name                   = local.instance.alb_dns_name
-    zone_id                = local.instance.alb_zone_id
-    evaluate_target_health = true
-  }
-}
-
-output "app_dns_records" {
-  value = { for k, r in aws_route53_record.app_alias : k => r.fqdn }
+provider "aws" {
+  region = var.aws_region
 }

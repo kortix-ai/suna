@@ -5,18 +5,19 @@ import { join } from 'node:path';
 import { confirm } from '../prompts.ts';
 import { C, status } from '../style.ts';
 import {
+  applianceInstanceId,
   awsIdentity,
   awsJson,
   awsJsonOptional,
-  deployClusterName,
-  describeDeployServices,
+  dockerPsViaSsm,
   firstLine,
   readReleaseRecord,
-  runDeployerTask,
+  runUpdaterViaSsm,
   spawnAws,
   verifyPinnedIdentity,
   type AwsIdentity,
-  type DeployServiceStatus,
+  type DockerServiceStatus,
+  type UpdaterRunResult,
 } from './aws-vpc-control-plane.ts';
 import {
   assertEnterpriseRelease,
@@ -102,12 +103,12 @@ export async function runAwsVpcCommand(
   if (!config) return 1;
   if (flags.local || flags.registry || (flags.tag !== 'latest' && !flags.release)) {
     process.stderr.write(
-      `${status.err('AWS VPC targets use --release with signed enterprise versions; --tag, --local, and --registry are Docker-only.')}\n`,
+      `${status.err('AWS EC2 targets use --release with signed enterprise versions; --tag, --local, and --registry are Docker-only.')}\n`,
     );
     return 2;
   }
   if (!['configure', 'config', 'logs', 'env'].includes(typedCommand) && args.length > 0) {
-    process.stderr.write(`${status.err(`unexpected AWS VPC arguments: ${args.join(' ')}`)}\n`);
+    process.stderr.write(`${status.err(`unexpected AWS EC2 arguments: ${args.join(' ')}`)}\n`);
     return 2;
   }
 
@@ -140,7 +141,7 @@ export async function runAwsVpcCommand(
     case 'env':
       return manageAwsVpcEnv(config, args, flags);
     default:
-      process.stderr.write(`${status.err(`unknown AWS VPC self-host command "${command}"`)}\n`);
+      process.stderr.write(`${status.err(`unknown AWS EC2 self-host command "${command}"`)}\n`);
       return 2;
   }
 }
@@ -153,12 +154,12 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
   }
   if (flags.local || flags.registry || (flags.tag !== 'latest' && !flags.release)) {
     process.stderr.write(
-      `${status.err('AWS VPC targets use signed releases; --local, --registry, and --tag are Docker-only options.')}\n`,
+      `${status.err('AWS EC2 targets use signed releases; --local, --registry, and --tag are Docker-only options.')}\n`,
     );
     return 2;
   }
   if (flags.channel && flags.channel !== 'stable') {
-    process.stderr.write(`${status.err('AWS VPC targets may only track the stable channel.')}\n`);
+    process.stderr.write(`${status.err('AWS EC2 targets may only track the stable channel.')}\n`);
     return 2;
   }
   if (flags.release) {
@@ -191,7 +192,7 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
     return 2;
   }
-  if (existing && existing.target !== 'aws-vpc') {
+  if (existing && existing.target !== 'aws-ec2') {
     process.stderr.write(`${status.err(`instance "${flags.instance}" already targets Docker`)}\n`);
     return 2;
   }
@@ -210,7 +211,7 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
   const config: SelfHostInstanceConfig = {
     schema_version: 1,
     instance: flags.instance,
-    target: 'aws-vpc',
+    target: 'aws-ec2',
     channel: 'stable',
     ...(flags.release || existing?.release ? { release: flags.release ?? existing?.release } : {}),
     aws,
@@ -229,8 +230,8 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
   }
 
   const missing = missingConfiguration(config.aws!);
-  process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC${C.reset}\n\n`);
-  process.stdout.write(`${status.ok(existing ? 'AWS VPC instance config verified' : 'AWS VPC instance config created')}\n`);
+  process.stdout.write(`\n  ${C.bold}Kortix Enterprise EC2${C.reset}\n\n`);
+  process.stdout.write(`${status.ok(existing ? 'AWS EC2 instance config verified' : 'AWS EC2 instance config created')}\n`);
   process.stdout.write(`  ${C.dim}instance  ${C.reset}${config.instance}\n`);
   process.stdout.write(`  ${C.dim}account   ${C.reset}${identity.Account}\n`);
   process.stdout.write(`  ${C.dim}profile   ${C.reset}${profile}\n`);
@@ -244,6 +245,7 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
     process.stdout.write(`  ${C.dim}Next: ${C.reset}${C.cyan}kortix self-host doctor --instance ${config.instance}${C.reset}\n`);
     process.stdout.write(`        ${C.cyan}kortix self-host plan --instance ${config.instance}${C.reset}\n\n`);
   }
+  process.stdout.write(`  ${C.dim}Full AWS EC2 walkthrough: docs/runbooks/enterprise-vpc-deployment.md${C.reset}\n\n`);
   return 0;
 }
 
@@ -254,7 +256,7 @@ async function configureAwsVpc(
 ): Promise<number> {
   try {
     verifyPinnedIdentity(config.aws!);
-    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
+    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS EC2 targets may only track the stable channel');
     const fromArgs = parseConfigurationAssignments(args);
     let aws = mergeAwsConfiguration(config.aws!, flags, fromArgs);
     if (!flags.yes && args.length === 0 && !hasConfigurationFlags(flags)) {
@@ -373,7 +375,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
     if (!flags.yes) {
       if (!(process.stdin.isTTY === true && process.stdout.isTTY === true)) {
         process.stderr.write(
-          `${status.err(`AWS VPC deployment requires confirmation; rerun with --yes after reviewing plan for ${identity.Account}.`)}\n`,
+          `${status.err(`AWS EC2 deployment requires confirmation; rerun with --yes after reviewing plan for ${identity.Account}.`)}\n`,
         );
         return 2;
       }
@@ -409,11 +411,11 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
       region: aws.region,
     });
     const deployment = runtime.missingOperatorKeys.length === 0
-      ? { ...runDeployerTask(config, { ...(flags.release ? { release: flags.release } : {}) }), status: 'DEPLOYED' }
+      ? { ...runUpdaterViaSsm(config, { ...(flags.release ? { release: flags.release } : {}), ...(flags.allowDowntime ? { allowDowntime: true } : {}) }), status: 'DEPLOYED' }
       : {
           status: 'WAITING_FOR_RUNTIME_CONFIG',
-          task_arn: null,
-          exit_code: null,
+          command_id: null,
+          instance_id: null,
           missing: runtime.missingOperatorKeys,
         };
     const payload = {
@@ -432,7 +434,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
     };
     if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
-      process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC deployed${C.reset}\n`);
+      process.stdout.write(`\n  ${C.bold}Kortix Enterprise EC2 deployed${C.reset}\n`);
       process.stdout.write(`${status.ok(`Terraform state verified at lineage ${migration.verification.lineage}, serial ${migration.verification.serial}`)}\n`);
       process.stdout.write(`${status.ok('Customer cluster infrastructure applied')}\n`);
       process.stdout.write(`${status.ok('Generated core runtime credentials directly into customer Secrets Manager')}\n`);
@@ -441,7 +443,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
         process.stdout.write(`  ${C.cyan}kortix self-host env set --instance ${config.instance} KEY=VALUE ...${C.reset}\n`);
         process.stdout.write(`  ${C.cyan}kortix self-host deploy --instance ${config.instance} --yes${C.reset}\n\n`);
       } else {
-        process.stdout.write(`${status.ok(`Customer deployer task completed: ${deployment.task_arn}`)}\n\n`);
+        process.stdout.write(`${status.ok(`On-box updater completed via SSM: ${deployment.command_id}`)}\n\n`);
       }
     }
     return 0;
@@ -460,14 +462,15 @@ async function startManagedUpdate(
 ): Promise<number> {
   try {
     verifyPinnedIdentity(config.aws!);
-    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
+    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS EC2 targets may only track the stable channel');
     if (flags.release) assertEnterpriseRelease(flags.release);
     assertRuntimeReady(config);
-    const result = runDeployerTask(config, {
+    const result = runUpdaterViaSsm(config, {
       force: flags.force,
       ...(flags.release ? { release: flags.release } : {}),
+      ...(flags.allowDowntime ? { allowDowntime: true } : {}),
     });
-    renderDeployerRun(config, result, flags);
+    renderUpdaterRun(config, result, flags);
     return 0;
   } catch (error) {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
@@ -560,11 +563,12 @@ async function rollbackAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCom
       );
       if (!approved) return 2;
     }
-    const result = runDeployerTask(config, {
+    const result = runUpdaterViaSsm(config, {
       force: flags.force,
       rollback: flags.release,
+      ...(flags.allowDowntime ? { allowDowntime: true } : {}),
     });
-    renderDeployerRun(config, result, flags);
+    renderUpdaterRun(config, result, flags);
     return 0;
   } catch (error) {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
@@ -603,34 +607,28 @@ function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommand
   try {
     const coordinates = config.aws!;
     verifyPinnedIdentity(coordinates);
-    const clusterName = deployClusterName(config.instance);
-    const cluster = awsJsonOptional<{ clusters?: Array<{ status?: string; runningTasksCount?: number }> }>(coordinates, [
-      'ecs', 'describe-clusters', '--clusters', clusterName,
-    ])?.clusters?.[0] ?? null;
-    const services = describeDeployServices(config);
-    const supabaseResponse = awsJsonOptional<{
-      Reservations?: Array<{ Instances?: Array<{ InstanceId?: string; State?: { Name?: string }; PrivateIpAddress?: string }> }>;
+    // One appliance host; the whole product is Docker on it.
+    const hostResponse = awsJsonOptional<{
+      Reservations?: Array<{ Instances?: Array<{ InstanceId?: string; State?: { Name?: string }; PublicIpAddress?: string }> }>;
     }>(coordinates, [
       'ec2', 'describe-instances',
-      '--filters', `Name=tag:Name,Values=${config.instance}-supabase`, 'Name=instance-state-name,Values=pending,running,stopping,stopped',
+      '--filters', `Name=tag:Name,Values=${config.instance}-appliance`, 'Name=instance-state-name,Values=pending,running,stopping,stopped',
     ]);
-    const supabaseInstance = supabaseResponse?.Reservations?.flatMap((entry) => entry.Instances ?? [])[0];
+    const hostInstance = hostResponse?.Reservations?.flatMap((entry) => entry.Instances ?? [])[0];
+    const running = hostInstance?.State?.Name === 'running';
+    const services = running ? dockerPsViaSsm(config) : [];
     const release = readReleaseRecord(config);
     const payload = {
       instance: config.instance,
       target: config.target,
       account_id: coordinates.account_id,
       region: coordinates.region,
-      cluster: {
-        name: clusterName,
-        status: cluster?.status ?? 'NOT_DEPLOYED',
-      },
+      host: hostInstance ? {
+        instance_id: hostInstance.InstanceId ?? null,
+        state: hostInstance.State?.Name ?? 'unknown',
+        public_ip: hostInstance.PublicIpAddress ?? null,
+      } : { instance_id: null, state: 'NOT_DEPLOYED', public_ip: null },
       services,
-      supabase: supabaseInstance ? {
-        instance_id: supabaseInstance.InstanceId ?? null,
-        state: supabaseInstance.State?.Name ?? 'unknown',
-        private_ip: supabaseInstance.PrivateIpAddress ?? null,
-      } : { instance_id: null, state: 'NOT_DEPLOYED', private_ip: null },
       release: release
         ? { version: release.version ?? null, supabase_bundle_sha: release.supabase_bundle_sha ?? null, deployed_at: release.deployed_at ?? null }
         : { version: null, supabase_bundle_sha: null, deployed_at: null },
@@ -652,31 +650,36 @@ function showAwsVpcLogs(config: SelfHostInstanceConfig, args: string[], _flags: 
     if (unknown.length > 0) throw new Error(`unknown logs option: ${unknown.join(', ')}`);
     const services = args.filter((arg) => !arg.startsWith('-'));
     if (services.length > 1) throw new Error('logs accepts at most one service name');
-    const service = services[0] ?? 'deployer';
+    const service = services[0] ?? 'updater';
     const follow = args.includes('--follow') || args.includes('-f');
-    if (service === 'supabase') {
-      const response = awsJson<{ Reservations?: Array<{ Instances?: Array<{ InstanceId?: string }> }> }>(coordinates, [
-        'ec2', 'describe-instances',
-        '--filters', `Name=tag:Name,Values=${config.instance}-supabase`, 'Name=instance-state-name,Values=running',
-      ]);
-      const instanceId = response.Reservations?.flatMap((entry) => entry.Instances ?? [])[0]?.InstanceId;
-      if (!instanceId) throw new Error(`no running Supabase host found for ${config.instance}`);
+
+    // The whole product runs as Docker/systemd on ONE host; container + unit logs
+    // live on the box (streamed via SSM), while the CloudWatch appliance group
+    // carries the host/updater log stream.
+    const SSM_UNIT: Record<string, string> = {
+      supabase: 'journalctl -u kortix-supabase -f -n 200',
+      app: 'journalctl -u kortix-app -f -n 200',
+      watchdog: 'journalctl -u kortix-watchdog -f -n 200',
+      api: 'docker compose --project-name kortix-app logs -f --tail 200 api',
+      gateway: 'docker compose --project-name kortix-app logs -f --tail 200 gateway',
+      frontend: 'docker compose --project-name kortix-app logs -f --tail 200 frontend',
+      caddy: 'docker compose --project-name kortix-app logs -f --tail 200 caddy',
+    };
+    if (SSM_UNIT[service]) {
+      const instanceId = applianceInstanceId(config);
+      if (!instanceId) throw new Error(`no running appliance host found for ${config.instance}`);
       const result = spawnAws(coordinates, [
         'ssm', 'start-session', '--target', instanceId,
         '--document-name', 'AWS-StartInteractiveCommand',
-        '--parameters', 'command=journalctl -u kortix-supabase -f -n 200',
+        '--parameters', `command=${SSM_UNIT[service]}`,
       ], 'inherit');
       if (result.status !== 0) throw new Error(`SSM log session failed with exit ${result.status ?? 1}`);
       return 0;
     }
-    const groups: Record<string, string> = {
-      deployer: `/kortix/${config.instance}/deployer`,
-      api: `/kortix/${config.instance}/api`,
-      frontend: `/kortix/${config.instance}/frontend`,
-      gateway: `/kortix/${config.instance}/gateway`,
-    };
-    const group = groups[service];
-    if (!group) throw new Error('logs service must be deployer, supabase, api, frontend, or gateway');
+    if (service !== 'updater' && service !== 'appliance') {
+      throw new Error('logs service must be updater, appliance, supabase, app, watchdog, api, gateway, frontend, or caddy');
+    }
+    const group = `/kortix/${config.instance}/appliance`;
     const result = spawnAws(coordinates, [
       'logs', 'tail', group, '--since', '1h', ...(follow ? ['--follow'] : []), '--no-cli-pager',
     ]);
@@ -719,17 +722,17 @@ function renderPlans(instance: string, account: string, region: string, plans: S
   process.stdout.write('\n');
 }
 
-function renderDeployerRun(
+function renderUpdaterRun(
   config: SelfHostInstanceConfig,
-  result: ReturnType<typeof runDeployerTask>,
+  result: UpdaterRunResult,
   flags: SelfHostCommandFlags,
 ): void {
   const payload = { instance: config.instance, channel: 'stable', ...result };
   if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else {
-    process.stdout.write(`\n  ${C.bold}Kortix customer-owned deployer${C.reset}\n`);
-    process.stdout.write(`${status.ok(result.task_arn)}\n`);
-    process.stdout.write(`  ${C.dim}The deployer task runs the signed ECS deploy in the customer VPC (TUF verify, digest mirror, migrate, service roll, circuit-breaker rollback).${C.reset}\n\n`);
+    process.stdout.write(`\n  ${C.bold}Kortix on-box updater${C.reset}\n`);
+    process.stdout.write(`${status.ok(result.command_id)}\n`);
+    process.stdout.write(`  ${C.dim}SSM ran kortix-updater on ${result.instance_id}: TUF verify, digest pull, migrate, start-first roll, health, breadcrumb.${C.reset}\n\n`);
   }
 }
 
@@ -737,19 +740,17 @@ function renderLiveStatus(payload: {
   instance: string;
   account_id: string;
   region: string;
-  cluster: { status: unknown };
-  services: DeployServiceStatus[];
-  supabase: { state: unknown };
+  host: { state: unknown; public_ip: unknown };
+  services: DockerServiceStatus[];
   release: { version: unknown; deployed_at: unknown };
 }): void {
   process.stdout.write(`\n  ${C.bold}kortix self-host status${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance   ${C.reset}${payload.instance}\n`);
   process.stdout.write(`  ${C.dim}target     ${C.reset}${payload.account_id}/${payload.region}\n`);
-  process.stdout.write(`  ${C.dim}cluster    ${C.reset}${String(payload.cluster.status)}\n`);
+  process.stdout.write(`  ${C.dim}host       ${C.reset}${String(payload.host.state)}${payload.host.public_ip ? ` (${String(payload.host.public_ip)})` : ''}\n`);
   for (const service of payload.services) {
-    process.stdout.write(`  ${C.dim}${service.role.padEnd(11)}${C.reset}${service.status} ${service.running}/${service.desired}${service.rollout ? ` (${service.rollout})` : ''}\n`);
+    process.stdout.write(`  ${C.dim}${service.service.padEnd(11)}${C.reset}${service.state}${service.health ? ` (${service.health})` : ''}\n`);
   }
-  process.stdout.write(`  ${C.dim}supabase   ${C.reset}${String(payload.supabase.state)}\n`);
   process.stdout.write(`  ${C.dim}release    ${C.reset}${String(payload.release.version ?? 'not deployed')}${payload.release.deployed_at ? ` (${String(payload.release.deployed_at)})` : ''}\n\n`);
 }
 
@@ -758,7 +759,7 @@ function rejectDockerLifecycleCommand(command: AwsVpcCommand, instance: string):
   process.stderr.write(`${status.err(`${canonical} is only available for Docker targets.`)}\n`);
   if (canonical === 'start') {
     process.stderr.write(
-      `${C.dim}AWS VPC environments are continuously reconciled; bootstrap with ${C.reset}${C.cyan}kortix self-host deploy --instance ${instance}${C.reset}${C.dim}.${C.reset}\n`,
+      `${C.dim}AWS EC2 environments are continuously reconciled; bootstrap with ${C.reset}${C.cyan}kortix self-host deploy --instance ${instance}${C.reset}${C.dim}.${C.reset}\n`,
     );
   }
   return 2;
@@ -774,12 +775,12 @@ function loadAwsConfig(instance: string): SelfHostInstanceConfig | null {
   }
   if (!config) {
     process.stderr.write(
-      `${status.err(`Self-host instance "${instance}" is not initialized. Run \`kortix self-host init --target aws-vpc --instance ${instance}\` first.`)}\n`,
+      `${status.err(`Self-host instance "${instance}" is not initialized. Run \`kortix self-host init --target aws-ec2 --instance ${instance}\` first.`)}\n`,
     );
     return null;
   }
-  if (config.target !== 'aws-vpc' || !config.aws) {
-    process.stderr.write(`${status.err(`Self-host instance "${instance}" is not an AWS VPC target.`)}\n`);
+  if (config.target !== 'aws-ec2' || !config.aws) {
+    process.stderr.write(`${status.err(`Self-host instance "${instance}" is not an AWS EC2 target.`)}\n`);
     return null;
   }
   return config;

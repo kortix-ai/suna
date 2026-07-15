@@ -79,7 +79,6 @@ export function writeClusterFiles(
     tuf_root_sha256: aws.tuf_root_sha256,
     updater_bootstrap_url: aws.updater_bootstrap_url,
     updater_bootstrap_sha256: aws.updater_bootstrap_sha256,
-    release_publisher_account_id: aws.release_publisher_account_id,
     maintenance_window: aws.maintenance_window,
     permissions_boundary_arn: permissionsBoundaryArn,
     tags: { Environment: 'enterprise', ManagedBy: 'kortix-self-host' },

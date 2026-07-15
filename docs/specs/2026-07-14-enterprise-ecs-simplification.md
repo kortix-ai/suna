@@ -1,8 +1,21 @@
 # Enterprise VPC on ECS — simplification refactor + A-to-Z deployment plan
 
-Date: 2026-07-14. Status: EXECUTING. Supersedes the EKS-based deployment in
-`docs/specs/2026-07-13-enterprise-vpc-single-tenant-deployment.md` (architecture
-section only — the BYOC thesis, signed releases, and account model stand).
+> **SUPERSEDED (2026-07-14) by
+> [`docs/specs/2026-07-14-enterprise-appliance.md`](2026-07-14-enterprise-appliance.md).**
+> The ECS/ALB/deployer runtime described below was replaced by a single-EC2, 100%
+> Docker appliance (Caddy + api×2 + gateway + frontend + official Supabase Docker,
+> reconciled by an on-box systemd updater timer). Everything release-side here still
+> stands unchanged — the TUF `stable` channel, `Promote Enterprise Stable`
+> (copy+sign, never rebuild), compatibility contracts with enforced `rollback_from`,
+> digest pinning, image mirroring, account pinning, secret generation, and the
+> `kortix self-host` CLI surface. Read the appliance spec for the current runtime,
+> `infra/terraform/modules/enterprise-vpc/README.md` for the module, and
+> `docs/runbooks/enterprise-vpc-deployment.md` for operations.
+
+Date: 2026-07-14. Status: SUPERSEDED (runtime half). Supersedes the EKS-based
+deployment in `docs/specs/2026-07-13-enterprise-vpc-single-tenant-deployment.md`
+(architecture section only — the BYOC thesis, signed releases, and account model
+stand).
 
 ## Decision
 

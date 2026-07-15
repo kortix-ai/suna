@@ -231,11 +231,15 @@ jobs:
       - name: Build deterministic platform, Supabase, and updater artifacts
         env:
           ENTERPRISE_VERSION: ${{ steps.release.outputs.enterprise_version }}
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          FRONTEND_IMAGE: ${{ steps.images.outputs.frontend }}
+          GATEWAY_IMAGE: ${{ steps.images.outputs.gateway }}
         run: |
           set -euo pipefail
           BUN_COMPILE_TARGET=bun-linux-x64 pnpm --filter "@kortix/enterprise-updater" build
           test -x apps/enterprise-updater/dist/kortix-enterprise-updater
-          bun apps/enterprise-release/src/build-bundles.ts --version "$ENTERPRISE_VERSION" --output-dir /tmp/bundles
+          bun apps/enterprise-release/src/build-bundles.ts --version "$ENTERPRISE_VERSION" --output-dir /tmp/bundles \
+            --api-image "$API_IMAGE" --frontend-image "$FRONTEND_IMAGE" --gateway-image "$GATEWAY_IMAGE"
           for bundle in platform supabase; do
             tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
               --format=posix --pax-option=delete=atime,delete=ctime \

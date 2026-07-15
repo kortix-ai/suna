@@ -1,6 +1,11 @@
 import { describe, test, expect } from 'bun:test';
-import { parseManifestString, serializeManifest, extractTriggers } from '../projects/triggers';
-import { draftToSpec } from '../projects/lib/triggers';
+import {
+  parseManifestString,
+  serializeManifest,
+  extractTriggers,
+  triggerSpecToTomlEntry,
+} from '../projects/triggers';
+import { draftToSpec, parseTriggerDraft } from '../projects/lib/triggers';
 import { extractAgents } from '../projects/agents';
 import { extractConnectors } from '../projects/connectors';
 
@@ -143,7 +148,7 @@ describe('draftToSpec — new trigger spec path uses the real manifest file', ()
   const draft = {
     slug: 'nightly', name: 'Nightly', type: 'cron' as const, agent: 'kortix', model: null,
     enabled: true, promptTemplate: 'do it', cron: '0 0 3 * * *', runAt: null,
-    timezone: 'UTC', secretEnv: null, sessionMode: 'fresh' as const,
+    timezone: 'UTC', secretEnv: null, sessionMode: 'fresh' as const, pinnedSessionId: null,
   };
 
   test('YAML project → path is kortix.yaml#triggers.<slug> (not hardcoded toml)', () => {
@@ -152,5 +157,88 @@ describe('draftToSpec — new trigger spec path uses the real manifest file', ()
 
   test('TOML default preserved when no path passed', () => {
     expect(draftToSpec(draft).path).toBe('kortix.toml#triggers.nightly');
+  });
+});
+
+describe('session_mode = pinned — parse, validate, serialize', () => {
+  const yamlWith = (triggerExtra: string) => `kortix_version: 2
+default_agent: kortix
+project:
+  name: probe
+  description: A probe project.
+env:
+  required: []
+  optional: []
+opencode:
+  config_dir: .kortix/opencode
+agents:
+  kortix:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+triggers:
+  - slug: loop
+    name: Loop
+    type: cron
+    agent: kortix
+    enabled: true
+    cron: "0 0 * * * *"
+    timezone: UTC
+    prompt: keep going
+${triggerExtra}`;
+
+  test('a pinned trigger parses sessionMode + pinnedSessionId', () => {
+    const m = parseManifestString(
+      yamlWith('    session_mode: pinned\n    session_id: sess-abc\n'),
+      'yaml',
+      'kortix.yaml',
+    );
+    const { specs, errors } = extractTriggers(m);
+    expect(errors).toEqual([]);
+    expect(specs[0].sessionMode).toBe('pinned');
+    expect(specs[0].pinnedSessionId).toBe('sess-abc');
+  });
+
+  test('pinned WITHOUT session_id is a parse error', () => {
+    const m = parseManifestString(yamlWith('    session_mode: pinned\n'), 'yaml', 'kortix.yaml');
+    const { errors } = extractTriggers(m);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].error).toMatch(/session_id/);
+  });
+
+  test('triggerSpecToTomlEntry emits session_mode + session_id for pinned', () => {
+    const m = parseManifestString(
+      yamlWith('    session_mode: pinned\n    session_id: sess-xyz\n'),
+      'yaml',
+      'kortix.yaml',
+    );
+    const spec = extractTriggers(m).specs[0];
+    const entry = triggerSpecToTomlEntry(spec);
+    expect(entry.session_mode).toBe('pinned');
+    expect(entry.session_id).toBe('sess-xyz');
+  });
+
+  test('fresh trigger omits session_mode/session_id on serialize', () => {
+    const m = parseManifestString(yamlWith(''), 'yaml', 'kortix.yaml');
+    const entry = triggerSpecToTomlEntry(extractTriggers(m).specs[0]);
+    expect(entry.session_mode).toBeUndefined();
+    expect(entry.session_id).toBeUndefined();
+  });
+
+  test('parseTriggerDraft: pinned requires session_id; fresh nulls it', () => {
+    const base = { name: 'p', type: 'cron', cron: '0 0 * * * *', prompt_template: 'x' };
+    const ok = parseTriggerDraft(
+      { ...base, session_mode: 'pinned', session_id: 'sess-1' },
+      { existingSlug: null },
+    );
+    expect('error' in ok).toBe(false);
+    if (!('error' in ok)) expect(ok.pinnedSessionId).toBe('sess-1');
+
+    const bad = parseTriggerDraft({ ...base, session_mode: 'pinned' }, { existingSlug: null });
+    expect('error' in bad).toBe(true);
+
+    const fresh = parseTriggerDraft(base, { existingSlug: null });
+    if (!('error' in fresh)) expect(fresh.pinnedSessionId).toBe(null);
   });
 });
