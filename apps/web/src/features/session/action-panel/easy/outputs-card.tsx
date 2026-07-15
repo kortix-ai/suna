@@ -12,6 +12,7 @@
  * `PanelCard`'s contract — no technical detail until there is something to show.
  */
 
+import { readFileAsBlob } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
 import {
   AppWindow,
@@ -21,7 +22,7 @@ import {
   Presentation as PresentationIcon,
   Video as VideoIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { deliverableKindLabel } from '../shared/output-priority';
 import { outputKey } from './easy-panel-logic';
@@ -36,11 +37,56 @@ const KIND_ICON = {
   app: AppWindow,
 } as const;
 
+/** path → object URL, shared across rows and re-renders. Never revoked: a
+ * session shows dozens of thumbs at ~28px, and revoking on unmount would
+ * refetch on every expand/collapse. */
+const thumbCache = new Map<string, string>();
+
+/**
+ * A 28×28 image thumbnail — the glyph is a promise ("this is an image"), the
+ * real pixels are the proof. Starts as the kind glyph (nothing fetched yet)
+ * and swaps to the actual bytes once loaded; stays the glyph on error rather
+ * than showing a broken-image icon.
+ */
+function ImageThumb({ path, name }: { path: string; name: string }) {
+  const [src, setSrc] = useState<string | null>(thumbCache.get(path) ?? null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (src || failed) return;
+    let cancelled = false;
+    readFileAsBlob(path)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        thumbCache.set(path, url);
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => !cancelled && setFailed(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [path, src, failed]);
+
+  if (!src || failed) {
+    const Ico = KIND_ICON.image;
+    return <Ico className="text-muted-foreground size-3.5" />;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={name}
+      className="size-7 rounded-sm object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+    />
+  );
+}
+
 /**
  * A file gets its real per-extension glyph (the `.md` tile, the `.png` tile) —
  * the same one the files explorer uses, so an output looks like the thing the
  * user will open. A running app and generated media have no filename to key off,
- * so they keep their kind icon.
+ * so they keep their kind icon — except an image with a path, which gets a real
+ * thumbnail (W13): the icon says "picture," the thumb shows which one.
  */
 function OutputIcon({ output }: { output: OutputItem }) {
   const tile = ' flex size-7 shrink-0 items-center justify-center rounded-sm';
@@ -49,6 +95,14 @@ function OutputIcon({ output }: { output: OutputItem }) {
     return (
       <span className={tile}>
         {getFileIcon(output.name, { className: 'size-3.5', variant: 'monochrome' })}
+      </span>
+    );
+  }
+
+  if (output.kind === 'image' && output.path) {
+    return (
+      <span className={tile}>
+        <ImageThumb path={output.path} name={output.name} />
       </span>
     );
   }

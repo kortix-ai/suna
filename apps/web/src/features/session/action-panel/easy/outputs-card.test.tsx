@@ -53,3 +53,32 @@ describe('OutputRows display (W3/W11)', () => {
     expect(withoutPath).not.toContain('Download');
   });
 });
+
+describe('OutputIcon image thumbnails (W13)', () => {
+  test('an image output without a path keeps the glyph (nothing to thumbnail)', () => {
+    const html = renderToStaticMarkup(
+      <OutputRows
+        outputs={[{ callID: 'i1', name: 'Image', kind: 'image' }]}
+        onOpenOutput={() => {}}
+      />,
+    );
+    expect(html).not.toContain('<img');
+  });
+
+  // The thumbnail cache is populated by a client-only effect (fetch the bytes,
+  // build an object URL) — a static server render can never observe the loaded
+  // state, only the glyph it starts as. Loaded-state coverage is Task 21's
+  // visual verification, not this file's job.
+  test('an image output with a path still starts as the glyph — the thumb loads client-side', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <OutputRows
+          outputs={[{ callID: 'i2', name: 'Generated image', kind: 'image', path: 'out.png' }]}
+          onOpenOutput={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    expect(html).not.toContain('<img');
+    expect(html).toContain('Generated image');
+  });
+});

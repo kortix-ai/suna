@@ -29,8 +29,8 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { FileWarning, Maximize2, MessageSquarePlus, Minimize2 } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
+import { Check, Copy, FileWarning, Maximize2, MessageSquarePlus, Minimize2 } from 'lucide-react';
+import { useState, useSyncExternalStore } from 'react';
 import { CloseButton } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
 
@@ -49,8 +49,10 @@ const getSandboxAliveSnapshot = () => {
 
 /**
  * The toolbar for every state that isn't text. Same shape and same actions as
- * `FileViewer`'s, minus Copy — there is nothing to copy. Without this, a file
- * that fails to load would strand the user in a pane with no title and no exit.
+ * `FileViewer`'s, minus Copy — there is nothing to copy, except where a caller
+ * hands one in via `actions` (the binary-image branch: copying the image
+ * itself). Without this, a file that fails to load would strand the user in a
+ * pane with no title and no exit.
  */
 function PreviewShell({
   name,
@@ -58,6 +60,7 @@ function PreviewShell({
   path,
   onClose,
   onAskForChanges,
+  actions,
   children,
 }: {
   /** The display name shown in the toolbar text — a human title when one
@@ -73,6 +76,9 @@ function PreviewShell({
    *  detail (W12). Omitted entirely (not disabled) where there's no session
    *  composer to hand it to. */
   onAskForChanges?: () => void;
+  /** Extra toolbar controls specific to one preview state — rendered before
+   *  Download, after the "ask for changes" control. */
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const isExpanded = useIsExpanded();
@@ -103,6 +109,7 @@ function PreviewShell({
             </Hint>
           )}
           {isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
+          {actions}
           <DownloadButton path={path} fileName={fileName} />
           {/* The store flip is a no-op on mobile — the drawer never reads
               `isExpanded` — so the control was dead weight there. */}
@@ -128,6 +135,59 @@ function PreviewShell({
       </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-auto">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Copy-to-clipboard for the binary-image preview — a sibling to Download, not
+ * a replacement: Download saves the file, this puts the pixels on the
+ * clipboard for pasting straight into a doc or chat. Feature-detected rather
+ * than always shown: `ClipboardItem` is missing on older browsers, and an
+ * omitted control beats a disabled one with no explanation (W4). Silent on
+ * failure (e.g. clipboard permission denied) — matches the rest of this
+ * panel's copy affordances, which just don't confirm rather than surfacing an
+ * error toast for a low-stakes action.
+ */
+function CopyImageButton({ mimeType, base64 }: { mimeType: string; base64: string }) {
+  const [copied, setCopied] = useState(false);
+  if (typeof ClipboardItem === 'undefined') return null;
+
+  const handleCopy = async () => {
+    try {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      // Browsers only accept image/png in ClipboardItem reliably; convert via canvas
+      // when the source is another format.
+      let blob: Blob = new Blob([bytes], { type: mimeType });
+      if (mimeType !== 'image/png') {
+        const bitmap = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+        blob = await new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png'),
+        );
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard permission denied — the button simply doesn't confirm.
+    }
+  };
+
+  return (
+    <Hint label={copied ? 'Copied' : 'Copy image'} side="bottom">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Copy image"
+        onClick={() => void handleCopy()}
+        className="size-7 active:scale-[0.96]"
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </Button>
+    </Hint>
   );
 }
 
@@ -259,6 +319,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
+        actions={isImage && <CopyImageButton mimeType={data.mimeType!} base64={data.content} />}
       >
         {isImage ? (
           <div className="flex items-start justify-center">
