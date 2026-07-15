@@ -2,19 +2,19 @@
 
 **Kortix self-host is VPS-first.** The supported way to run it is on your own
 VPS or server with a persistent domain pointed at it — that combination is
-what makes reachability, TLS, and agent sandboxes work correctly and durably.
-Running it on a laptop is a convenience for evaluating the product, not a
-deployment target: laptop mode needs a Cloudflare tunnel (or nothing at all)
-to get any external reachability, that URL is ephemeral or missing entirely,
-and browsers enforce connection limits against plain-HTTP `localhost` that a
-real deployment won't hit. If you're deciding where to run this for real,
-provision a VPS and point a domain at it.
+what makes reachability, TLS, and agent sessions work correctly and durably.
+Running it on a local machine with no public domain is a convenience for
+evaluating the product, not a deployment target: it needs a Cloudflare
+tunnel to get any external reachability at all, that URL is ephemeral by
+default, and browsers enforce connection limits against plain-HTTP
+`localhost` that a real deployment won't hit. If you're deciding where to run
+this for real, provision a VPS and point a domain at it.
 
 Kortix self-host is **one generic Docker-native system**: `kortix self-host`
 generates a `docker-compose.yml` + `.env` (+ a `Caddyfile` and `updater.sh` when
 a domain is configured) into `~/.config/kortix/self-host/<instance>/` and runs
-`docker compose up`. The same artifact happens to also run on a laptop, any
-VPS, or a cloud VM (EC2, Droplet, etc.) — there is no separate "target" to
+`docker compose up`. The same artifact happens to also run on a local
+machine, any VPS, or a cloud VM (EC2, Droplet, etc.) — there is no separate "target" to
 pick, no AWS profile, no Terraform, no TUF/signing, no SSM. A public domain is
 just an env var (`KORTIX_DOMAIN`) the same stack reacts to, not a different
 deployment mechanism.
@@ -37,9 +37,9 @@ box.
 
 ## Prerequisites
 
-- **A VPS or server you control (recommended), or a laptop for evaluation
-  only** — Linux (any VPS, EC2, bare metal) or macOS/Linux with Docker Desktop
-  or Docker Engine.
+- **A VPS or server you control (recommended), or a local machine for
+  evaluation only** — Linux (any VPS, EC2, bare metal) or macOS/Linux with
+  Docker Desktop or Docker Engine.
 - Docker Engine + the Compose plugin (`docker compose version`). The bootstrap
   script below installs these for you on a fresh Linux box.
 - **Required for production:** a domain you control, with its DNS A/AAAA
@@ -58,46 +58,45 @@ box.
 
 ## Reachability (required for agent sessions) — VPS-first
 
-Agent sessions run inside a **cloud** Daytona sandbox — a VM outside your
-network — that calls back to this instance's API over the public internet via
+Agent sessions run inside a **cloud** sandbox VM — outside your network —
+that calls back to this instance's API over the public internet via
 `KORTIX_URL`. That means `KORTIX_URL` can never be a loopback/internal
 address: a sandbox trying to reach `http://localhost:...` or an internal
 Docker hostname like `http://kortix-api:8008` will simply never connect, and
 agent sessions fail with a fast, explicit error (or, before this URL was
-validated, a confusing hang).
+validated, a confusing hang). Note the failure is specifically in that
+**callback** — a cloud sandbox itself is perfectly reachable compute; it's
+`KORTIX_URL` (this API, reachable from the sandbox) that has to be real.
 
 `kortix self-host init`/`configure` ask interactively how this instance is
-reachable from the internet, and default to the domain path; non-interactively,
-pick one of:
+reachable from the internet, and only ever offer two choices (defaulting to
+the domain path); non-interactively, pick one of:
 
-1. **Public domain** (server/VPS/EC2 with DNS) — `--domain kortix.example.com`.
-   **The recommended, production path**: turns on the bundled Caddy reverse
-   proxy + ACME TLS, and `KORTIX_URL` becomes `https://api.<domain>`. This is
-   the only mode with a stable URL and no laptop/browser caveats — deploy on a
-   VPS with a domain for anything beyond kicking the tyres.
-2. **Cloudflare tunnel** (laptop — no public IP/DNS) — `--tunnel cloudflare`.
-   **Evaluation on a laptop only — not recommended for production.** A
-   `cloudflared` Compose service exposes the API to the internet with zero
-   DNS/firewall setup, and the CLI wires `KORTIX_URL` to the tunnel's public
-   URL automatically. By default that URL is **ephemeral** (a fresh one on
-   every restart) and browsers enforce connection limits against plain-HTTP
-   `localhost` that a real deployment won't hit. See below.
-3. **Local only** (neither flag) — loopback URLs only, the historical default.
-   **Development only.** Agent sessions and any other external caller
-   (webhooks, Slack/Teams OAuth, the git-proxy clone URL) **will not work**.
-   Browser-local flows (e.g. creating a GitHub App) still do, since the
-   browser runs on the same machine. `start` prints a warning every time this
-   mode is active.
+1. **`--domain kortix.example.com`** — you have a public domain pointed at
+   this machine. **The recommended, production path**: turns on the bundled
+   Caddy reverse proxy + ACME TLS, and `KORTIX_URL` becomes
+   `https://api.<domain>`. This is the only choice with a stable URL and no
+   browser caveats — deploy on a VPS with a domain for anything beyond
+   kicking the tyres.
+2. **`--tunnel cloudflare`** — no public domain. A `cloudflared` Compose
+   service exposes the API to the internet with zero DNS/firewall setup, and
+   the CLI wires `KORTIX_URL` to the tunnel's public URL automatically. **For
+   local machines / evaluation — not recommended for production.** By
+   default that URL is **ephemeral** (a fresh one on every restart) and
+   browsers enforce connection limits against plain-HTTP `localhost` that a
+   real deployment won't hit. See below.
 
-Self-host is designed VPS-first: for reliable production use, deploy on a VPS
-with a domain (mode 1). Modes 2 and 3 exist for evaluation/development and
-print a reminder of that every time they're selected or active.
+There is no third "local-only" mode to deliberately choose: if you're on a
+local machine with no public domain, use the tunnel. Passing neither flag
+non-interactively just leaves the instance in an unconfigured fallback state
+— `init`/`start` print a loud warning every time that's the case, because
+agent sessions genuinely cannot run until one of the two is set.
 
-Switch modes any time with `kortix self-host configure` (interactive) or the
-same flags on `init`/`update`. Re-running with neither flag never resets an
-already-configured mode.
+Switch reachability any time with `kortix self-host configure` (interactive)
+or the same flags on `init`/`update`. Re-running with neither flag never
+resets an already-configured choice.
 
-### Cloudflare tunnel mechanics (mode 2, evaluation only)
+### Cloudflare tunnel mechanics (no public domain, evaluation only)
 
 `--tunnel cloudflare` adds a `cloudflared` service to the Compose stack that
 tunnels straight to `kortix-api` (Caddy is never present in this mode — there
@@ -137,8 +136,8 @@ never changes across restarts.
 ## Quickstart
 
 **VPS-first: provision a VPS → point DNS at it → `init --domain` → `start`.**
-The laptop/tunnel path further down is for evaluating the product only — not
-for production use.
+The no-public-domain/tunnel path further down is for evaluating the product
+only — not for production use.
 
 ### VPS / EC2 / any bare Linux box (recommended)
 
@@ -223,7 +222,7 @@ so the module points `KORTIX_SELF_HOST_CONFIG_DIR` at the EBS volume rather
 than just bind-mounting `/var/lib/docker`) and how an instance can be replaced
 without losing data (daily EBS snapshots + `delete_on_termination = false`).
 
-### Evaluating on a laptop (not for production)
+### Evaluating on a local machine, no public domain (not for production)
 
 This path is for kicking the tyres on your own machine — it is **not**
 recommended for real use. See Reachability above for the specific caveats
@@ -241,10 +240,11 @@ Supabase, the API, the gateway, and the frontend come up on loopback ports
 quick tunnel is what makes agent sessions work at all with no domain/DNS
 (see Reachability above). `start` prints the exact URLs, the tunnel's public
 URL, and warns if the sandbox provider or managed git aren't configured yet.
-Omit `--tunnel cloudflare` to stay fully local-only (no agent sessions; see
-mode 3 above). When you're ready for real use, switch to a VPS with a domain
-(see above) — `kortix self-host configure` or `init --domain <domain>` any
-time, on the same box or a new one.
+Omitting `--tunnel cloudflare` leaves reachability unconfigured — no agent
+sessions, and `init`/`start` warn loudly every time (see Reachability above).
+When you're ready for real use, switch to a VPS with a domain (see above) —
+`kortix self-host configure` or `init --domain <domain>` any time, on the
+same box or a new one.
 
 ## The `kortix self-host` command surface
 
@@ -261,7 +261,10 @@ time, on the same box or a new one.
 | `kortix self-host doctor` | Validate local Docker tooling and the rendered Compose config. Non-mutating. |
 | `kortix self-host logs [service]` | Tail Compose logs. |
 | `kortix self-host open` | Open the dashboard in a browser. |
-| `kortix self-host env ls` / `env set KEY=VALUE …` | Show / update persistent env values (secrets masked on `ls`). |
+| `kortix self-host env ls [--show]` | Show every persistent value, grouped by service; secrets masked by default (`--show` reveals). |
+| `kortix self-host env set KEY=VALUE …` | Set any value (secret or plain config) and restart exactly the services it affects. |
+| `kortix self-host env rotate KEY \| --all-generated` | Regenerate a rotatable CLI-generated secret (JWT signing key, internal tokens, ...) in place. |
+| `kortix self-host uninstall` | Stop the stack and permanently delete this instance's containers, volumes, and config. Interactive confirmation (type the instance name); `--yes` for scripts. |
 
 Common flags: `--instance <name>` (default `default` — run multiple isolated
 stacks on one box), `--tag <version>` / `--release <version>` (pin an explicit
@@ -293,15 +296,16 @@ opens the right origin. That matters because the CLI has no other way to
 learn your dashboard's URL from the API URL alone: it normally *derives* one
 from the API URL's shape (`api.<domain>` → `<domain>`, or the `pnpm dev`
 pairing `:8008` → `:3000`), which is right for a domain deployment
-(`https://api.<domain>` → `https://<domain>`) but **wrong** for the laptop
-default (API `:13738`, dashboard `:13737` — not `:3000`) or any custom port.
+(`https://api.<domain>` → `https://<domain>`) but **wrong** for the
+local-machine default (API `:13738`, dashboard `:13737` — not `:3000`) or any
+custom port.
 If you ever add the host by hand instead of through `kortix self-host`
 (pointing the CLI at a self-host instance from a *different* machine, for
 example) and `kortix login` opens a dead-looking `:3000`, pass the dashboard
 URL explicitly:
 
 ```sh
-kortix hosts add selfhost --url http://localhost:13738 --dashboard-url http://localhost:13737   # laptop
+kortix hosts add selfhost --url http://localhost:13738 --dashboard-url http://localhost:13737   # local machine
 kortix hosts add selfhost --url https://api.kortix.example.com --dashboard-url https://kortix.example.com   # domain
 ```
 
@@ -393,6 +397,55 @@ kortix self-host env set INTEGRATION_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID
 `kortix self-host env ls` lists every key (secrets masked); `kortix self-host
 doctor` validates the rendered Compose config without applying anything.
 
+## SAML SSO + SCIM (Enterprise)
+
+GoTrue SAML is enabled on every self-host instance by default: `init`
+generates a per-instance RSA SAML signing key (`SAML_PRIVATE_KEY`) the same
+way it generates `SUPABASE_JWT_SECRET`/`POSTGRES_PASSWORD`, and
+`GOTRUE_SAML_ENABLED=true` is wired straight through to the `supabase-auth`
+service. That only turns on the *capability* — no IdP is registered and the
+enterprise IAM surface (SSO/SCIM/RBAC/audit) stays hidden behind a 402 until
+you unlock the entitlement:
+
+```sh
+kortix self-host env set ENTERPRISE_LICENSE_AVAILABLE=true
+# or pass --enterprise-license to `init`/`configure`
+kortix self-host start
+```
+
+With that flag on, register an IdP exactly like on Kortix Cloud — see
+`docs/ENTRA_SSO_SCIM_SETUP.md` for the full walkthrough (Entra/Okta/Google/
+custom SAML, group→role mapping, SCIM). Two paths:
+
+- **Self-serve (recommended)**: sign in as an account owner/admin → Account →
+  Settings → Identity → SAML SSO → Configure → Import IdP metadata. Kortix
+  registers the IdP with your self-hosted Supabase Auth (`/auth/v1/admin/sso/
+  providers`) server-side — you never touch Supabase directly. Everything
+  (Entity ID, ACS URL, metadata endpoint) is derived from your own
+  `KORTIX_DOMAIN`/tunnel URL, never a Kortix Cloud URL.
+- **Advanced/operator path**: run `supabase sso add --type saml --metadata-url
+  "<idp metadata url>" --domains your-company.com` yourself against your
+  self-hosted Supabase project, then paste the returned provider UUID into the
+  same dashboard dialog (`PUT /v1/accounts/{accountId}/iam/sso/provider`).
+
+Verify the plumbing independent of any IdP with:
+
+```sh
+curl -s https://<your-domain>/auth/v1/settings -H "apikey: $(kortix self-host env ls --json --show | jq -r '.categories[] | select(.category=="database") | .secrets[] | select(.key=="SUPABASE_ANON_KEY") | .value')" | jq .saml_enabled
+# → true
+```
+
+Notes:
+- **Never rotate `SAML_PRIVATE_KEY`** once an IdP is registered — it's the SP's
+  signing identity; regenerating it breaks every already-trusted IdP
+  relationship until you re-register. `kortix self-host env rotate` refuses it
+  for this reason.
+- First-login auto-provisioning ("does every SSO sign-in land in the right
+  account automatically?") is governed by the account's `auto_create_members`
+  setting and its SSO group→role mappings — see `docs/ENTRA_SSO_SCIM_SETUP.md`
+  Part A/C; it is not a self-host-specific concern once the plumbing above is
+  in place.
+
 ## Backups
 
 There is no separate backup system — it's plain Docker volumes and bind
@@ -433,12 +486,32 @@ Restore is the inverse: stop the stack, restore `volumes/db/data` (whole-
 directory approach) or `psql < backup.sql` against a fresh instance (logical
 approach), then start.
 
+## Uninstalling / starting over
+
+`kortix self-host uninstall` is the full, clean teardown for one instance: it
+stops the stack, runs `docker compose down --volumes --remove-orphans`
+(containers, networks, and the two named Docker volumes above — NOT a
+substitute for the backup step if you need the data), deletes the instance's
+config directory (`~/.config/kortix/self-host/<instance>/`, including
+`.env` and `volumes/`), and clears the CLI's `selfhost` host entry if it
+still points at this instance.
+
+```sh
+kortix self-host uninstall                    # interactive: type the instance name to confirm
+kortix self-host uninstall --yes              # non-interactive / scripts
+kortix self-host uninstall --instance staging # a specific --instance
+```
+
+**This permanently deletes all data for that instance** (Postgres, Storage,
+every secret) — take a backup first if you might need it. Reinstalling is
+just `init` + `start` again, on the same box or a fresh one.
+
 ## Troubleshooting
 
 - **`docker compose version` fails / "Cannot connect to the Docker daemon"** —
   Docker isn't installed or the daemon isn't running.
   `scripts/kortix-selfhost-up.sh` installs and starts it; on an existing box,
-  `systemctl status docker` (Linux) or open Docker Desktop (laptop).
+  `systemctl status docker` (Linux) or open Docker Desktop (local machine).
 - **A newly created Linux user can't run `docker` without `sudo`** — group
   membership (`usermod -aG docker $USER`) only takes effect in a *new* login
   session; log out/in or start a new shell.
@@ -451,14 +524,14 @@ approach), then start.
 - **Creating a project fails ("provider github not configured")** — managed
   git isn't configured. Same fix, with the `MANAGED_GIT_GITHUB_*` keys above.
 - **Agent sessions fail with "Cannot connect to the API" / a `KORTIX_URL`
-  error, or hang forever** — this instance's reachability mode is `local`
-  (the default absent `--domain`/`--tunnel`), or a Cloudflare quick tunnel's
-  URL wasn't captured yet. Run `kortix self-host configure` to set up a
-  domain or `--tunnel cloudflare`, or re-run `kortix self-host start` — see
-  Reachability above. Check `kortix self-host logs cloudflared` if a tunnel is
-  configured but the URL capture keeps timing out (cloudflared may be missing
-  its image locally yet, or outbound network access to Cloudflare may be
-  blocked).
+  error, or hang forever** — the cloud sandbox can't call back to this API:
+  reachability is unconfigured (the default absent `--domain`/`--tunnel`), or
+  a Cloudflare quick tunnel's URL wasn't captured yet. Run
+  `kortix self-host configure` to set up a domain or `--tunnel cloudflare`,
+  or re-run `kortix self-host start` — see Reachability above. Check
+  `kortix self-host logs cloudflared` if a tunnel is configured but the URL
+  capture keeps timing out (cloudflared may be missing its image locally yet,
+  or outbound network access to Cloudflare may be blocked).
 - **ACME/TLS cert issuance fails** — confirm the domain's (and API domain's)
   DNS A/AAAA record actually resolves to the box's public IP, and that ports
   80/443 are open in any cloud/VPS firewall or security group — HTTP-01

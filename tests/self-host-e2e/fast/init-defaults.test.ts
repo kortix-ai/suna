@@ -7,10 +7,9 @@ import { SelfHostSandbox, composeServiceNames } from '../support/cli';
 // (password-first auth, autoconfirm on, daytona sandbox). Pure render check:
 // no Docker daemon involved, so this runs in default CI with zero setup.
 //
-// `--allow-missing-secrets` is required on every init below because none of
-// these renders configure DAYTONA_API_KEY/managed-git/OPENROUTER_API_KEY —
-// see required-secrets.test.ts for the enforcement this is deliberately
-// opting out of.
+// None of these renders configure DAYTONA_API_KEY/managed-git/OPENROUTER_API_KEY
+// — `init` never blocks on that (it warns instead), see
+// required-secrets.test.ts for the warning behavior itself.
 
 describe('self-host init: fresh render (fast, no Docker)', () => {
   let sandbox: SelfHostSandbox;
@@ -22,7 +21,7 @@ describe('self-host init: fresh render (fast, no Docker)', () => {
   afterEach(() => sandbox.cleanup());
 
   test('exits 0 and writes .env + docker-compose.yml', async () => {
-    const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    const { code } = await sandbox.run(['init', '--yes']);
     expect(code).toBe(0);
 
     const env = sandbox.readEnv();
@@ -32,7 +31,7 @@ describe('self-host init: fresh render (fast, no Docker)', () => {
   });
 
   test('every required service is present in the rendered compose', async () => {
-    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    await sandbox.run(['init', '--yes']);
     const services = composeServiceNames(sandbox.readComposeText());
 
     for (const required of [
@@ -53,7 +52,7 @@ describe('self-host init: fresh render (fast, no Docker)', () => {
   });
 
   test('ports are set (laptop-mode loopback host ports)', async () => {
-    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    await sandbox.run(['init', '--yes']);
     const env = sandbox.readEnv();
 
     expect(env.FRONTEND_PORT).toBeTruthy();
@@ -71,7 +70,7 @@ describe('self-host init: fresh render (fast, no Docker)', () => {
   });
 
   test('SHARED_SELF_HOST_DEFAULTS: password-first auth + autoconfirm + daytona sandbox', async () => {
-    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    await sandbox.run(['init', '--yes']);
     const env = sandbox.readEnv();
 
     // Auth: password-first, signup on, email autoconfirm on (no SMTP needed
@@ -87,10 +86,10 @@ describe('self-host init: fresh render (fast, no Docker)', () => {
   });
 
   test('a re-run of init on the same instance is idempotent (no port/secret churn)', async () => {
-    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    await sandbox.run(['init', '--yes']);
     const first = sandbox.readEnv();
 
-    const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    const { code } = await sandbox.run(['init', '--yes']);
     expect(code).toBe(0);
     const second = sandbox.readEnv();
 

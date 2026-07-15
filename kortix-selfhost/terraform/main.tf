@@ -76,6 +76,5 @@ module "kortix_selfhost" {
   kortix_cli_install_url = var.kortix_cli_install_url
   kortix_cli_channel     = var.kortix_cli_channel
   auto_update            = var.auto_update
-  single_account_mode    = var.single_account_mode
   acme_email             = var.acme_email
 }

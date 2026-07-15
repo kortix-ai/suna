@@ -1,4 +1,4 @@
-# The live vpc-demo deployment uses the defaults baked into variables.tf
+# The live vps-demo deployment uses the defaults baked into variables.tf
 # (domain, zone_id, admin_email, selfhost-rc tag, dev CLI channel, daily
 # backups retaining 10) — this file exists for parity with the other
 # terraform roots and as a template if this ever needs re-applying from a
@@ -6,6 +6,6 @@
 # `kortix self-host secrets set` over SSM, never as Terraform inputs.
 
 aws_region      = "us-east-1"
-domain          = "vpc-demo.kortix.com"
-route53_zone_id = "Z08967081WIACA6008WUL"
-admin_email     = "marko@kortix.ai"
+domain          = "vps-demo.kortix.com"
+route53_zone_id = "Z07380351PAIRZS9726W1"
+admin_email     = "marko@kortix.ai,marko@kortix.com"

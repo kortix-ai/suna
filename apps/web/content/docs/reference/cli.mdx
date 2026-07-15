@@ -76,7 +76,7 @@ One Kortix login can belong to many accounts (personal, a company account, …).
 to pick. `init` generates a `docker-compose.yml` + `.env` (plus a `Caddyfile`
 and `updater.sh` when a domain is configured) into
 `~/.config/kortix/self-host/<instance>/`, and `start` pulls the images and
-runs `docker compose up`. It's identical on a laptop, any VPS, or a cloud VM —
+runs `docker compose up`. It's identical on a local machine, any VPS, or a cloud VM —
 there is no AWS profile, no Terraform, no TUF/signing, no SSM.
 
 `start` creates config if needed, starts Supabase/API/gateway/frontend
@@ -112,10 +112,12 @@ Docker + the CLI and runs `init`/`start` for you — see the runbook.
 | `kortix self-host restart` | Restart the stack. |
 | `kortix self-host status` | Show Docker Compose service status. |
 | `kortix self-host open` | Open the dashboard in your browser. |
-| `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
-| `kortix self-host env set KEY=VALUE …` | Update persistent env values (domain, integrations, update policy, …) before the next start. |
+| `kortix self-host env ls [--show]` | Show every persistent value, grouped by service, masking populated secrets (`--show` reveals). |
+| `kortix self-host env set KEY=VALUE …` | Set any value (domain, integrations, update policy, secrets, …) and restart only the services it affects. |
+| `kortix self-host env rotate KEY \| --all-generated` | Regenerate a rotatable CLI-generated secret in place. |
 | `kortix self-host logs [service]` | Tail Docker Compose logs. |
 | `kortix self-host stop` | Stop the stack. |
+| `kortix self-host uninstall` | Stop the stack and permanently delete this instance's containers, volumes, and config. Interactive confirmation, or `--yes`. |
 
 Common flags: `--instance <name>` (default `default`), `--tag <version>` /
 `--release <version>` (pin an explicit image tag), `--channel stable|latest`
@@ -588,6 +590,6 @@ The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare pr
 
 ## What the CLI is not
 
-- **Not a separate runtime.** Use `kortix self-host start` to run the generic Docker self-host stack (laptop, VPS, or cloud VM — all identical), then switch between Cloud and self-hosted APIs with `kortix hosts use`.
+- **Not a separate runtime.** Use `kortix self-host start` to run the generic Docker self-host stack (local machine, VPS, or cloud VM — all identical), then switch between Cloud and self-hosted APIs with `kortix hosts use`.
 - **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
 - **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

@@ -15,7 +15,7 @@ name: Self-host E2E (fast always, full + live opt-in)
 #                     `self-host-schema` job in ci.yml.
 #   3. `live-opt-in` — tests/self-host-e2e/live/**: throwaway, uniquely-named
 #                     Docker stacks asserting HTTP-layer graceful degradation
-#                     (billing off / managed-git absent / single-account) and
+#                     (billing off / managed-git absent) and
 #                     the update mechanism's runtime behavior (schema
 #                     re-bootstrap, health recovery, data persistence).
 #                     Nightly + manual only (opt in via the `run_live` dispatch
@@ -134,7 +134,7 @@ jobs:
           npm_config_engine_strict: "false"
       - name: Build API image
         run: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
-      - name: Graceful degradation (billing off / managed-git absent / single-account)
+      - name: Graceful degradation (billing off / managed-git absent)
         run: bash tests/self-host-e2e/live/graceful-degradation.live.sh
         env:
           RUN_SELFHOST_LIVE: '1'
