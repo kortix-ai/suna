@@ -49,7 +49,6 @@ import {
   Layers,
   // Navigation
   LayoutDashboard,
-  LayoutTemplate,
   LogOut,
   MessagesSquare,
   Monitor,
@@ -702,16 +701,6 @@ export const menuRegistry: MenuItemDef[] = [
     tabId: 'desktop:main',
     tabType: 'desktop',
     keywords: 'desktop selkies novnc full screen xfce sandbox vnc remote',
-  },
-  {
-    id: 'templates',
-    label: 'Templates',
-    icon: LayoutTemplate,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/templates',
-    keywords: 'templates starter project boilerplate',
   },
   {
     id: 'changelog',

@@ -4,8 +4,6 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { config } from '../config';
-import { buildTemplateDetail } from '../projects/templates/install-template';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -15,6 +13,7 @@ import {
   assertAllowedSourceAddress,
   catalogStatus,
   clampMarketplaceItemsLimit,
+  FEATURED_MARKETPLACES,
   getCatalogItemDetail,
   getCatalogItemFile,
   listCatalogItemsLive,
@@ -134,15 +133,7 @@ marketplaceApp.openapi(
     },
   }),
   async (c: any) => {
-    const id = c.req.param('id');
-    // A use-case template gets its richer detail (inputs + requirements) — the
-    // generic catalog detail would otherwise shadow it now that templates
-    // resolve through the catalog.
-    if (config.KORTIX_TEMPLATES_ENABLED) {
-      const tpl = await buildTemplateDetail(id);
-      if (tpl) return c.json(tpl);
-    }
-    const detail = await getCatalogItemDetail(id);
+    const detail = await getCatalogItemDetail(c.req.param('id'));
     if (!detail) return c.json({ error: 'Not found' }, 404);
     return c.json(detail);
   },
@@ -176,13 +167,15 @@ marketplaceApp.use('/sources', supabaseAuth);
 marketplaceApp.use('/sources/*', supabaseAuth);
 // Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
 // items merge into the catalog. Platform-global; persisted as a platform setting.
-// Mutating this list is a platform-admin action (GET stays open to any
-// authenticated user); gate POST/DELETE the same way admin/index.ts and
-// ops/index.ts do, without touching the GET listing above.
-marketplaceApp.use('/sources', async (c, next) => {
-  if (c.req.method === 'POST') return requireAdmin(c, next);
-  await next();
-});
+// Mutating this list is normally a platform-admin action (GET stays open to any
+// authenticated user).
+//
+// Exception: the curated FEATURED_MARKETPLACES are vetted, public, read-only git
+// repos (they resolve out of the box and carry no SSRF/LFI surface). Enabling one
+// is "just git" — any signed-in user may flip a featured source on so they can
+// explore it. Adding an ARBITRARY address stays admin-only (that's the injection
+// surface `assertAllowedSourceAddress` guards). DELETE stays admin-only.
+const FEATURED_SOURCE_ADDRESSES = new Set(FEATURED_MARKETPLACES.map((f) => f.address));
 marketplaceApp.use('/sources/*', async (c, next) => {
   if (c.req.method === 'DELETE') return requireAdmin(c, next);
   await next();
@@ -233,6 +226,16 @@ marketplaceApp.openapi(
   }),
   async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
+    // Adding an arbitrary source is admin-only; the curated FEATURED_MARKETPLACES
+    // are vetted, public, read-only git repos (they resolve out of the box and
+    // carry no SSRF/LFI surface) so any signed-in user may enable one to explore
+    // it. See the module-level comment above for the full rationale.
+    const address = String((body as { address?: unknown })?.address ?? '').trim();
+    if (!FEATURED_SOURCE_ADDRESSES.has(address)) {
+      // Throws (401/403) on failure — caught by the app's global onError and
+      // turned into the right response; resolves to undefined on success.
+      await requireAdmin(c, async () => {});
+    }
     try {
       // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
       assertAllowedSourceAddress(String(body?.address ?? ''));

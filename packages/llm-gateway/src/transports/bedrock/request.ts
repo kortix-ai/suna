@@ -20,6 +20,14 @@ export function buildBedrockRequest(
     ...buildAnthropicCorePayload(body),
   };
 
+  // TODO(bedrock-sigv4): the enterprise appliance authenticates Bedrock with a
+  // long-lived AWS_BEDROCK_API_KEY bearer token (the v1 decision — see
+  // docs/runbooks/enterprise-vpc-deployment.md). The appliance instance role
+  // ALREADY holds bedrock:InvokeModel[WithResponseStream] (latent). Adding a SigV4
+  // signing path here (sign the request with the instance-role credentials from
+  // IMDS/env instead of a Bearer header) would let the appliance drop the bearer
+  // key entirely and rely solely on IAM — no rot, no shared secret. Until then the
+  // bearer key stays required for the aws-vpc target.
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     authorization: `Bearer ${descriptor.apiKey}`,

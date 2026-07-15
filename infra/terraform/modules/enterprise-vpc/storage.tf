@@ -2,13 +2,95 @@ locals {
   bucket_prefix = substr("${var.name}-${var.expected_account_id}-${local.region}", 0, 44)
 }
 
-resource "aws_s3_bucket" "backups" {
-  #checkov:skip=CKV_AWS_144:Customer backups remain in the selected residency region; AWS Backup vault lock, hourly EBS recovery points, WAL objects, and versioning provide independent recovery layers.
-  #checkov:skip=CKV_AWS_18:Object-level CloudTrail data events below provide authenticated access audit records without a recursive server-access-log bucket.
-  #checkov:skip=CKV2_AWS_62:CloudTrail data events and the encrypted alert topic are the installation-wide detection path.
-  bucket        = "${local.bucket_prefix}-backups"
-  force_destroy = false
+# Release-staging bucket. The deployer stages the verified Supabase bundle
+# tarball here (KMS-encrypted, short-lived) so the private Supabase EC2 can pull
+# it via SSM RunCommand over the S3 gateway endpoint. Customer-data durability is
+# encrypted EBS + hourly AWS Backup recovery points (backup.tf); this bucket ever
+# holds only transient deploy artifacts, which lifecycle-expire automatically.
+#trivy:ignore:AVD-AWS-0089
+resource "aws_s3_bucket" "artifacts" {
+  #checkov:skip=CKV_AWS_18:Transient release-staging bucket; contents are short-lived KMS-encrypted deploy artifacts, not audited data.
+  #checkov:skip=CKV_AWS_144:Cross-region replication is unnecessary for transient staging artifacts kept in the customer residency region.
+  #checkov:skip=CKV2_AWS_62:Event notifications are unnecessary for a transient staging bucket.
+  bucket        = "${local.bucket_prefix}-artifacts"
+  force_destroy = true
   tags          = local.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.data.arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+data "aws_iam_policy_document" "artifacts_bucket" {
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.artifacts.arn,
+      "${aws_s3_bucket.artifacts.arn}/*",
+    ]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  policy = data.aws_iam_policy_document.artifacts_bucket.json
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  #checkov:skip=CKV_AWS_300:abort_incomplete_multipart_upload IS set (1 day); checkov mis-evaluates rules that use a filter block.
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    id     = "expire-staging"
+    status = "Enabled"
+    filter {
+      prefix = "updater-staging/"
+    }
+    expiration {
+      days = 7
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
 }
 
 resource "aws_s3_bucket" "audit" {
@@ -20,15 +102,6 @@ resource "aws_s3_bucket" "audit" {
   tags          = local.tags
 }
 
-resource "aws_s3_bucket_public_access_block" "backups" {
-  bucket = aws_s3_bucket.backups.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
 resource "aws_s3_bucket_public_access_block" "audit" {
   bucket = aws_s3_bucket.audit.id
 
@@ -38,29 +111,10 @@ resource "aws_s3_bucket_public_access_block" "audit" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_versioning" "backups" {
-  bucket = aws_s3_bucket.backups.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
 resource "aws_s3_bucket_versioning" "audit" {
   bucket = aws_s3_bucket.audit.id
   versioning_configuration {
     status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
-  bucket = aws_s3_bucket.backups.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.data.arn
-      sse_algorithm     = "aws:kms"
-    }
-    bucket_key_enabled = true
   }
 }
 
@@ -76,23 +130,14 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "audit" {
   }
 }
 
-locals {
-  protected_buckets = {
-    backups = aws_s3_bucket.backups.id
-    audit   = aws_s3_bucket.audit.id
-  }
-}
-
-data "aws_iam_policy_document" "bucket_transport" {
-  for_each = local.protected_buckets
-
+data "aws_iam_policy_document" "audit_bucket" {
   statement {
     sid     = "DenyInsecureTransport"
     effect  = "Deny"
     actions = ["s3:*"]
     resources = [
-      "arn:${local.partition}:s3:::${each.value}",
-      "arn:${local.partition}:s3:::${each.value}/*",
+      aws_s3_bucket.audit.arn,
+      "${aws_s3_bucket.audit.arn}/*",
     ]
     principals {
       type        = "*"
@@ -105,83 +150,47 @@ data "aws_iam_policy_document" "bucket_transport" {
     }
   }
 
-  dynamic "statement" {
-    for_each = each.key == "audit" ? [1] : []
-    content {
-      sid       = "CloudTrailAclCheck"
-      effect    = "Allow"
-      actions   = ["s3:GetBucketAcl"]
-      resources = ["arn:${local.partition}:s3:::${each.value}"]
-      principals {
-        type        = "Service"
-        identifiers = ["cloudtrail.amazonaws.com"]
-      }
-      condition {
-        test     = "StringEquals"
-        variable = "aws:SourceArn"
-        values   = ["arn:${local.partition}:cloudtrail:${local.region}:${var.expected_account_id}:trail/${var.name}"]
-      }
+  statement {
+    sid       = "CloudTrailAclCheck"
+    effect    = "Allow"
+    actions   = ["s3:GetBucketAcl"]
+    resources = [aws_s3_bucket.audit.arn]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = ["arn:${local.partition}:cloudtrail:${local.region}:${var.expected_account_id}:trail/${var.name}"]
     }
   }
 
-  dynamic "statement" {
-    for_each = each.key == "audit" ? [1] : []
-    content {
-      sid       = "CloudTrailWrite"
-      effect    = "Allow"
-      actions   = ["s3:PutObject"]
-      resources = ["arn:${local.partition}:s3:::${each.value}/AWSLogs/${var.expected_account_id}/*"]
-      principals {
-        type        = "Service"
-        identifiers = ["cloudtrail.amazonaws.com"]
-      }
-      condition {
-        test     = "StringEquals"
-        variable = "s3:x-amz-acl"
-        values   = ["bucket-owner-full-control"]
-      }
-      condition {
-        test     = "StringEquals"
-        variable = "aws:SourceArn"
-        values   = ["arn:${local.partition}:cloudtrail:${local.region}:${var.expected_account_id}:trail/${var.name}"]
-      }
+  statement {
+    sid       = "CloudTrailWrite"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.audit.arn}/AWSLogs/${var.expected_account_id}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = ["arn:${local.partition}:cloudtrail:${local.region}:${var.expected_account_id}:trail/${var.name}"]
     }
   }
-}
-
-resource "aws_s3_bucket_policy" "backups" {
-  bucket = aws_s3_bucket.backups.id
-  policy = data.aws_iam_policy_document.bucket_transport["backups"].json
 }
 
 resource "aws_s3_bucket_policy" "audit" {
   bucket = aws_s3_bucket.audit.id
-  policy = data.aws_iam_policy_document.bucket_transport["audit"].json
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "backups" {
-  bucket = aws_s3_bucket.backups.id
-
-  rule {
-    id     = "retain-and-archive"
-    status = "Enabled"
-
-    filter {}
-
-    transition {
-      days          = 30
-      storage_class = "STANDARD_IA"
-    }
-    expiration {
-      days = var.backup_retention_days
-    }
-    noncurrent_version_expiration {
-      noncurrent_days = var.backup_retention_days
-    }
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
-    }
-  }
+  policy = data.aws_iam_policy_document.audit_bucket.json
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "audit" {
@@ -251,56 +260,12 @@ resource "aws_cloudtrail" "operations" {
   event_selector {
     read_write_type           = "All"
     include_management_events = true
-
-    data_resource {
-      type = "AWS::S3::Object"
-      values = [
-        "${aws_s3_bucket.backups.arn}/",
-      ]
-    }
   }
 
-  depends_on = [aws_s3_bucket_policy.audit]
-}
-
-moved {
-  from = aws_s3_bucket_public_access_block.protected["backups"]
-  to   = aws_s3_bucket_public_access_block.backups
-}
-
-moved {
-  from = aws_s3_bucket_public_access_block.protected["audit"]
-  to   = aws_s3_bucket_public_access_block.audit
-}
-
-moved {
-  from = aws_s3_bucket_versioning.protected["backups"]
-  to   = aws_s3_bucket_versioning.backups
-}
-
-moved {
-  from = aws_s3_bucket_versioning.protected["audit"]
-  to   = aws_s3_bucket_versioning.audit
-}
-
-moved {
-  from = aws_s3_bucket_server_side_encryption_configuration.protected["backups"]
-  to   = aws_s3_bucket_server_side_encryption_configuration.backups
-}
-
-moved {
-  from = aws_s3_bucket_server_side_encryption_configuration.protected["audit"]
-  to   = aws_s3_bucket_server_side_encryption_configuration.audit
-}
-
-moved {
-  from = aws_s3_bucket_policy.bucket_transport["backups"]
-  to   = aws_s3_bucket_policy.backups
-}
-
-moved {
-  from = aws_s3_bucket_policy.bucket_transport["audit"]
-  to   = aws_s3_bucket_policy.audit
+  # CloudTrail validates both the S3 bucket policy and the SNS topic policy at
+  # trail-creation time, so both must exist first or CreateTrail fails with
+  # InsufficientSnsTopicPolicyException.
+  depends_on = [aws_s3_bucket_policy.audit, aws_sns_topic_policy.cloudtrail]
 }
 
 resource "aws_cloudwatch_log_group" "cloudtrail" {

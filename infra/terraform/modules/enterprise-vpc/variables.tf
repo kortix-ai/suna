@@ -1,10 +1,15 @@
 variable "name" {
-  description = "Globally stable instance slug, for example kortix-vpc-demo or essentia."
+  description = "Globally stable instance slug, for example vpc-demo or essentia. Do NOT prefix with kortix-; every resource is already named kortix-<name> (a kortix- prefix here would double it to kortix-kortix-...)."
   type        = string
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{2,30}[a-z0-9]$", var.name))
     error_message = "name must be a 4-32 character lowercase DNS slug."
+  }
+
+  validation {
+    condition     = !startswith(var.name, "kortix-")
+    error_message = "name must not start with 'kortix-'; resources are already named kortix-<name>."
   }
 }
 
@@ -32,57 +37,18 @@ variable "vpc_cidr" {
   }
 }
 
-variable "cluster_version" {
-  description = "EKS Kubernetes minor version."
-  type        = string
-  default     = "1.32"
-}
-
-variable "node_instance_types" {
-  description = "On-demand EKS application node types."
-  type        = list(string)
-  default     = ["m7i.large"]
-}
-
-variable "node_desired_size" {
-  type    = number
-  default = 3
-}
-
-variable "node_min_size" {
-  type    = number
-  default = 3
-}
-
-variable "node_max_size" {
-  type    = number
-  default = 9
-}
-
-variable "app_namespace" {
-  description = "Namespace for Kortix frontend, API, workers, and gateway."
-  type        = string
-  default     = "kortix-app"
-}
-
-variable "app_service_account" {
-  description = "IRSA-enabled service account used by Kortix workloads and External Secrets."
-  type        = string
-  default     = "kortix"
-}
-
 variable "api_domain" {
-  description = "Customer API FQDN covered by ACM and managed during platform bootstrap."
+  description = "Customer API FQDN. An A record is created in route53_zone_id pointing at the appliance EIP; Caddy on the box terminates TLS via ACME."
   type        = string
 }
 
 variable "frontend_domain" {
-  description = "Customer frontend FQDN covered by ACM and managed during platform bootstrap."
+  description = "Customer frontend FQDN. An A record is created in route53_zone_id pointing at the appliance EIP; Caddy on the box terminates TLS via ACME."
   type        = string
 }
 
 variable "route53_zone_id" {
-  description = "Customer-owned public Route 53 hosted zone containing both application domains."
+  description = "Customer-owned public Route 53 hosted zone containing both application domains. Also used for ACME DNS-01 by the on-box updater via the instance role."
   type        = string
 
   validation {
@@ -91,40 +57,83 @@ variable "route53_zone_id" {
   }
 }
 
-variable "supabase_instance_type" {
-  description = "Private EC2 instance type for the single-tenant Supabase Docker stack."
+variable "acme_email" {
+  description = "Contact email Caddy registers with the ACME CA (Let's Encrypt/ZeroSSL) for the appliance certificates. Optional; empty issues anonymously. Recommended so the CA can send expiry/revocation notices."
   type        = string
-  default     = "r7i.xlarge"
+  default     = ""
 }
 
-variable "supabase_ami_id" {
+# ── Ingress ───────────────────────────────────────────────────────────────────
+variable "ingress_cidrs" {
+  description = "CIDRs allowed to reach the appliance host on 80/443 (the whole customer-facing surface). Enterprise customers SHOULD restrict this to their corporate egress ranges; the open default exists only for first bring-up."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+# ── Bedrock (LLM upstream; the gateway SigV4-signs with the instance role) ─────
+variable "bedrock_model_allowlist" {
+  description = "Resource ARNs the instance role may invoke via bedrock:InvokeModel[WithResponseStream]. Defaults to Anthropic foundation models and cross-region inference profiles; restrict per certification."
+  type        = list(string)
+  default = [
+    "arn:aws:bedrock:*::foundation-model/anthropic.*",
+    "arn:aws:bedrock:*:*:inference-profile/*anthropic.*",
+    "arn:aws:bedrock:*:*:application-inference-profile/*",
+  ]
+}
+
+# ── Appliance EC2 (runs the whole product: Caddy + api/gateway/frontend + Supabase) ─
+variable "appliance_instance_type" {
+  description = "EC2 instance type for the single-box appliance. Sized for Supabase plus api (x2) + gateway + frontend + Caddy on one host."
+  type        = string
+  default     = "m7i.2xlarge"
+}
+
+variable "appliance_ami_id" {
   description = "Optional reviewed AL2023 AMI. Null resolves the current AWS AL2023 x86_64 image during plan."
   type        = string
   default     = null
 }
 
-variable "supabase_data_volume_size_gib" {
+variable "root_volume_size_gib" {
+  description = "Encrypted root volume size (GiB). Sized with headroom for Docker image churn between prunes."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.root_volume_size_gib >= 50
+    error_message = "Root volume must be at least 50 GiB."
+  }
+}
+
+variable "data_volume_size_gib" {
   type    = number
   default = 500
 
   validation {
-    condition     = var.supabase_data_volume_size_gib >= 100
-    error_message = "Supabase data volume must be at least 100 GiB."
+    condition     = var.data_volume_size_gib >= 100
+    error_message = "Data volume must be at least 100 GiB."
   }
 }
 
-variable "supabase_data_volume_iops" {
+variable "data_volume_iops" {
   type    = number
   default = 6000
 }
 
-variable "supabase_data_volume_throughput" {
+variable "data_volume_throughput" {
   type    = number
   default = 250
 }
 
+variable "disk_used_percent_alarm_threshold" {
+  description = "CloudWatch alarm threshold (%%) on the data volume's used space, published by the CloudWatch agent."
+  type        = number
+  default     = 85
+}
+
+# ── Signed-release / updater configuration ────────────────────────────────────
 variable "release_repository_url" {
-  description = "HTTPS base URL of the immutable enterprise TUF repository."
+  description = "HTTPS base URL of the immutable enterprise TUF repository the deployer fetches and verifies."
   type        = string
 
   validation {
@@ -134,44 +143,13 @@ variable "release_repository_url" {
 }
 
 variable "tuf_root_sha256" {
-  description = "Offline-reviewed SHA-256 of the trusted TUF root embedded at install time."
+  description = "Offline-reviewed SHA-256 of the trusted TUF root the deployer pins."
   type        = string
   sensitive   = true
 
   validation {
     condition     = can(regex("^[a-f0-9]{64}$", var.tuf_root_sha256))
     error_message = "tuf_root_sha256 must be a lowercase SHA-256 digest."
-  }
-}
-
-variable "updater_bootstrap_url" {
-  description = "HTTPS URL for the minimal updater bootstrap binary."
-  type        = string
-
-  validation {
-    condition     = startswith(var.updater_bootstrap_url, "https://")
-    error_message = "updater_bootstrap_url must use HTTPS."
-  }
-}
-
-variable "updater_bootstrap_sha256" {
-  description = "Pinned digest of the updater bootstrap; it then verifies all releases through TUF."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = can(regex("^[a-f0-9]{64}$", var.updater_bootstrap_sha256))
-    error_message = "updater_bootstrap_sha256 must be a lowercase SHA-256 digest."
-  }
-}
-
-variable "release_publisher_account_id" {
-  description = "Kortix AWS account allowed to PutEvents release hints on this customer's bus. Hints never authorize an update."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[0-9]{12}$", var.release_publisher_account_id))
-    error_message = "release_publisher_account_id must be a 12-digit AWS account ID."
   }
 }
 
@@ -186,8 +164,28 @@ variable "release_channel" {
   }
 }
 
+variable "updater_bootstrap_url" {
+  description = "HTTPS URL of the initial signed updater binary the host fetches on first boot. The binary self-updates to the channel's signed updater on every run."
+  type        = string
+
+  validation {
+    condition     = startswith(var.updater_bootstrap_url, "https://")
+    error_message = "updater_bootstrap_url must use HTTPS."
+  }
+}
+
+variable "updater_bootstrap_sha256" {
+  description = "SHA-256 of the initial updater binary at updater_bootstrap_url, verified on the host before execution."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.updater_bootstrap_sha256))
+    error_message = "updater_bootstrap_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
 variable "image_repositories" {
-  description = "Customer-owned ECR repositories populated by the signed updater. Release bundles remain authenticated TUF targets and are not duplicated as OCI images."
+  description = "Customer-owned ECR repositories populated by the signed deployer. Release bundles remain authenticated TUF targets and are not duplicated as OCI images."
   type        = set(string)
   default     = ["api", "frontend", "gateway"]
 
@@ -198,11 +196,12 @@ variable "image_repositories" {
 }
 
 variable "maintenance_window" {
-  description = "UTC maintenance window passed to the signed updater (for example Sun:02:00-05:00)."
+  description = "UTC maintenance window passed to the signed deployer (for example Sun:02:00-05:00)."
   type        = string
   default     = "Sun:02:00-05:00"
 }
 
+# ── Operator / boundaries / state ─────────────────────────────────────────────
 variable "operator_principal_arns" {
   description = "Customer-approved IAM principals allowed to assume the time-limited operator role. Empty disables operator access."
   type        = list(string)
@@ -222,28 +221,13 @@ variable "operator_external_id" {
 }
 
 variable "permissions_boundary_arn" {
-  description = "Reviewed customer-owned IAM permissions boundary attached to every runtime and updater role. The state bootstrap module creates the default boundary."
+  description = "Reviewed customer-owned IAM permissions boundary attached to every runtime and deployer role. The state bootstrap module creates the default boundary."
   type        = string
 
   validation {
     condition     = can(regex("^arn:[^:]+:iam::${var.expected_account_id}:policy/.+$", var.permissions_boundary_arn))
     error_message = "permissions_boundary_arn must be a managed-policy ARN owned by expected_account_id."
   }
-}
-
-variable "terraform_state_bucket" {
-  description = "Customer-owned remote-state bucket used by the private platform stage."
-  type        = string
-}
-
-variable "terraform_state_lock_table" {
-  description = "Customer-owned DynamoDB lock table used by the private platform stage."
-  type        = string
-}
-
-variable "terraform_state_kms_key_arn" {
-  description = "Customer-owned KMS key protecting remote Terraform state."
-  type        = string
 }
 
 variable "backup_retention_days" {

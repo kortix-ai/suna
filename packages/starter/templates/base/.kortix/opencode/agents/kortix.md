@@ -1,9 +1,5 @@
 ---
-description: >-
-  Generic Kortix general knowledge worker. Hands-on, full tool access,
-  handles coding / research / content / ops / data tasks end-to-end in
-  an isolated session sandbox. Edit this file to specialize for your
-  project.
+description: "Generic Kortix general knowledge worker. Hands-on, full tool access, handles coding / research / content / ops / data tasks end-to-end in an isolated session sandbox. Edit this file to specialize for your project."
 mode: primary
 permission: allow
 ---

@@ -1,15 +1,7 @@
+# Retained for the no-op platform stage (see main.tf). The old remote-state
+# indirection (state_bucket / cluster_state_key / lock_table / state_kms_key_arn)
+# is gone: DNS now lives in the cluster stage.
 variable "aws_region" {
   type    = string
   default = "us-west-2"
-}
-variable "state_bucket" { type = string }
-variable "cluster_state_key" {
-  type    = string
-  default = "enterprise/cluster.tfstate"
-}
-variable "lock_table" { type = string }
-variable "state_kms_key_arn" { type = string }
-variable "tags" {
-  type    = map(string)
-  default = {}
 }

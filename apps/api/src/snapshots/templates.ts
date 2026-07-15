@@ -112,7 +112,11 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // starter tool files against it) can't actually be bundled by Bun — a
 // bundle-breaking axios override once shipped silently baked into every
 // sandbox image (bun install succeeded; the runtime bundle did not).
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v24';
+// v25: bake the `kortix skills` subcommand into the in-sandbox CLI so the
+// seeded kortix-system <live-skills> pointer (`kortix skills get <name>`)
+// resolves — without this rebake, fresh sandboxes run an older baked CLI that
+// hard-errors on `kortix skills`.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v25';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

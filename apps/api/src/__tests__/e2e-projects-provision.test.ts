@@ -434,7 +434,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(insertedProject).toBeNull();
   });
 
-  test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
+  test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
+    // The deterministic install/lock engine is gone (see
+    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
+    // the plain starter scaffold. `marketplace_items` is accepted for API
+    // back-compat but no longer installs anything at provision time; adding a
+    // marketplace item to a project is now an agent import
+    // (POST /:projectId/marketplace/install-session), which needs the project
+    // (and a session) to already exist.
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -455,36 +462,22 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(201);
     expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(seedFilePaths).toContain('registry-lock.json');
+    // No lock is ever produced — the engine that wrote it is deleted.
+    expect(seedFilePaths).not.toContain('registry-lock.json');
+    // The requested marketplace skills are NOT deterministically installed —
+    // only the always-present kortix-system skill (part of the base minimal
+    // scaffold) is present.
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(seedFilePaths).toContain('kortix.yaml');
 
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
-
-    const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
-    expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toContain('agent-browser');
-    expect(Object.keys(lock.items).sort()).toContain('deep-research');
-    expect(Object.keys(lock.items).sort()).toContain('pdf');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-system');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
-    expect(Object.keys(lock.items).sort()).not.toContain('account-research');
-    // kortix-computer now lives in the marketplace tier (opt-in), not the base
-    // floor — it's absent here because this request didn't select it.
-    expect(Object.keys(lock.items).sort()).not.toContain('kortix-computer');
-    expect(lock.items['agent-browser'].type).toBe('registry:skill');
-    expect(lock.items['agent-browser'].source).toBe('kortix-starter');
-    expect(lock.items['agent-browser'].sourceType).toBe('local');
-    expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(lock.items['kortix-system'].source).toBe('kortix-starter');
-    expect(lock.items['kortix-system'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
-    expect(lock.items['deep-research'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/deep-research/SKILL.md');
-    expect(lock.items['pdf'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/pdf/SKILL.md');
   });
 
   test('returns 503 when managed git is not configured', async () => {

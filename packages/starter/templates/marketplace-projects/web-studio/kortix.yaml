@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+
+default_agent: studio
+
+project:
+  name: "{{projectName}}"
+  description: An email-first web studio that designs, deploys, and maintains client websites and bills for them through Stripe.
+
+# The studio needs a few things connected before it can run for real. Add the
+# values in the Kortix Secrets Manager / connect the providers in Customize.
+env:
+  required: []
+  optional:
+    # A public base to serve preview sites from (Vercel token is a connector).
+    - STUDIO_FROM_EMAIL # the address clients email + the agent replies from
+    - STUDIO_PRICE_FLOOR # lowest monthly price the studio will quote (e.g. 20)
+    - STUDIO_PRICE_CEILING # highest monthly price (e.g. 200)
+    - STUDIO_DOMAIN_BUDGET # max USD the studio may spend on a domain w/o asking
+
+opencode:
+  config_dir: .kortix/opencode
+
+# GOVERNANCE ONLY (behaviour lives in .kortix/opencode/agents/studio.md).
+# The studio is granted broad access so a fresh clone works end-to-end; narrow
+# it once you know exactly which connectors/secrets you use.
+agents:
+  studio:
+    connectors: all # email/channel, Stripe, Vercel/deploy, a registrar
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+# ─── Triggers ──────────────────────────────────────────────────────────────
+# The studio runs on two triggers. Both are disabled by default so a fresh
+# clone never acts before you've connected email + Stripe and reviewed the
+# persona. Flip `enabled: true` once you're set up.
+triggers:
+  # 1. Inbound email — the studio's front door. Every client message (a new
+  #    request, a change, a question, a reply) fires a session. Wire your
+  #    inbound address to this webhook, or connect an email channel in the
+  #    dashboard and point it at the `studio` agent.
+  - slug: inbound-email
+    name: Inbound email
+    type: webhook
+    agent: studio
+    enabled: false
+    secret_env: WEBHOOK_EMAIL_SECRET # HMAC secret; add via Secrets Manager
+    prompt: |
+      A client email arrived. Handle it end-to-end per your studio workflow.
+
+      From: {{ body.from }}
+      Subject: {{ body.subject }}
+
+      {{ body.text }}
+
+  # 2. Heartbeat — keeps the studio's own house in order between emails:
+  #    follow up ONCE on unpaid previews, confirm live sites are still up,
+  #    reconcile the client ledger, and surface anything that needs you.
+  - slug: heartbeat
+    name: Studio heartbeat
+    type: cron
+    agent: studio
+    enabled: false
+    cron: "0 0 */4 * * *" # every 4 hours
+    timezone: UTC
+    prompt: |
+      Run your heartbeat: read the client ledger in `.kortix/memory/`, send at
+      most one gentle reminder per unpaid preview (respect opt-outs), verify
+      each live site still resolves, redeploy anything that drifted, and open a
+      short `studio: …` note if something needs a human. Do nothing that spends
+      money or emails a NEW (un-contacted) prospect without asking first.

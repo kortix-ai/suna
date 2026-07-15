@@ -35,6 +35,11 @@ export interface ProjectTrigger {
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
   prompt_template: string;
+  /** Session strategy: 'fresh' (new session each run, default), 'reuse' (loop
+   *  this trigger's own session), or 'pinned' (loop the exact session_id). */
+  session_mode: 'fresh' | 'reuse' | 'pinned';
+  /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
+  session_id: string | null;
   last_fired_at: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
@@ -85,6 +90,14 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
+  /**
+   * Session strategy across fires: 'fresh' (new session each run, default),
+   * 'reuse' (loop this trigger's own session), or 'pinned' (loop the exact
+   * `session_id` chosen below). Omit for the default 'fresh'.
+   */
+  session_mode?: 'fresh' | 'reuse' | 'pinned';
+  /** Required when session_mode === 'pinned': the session id to loop. */
+  session_id?: string | null;
 }
 
 export interface UpdateProjectTriggerInput {
@@ -97,6 +110,8 @@ export interface UpdateProjectTriggerInput {
   cron?: string;
   timezone?: string;
   secret_env?: string;
+  session_mode?: 'fresh' | 'reuse' | 'pinned';
+  session_id?: string | null;
 }
 
 export async function listProjectTriggers(projectId: string) {
