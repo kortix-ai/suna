@@ -211,7 +211,13 @@ export function LlmProvidersPage({
     return PROJECT_PROVIDER_CONNECTIONS.map((definition) => ({
       definition,
       connection: server.get(definition.id) ?? null,
-    })).filter((row) => row.connection || row.definition.mode !== 'native');
+    })).filter((row) => {
+      // A kind compatible with no harness (parked anthropic_compatible,
+      // 2026-07-15) is never offered fresh — only shown if a legacy
+      // connection is already configured, so it stays manageable.
+      if (row.definition.compatibleHarnesses.length === 0) return Boolean(row.connection?.configured);
+      return row.connection || row.definition.mode !== 'native';
+    });
   }, [connectionsQuery.data?.connections]);
 
   const [activeTab, setActiveTab] = useState<Tab>('providers');

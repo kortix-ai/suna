@@ -1,4 +1,4 @@
-import { CATALOG } from '@kortix/llm-catalog';
+import { CATALOG, type CatalogModel } from '@kortix/llm-catalog';
 
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
@@ -69,13 +69,22 @@ export type ConfiguredModelProvider = {
   label: string;
 };
 
+// 2026-07-15 simplification (founder decision): Claude Code and Codex are
+// harness-only — their subscription, their own provider API key, or the
+// repo's committed native config. They NEVER ride the Kortix managed gateway
+// and NEVER take a custom endpoint. OpenCode and Pi keep the full gateway
+// story (managed gateway, BYOK, custom endpoints, native config). This table
+// is the single source of truth for that matrix — every other place that
+// needs to know what's compatible with what (web connect modal, SDK
+// projection, route validation) reads it from here, directly or via the
+// `/harness-connections` response's `compatible_harnesses`.
 const CONNECTIONS: Record<
   HarnessAuthKind,
   Pick<HarnessConnection, 'label' | 'compatible_harnesses' | 'source'>
 > = {
   managed_gateway: {
     label: 'Kortix managed gateway',
-    compatible_harnesses: ['claude', 'codex', 'opencode', 'pi'],
+    compatible_harnesses: ['opencode', 'pi'],
     source: 'kortix',
   },
   claude_subscription: {
@@ -100,12 +109,17 @@ const CONNECTIONS: Record<
   },
   openai_compatible: {
     label: 'OpenAI-compatible REST',
-    compatible_harnesses: ['codex', 'opencode', 'pi'],
+    compatible_harnesses: ['opencode', 'pi'],
     source: 'project_secret',
   },
+  // Deliberate capability decision (2026-07-15): a custom Anthropic-protocol
+  // endpoint had exactly one consumer — Claude Code custom routing — and that
+  // routing is cut by the harness-only simplification above. No harness is
+  // compatible with this kind for now; the form/route plumbing stays intact
+  // (cheap to bring back) but it is unreachable from any UI surface.
   anthropic_compatible: {
     label: 'Anthropic-compatible REST',
-    compatible_harnesses: ['claude'],
+    compatible_harnesses: [],
     source: 'project_secret',
   },
   native_config: {
@@ -236,7 +250,26 @@ export function resolveActiveHarnessConnection(input: {
   return { active: null, reason: `Connect a compatible ${input.harness} authentication route.` };
 }
 
-function modelPresets(kind: HarnessAuthKind, env: Record<string, string>, projectId: string): ComposerModelPreset[] {
+// Founder decision (2026-07-15): the raw models.dev catalog for Anthropic/
+// OpenAI is 25-50+ entries deep (dated snapshots, minor point releases) —
+// that's the noise the Claude/Codex pickers must never show. Their native
+// preset lists are capped to the newest models by release date; the full
+// catalog stays reachable through OpenCode/Pi's gateway-backed picker, which
+// does not go through this cap.
+const NATIVE_MODEL_PRESET_LIMIT = 6;
+
+/** Newest-first, capped, deterministic on ties (release date, then id) — pure
+ *  so the cap is unit-testable without a compiled runtime config. */
+export function newestCatalogModels(models: CatalogModel[], limit: number): CatalogModel[] {
+  return [...models]
+    .sort((a, b) => {
+      const released = (Date.parse(b.released ?? '') || -Infinity) - (Date.parse(a.released ?? '') || -Infinity);
+      return released !== 0 ? released : a.id.localeCompare(b.id);
+    })
+    .slice(0, limit);
+}
+
+export function modelPresets(kind: HarnessAuthKind, env: Record<string, string>, projectId: string): ComposerModelPreset[] {
   if (kind === 'managed_gateway') {
     return Object.entries(gatewayModelCatalog(projectId)).map(([id, model]) => ({
       id: `kortix/${id}`,
@@ -247,7 +280,8 @@ function modelPresets(kind: HarnessAuthKind, env: Record<string, string>, projec
   const providerId = kind === 'anthropic_api_key' ? 'anthropic' : kind === 'openai_api_key' ? 'openai' : null;
   if (providerId) {
     const provider = CATALOG.providers.find((entry) => entry.id === providerId);
-    return (provider?.models ?? []).map((model) => ({ id: model.id, name: model.name || model.id, source: 'models.dev' }));
+    const models = newestCatalogModels(provider?.models ?? [], NATIVE_MODEL_PRESET_LIMIT);
+    return models.map((model) => ({ id: model.id, name: model.name || model.id, source: 'models.dev' }));
   }
   if (kind === 'openai_compatible' || kind === 'anthropic_compatible') {
     const id = env.CUSTOM_LLM_MODEL_ID?.trim();

@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildHarnessConnections,
   computeDefaultAllowed,
+  modelPresets,
+  newestCatalogModels,
   readHarnessAuthRoutes,
   resolveActiveHarnessConnection,
   writeHarnessAuthRoute,
@@ -31,17 +33,68 @@ describe('composer capability auth resolution', () => {
     expect(connections.find((item) => item.id === 'openai_api_key')?.ready).toBe(true);
   });
 
-  test('managed gateway is the deterministic default until an explicit route is stored', () => {
+  test('managed gateway is the deterministic default for opencode/pi until an explicit route is stored', () => {
     const connections = buildHarnessConnections({
-      env: { CLAUDE_CODE_OAUTH_TOKEN: 'subscription' },
+      env: { ANTHROPIC_API_KEY: 'api-key' },
       gatewayEnabled: true,
     });
-    expect(resolveActiveHarnessConnection({ harness: 'claude', connections }).active?.id).toBe('managed_gateway');
+    expect(resolveActiveHarnessConnection({ harness: 'opencode', connections }).active?.id).toBe('managed_gateway');
+    expect(resolveActiveHarnessConnection({ harness: 'pi', connections }).active?.id).toBe('managed_gateway');
+    expect(resolveActiveHarnessConnection({
+      harness: 'opencode',
+      connections,
+      explicit: 'anthropic_api_key',
+    }).active?.id).toBe('anthropic_api_key');
+  });
+
+  test('2026-07-15 simplification: claude and codex are harness-only, never the managed gateway or a custom endpoint', () => {
+    const connections = buildHarnessConnections({
+      env: { CLAUDE_CODE_OAUTH_TOKEN: 'subscription', CODEX_AUTH_JSON: '{}' },
+      gatewayEnabled: true,
+    });
+    // Even with the gateway enabled, claude/codex resolve to their own
+    // subscription — the gateway is not in their compatible set at all.
+    expect(resolveActiveHarnessConnection({ harness: 'claude', connections }).active?.id).toBe('claude_subscription');
+    expect(resolveActiveHarnessConnection({ harness: 'codex', connections }).active?.id).toBe('codex_subscription');
     expect(resolveActiveHarnessConnection({
       harness: 'claude',
       connections,
-      explicit: 'claude_subscription',
-    }).active?.id).toBe('claude_subscription');
+      explicit: 'managed_gateway',
+    }).active).toBeNull();
+    expect(resolveActiveHarnessConnection({
+      harness: 'codex',
+      connections,
+      explicit: 'openai_compatible',
+    }).active).toBeNull();
+  });
+
+  test('per-harness compatible connection kinds match the 2026-07-15 simplification matrix', () => {
+    const connections = buildHarnessConnections({ env: {}, gatewayEnabled: false });
+    const kindsFor = (harness: 'claude' | 'codex' | 'opencode' | 'pi') =>
+      connections
+        .filter((connection) => connection.compatible_harnesses.includes(harness))
+        .map((connection) => connection.id)
+        .sort();
+
+    expect(kindsFor('claude')).toEqual(['anthropic_api_key', 'claude_subscription', 'native_config']);
+    expect(kindsFor('codex')).toEqual(['codex_subscription', 'native_config', 'openai_api_key']);
+    expect(kindsFor('opencode')).toEqual([
+      'anthropic_api_key',
+      'managed_gateway',
+      'native_config',
+      'openai_api_key',
+      'openai_compatible',
+    ]);
+    expect(kindsFor('pi')).toEqual([
+      'anthropic_api_key',
+      'managed_gateway',
+      'native_config',
+      'openai_api_key',
+      'openai_compatible',
+    ]);
+    expect(connections.find((connection) => connection.id === 'anthropic_compatible')?.compatible_harnesses).toEqual(
+      [],
+    );
   });
 
   test('two native credentials require an explicit choice when the gateway is disabled', () => {
@@ -119,5 +172,46 @@ describe('computeDefaultAllowed', () => {
     expect(
       computeDefaultAllowed({ active: 'openai_compatible', harness: 'opencode', presetsLength: 0 }),
     ).toBe(false);
+  });
+});
+
+describe('newestCatalogModels', () => {
+  test('keeps only the newest N by release date, newest first', () => {
+    const models = [
+      { id: 'a', name: 'A', released: '2024-01-01' },
+      { id: 'b', name: 'B', released: '2026-01-01' },
+      { id: 'c', name: 'C', released: '2025-01-01' },
+    ];
+    expect(newestCatalogModels(models, 2).map((m) => m.id)).toEqual(['b', 'c']);
+  });
+
+  test('ties on release date break deterministically by id', () => {
+    const models = [
+      { id: 'z', name: 'Z', released: '2026-01-01' },
+      { id: 'a', name: 'A', released: '2026-01-01' },
+    ];
+    expect(newestCatalogModels(models, 2).map((m) => m.id)).toEqual(['a', 'z']);
+  });
+
+  test('models with no release date sort last', () => {
+    const models = [
+      { id: 'undated', name: 'Undated' },
+      { id: 'dated', name: 'Dated', released: '2020-01-01' },
+    ];
+    expect(newestCatalogModels(models, 2).map((m) => m.id)).toEqual(['dated', 'undated']);
+  });
+});
+
+describe('modelPresets curated native catalogs', () => {
+  test('anthropic_api_key preset list is capped to the newest 6 models.dev entries', () => {
+    const presets = modelPresets('anthropic_api_key', {}, 'test-project');
+    expect(presets.length).toBeLessThanOrEqual(6);
+    expect(presets.length).toBeGreaterThan(0);
+  });
+
+  test('openai_api_key preset list is capped to the newest 6 models.dev entries', () => {
+    const presets = modelPresets('openai_api_key', {}, 'test-project');
+    expect(presets.length).toBeLessThanOrEqual(6);
+    expect(presets.length).toBeGreaterThan(0);
   });
 });

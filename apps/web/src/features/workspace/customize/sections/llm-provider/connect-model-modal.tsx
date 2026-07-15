@@ -31,14 +31,23 @@ type ConnectMethod =
   | { kind: 'openai_compatible' }
   | { kind: 'anthropic_compatible' };
 
+// 2026-07-15 simplification: Claude Code and Codex are harness-only (their
+// subscription, their own provider API key, or the repo's native config) —
+// never the Kortix managed gateway, never a custom endpoint. OpenCode and Pi
+// keep the full gateway story. Mirrors the server's source of truth
+// (apps/api/src/projects/lib/composer-capabilities.ts CONNECTIONS table).
 const METHOD_COMPATIBLE_HARNESSES: Record<HarnessAuthKind, HarnessId[]> = {
-  managed_gateway: ['claude', 'codex', 'opencode', 'pi'],
+  managed_gateway: ['opencode', 'pi'],
   claude_subscription: ['claude'],
   codex_subscription: ['codex'],
   anthropic_api_key: ['claude', 'opencode', 'pi'],
   openai_api_key: ['codex', 'opencode', 'pi'],
-  openai_compatible: ['codex', 'opencode', 'pi'],
-  anthropic_compatible: ['claude'],
+  openai_compatible: ['opencode', 'pi'],
+  // Parked: a custom Anthropic-protocol endpoint's only consumer was Claude
+  // Code custom routing, which the harness-only simplification cuts. No
+  // harness is compatible for now — the method row below is hidden
+  // accordingly, but the form code stays intact.
+  anthropic_compatible: [],
   native_config: ['claude', 'codex', 'opencode', 'pi'],
 };
 
@@ -71,6 +80,9 @@ function methodForKind(kind: HarnessAuthKind): ConnectMethod | null {
 }
 
 function compatibleWithFilter(kind: HarnessAuthKind, harnessFilter: HarnessId | null): boolean {
+  // A kind compatible with no harness at all (e.g. the parked
+  // anthropic_compatible endpoint) is never offered, filtered or not.
+  if (METHOD_COMPATIBLE_HARNESSES[kind].length === 0) return false;
   if (!harnessFilter) return true;
   return METHOD_COMPATIBLE_HARNESSES[kind].includes(harnessFilter);
 }
@@ -132,7 +144,9 @@ export function ConnectModelModal({
   const showOpenaiKey = compatibleWithFilter('openai_api_key', harnessFilter);
   const showOtherProviders = !harnessFilter;
   const showOpenaiCompatible = compatibleWithFilter('openai_compatible', harnessFilter);
-  const showAnthropicCompatible = compatibleWithFilter('anthropic_compatible', harnessFilter);
+  // Anthropic-compatible custom endpoints are parked (2026-07-15): no harness
+  // is compatible with this kind, so it is never offered in the method list —
+  // see METHOD_COMPATIBLE_HARNESSES.anthropic_compatible above.
 
   let body: ReactNode;
   if (!method) {
@@ -168,7 +182,7 @@ export function ConnectModelModal({
           </section>
         )}
 
-        {(showAnthropicKey || showOpenaiKey || showOtherProviders || showOpenaiCompatible || showAnthropicCompatible) && (
+        {(showAnthropicKey || showOpenaiKey || showOtherProviders || showOpenaiCompatible) && (
           <section className="space-y-2">
             <Label>API keys & endpoints</Label>
             <InputGroupSearch>
@@ -224,20 +238,9 @@ export function ConnectModelModal({
                   <MethodRow
                     providerID="custom"
                     label="OpenAI-compatible endpoint"
-                    hint="Custom base URL — Codex, OpenCode, and Pi"
+                    hint="Custom base URL — OpenCode and Pi"
                     connected={connectionFor(connections, 'openai_compatible')?.status === 'ready'}
                     onClick={() => setMethod({ kind: 'openai_compatible' })}
-                  />
-                </li>
-              )}
-              {showAnthropicCompatible && matchesSearch('custom anthropic-compatible endpoint local proxy') && (
-                <li>
-                  <MethodRow
-                    providerID="custom"
-                    label="Anthropic-compatible endpoint"
-                    hint="Custom base URL — Claude Code"
-                    connected={connectionFor(connections, 'anthropic_compatible')?.status === 'ready'}
-                    onClick={() => setMethod({ kind: 'anthropic_compatible' })}
                   />
                 </li>
               )}
@@ -245,8 +248,7 @@ export function ConnectModelModal({
                 filteredOtherProviders.length === 0 &&
                 !matchesSearch('anthropic claude api key') &&
                 !matchesSearch('openai gpt api key') &&
-                !matchesSearch('custom openai-compatible endpoint local vllm ollama') &&
-                !matchesSearch('custom anthropic-compatible endpoint local proxy') && (
+                !matchesSearch('custom openai-compatible endpoint local vllm ollama') && (
                   <li className="text-muted-foreground px-3 py-4 text-center text-xs">
                     No providers match &ldquo;{search}&rdquo;
                   </li>
@@ -255,7 +257,7 @@ export function ConnectModelModal({
           </section>
         )}
 
-        {!showSubscriptions && !showAnthropicKey && !showOpenaiKey && !showOpenaiCompatible && !showAnthropicCompatible && (
+        {!showSubscriptions && !showAnthropicKey && !showOpenaiKey && !showOpenaiCompatible && (
           <EmptyState size="sm" title="No compatible connection methods" />
         )}
       </div>

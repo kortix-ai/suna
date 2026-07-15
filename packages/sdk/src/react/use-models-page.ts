@@ -39,7 +39,10 @@ const HARNESS_LABEL: Record<HarnessId, string> = {
 /** Locked product language (handoff §2) — never surface backend kind ids,
  *  `managed_gateway`, `native_config`, or protocol names in the UI. The
  *  managed gateway is named plainly "Kortix" (never "Kortix managed" or
- *  "managed gateway") — see {@link connectionExplainer} for its subtitle. */
+ *  "managed gateway") — see {@link connectionExplainer} for its subtitle.
+ *  `native_config` reads as "Project config" (2026-07-15 simplification —
+ *  never "Harness-native configuration" and never "Managed by the harness",
+ *  which reads as a duplicate of the subscription rows). */
 const CONNECTION_NAME: Record<HarnessAuthKind, string> = {
   managed_gateway: 'Kortix',
   claude_subscription: 'Claude subscription',
@@ -48,17 +51,25 @@ const CONNECTION_NAME: Record<HarnessAuthKind, string> = {
   openai_api_key: 'OpenAI',
   openai_compatible: 'Custom endpoint',
   anthropic_compatible: 'Custom endpoint',
-  native_config: 'Harness-native configuration',
+  native_config: 'Project config',
 };
 
 /** One-line explainer shown under the "Kortix" connection name — it is
  *  built in and requires no setup, unlike every other connection kind. */
 const KORTIX_INCLUDED_EXPLAINER = 'Included — no setup needed';
 
-/** Subtitle copy for a connection kind, or `null` when the kind has none.
- *  Currently only the managed gateway ("Kortix") carries one. */
+/** One-line explainer shown under "Project config" — never "Managed by the
+ *  harness", which duplicates the subscription rows' copy. */
+const PROJECT_CONFIG_EXPLAINER = "Uses the repo's committed setup";
+
+/** Subtitle copy for a connection kind, or `null` when the kind has none
+ *  (subscription rows carry their own "Models managed by …" copy elsewhere —
+ *  see `NOT_EXPOSED_TEXT` in connection-row.tsx and `connectionMetaLine` in
+ *  connection-select.tsx, which must agree with this). */
 export function connectionExplainer(kind: HarnessAuthKind): string | null {
-  return kind === 'managed_gateway' ? KORTIX_INCLUDED_EXPLAINER : null;
+  if (kind === 'managed_gateway') return KORTIX_INCLUDED_EXPLAINER;
+  if (kind === 'native_config') return PROJECT_CONFIG_EXPLAINER;
+  return null;
 }
 
 /** Kinds whose model list is owned by the authenticated harness itself — a

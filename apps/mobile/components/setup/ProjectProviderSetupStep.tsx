@@ -63,7 +63,10 @@ export function ProjectProviderSetupStep({
   const card = isDark ? 'rgba(248,248,248,0.03)' : 'rgba(18,18,21,0.02)';
   const choices = useMemo(
     () => PROJECT_PROVIDER_CONNECTIONS.filter((entry) =>
-      ['managed', 'token', 'api-key', 'oauth', 'custom'].includes(entry.mode),
+      // A kind compatible with no harness (the parked anthropic_compatible
+      // custom endpoint, 2026-07-15) is never offered as a fresh choice.
+      ['managed', 'token', 'api-key', 'oauth', 'custom'].includes(entry.mode) &&
+      entry.compatibleHarnesses.length > 0,
     ),
     [],
   );

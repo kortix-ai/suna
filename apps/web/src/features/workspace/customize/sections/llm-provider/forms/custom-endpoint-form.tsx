@@ -25,9 +25,15 @@ const CUSTOM_PROVIDER_SECRET_NAMES = {
   name: 'CUSTOM_LLM_NAME',
 } as const;
 
+// 2026-07-15 simplification: Codex no longer takes a custom endpoint (harness-
+// only now — subscription, its own API key, or native config), and a custom
+// Anthropic-protocol endpoint has no harness left at all (its only consumer,
+// Claude Code custom routing, is cut). `anthropic` stays selectable ONLY so an
+// existing legacy connection can still be viewed/edited — see
+// `canPickAnthropicProtocol` below — it is never offered as a fresh choice.
 const COMPATIBLE_HARNESSES: Record<CustomFormState['protocol'], HarnessId[]> = {
-  openai: ['codex', 'opencode', 'pi'],
-  anthropic: ['claude'],
+  openai: ['opencode', 'pi'],
+  anthropic: [],
 };
 
 export function CustomEndpointForm({
@@ -121,10 +127,17 @@ export function CustomEndpointForm({
   const protocolHint = useMemo(
     () =>
       form.protocol === 'openai'
-        ? 'Available to Codex, OpenCode, and Pi.'
-        : 'Available to Claude Code. The endpoint must implement the Anthropic Messages API.',
+        ? 'Available to OpenCode and Pi.'
+        : 'Legacy connection. Claude Code no longer takes a custom endpoint — reconnect with a Claude subscription, Anthropic key, or the project config instead.',
     [form.protocol],
   );
+
+  // Anthropic-protocol custom endpoints are parked (2026-07-15): only offered
+  // here when editing a pre-existing legacy connection (initialProtocol is
+  // seeded from that connection's kind); never selectable when connecting
+  // fresh, since no harness is compatible with it anymore.
+  const availableProtocols =
+    initialProtocol === 'anthropic' ? (['openai', 'anthropic'] as const) : (['openai'] as const);
 
   return (
     <div className="space-y-3">
@@ -152,8 +165,8 @@ export function CustomEndpointForm({
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
             API compatibility
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['openai', 'anthropic'] as const).map((protocol) => (
+          <div className={availableProtocols.length > 1 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
+            {availableProtocols.map((protocol) => (
               <Button
                 key={protocol}
                 type="button"

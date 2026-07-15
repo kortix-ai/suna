@@ -296,16 +296,19 @@ describe('presentation helpers', () => {
     expect(connectionDisplayName('codex_subscription')).toBe('ChatGPT subscription');
     expect(connectionDisplayName('anthropic_api_key')).toBe('Anthropic');
     expect(connectionDisplayName('openai_api_key')).toBe('OpenAI');
+    // 2026-07-15 simplification: "Project config", never "Harness-native
+    // configuration" or "Managed by the harness".
+    expect(connectionDisplayName('native_config')).toBe('Project config');
   });
 
-  test('connectionExplainer: only the managed gateway ("Kortix") carries a subtitle', () => {
+  test('connectionExplainer: the managed gateway ("Kortix") and "Project config" carry subtitles, nothing else does', () => {
     expect(connectionExplainer('managed_gateway')).toBe('Included — no setup needed');
+    expect(connectionExplainer('native_config')).toBe("Uses the repo's committed setup");
     expect(connectionExplainer('claude_subscription')).toBeNull();
     expect(connectionExplainer('codex_subscription')).toBeNull();
     expect(connectionExplainer('anthropic_api_key')).toBeNull();
     expect(connectionExplainer('openai_api_key')).toBeNull();
     expect(connectionExplainer('openai_compatible')).toBeNull();
     expect(connectionExplainer('anthropic_compatible')).toBeNull();
-    expect(connectionExplainer('native_config')).toBeNull();
   });
 });

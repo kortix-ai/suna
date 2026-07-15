@@ -24,16 +24,23 @@ export interface ProjectProviderConnectionDefinition {
  * Mobile presentation metadata for the server-authoritative harness connection
  * kinds. Readiness and active routing always come from /harness-connections;
  * this table only owns labels and the project-secret form contract.
+ *
+ * `compatibleHarnesses` mirrors the server's source of truth (2026-07-15
+ * simplification, apps/api/src/projects/lib/composer-capabilities.ts
+ * CONNECTIONS table): Claude Code and Codex are harness-only (their own
+ * subscription, their own provider API key, or native config) — never the
+ * Kortix managed gateway, never a custom endpoint. OpenCode and Pi keep the
+ * full gateway story.
  */
 export const PROJECT_PROVIDER_CONNECTIONS: ProjectProviderConnectionDefinition[] = [
   {
     id: 'managed_gateway',
     label: 'Kortix',
-    description: 'Included — no setup needed. Routed by Kortix for every harness.',
+    description: 'Included — no setup needed. Routed by Kortix for OpenCode and Pi.',
     providerId: 'kortix',
     mode: 'managed',
     secretNames: [],
-    compatibleHarnesses: ['claude', 'codex', 'opencode', 'pi'],
+    compatibleHarnesses: ['opencode', 'pi'],
   },
   {
     id: 'claude_subscription',
@@ -91,8 +98,12 @@ export const PROJECT_PROVIDER_CONNECTIONS: ProjectProviderConnectionDefinition[]
       'CUSTOM_LLM_MODEL_ID',
       'CUSTOM_LLM_NAME',
     ],
-    compatibleHarnesses: ['codex', 'opencode', 'pi'],
+    compatibleHarnesses: ['opencode', 'pi'],
   },
+  // Parked (2026-07-15): no harness is compatible with a custom Anthropic-
+  // protocol endpoint now that Claude Code custom routing — its only
+  // consumer — is cut. Definition kept (never offered by any harness) so an
+  // existing legacy connection can still be surfaced/managed.
   {
     id: 'anthropic_compatible',
     label: 'Anthropic-compatible REST',
@@ -106,12 +117,12 @@ export const PROJECT_PROVIDER_CONNECTIONS: ProjectProviderConnectionDefinition[]
       'CUSTOM_LLM_MODEL_ID',
       'CUSTOM_LLM_NAME',
     ],
-    compatibleHarnesses: ['claude'],
+    compatibleHarnesses: [],
   },
   {
     id: 'native_config',
-    label: 'Harness-native config',
-    description: 'Use credentials already materialized by the selected harness.',
+    label: 'Project config',
+    description: "Uses the repo's committed setup.",
     providerId: 'native',
     mode: 'native',
     secretNames: [],

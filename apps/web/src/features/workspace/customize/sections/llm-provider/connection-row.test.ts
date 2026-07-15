@@ -32,7 +32,7 @@ describe('catalogLine', () => {
     ).toBe('Models managed by Codex');
     expect(
       catalogLine(conn({ kind: 'native_config', catalogState: 'not-exposed' })),
-    ).toBe('Model catalog not exposed');
+    ).toBe("Uses the repo's committed setup");
   });
 
   test('renders loading/error states', () => {

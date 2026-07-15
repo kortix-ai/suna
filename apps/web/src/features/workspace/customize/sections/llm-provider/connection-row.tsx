@@ -13,10 +13,12 @@ const CONNECTION_ICON_PROVIDER_ID: Record<string, string> = {
   openai_api_key: 'openai',
 };
 
+// native_config reads as the repo's own setup, never a generic "Managed by
+// the harness" (2026-07-15 simplification — see connectionExplainer).
 const NOT_EXPOSED_TEXT: Record<string, string> = {
   claude_subscription: 'Models managed by Claude Code',
   codex_subscription: 'Models managed by Codex',
-  native_config: 'Model catalog not exposed',
+  native_config: "Uses the repo's committed setup",
 };
 
 function joinAnd(items: string[]): string {

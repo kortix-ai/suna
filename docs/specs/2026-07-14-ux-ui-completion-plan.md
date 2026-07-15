@@ -31,6 +31,30 @@ Multiple subscriptions/keys per project, team sharing, routing between several c
 "any API key with the Claude Code/Codex harnesses" are **product decisions + backend work** —
 tracked in §5, not blocked on here.
 
+### 0.1 Interim compatibility matrix (2026-07-15, founder decision)
+
+The provider/model setup was "giga complex — too many options." Simplified hard, for now:
+
+- **Claude Code and Codex are harness-only.** Allowed connection kinds: their own subscription
+  (`claude_subscription`/`codex_subscription`), their own provider API key (`anthropic_api_key`/
+  `openai_api_key`), or the repo's committed native config (`native_config`). They never ride the
+  Kortix managed gateway and never take a custom endpoint (`openai_compatible`/
+  `anthropic_compatible`).
+- **OpenCode and Pi keep the full gateway story** — managed gateway, both BYOK key kinds, custom
+  OpenAI-compatible endpoints, and native config.
+- **`anthropic_compatible` (custom Anthropic-protocol endpoint) is parked** — compatible with no
+  harness at all. Its only consumer was Claude Code custom routing, which the harness-only rule
+  above cuts. Hidden from the Connect modal's method list; the form code stays intact for a
+  possible future revival.
+- Claude/Codex's native model pickers (`anthropic_api_key`/`openai_api_key` presets) are capped to
+  the newest 6 models.dev entries by release date — the uncapped 25-50+ entry catalog was exactly
+  the noise driving the "giga complex" complaint. OpenCode/Pi's gateway-backed picker is unaffected.
+
+Source of truth for the matrix: `apps/api/src/projects/lib/composer-capabilities.ts` (`CONNECTIONS`
+table). Every other surface (web connect modal, SDK models-page projection) mirrors it — see
+`2026-07-14-models-page-ui-handoff.md` §2 for the locked naming that goes with it (`native_config`
+→ "Project config").
+
 ## 1. Workstream A — Session-chat parity with main (highest priority)
 
 Finding: the shared primitives (`session-chat-input.tsx`, `model-selector.tsx`,

@@ -46,11 +46,16 @@ Use these labels consistently:
 | gateway `auto`              | Automatic                                   |
 | custom provider             | Custom endpoint                             |
 | active route                | Uses                                        |
+| `native_config`             | Project config — subtitle "Uses the repo's committed setup" |
 
 Do not show `managed_gateway`, `native_config`, `harness_auth_routes`, protocol
 IDs, secret names, or connection-kind IDs in normal UI. Also never render the
 strings "Kortix managed" or "managed gateway" — the connection is just
-"Kortix" (2026-07-14 UX pass, see `2026-07-14-ux-ui-completion-plan.md`).
+"Kortix" (2026-07-14 UX pass, see `2026-07-14-ux-ui-completion-plan.md`). Also
+never render "Managed by the harness" for `native_config` — that copy is
+reserved for the two subscription rows ("Models managed by Claude
+Code"/"…Codex"); Project config gets its own subtitle (2026-07-15
+simplification, see `2026-07-14-ux-ui-completion-plan.md` §0).
 
 ## 3. Page anatomy
 
@@ -215,8 +220,12 @@ The first screen is a short categorized list:
 
 ### Custom
 
-- OpenAI-compatible endpoint
-- Anthropic-compatible endpoint
+- OpenAI-compatible endpoint (OpenCode, Pi)
+
+Anthropic-compatible endpoint is **parked as of 2026-07-15** — its only
+consumer was Claude Code custom routing, which is cut by the harness-only
+simplification (`2026-07-14-ux-ui-completion-plan.md` §0). Not offered in this
+list; the form code is kept for a possible future revival.
 
 Do not show a provider search field until the known-provider list exceeds eight
 items. If search is needed, it belongs inside this modal and uses
