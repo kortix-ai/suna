@@ -3,6 +3,29 @@ import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-d
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
+/**
+ * Is the WebAssembly runtime Shiki needs available in this context?
+ *
+ * Shiki's oniguruma grammar engine compiles to WebAssembly. Some browsers /
+ * contexts block or disable WebAssembly entirely — privacy browsers (Brave with
+ * aggressive shields, LibreWolf, Tor Browser in high-security mode), hardened /
+ * sandboxed WebViews, enterprise-policy-locked browsers, and scrapers/bots with
+ * spoofed Chrome UAs running on runtimes without WebAssembly. In those contexts
+ * eagerly kicking off `getSingletonHighlighter()` at module init leaves a
+ * promise that rejects with `ReferenceError: WebAssembly is not defined` (V8) /
+ * `Can't find variable: WebAssembly` (WebKit). Because the singleton starts
+ * before any code block renders, the rejection has no consumer attached yet and
+ * fires `onunhandledrejection` → Sentry → Better Stack.
+ *
+ * Gate the highlighter on this check so such visitors degrade to plain
+ * (un-highlighted) code instead of paging on every page load.
+ *
+ * See Better Stack 1604d50a (`WebAssembly is not defined`).
+ */
+export function shikiWasmAvailable(): boolean {
+  return typeof WebAssembly !== 'undefined';
+}
+
 /** Same-origin link? Internal links route through next/link; the rest open externally. */
 export function isInternalUrl(href: string | undefined): boolean {
   if (!href) return false;
