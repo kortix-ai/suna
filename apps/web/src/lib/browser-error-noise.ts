@@ -354,6 +354,53 @@ function isTronLinkInjectedSource(filename: unknown): boolean {
   return /^app:\/\/\/injected\/injected\.js$/.test(normalized);
 }
 
+// EVM-wallet-extension injected `inpage.js` stream EventEmitter noise. EVM
+// wallet extensions (MetaMask and derivatives — Rabby, Bifrost, …) inject a
+// content script as `app:///inpage.js` whose provider stream is built on
+// `@metamask/post-message-stream`'s `ExtendedBroadcastMessage` (an
+// EventEmitter subclass). During extension init / port-teardown races the
+// underlying stream/port object is `undefined`, so an `.addListener` /
+// `.emit` call on it throws
+//   `TypeError: Cannot read properties of undefined (reading 'addListener')`
+//   `TypeError: Cannot read properties of undefined (reading 'emit')`
+// INSIDE `app:///inpage.js` — never in first-party code. The observed frames
+// are `?` / `fulfilled` / `ExtendedBroadcastMessage.<anonymous>`, all in
+// `app:///inpage.js`. `app:///inpage.js` is the extension's synthetic
+// content-script source (NOT an `app:///_next/…` bundle frame and NOT a
+// de-minified `apps/web/src/…` frame), so it is never a first-party Kortix
+// call site. Better Stack patterns `17a0ce67…` (addListener, 21 occ.) and
+// `3a6b00dc…` (emit, 4 occ.), Kortix Frontend (prod, application_id 2346967),
+// 0 identified users, first/last 2026-07-14, call site `app:///inpage.js`,
+// request URL `https://kortix.com/` (marketing homepage), Chrome 150.
+//
+// The `addListener` / `emit` wording is GENERIC — a first-party
+// EventEmitter-like bug (Node `EventEmitter`, `mitt`, `nanoevents`, a
+// hand-rolled emitter, or any object exposing `addListener`/`emit`) throws
+// the SAME wording, so matching on message alone would swallow real app
+// bugs. Require BOTH one of the exact message markers AND an
+// `app:///inpage.js` injected-source frame (or an extension-origin frame) so
+// a real first-party `.addListener`/`.emit` TypeError keeps reporting.
+// Returns false when there is no source anchor at all (can't confirm
+// extension origin — keep reporting rather than swallow a possible app bug).
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list
+// — that gate has no frame context, so a bare-string match there could
+// swallow a real first-party emitter TypeError; the frame-aware `beforeSend`
+// hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const INPAGE_WALLET_STREAM_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording.
+  /Cannot read properties of undefined \(reading 'addListener'\)/,
+  /Cannot read properties of undefined \(reading 'emit'\)/,
+  // Old JSC (Safari < …): "Cannot read property 'addListener' of undefined"
+  // / "'emit' of undefined" — different engine, same wallet-extension class.
+  /Cannot read property 'addListener' of undefined/,
+  /Cannot read property 'emit' of undefined/,
+];
+
+function isInpageWalletInjectedSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return /^app:\/\/\/inpage\.js$/.test(normalized);
+}
+
 function containsKnownPattern(message: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => message.includes(pattern));
 }
@@ -535,6 +582,39 @@ export function isTronLinkProxyNoise(input: {
   ];
   return sources.some(
     (filename) => isTronLinkInjectedSource(filename) || isExtensionSource(filename),
+  );
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the EVM-wallet-extension
+ * injected-`inpage.js` stream EventEmitter noise class: a `TypeError` from
+ * calling `.addListener` / `.emit` on an `undefined` stream object inside
+ * the extension's `app:///inpage.js` content script
+ * (`@metamask/post-message-stream`'s `ExtendedBroadcastMessage`). The throw
+ * is in the extension's injected code, never in first-party app code.
+ * Requires BOTH one of the exact message markers AND an `app:///inpage.js`
+ * injected-source frame (or an extension-origin frame) so a real first-party
+ * `.addListener`/`.emit` TypeError (Node `EventEmitter` / `mitt` /
+ * `nanoevents` / hand-rolled emitter) keeps reporting. Returns false when
+ * there is no source anchor at all (can't confirm extension origin — keep
+ * reporting rather than swallow a possible app emitter bug). See
+ * `INPAGE_WALLET_STREAM_NOISE_PATTERNS` for the full rationale.
+ */
+export function isInpageWalletStreamNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!INPAGE_WALLET_STREAM_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some(
+    (filename) => isInpageWalletInjectedSource(filename) || isExtensionSource(filename),
   );
 }
 
@@ -859,6 +939,16 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // EVM-wallet-extension injected-`inpage.js` stream EventEmitter noise —
+  // MetaMask/derivatives' `app:///inpage.js` (`ExtendedBroadcastMessage`)
+  // calls `.addListener` / `.emit` on an `undefined` stream during init/tear-
+  // down races. Requires BOTH the exact message AND an `app:///inpage.js` /
+  // extension source so a real first-party emitter TypeError keeps reporting.
+  // See `isInpageWalletStreamNoise`.
+  if (isInpageWalletStreamNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
 }
 
@@ -1020,6 +1110,16 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // injected/extension frame so a real first-party Proxy `set` failure keeps
   // reporting. See `isTronLinkProxyNoise`.
   if (isTronLinkProxyNoise({ message, frames })) {
+    return true;
+  }
+
+  // EVM-wallet-extension injected-`inpage.js` stream EventEmitter noise —
+  // MetaMask/derivatives' `app:///inpage.js` (`ExtendedBroadcastMessage`)
+  // calls `.addListener` / `.emit` on an `undefined` stream during init/tear-
+  // down races. Requires BOTH the exact message AND an `app:///inpage.js` /
+  // extension frame so a real first-party emitter TypeError keeps reporting.
+  // See `isInpageWalletStreamNoise`.
+  if (isInpageWalletStreamNoise({ message, frames })) {
     return true;
   }
 

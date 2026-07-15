@@ -8,6 +8,7 @@ import {
   isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
+  isInpageWalletStreamNoise,
   isKnownBrowserNoiseMessage,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
@@ -1818,4 +1819,215 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
     }),
     false,
   )
+})
+
+// ---------------------------------------------------------------------------
+// EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
+// (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
+// (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
+// and 3a6b00dc85a3e75f08efab371960c60f74beb2c18059a7f9bcffe409c2591ce6
+// (`Cannot read properties of undefined (reading 'emit')`, 4 occ.),
+// Kortix Frontend prod, application_id 2346967). EVM wallet extensions
+// (MetaMask + derivatives) inject `app:///inpage.js` whose provider stream is
+// `@metamask/post-message-stream`'s `ExtendedBroadcastMessage` (an
+// EventEmitter subclass). During extension init / port-teardown races the
+// underlying stream/port is `undefined`, so an `.addListener` / `.emit` call
+// throws inside `app:///inpage.js` (frames `?` / `fulfilled` /
+// `ExtendedBroadcastMessage.<anonymous>`). 0 identified users, first/last
+// 2026-07-14, request URL `https://kortix.com/`, Chrome 150. The throw is in
+// the EXTENSION's injected script, never first-party code. The matcher
+// requires BOTH one of the exact message markers AND an `app:///inpage.js` /
+// extension source so a real first-party `.addListener`/`.emit` TypeError
+// keeps reporting.
+// ---------------------------------------------------------------------------
+
+const INPAGE_WALLET_INJECTED_FRAME = { filename: 'app:///inpage.js', function: '?' }
+const INPAGE_WALLET_EMIT_FRAME_CHAIN = [
+  { filename: 'app:///inpage.js', function: 'fulfilled' },
+  { filename: '<anonymous>', function: 'Generator.next' },
+  { filename: 'app:///inpage.js', function: 'ExtendedBroadcastMessage.<anonymous>' },
+]
+
+const INPAGE_WALLET_STREAM_EVENTS = [
+  // The exact raw exception values from the two production events (V8/Chrome).
+  "Cannot read properties of undefined (reading 'addListener')",
+  "Cannot read properties of undefined (reading 'emit')",
+  // `TypeError:` prefixed (window.onerror / onunhandledrejection paths).
+  "TypeError: Cannot read properties of undefined (reading 'addListener')",
+  "TypeError: Cannot read properties of undefined (reading 'emit')",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'addListener')",
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'emit')",
+  // Old JSC (Safari) wording, same wallet-extension class.
+  "Cannot read property 'addListener' of undefined",
+  "TypeError: Cannot read property 'emit' of undefined",
+]
+
+test('classifies every inpage.js wallet-stream variant as noise when sourced from the injected script', () => {
+  for (const message of INPAGE_WALLET_STREAM_EVENTS) {
+    assert.equal(
+      isInpageWalletStreamNoise({ message, filename: 'app:///inpage.js' }),
+      true,
+      `expected "${message}" from inpage.js to be wallet-stream noise`,
+    )
+    assert.equal(
+      isInpageWalletStreamNoise({ message, frames: [INPAGE_WALLET_INJECTED_FRAME] }),
+      true,
+      `expected "${message}" with an injected frame to be wallet-stream noise`,
+    )
+  }
+})
+
+test('classifies the emit variant from the full ExtendedBroadcastMessage frame chain', () => {
+  assert.equal(
+    isInpageWalletStreamNoise({
+      message: "Cannot read properties of undefined (reading 'emit')",
+      frames: INPAGE_WALLET_EMIT_FRAME_CHAIN,
+    }),
+    true,
+  )
+})
+
+test('classifies inpage.js wallet-stream noise from a chrome-extension:// frame', () => {
+  assert.equal(
+    isInpageWalletStreamNoise({
+      message: "TypeError: Cannot read properties of undefined (reading 'emit')",
+      frames: [{ filename: 'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('suppresses the inpage.js wallet-stream Sentry event via the beforeSend gate', () => {
+  for (const value of INPAGE_WALLET_STREAM_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: INPAGE_WALLET_EMIT_FRAME_CHAIN },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the inpage.js wallet-stream unhandled rejection from the browser (window.onerror)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'addListener')",
+      filename: 'app:///inpage.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress an inpage.js wallet-stream event with NO injected/extension source (conservative — keep reporting)', () => {
+  // No source anchor → can't confirm extension origin; a first-party emitter
+  // could theoretically throw the same wording, so keep reporting.
+  for (const value of INPAGE_WALLET_STREAM_EVENTS) {
+    assert.equal(
+      isInpageWalletStreamNoise({ message: value }),
+      false,
+      `expected frameless "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress an inpage.js wallet-stream event from a first-party app frame', () => {
+  // A genuine first-party emitter bug (Node `EventEmitter` / `mitt` /
+  // `nanoevents` / hand-rolled emitter) throws the SAME wording but inside
+  // app code — the de-minified frame is `apps/web/src/…` (or an
+  // `app:///_next/…` chunk), never the extension's `app:///inpage.js`. It
+  // must keep reporting so a real emitter bug is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///apps/web/src/lib/event-bus.ts' },
+    { filename: 'apps/web/src/lib/event-bus.ts' },
+    { filename: 'https://app.kortix.com/_next/static/chunks/event-bus.js' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///_next/static/chunks/app.js' }]]) {
+    assert.equal(
+      isInpageWalletStreamNoise({
+        message: "TypeError: Cannot read properties of undefined (reading 'emit')",
+        frames,
+      }),
+      false,
+      `expected wallet-stream-worded event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: "Cannot read properties of undefined (reading 'addListener')",
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting wallet-stream-worded event from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read properties of undefined (reading 'emit')",
+      filename: 'apps/web/src/lib/event-bus.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a real first-party TypeError on a DIFFERENT method name from inpage.js', () => {
+  // The generic `Cannot read properties of undefined (reading '<X>')` wording
+  // with a non-`addListener`/`emit` method name is NOT the wallet-stream
+  // class — even from the injected script frame it must keep reporting, so a
+  // different injected-script regression is never hidden by this guard.
+  for (const value of [
+    "Cannot read properties of undefined (reading 'addEventListener')",
+    "TypeError: Cannot read properties of undefined (reading 'on')",
+    "Cannot read properties of undefined (reading 'removeListener')",
+  ]) {
+    assert.equal(
+      isInpageWalletStreamNoise({ message: value, filename: 'app:///inpage.js' }),
+      false,
+      `expected non-wallet-stream message "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a same-worded message from a near-miss injected filename', () => {
+  // The matcher is anchored on the EXACT `app:///inpage.js` source — a
+  // near-identical filename (e.g. a path variant or a typo) must NOT be
+  // swallowed by this guard.
+  for (const filename of [
+    'app:///scripts/inpage.js',
+    'app:///inpage.min.js',
+    'app://inpage.js',
+    'app:///injected/inpage.js',
+  ]) {
+    assert.equal(
+      isInpageWalletStreamNoise({
+        message: "Cannot read properties of undefined (reading 'emit')",
+        frames: [{ filename }],
+      }),
+      false,
+      `expected "${filename}" frame to keep reporting`,
+    )
+  }
 })
