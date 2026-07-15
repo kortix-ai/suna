@@ -5,12 +5,10 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.38"
-kortixVersion: "0.9.38"
-
+  tag: "0.11.0"
+kortixVersion: "0.11.0"
 env:
   internalKortixEnv: prod
-
 # Explicit container env (overrides the kortix-prod-env secret bundle — k8s env
 # wins over envFrom).
 extraEnv:
@@ -23,7 +21,6 @@ extraEnv:
   # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
   # catalog shape) and the model picker collapses to a single model.
   LLM_GATEWAY_BASE_URL: "https://gateway.kortix.com/v1/llm"
-
 # CUTOVER COMPLETE (2026-06-21): api.kortix.com is served by api-eks, and EKS now
 # OWNS the singleton workers (cron scheduler, project maintenance, migrations).
 # ECS Fargate is scaled to 0 — it had held the worker lease while running stale
@@ -34,7 +31,6 @@ extraEnv:
 # so it can never grab the worker lease and starve the scheduler again.
 workers:
   enabled: true
-
 # Drizzle migrations as a PreSync hook before each rollout (gates the release on
 # schema). The hook (templates/migrate-job.yaml) is in place and ready, but is
 # DISABLED on prod until the prod Drizzle ledger is baselined: prod's schema was
@@ -45,7 +41,6 @@ workers:
 # `migration` skill: show SQL, test on a throwaway DB, get go-ahead).
 migrate:
   enabled: false
-
 # Prod sizing / HA (chart defaults are already prod-tuned; pinned here explicitly).
 replicas: 3
 autoscaling:
@@ -57,7 +52,6 @@ autoscaling:
   # so this is the proactive half; the per-pod OOM ceiling is raised below.
   targetCPUUtilizationPercentage: 60
   targetMemoryUtilizationPercentage: 60
-
 # The app sits at ~840Mi steady and spiked past the old 1Gi limit → OOMKilled
 # (exit 137) → random restarts. HPA can't prevent that (it scales on the average;
 # OOM is per-pod + instant). Give each pod real headroom: 2Gi, request==limit so
@@ -70,17 +64,14 @@ resources:
   limits:
     cpu: "1"
     memory: "2Gi"
-
 serviceAccount:
   name: kortix-api
   roleArn: arn:aws:iam::935064898258:role/kortix-prod-eks-app
-
 externalSecrets:
   enabled: true
   region: eu-west-2
   secretName: kortix-prod-env
   targetSecretName: kortix-api-env
-
 ingress:
   enabled: true
   host: api-eks.kortix.com
@@ -90,12 +81,10 @@ ingress:
   # reached THROUGH Cloudflare — no direct-to-origin WAF/rate-limit bypass. Same
   # allowlist as the devops/argocd ingress and qa-portal.
   inboundCidrs: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22"
-
 serviceMonitor:
   enabled: true
   labels:
     release: kps
-
 # Plain rolling Deployment (no canary). The EKS wins we actually want —
 # auto-healing (probes restart hung/stale pods), autoscaling (HPA + cluster
 # autoscaler), zero-downtime rolling deploys — all come from the Deployment, not
