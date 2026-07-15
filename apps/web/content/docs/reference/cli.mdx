@@ -109,7 +109,7 @@ repository.
 | `kortix self-host open` | Open the local dashboard in your browser. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
 | `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
-| `kortix self-host logs [service]` | Tail Docker Compose logs. |
+| `kortix self-host logs [service]` | Tail Docker Compose logs (Docker) or CloudWatch/SSM service logs (AWS VPC: `updater`, `supabase`, `app`, `watchdog`, `api`, `gateway`, `frontend`, `caddy`). |
 | `kortix self-host stop` | Docker only: stop the local stack. |
 
 Common target flags: `--instance`, `--target`, `--json`, and `--yes`. Docker
@@ -159,8 +159,8 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secret names + manifest `env` spec (`env:` in `kortix.yaml`, `[env]` in legacy `kortix.toml`); marks required-but-missing. |
-| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
+| `kortix secrets ls` | List secrets by identifier + manifest `env` spec (`env:` in `kortix.yaml`, `[env]` in legacy `kortix.toml`), showing `→ KEY` when the injected env key differs; marks required-but-missing. |
+| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). Add `--identifier <id>` (alias `--id`) with exactly one `KEY=VALUE` pair to store a second value under the same env key. |
 | `kortix secrets request NAME [NAME …] [--scope runtime\|connector] [--expires <min>]` | Mint a short-lived link for a human to **enter** the value(s) directly — you never see or handle the raw value. Surface the URL (web: fill-in modal; Slack: tappable link). |
 | `kortix secrets unset NAME …` | Remove. |
 
