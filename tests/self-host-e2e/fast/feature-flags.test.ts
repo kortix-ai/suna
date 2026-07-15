@@ -16,7 +16,7 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
 
   afterEach(() => sandbox.cleanup());
 
-  test('default: multi-account, landing on, billing off, enterprise off, managed-git required', async () => {
+  test('default: multi-account, marketing OFF, billing off, enterprise off, managed-git required', async () => {
     const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
     expect(code).toBe(0);
     const env = sandbox.readEnv();
@@ -24,8 +24,9 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     // Multi-account (single-account mode off).
     expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('false');
     expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('false');
-    // Landing page on (not redirected straight to /auth).
-    expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
+    // Marketing/landing site DEACTIVATED by default on self-host — every
+    // marketing route redirects to the app (see apps/web middleware).
+    expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
     // Billing off by default.
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
     expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
