@@ -115,6 +115,13 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   if (statusQuery.isError || !statusQuery.data) return null;
 
   const status: GitHubAppStatus = statusQuery.data;
+
+  // Cloud guard: when the App is configured from the environment (the hosted
+  // Kortix deployment), this in-app creation surface is irrelevant — the
+  // existing installations card handles per-account installs. Only self-host
+  // (source 'db' once created, or 'none' when unconfigured) shows this card.
+  if (status.configured && status.source === 'env') return null;
+
   const showCreateForm = !status.configured || reconfiguring;
 
   return (

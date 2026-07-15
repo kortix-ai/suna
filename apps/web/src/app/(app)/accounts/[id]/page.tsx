@@ -536,13 +536,13 @@ export default function AccountSettingsPage() {
 
             {activeSection === 'git' && canWriteAccount ? (
               <div className="space-y-8">
-                {/* Self-host in-app GitHub App creation — cloud's App is
-                    env-configured (source: 'env', always configured), so this
-                    gate keeps the create-form path off cloud entirely; the
-                    connected summary + Reconfigure stay self-host-only too,
-                    since the existing installations card below already
-                    covers per-account install management on cloud. */}
-                {singleAccountMode ? <GitHubAppSetupCard canManage={canWriteAccount} /> : null}
+                {/* Self-host in-app GitHub App creation. Rendered for any admin;
+                    the card self-hides on cloud, where the App is env-configured
+                    (status.source === 'env') and the installations card below
+                    covers per-account install management. Gating here on
+                    single-account mode would wrongly hide it on multi-account
+                    self-hosts, so the cloud guard lives inside the card. */}
+                <GitHubAppSetupCard canManage={canWriteAccount} />
                 <GitHubConnectionCard account={account} canManage={canWriteAccount} />
               </div>
             ) : null}
