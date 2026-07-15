@@ -1681,18 +1681,18 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   // live via `kortix skills get`, so they're not browse-and-install cards. They
   // stay installable by id (getCatalogEntry, ungated).
   if (it.managedBy === "kortix") return false;
-  if (MARKETPLACE_VISIBLE_TYPES.has(it.type)) return !it.hidden;
-  // Use-case templates and the agents they install are surfaced (browse + show +
-  // fetch, so the install-session agent can read + place them) only while the
-  // feature is on — dark in prod. Read the flag from the environment directly (not
-  // the validated `config`) so this module stays importable in unit tests.
-  if (
-    (it.type === "registry:template" || it.type === "registry:agent") &&
-    process.env.KORTIX_TEMPLATES_ENABLED === "true"
-  ) {
-    return !it.hidden;
-  }
-  return false;
+  return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
+}
+
+/** Resolvable-by-id (detail + file fetch) but not necessarily browse-listed.
+ *  Use-case templates and the agents they install stay OUT of the browse grid
+ *  (that's the use-case pages' job), yet `kortix marketplace show <id>` /
+ *  install-session must read them — so they resolve by id. */
+function isResolvableCatalogItem(it: CatalogItem): boolean {
+  if (isBrowseableCatalogItem(it)) return true;
+  return (
+    (it.type === "registry:template" || it.type === "registry:agent") && !it.hidden
+  );
 }
 
 
@@ -1872,7 +1872,7 @@ export async function getCatalogItemDetail(
   const entry = byId.get(id);
   if (!entry) return null;
   const base = items.find((i) => i.id === id)!;
-  if (!isBrowseableCatalogItem(base)) return null;
+  if (!isResolvableCatalogItem(base)) return null;
 
   // Files come straight from the cached catalog entry — no re-fetch, so the full
   // file tree previews instantly even for a 174-skill source.

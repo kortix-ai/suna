@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   clampMarketplaceItemsLimit,
   getCatalogItemDetail,
@@ -36,34 +36,17 @@ function synthetic(count: number, overrides: (i: number) => Partial<CatalogItem>
   );
 }
 
-describe('template + agent browse visibility (flag-gated)', () => {
-  const prev = process.env.KORTIX_TEMPLATES_ENABLED;
-  afterEach(() => {
-    if (prev === undefined) delete process.env.KORTIX_TEMPLATES_ENABLED;
-    else process.env.KORTIX_TEMPLATES_ENABLED = prev;
+describe('template + agent resolution (decoupled from browse)', () => {
+  test('use-case templates + their agents are NOT surfaced in the browse list', () => {
+    const mix = [
+      item({ type: 'registry:template', name: 't', id: 'kortix-starter:t' }),
+      item({ type: 'registry:agent', name: 'a', id: 'kortix-starter:a' }),
+      item({ type: 'registry:skill', name: 's', id: 'kortix-starter:s' }),
+    ];
+    expect(pageCatalogItems(mix, {}).items.map((i) => i.type)).toEqual(['registry:skill']);
   });
 
-  const mix = () => [
-    item({ type: 'registry:template', name: 't', id: 'kortix-starter:t' }),
-    item({ type: 'registry:agent', name: 'a', id: 'kortix-starter:a' }),
-    item({ type: 'registry:skill', name: 's', id: 'kortix-starter:s' }),
-  ];
-
-  test('hides templates + agents from browse when the flag is off', () => {
-    process.env.KORTIX_TEMPLATES_ENABLED = 'false';
-    expect(pageCatalogItems(mix(), {}).items.map((i) => i.type)).toEqual(['registry:skill']);
-  });
-
-  test('surfaces templates + agents when the flag is on (so the CLI can find + install them)', () => {
-    process.env.KORTIX_TEMPLATES_ENABLED = 'true';
-    const types = pageCatalogItems(mix(), {})
-      .items.map((i) => i.type)
-      .sort();
-    expect(types).toEqual(['registry:agent', 'registry:skill', 'registry:template']);
-  });
-
-  test('item detail carries the full template declaration (inputs, envVars, template block)', async () => {
-    process.env.KORTIX_TEMPLATES_ENABLED = 'true';
+  test('but a template resolves by id and detail carries its full declaration', async () => {
     const detail = await getCatalogItemDetail('kortix-starter:customer-support');
     expect(detail).not.toBeNull();
     expect(detail!.type).toBe('registry:template');
@@ -71,6 +54,12 @@ describe('template + agent browse visibility (flag-gated)', () => {
     expect(Object.keys(detail!.envVars ?? {})).toContain('PLAIN_API_KEY');
     const tpl = detail!.template as { triggers?: Array<{ slug: string }> };
     expect(tpl.triggers?.map((t) => t.slug)).toContain('support-triage');
+  });
+
+  test('and the agent a template installs resolves by id too (for the install-session fetch)', async () => {
+    const agent = await getCatalogItemDetail('kortix-starter:support-agent');
+    expect(agent).not.toBeNull();
+    expect(agent!.type).toBe('registry:agent');
   });
 });
 
