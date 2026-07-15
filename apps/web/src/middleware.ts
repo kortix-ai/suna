@@ -311,6 +311,29 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Self-heal a stale/rotated session. A refresh token that's invalid or
+  // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
+  // erroring on every request and dead-ends the user on /auth. Drop the Supabase
+  // auth cookies (they can be chunked: name, name.0, name.1, …) so the next load
+  // starts clean instead of looping on the bad token.
+  if (authError) {
+    const message = authError.message || '';
+    const code = (authError as { code?: string }).code;
+    if (
+      code === 'refresh_token_already_used' ||
+      code === 'refresh_token_not_found' ||
+      /refresh token/i.test(message) ||
+      /invalid.*(jwt|token)/i.test(message)
+    ) {
+      for (const { name } of request.cookies.getAll()) {
+        if (name === KORTIX_SUPABASE_AUTH_COOKIE || name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)) {
+          supabaseResponse.cookies.delete(name);
+        }
+      }
+      user = null;
+    }
+  }
+
   // FAST PATH: authenticated users hitting the homepage go straight to /projects.
   if (pathname === '/' && user) {
     return NextResponse.redirect(new URL('/projects', request.url));
