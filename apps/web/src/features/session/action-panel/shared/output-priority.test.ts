@@ -126,6 +126,18 @@ describe('selectPrimaryDeliverable (W2)', () => {
   test('all-stale input still picks by rank', () => {
     expect(selectPrimaryDeliverable([], [css, pdf])).toBe(pdf);
   });
+
+  // ─── easy-panel.tsx's chip-consume effect calls selectPrimaryDeliverable
+  // with the UNFILTERED apps/files lists on purpose (the stale fallback is
+  // its legitimate purpose — see the comment at that call site). The payoff
+  // effect, by contrast, must pre-filter to fresh-only before calling in, so
+  // that text-only turns in a session with history never resurrect a stale
+  // deliverable. This test locks in the primitive the chip path depends on:
+  // a stale-only input must still resolve to something openable. ──
+  test('chip path: stale-only input still resolves (payoff must pre-filter to fresh before calling in)', () => {
+    const stalePdf = { ...pdf, fresh: undefined };
+    expect(selectPrimaryDeliverable([], [stalePdf])).toBe(stalePdf);
+  });
 });
 
 describe('deliverableKindLabel (W3)', () => {

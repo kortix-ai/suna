@@ -302,7 +302,14 @@ export const EasyPanel = memo(function EasyPanel({
     const wasRunning = prevRunningRef.current;
     if (!wasRunning && isRunning) interactedThisRunRef.current = false;
     prevRunningRef.current = isRunning;
-    const primary = selectPrimaryDeliverable(apps, files);
+    // Fresh-only (unlike the chip-consume effect below): the payoff is this
+    // run's reward for THIS run's work. Without this filter,
+    // selectPrimaryDeliverable's stale fallback fires on every text-only turn
+    // in a session with history, auto-opening a deliverable from a run the
+    // user already saw.
+    const freshApps = apps.filter((a) => a.fresh);
+    const freshFiles = files.filter((f) => f.fresh);
+    const primary = selectPrimaryDeliverable(freshApps, freshFiles);
     if (
       shouldAutoOpenPayoff({
         wasRunning,
@@ -329,6 +336,10 @@ export const EasyPanel = memo(function EasyPanel({
   useEffect(() => {
     if (pendingPrimaryOpenSessionId !== sessionId) return;
     if (!useKortixComputerStore.getState().consumePrimaryOpen(sessionId)) return;
+    // Unfiltered (unlike the payoff effect above): the chip was already
+    // earned by a real finish, possibly in an earlier render than this one —
+    // the stale fallback is this path's legitimate purpose, so a user who
+    // taps a chip after navigating away still lands on something.
     const primary = selectPrimaryDeliverable(apps, files);
     if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
   }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
