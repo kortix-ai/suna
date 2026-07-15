@@ -1,13 +1,23 @@
 # Runbook: Self-hosting Kortix
 
+**Kortix self-host is VPS-first.** The supported way to run it is on your own
+VPS or server with a persistent domain pointed at it — that combination is
+what makes reachability, TLS, and agent sandboxes work correctly and durably.
+Running it on a laptop is a convenience for evaluating the product, not a
+deployment target: laptop mode needs a Cloudflare tunnel (or nothing at all)
+to get any external reachability, that URL is ephemeral or missing entirely,
+and browsers enforce connection limits against plain-HTTP `localhost` that a
+real deployment won't hit. If you're deciding where to run this for real,
+provision a VPS and point a domain at it.
+
 Kortix self-host is **one generic Docker-native system**: `kortix self-host`
 generates a `docker-compose.yml` + `.env` (+ a `Caddyfile` and `updater.sh` when
 a domain is configured) into `~/.config/kortix/self-host/<instance>/` and runs
-`docker compose up`. It is **identical** on a laptop, any VPS, or a cloud VM
-(EC2, Droplet, etc.) — there is no separate "target" to pick, no AWS profile,
-no Terraform, no TUF/signing, no SSM. A public domain is just an env var
-(`KORTIX_DOMAIN`) the same stack reacts to, not a different deployment
-mechanism.
+`docker compose up`. The same artifact happens to also run on a laptop, any
+VPS, or a cloud VM (EC2, Droplet, etc.) — there is no separate "target" to
+pick, no AWS profile, no Terraform, no TUF/signing, no SSM. A public domain is
+just an env var (`KORTIX_DOMAIN`) the same stack reacts to, not a different
+deployment mechanism.
 
 The stack: Caddy (reverse proxy + ACME TLS, only present when a domain is
 configured) → `kortix-api`, `llm-gateway`, `frontend`, plus the official
@@ -27,14 +37,17 @@ box.
 
 ## Prerequisites
 
-- A Linux box (any VPS, EC2, bare metal) or a laptop (macOS/Linux) with Docker
-  Desktop or Docker Engine.
+- **A VPS or server you control (recommended), or a laptop for evaluation
+  only** — Linux (any VPS, EC2, bare metal) or macOS/Linux with Docker Desktop
+  or Docker Engine.
 - Docker Engine + the Compose plugin (`docker compose version`). The bootstrap
   script below installs these for you on a fresh Linux box.
-- **Optional:** a domain you control, with its DNS A/AAAA record (and the API
-  subdomain's) pointed at the box's public IP, if you want a public HTTPS URL
-  instead of loopback-only ports. Ports **80** and **443** must be reachable
-  from the internet for ACME HTTP-01 when a domain is set.
+- **Required for production:** a domain you control, with its DNS A/AAAA
+  record (and the API subdomain's) pointed at the box's public IP. This is
+  what turns on a public HTTPS URL instead of loopback-only ports, and it's
+  the reachability mode agent sandboxes need to work reliably. Ports **80**
+  and **443** must be reachable from the internet for ACME HTTP-01 once a
+  domain is set.
 - **Required for agent sessions to actually run:** a [Daytona](https://app.daytona.io)
   API key (the sandbox provider) and managed-git access (a GitHub PAT or GitHub
   App) so the platform can create project repos. Both can be set after first
@@ -43,7 +56,7 @@ box.
   signups and leads with password auth, so the first account works with zero
   email configuration. Configure SMTP later to enable magic-link sign-in.
 
-## Reachability (required for agent sessions)
+## Reachability (required for agent sessions) — VPS-first
 
 Agent sessions run inside a **cloud** Daytona sandbox — a VM outside your
 network — that calls back to this instance's API over the public internet via
@@ -54,26 +67,37 @@ agent sessions fail with a fast, explicit error (or, before this URL was
 validated, a confusing hang).
 
 `kortix self-host init`/`configure` ask interactively how this instance is
-reachable from the internet; non-interactively, pick one of:
+reachable from the internet, and default to the domain path; non-interactively,
+pick one of:
 
 1. **Public domain** (server/VPS/EC2 with DNS) — `--domain kortix.example.com`.
-   The production path: turns on the bundled Caddy reverse proxy + ACME TLS,
-   and `KORTIX_URL` becomes `https://api.<domain>`.
+   **The recommended, production path**: turns on the bundled Caddy reverse
+   proxy + ACME TLS, and `KORTIX_URL` becomes `https://api.<domain>`. This is
+   the only mode with a stable URL and no laptop/browser caveats — deploy on a
+   VPS with a domain for anything beyond kicking the tyres.
 2. **Cloudflare tunnel** (laptop — no public IP/DNS) — `--tunnel cloudflare`.
-   The recommended laptop path: a `cloudflared` Compose service exposes the
-   API to the internet with zero DNS/firewall setup, and the CLI wires
-   `KORTIX_URL` to the tunnel's public URL automatically. See below.
+   **Evaluation on a laptop only — not recommended for production.** A
+   `cloudflared` Compose service exposes the API to the internet with zero
+   DNS/firewall setup, and the CLI wires `KORTIX_URL` to the tunnel's public
+   URL automatically. By default that URL is **ephemeral** (a fresh one on
+   every restart) and browsers enforce connection limits against plain-HTTP
+   `localhost` that a real deployment won't hit. See below.
 3. **Local only** (neither flag) — loopback URLs only, the historical default.
-   Agent sessions and any other external caller (webhooks, Slack/Teams OAuth,
-   the git-proxy clone URL) **will not work**. Browser-local flows (e.g.
-   creating a GitHub App) still do, since the browser runs on the same
-   machine. `start` prints a warning every time this mode is active.
+   **Development only.** Agent sessions and any other external caller
+   (webhooks, Slack/Teams OAuth, the git-proxy clone URL) **will not work**.
+   Browser-local flows (e.g. creating a GitHub App) still do, since the
+   browser runs on the same machine. `start` prints a warning every time this
+   mode is active.
+
+Self-host is designed VPS-first: for reliable production use, deploy on a VPS
+with a domain (mode 1). Modes 2 and 3 exist for evaluation/development and
+print a reminder of that every time they're selected or active.
 
 Switch modes any time with `kortix self-host configure` (interactive) or the
 same flags on `init`/`update`. Re-running with neither flag never resets an
 already-configured mode.
 
-### Cloudflare tunnel mechanics (mode 2)
+### Cloudflare tunnel mechanics (mode 2, evaluation only)
 
 `--tunnel cloudflare` adds a `cloudflared` service to the Compose stack that
 tunnels straight to `kortix-api` (Caddy is never present in this mode — there
@@ -112,23 +136,21 @@ never changes across restarts.
 
 ## Quickstart
 
-### Laptop
+**VPS-first: provision a VPS → point DNS at it → `init --domain` → `start`.**
+The laptop/tunnel path further down is for evaluating the product only — not
+for production use.
 
-```sh
-curl -fsSL https://kortix.com/install | bash
-kortix self-host init --tunnel cloudflare
-kortix self-host start
-```
+### VPS / EC2 / any bare Linux box (recommended)
 
-Supabase, the API, the gateway, and the frontend come up on loopback ports
-(default dashboard: `http://localhost:13737`) — the bundled `cloudflared`
-quick tunnel is what makes agent sessions actually work with no domain/DNS at
-all (see Reachability above). `start` prints the exact URLs, the tunnel's
-public URL, and warns if the sandbox provider or managed git aren't configured
-yet. Omit `--tunnel cloudflare` to stay fully local-only (no agent sessions;
-see mode 3 above).
-
-### VPS / EC2 / any bare Linux box
+1. **Provision a VPS or server** (any provider — a small box is enough to
+   start: 2 vCPU / 4GB RAM is a reasonable floor).
+2. **Point DNS at it** — create an A/AAAA record for your domain (and the API
+   subdomain, `api.<domain>` by default) pointing at the box's public IP.
+   Ports **80** and **443** must be reachable from the internet for ACME
+   HTTP-01 once you set the domain.
+3. **Run the bootstrap script**, which installs Docker, installs the `kortix`
+   CLI, runs `kortix self-host init --domain <your-domain>`, and starts the
+   stack:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/kortix-selfhost-up.sh \
@@ -149,10 +171,14 @@ flag (channel, auto-update policy, instance name, Daytona key). Re-running the
 script is safe — every step it drives (`init`, `env set`, `start`) is
 idempotent.
 
-No domain yet? Omit `--domain` — the stack binds to loopback ports only, which
-is fine for kicking the tyres over an SSH tunnel; add a domain later with
-`kortix self-host env set KORTIX_DOMAIN=... KORTIX_ACME_EMAIL=...` followed by
-`kortix self-host start`.
+Or drive it directly with the CLI, without the bootstrap script (e.g. Docker
+is already installed):
+
+```sh
+curl -fsSL https://kortix.com/install | bash
+kortix self-host init --domain kortix.example.com
+kortix self-host start
+```
 
 After first boot, configure the sandbox provider and managed git:
 
@@ -162,6 +188,29 @@ kortix self-host configure       # interactive wizard: Daytona key, GitHub, Pipe
 kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
 kortix self-host start           # re-applies env + restarts affected services
 ```
+
+### Evaluating on a laptop (not for production)
+
+This path is for kicking the tyres on your own machine — it is **not**
+recommended for real use. See Reachability above for the specific caveats
+(ephemeral tunnel URL, browser connection limits on plain-HTTP `localhost`,
+and no external reachability at all without the tunnel).
+
+```sh
+curl -fsSL https://kortix.com/install | bash
+kortix self-host init --tunnel cloudflare
+kortix self-host start
+```
+
+Supabase, the API, the gateway, and the frontend come up on loopback ports
+(default dashboard: `http://localhost:13737`) — the bundled `cloudflared`
+quick tunnel is what makes agent sessions work at all with no domain/DNS
+(see Reachability above). `start` prints the exact URLs, the tunnel's public
+URL, and warns if the sandbox provider or managed git aren't configured yet.
+Omit `--tunnel cloudflare` to stay fully local-only (no agent sessions; see
+mode 3 above). When you're ready for real use, switch to a VPS with a domain
+(see above) — `kortix self-host configure` or `init --domain <domain>` any
+time, on the same box or a new one.
 
 ## The `kortix self-host` command surface
 

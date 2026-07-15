@@ -5,6 +5,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/kortix-selfhost-up.sh | bash -s -- --domain kortix.example.com --email ops@example.com
 #   bash kortix-selfhost-up.sh --domain kortix.example.com --email ops@example.com
 #
+# Kortix self-host is VPS-first: --domain (a persistent domain, DNS pointed at
+# this box) is the recommended, production-ready way to run this script.
+# Omitting --domain is for evaluation/testing only, not real use.
+#
 # What it does, in order, on any bare Linux box (VPS, EC2, bare metal):
 #   1. Installs Docker Engine + the Compose plugin if missing.
 #   2. Installs the `kortix` CLI (the published one-click installer).
@@ -15,14 +19,16 @@
 #   5. Runs `kortix self-host start` (pulls the images, brings the stack up).
 #
 # This is the SAME docker-compose.yml + .env system `kortix self-host` produces
-# on a laptop — there is no separate "target" here. Re-running this script is
+# everywhere — there is no separate "target" here. Re-running this script is
 # safe (init/env-set/start are all idempotent) and is a reasonable way to pick
 # up config changes.
 #
 # No domain? Leave --domain unset and the stack binds to loopback ports only —
-# fine for kicking the tyres on a box you reach over SSH tunnel/VPN. For a
-# laptop, skip this script entirely: install the CLI and run
-# `kortix self-host init && kortix self-host start` directly.
+# that's for evaluation only (e.g. kicking the tyres over an SSH tunnel/VPN),
+# NOT recommended for production. For a laptop, skip this script entirely and
+# evaluate directly instead: install the CLI and run
+# `kortix self-host init --tunnel cloudflare && kortix self-host start`
+# (or omit --tunnel to stay fully local-only — no agent sessions either way).
 #
 # Required for agent sessions to actually run (set later, any time):
 #   kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
@@ -53,7 +59,7 @@ warn() { printf '\033[33mkortix-selfhost-up: %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[31mkortix-selfhost-up: %s\033[0m\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ─── Args + env defaults ─────────────────────────────────────────────────────

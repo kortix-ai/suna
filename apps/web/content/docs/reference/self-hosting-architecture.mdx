@@ -3,16 +3,25 @@ title: Self-hosting architecture
 description: How the generic Docker self-host stack fits together — one box, Caddy, the app containers, official Supabase Docker, and the in-compose updater.
 ---
 
-Kortix self-host is **one generic Docker-native system**, not a family of
-deployment targets. `kortix self-host init` renders a `docker-compose.yml` +
-`.env` (plus a `Caddyfile` and `updater.sh` when a domain is configured) into
-`~/.config/kortix/self-host/<instance>/`, and `kortix self-host start` runs
-`docker compose up`. The exact same artifact runs on a laptop, any VPS, or a
-cloud VM (EC2, Droplet, …) — a public domain is just an env var
-(`KORTIX_DOMAIN`) the same stack reacts to, not a different mechanism. See the
-[CLI reference](/docs/reference/cli#self-host) for the full command surface
-and the [self-hosting runbook](https://github.com/kortix-ai/suna/blob/main/docs/runbooks/self-hosting.md)
-for operations.
+**Kortix self-host is VPS-first.** The supported production deployment is
+your own VPS/server with a persistent domain pointed at it — that's the
+combination that gives you a stable, durable public URL for Caddy/ACME TLS
+and for agent sandboxes to call back to. A laptop can run the identical
+artifact for evaluation, but only via a Cloudflare tunnel (ephemeral URL) or
+loopback-only (no external reachability at all, agent sandboxes will not
+work) — neither is a deployment target.
+
+Architecturally, Kortix self-host is **one generic Docker-native system**,
+not a family of deployment targets. `kortix self-host init` renders a
+`docker-compose.yml` + `.env` (plus a `Caddyfile` and `updater.sh` when a
+domain is configured) into `~/.config/kortix/self-host/<instance>/`, and
+`kortix self-host start` runs `docker compose up`. The exact same artifact
+runs on a laptop, any VPS, or a cloud VM (EC2, Droplet, …) — a public domain
+is just an env var (`KORTIX_DOMAIN`) the same stack reacts to, not a
+different mechanism. See the [CLI reference](/docs/reference/cli#self-host)
+for the full command surface and the
+[self-hosting runbook](https://github.com/kortix-ai/suna/blob/main/docs/runbooks/self-hosting.md)
+for the VPS-first quickstart and day-2 operations.
 
 ## One box, one Compose stack
 
