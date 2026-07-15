@@ -95,17 +95,6 @@ export const isManagedProviderEnabled = (): boolean => {
 };
 
 /**
- * Whether this deployment is scoped to a single account (self-host,
- * KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE). Hides "New account" affordances and
- * team-management surfaces (members/groups/identity) that only make sense
- * with more than one account/user. Mirrors the backend's
- * KORTIX_SINGLE_ACCOUNT_MODE, which 403s POST /v1/accounts.
- */
-export const isSingleAccountMode = (): boolean => {
-  return getEnv().SINGLE_ACCOUNT_MODE;
-};
-
-/**
  * Whether Pipedream-backed connector UI (the "Connect your tools" onboarding
  * step, the "Easy connect" app catalogue) is enabled. Cloud always has
  * Pipedream configured (defaults true); self-host without PIPEDREAM_client

@@ -16,14 +16,11 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
 
   afterEach(() => sandbox.cleanup());
 
-  test('default: multi-account, marketing OFF, billing off, enterprise off, git provider declared github', async () => {
-    const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+  test('default: marketing OFF, billing off, enterprise off, git provider declared github', async () => {
+    const { code } = await sandbox.run(['init', '--yes']);
     expect(code).toBe(0);
     const env = sandbox.readEnv();
 
-    // Multi-account (single-account mode off).
-    expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('false');
-    expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('false');
     // Marketing/landing site DEACTIVATED by default on self-host — every
     // marketing route redirects to the app (see apps/web middleware).
     expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
@@ -38,25 +35,12 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     expect(env.MANAGED_GIT_PROVIDER).toBe('github');
   });
 
-  test('--single-account sets both KORTIX_SINGLE_ACCOUNT_MODE and the _PUBLIC_ frontend flag', async () => {
-    const { code } = await sandbox.run([
-      'init',
-      '--yes',
-      '--allow-missing-secrets',
-      '--single-account',
-    ]);
-    expect(code).toBe(0);
-    const env = sandbox.readEnv();
-    expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
-    expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('true');
-  });
-
   // There is deliberately no `--landing`/`--no-landing` flag: the landing page
   // isn't a guided-flow decision (self-host is an app deployment, not a
   // marketing site), it's just an ordinary env var an operator flips directly
   // if they genuinely want it back — see the default-off assertion above.
   test('re-enabling the landing page is a plain `env set`, no dedicated flag', async () => {
-    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    await sandbox.run(['init', '--yes']);
     expect(sandbox.readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
 
     const { code } = await sandbox.run(['env', 'set', 'KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false']);
@@ -68,7 +52,6 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     const { code } = await sandbox.run([
       'init',
       '--yes',
-      '--allow-missing-secrets',
       '--enterprise-license',
     ]);
     expect(code).toBe(0);
@@ -79,8 +62,6 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     await sandbox.run([
       'init',
       '--yes',
-      '--allow-missing-secrets',
-      '--single-account',
       '--enterprise-license',
     ]);
     const env = sandbox.readEnv();
@@ -98,20 +79,16 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     expect(after.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
     expect(after.KORTIX_PUBLIC_BILLING_ENABLED).toBe('true');
     // Untouched by the billing env set.
-    expect(after.KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
     expect(after.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
     expect(after.ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
   });
 
   test('the rendered compose passes every flag through as a runtime template var, not a literal', async () => {
-    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    await sandbox.run(['init', '--yes']);
     const compose = sandbox.readComposeText();
 
     const frontendEnv = composeServiceEnv(composeServiceBlock(compose, 'frontend'));
     expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
-    expect(frontendEnv.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe(
-      '${KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE}',
-    );
     expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe(
       '${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}',
     );
@@ -122,7 +99,6 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     const apiBlock = composeServiceBlock(compose, 'kortix-api');
     const apiEnv = composeServiceEnv(apiBlock);
     expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
-    expect(apiEnv.KORTIX_SINGLE_ACCOUNT_MODE).toBeUndefined();
     expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
     expect(apiBlock).toContain('.env');
   });
@@ -131,17 +107,13 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     await sandbox.run([
       'init',
       '--yes',
-      '--allow-missing-secrets',
-      '--single-account',
       '--enterprise-license',
     ]);
-    expect(sandbox.readEnv().KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
     expect(sandbox.readEnv().ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
 
-    const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+    const { code } = await sandbox.run(['init', '--yes']);
     expect(code).toBe(0);
     const env = sandbox.readEnv();
-    expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
     expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
   });
 });

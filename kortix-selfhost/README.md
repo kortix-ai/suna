@@ -47,11 +47,10 @@ for real use) running Linux, and a domain you control.
    `--yes` for the defaults) that asks, in order:
 
    1. **Reachability** — confirms the domain/DNS above (or `--tunnel
-      cloudflare` for laptop evaluation only, or local-only for development;
-      see the runbook for the tradeoffs of each).
+      cloudflare` if you have no public domain — for local machines /
+      evaluation only; see the runbook for the tradeoffs).
    2. **Admin email** — which account gets platform-admin on first sign-up.
-   3. **Deployment shape** — single-account (hide multi-tenant sign-up UI) or
-      normal, and whether you hold an Enterprise license (SSO/SCIM/RBAC/audit).
+   3. **Deployment shape** — whether you hold an Enterprise license (SSO/SCIM/RBAC/audit).
    4. **Sandbox provider** — `daytona` (default), `e2b`, or `platinum`, plus
       its API key.
    5. **Pipedream** (optional) — the 3,000+ app connector catalog; skip or
@@ -89,9 +88,9 @@ cd your-project && kortix ship
 
 See
 [`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md) for the
-Cloudflare-tunnel (laptop) and fully-local (dev) paths, SMTP, using the CLI
-from a different machine than the one you self-hosted on, and the full
-`kortix self-host` command reference.
+no-public-domain Cloudflare-tunnel evaluation path, SMTP, using the CLI
+from a different machine than the one you self-hosted on, uninstalling, and
+the full `kortix self-host` command reference.
 
 ## 2. Want something more robust on AWS? There's a Terraform for that
 
@@ -128,7 +127,7 @@ route53_zone_id = "Z0123456789ABCDEFGHIJ"   # optional — see "Domain / DNS" be
 ```
 
 See `terraform/variables.tf` for the full input surface (instance type,
-network, backup schedule, update channel, single-account mode, ...).
+network, backup schedule, update channel, ...).
 
 ### Domain / DNS — both ways are supported
 
@@ -184,10 +183,12 @@ exact command, no SSH key or open port required):
 
 ```sh
 kortix self-host update            # pull the newest image on your channel now, migrate, roll forward
-kortix self-host secrets ls        # list configured secrets (values masked)
-kortix self-host secrets set KEY=VALUE ...   # set/rotate a secret (sandbox key, GitHub token, SMTP, ...)
+kortix self-host env ls            # list every value, grouped by service (secrets masked)
+kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, SMTP, ...); restarts affected services only
+kortix self-host env rotate KEY    # regenerate a rotatable generated secret (or --all-generated)
 kortix self-host logs [service]    # tail Compose logs
 kortix self-host status            # container status
+kortix self-host uninstall         # stop + permanently delete this instance's data and config
 ```
 
 **Restoring from a snapshot** (disaster recovery / cloning an instance):
@@ -206,3 +207,24 @@ kortix self-host status            # container status
 Full detail (whole-directory `tar` backups, logical `pg_dump` backups, and
 every troubleshooting scenario) lives in
 [`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md).
+
+## 4. Run a specific version or your own build
+
+```sh
+kortix self-host init --channel latest             # track the bleeding-edge moving tag instead of stable
+kortix self-host init --version 0.10.1             # pin an exact released version
+kortix self-host init --version dev-a1b2c3d         # pin a published dev build (e.g. from a branch's CI)
+```
+
+Testing a locally-built image (never pushed to any registry):
+
+```sh
+docker build -t kortix/kortix-api:mytest apps/api
+kortix self-host init --version mytest --local-images
+kortix self-host start
+```
+
+`--local-images` skips `docker compose pull` (a locally-built tag isn't on
+any registry, so a blanket pull would fail) and forces auto-update off — a
+box running an unpublished build must never let the nightly updater try to
+pull it from nowhere.

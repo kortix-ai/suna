@@ -181,12 +181,6 @@ variable "auto_update" {
   default     = "on"
 }
 
-variable "single_account_mode" {
-  description = "Run this instance single-account (no multi-tenant signup)."
-  type        = bool
-  default     = false
-}
-
 variable "acme_email" {
   description = "Optional ACME (Let's Encrypt) contact email. Leave empty to use admin@<domain>."
   type        = string

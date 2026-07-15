@@ -16,7 +16,6 @@ services:
       KORTIX_PUBLIC_CONNECTORS_ENABLED: ${KORTIX_PUBLIC_CONNECTORS_ENABLED}
       KORTIX_PUBLIC_APP_URL: ${PUBLIC_URL}
       KORTIX_PUBLIC_AUTH_METHODS: ${KORTIX_PUBLIC_AUTH_METHODS}
-      KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE: ${KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE}
       KORTIX_PUBLIC_DISABLE_LANDING_PAGE: ${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}
       SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       SUPABASE_SERVER_URL: http://supabase-kong:8000
@@ -72,15 +71,16 @@ services:
       # the cloudflared tunnel's public URL in tunnel mode (captured from the
       # `cloudflared` service's logs after `docker compose up` — see
       # reconcileTunnelReachability() in commands/self-host.ts), or a loopback
-      # URL in local-only mode (agent sandboxes will not work in that mode).
+      # URL when reachability is unconfigured (agent sessions won't work —
+      # the cloud sandbox can't call back to this API in that state).
       KORTIX_URL: ${KORTIX_URL}
       FRONTEND_URL: ${PUBLIC_URL}
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL},${API_PUBLIC_URL}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE}
       SANDBOX_NETWORK: __KORTIX_COMPOSE_PROJECT___default
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
-      # KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_SINGLE_ACCOUNT_MODE, and
-      # ENTERPRISE_LICENSE_AVAILABLE are NOT listed here on purpose — this
+      # KORTIX_BILLING_INTERNAL_ENABLED and ENTERPRISE_LICENSE_AVAILABLE are
+      # NOT listed here on purpose — this
       # service already has `env_file: .env` above, which loads every key in
       # .env (including these) as container env. An explicit `environment:`
       # entry would take precedence over env_file and silently pin the value

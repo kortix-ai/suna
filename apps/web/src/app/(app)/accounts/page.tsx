@@ -9,7 +9,6 @@ import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { isSingleAccountMode } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +22,6 @@ export default function AccountsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [createOpen, setCreateOpen] = useState(false);
-  const singleAccountMode = isSingleAccountMode();
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -53,14 +51,12 @@ export default function AccountsPage() {
             <h2 className="text-foreground text-xl font-medium">Accounts</h2>
             <p className="text-muted-foreground text-sm text-balance">Teams you belong to.</p>
           </div>
-          {!singleAccountMode && (
-            <div className="mt-2 shrink-0 sm:mt-0">
-              <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-                <Plus className="size-4" />
-                New account
-              </Button>
-            </div>
-          )}
+          <div className="mt-2 shrink-0 sm:mt-0">
+            <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" />
+              New account
+            </Button>
+          </div>
         </header>
 
         {accountsQuery.isLoading ? (
@@ -87,12 +83,10 @@ export default function AccountsPage() {
             title="No accounts yet"
             description="Create an account to start working with a team."
             action={
-              singleAccountMode ? undefined : (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-                  <Plus className="size-3.5" />
-                  New account
-                </Button>
-              )
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-3.5" />
+                New account
+              </Button>
             }
           />
         ) : (

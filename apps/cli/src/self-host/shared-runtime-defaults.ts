@@ -36,21 +36,18 @@ export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
 };
 
 /**
- * Configuration feature flags: single-account mode, landing-page
- * disable, enterprise license, and billing. A fresh self-host is
- * multi-account-capable, runs on the free-tier entitlement set, and has
+ * Configuration feature flags: landing-page disable, enterprise license, and
+ * billing. A fresh self-host runs on the free-tier entitlement set and has
  * billing disabled (no Stripe keys to configure). The marketing/landing site
  * is DEACTIVATED by default (KORTIX_PUBLIC_DISABLE_LANDING_PAGE='true') — a
  * self-host is an app deployment, not a marketing site, so every marketing
  * route auto-redirects to the app (see apps/web middleware). `kortix self-host
- * configure` / the init wizard / --single-account, --landing, --no-landing,
- * --enterprise-license flip these; they are ordinary runtime env, so they
- * survive `kortix self-host update` unchanged (only the image tags move) and
- * are explicit in .env instead of only hard-coded into the compose template.
+ * configure` / the init wizard / --landing, --no-landing, --enterprise-license
+ * flip these; they are ordinary runtime env, so they survive
+ * `kortix self-host update` unchanged (only the image tags move) and are
+ * explicit in .env instead of only hard-coded into the compose template.
  */
 export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
-  KORTIX_SINGLE_ACCOUNT_MODE: 'false',
-  KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE: 'false',
   // Marketing site off by default on self-host — redirect straight to the app.
   KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
   ENTERPRISE_LICENSE_AVAILABLE: 'false',

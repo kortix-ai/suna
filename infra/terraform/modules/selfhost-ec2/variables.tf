@@ -199,12 +199,6 @@ variable "auto_update" {
   }
 }
 
-variable "single_account_mode" {
-  description = "Run this instance single-account (no multi-tenant signup) — passed as `kortix self-host init --single-account`."
-  type        = bool
-  default     = false
-}
-
 variable "admin_email" {
   description = "Optional admin email granted platform-admin on first boot (`kortix self-host init --admin-email`). Leave empty to skip and configure later via `kortix self-host configure`."
   type        = string

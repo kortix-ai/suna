@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "files": {
     "docker-compose.logs.yml": "c1c386ee49680a8cd10b6f5a336097f5f4db72608cbbfa211053f146f3785a55",
-    "docker-compose.yml": "3b295bf43c4f01edbbafa2a8aa8642746fd4caab948c64313e474df4a50b7fa0",
+    "docker-compose.yml": "ae78100f50b2032c77691ed6086e34d1574a9f0005814c5f1cea8938f9841991",
     "volumes/api/kong-entrypoint.sh": "399394576635f7477dfee32e870f509567fc496f0dc86a5a6611f58d1099031f",
     "volumes/api/kong.yml": "3d6db996d43d4bb9ef119058dfb2806e2ad74c0509991680a4f6f54a06a39174",
     "volumes/db/_supabase.sql": "9dce462adc04137d6afabcf28efa60a6c355270a4b32d7af58891ac4eb964c5f",

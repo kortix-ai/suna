@@ -80,12 +80,6 @@ const RuntimeEnvSchema = z.object({
    *  self-host without PIPEDREAM_* set should flip it off. Set via
    *  KORTIX_PUBLIC_CONNECTORS_ENABLED / NEXT_PUBLIC_CONNECTORS_ENABLED. */
   CONNECTORS_ENABLED: z.boolean().default(true),
-  /** Self-host single-account mode: this deployment is meant for exactly one
-   *  account (no teams). Hides "New account" UI + team-management
-   *  surfaces. Mirrors the backend's KORTIX_SINGLE_ACCOUNT_MODE, which
-   *  blocks POST /v1/accounts with 403. Set via
-   *  KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE / NEXT_PUBLIC_SINGLE_ACCOUNT_MODE. */
-  SINGLE_ACCOUNT_MODE: z.boolean().default(false),
   /** Self-host: redirect unauthenticated visitors hitting "/" straight to
    *  /auth instead of the marketing landing page. Set via
    *  KORTIX_PUBLIC_DISABLE_LANDING_PAGE / NEXT_PUBLIC_DISABLE_LANDING_PAGE. */

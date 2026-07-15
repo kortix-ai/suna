@@ -10,20 +10,10 @@ export interface SelfHostCommandFlags {
   updateTime?: string;
   /** IANA timezone the auto-updater interprets updateTime in (default America/New_York). */
   updateTz?: string;
-  /** Allow a brief downtime window for a non-backward-compatible migration (KORTIX_ALLOW_DOWNTIME). */
-  allowDowntime?: boolean;
-  /** Single-account mode: this deployment is meant for exactly one account —
-   *  no teams. Sets KORTIX_SINGLE_ACCOUNT_MODE + the matching KORTIX_PUBLIC_
-   *  frontend flag (--single-account). */
-  singleAccount?: boolean;
   /** Operator holds a Kortix Enterprise license: unlocks SSO/SCIM/RBAC/audit
    *  entitlements platform-wide regardless of billing tier
    *  (ENTERPRISE_LICENSE_AVAILABLE, --enterprise-license). */
   enterpriseLicense?: boolean;
-  /** Escape hatch: let `init`/`start` proceed with required secrets unset
-   *  instead of failing — local experimentation only, never for a real
-   *  deployment (managed git / sandbox / LLM calls will fail at runtime). */
-  allowMissingSecrets?: boolean;
   /** Public domain reachability mode: this instance is reachable at
    *  `https://<domain>` (and `https://api.<domain>`) — sets KORTIX_DOMAIN,
    *  turning on the bundled Caddy reverse proxy/ACME TLS, same as
@@ -32,8 +22,8 @@ export interface SelfHostCommandFlags {
   domain?: string;
   /** Cloudflare-tunnel reachability mode: no public domain, but a
    *  `cloudflared` tunnel exposes the API to the internet so cloud sandboxes
-   *  can call back to it — the recommended laptop/no-DNS path
-   *  (`--tunnel cloudflare`). See CLOUDFLARE_TUNNEL_TOKEN/
+   *  can call back to it — the recommended no-public-domain / local-machine
+   *  path (`--tunnel cloudflare`). See CLOUDFLARE_TUNNEL_TOKEN/
    *  CLOUDFLARE_TUNNEL_HOSTNAME for the optional stable named-tunnel
    *  alternative to the zero-config ephemeral quick tunnel. */
   tunnel?: 'cloudflare';
