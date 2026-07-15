@@ -88,7 +88,19 @@ services:
       # exactly the bug this fixes (billing used to be hard-pinned "false"
       # here no matter what .env said).
       LLM_GATEWAY_ENABLED: "true"
-      LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
+      # Deliberately NOT set: LLM_GATEWAY_BASE_URL is what gets handed straight
+      # to sandboxes as KORTIX_LLM_BASE_URL (see session-sandbox.ts /
+      # sandbox-env-sync.ts). It used to be pinned here to the compose-internal
+      # `llm-gateway` service (http://llm-gateway:8090/v1/llm) — a hostname a
+      # remote Daytona sandbox VM can never resolve, so every BYOK model call
+      # failed with opencode's "Cannot connect to API: Was there a typo in the
+      # url or port?" the moment a session tried to actually run a turn. Left
+      # unset, the fallback in session-sandbox.ts correctly resolves to
+      # `${KORTIX_URL}/v1/llm` — kortix-api's own in-process gateway mount,
+      # already reachable through the SAME public tunnel/domain origin every
+      # other sandbox call already uses. The standalone `llm-gateway` container
+      # below still runs (control-plane RPC at /internal/gateway), it's just
+      # never the sandbox-facing base URL in self-host.
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     depends_on:
