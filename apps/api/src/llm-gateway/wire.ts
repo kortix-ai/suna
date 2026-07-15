@@ -27,13 +27,23 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     llm.get('/health', (c) =>
       c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
     );
-    llm.post('/chat/completions', async (c) =>
+    const chat = async (c: import('hono').Context) =>
       gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
-      }),
-    );
-    llm.get('/models', (c) => gateway.listModels(c.req.header('authorization')));
+      });
+    const models = (c: import('hono').Context) =>
+      gateway.listModels(c.req.header('authorization'));
+    llm.post('/chat/completions', chat);
+    llm.get('/models', models);
+    // OpenAI-style clients (opencode's `kortix` provider among them) treat the
+    // base URL as an OpenAI ORIGIN and append `/v1/chat/completions` — so the
+    // in-process mount must also serve the `/v1/...`-prefixed shape, exactly
+    // like the standalone gateway pod does. Without this, a self-host whose
+    // public URL points at the API directly (tunnel/local mode, no Caddy
+    // /v1/llm* split) 404s every completion call.
+    llm.post('/v1/chat/completions', chat);
+    llm.get('/v1/models', models);
     app.route('/v1/llm', llm);
   }
 
