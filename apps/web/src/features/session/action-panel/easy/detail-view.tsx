@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import type { ToolPart } from '@/ui';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 
@@ -109,22 +109,34 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
 }
 
-/** Desktop-only ArrowLeft/ArrowRight while a detail with nav is open. A
- *  document listener (not a focused-element one) because the detail's body
- *  can put focus anywhere — a code block, an iframe's surrounding chrome, a
- *  button — and the shortcut should work regardless of which of those has
- *  focus, same as the reference browser chrome it's paging next to. */
-function useDetailNavKeyboard(nav: Detail['nav'], isMobile: boolean) {
+/**
+ * Desktop-only keyboard for the open detail — ArrowLeft/Right walks siblings,
+ * Escape closes back to home. One document listener carries both: a
+ * focused-element listener would miss most of the detail's body, since that
+ * body can put focus anywhere — a code block, an iframe's surrounding
+ * chrome, a button — same reasoning as the reference browser chrome this
+ * pages next to. Desktop-only because mobile is a vaul drawer, which already
+ * owns Escape/swipe-down itself; a second listener there would double-fire.
+ */
+function useDetailKeyboard(detail: Detail | null, isMobile: boolean, onBack: () => void) {
   useEffect(() => {
-    if (isMobile || !nav) return;
+    if (isMobile || !detail) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // The AppPreview address bar (and anything else typing-shaped) owns
+      // its own Arrow/Escape handling — e.g. its Escape resets-and-blurs.
       if (isTypingTarget(event.target)) return;
+      if (event.key === 'Escape') {
+        onBack();
+        return;
+      }
+      const nav = detail.nav;
+      if (!nav) return;
       if (event.key === 'ArrowLeft' && nav.prev) nav.prev();
       else if (event.key === 'ArrowRight' && nav.next) nav.next();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [nav, isMobile]);
+  }, [detail, isMobile, onBack]);
 }
 
 /**
@@ -150,10 +162,30 @@ export function DetailLayer({
 }) {
   const reduce = useReducedMotion();
   const transition = reduce ? { duration: 0 } : { duration: DURATION, ease: EASE };
+  const detailRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   // Desktop only — mobile has no keyboard to speak of, and the drawer's own
-  // buttons carry it instead (see `DetailNav`'s comment).
-  useDetailNavKeyboard(detail?.nav, isMobile);
+  // buttons (plus vaul's own Escape/swipe handling) carry it instead (see
+  // `DetailNav`'s comment).
+  useDetailKeyboard(detail, isMobile, onBack);
+
+  // Focus rides the layer: in on open (so Escape and the arrows work
+  // immediately, and keyboard focus can never remain inside the aria-hidden
+  // home), back to the invoking control on close. Keyed on `detail?.key` so
+  // paging to a sibling (nav) re-focuses the container too — harmless, since
+  // the keyboard listener above is document-level and doesn't care where
+  // focus sits. Harmless on mobile as well: `detailRef` never mounts there,
+  // so `.focus()` is just a no-op on a null ref.
+  useEffect(() => {
+    if (detail) {
+      restoreFocusRef.current = document.activeElement as HTMLElement | null;
+      requestAnimationFrame(() => detailRef.current?.focus());
+    } else {
+      restoreFocusRef.current?.focus?.();
+      restoreFocusRef.current = null;
+    }
+  }, [detail?.key]);
 
   // Mobile: the panel is already a bottom drawer. Stack a drawer, not a slide.
   if (isMobile) {
@@ -194,12 +226,18 @@ export function DetailLayer({
 
   return (
     <div className="relative h-full w-full shrink-0">
-      {/* Home. Slides a short way left and dims — present, just behind. */}
+      {/* Home. Slides a short way left and dims — present, just behind.
+          `inert` (native, zero-dependency) is what actually keeps it out of
+          the tab order and find-in-page while hidden — `aria-hidden` alone
+          only hides it from assistive tech, and `pointer-events-none` only
+          blocks the mouse; neither stops Shift+Tab walking backward into it
+          from the freshly-focused detail. */}
       <motion.div
         animate={open ? { x: '-12%', opacity: 0 } : { x: 0, opacity: 1 }}
         transition={transition}
         className={cn('h-full w-full', open && 'pointer-events-none')}
         aria-hidden={open}
+        inert={open || undefined}
       >
         {children}
       </motion.div>
@@ -208,6 +246,11 @@ export function DetailLayer({
         {detail && (
           <motion.div
             key={detail.key}
+            role="dialog"
+            aria-modal="true"
+            aria-label={detail.title}
+            tabIndex={-1}
+            ref={detailRef}
             initial={reduce ? { opacity: 0 } : { x: '100%' }}
             animate={reduce ? { opacity: 1 } : { x: 0 }}
             exit={reduce ? { opacity: 0 } : { x: '100%' }}

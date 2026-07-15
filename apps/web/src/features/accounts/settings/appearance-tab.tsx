@@ -173,9 +173,15 @@ export function AppearanceTab() {
 
       <div className="flex flex-col space-y-2">
         <label className="text-muted-foreground text-sm font-medium">Session panel</label>
-        <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
+        <div
+          role="radiogroup"
+          aria-label="Session panel mode"
+          className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5"
+        >
           <button
             type="button"
+            role="radio"
+            aria-checked={panelMode === 'easy'}
             aria-label="Easy mode"
             className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
             style={{ backgroundColor: panelMode === 'easy' ? 'var(--background)' : 'transparent' }}
@@ -188,6 +194,8 @@ export function AppearanceTab() {
           </button>
           <button
             type="button"
+            role="radio"
+            aria-checked={panelMode === 'advanced'}
             aria-label="Advanced mode"
             className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
             style={{
