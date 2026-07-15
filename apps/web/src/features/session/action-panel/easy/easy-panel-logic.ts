@@ -4,6 +4,7 @@
  */
 
 import type { OutputItem } from '../shared/derive-panels';
+import type { RunOutcome } from '../shared/run-outcome';
 
 /**
  * React key for one Outputs row.
@@ -59,4 +60,30 @@ export function shouldAutoExpandOutputs(
  */
 export function deriveIsRunning(stepsRunning: boolean, sessionBusy: boolean): boolean {
   return stepsRunning || sessionBusy;
+}
+
+/**
+ * Whether the panel should present the primary deliverable on this render —
+ * the payoff screen (W2). Same transition discipline as
+ * `shouldAutoExpandOutputs`, with three extra refusals: a failed or stopped
+ * run presents its outcome, not a payoff; an open detail is never replaced;
+ * and a user who opened any detail during the run has shown they're driving —
+ * auto-opening would fight them.
+ */
+export function shouldAutoOpenPayoff(args: {
+  wasRunning: boolean;
+  isRunning: boolean;
+  outcome: RunOutcome;
+  hasPrimary: boolean;
+  detailOpen: boolean;
+  interactedThisRun: boolean;
+}): boolean {
+  return (
+    args.wasRunning &&
+    !args.isRunning &&
+    args.outcome === 'succeeded' &&
+    args.hasPrimary &&
+    !args.detailOpen &&
+    !args.interactedThisRun
+  );
 }

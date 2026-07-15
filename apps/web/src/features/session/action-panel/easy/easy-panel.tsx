@@ -20,7 +20,11 @@
  */
 
 import { useIsMobile } from '@/hooks/utils';
-import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
+import {
+  useClearFocusedToolCall,
+  useFocusedToolCallId,
+  useKortixComputerStore,
+} from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
 import { FileText } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,11 +32,13 @@ import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
 import { derivePlan } from '../shared/derive-plan';
 import { groupSteps } from '../shared/group-steps';
-import { sortOutputs } from '../shared/output-priority';
+import { latestRunCallIds } from '../shared/latest-run';
+import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
+import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
 import { ContextCard } from './context-card';
 import { type Detail, DetailLayer, ToolParts } from './detail-view';
-import { deriveIsRunning, shouldAutoExpandOutputs } from './easy-panel-logic';
+import { deriveIsRunning, shouldAutoExpandOutputs, shouldAutoOpenPayoff } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
 import { AppsCard } from './apps-card';
 import { OutputsCard } from './outputs-card';
@@ -51,7 +57,8 @@ export const EasyPanel = memo(function EasyPanel({
 }) {
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
   const steps = useMemo(() => groupSteps(parts), [parts]);
-  const outputs = useMemo(() => deriveOutputs(parts), [parts]);
+  const latestIds = useMemo(() => latestRunCallIds(messages), [messages]);
+  const outputs = useMemo(() => deriveOutputs(parts, { latestRun: latestIds }), [parts, latestIds]);
   const context = useMemo(() => deriveContext(parts), [parts]);
 
   // The agent's own checklist — what Progress shows now. Steps are still derived,
@@ -71,10 +78,17 @@ export const EasyPanel = memo(function EasyPanel({
   // Sorted, not filtered: everything the agent produced is still here, but the
   // report leads and the twelve files it took to build the report follow. See
   // `sortOutputs` — chronological order buries the answer under its scaffolding.
-  const files = useMemo(
-    () => sortOutputs(outputs.filter((o) => o.kind !== 'app')),
-    [outputs],
-  );
+  //
+  // Fresh-first inside the human ranking: the latest run's deliverables lead,
+  // then everything the session has ever produced, each group in sortOutputs
+  // order. A returning user sees what's new without losing what's old.
+  const files = useMemo(() => {
+    const nonApps = outputs.filter((o) => o.kind !== 'app');
+    return [
+      ...sortOutputs(nonApps.filter((o) => o.fresh)),
+      ...sortOutputs(nonApps.filter((o) => !o.fresh)),
+    ];
+  }, [outputs]);
 
   // Part-derived alone flickers between tool calls (assistant text streams
   // with no part running/pending) — OR it with the session's own status so
@@ -92,6 +106,41 @@ export const EasyPanel = memo(function EasyPanel({
   // another detail, so Back behaves identically wherever you came from.
   const [detail, setDetail] = useState<Detail | null>(null);
 
+  /**
+   * Opening an output shows the THING, not the machinery around it: a running
+   * app opens as the app, a file opens as that one file — never the file
+   * manager, which is a filing cabinet in answer to "show me the page".
+   *
+   * Both bring their own toolbar, so the layer's header is suppressed for both
+   * (one bar, not two), and both fill the pane, so neither takes the layer's
+   * padding.
+   *
+   * Declared here (not near the JSX) so the payoff/chip-consume effects below
+   * can depend on it.
+   */
+  const handleOpenOutput = useCallback((output: OutputItem) => {
+    if (output.kind === 'app' && output.url) {
+      setDetail({
+        key: `app:${output.url}`,
+        title: output.name,
+        hideHeader: true,
+        padded: false,
+        body: <AppPreview url={output.url} name={output.name} onClose={() => setDetail(null)} />,
+      });
+      return;
+    }
+
+    if (!output.path) return;
+    setDetail({
+      key: `file:${output.path}`,
+      title: output.name,
+      icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
+      hideHeader: true,
+      padded: false,
+      body: <FilePreview path={output.path} name={output.name} onClose={() => setDetail(null)} />,
+    });
+  }, []);
+
   // Auto-expand Outputs the moment a run finishes with something to show —
   // never on every render of an already-finished (or still-running) run.
   const wasRunningRef = useRef(isRunning);
@@ -102,6 +151,48 @@ export const EasyPanel = memo(function EasyPanel({
     }
     wasRunningRef.current = isRunning;
   }, [isRunning, files.length]);
+
+  const outcome = useMemo(
+    () => deriveRunOutcome(messages, steps[steps.length - 1]?.status),
+    [messages, steps],
+  );
+
+  // Payoff (W2): present the primary deliverable exactly once, at the finish,
+  // and only when the user hasn't taken the wheel themselves this run.
+  const interactedThisRunRef = useRef(false);
+  useEffect(() => {
+    if (detail !== null) interactedThisRunRef.current = true;
+  }, [detail]);
+  const prevRunningRef = useRef(isRunning);
+  useEffect(() => {
+    const wasRunning = prevRunningRef.current;
+    if (!wasRunning && isRunning) interactedThisRunRef.current = false;
+    prevRunningRef.current = isRunning;
+    const primary = selectPrimaryDeliverable(apps, files);
+    if (
+      shouldAutoOpenPayoff({
+        wasRunning,
+        isRunning,
+        outcome,
+        hasPrimary: primary !== null,
+        detailOpen: detail !== null,
+        interactedThisRun: interactedThisRunRef.current,
+      }) &&
+      primary
+    ) {
+      handleOpenOutput(primary);
+    }
+  }, [isRunning, outcome, detail, apps, files, handleOpenOutput]);
+
+  // Chip tap (W1→W2 handoff): the header asked us to open the primary
+  // deliverable the moment we mount with the panel now open.
+  const consumePrimaryOpen = useKortixComputerStore((s) => s.consumePrimaryOpen);
+  useEffect(() => {
+    if (!consumePrimaryOpen(sessionId)) return;
+    const primary = selectPrimaryDeliverable(apps, files);
+    if (primary) handleOpenOutput(primary);
+    // Deliberately once per mount-ish tick: consumePrimaryOpen is one-shot.
+  }, [consumePrimaryOpen, sessionId, apps, files, handleOpenOutput]);
 
   /**
    * A tool call clicked in the CHAT opens that tool's real view in the panel.
@@ -127,38 +218,6 @@ export const EasyPanel = memo(function EasyPanel({
     }
     clearFocusedToolCall();
   }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId]);
-
-  /**
-   * Opening an output shows the THING, not the machinery around it: a running
-   * app opens as the app, a file opens as that one file — never the file
-   * manager, which is a filing cabinet in answer to "show me the page".
-   *
-   * Both bring their own toolbar, so the layer's header is suppressed for both
-   * (one bar, not two), and both fill the pane, so neither takes the layer's
-   * padding.
-   */
-  const handleOpenOutput = useCallback((output: OutputItem) => {
-    if (output.kind === 'app' && output.url) {
-      setDetail({
-        key: `app:${output.url}`,
-        title: output.name,
-        hideHeader: true,
-        padded: false,
-        body: <AppPreview url={output.url} name={output.name} onClose={() => setDetail(null)} />,
-      });
-      return;
-    }
-
-    if (!output.path) return;
-    setDetail({
-      key: `file:${output.path}`,
-      title: output.name,
-      icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
-      hideHeader: true,
-      padded: false,
-      body: <FilePreview path={output.path} name={output.name} onClose={() => setDetail(null)} />,
-    });
-  }, []);
 
   const goHome = useCallback(() => setDetail(null), []);
 

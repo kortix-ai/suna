@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
-import { deriveIsRunning, outputKey, shouldAutoExpandOutputs } from './easy-panel-logic';
+import {
+  deriveIsRunning,
+  outputKey,
+  shouldAutoExpandOutputs,
+  shouldAutoOpenPayoff,
+} from './easy-panel-logic';
 
 type FileOutputItem = Exclude<OutputItem, { kind: 'app' }> & { kind: 'file' };
 
@@ -86,5 +91,33 @@ describe('deriveIsRunning', () => {
 
   it('is false only when neither signal says the run is active', () => {
     expect(deriveIsRunning(false, false)).toBe(false);
+  });
+});
+
+describe('shouldAutoOpenPayoff (W2)', () => {
+  const base = {
+    wasRunning: true,
+    isRunning: false,
+    outcome: 'succeeded' as const,
+    hasPrimary: true,
+    detailOpen: false,
+    interactedThisRun: false,
+  };
+
+  test('fires exactly at the successful running→idle transition with a primary', () => {
+    expect(shouldAutoOpenPayoff(base)).toBe(true);
+  });
+
+  test('never without a transition, primary, or success', () => {
+    expect(shouldAutoOpenPayoff({ ...base, wasRunning: false })).toBe(false);
+    expect(shouldAutoOpenPayoff({ ...base, isRunning: true })).toBe(false);
+    expect(shouldAutoOpenPayoff({ ...base, hasPrimary: false })).toBe(false);
+    expect(shouldAutoOpenPayoff({ ...base, outcome: 'failed' })).toBe(false);
+    expect(shouldAutoOpenPayoff({ ...base, outcome: 'stopped' })).toBe(false);
+  });
+
+  test('never steals from a user who is (or was) looking at a detail this run', () => {
+    expect(shouldAutoOpenPayoff({ ...base, detailOpen: true })).toBe(false);
+    expect(shouldAutoOpenPayoff({ ...base, interactedThisRun: true })).toBe(false);
   });
 });
