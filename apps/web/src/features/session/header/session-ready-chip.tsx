@@ -23,7 +23,9 @@ function chipLabel(chip: ReadyChipState): string {
   switch (chip.outcome) {
     case 'ready':
       if (chip.primaryName) return `${chip.primaryName} is ready`;
-      return chip.count === 1 ? '1 file ready' : `${chip.count} files ready`;
+      // "files" undersells a run whose deliverables aren't all files (a live
+      // app, a deck) — "results" covers every kind without naming one.
+      return chip.count === 1 ? '1 result ready' : `${chip.count} results ready`;
     case 'failed':
       return 'Something went wrong';
     case 'stopped':

@@ -25,7 +25,14 @@ describe('SessionReadyChip', () => {
 
   test('multiple deliverables with no primary name count them', () => {
     useKortixComputerStore.getState().setReadyChip({ sessionId: 's1', outcome: 'ready', count: 3 });
-    expect(renderToStaticMarkup(<SessionReadyChip sessionId="s1" />)).toContain('3 files ready');
+    expect(renderToStaticMarkup(<SessionReadyChip sessionId="s1" />)).toContain('3 results ready');
+  });
+
+  // ─── MINOR SWEEP (d) — "files" undersold a run whose deliverables aren't
+  // all files (a live app, a deck); "results" covers every kind. ──
+  test('a single deliverable with no primary name uses the singular', () => {
+    useKortixComputerStore.getState().setReadyChip({ sessionId: 's1', outcome: 'ready', count: 1 });
+    expect(renderToStaticMarkup(<SessionReadyChip sessionId="s1" />)).toContain('1 result ready');
   });
 
   test('failed, stopped, and needs-input variants say what happened', () => {

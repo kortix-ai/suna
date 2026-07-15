@@ -32,4 +32,20 @@ describe('uniqueZipNames (W15)', () => {
   test('names without an extension still dedupe', () => {
     expect(uniqueZipNames(['LICENSE', 'LICENSE'])).toEqual(['LICENSE', 'LICENSE-2']);
   });
+
+  // ─── MINOR SWEEP (b) — a colon (and the rest of Windows' reserved set) in
+  // an entry name breaks extraction on Windows even though the zip itself
+  // built fine on macOS/Linux. Sanitize before dedup so the zip is
+  // extractable cross-platform. ──
+  test('sanitizes characters that break Windows extraction', () => {
+    expect(uniqueZipNames(['Pitch: intro.pptx'])).toEqual(['Pitch- intro.pptx']);
+    expect(uniqueZipNames(['a<b>c|d?e*f"g.txt'])).toEqual(['a-b-c-d-e-f-g.txt']);
+  });
+
+  test('sanitized collisions still dedupe against each other', () => {
+    expect(uniqueZipNames(['Pitch: v1.pptx', 'Pitch- v1.pptx'])).toEqual([
+      'Pitch- v1.pptx',
+      'Pitch- v1-2.pptx',
+    ]);
+  });
 });

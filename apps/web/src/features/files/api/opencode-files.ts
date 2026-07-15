@@ -97,12 +97,20 @@ async function listAllFilesRecursive(dirPath: string): Promise<string[]> {
   return results;
 }
 
+/** Characters Windows Explorer's extractor (and NTFS itself) refuses in a
+ * filename — most notably `:`, which turns "Pitch: intro.pptx" into a
+ * silently-truncated or failed extraction on Windows even though macOS/Linux
+ * accept it fine. Replaced with '-' before dedup so the zip is extractable
+ * cross-platform, not just on the OS the agent happened to build it on. */
+const UNSAFE_ZIP_NAME_CHARS = /[:\\/<>|?*"]/g;
+
 /** Zip entry names must be unique; outputs often share basenames across dirs
  * (`report.md` from two different tool calls). Collisions get a `-2`, `-3`, …
  * suffix inserted before the extension, so the file stays recognizable. */
 export function uniqueZipNames(names: string[]): string[] {
   const used = new Map<string, number>();
-  return names.map((name) => {
+  return names.map((rawName) => {
+    const name = rawName.replace(UNSAFE_ZIP_NAME_CHARS, '-');
     const count = (used.get(name) ?? 0) + 1;
     used.set(name, count);
     if (count === 1) return name;

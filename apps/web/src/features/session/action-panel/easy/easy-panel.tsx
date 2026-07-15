@@ -365,6 +365,13 @@ export const EasyPanel = memo(function EasyPanel({
    * the panel nothing: the affordance lives in the chat, so there is no new
    * thing to click here and no new way to get lost. The user asked to see one
    * specific thing; they see that thing.
+   *
+   * `panel_opened` is tracked in `session-chat.tsx`'s `handleToolActivate`,
+   * NOT here (MINOR SWEEP c): by the time this effect runs, the store's
+   * `focusToolCall` action has already flipped `isSidePanelOpen` to true, so
+   * a "was it already open?" read at this point would always answer "yes"
+   * and the event would never fire honestly. `handleToolActivate` is the
+   * only point in the flow where the pre-open state is still observable.
    */
   const focusedToolCallId = useFocusedToolCallId();
   const clearFocusedToolCall = useClearFocusedToolCall();
@@ -372,7 +379,6 @@ export const EasyPanel = memo(function EasyPanel({
     if (!focusedToolCallId) return;
     const step = stepForCallId(steps, focusedToolCallId);
     if (step) {
-      track('panel_opened', { source: 'chat_tool' });
       setDetail({
         key: `step:${step.id}`,
         title: step.label,

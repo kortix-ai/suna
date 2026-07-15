@@ -110,6 +110,7 @@ import {
   buildFileRefsBlock,
 } from '@/lib/project-preamble';
 import { playSound } from '@/lib/sounds';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import {
   type KortixSystemMessage,
@@ -3339,8 +3340,17 @@ export function SessionChat({
   const setSidePanelView = useSessionBrowserStore((s) => s.setView);
   const handleToolActivate = useCallback(
     (callID: string) => {
+      // Telemetry honesty (MINOR SWEEP c): the panel's own chat-focus effect
+      // (`easy-panel.tsx`) can't tell whether this open was fresh — by the
+      // time that effect runs, `focusToolCall` has already flipped
+      // `isSidePanelOpen` to true, so reading the store there always reports
+      // "already open". This callback is the only point in the flow where
+      // the PRE-open state is still observable, so the `panel_opened` event
+      // is tracked here instead, gated on that read.
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
       setSidePanelView(sessionId, 'actions');
       focusToolCall(callID);
+      if (!wasOpen) track('panel_opened', { source: 'chat_tool' });
     },
     [sessionId, setSidePanelView, focusToolCall],
   );
