@@ -133,6 +133,20 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   const startMutation = useMutation({
     mutationFn: () => startGitHubAppManifest({ org: org.trim() || undefined }),
     onSuccess: ({ github_create_url, manifest, state }) => {
+      // Guard: never POST a malformed manifest to GitHub — that's what produces
+      // the opaque "'url' wasn't supplied" error page. If the homepage url is
+      // missing, surface a clear message instead of bouncing to GitHub.
+      if (!manifest || typeof manifest.url !== 'string' || !manifest.url.startsWith('http')) {
+        // eslint-disable-next-line no-console
+        console.error('[github-app] manifest is malformed, not submitting:', manifest);
+        errorToast('GitHub setup failed', {
+          description:
+            'The app manifest came back without a valid homepage URL. Retry, or use the token option below.',
+        });
+        return;
+      }
+      // eslint-disable-next-line no-console
+      console.debug('[github-app] submitting manifest to GitHub:', manifest);
       submitManifestForm(github_create_url, state, manifest);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to start GitHub App setup'),
@@ -255,7 +269,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                   <Input
                     value={org}
                     onChange={(e) => setOrg(e.target.value)}
-                    placeholder="e.g. Essentia-Innovation"
+                    placeholder="e.g. acme-inc"
                     disabled={startMutation.isPending}
                     variant="popover"
                   />
@@ -368,7 +382,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                   <Input
                     value={patOwner}
                     onChange={(e) => setPatOwner(e.target.value)}
-                    placeholder="e.g. Essentia-Innovation"
+                    placeholder="e.g. acme-inc"
                     disabled={patMutation.isPending}
                     variant="popover"
                   />

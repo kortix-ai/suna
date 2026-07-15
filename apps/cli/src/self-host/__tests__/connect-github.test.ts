@@ -58,8 +58,8 @@ describe('buildAppManifest', () => {
 
 describe('buildCreateAppUrl', () => {
   test('an org targets the org-scoped settings path with the state query param', () => {
-    const url = buildCreateAppUrl({ org: 'Essentia-Innovation', state: 'st4te' });
-    expect(url).toBe('https://github.com/organizations/Essentia-Innovation/settings/apps/new?state=st4te');
+    const url = buildCreateAppUrl({ org: 'acme-inc', state: 'st4te' });
+    expect(url).toBe('https://github.com/organizations/acme-inc/settings/apps/new?state=st4te');
   });
 
   test('no org (personal account) targets the unscoped settings path', () => {
@@ -182,14 +182,14 @@ describe('buildAppCredentialsEnvPatch (env-wiring, step after manifest exchange)
 
 describe('buildManagedGitEnvPatch (env-wiring, step after install)', () => {
   test('sets provider/owner/install_id and clears any stale PAT so the App path is authoritative', () => {
-    const patch = buildManagedGitEnvPatch({ owner: 'Essentia-Innovation', installationId: '789' });
+    const patch = buildManagedGitEnvPatch({ owner: 'acme-inc', installationId: '789' });
     expect(patch).toEqual({
       MANAGED_GIT_PROVIDER: 'github',
-      MANAGED_GIT_GITHUB_OWNER: 'Essentia-Innovation',
+      MANAGED_GIT_GITHUB_OWNER: 'acme-inc',
       MANAGED_GIT_GITHUB_INSTALL_ID: '789',
       MANAGED_GIT_GITHUB_TOKEN: '',
       KORTIX_GITHUB_TOKEN: '',
-      KORTIX_GITHUB_OWNER: 'Essentia-Innovation',
+      KORTIX_GITHUB_OWNER: 'acme-inc',
     });
   });
 });
@@ -296,11 +296,11 @@ describe('fetchAppInstallation (network call, injected fetch)', () => {
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       capturedAuth = (init?.headers as Record<string, string>).Authorization;
       expect(url).toBe('https://api.github.com/app/installations/789');
-      return new Response(JSON.stringify({ account: { login: 'Essentia-Innovation', type: 'Organization' } }), { status: 200 });
+      return new Response(JSON.stringify({ account: { login: 'acme-inc', type: 'Organization' } }), { status: 200 });
     }) as typeof fetch;
 
     const result = await fetchAppInstallation({ appId: '1', privateKeyPem: pem, installationId: '789', fetchImpl });
-    expect(result).toEqual({ login: 'Essentia-Innovation', type: 'Organization' });
+    expect(result).toEqual({ login: 'acme-inc', type: 'Organization' });
     expect(capturedAuth).toMatch(/^Bearer ey/);
   });
 
