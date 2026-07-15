@@ -200,6 +200,22 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       '127.0.0.1:${POSTGRES_PORT}:5432',
       '127.0.0.1:${POOLER_PORT}:6543',
     ];
+    // supavisor's entrypoint (limits.sh) unconditionally runs `ulimit -n 100000`
+    // before starting. Containers with no explicit `ulimits:` inherit the
+    // HOST's default open-files limit (systemd DefaultLimitNOFILE, or
+    // /etc/security/limits.conf) rather than something generously high — on
+    // plenty of real VPS/EC2 images that default is well under 100000 (e.g.
+    // 65535), `ulimit -n 100000` then fails with EPERM, and (the script running
+    // under `set -e`) the container exits 1 and restart-loops forever, so
+    // Postgres access via the pooler never comes up. Pin it explicitly so this
+    // doesn't depend on host ulimit defaults. Matches the old enterprise
+    // appliance's docker-compose.enterprise.yml override for this service.
+    supavisor.ulimits = {
+      nofile: {
+        soft: 100000,
+        hard: 100000,
+      },
+    };
   }
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {

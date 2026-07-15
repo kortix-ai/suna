@@ -76,6 +76,23 @@ describe('full self-host Docker distribution', () => {
     }
   });
 
+  test('supavisor carries an explicit nofile ulimits override (100000/100000)', () => {
+    // supavisor's entrypoint (limits.sh) unconditionally runs `ulimit -n
+    // 100000` before starting. Without an explicit `ulimits:` override, the
+    // container inherits the HOST's default open-files limit, which is well
+    // under 100000 on plenty of real VPS/EC2 images — `ulimit -n 100000` then
+    // fails with EPERM and the container restart-loops forever (confirmed
+    // live on a demo EC2 box). This mirrors the old enterprise appliance's
+    // docker-compose.enterprise.yml override, restored here for the generic
+    // compose file.
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { ulimits?: { nofile?: { soft?: number; hard?: number } } }>;
+    };
+    expect(document.services['supabase-supavisor']?.ulimits).toEqual({
+      nofile: { soft: 100000, hard: 100000 },
+    });
+  });
+
   test('omits the caddy reverse-proxy service when no domain is configured', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, unknown>;
