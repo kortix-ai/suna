@@ -32,7 +32,7 @@ import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
 import { derivePlan } from '../shared/derive-plan';
 import { groupSteps } from '../shared/group-steps';
-import { latestRunCallIds } from '../shared/latest-run';
+import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
 import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
@@ -66,10 +66,12 @@ export const EasyPanel = memo(function EasyPanel({
   // longer rendered. A transcript of tool calls is an audit trail, and that lives
   // in Advanced mode.
   const plan = useMemo(() => derivePlan(parts), [parts]);
-  const elapsedMs = useMemo(
-    () => steps.reduce((total, step) => total + (step.durationMs ?? 0), 0),
-    [steps],
-  );
+  // The latest run's wall-clock, not the session's lifetime sum — "6 of 6 done
+  // · 3h 40m" across a week of runs answers a question nobody asked (W11).
+  const elapsedMs = useMemo(() => {
+    const latest = groupSteps(collectAllToolParts(latestRunMessages(messages)));
+    return latest.reduce((total, step) => total + (step.durationMs ?? 0), 0);
+  }, [messages]);
 
   // A running app is not "one of" the outputs — it's the thing the user asked
   // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
@@ -141,21 +143,25 @@ export const EasyPanel = memo(function EasyPanel({
     });
   }, []);
 
-  // Auto-expand Outputs the moment a run finishes with something to show —
-  // never on every render of an already-finished (or still-running) run.
-  const wasRunningRef = useRef(isRunning);
-  const [outputsDefaultOpen, setOutputsDefaultOpen] = useState(false);
-  useEffect(() => {
-    if (shouldAutoExpandOutputs(wasRunningRef.current, isRunning, files.length)) {
-      setOutputsDefaultOpen(true);
-    }
-    wasRunningRef.current = isRunning;
-  }, [isRunning, files.length]);
-
   const outcome = useMemo(
     () => deriveRunOutcome(messages, steps[steps.length - 1]?.status),
     [messages, steps],
   );
+
+  // Auto-expand Outputs the moment a run finishes with something to show —
+  // never on every render of an already-finished (or still-running) run, and
+  // never on a failed one: a pile of half-written files is not a celebration.
+  const wasRunningRef = useRef(isRunning);
+  const [outputsDefaultOpen, setOutputsDefaultOpen] = useState(false);
+  useEffect(() => {
+    if (
+      outcome === 'succeeded' &&
+      shouldAutoExpandOutputs(wasRunningRef.current, isRunning, files.length)
+    ) {
+      setOutputsDefaultOpen(true);
+    }
+    wasRunningRef.current = isRunning;
+  }, [isRunning, files.length, outcome]);
 
   // Payoff (W2): present the primary deliverable exactly once, at the finish,
   // and only when the user hasn't taken the wheel themselves this run.
@@ -229,7 +235,7 @@ export const EasyPanel = memo(function EasyPanel({
   return (
     <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
       <div className="flex h-full flex-col gap-3 overflow-auto p-3">
-        <ProgressCard plan={plan} isRunning={isRunning} elapsedMs={elapsedMs} />
+        <ProgressCard plan={plan} isRunning={isRunning} elapsedMs={elapsedMs} outcome={outcome} />
         <OutputsCard
           outputs={files}
           defaultExpanded={outputsDefaultOpen}

@@ -25,6 +25,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { cn } from '@/lib/utils';
 import { TodoStatusIcon, type TodoItem } from '../../tool/shared/todo-helpers';
 import { planProgress } from '../shared/derive-plan';
+import type { RunOutcome } from '../shared/run-outcome';
 import { PanelCard } from './panel-card';
 import { formatDuration } from './progress-summary';
 
@@ -32,19 +33,34 @@ export function ProgressCard({
   plan,
   isRunning,
   elapsedMs,
+  outcome,
 }: {
   /** The agent's checklist. Empty when it never made one — many short runs don't. */
   plan: TodoItem[];
   isRunning: boolean;
   elapsedMs?: number;
+  /** How the run ended. Only read once settled — a running run has no outcome yet. */
+  outcome: RunOutcome;
 }) {
   const { done, total, current } = planProgress(plan);
   const duration = elapsedMs ? formatDuration(elapsedMs) : '';
 
-  // No plan and nothing happening: there is nothing truthful to say. A card whose
-  // only content would be a restatement of the chat should not exist — Outputs
-  // and Apps carry the payoff.
-  if (total === 0 && !isRunning) return null;
+  // Nothing planned, nothing running, nothing wrong: nothing truthful to say.
+  // But a FAILED or STOPPED run must say so even with no plan — silence here
+  // is the panel claiming a broken run finished fine (W7).
+  if (total === 0 && !isRunning) {
+    if (outcome === 'succeeded') return null;
+    return (
+      <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
+        <span className="text-foreground truncate text-sm">
+          {outcome === 'stopped' ? 'Stopped by you' : 'Something went wrong'}
+        </span>
+        {duration && (
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{duration}</span>
+        )}
+      </div>
+    );
+  }
 
   // No plan, but still working. One live line is the whole message.
   if (total === 0) {
@@ -60,7 +76,16 @@ export function ProgressCard({
     );
   }
 
-  const subtitle = isRunning && current ? current.content : `${done} of ${total} done`;
+  const OUTCOME_PREFIX: Record<RunOutcome, string> = {
+    succeeded: '',
+    failed: 'Something went wrong · ',
+    stopped: 'Stopped by you · ',
+  };
+
+  const subtitle =
+    isRunning && current
+      ? `Step ${Math.min(done + 1, total)} of ${total} · ${current.content}`
+      : `${OUTCOME_PREFIX[outcome]}${done} of ${total} done`;
 
   return (
     <PanelCard

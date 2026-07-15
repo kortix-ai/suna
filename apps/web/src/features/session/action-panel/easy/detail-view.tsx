@@ -207,6 +207,13 @@ export function collapseSnapshots(parts: ToolPart[]): ToolPart[] {
 /** The real tool views for a set of calls — the escape hatch's payload. */
 export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: string }) {
   const visible = collapseSnapshots(parts);
+  // A step's own icon already went red for this (StepIcon, ContextCard) — but
+  // that badge is one glance from the panel's home. Once the user has actually
+  // opened the failed step, the detail must say so too, not just show a tool
+  // view that looks the same as a success (W7).
+  const failed = visible.some(
+    (part) => (part.state as { status?: string } | undefined)?.status === 'error',
+  );
 
   return (
     <ToolSurfaceContext.Provider value="panel">
@@ -221,6 +228,11 @@ export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: 
           '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
         )}
       >
+        {failed && (
+          <div className="border-kortix-red/30 bg-kortix-red/5 text-foreground rounded-md border px-3 py-2 text-sm">
+            This step hit a problem — the details below show what happened.
+          </div>
+        )}
         {visible.map((part) => (
           <ToolPartRenderer key={part.callID} part={part} sessionId={sessionId} defaultOpen />
         ))}

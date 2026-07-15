@@ -78,11 +78,17 @@ export function ContextCard({
   // places. A tool badge's detail shows what it actually did.
   for (const tool of tools) {
     const family: StepFamily = (familyForTool(tool.parts?.[0]?.tool ?? '') as StepFamily) ?? 'other';
+    // `deriveContext` skips *fully* errored calls, but this chip aggregates ALL
+    // calls to that tool — one failed call among several is exactly what a
+    // status="done" badge would hide (W7).
+    const failed = (tool.parts ?? []).some(
+      (p) => (p.state as { status?: string } | undefined)?.status === 'error',
+    );
     groups.push({
       id: tool.callID,
       label: tool.label,
       count: tool.parts?.length ?? 1,
-      icon: <StepIcon family={family} status="done" />,
+      icon: <StepIcon family={family} status={failed ? 'error' : 'done'} />,
       body: <ToolParts parts={tool.parts ?? []} sessionId={sessionId} />,
     });
   }
