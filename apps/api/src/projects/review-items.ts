@@ -10,9 +10,20 @@
 
 import { changeRequests, executorExecutions, reviewItems } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+// Lives in the telegram channel module to reuse its solved sandbox auth; the
+// Review Center consumes it read-only. Move to a shared sandbox-permission
+// module if a third caller appears.
+import {
+  type SandboxPermissionRow,
+  listProjectPendingPermissions,
+} from '../channels/telegram/question-relay';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
-import { changeRequestToReviewItem, executorExecutionToReviewItem } from './review-adapters';
+import {
+  changeRequestToReviewItem,
+  executorExecutionToReviewItem,
+  sandboxPermissionToReviewItem,
+} from './review-adapters';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
@@ -109,6 +120,9 @@ export interface InboxSources {
   native: () => Promise<ReviewItemRow[]>;
   changeRequests: () => Promise<ChangeRequestRow[]>;
   executorApprovals: () => Promise<ExecutorExecutionRow[]>;
+  /** Live opencode permissions across the project's sandboxes (fetched, not a DB
+   *  table) — the same blocking asks relayed to Telegram, shown in the inbox. */
+  sandboxPermissions: () => Promise<SandboxPermissionRow[]>;
 }
 
 /**
@@ -159,15 +173,17 @@ export async function collectInboxItems(
   sources: InboxSources,
   opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
 ) {
-  const [nativeRows, crRows, execRows] = await Promise.all([
+  const [nativeRows, crRows, execRows, permRows] = await Promise.all([
     safeSource('native', sources.native),
     safeSource('change_requests', sources.changeRequests),
     safeSource('executor_executions', sources.executorApprovals),
+    safeSource('sandbox_permissions', sources.sandboxPermissions),
   ]);
   const items = [
     ...safeMap('native', nativeRows, serializeReviewItem),
     ...safeMap('change_requests', crRows, changeRequestToReviewItem),
     ...safeMap('executor_executions', execRows, executorExecutionToReviewItem),
+    ...safeMap('sandbox_permissions', permRows, sandboxPermissionToReviewItem),
   ];
   const segmentStatuses = opts.segment ? statusesForSegment(opts.segment) : null;
   return items
@@ -185,8 +201,7 @@ export async function listInboxItems(
 ) {
   return collectInboxItems(
     {
-      native: () =>
-        db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
+      native: () => db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
       changeRequests: () =>
         db.select().from(changeRequests).where(eq(changeRequests.projectId, projectId)),
       executorApprovals: () =>
@@ -199,6 +214,7 @@ export async function listInboxItems(
               eq(executorExecutions.status, 'pending_approval'),
             ),
           ),
+      sandboxPermissions: () => listProjectPendingPermissions(projectId),
     },
     opts,
   );

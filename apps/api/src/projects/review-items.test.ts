@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { collectInboxItems, type InboxSources } from './review-items';
+import { type InboxSources, collectInboxItems } from './review-items';
 
 // review_items row factory (only the fields serializeReviewItem touches).
 function nativeRow(over: Partial<Record<string, unknown>> = {}) {
@@ -38,6 +38,7 @@ describe('collectInboxItems fault isolation', () => {
       native: async () => [nativeRow()],
       changeRequests: throwing('change_requests'),
       executorApprovals: throwing('executor_executions'),
+      sandboxPermissions: async () => [],
     };
 
     const items = await collectInboxItems(sources);
@@ -52,6 +53,7 @@ describe('collectInboxItems fault isolation', () => {
       native: throwing('native'),
       changeRequests: throwing('change_requests'),
       executorApprovals: throwing('executor_executions'),
+      sandboxPermissions: async () => [],
     };
 
     // The point of the fix: this must resolve to [], not reject → the route
@@ -69,6 +71,7 @@ describe('collectInboxItems fault isolation', () => {
       ],
       changeRequests: async () => [],
       executorApprovals: async () => [],
+      sandboxPermissions: async () => [],
     };
 
     const items = await collectInboxItems(sources);
@@ -85,6 +88,7 @@ describe('collectInboxItems fault isolation', () => {
       ],
       changeRequests: async () => [],
       executorApprovals: async () => [],
+      sandboxPermissions: async () => [],
     };
 
     const needsYou = await collectInboxItems(sources, { segment: 'needs_you' });

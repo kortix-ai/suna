@@ -270,6 +270,36 @@ export async function submitTelegramPermissionReply(
   }
 }
 
+/** Every pending opencode permission across a project's live sandboxes, tagged
+ *  with its kortix sessionId. Powers the Review Center's sandbox-permission
+ *  source so the SAME permission is approvable from the web, not just Telegram.
+ *  Fetched live (permissions live in the sandbox, not the DB) — the caller
+ *  fault-isolates it. NB: lives here for now to reuse sandboxCall; belongs in a
+ *  shared sandbox-permission module if a second non-telegram caller appears. */
+export interface SandboxPermissionRow extends PendingPermission {
+  sessionId: string;
+  accountId: string;
+  projectId: string;
+}
+
+export async function listProjectPendingPermissions(
+  projectId: string,
+): Promise<SandboxPermissionRow[]> {
+  const rows = await db
+    .select({ sessionId: sessionSandboxes.sessionId, accountId: sessionSandboxes.accountId })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+  const out: SandboxPermissionRow[] = [];
+  for (const r of rows) {
+    const info = await loadSessionSandbox(r.sessionId);
+    if (!info) continue;
+    for (const p of await fetchPendingPermissions(info)) {
+      out.push({ sessionId: r.sessionId, accountId: r.accountId, projectId, ...p });
+    }
+  }
+  return out;
+}
+
 /** True while a telegram session has a question awaiting the user's tap. */
 export function hasPendingTelegramQuestion(sessionId: string): boolean {
   return pendingReplyTarget.has(sessionId);

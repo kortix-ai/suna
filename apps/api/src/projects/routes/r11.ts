@@ -7,6 +7,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { submitTelegramPermissionReply } from '../../channels/telegram/question-relay';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
@@ -15,7 +16,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { normalizeString, readBody } from '../lib/serializers';
-import { isAdaptedId } from '../review-adapters';
+import { isAdaptedId, parsePermissionReviewId } from '../review-adapters';
 import {
   type ReviewSegment,
   applyVerdict,
@@ -53,7 +54,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+    );
 
     const segment = normalizeString(c.req.query('segment'))?.toLowerCase();
     if (segment && !SEGMENTS.includes(segment as (typeof SEGMENTS)[number])) {
@@ -92,7 +99,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+    );
 
     const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
     if (!item) return c.json({ error: 'Review item not found' }, 404);
@@ -124,7 +137,13 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Human gate: submitting a reviewable needs project.review.submit. Every
     // built-in role holds it; a custom role that unchecks it is denied here.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT,
+    );
     // Agent-side gate: submitting a reviewable is the agent's intended path.
     assertAgentScope(c, 'project.review.submit');
 
@@ -226,9 +245,29 @@ projectsApp.openapi(
         400,
       );
     }
-    // Adapted items (change requests, executor approvals) act through their own
-    // source flow, not the review act endpoint.
+    // Adapted items act through their own source flow, not the review act
+    // endpoint — EXCEPT sandbox permissions, which reply straight to the sandbox
+    // to unblock the blocked agent (the same reply a Telegram Approve/Deny sends),
+    // so a permission is approvable from the web Review Center too.
     if (isAdaptedId(reviewItemId)) {
+      const perm = parsePermissionReviewId(reviewItemId);
+      if (perm) {
+        if (verdict !== 'approve' && verdict !== 'reject') {
+          return c.json({ error: 'permission approvals take approve or reject' }, 400);
+        }
+        const ok = await submitTelegramPermissionReply(
+          perm.sessionId,
+          perm.requestID,
+          verdict === 'approve' ? 'once' : 'reject',
+        );
+        if (!ok) return c.json({ error: 'permission is no longer pending' }, 409);
+        return c.json({
+          review_item_id: reviewItemId,
+          kind: 'approval',
+          status: verdict === 'approve' ? 'approved' : 'rejected',
+          acted_by: loaded.userId,
+        });
+      }
       return c.json({ error: 'Act on this item from its source view' }, 409);
     }
     const existing = await getReviewItemById(reviewItemId, projectId);
