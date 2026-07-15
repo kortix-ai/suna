@@ -30,7 +30,7 @@
  *     (would need non-standard `$data` references). These stay
  *     imperative-only; the schema is intentionally silent on them.
  *   - Warning-level rules (case-insensitive "all"/"none" sentinels, GPU-key
- *     deprecation, image `:latest` tag nudge, missing `[apps.source]`,
+ *     deprecation, image `:latest` tag nudge,
  *     sandbox-template-slug length, non-IANA trigger `timezone`, …) never
  *     flip `valid`, so the schema does not need to encode them for the two
  *     validators to agree on accept/reject. `enabled`'s true/false/1/0/yes/
@@ -206,7 +206,7 @@ const ENABLED_SENTINEL_WORDS = ['true', 'false', '1', '0', 'yes', 'no', 'on', 'o
 
 /** `enabled` field shape — mirrors `isEnabledValue` (`./index.ts`) exactly:
  *  a boolean, a number, or (case-insensitively) one of true/false/1/0/yes/
- *  no/on/off as a string. Shared by triggers/apps/channels, which all defer
+ *  no/on/off as a string. Shared by triggers/channels, which both defer
  *  to the same runtime `coerceBool`. */
 function enabledValueSchema(): JsonSchemaFragment {
   return {
@@ -324,8 +324,10 @@ function triggerSchema(): JsonSchemaFragment {
       agent: { type: 'string', minLength: 1 },
       agent_name: { type: 'string', minLength: 1 },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse'] },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse'] },
+      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned'] },
+      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned'] },
+      session_id: { type: 'string', minLength: 1 },
+      sessionId: { type: 'string', minLength: 1 },
       prompt: NON_EMPTY_STRING,
       prompt_template: NON_EMPTY_STRING,
       cron: { type: 'string', minLength: 1 },
@@ -465,36 +467,6 @@ function channelSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[apps]]` entry. */
-function appSchema(): JsonSchemaFragment {
-  return {
-    type: 'object',
-    required: ['slug'],
-    properties: {
-      slug: SLUG_SCHEMA,
-      name: { type: 'string' },
-      framework: { type: 'string' },
-      enabled: enabledValueSchema(),
-      domains: { type: 'array', items: { type: 'string' } },
-      source: {
-        type: 'object',
-        required: ['type'],
-        properties: {
-          type: { type: 'string', enum: ['git', 'tar'] },
-          repo: { type: 'string' },
-          branch: { type: 'string' },
-          root_path: { type: 'string' },
-          url: { type: 'string' },
-        },
-        additionalProperties: true,
-      },
-      build: { type: 'object' },
-      env: { type: 'object' },
-    },
-    additionalProperties: true,
-  };
-}
-
 /** `[[agents]]` (v1) — the array-of-tables governance overlay. */
 function agentEntryV1Schema(): JsonSchemaFragment {
   return {
@@ -541,7 +513,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandboxes: false,
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
-    apps: { type: 'array', items: appSchema() },
+    apps: false,
   };
 }
 

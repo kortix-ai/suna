@@ -14,3 +14,22 @@ e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-ex
 e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:310
 e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:312
 e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:319
+
+# Self-host GitHub App flow — FAKE test-fixture RSA keys / tokens (the key body
+# is a literal "abc" or an ephemeral in-test generated keypair asserted against
+# the manifest/JWT logic). None are live credentials. Reviewed 2026-07-15.
+c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/platform/services/managed-github-app.test.ts:private-key:86
+c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-manifest.test.ts:private-key:134
+89befc961579cdfe770042fd0637f537c17297c8:apps/cli/src/self-host/__tests__/connect-github.test.ts:private-key:86
+89befc961579cdfe770042fd0637f537c17297c8:apps/cli/src/self-host/__tests__/connect-github.test.ts:private-key:136
+89befc961579cdfe770042fd0637f537c17297c8:apps/cli/src/self-host/__tests__/connect-github.test.ts:private-key:260
+0a56dc3d5fec8d49935be8275faeb8169642e332:apps/cli/src/self-host/__tests__/secrets.test.ts:generic-api-key:255
+
+# False positive in a HISTORICAL commit inside the v0.10.0 promote range: the
+# generic-api-key rule matched the ACM certificate key_algorithm field (an
+# elliptic-curve algorithm NAME, not a credential) in the since-DELETED enterprise-vpc module.
+8887265c9d328380c42805206bc6a5bcebd6ecd5:infra/terraform/modules/enterprise-vpc/acm.tf:generic-api-key:5
+
+# The PR-range scan also walks the HISTORICAL version of this very file (commit
+# 619d83ee), whose comment quoted the flagged value before being reworded.
+619d83ee645f3d750600a4728bf441bfee147e44:.gitleaksignore:generic-api-key:29

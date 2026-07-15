@@ -1,6 +1,5 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { createGateway } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/llm-catalog';
 import { Hono } from 'hono';
 import { config } from '../config';
 import { createInProcessGatewayHooks } from './hooks';
@@ -23,10 +22,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
-      // Resolve `auto` against the principal's account/agent default (resolved in
-      // withResolvedTier at authentication; undefined → the platform default).
-      autoRouter: (model, body, principal) =>
-        pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
     });
     const llm = new Hono();
     llm.get('/health', (c) =>

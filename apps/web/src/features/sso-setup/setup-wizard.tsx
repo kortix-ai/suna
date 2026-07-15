@@ -536,7 +536,11 @@ function ImportForm({
   const [domain, setDomain] = useState('');
   const [claim, setClaim] = useState(config.groupClaimName);
   const [autoCreate, setAutoCreate] = useState(true);
-  const [autoProvision, setAutoProvision] = useState(false);
+  // Default ON: connecting an IdP should make its groups appear in Kortix
+  // without hand-mapping each claim — the admin just attaches project roles.
+  // (Groups auto-created this way are source='sso' and never annex manual
+  // groups; the toggle stays for admins who want mapping-only.)
+  const [autoProvision, setAutoProvision] = useState(true);
   // Default to the form this IdP actually hands out (Google: XML only).
   const [metaKind, setMetaKind] = useState<'url' | 'xml'>(config.preferredMetadata ?? 'url');
   const [metaUrl, setMetaUrl] = useState('');
@@ -999,7 +1003,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
 
   const finish = () => {
     markDone(guide.steps[guide.steps.length - 1]!.id);
-    router.push(`/accounts/${accountId}?tab=settings`);
+    router.push(`/accounts/${accountId}?tab=identity`);
   };
 
   const step = guide.steps[Math.min(activeStep, guide.steps.length - 1)]!;

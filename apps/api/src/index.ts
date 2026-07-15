@@ -17,6 +17,8 @@ import { getRequestUrl } from './lib/request-url';
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -32,7 +34,9 @@ import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { requestDeadline } from './middleware/request-deadline';
+import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -44,13 +48,13 @@ import { platformSettings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
+import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
-import { templatesApp } from './projects/templates/routes';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -62,8 +66,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
-import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
 import { accountsRouter } from './accounts';
@@ -557,6 +559,65 @@ app.openapi(
   },
 );
 
+// ─── Demo request (public lead capture) ─────────────────────────────────────
+// POST /v1/system/demo-request — public, unauthenticated. The marketing site's
+// "Book a demo" qualifier form POSTs the first-step details here (via the web
+// server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
+// submission, whether or not the lead goes on to book a Cal slot. The email uses
+// the API's Mailtrap credentials (AWS Secrets Manager), so the Vercel frontend
+// never needs the secret. IP rate-limited; a missing Mailtrap token is a
+// graceful skip, so lead capture never fails on account of email.
+const DemoRequestSchema = z
+  .object({
+    name: z.string().max(200).optional(),
+    email: z.string().email(),
+    company_name: z.string().max(200).optional(),
+    company_size: z.string().max(50).optional(),
+    goal: z.string().max(2000).optional(),
+    qualified: z.boolean().optional(),
+    source: z.string().max(100).optional(),
+  })
+  .openapi('DemoRequest');
+
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/v1/system/demo-request',
+    tags: ['system'],
+    summary: 'Submit a public demo request (emails an internal notification)',
+    middleware: [createDemoRequestRateLimitMiddleware()] as const,
+    request: { body: { content: { 'application/json': { schema: DemoRequestSchema } } } },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
+        'Accepted',
+      ),
+      ...errors(400, 429),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    const email = String(body?.email ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ error: 'Invalid email' }, 400);
+    }
+    const result = await sendDemoRequestNotification({
+      name: typeof body.name === 'string' ? body.name : undefined,
+      email,
+      company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
+      company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
+      goal: typeof body.goal === 'string' ? body.goal : undefined,
+      qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
+      source: typeof body.source === 'string' ? body.source : undefined,
+      user_agent: c.req.header('user-agent')?.slice(0, 500) ?? null,
+    });
+    if (!result.ok && !('skipped' in result && result.skipped)) {
+      console.error('[system/demo-request] notification not sent:', result);
+    }
+    return c.json({ ok: true, emailed: result.ok });
+  },
+);
+
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
 // These endpoints are called by the frontend but were never implemented.
 // Adding proper stubs stops 404 noise and provides correct responses.
@@ -626,11 +687,9 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
-registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
-app.route('/v1/templates', templatesApp); // /v1/templates — installable use-case templates (public read)
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -652,10 +711,13 @@ app.route('/v1/templates', templatesApp); // /v1/templates — installable use-c
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
+const { slackWebhookApp, teamsWebhookApp, teamsIdentityApp, teamsOauthApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
+app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
+app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
 app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
@@ -710,7 +772,7 @@ app.route('/v1/tunnel', tunnelApp);
 
 // Preview Proxy — unified route for sandbox HTTP access.
 // Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
-// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
+// resolved to a reachable upstream URL via the provider ingress contract.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);
@@ -730,6 +792,44 @@ app.onError((err, c) => {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
   }
 
+  // Platinum auto-stops idle microVMs natively; while a box is stopped, POST
+  // /:id/expose answers `409 sandbox_not_running`. That is an EXPECTED,
+  // transient state, not a 500 — the caller either wakes the box and retries
+  // (preview proxy) or the client retries (transcript / lease-discover). It
+  // must NOT page Sentry, so the typed error is classified out of
+  // captureException and surfaced as a retryable 503 + Retry-After (mirroring
+  // the request-deadline 503 pattern). Other Platinum failures still throw a
+  // generic Error and fall through to the generic capture below. See
+  // shared/platinum.ts PlatinumSandboxNotRunningError.
+  if (isPlatinumSandboxNotRunningError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [PlatinumSandboxNotRunningError] ${err.message}`, {
+      method, path, errorType: 'PlatinumSandboxNotRunningError',
+    });
+    c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
+  }
+
+  // A bare-clone / fetch of a project's git mirror that exceeds its timeout
+  // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
+  // retryable — the mirror already retries once internally before surfacing.
+  // Previously these surfaced as the opaque Better Stack pattern `8d0cffbb…`
+  // ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
+  // progress line captured on stderr before the kill, masking the real cause).
+  // `runGit` now throws a typed `GitOperationError` (kind 'timeout') whose
+  // message names the timeout; classify the transient kind into a retryable
+  // 503 + Retry-After WITHOUT paging Sentry (mirroring Platinum /
+  // request-deadline), while a real `failed` kind (auth / missing repo) still
+  // falls through to Sentry with a meaningful `fatal:` message. See
+  // projects/git/mirror.ts.
+  if (isGitOperationError(err) && err.kind === 'timeout') {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:timeout] ${err.message}`, {
+      method, path, errorType: 'GitOperationError', gitKind: 'timeout',
+      gitArgs: err.gitArgs, signal: err.signal,
+    });
+    c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'git mirror is temporarily unavailable', status: 503 }, 503);
+  }
+
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
       statusCode: err.statusCode, message: err.message, path, method,
@@ -738,8 +838,14 @@ app.onError((err, c) => {
   }
 
   if (err instanceof HTTPException) {
-    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected)
-    if (err.status >= 500) {
+    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected). The
+    // request-deadline 503 is an EXPECTED, typed, retryable degradation (the
+    // deadline net bounding a slow request) — already logged + metriced
+    // per-route and returned with Retry-After. Capturing it to Sentry produced
+    // the recurring Better Stack pattern `29af03…` "Request exceeded the 25s
+    // server processing deadline" (the system working as designed), so classify
+    // it out. See middleware/request-deadline.ts.
+    if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
       captureException(err, { method, path, status: err.status });
     }
     appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
@@ -819,7 +925,6 @@ console.log(`
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
-${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║
@@ -837,6 +942,9 @@ ${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental
 // Awaited so pricing is available before the first billing request.
 initModelPricing().catch((err) =>
   console.error('[startup] Model pricing init failed (will retry in 24h):', err),
+);
+runtimeModelCatalog.start().catch((err) =>
+  console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
 );
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
@@ -858,6 +966,12 @@ async function startReplicaServices() {
   // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
   await import('./platform/services/runtime-settings')
     .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
+  // Warm the managed-GitHub-App config cache too — so a self-host instance
+  // whose operator just ran the in-app GitHub App setup flow (rather than
+  // `.env`) gets its DB-stored creds from request #1, not after a 30s TTL.
+  await import('./platform/services/managed-github-app')
+    .then((m) => m.refreshManagedGithubAppConfig())
     .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
@@ -882,7 +996,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
@@ -895,7 +1008,6 @@ async function stopSingletonWorkers() {
   singletonWorkersRunning = false;
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
-  stopLegacyMigrationWorker();
   stopSunaMigrationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
@@ -931,6 +1043,7 @@ async function shutdown(signal: string) {
   // node was the leader. Then stop the per-node services.
   await stopLeaderElection();
   stopModelPricing();
+  runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();

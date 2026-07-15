@@ -185,3 +185,15 @@ describe('directory sync wizard wiring', () => {
     expect(scimCardSource).toContain('/scim-setup');
   });
 });
+
+describe('auto-provision groups default', () => {
+  test('the wizard connect form defaults auto-provision ON', () => {
+    expect(wizardSource).toContain('setAutoProvision] = useState(true)');
+  });
+
+  test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
+    expect(cardSource).toContain(
+      'useState(existing ? existing.auto_provision_groups : true)',
+    );
+  });
+});

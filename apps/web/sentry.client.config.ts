@@ -59,9 +59,33 @@ if (SENTRY_DSN) {
       'Server URL not ready',
       'sandbox is still loading',
       'opencode not ready',
+      // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
+      // account / subscription required — the exact strings emitted by
+      // `apps/api/src/billing/services/billing-gate.ts:assertBillingActive`).
+      // They are user-facing business states handled by a top-up toast / upgrade
+      // dialog (`error-handler.tsx`), but the SDK's `ApiError` can leak to
+      // Sentry through capture paths that bypass `handleApiError`'s 402 guard
+      // (route/system-fault boundaries, `<ClientErrorBoundary>`, and the Sentry
+      // SDK's own `onunhandledrejection`). Drop them at the SDK level too so an
+      // expected billing state never pages Better Stack. Real `ApiError`s keep
+      // reporting — these regexes are exact after optional canonical wrappers.
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\. Top up to continue\.$/,
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?No credit account found\. Complete account setup first\.$/,
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$20\/teammate per month includes wallet credits for compute and LLM usage\.$/,
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
+      // Old WebKit (Safari/iOS < 16.4) cannot parse lookbehind assertions
+      // (`(?<=…)` / `(?<!…)`): JSC reads `(?<` as a named-capture-group opener,
+      // sees `=` / `!`, and throws `SyntaxError: Invalid regular expression:
+      // invalid group specifier name` at chunk PARSE time, failing the whole
+      // chunk. The lookbehind literals live in bundled third-party deps
+      // (`mdast-util-gfm-autolink-literal` GFM email-autolink regex +
+      // `@pierre/diffs` `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is
+      // WebKit-specific (V8/Node say "Invalid group"), and only very old
+      // Safari/iOS visitors hit it. `browser-error-noise.ts` drops it from
+      // `beforeSend` too; this string gate covers frameless onerror captures.
+      'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
       // Third-party injected scripts / wallet extensions
@@ -76,6 +100,20 @@ if (SENTRY_DSN) {
       // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
       "Cannot assign to read only property 'then' of object '#<Promise>'",
       'Cannot assign to read only property',
+      // Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser)
+      // resolve `window.localStorage` / `window.sessionStorage` to `null`. Any
+      // direct `storage.getItem/setItem/removeItem` then throws
+      // `TypeError: Cannot read properties of null (reading 'getItem')` (V8) /
+      // `Cannot read property 'getItem' of null` (JSC). Browser-environment
+      // noise, not an app defect — `getItem/setItem/removeItem` are Web Storage
+      // API method names, so matching them on a `null` access is specific. See
+      // browser-error-noise.ts `STORAGE_NULL_ACCESS_NOISE_PATTERNS`.
+      "Cannot read properties of null (reading 'getItem')",
+      "Cannot read properties of null (reading 'setItem')",
+      "Cannot read properties of null (reading 'removeItem')",
+      "Cannot read property 'getItem' of null",
+      "Cannot read property 'setItem' of null",
+      "Cannot read property 'removeItem' of null",
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',

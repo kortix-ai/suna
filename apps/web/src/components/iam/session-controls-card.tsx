@@ -1,13 +1,12 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 // Session controls on the Settings tab: per-account max-lifetime + idle
 // timeout, plus an "active sessions" panel with force-logout. PATs are
 // not represented here — they have their own lifecycle policies.
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { Clock, LogOut } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +14,17 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   type ActiveSession,
   type SessionPolicy,
@@ -34,7 +43,6 @@ interface SessionControlsCardProps {
 }
 
 export function SessionControlsCard({ accountId, canManage }: SessionControlsCardProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [revokeTarget, setRevokeTarget] = useState<ActiveSession | null>(null);
 
@@ -91,11 +99,11 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
   const saveMutation = useMutation({
     mutationFn: (patch: Partial<SessionPolicy>) => updateSessionPolicy(accountId, patch),
     onSuccess: () => {
-      toast.success('Session policy updated');
+      successToast('Session policy updated');
       queryClient.invalidateQueries({ queryKey: ['iam-session-policy', accountId] });
       setError(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update policy'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update policy'),
   });
 
   function handleSave() {
@@ -119,11 +127,11 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
   const revokeMutation = useMutation({
     mutationFn: (sessionId: string) => revokeAccountSession(accountId, sessionId),
     onSuccess: () => {
-      toast.success('Session revoked');
+      successToast('Session revoked');
       queryClient.invalidateQueries({ queryKey: ['iam-sessions', accountId] });
       setRevokeTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to revoke session'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to revoke session'),
   });
 
   const sessions = sessionsQuery.data ?? [];
@@ -140,81 +148,58 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
   }, [sessions]);
 
   return (
-    <section className="border-border/70 bg-card rounded-xl border">
-      <header className="border-border/60 border-b px-6 py-4">
-        <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
-          <ShieldCheck className="text-muted-foreground h-4 w-4" />
-          {tHardcodedUi.raw('componentsIamSessionControlsCard.line145JsxTextSessionControls')}
-        </h2>
-        <p className="text-muted-foreground mt-0.5 text-xs">
-          {tHardcodedUi.raw(
-            'componentsIamSessionControlsCard.line148JsxTextCapHowLongABrowserSessionLivesForce',
-          )}
-        </p>
-      </header>
-
+    <div className="space-y-5">
       {/* Policy form */}
-      <div className="border-border/60 space-y-4 border-b px-6 py-5">
-        {policyQuery.isLoading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                {tHardcodedUi.raw(
-                  'componentsIamSessionControlsCard.line161JsxTextMaxSessionLifetimeMinutes',
-                )}
-              </Label>
-              <Input
-                value={maxLifetime}
-                onChange={(e) => setMaxLifetime(e.target.value)}
-                placeholder={tHardcodedUi.raw(
-                  'componentsIamSessionControlsCard.line165JsxAttrPlaceholderLeaveBlankForNoMax',
-                )}
-                inputMode="numeric"
-                disabled={!canManage || saveMutation.isPending}
-              />
-              <p className="text-muted-foreground text-[11px]">
-                {tHardcodedUi.raw(
-                  'componentsIamSessionControlsCard.line170JsxTextForcesAFreshSignInAfterThisMany',
-                )}
-              </p>
+      <div className="bg-popover rounded-md border">
+        <div className="space-y-4 px-4 py-5">
+          {policyQuery.isLoading ? (
+            <Skeleton className="h-24 w-full rounded-md" />
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Max session lifetime (minutes)</Label>
+                <Input
+                  value={maxLifetime}
+                  onChange={(e) => setMaxLifetime(e.target.value)}
+                  placeholder="leave blank for no max"
+                  inputMode="numeric"
+                  disabled={!canManage || saveMutation.isPending}
+                  variant="popover"
+                />
+                <p className="text-muted-foreground text-xs">
+                  Forces a fresh sign-in after this many minutes, measured from when the access
+                  token was issued.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Idle timeout (minutes)</Label>
+                <Input
+                  value={idleTimeout}
+                  onChange={(e) => setIdleTimeout(e.target.value)}
+                  placeholder="leave blank for no idle gate"
+                  inputMode="numeric"
+                  disabled={!canManage || saveMutation.isPending}
+                  variant="popover"
+                />
+                <p className="text-muted-foreground text-xs">
+                  Kills the session after this many minutes of no activity against this account.
+                </p>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                {tHardcodedUi.raw(
-                  'componentsIamSessionControlsCard.line175JsxTextIdleTimeoutMinutes',
-                )}
-              </Label>
-              <Input
-                value={idleTimeout}
-                onChange={(e) => setIdleTimeout(e.target.value)}
-                placeholder={tHardcodedUi.raw(
-                  'componentsIamSessionControlsCard.line179JsxAttrPlaceholderLeaveBlankForNoIdleGate',
-                )}
-                inputMode="numeric"
-                disabled={!canManage || saveMutation.isPending}
-              />
-              <p className="text-muted-foreground text-[11px]">
-                {tHardcodedUi.raw(
-                  'componentsIamSessionControlsCard.line184JsxTextKillsTheSessionAfterThisManyMinutesOf',
-                )}
-              </p>
-            </div>
-          </div>
-        )}
+          )}
 
-        {error && <p className="text-destructive text-xs">{error}</p>}
+          {error && <p className="text-destructive text-xs">{error}</p>}
+        </div>
 
         {canManage && (
-          <div className="flex justify-end">
+          <div className="border-border flex items-center justify-end border-t px-4 py-3">
             <Button
               size="sm"
               onClick={handleSave}
               disabled={saveMutation.isPending}
               className="gap-1.5"
             >
-              {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saveMutation.isPending && <Loading className="size-3.5 shrink-0" />}
               Save
             </Button>
           </div>
@@ -222,19 +207,17 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
       </div>
 
       {/* Active sessions */}
-      <div className="px-6 py-5">
-        <h3 className="text-foreground mb-3 flex items-center gap-2 text-sm font-medium">
-          <Clock className="text-muted-foreground h-3.5 w-3.5" />
-          {tHardcodedUi.raw('componentsIamSessionControlsCard.line212JsxTextActiveSessions')}
-        </h3>
+      <div className="space-y-3">
+        <p className="text-foreground text-sm font-medium">Active sessions</p>
         {sessionsQuery.isLoading ? (
-          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full rounded-md" />
         ) : partitioned.live.length === 0 && partitioned.revoked.length === 0 ? (
-          <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw(
-              'componentsIamSessionControlsCard.line218JsxTextNoSessionsTrackedYetSessionsShowUpHere',
-            )}
-          </p>
+          <EmptyState
+            icon={Clock}
+            size="sm"
+            title="No sessions tracked yet"
+            description="Sessions show up here the first time a member hits an account-scoped route while a policy is configured."
+          />
         ) : (
           <div className="space-y-3">
             <SessionsTable
@@ -245,12 +228,9 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
               muted={false}
             />
             {partitioned.revoked.length > 0 && (
-              <details className="border-border/60 rounded-2xl border px-3 py-2 text-xs">
+              <details className="rounded-md border px-3 py-2 text-xs">
                 <summary className="text-muted-foreground cursor-pointer">
-                  {tHardcodedUi.raw(
-                    'componentsIamSessionControlsCard.line233JsxTextRevokedExpired',
-                  )}
-                  {partitioned.revoked.length})
+                  Revoked / expired ({partitioned.revoked.length})
                 </summary>
                 <div className="mt-3">
                   <SessionsTable
@@ -272,9 +252,7 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title={tHardcodedUi.raw(
-          'componentsIamSessionControlsCard.line255JsxAttrTitleForceLogoutThisSession',
-        )}
+        title="Force-logout this session?"
         description={
           revokeTarget
             ? `The user (${emailByUserId.get(revokeTarget.user_id) ?? revokeTarget.user_id}) will get 401 on their next request to this account and must sign in again.`
@@ -287,7 +265,7 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
           if (revokeTarget) revokeMutation.mutate(revokeTarget.session_id);
         }}
       />
-    </section>
+    </div>
   );
 }
 
@@ -306,74 +284,65 @@ function SessionsTable({
   onRevoke: (s: ActiveSession) => void;
   muted: boolean;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   if (rows.length === 0) {
-    return (
-      <p className="text-muted-foreground text-xs">
-        {tHardcodedUi.raw('componentsIamSessionControlsCard.line289JsxTextNoActiveSessions')}
-      </p>
-    );
+    return <p className="text-muted-foreground text-xs">No active sessions.</p>;
   }
 
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="border-border/60 text-muted-foreground border-b text-left text-[10px] font-medium tracking-wider uppercase">
-          <th className="py-2 font-medium">Member</th>
-          <th className="py-2 font-medium">
-            {tHardcodedUi.raw('componentsIamSessionControlsCard.line298JsxTextLastSeen')}
-          </th>
-          <th className="py-2 font-medium">IP</th>
-          <th className="py-2 font-medium">Status</th>
-          <th className="w-16 py-2" />
-        </tr>
-      </thead>
-      <tbody className="divide-border divide-y">
+    <Table className={muted ? 'opacity-60' : undefined}>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead>Member</TableHead>
+          <TableHead>Last seen</TableHead>
+          <TableHead>IP</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="w-12">
+            <span className="sr-only">Actions</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {rows.map((s) => (
-          <tr
-            key={`${s.user_id}|${s.session_id}`}
-            className={muted ? 'opacity-60' : 'hover:bg-muted/20'}
-          >
-            <td className="text-foreground py-2">
+          <TableRow key={`${s.user_id}|${s.session_id}`} className={muted ? 'hover:bg-transparent' : undefined}>
+            <TableCell className="text-foreground text-xs">
               {emailByUserId.get(s.user_id) ?? (
-                <span className="text-muted-foreground font-mono text-[11px]">{s.user_id}</span>
+                <span className="text-muted-foreground font-mono text-xs">{s.user_id}</span>
               )}
-            </td>
-            <td className="text-muted-foreground py-2">{formatRelative(s.last_seen_at)}</td>
-            <td className="text-muted-foreground py-2 font-mono text-[11px]">{s.ip ?? '—'}</td>
-            <td className="py-2">
+            </TableCell>
+            <TableCell className="text-muted-foreground text-xs">
+              {formatRelative(s.last_seen_at)}
+            </TableCell>
+            <TableCell className="text-muted-foreground font-mono text-xs">
+              {s.ip ?? '—'}
+            </TableCell>
+            <TableCell>
               {s.revoked_at ? (
-                <Badge variant="outline" size="sm" className="text-muted-foreground">
+                <Badge variant="muted" size="sm">
                   {s.revoked_reason ?? 'revoked'}
                 </Badge>
               ) : (
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-                >
+                <Badge variant="success" size="sm">
                   active
                 </Badge>
               )}
-            </td>
-            <td className="py-2 text-right">
+            </TableCell>
+            <TableCell>
               {canManage && !s.revoked_at && (
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="text-muted-foreground hover:text-destructive h-7 w-7"
+                  className="text-muted-foreground hover:text-destructive"
                   onClick={() => onRevoke(s)}
                   aria-label="Force-logout"
-                  title="Force-logout"
                 >
-                  <LogOut className="h-3.5 w-3.5" />
+                  <LogOut className="size-3.5 shrink-0" />
                 </Button>
               )}
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 

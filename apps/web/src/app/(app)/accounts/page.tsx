@@ -1,30 +1,29 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
+import { isSingleAccountMode } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, Plus, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 export default function AccountsPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [createOpen, setCreateOpen] = useState(false);
+  const singleAccountMode = isSingleAccountMode();
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -48,51 +47,67 @@ export default function AccountsPage() {
 
   return (
     <>
-      <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-6xl space-y-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight">Accounts</h1>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {tHardcodedUi.raw('appAccountsPage.line71JsxTextAccountsYouBelongTo')}
-              </p>
-            </div>
-            <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              {tHardcodedUi.raw('appAccountsPage.line75JsxTextNewAccount')}
-            </Button>
+      <div className="mx-auto w-full max-w-6xl space-y-5 pb-10">
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-foreground text-xl font-medium">Accounts</h2>
+            <p className="text-muted-foreground text-sm text-balance">Teams you belong to.</p>
           </div>
-
-          {accountsQuery.isLoading ? (
-            <SectionCard flush>
-              <List>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <li key={i} className="flex items-center gap-3 px-6 py-3">
-                    <Skeleton className="size-8 rounded-lg" />
-                    <div className="flex-1 space-y-1.5">
-                      <Skeleton className="h-3.5 w-40" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </li>
-                ))}
-              </List>
-            </SectionCard>
-          ) : (
-            <SectionCard flush>
-              <List>
-                {sortedAccounts.map((account) => (
-                  <AccountRow
-                    key={account.account_id}
-                    account={account}
-                    active={account.account_id === selectedAccountId}
-                    onClick={() => router.push(`/accounts/${account.account_id}`)}
-                  />
-                ))}
-              </List>
-            </SectionCard>
+          {!singleAccountMode && (
+            <div className="mt-2 shrink-0 sm:mt-0">
+              <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" />
+                New account
+              </Button>
+            </div>
           )}
-        </div>
-      </main>
+        </header>
+
+        {accountsQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-[54px] w-full rounded-md" />
+            ))}
+          </div>
+        ) : accountsQuery.isError ? (
+          <ErrorState
+            size="sm"
+            title="Failed to load accounts"
+            description={(accountsQuery.error as Error).message}
+            action={
+              <Button variant="outline" size="sm" onClick={() => accountsQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        ) : sortedAccounts.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            size="sm"
+            title="No accounts yet"
+            description="Create an account to start working with a team."
+            action={
+              singleAccountMode ? undefined : (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                  <Plus className="size-3.5" />
+                  New account
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <ul className="space-y-2">
+            {sortedAccounts.map((account) => (
+              <AccountRow
+                key={account.account_id}
+                account={account}
+                active={account.account_id === selectedAccountId}
+                onClick={() => router.push(`/accounts/${account.account_id}`)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       <CreateAccountModal
         open={createOpen}
@@ -127,23 +142,30 @@ function AccountRow({
 }) {
   const label = account.name || 'Account';
   return (
-    <ListRow
-      onClick={onClick}
-      leading={<EntityAvatar label={label} />}
-      title={label}
-      badges={
-        <>
-          {active && (
-            <Badge variant="outline" size="sm">
-              <Check />
-              Active
-            </Badge>
-          )}
-        </>
-      }
-      trailing={
-        <ChevronRight className="text-muted-foreground h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
-      }
-    />
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="group bg-popover hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors"
+      >
+        <EntityAvatar label={label} size="md" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="text-foreground truncate text-sm font-medium">{label}</span>
+            {active && (
+              <Badge variant="outline" size="sm" className="border-foreground/30 text-foreground">
+                Active
+              </Badge>
+            )}
+          </span>
+          {account.account_role ? (
+            <span className="text-muted-foreground block text-xs capitalize">
+              {account.account_role}
+            </span>
+          ) : null}
+        </span>
+        <ChevronRight className="text-muted-foreground size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+      </button>
+    </li>
   );
 }

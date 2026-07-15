@@ -7,7 +7,6 @@ import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +24,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,12 +51,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Separator } from '@/components/ui/separator';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
-import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
-  defaultProjectMarketplaceItems,
+  getMarketplaceItem,
   listMarketplaceItems,
+  type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
+  getManagedGitStatus,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -68,13 +70,18 @@ import {
   type KortixProject,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
+import {
+  startProjectOnboardingSession,
+  startTemplateSetupSession,
+} from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -92,8 +99,6 @@ const managedProjectSchema = z.object({
         .min(1, 'Project name is required')
         .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
     ),
-  includeGeneralKnowledgeSkills: z.boolean(),
-  marketplaceItems: z.array(z.string()),
 });
 
 const githubLinkSchema = z.object({
@@ -109,6 +114,9 @@ interface ProjectCreateModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountId: string | null;
+  /** Clone a `registry:project` marketplace item instead of the blank
+   *  starter — set from `/projects?clone=<item-id>` (marketplace "Clone"). */
+  sourceItemId?: string | null;
 }
 
 function rememberGitHubSetupReturn(path: string) {
@@ -129,16 +137,28 @@ function upsertProject(projects: KortixProject[] | undefined, project: KortixPro
   return next;
 }
 
-export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCreateModalProps) => {
+export const ProjectCreateModal = ({
+  open,
+  onOpenChange,
+  accountId,
+  sourceItemId,
+}: ProjectCreateModalProps) => {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<'managed' | 'github'>('managed');
+  const [mode, setMode] = useState<'managed' | 'template' | 'github'>('managed');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
-  const [marketplaceDefaultsApplied, setMarketplaceDefaultsApplied] = useState(false);
+  const [sourceNameApplied, setSourceNameApplied] = useState(false);
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
+  // Cloning a project template comes from two places: the marketplace's
+  // "Clone" button (external `?clone=` → `sourceItemId` prop) or picking one
+  // right here via "Clone from a template" (`pickedTemplateId`). Once either
+  // is set, the rest of the managed form behaves identically either way.
+  const [pickedTemplateId, setPickedTemplateId] = useState<string | null>(null);
+  const effectiveSourceItemId = sourceItemId ?? pickedTemplateId;
+  const cloningFromSource = !!effectiveSourceItemId;
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -146,6 +166,20 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     staleTime: 60_000,
     enabled: open,
   });
+
+  // Pre-check whether managed git (the "Create project" quick path, backed by
+  // POST /projects/provision) is usable BEFORE the user hits its 503 —
+  // self-host with no MANAGED_GIT_* configured is the primary case. Only
+  // gates 'managed'/'template' modes; the BYO GitHub import ('github' mode)
+  // doesn't depend on it. `configured` defaults true while loading so the
+  // form isn't disabled by a flash of "unavailable".
+  const managedGitStatusQuery = useQuery({
+    queryKey: ['managed-git-status'],
+    queryFn: getManagedGitStatus,
+    staleTime: 60_000,
+    enabled: open,
+  });
+  const managedGitUnavailable = managedGitStatusQuery.data?.configured === false;
   const accountSelection = useMemo(
     () => resolveCreateAccountSelection(accountsQuery.data, accountId, pickedAccountId),
     [accountsQuery.data, accountId, pickedAccountId],
@@ -156,8 +190,6 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
-      includeGeneralKnowledgeSkills: true,
-      marketplaceItems: [],
     },
   });
 
@@ -175,8 +207,9 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   function resetAndClose() {
     setMode('managed');
-    setMarketplaceDefaultsApplied(false);
+    setSourceNameApplied(false);
     setPickedAccountId(null);
+    setPickedTemplateId(null);
     managedForm.reset();
     githubForm.reset();
     onOpenChange(false);
@@ -191,9 +224,25 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     setMode('managed');
   }
 
+  function switchToTemplateMode() {
+    setMode('template');
+  }
+
+  function pickTemplate(itemId: string) {
+    setSourceNameApplied(false);
+    setPickedTemplateId(itemId);
+    setMode('managed');
+  }
+
+  function clearPickedTemplate() {
+    setPickedTemplateId(null);
+    setSourceNameApplied(false);
+    managedForm.setValue('name', '');
+  }
+
   const createMutation = useMutation({
     mutationFn: provisionProject,
-    onSuccess: (project) => {
+    onSuccess: async (project) => {
       successToast('Project created');
       queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
         upsertProject(projects, project),
@@ -206,6 +255,31 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
         queryKey: ['projects'],
         type: 'active',
       });
+
+      // Cloned from a marketplace item → route through the setup session
+      // instead of dropping the user on an empty project.
+      if (effectiveSourceItemId) {
+        const sessionId = await startTemplateSetupSession(project, {
+          itemId: effectiveSourceItemId,
+          title: sourceItemQuery.data?.title ?? 'this project',
+        });
+        if (sessionId) {
+          resetAndClose();
+          router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
+          return;
+        }
+      }
+
+      // Plain new project → the "agent creation" default: start a first session
+      // that onboards + personalizes the preloaded starter, instead of landing
+      // the user on an empty project. Falls back to the project home if it fails.
+      const onboardingSessionId = await startProjectOnboardingSession(project);
+      if (onboardingSessionId) {
+        resetAndClose();
+        router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+        return;
+      }
+
       resetAndClose();
       router.replace(`/projects/${project.project_id}`);
     },
@@ -223,6 +297,29 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
           // Fall through to the generic toast below.
         }
       }
+      if (isManagedGitUnavailableError(error)) {
+        const gitSettingsAccountId =
+          effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+        errorToast("Managed git isn't set up on this server", {
+          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          ...(gitSettingsAccountId
+            ? {
+                button: (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      resetAndClose();
+                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
+                    }}
+                  >
+                    Open Git settings
+                  </Button>
+                ),
+              }
+            : {}),
+        });
+        return;
+      }
       errorToast(error.message || 'Failed to create project');
     },
   });
@@ -234,28 +331,30 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     staleTime: 0,
   });
 
-  const marketplaceDefaultsQuery = useQuery({
-    queryKey: ['marketplace-default-project-items'],
-    queryFn: () => listMarketplaceItems({ source: 'kortix', type: 'skill' }),
-    enabled: open && mode === 'managed',
+  const sourceItemQuery = useQuery({
+    queryKey: ['marketplace-item', effectiveSourceItemId],
+    queryFn: () => getMarketplaceItem(effectiveSourceItemId!),
+    enabled: open && cloningFromSource,
     staleTime: 60_000,
   });
-  const marketplaceItems = useMemo(
-    () => defaultProjectMarketplaceItems(marketplaceDefaultsQuery.data?.items),
-    [marketplaceDefaultsQuery.data?.items],
-  );
-  const includeGeneralKnowledgeSkills = managedForm.watch('includeGeneralKnowledgeSkills');
-  const includedCount = includeGeneralKnowledgeSkills ? 1 : 0;
+
+  const templatesQuery = useQuery({
+    queryKey: ['marketplace-project-templates'],
+    queryFn: () => listMarketplaceItems({ type: 'project' }),
+    enabled: open && mode === 'template',
+    staleTime: 60_000,
+  });
+  const templates = templatesQuery.data?.items ?? [];
 
   useEffect(() => {
-    if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
-    managedForm.setValue('marketplaceItems', marketplaceItems.map((item) => item.id), {
+    if (!open || !cloningFromSource || sourceNameApplied || !sourceItemQuery.data) return;
+    managedForm.setValue('name', sourceItemQuery.data.title.replaceAll('-', ' '), {
       shouldDirty: false,
       shouldTouch: false,
       shouldValidate: false,
     });
-    setMarketplaceDefaultsApplied(true);
-  }, [managedForm, marketplaceDefaultsApplied, marketplaceItems, open]);
+    setSourceNameApplied(true);
+  }, [managedForm, cloningFromSource, open, sourceItemQuery.data, sourceNameApplied]);
 
   const githubInstallations = useMemo(
     () => githubInstallationsQuery.data?.installations ?? [],
@@ -318,12 +417,21 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
-    const defaultMarketplaceItems = marketplaceItems.map((item) => item.id);
+    if (cloningFromSource && effectiveSourceItemId) {
+      createMutation.mutate({
+        account_id: effectiveAccountId,
+        name: values.name,
+        source_item_id: effectiveSourceItemId,
+      });
+      return;
+    }
     createMutation.mutate({
       account_id: effectiveAccountId,
       name: values.name,
-      starter_template: 'minimal',
-      marketplace_items: values.includeGeneralKnowledgeSkills ? defaultMarketplaceItems : [],
+      // One starter kit: every new project ships the full Kortix skill kit (the
+      // general-knowledge-worker template seeds every skill).
+      starter_template: 'general-knowledge-worker',
+      marketplace_items: [],
     });
   }
 
@@ -397,7 +505,14 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
           />
         ) : null}
 
-        {mode === 'managed' ? (
+        {mode === 'template' ? (
+          <TemplatePicker
+            templates={templates}
+            loading={templatesQuery.isLoading}
+            onPick={pickTemplate}
+            onCancel={() => setMode('managed')}
+          />
+        ) : mode === 'managed' ? (
           <Form {...managedForm}>
             <form onSubmit={managedForm.handleSubmit(handleCreate)} className="w-full">
               <ModalBody>
@@ -427,66 +542,107 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                     )}
                   />
 
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-foreground text-sm font-medium">Starter skills</span>
-                      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                        {includedCount} included
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
-                      Preinstalled into your project&apos;s repo and ready in the first session.
-                      Toggle off anything you don&apos;t need.
-                    </p>
-                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
-                      <SetupOptionRow
-                        icon={
-                          <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
-                            <Boxes className="size-4" />
-                          </span>
-                        }
-                        title="Starter pack"
-                        description="Ready-made skills for research, writing, documents, slides, data, the web, and browser automation."
-                        selected={includeGeneralKnowledgeSkills}
-                        disabled={submitting}
-                        onToggle={(next) => {
-                          managedForm.setValue('includeGeneralKnowledgeSkills', next, {
-                            shouldDirty: true,
-                          });
-                          managedForm.setValue(
-                            'marketplaceItems',
-                            next ? marketplaceItems.map((item) => item.id) : [],
-                            { shouldDirty: true },
-                          );
-                        }}
-                      />
-                    </div>
-                  </div>
+                  {managedGitUnavailable ? (
+                    <InfoBanner tone="warning" title="Managed git isn't set up on this server">
+                      Ask your admin to configure GitHub, or{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2"
+                        onClick={switchToGitHubMode}
+                      >
+                        import an existing GitHub repo
+                      </button>{' '}
+                      instead.
+                    </InfoBanner>
+                  ) : null}
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={submitting}
-                    onClick={switchToGitHubMode}
-                  >
-                    <Icon.Github />
-                    {tHardcodedUi.raw(
-                      'componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo',
-                    )}
-                  </Button>
+                  {cloningFromSource ? (
+                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
+                      <div className="flex items-start gap-3 px-3.5 py-3">
+                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                          <Boxes className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-foreground text-sm font-medium">
+                            Cloning {sourceItemQuery.data?.title.replaceAll('-', ' ') ?? 'project'}
+                          </div>
+                          <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+                            {sourceItemQuery.data?.description ??
+                              'Your new project starts with everything this project ships.'}
+                          </p>
+                        </div>
+                        {pickedTemplateId && !sourceItemId ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0"
+                            disabled={submitting}
+                            onClick={clearPickedTemplate}
+                          >
+                            Change
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      <span className="text-foreground text-sm font-medium">Starter skills</span>
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        Every new project ships with the full Kortix skill kit —
+                        preinstalled into your repo and ready in the first session.
+                      </p>
+                      <div className="flex items-center gap-3 rounded-2xl border px-3.5 py-3">
+                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                          <Boxes className="size-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-foreground text-sm font-medium">Starter pack</div>
+                          <div className="text-muted-foreground text-xs leading-relaxed">
+                            Ready-made skills for research, writing, documents, slides, data, the
+                            web, and browser automation.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!cloningFromSource ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={submitting || managedGitUnavailable}
+                        onClick={switchToTemplateMode}
+                        title={managedGitUnavailable ? "Managed git isn't set up on this server" : undefined}
+                      >
+                        <Boxes className="size-4" />
+                        Clone from a template
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={submitting}
+                        onClick={switchToGitHubMode}
+                      >
+                        <Icon.Github />
+                        {tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo',
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </ModalBody>
               <ModalFooter>
                 <Button
                   type="submit"
                   className="w-full sm:w-auto"
-                  disabled={
-                    submitting ||
-                    !effectiveAccountId ||
-                    (includeGeneralKnowledgeSkills && marketplaceDefaultsQuery.isLoading)
-                  }
+                  disabled={submitting || !effectiveAccountId || managedGitUnavailable}
                 >
                   {submitting ? <Loading /> : <Icon.Plus />}
                   {tHardcodedUi.raw(
@@ -816,62 +972,67 @@ function CreateAccountField({
   );
 }
 
-/** One selectable row in the New Project "Starter skills" surface — the whole
- *  row is a label wrapping a real checkbox, so a click anywhere toggles it and
- *  it stays keyboard-accessible. Selected rows read as "included in this
- *  project" via the tinted fill + checked box (no "Add" affordance). */
-function SetupOptionRow({
-  icon,
-  title,
-  description,
-  badge,
-  selected,
-  disabled,
-  onToggle,
+/** "Clone from a template" step — pick a `registry:project` marketplace item
+ *  to seed the new project from, right inside the New Project flow (the
+ *  same source items the public marketplace's "Clone" button uses). */
+function TemplatePicker({
+  templates,
+  loading,
+  onPick,
+  onCancel,
 }: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  badge?: string;
-  selected: boolean;
-  disabled?: boolean;
-  onToggle: (next: boolean) => void;
+  templates: MarketplaceItem[];
+  loading: boolean;
+  onPick: (id: string) => void;
+  onCancel: () => void;
 }) {
   return (
-    <label
-      className={cn(
-        'flex cursor-pointer items-start gap-3 px-3.5 py-3 transition-colors',
-        selected ? 'bg-primary/[0.05]' : 'hover:bg-foreground/[0.03]',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      {icon}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-foreground truncate text-sm font-medium">{title}</span>
-          {badge && (
-            <Badge variant="new" size="sm" className="shrink-0">
-              {badge}
-            </Badge>
-          )}
-          {selected && (
-            <Badge variant="outline" size="sm" className="shrink-0">
-              Included
-            </Badge>
+    <>
+      <ModalBody>
+        <div className="min-h-[200px] space-y-2">
+          {loading ? (
+            <div className="text-muted-foreground flex h-28 items-center justify-center text-sm">
+              <Loading />
+            </div>
+          ) : templates.length === 0 ? (
+            <EmptyState
+              icon={Boxes}
+              size="sm"
+              title="No templates yet"
+              description="Ready-to-clone Kortix projects will show up here."
+            />
+          ) : (
+            templates.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onPick(item.id)}
+                className="hover:bg-muted/50 border-border/60 flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors"
+              >
+                <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                  <Boxes className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-foreground text-sm font-medium capitalize">
+                    {item.title.replaceAll('-', ' ')}
+                  </div>
+                  {item.description ? (
+                    <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
+                      {item.description}
+                    </p>
+                  ) : null}
+                </div>
+              </button>
+            ))
           )}
         </div>
-        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
-          {description}
-        </p>
-      </div>
-      <Checkbox
-        checked={selected}
-        onCheckedChange={(value) => onToggle(value === true)}
-        disabled={disabled}
-        aria-label={title}
-        className="mt-0.5 shrink-0"
-      />
-    </label>
+      </ModalBody>
+      <ModalFooter>
+        <Button type="button" variant="outline-ghost" className="w-full sm:w-auto" onClick={onCancel}>
+          Back
+        </Button>
+      </ModalFooter>
+    </>
   );
 }
 

@@ -65,12 +65,12 @@ const introducingKortix: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'A company that runs on AI shouldn’t be a black box you rent. It should be a codebase you own.',
+      text: 'A company that runs on AI shouldn’t be a dashboard you rent and can’t inspect. It should be a codebase you own.',
     },
-    { type: 'h2', text: 'kortix.toml: the single source of truth' },
+    { type: 'h2', text: 'kortix.yaml: the single source of truth' },
     {
       type: 'p',
-      text: 'At the root of every project sits one file — `kortix.toml` when this was written, `kortix.yaml` today. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
+      text: 'At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
     },
     {
       type: 'code',
@@ -151,7 +151,7 @@ connectors:
     { type: 'h2', text: 'Self-hostable, open, and yours' },
     {
       type: 'p',
-      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open and source-available**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
+      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open-source and self-hostable**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
     },
     {
       type: 'p',
@@ -226,7 +226,7 @@ const kortixVsClaudeCowork: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'Same agents, a fraction of the bill — and you can run them on your own infrastructure, even your own GPUs, with your data never leaving your walls.',
+      text: 'Same agents, [a fraction of the bill](/pricing) — and you can run them on your own infrastructure, even your own GPUs, with your data never leaving your walls.',
     },
     { type: 'h2', text: 'Side by side' },
     {
@@ -287,7 +287,7 @@ const kortixVsClaudeCowork: BlogPostEntry = {
       themLabel: 'Claude Cowork',
       them: 'you want a brilliant agent on one person’s desktop, you’re happy on Anthropic’s models, and you don’t need to self-host or run a fleet.',
       kortix:
-        'you want that same do-the-work power as a company platform — many agents across departments, any model, self-hosted, with everything versioned and owned by you.',
+        'you want that same do-the-work power as a company platform — many agents [across departments](/enterprise), any model, self-hosted, with everything versioned and owned by you.',
     },
     {
       type: 'p',
@@ -487,6 +487,159 @@ const beyondTheChatBox: BlogPostEntry = {
   ],
 };
 
+const secureAiAgentToolAccess: BlogPostEntry = {
+  slug: 'secure-ai-agent-tool-access',
+  title: 'How to give AI agents tool access safely',
+  description:
+    'How to give AI agents production tool access without raw API keys: scoped connectors, approval policies, server-side credentials, and reviewed work.',
+  date: '2026-07-07',
+  author: 'team',
+  cover: '/banner.png',
+  tags: ['Security', 'Connectors', 'Enterprise'],
+  readingTime: 7,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'The moment an AI agent can use tools, it stops being a chat feature and becomes production infrastructure. It can read customer records, draft emails, open pull requests, query billing, post in Slack, or touch an internal API. At that point the hard question is not “can the model call the tool?” It is **who gave it access, how narrow is that access, what happens before a risky action runs, and what audit trail remains afterward?**',
+    },
+    {
+      type: 'p',
+      text: 'Kortix was built around that boundary. Tool access does not belong in a prompt and raw credentials do not belong in an agent sandbox. In Kortix, connections are part of the project operating layer: declared as files, brokered server-side, granted per agent, governed by policy, and reviewed when durable work changes the company. If you want the larger architecture first, read [Introducing Kortix](/blog/introducing-kortix) or the [company OS post](/blog/ai-transformation-company-os).',
+    },
+    {
+      type: 'p',
+      text: 'The rest of the market is converging on the same lesson. [Auth0](https://auth0.com/blog/api-key-security-for-ai-agents) calls out over-privileged tokens, prompt-injection exposure, and missing audit trails as common risks when teams hand API keys to agents. [WorkOS](https://workos.com/blog/ai-agent-credentials) argues agents need their own scoped, revocable credentials instead of borrowing a user’s full session. [Promptfoo’s OWASP Agentic AI summary](https://www.promptfoo.dev/docs/red-team/owasp-agentic-ai) lists Tool Misuse and Identity and Privilege Abuse as core agentic risks. The pattern is clear: agent security is mostly tool security.',
+    },
+    { type: 'h2', text: 'Chat is harmless until it touches systems' },
+    {
+      type: 'p',
+      text: 'A model drafting text in a window has a small blast radius. A model with connected tools has the blast radius of those tools. That is not a reason to keep agents powerless; powerless agents do not run companies. It is a reason to treat the connector layer as seriously as you treat IAM, secrets, and production deploys.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**A support agent** may need to read tickets and invoices, but should not be able to refund money without approval.',
+        '**A finance agent** may need to pull Stripe, bank, and warehouse data, but should not be able to send vendor payments from the same path.',
+        '**A recruiting agent** may need to enrich candidates and draft outreach, but should not send messages without a human approving the final copy.',
+        '**An engineering agent** may need GitHub, Linear, CI, and preview access, but should land work through a reviewed change request instead of mutating main directly.',
+      ],
+    },
+    {
+      type: 'callout',
+      text: 'The control plane cannot be “the prompt told the agent to be careful.” The control plane has to be outside the model.',
+    },
+    { type: 'h2', text: 'The five rules of safe tool access' },
+    {
+      type: 'p',
+      text: 'A production agent platform needs five layers before you can comfortably connect real company systems:',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Keep credentials out of the sandbox.** The agent should never receive a third-party API key unless the task truly requires direct process-level access. Connector credentials should be resolved server-side and injected into the upstream request, not into model context.',
+        '**Grant tools per agent.** Connecting Slack, Gmail, Stripe, or GitHub to a project is not the same as letting every agent call it. The support agent and release agent need different reach.',
+        '**Gate individual actions.** Read operations, write operations, deletes, sends, payments, and admin changes should not share one permission bit. Tool names need policy: always run, require approval, or block.',
+        '**Make risky calls human-reviewable.** A good agent can prepare the exact action and evidence. The platform should pause at the boundary where a human decision is required.',
+        '**Route durable change through review.** If the agent edits the operating layer — agents, skills, triggers, memory, policies, or code — that work should be a diff someone can review, merge, and roll back.',
+      ],
+    },
+    { type: 'h2', text: 'How Kortix models a connector' },
+    {
+      type: 'p',
+      text: 'Kortix connections are documented in [Connecting your tools](/docs/guides/connecting-tools). A connector can be a one-click Pipedream app, a remote MCP server, an OpenAPI or GraphQL API, a raw HTTP API, a channel such as Slack, or a connected computer. The definition lives with the project; the credential lives on the platform. The agent sees a tool catalog, not a pile of secrets.',
+    },
+    {
+      type: 'code',
+      code: `connectors:
+  - slug: stripe
+    provider: openapi
+    spec: https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json
+    policies:
+      - match: "*.get*"
+        action: always_run
+      - match: "*.create*"
+        action: require_approval
+      - match: "*.delete*"
+        action: block
+
+agents:
+  support:
+    connectors: [plain, stripe]
+    secrets: none
+    kortix_cli: none
+
+  release-bot:
+    connectors: [github, vercel]
+    kortix_cli: [project.cr.open]`,
+    },
+    {
+      type: 'p',
+      text: 'That example is deliberately boring. Boring is the point. You should be able to answer “what can this agent call?” by reading the project files, not by reverse-engineering a prompt or inspecting a live process. The [manifest reference](/docs/reference/manifest#connectors--connectors) defines connector policies and the [agent governance section](/docs/reference/manifest#agents-v2) defines per-agent grants.',
+    },
+    { type: 'h2', text: 'Server-side credentials change the failure mode' },
+    {
+      type: 'p',
+      text: 'When credentials sit in environment variables inside the agent runtime, every prompt-injection bug, logging bug, file-read bug, and subprocess bug becomes a possible credential leak. When credentials are brokered server-side, the agent can ask to call a tool, but the platform decides whether the call is allowed, resolves the credential, executes the upstream request, and records what happened.',
+    },
+    {
+      type: 'p',
+      text: 'That is the model behind the Kortix Executor. Every session gets a scoped Executor token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
+    },
+    {
+      type: 'callout',
+      text: 'A scoped tool token is not just safer than a raw API key. It also makes the audit trail meaningful: agent identity, tool name, input boundary, policy decision, approval state, and upstream result can all be tied together.',
+    },
+    { type: 'h2', text: 'The dangerous pattern to delete' },
+    {
+      type: 'p',
+      text: 'The common early pattern is understandable: put `STRIPE_SECRET_KEY`, `GITHUB_TOKEN`, `SLACK_BOT_TOKEN`, and a dozen other keys into `.env`, start the agent, and hope the prompt keeps it in bounds. That works for a demo. It is the wrong shape for a company.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**It is too broad.** The key usually carries every permission the integration owner had, not the minimum action the agent needs.',
+        '**It is hard to attribute.** Downstream systems see the shared key, not the agent, session, person, or approval that caused the call.',
+        '**It is hard to revoke safely.** Rotating a shared key breaks every workflow using it; leaving it in place keeps the blast radius large.',
+        '**It hides policy in code and prompts.** Security reviewers need declarative grants and logs, not “the agent instructions say don’t delete things.”',
+      ],
+    },
+    { type: 'h2', text: 'A quick audit for your agent stack' },
+    {
+      type: 'p',
+      text: 'Before you connect agents to production systems, ask these questions:',
+    },
+    {
+      type: 'ul',
+      items: [
+        'Can I list every external system this agent can reach without opening the agent prompt?',
+        'Can I give a sales agent CRM read access without also giving it billing write access?',
+        'Can I block deletes, require approval for sends, and allow safe reads on the same connector?',
+        'Can I see which person, agent, session, and policy decision caused a tool call?',
+        'Can I revoke one agent’s reach without rotating a shared key that breaks other workflows?',
+        'Can the operating layer move from cloud to VPC or on-prem without rewriting the tool model?',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'If the answer is no, you may still have a useful agent prototype. You do not yet have a secure AI command center.',
+    },
+    { type: 'h2', text: 'Why this is a company OS problem' },
+    {
+      type: 'p',
+      text: 'Safe tool access is not a standalone feature. It only works when it sits beside the rest of the company operating layer: memory, agents, skills, triggers, secrets, policies, sandboxes, and change requests. The connector grant says what the agent may touch. The sandbox limits where it runs. The policy gate decides which calls need approval. The change request records durable changes as a diff. The repo keeps the whole thing owned and reviewable.',
+    },
+    {
+      type: 'p',
+      text: 'That is why Kortix frames the product as an Autonomous Company Operating System, not another assistant with more integrations. A company does not need one more place to paste keys. It needs a Git-backed AI command center where the tools, credentials, policies, and agent work are part of the same owned system.',
+    },
+    {
+      type: 'cta',
+      title: 'Connect the tools, keep the keys out of the agent.',
+      body: 'Start with one workflow, grant only the connectors it needs, gate risky actions, and run the work from a repo your company owns.',
+    },
+  ],
+};
+
 const aiTransformationCompanyOs: BlogPostEntry = {
   slug: 'ai-transformation-company-os',
   title: 'AI transformation needs a company OS',
@@ -646,7 +799,148 @@ const aiTransformationCompanyOs: BlogPostEntry = {
   ],
 };
 
+const kortixVsGlean: BlogPostEntry = {
+  slug: 'kortix-vs-glean',
+  title: 'Kortix vs Glean: search or an agent platform that runs work?',
+  description:
+    "Glean is the best permission-aware enterprise search. But search finds work — it doesn't do it. Here's where you outgrow it, and the open runtime alternative.",
+  date: '2026-07-13',
+  author: 'team',
+  cover: '/banner.png',
+  tags: ['Comparisons', 'Enterprise', 'Open Source'],
+  coverLogos: [{ domain: 'glean.com', name: 'Glean' }],
+  readingTime: 5,
+  blocks: [
+    {
+      type: 'lead',
+      text: "Glean is genuinely the best permission-aware enterprise search you can buy. It indexes your apps, respects your ACLs, and answers in plain language with citations. So this isn't a \"they're bad, we're good\" post. The honest question is a different one: once you can find anything in your company, what actually does the work with it?",
+    },
+    {
+      type: 'logos',
+      label: 'Compared here:',
+      items: [{ domain: 'glean.com', name: 'Glean' }],
+    },
+    { type: 'h2', text: 'What Glean is great at' },
+    {
+      type: 'ul',
+      items: [
+        '**Permission-aware search done right** — it inherits your source-system ACLs, so a result you can see is a result you can act on.',
+        '**Mature connectors** — it reaches across the usual enterprise stack and keeps the index fresh.',
+        '**Serious compliance posture** — built for the security review that enterprise search has to survive.',
+        '**A clean assistant on top of retrieval** — ask a question, get a cited answer instead of ten blue links.',
+      ],
+    },
+    { type: 'h2', text: 'Where it stops: search finds work, it doesn’t do it' },
+    {
+      type: 'p',
+      text: 'Glean’s center of gravity is the index. Agents are a layer on top of retrieval, not a workforce that runs your company. The moment the job is “open the tickets, enrich the accounts, draft and send the outreach, land the fix, close the book” — search has stopped being the bottleneck and a chat assistant over the index isn’t the answer either. You need a runtime that hands a task to agents and they return finished work.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Retrieval-first, agents bolted on.** The product answers “where is it?” well; it is not built to run a fleet of agents that take real actions across your tools.',
+        '**Closed and vendor-hosted.** You query Glean; you don’t own it. It is SaaS or vendor-managed cloud — your company’s knowledge leaves your walls to be indexed somewhere else.',
+        '**Seat-priced and sales-led.** Public reporting puts Glean at roughly [$50–75 per user/month with a ~100-seat minimum](https://www.gosearch.ai/faqs/glean-enterprise-search-pricing-explained-costs-tiers-hidden-fees-gosearch-comparison) — about a $60k/year floor before infrastructure and implementation. That locks out the small team and the single-department pilot.',
+        '**Configured in a console, not as code.** Connectors, assistants, and prompts live in a vendor dashboard. There is no diff to review, no version to roll back, no repo to fork.',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'None of that is a flaw in a search product. It is exactly the line you cross when “let me find it” becomes “let something do it.” If you want the broader framing, [beyond the chat box](/blog/beyond-the-chat-box) makes the same argument against chat assistants: input→output stops short of work.',
+    },
+    { type: 'h2', text: 'A runtime that does the work, not just retrieves it' },
+    {
+      type: 'p',
+      text: 'Kortix is an open agent runtime — the command center where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
+    },
+    {
+      type: 'p',
+      text: 'That is the real split. Glean makes your existing knowledge searchable; Kortix makes your company’s operating layer — agents, skills, memory, connectors, policies — into [files in one repo](/blog/introducing-kortix) that agents run against. One is a window onto work; the other is where the work happens.',
+    },
+    { type: 'h2', text: 'Own the data, pick the model, skip the seat tax' },
+    {
+      type: 'p',
+      text: 'Because Kortix is open-source and self-hostable, your data never has to leave your walls — your cloud, your VPC, on-prem, or your own GPUs. And because you bring your own key and run any model, the bill is not bundled into a per-seat license. An open-weight model like **GLM-5.2** runs about **5–7× cheaper** than Claude Opus or GPT on output (~$4.40 vs $25–30 per 1M tokens), and **DeepSeek** is **50×+ cheaper** on output. Route a cheap model for the bulk of the work and a frontier model only where it earns its keep.',
+    },
+    {
+      type: 'callout',
+      text: 'No 100-seat floor, no sales process to start — [see the plans](/pricing). Open-source means you can run one project today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
+    },
+    { type: 'h2', text: 'Side by side' },
+    {
+      type: 'compare',
+      them: 'Glean',
+      rows: [
+        {
+          dimension: 'Core job',
+          them: 'Find & answer over company data',
+          kortix: 'Build & run agents that do the work',
+        },
+        {
+          dimension: 'Runs a fleet of agents in parallel',
+          them: 'Assistants bolted onto search',
+          kortix: 'Thousands of agents, isolated sandboxes',
+        },
+        {
+          dimension: 'Self-hostable / own your data',
+          them: 'No — SaaS or vendor-managed cloud',
+          kortix: 'Yes — your cloud, VPC, on-prem',
+        },
+        {
+          dimension: 'Choose your models',
+          them: 'Vendor-managed, bundled in seat',
+          kortix: 'Any model — your keys',
+        },
+        {
+          dimension: 'Pricing model',
+          them: '~$50–75/user/mo, ~100-seat min',
+          kortix: 'Open-source; cloud or self-host, any size',
+        },
+        {
+          dimension: 'Accessible below 100 seats',
+          them: 'No — sales-led, large-enterprise floor',
+          kortix: 'Yes — start with one project',
+        },
+        {
+          dimension: 'Agents, skills & policies as code',
+          them: 'Configured in a vendor console',
+          kortix: 'Files in one repo you own',
+        },
+        {
+          dimension: 'Versioned, reviewable, roll-back-able',
+          them: 'Console settings, no diff',
+          kortix: 'Git history + change requests',
+        },
+        {
+          dimension: 'Multi-tenant governance',
+          them: 'Enterprise permissions on search',
+          kortix: 'Departments, roles, scoped connectors',
+        },
+      ],
+    },
+    { type: 'h2', text: 'When to pick which' },
+    {
+      type: 'verdict',
+      themLabel: 'Glean',
+      them: 'you want the best permission-aware enterprise search and assistant, you’re fine with a closed SaaS and a sales-led ~100-seat contract, and “find the answer” is the job.',
+      kortix:
+        'you want to run agents that actually do the work — [across departments](/enterprise), any model, self-hosted, with everything versioned and owned by you.',
+    },
+    {
+      type: 'p',
+      text: 'They can coexist, too. Plenty of companies will keep Glean as the search layer and run the work itself on Kortix — agents that read, decide, and act, with the operating layer they need to do it governed as code. If that operating layer is what you’re missing, the [company OS post](/blog/ai-transformation-company-os) and the [secure connector model](/blog/secure-ai-agent-tool-access) are the next reads.',
+    },
+    {
+      type: 'cta',
+      title: "Don't just find the work. Run it.",
+      body: 'Connect your tools and hand a Kortix agent a real task. Free to start, free to self-host.',
+    },
+  ],
+};
+
 export const BLOG_POSTS: BlogPostEntry[] = [
+  kortixVsGlean,
+  secureAiAgentToolAccess,
   aiTransformationCompanyOs,
   kortixVsClaudeCowork,
   personalAgentsVsCompanyOs,

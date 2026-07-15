@@ -38,6 +38,40 @@ export interface ApiResponse<T = any> {
   success: boolean;
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * HTTP statuses that represent a transient gateway / overload condition rather
+ * than a deterministic server-side failure: 502 (Bad Gateway), 503 (Service
+ * Unavailable), 504 (Gateway Timeout). These are produced by the load balancer
+ * / reverse proxy / the API's request-deadline net under momentary saturation,
+ * typically resolve within a few hundred ms, and are safe to retry on
+ * idempotent reads. A real 500 is NOT here — it's a deterministic bug and must
+ * surface on the first response.
+ */
+const TRANSIENT_GATEWAY_STATUSES = new Set([502, 503, 504]);
+const isTransientGatewayStatus = (status: number): boolean =>
+  TRANSIENT_GATEWAY_STATUSES.has(status);
+
+/** Idempotent HTTP methods that are safe to transparently retry. GET/HEAD only
+ *  — POST/PUT/PATCH/DELETE mutate state and must not be replayed by the client. */
+const isIdempotentMethod = (method?: string): boolean => {
+  const m = (method ?? 'GET').toUpperCase();
+  return m === 'GET' || m === 'HEAD';
+};
+
+/**
+ * Bounded retry count for transient gateway (502/503/504) responses on
+ * idempotent reads. Two retries (3 total attempts) with 250ms→500ms backoff
+ * absorbs a single transient ALB/proxy blip — the signature of Better Stack
+ * frontend pattern `994987…` (`ApiError: HTTP 502: ` on the background
+ * `useSessionAudit` poll) — without surfacing it to `onError` / Sentry.
+ * Persistent gateway failures exhaust the loop and surface normally, so real
+ * outages still report. Mirrors the established retry pattern in
+ * `apps/api/src/git-proxy/upstream.ts` (`fetchUpstreamBuffered`).
+ */
+const TRANSIENT_GATEWAY_RETRIES = 2;
+
 // Platform-admin read-only bypass toggle (web only). In-memory, per-tab — never
 // persisted — so it resets on reload and can't linger silently. When on, every
 // request from this client carries `x-kortix-admin-bypass: 1`; the API only
@@ -115,7 +149,7 @@ async function makeRequest<T = any>(
     // Note: X-Refresh-Token was removed to reduce header size and prevent HTTP 431 errors.
     // The backend handles token refresh via Supabase directly.
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       ...fetchOptions,
       headers,
       signal: controller.signal,
@@ -130,20 +164,63 @@ async function makeRequest<T = any>(
       timeoutId = null;
     }
 
+    // Absorb a single transient gateway blip (502/503/504) on idempotent reads
+    // instead of surfacing it to `onError` / Sentry on the first response. The
+    // next attempt usually succeeds; persistent gateway failures exhaust the
+    // loop and fall through to the normal error path below (so real outages
+    // still report). Non-idempotent methods (POST/PUT/PATCH/DELETE) and
+    // non-transient statuses are never retried.
+    if (
+      !response.ok &&
+      isIdempotentMethod(fetchOptions.method) &&
+      isTransientGatewayStatus(response.status)
+    ) {
+      for (let attempt = 0; attempt < TRANSIENT_GATEWAY_RETRIES; attempt++) {
+        // Drain + discard the transient error body before re-fetching.
+        try {
+          await response.arrayBuffer();
+        } catch {
+        }
+        await sleep(250 * 2 ** attempt);
+        const retryController = new AbortController();
+        let retryTimeoutId: NodeJS.Timeout | null = setTimeout(() => {
+          retryController.abort();
+        }, timeout);
+        try {
+          response = await fetch(url, {
+            ...fetchOptions,
+            headers,
+            signal: retryController.signal,
+            credentials: fetchOptions.credentials ?? 'omit',
+          });
+        } catch {
+          // Network error / abort on the retry — give up retrying and surface
+          // the last (transient) response through the normal error path below.
+          break;
+        } finally {
+          if (retryTimeoutId) {
+            clearTimeout(retryTimeoutId);
+            retryTimeoutId = null;
+          }
+        }
+        if (response.ok || !isTransientGatewayStatus(response.status)) break;
+      }
+    }
+
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       let errorData: any = null;
 
       try {
         errorData = await response.json();
-        if (errorData.message) {
+        if (typeof errorData.message === 'string') {
           errorMessage = errorData.message;
         } else if (errorData.error && typeof errorData.error === 'string') {
           errorMessage = errorData.error;
         } else if (typeof errorData.detail === 'string') {
           // FastAPI returns {"detail": "error message"}
           errorMessage = errorData.detail;
-        } else if (errorData.detail?.message) {
+        } else if (typeof errorData.detail?.message === 'string') {
           errorMessage = errorData.detail.message;
         }
       } catch {

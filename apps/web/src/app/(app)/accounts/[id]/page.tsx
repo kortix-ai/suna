@@ -1,56 +1,48 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
   Clock,
+  Coins,
+  CreditCard,
   ExternalLink,
+  Fingerprint,
+  GitBranch,
   Github,
+  Info,
   KeyRound,
   Link as LinkIcon,
-  Loader2,
   Mail,
   MoreHorizontal,
+  Network,
   RefreshCw,
-  Search,
-  Shield,
-  Trash2,
+  ScrollText,
   Unplug,
-  UserPlus,
-  X,
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
+import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
+import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
+import { GitHubAppSetupCard, useGitHubAppStatus } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { RolesTab } from '@/components/iam/roles-tab';
-import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
-import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,14 +51,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -75,19 +81,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
+import { isBillingEnabled, isSingleAccountMode } from '@/lib/config';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
+import { usePermissions } from '@/lib/use-permission';
+import { cn } from '@/lib/utils';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
-  type AccountDetail,
-  type AccountInvitation,
-  type AccountMember,
-  type AccountRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
   getAccount,
@@ -100,10 +109,22 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
+  type AccountDetail,
+  type AccountInvitation,
+  type AccountMember,
+  type AccountRole,
 } from '@kortix/sdk/projects-client';
-import { usePermissions } from '@/lib/use-permission';
-import { cn } from '@/lib/utils';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import {
+  CogOne,
+  Icon as IconMynauiType,
+  Search,
+  Shield,
+  TrashSolid,
+  UserPlus,
+  Users,
+} from '@mynaui/icons-react';
+import { LucideIcon } from 'lucide-react';
+import { IconType } from 'react-icons/lib';
 
 // Stable (module-level) probe list for the account-capabilities batch. Order
 // must match the destructure at the call site. Declared outside the component
@@ -125,7 +146,76 @@ const ROLE_LABEL: Record<AccountRole, string> = {
   member: 'Member',
 };
 
-// The enterprise IdP surface (SAML SSO + SCIM provisioning) is now PLAN-GATED,
+// Entity row dialect shared with the customize section views (members-view).
+const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
+
+// ── Section nav (left rail) ───────────────────────────────────────────────
+
+const VALID_TABS = [
+  'members',
+  'git',
+  'tokens',
+  'settings',
+  'billing',
+  'transactions',
+  'groups',
+  'roles',
+  'identity',
+  'audit',
+] as const;
+type AccountSection = (typeof VALID_TABS)[number];
+
+// Three labeled groups: day-to-day account plumbing, money, and the
+// enterprise IAM surface (Groups / Roles / Identity / Audit all share the
+// same entitlement story, so they live together under one "Enterprise"
+// heading instead of being scattered across the rail and the Settings tab).
+const NAV_GROUPS: Array<{
+  label?: string;
+  items: Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>;
+}> = [
+  {
+    items: [
+      { id: 'members', label: 'Members', icon: Users },
+      { id: 'git', label: 'Git', icon: GitBranch },
+      { id: 'tokens', label: 'Tokens', icon: KeyRound },
+      { id: 'settings', label: 'Settings', icon: CogOne },
+    ],
+  },
+  {
+    label: 'Billing',
+    items: [
+      { id: 'billing', label: 'Plan', icon: CreditCard },
+      { id: 'transactions', label: 'Credits', icon: Coins },
+    ],
+  },
+  {
+    label: 'Enterprise',
+    items: [
+      { id: 'groups', label: 'Groups', icon: Network },
+      { id: 'roles', label: 'Roles', icon: Shield },
+      { id: 'identity', label: 'Identity', icon: Fingerprint },
+      { id: 'audit', label: 'Audit log', icon: ScrollText },
+    ],
+  },
+];
+
+// Header block for sections whose content doesn't carry its own title.
+const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
+  members: { title: 'Members', description: 'People with access to this account.' },
+  billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
+  transactions: { title: 'Credits', description: 'Every credit movement on this account.' },
+  tokens: {
+    title: 'Tokens',
+    description: 'Token policy and machine identities for CI and automations.',
+  },
+  identity: {
+    title: 'Identity',
+    description: 'Bring members in from your identity provider.',
+  },
+  settings: { title: 'Settings', description: 'Name and security for this account.' },
+};
+
+// The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
 // `sso` / `scim` entitlement (i.e. the sales-assigned `enterprise` tier). This
 // matches the server-side enforcement in the SCIM/SSO routes — the API returns
@@ -151,11 +241,11 @@ function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
 async function copyInviteLink(url: string) {
   try {
     await navigator.clipboard.writeText(url);
-    toast.success('Invite link copied to clipboard');
+    successToast('Invite link copied to clipboard');
   } catch {
     // Older browsers / blocked clipboard — show the link in a toast so the
     // admin can copy it by hand.
-    toast.message('Copy this invite link', {
+    infoToast('Copy this invite link', {
       description: url,
       duration: 15_000,
     });
@@ -171,8 +261,6 @@ function rememberGitHubSetupReturn(path: string) {
 }
 
 export default function AccountSettingsPage() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -236,102 +324,176 @@ export default function AccountSettingsPage() {
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
+  // Lifted (rather than read only inside GitHubAppSetupCard) so the Git tab
+  // can also gate the cloud GitHubConnectionCard on it below — same query,
+  // same cache entry, so this doesn't add a second network round-trip.
+  const githubAppStatusQuery = useGitHubAppStatus(canWriteAccount === true);
+
+  const prefersReducedMotion = useReducedMotion();
+
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const VALID_TABS = [
-    'members',
-    'groups',
-    'roles',
-    'billing',
-    'transactions',
-    'git',
-    'audit',
-    'settings',
-  ] as const;
   const rawTab = searchParams.get('tab');
   // Legacy callers pass tab=overview — the limits/wallet/spend panels now
   // live at the top of the Billing tab, so fold it.
-  const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as
-    | (typeof VALID_TABS)[number]
-    | null;
-  const requestedTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
-  // The 'roles' tab trigger + panel are gated on canManageRoles; a non-manager
-  // deep-linking ?tab=roles would otherwise land on an empty panel.
-  const initialTab = requestedTab === 'roles' && !canManageRoles ? 'members' : requestedTab;
+  const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
+  const requestedTab: AccountSection =
+    tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
+  // Self-host single-account mode: no teams, so member/group management has
+  // nothing to manage. Self-host billing-disabled: no Stripe/credit ledger
+  // to show — see isBillingEnabled() (mirrors the backend's
+  // KORTIX_BILLING_INTERNAL_ENABLED) instead of only checking permission.
+  const singleAccountMode = isSingleAccountMode();
+  const billingActive = isBillingEnabled();
+
+  // Which rail items this caller can see. Mirrors the per-section gates the
+  // content rendering applies below, so a deep link to a section the caller
+  // can't use falls back to Members instead of an empty pane.
+  const sectionVisible: Record<AccountSection, boolean> = {
+    members: !singleAccountMode,
+    groups: !singleAccountMode,
+    roles: canManageRoles === true,
+    identity: canWriteAccount === true && !singleAccountMode,
+    billing: canWriteAccount === true && billingActive,
+    transactions: canWriteAccount === true && billingActive,
+    git: canWriteAccount === true,
+    tokens: canWriteAccount === true,
+    audit: canReadAudit === true,
+    settings: canWriteAccount === true,
+  };
+  const activeSection: AccountSection = sectionVisible[requestedTab]
+    ? requestedTab
+    : sectionVisible.members
+      ? 'members'
+      : 'settings';
+  const paneMeta = PANE_META[activeSection];
+  const navigate = (section: AccountSection) =>
+    router.replace(`/accounts/${accountId}?tab=${section}`, { scroll: false });
 
   return (
-    <main className="w-full flex-1 px-4 py-8">
-      <div className="mx-auto w-full max-w-6xl space-y-8">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-                {accountQuery.isLoading ? <Skeleton className="h-7 w-48" /> : account?.name}
-              </h1>
-              {account && (
-                <p className="text-muted-foreground mt-1 text-sm">
-                  {tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxTextManageAccountSettings5130f3ea',
-                  )}
-                </p>
-              )}
+    <div className="mx-auto w-full max-w-6xl pb-10">
+      {accountQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load account"
+          description={(accountQuery.error as Error).message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : accountQuery.isLoading ? (
+        <div className="lg:grid lg:grid-cols-[208px_minmax(0,1fr)] lg:gap-12">
+          <div className="mb-6 space-y-4 lg:mb-0">
+            <div className="flex items-center gap-2.5">
+              <Skeleton className="size-8 rounded-md" />
+              <Skeleton className="h-5 w-32 rounded-md" />
             </div>
-            {account && <PermissionsHelpPopover />}
+            <div className="space-y-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full rounded-md" />
+              ))}
+            </div>
+          </div>
+          <div className="max-w-3xl space-y-4">
+            <Skeleton className="h-7 w-40 rounded-md" />
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+              ))}
+            </div>
           </div>
         </div>
+      ) : account ? (
+        <div className="lg:grid lg:grid-cols-[208px_minmax(0,1fr)] lg:gap-12">
+          {/* ── Rail — identity + section nav ── */}
+          <aside className="mb-6 space-y-4 self-start lg:sticky lg:top-8 lg:mb-0">
+            <div className="flex min-w-0 items-center gap-2.5 px-1">
+              <EntityAvatar label={account.name || 'Account'} size="md" />
+              <div className="min-w-0">
+                <p className="text-foreground truncate text-sm font-medium">{account.name}</p>
+                {!membersQuery.isLoading ? (
+                  <p className="text-muted-foreground text-xs">
+                    {members.length} member{members.length === 1 ? '' : 's'}
+                  </p>
+                ) : null}
+              </div>
+            </div>
 
-        {accountQuery.isError && (
-          <InfoBanner
-            tone="destructive"
-            title={tHardcodedUi.raw('appAccountsIdPage.line237JsxAttrTitleFailedToLoadAccount')}
-            action={
-              <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
-                Retry
-              </Button>
-            }
+            <nav
+              aria-label="Account sections"
+              className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0"
+            >
+              {NAV_GROUPS.map((group, gi) => {
+                const items = group.items.filter((item) => sectionVisible[item.id]);
+                if (items.length === 0) return null;
+                return (
+                  <div key={group.label ?? gi} className="contents lg:block lg:space-y-0.5">
+                    {gi > 0 ? <div className="hidden lg:block lg:h-4" aria-hidden /> : null}
+                    {group.label ? (
+                      // Same label dialect as the project sidebar's group
+                      // headings. Hidden on the mobile horizontal strip —
+                      // there the items flow as one row of chips.
+                      <p className="text-muted-foreground/60 hidden px-2.5 pb-1 text-xs font-medium tracking-wider uppercase lg:block">
+                        {group.label}
+                      </p>
+                    ) : null}
+                    {items.map((item) => {
+                      const active = item.id === activeSection;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => navigate(item.id)}
+                          aria-current={active ? 'page' : undefined}
+                          className={cn(
+                            'flex h-8 shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-sm whitespace-nowrap transition-colors lg:w-full',
+                            active
+                              ? 'bg-primary/[0.06] text-foreground font-medium'
+                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                          )}
+                        >
+                          <item.icon className="size-4 shrink-0" />
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </nav>
+
+            <div className="hidden px-1 lg:block">
+              <PermissionsHelpPopover />
+            </div>
+          </aside>
+
+          {/* ── Content pane. Keyed remount + a 200ms rise on section switch;
+                opacity-only under reduced motion. ── */}
+          <motion.div
+            key={activeSection}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            className="max-w-3xl min-w-0"
           >
-            {(accountQuery.error as Error).message}
-          </InfoBanner>
-        )}
+            {paneMeta ? (
+              <div className="mb-6 space-y-1">
+                <h2 className="text-foreground text-xl font-medium">{paneMeta.title}</h2>
+                <p className="text-muted-foreground text-sm">{paneMeta.description}</p>
+              </div>
+            ) : null}
 
-        {accountQuery.isLoading && (
-          <>
-            <Skeleton className="h-48 w-full rounded-2xl" />
-            <Skeleton className="h-64 w-full rounded-2xl" />
-          </>
-        )}
-
-        {account && (
-          <Tabs defaultValue={initialTab} className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="members">
-                {tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}
-              </TabsTrigger>
-              <TabsTrigger value="groups">Groups</TabsTrigger>
-              {canManageRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
-              {/* Billing holds plan + limits + wallet + spend; Credits ledger
-                    holds the per-transaction history. Both are gated on
-                    account.write so non-admins don't see money surfaces. */}
-              {canWriteAccount && <TabsTrigger value="billing">Billing</TabsTrigger>}
-              {canWriteAccount && (
-                <TabsTrigger value="transactions">
-                  {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextCreditsLedger313d0d27')}
-                </TabsTrigger>
-              )}
-              {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
-              {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
-              {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
-            </TabsList>
-
-            {canWriteAccount && (
-              <TabsContent value="billing" className="space-y-6">
+            {activeSection === 'billing' && canWriteAccount ? (
+              <div className="space-y-6">
                 {/* Scope every billing hook nested below to this account so a
-                      multi-account user doesn't see (or mutate) their primary
-                      account by accident. */}
+                    multi-account user doesn't see (or mutate) their primary
+                    account by accident. */}
                 <BillingAccountProvider accountId={account.account_id}>
                   <BillingTab
                     // Stripe Billing Portal requires an absolute return_url —
@@ -341,26 +503,24 @@ export default function AccountSettingsPage() {
                         ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
                         : `/accounts/${account.account_id}?tab=billing`
                     }
-                    isActive={initialTab === 'billing'}
+                    isActive
                   />
                   {/* The "Subscribe to Team plan" button opens the global
-                        upgrade-dialog store; mount its renderer here (the global
-                        one lives only on share pages) so the dialog actually
-                        appears, scoped to THIS account via the provider above. */}
+                      upgrade-dialog store; mount its renderer here (the global
+                      one lives only on share pages) so the dialog actually
+                      appears, scoped to THIS account via the provider above. */}
                   <GlobalUpgradeModal />
                 </BillingAccountProvider>
-              </TabsContent>
-            )}
+              </div>
+            ) : null}
 
-            {canWriteAccount && (
-              <TabsContent value="transactions" className="space-y-6">
-                <BillingAccountProvider accountId={account.account_id}>
-                  <TransactionsTab />
-                </BillingAccountProvider>
-              </TabsContent>
-            )}
+            {activeSection === 'transactions' && canWriteAccount ? (
+              <BillingAccountProvider accountId={account.account_id}>
+                <TransactionsTab />
+              </BillingAccountProvider>
+            ) : null}
 
-            <TabsContent value="members" className="space-y-6">
+            {activeSection === 'members' ? (
               <MembersCard
                 account={account}
                 members={members}
@@ -374,11 +534,11 @@ export default function AccountSettingsPage() {
                 canRemove={canRemoveMember}
                 canUpdateRole={canUpdateMember}
               />
-            </TabsContent>
+            ) : null}
 
-            <TabsContent value="groups" className="space-y-6">
-              {entitlementsLoading ? (
-                <Skeleton className="h-64 w-full rounded-2xl" />
+            {activeSection === 'groups' ? (
+              entitlementsLoading ? (
+                <Skeleton className="h-64 w-full rounded-md" />
               ) : rbacEnabled ? (
                 <GroupsTab
                   accountId={account.account_id}
@@ -387,46 +547,97 @@ export default function AccountSettingsPage() {
                 />
               ) : (
                 <EnterpriseUpsell feature="groups" />
-              )}
-            </TabsContent>
+              )
+            ) : null}
 
-            {canManageRoles && (
-              <TabsContent value="roles" className="space-y-6">
-                {entitlementsLoading ? (
-                  <Skeleton className="h-64 w-full rounded-2xl" />
-                ) : rbacEnabled ? (
-                  <RolesTab
-                    accountId={account.account_id}
-                    canManage={canManageRoles}
-                    rbacEnabled={rbacEnabled}
-                  />
-                ) : (
-                  <EnterpriseUpsell feature="roles" />
-                )}
-              </TabsContent>
-            )}
+            {activeSection === 'roles' && canManageRoles ? (
+              entitlementsLoading ? (
+                <Skeleton className="h-64 w-full rounded-md" />
+              ) : rbacEnabled ? (
+                <RolesTab
+                  accountId={account.account_id}
+                  canManage={canManageRoles}
+                  rbacEnabled={rbacEnabled}
+                />
+              ) : (
+                <EnterpriseUpsell feature="roles" />
+              )
+            ) : null}
 
-            {canReadAudit && (
-              <TabsContent value="audit" className="space-y-6">
+            {activeSection === 'audit' && canReadAudit ? (
+              <div className="space-y-10">
                 {entitlementsLoading ? (
-                  <Skeleton className="h-64 w-full rounded-2xl" />
+                  <Skeleton className="h-64 w-full rounded-md" />
                 ) : auditEnabled ? (
                   <AuditTab accountId={account.account_id} />
                 ) : (
                   <EnterpriseUpsell feature="audit" />
                 )}
-              </TabsContent>
-            )}
+                {/* Webhooks ship the same events the log above shows, so they
+                    live on this tab rather than buried in Settings. Only
+                    rendered entitled + writable — the card is all mutations. */}
+                {!entitlementsLoading && auditEnabled && canWriteAccount ? (
+                  <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
+                ) : null}
+              </div>
+            ) : null}
 
-            {canWriteAccount && (
-              <TabsContent value="git" className="space-y-6">
-                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
-              </TabsContent>
-            )}
+            {activeSection === 'git' && canWriteAccount ? (
+              <div className="space-y-8">
+                {/* One coherent managed-git card covering all three setup
+                    methods (manifest App, pasted App, PAT) — rendered for any
+                    admin regardless of source. The cloud per-account
+                    installations card below is a DIFFERENT thing (per-account
+                    App installs on the hosted deployment) and only makes
+                    sense when managed-git itself is env-configured (source
+                    'env'); on self-host (source 'db' | 'pat' | 'none') it
+                    would just confusingly show "No connections yet" next to
+                    the card above, so it's hidden until the status query
+                    resolves to 'env'. */}
+                <GitHubAppSetupCard canManage={canWriteAccount} />
+                {githubAppStatusQuery.data?.source === 'env' ? (
+                  <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+                ) : null}
+              </div>
+            ) : null}
 
-            {canWriteAccount && (
-              <TabsContent value="settings" className="space-y-8">
-                {/* ── General ────────────────────────────────────── */}
+            {/* Tokens — the machine-access surface: PAT lifecycle policy +
+                service accounts. Both cards carry their own title/description
+                headers, so the pane header above is the only chrome. */}
+            {activeSection === 'tokens' && canWriteAccount ? (
+              <div className="space-y-10">
+                <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
+                <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
+              </div>
+            ) : null}
+
+            {/* Identity — SAML SSO + SCIM under the Enterprise nav group. The
+                enterprise-demo toggle is ALWAYS shown to account admins so
+                they can unlock the surface self-serve. SAML SSO + SCIM only
+                render once the entitlement is on (the demo flag OR a real
+                enterprise tier); their API routes enforce the same gate
+                server-side (402 for non-entitled accounts). Keeping the
+                toggle OUTSIDE the entitlement gate avoids a chicken-and-egg
+                where the enabler is hidden behind the very thing it
+                enables. */}
+            {activeSection === 'identity' && canWriteAccount ? (
+              <div className="space-y-3">
+                <EnterpriseDemoCard accountId={account.account_id} canManage={canWriteAccount} />
+                {entitlementsLoading ? (
+                  <Skeleton className="h-40 w-full rounded-md" />
+                ) : enterpriseIdentityEnabled ? (
+                  <>
+                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                  </>
+                ) : (
+                  <EnterpriseUpsell feature="identity" />
+                )}
+              </div>
+            ) : null}
+
+            {activeSection === 'settings' && canWriteAccount ? (
+              <div className="space-y-10">
                 <SettingsGroup title="General">
                   <GeneralCard
                     account={account}
@@ -435,119 +646,51 @@ export default function AccountSettingsPage() {
                   />
                 </SettingsGroup>
 
-                {/* ── Security ──────────────────────────────────── */}
-                {/* MFA is the only security control 95% of accounts ever
-                    touch — keep it primary. Session lifetime + idle
-                    timeout tuning matters for compliance shops but is
-                    noise for everyone else, so it hides under an
-                    "Advanced" disclosure (closed by default). */}
-                <SettingsGroup
-                  title="Security"
-                  description={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrDescriptionAccountWide0fbfc59e',
-                  )}
-                >
+                {/* MFA is the only security control 95% of accounts ever touch —
+                  keep it primary. Session lifetime + idle timeout tuning
+                  matters for compliance shops but is noise for everyone else,
+                  so it hides under an "Advanced" disclosure (closed by
+                  default). */}
+                <SettingsGroup title="Security" description="Account-wide sign-in requirements.">
                   <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
-                  <Collapsible>
-                    <CollapsibleTrigger className="group border-border/60 bg-card/30 hover:border-border hover:bg-card/60 flex w-full items-center justify-between rounded-2xl border border-dashed px-4 py-3 text-left text-sm transition">
-                      <div>
-                        <div className="text-foreground font-medium">
-                          {tI18nHardcoded.raw(
-                            'autoAppAppAccountsIdPageJsxTextAdvancedSecurity9ca9f4b4',
-                          )}
+                  <Disclosure variant="outline" className="group bg-popover overflow-hidden">
+                    <DisclosureTrigger className="px-4 py-3">
+                      <div className="flex w-full cursor-pointer items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-foreground text-sm font-medium">Advanced</p>
+                          <p className="text-muted-foreground mt-0.5 text-xs">
+                            Session lifetime and idle timeout.
+                          </p>
                         </div>
-                        <div className="text-muted-foreground text-xs">
-                          {tI18nHardcoded.raw(
-                            'autoAppAppAccountsIdPageJsxTextSessionLifetimesIdleaa3d2f86',
-                          )}
-                        </div>
+                        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
                       </div>
-                      <ChevronDown className="text-muted-foreground h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="space-y-6 pt-4">
-                      <SessionControlsCard
-                        accountId={account.account_id}
-                        canManage={canWriteAccount}
-                      />
-                    </CollapsibleContent>
-                  </Collapsible>
+                    </DisclosureTrigger>
+                    <DisclosureContent contentClassName="border-border border-t">
+                      <div className="px-4 py-5">
+                        <SessionControlsCard
+                          accountId={account.account_id}
+                          canManage={canWriteAccount}
+                        />
+                      </div>
+                    </DisclosureContent>
+                  </Disclosure>
                 </SettingsGroup>
 
-                {/* ── Identity & directory ─────────────────────── */}
-                {/* The enterprise-demo toggle is ALWAYS shown to account admins
-                    so they can unlock the surface self-serve. SAML SSO + SCIM
-                    are Enterprise features and only render once the entitlement
-                    is on (the demo flag OR a real enterprise tier); their API
-                    routes enforce the same gate server-side (402 for non-entitled
-                    accounts). Keeping the toggle OUTSIDE the entitlement gate
-                    avoids a chicken-and-egg where the enabler is hidden behind
-                    the very thing it enables. */}
-                <SettingsGroup
-                  title={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
-                  )}
-                  description={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
-                  )}
-                >
-                  <EnterpriseDemoCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
-                  {entitlementsLoading ? (
-                    <Skeleton className="h-40 w-full rounded-2xl" />
-                  ) : enterpriseIdentityEnabled ? (
-                    <>
-                      <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                      <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                    </>
-                  ) : (
-                    <EnterpriseUpsell feature="identity" />
-                  )}
-                </SettingsGroup>
-
-                {/* ── Tokens & automation ──────────────────────── */}
-                <SettingsGroup
-                  title={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrTitleTokensAutomation0764b2bd',
-                  )}
-                  description={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrDescriptionProgrammaticAccess21449ecb',
-                  )}
-                >
-                  <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
-                  <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
-                </SettingsGroup>
-
-                {/* ── Observability ─────────────────────────────── */}
-                <SettingsGroup
-                  title="Observability"
-                  description={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrDescriptionForwardAudit00c0c84a',
-                  )}
-                >
-                  <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
-                </SettingsGroup>
-
-                {canDeleteAccount && (
-                  <SettingsGroup
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrTitleDangerZonebdaa0f25',
-                    )}
-                  >
+                {canDeleteAccount ? (
+                  <SettingsGroup title="Danger zone">
                     <DangerZoneCard />
                   </SettingsGroup>
-                )}
-              </TabsContent>
-            )}
-          </Tabs>
-        )}
-      </div>
-    </main>
+                ) : null}
+              </div>
+            ) : null}
+          </motion.div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-// ============================== GENERAL ==============================
+// ============================== GIT ==============================
 
 function GitHubConnectionCard({
   account,
@@ -556,7 +699,6 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
@@ -574,7 +716,7 @@ function GitHubConnectionCard({
     mutationFn: (installationId: string) =>
       deleteGitHubInstallation(account.account_id, installationId),
     onSuccess: () => {
-      toast.success('GitHub disconnected');
+      successToast('GitHub disconnected');
       setDisconnectTarget(null);
       queryClient.invalidateQueries({
         queryKey: ['github-installations', account.account_id],
@@ -583,7 +725,7 @@ function GitHubConnectionCard({
         queryKey: ['github-repositories', account.account_id],
       });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to disconnect GitHub'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
   async function handleConnect() {
@@ -594,7 +736,7 @@ function GitHubConnectionCard({
       if (result.error) throw result.error;
       const installUrl = result.data?.install_url;
       if (!installUrl) {
-        toast.error(
+        errorToast(
           result.data?.configured === false
             ? 'GitHub App is not configured'
             : 'GitHub install URL unavailable',
@@ -604,7 +746,7 @@ function GitHubConnectionCard({
       rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
       window.location.assign(installUrl);
     } catch (err) {
-      toast.error((err as Error).message || 'Failed to start GitHub setup');
+      errorToast((err as Error).message || 'Failed to start GitHub setup');
     } finally {
       setIsConnecting(false);
     }
@@ -613,162 +755,130 @@ function GitHubConnectionCard({
   const installations = installationsQuery.data?.installations ?? [];
 
   return (
-    <>
-      <SectionCard
-        title={tHardcodedUi.raw('appAccountsIdPage.line397JsxAttrTitleGitConnections')}
-        count={installations.length}
-        description={tHardcodedUi.raw(
-          'appAccountsIdPage.line399JsxAttrDescriptionConnectOneOrMoreGithubUsersOrOrganizations',
-        )}
-        action={
-          <Button
-            type="button"
-            size="sm"
-            className="gap-1.5"
-            disabled={!canManage || isConnecting}
-            onClick={handleConnect}
-            title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
-          >
-            {isConnecting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Github className="h-4 w-4" />
-            )}
-            {isConnecting ? 'Connecting' : 'Connect GitHub'}
-          </Button>
-        }
-        flush
-      >
-        {installationsQuery.isLoading ? (
-          <List>
-            <li className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="size-8 rounded-lg" />
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-32" />
-                <Skeleton className="h-3 w-56" />
-              </div>
-            </li>
-          </List>
-        ) : installationsQuery.isError ? (
-          <div className="px-6 py-5">
-            <InfoBanner
-              tone="warning"
-              icon={Github}
-              title={tHardcodedUi.raw(
-                'appAccountsIdPage.line438JsxAttrTitleGithubStatusUnavailable',
-              )}
-            >
-              {(installationsQuery.error as Error).message}
-            </InfoBanner>
-          </div>
-        ) : installations.length === 0 ? (
-          <EmptyState
-            icon={Github}
-            title={tHardcodedUi.raw('appAccountsIdPage.line446JsxAttrTitleNoGithubConnections')}
-            description={tHardcodedUi.raw(
-              'appAccountsIdPage.line447JsxAttrDescriptionConnectTheKortixGithubAppToImportRepositories',
-            )}
-            action={
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <span className="flex items-center gap-1">
+            <p className="text-foreground text-sm font-medium">GitHub connections</p>
+            <Hint label="Kortix stores the GitHub App installation on the account, not on individual members — Git credentials are platform credentials.">
               <Button
                 type="button"
-                size="sm"
-                className="gap-1.5"
-                disabled={!canManage || isConnecting}
-                onClick={handleConnect}
+                variant="ghost"
+                size="icon"
+                aria-label="About Git credentials"
+                className="text-muted-foreground hover:text-foreground size-5"
               >
-                {isConnecting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Github className="h-4 w-4" />
-                )}
-                {tHardcodedUi.raw('appAccountsIdPage.line461JsxTextConnectGithub')}
+                <Info className="size-3.5" />
               </Button>
-            }
-          />
-        ) : (
-          <List>
-            {installations.map((installation) => {
-              const contentsPermission = permissionLabel(installation.permissions?.contents);
-              const repoSelection =
-                installation.repository_selection === 'selected'
-                  ? 'Selected repositories'
-                  : installation.repository_selection === 'all'
-                    ? 'All repositories'
-                    : null;
-              const installationId = installation.installation_id ?? '';
-              return (
-                <ListRow
-                  key={installationId || installation.owner_login || 'github'}
-                  leading={<EntityAvatar icon={Github} />}
-                  title={installation.owner_login ?? 'GitHub App'}
-                  badges={
+            </Hint>
+          </span>
+          <p className="text-muted-foreground text-xs">
+            Connect GitHub users or organizations to import repositories.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="gap-1.5"
+          disabled={!canManage || isConnecting}
+          onClick={handleConnect}
+          title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
+        >
+          {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
+          {isConnecting ? 'Connecting' : 'Connect GitHub'}
+        </Button>
+      </div>
+
+      {installationsQuery.isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-[58px] w-full rounded-md" />
+        </div>
+      ) : installationsQuery.isError ? (
+        <InfoBanner tone="warning" icon={Github} title="GitHub status unavailable">
+          {(installationsQuery.error as Error).message}
+        </InfoBanner>
+      ) : installations.length === 0 ? (
+        // Quiet contained empty state — the toolbar above already carries the
+        // single "Connect GitHub" CTA.
+        <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
+          No GitHub connections yet. Connect the Kortix GitHub App to import repositories.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {installations.map((installation) => {
+            const contentsPermission = permissionLabel(installation.permissions?.contents);
+            const repoSelection =
+              installation.repository_selection === 'selected'
+                ? 'Selected repositories'
+                : installation.repository_selection === 'all'
+                  ? 'All repositories'
+                  : null;
+            const installationId = installation.installation_id ?? '';
+            return (
+              <li
+                key={installationId || installation.owner_login || 'github'}
+                className={MEMBER_ROW}
+              >
+                <EntityAvatar icon={Github} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground truncate text-sm font-medium">
+                      {installation.owner_login ?? 'GitHub App'}
+                    </span>
                     <Badge variant="success" size="sm">
                       Connected
                     </Badge>
-                  }
-                  subtitle={
+                  </div>
+                  <span className="text-muted-foreground text-xs">
                     <InlineMeta>
                       {installation.owner_type ? <span>{installation.owner_type}</span> : null}
                       {repoSelection ? <span>{repoSelection}</span> : null}
                       {contentsPermission ? <span>{contentsPermission}</span> : null}
                     </InlineMeta>
-                  }
-                  trailing={
-                    <>
-                      {installation.installation_url ? (
-                        <Button asChild variant="outline" size="sm" className="gap-1.5">
-                          <a
-                            href={installation.installation_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Configure
-                          </a>
-                        </Button>
-                      ) : null}
-                      {canManage && installationId ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() =>
-                            setDisconnectTarget({
-                              installationId,
-                              ownerLogin: installation.owner_login,
-                            })
-                          }
-                        >
-                          <Unplug className="h-3.5 w-3.5" />
-                          Disconnect
-                        </Button>
-                      ) : null}
-                    </>
-                  }
-                />
-              );
-            })}
-          </List>
-        )}
-      </SectionCard>
-
-      <InfoBanner
-        tone="neutral"
-        icon={Shield}
-        title={tHardcodedUi.raw(
-          'appAccountsIdPage.line547JsxAttrTitleGitCredentialsArePlatformCredentials',
-        )}
-      >
-        {tHardcodedUi.raw(
-          'appAccountsIdPage.line549JsxTextKortixStoresTheGithubAppInstallationOnThe',
-        )}
-      </InfoBanner>
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {installation.installation_url ? (
+                    <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                      <a
+                        href={installation.installation_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        Configure
+                      </a>
+                    </Button>
+                  ) : null}
+                  {canManage && installationId ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() =>
+                        setDisconnectTarget({
+                          installationId,
+                          ownerLogin: installation.owner_login,
+                        })
+                      }
+                    >
+                      <Unplug className="size-3.5" />
+                      Disconnect
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <ConfirmDialog
         open={Boolean(disconnectTarget)}
         onOpenChange={(open) => !open && setDisconnectTarget(null)}
-        title={tHardcodedUi.raw('appAccountsIdPage.line558JsxAttrTitleDisconnectGithub')}
+        title="Disconnect GitHub"
         description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
         confirmLabel="Disconnect"
         onConfirm={() => {
@@ -778,7 +888,7 @@ function GitHubConnectionCard({
         }}
         isPending={disconnectMutation.isPending}
       />
-    </>
+    </div>
   );
 }
 
@@ -787,11 +897,12 @@ function permissionLabel(value: unknown): string | null {
   return `Contents ${value}`;
 }
 
+// ============================== SETTINGS ==============================
+
 /**
- * Visual grouping for the Settings tab. With ~10 cards the tab used to
- * be a wall of similar-looking panels; a small uppercase header per
- * theme gives the eye a scan path without competing with the cards
- * themselves.
+ * Visual grouping for the Settings tab: a `Label` heading with an optional
+ * one-line description over the group's panels — same dialect as the
+ * customize settings view.
  */
 function SettingsGroup({
   title,
@@ -803,14 +914,12 @@ function SettingsGroup({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-3">
-      <div className="space-y-0.5 px-1">
-        <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-          {title}
-        </h3>
-        {description && <p className="text-muted-foreground/80 text-xs">{description}</p>}
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <Label>{title}</Label>
+        {description ? <p className="text-muted-foreground text-xs">{description}</p> : null}
       </div>
-      <div className="space-y-4">{children}</div>
+      <div className="space-y-3">{children}</div>
     </section>
   );
 }
@@ -824,7 +933,6 @@ function GeneralCard({
   queryClient: ReturnType<typeof useQueryClient>;
   canWrite: boolean;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState(account.name);
 
   useEffect(() => {
@@ -834,11 +942,11 @@ function GeneralCard({
   const renameMutation = useMutation({
     mutationFn: (next: string) => updateAccountName(account.account_id, next),
     onSuccess: (updated) => {
-      toast.success('Account updated');
+      successToast('Account updated');
       queryClient.setQueryData(['account', account.account_id], updated);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update account'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update account'),
   });
 
   const trimmed = name.trim();
@@ -851,49 +959,56 @@ function GeneralCard({
   }
 
   return (
-    <SectionCard
-      title="General"
-      description={tHardcodedUi.raw(
-        'appAccountsIdPage.line615JsxAttrDescriptionBasicInformationAboutThisAccount',
-      )}
-      flush
-    >
-      <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
-        <div className="space-y-1.5">
-          <Label htmlFor="account-name">
-            {tHardcodedUi.raw('appAccountsIdPage.line620JsxTextAccountName')}
-          </Label>
-          <Input
-            id="account-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!canWrite || renameMutation.isPending}
-            maxLength={120}
-            className="max-w-md"
-            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
-          />
-          {!canWrite && (
-            <p className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw(
-                'appAccountsIdPage.line636JsxTextYouDoNotHavePermissionToRenameThis',
-              )}
-            </p>
-          )}
-        </div>
+    <form onSubmit={handleSubmit} className="bg-popover rounded-md border">
+      <div className="space-y-1.5 px-4 py-5">
+        <Label htmlFor="account-name">Account name</Label>
+        <Input
+          id="account-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!canWrite || renameMutation.isPending}
+          maxLength={120}
+          className="max-w-md"
+          title={canWrite ? undefined : 'You do not have permission to rename this account.'}
+        />
+        {!canWrite ? (
+          <p className="text-muted-foreground text-xs">
+            You do not have permission to rename this account.
+          </p>
+        ) : null}
+      </div>
 
-        <div className="border-border/60 flex items-center justify-between border-t pt-4">
-          <p className="text-muted-foreground text-xs">Created {formatDate(account.created_at)}</p>
-          <Button
-            type="submit"
-            disabled={!canSubmit || renameMutation.isPending}
-            className="gap-1.5"
-          >
-            {renameMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
-          </Button>
+      <div className="border-border flex items-center justify-between border-t px-4 py-3">
+        <p className="text-muted-foreground text-xs">Created {formatDate(account.created_at)}</p>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!canSubmit || renameMutation.isPending}
+          className="gap-1.5"
+        >
+          {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+          Save
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DangerZoneCard() {
+  return (
+    <div className="bg-popover rounded-md border px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-foreground text-sm font-medium">Delete account</p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            Permanently deletes this account and all its projects.
+          </p>
         </div>
-      </form>
-    </SectionCard>
+        <Button variant="outline" size="sm" disabled title="Coming soon" className="shrink-0">
+          Coming soon
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -924,8 +1039,6 @@ function MembersCard({
   canRemove: boolean;
   canUpdateRole: boolean;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
   // Set rather than scalar so multiple per-row mutations (remove + role
@@ -989,11 +1102,11 @@ function MembersCard({
     onMutate: (userId) => markPending(userId),
     onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
-      toast.success('Member removed');
+      successToast('Member removed');
       invalidateMembers();
       setRemoveTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove member'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove member'),
   });
 
   const roleMutation = useMutation({
@@ -1002,10 +1115,10 @@ function MembersCard({
     onMutate: ({ userId }) => markPending(userId),
     onSettled: (_data, _error, vars) => clearPending(vars.userId),
     onSuccess: () => {
-      toast.success('Role updated');
+      successToast('Role updated');
       invalidateMembers();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
   });
 
   const leaveMutation = useMutation({
@@ -1013,11 +1126,11 @@ function MembersCard({
     onMutate: () => markPending(currentUserId),
     onSettled: () => clearPending(currentUserId),
     onSuccess: () => {
-      toast.success(`Left ${account.name}`);
+      successToast(`Left ${account.name}`);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       router.push('/accounts');
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to leave team'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to leave team'),
   });
 
   // Bulk surface only shows when the caller can actually do something
@@ -1103,7 +1216,7 @@ function MembersCard({
     });
 
     if (failures.length === 0) {
-      toast.success(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
+      successToast(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
       clearSelection();
       setBulkDialog(null);
       return;
@@ -1118,7 +1231,7 @@ function MembersCard({
     const first = failures[0];
     const reasonShort = first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
     const tail = failures.length > 1 ? ` (+${failures.length - 1} more — see console)` : '';
-    toast.error(
+    errorToast(
       `${label}: ${ids.length - failures.length} succeeded, ${failures.length} failed. ${first.email}: ${reasonShort}${tail}`,
     );
     // Drop succeeded rows from the selection so a retry only re-runs
@@ -1135,372 +1248,357 @@ function MembersCard({
       const ids = Array.from(effectiveSelectedIds);
       const res = await addGroupMembers(account.account_id, groupId, ids);
       invalidateMembers();
-      toast.success(`Added ${res.added} member${res.added === 1 ? '' : 's'} to group`);
+      successToast(`Added ${res.added} member${res.added === 1 ? '' : 's'} to group`);
       clearSelection();
       setBulkDialog(null);
     } catch (err) {
-      toast.error((err as Error).message || 'Failed to add to group');
+      errorToast((err as Error).message || 'Failed to add to group');
     } finally {
       setBulkBusy(false);
     }
   }
 
   return (
-    <SectionCard
-      title="Members"
-      // Count what THIS caller can actually see, not the raw total. The roster
-      // is visibility-filtered server-side for plain members (owners/admins +
-      // self), while account.member_count is the unfiltered COUNT(*) — using it
-      // would leak the roster size and mismatch the list below. Owners/admins
-      // see everyone, so for them members.length === member_count anyway.
-      count={members.length}
-      description={tHardcodedUi.raw(
-        'appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount',
-      )}
-      action={
-        canInvite && (
-          <Button onClick={() => setInviteOpen(true)} size="sm" className="gap-1.5">
-            <UserPlus className="h-4 w-4" />
-            {tHardcodedUi.raw('appAccountsIdPage.line770JsxTextInviteMember')}
-          </Button>
-        )
-      }
-      flush
-    >
-      {isError && (
-        <div className="px-6 py-5">
-          <InfoBanner
-            tone="destructive"
-            title={tHardcodedUi.raw('appAccountsIdPage.line780JsxAttrTitleFailedToLoadMembers')}
-            action={
-              <Button variant="outline" size="sm" onClick={onRetry}>
-                Retry
-              </Button>
-            }
-          >
-            {error?.message}
-          </InfoBanner>
-        </div>
-      )}
-
-      {isLoading && (
-        <List>
-          {Array.from({ length: 3 }).map((_, i) => (
-            <li key={i} className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="size-8 rounded-full" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-48" />
-                <Skeleton className="h-3 w-24" />
-              </div>
-            </li>
-          ))}
-        </List>
-      )}
-
-      {/* Search lives at the top of the list so it filters EVERYTHING
-          below it — pending invites + members alike. Looking up
-          "@foo.com" shouldn't care whether the person has accepted yet;
-          they're all people you're trying to find. */}
-      {!isLoading && !isError && (
-        <div className="border-border/60 flex flex-wrap items-center gap-3 border-b px-6 py-3">
-          <div className="relative max-w-sm flex-1">
-            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={tI18nHardcoded.raw(
-                'autoAppAppAccountsIdPageJsxAttrPlaceholderSearchBy353c608c',
-              )}
-              className="h-9 pl-9"
-            />
-          </div>
-          {canBulk && bulkEligible.length > 0 && (
-            <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={allEligibleSelected}
-                onChange={toggleAllEligible}
-                className="border-border accent-primary h-3.5 w-3.5 cursor-pointer rounded"
-              />
-              {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
-              {bulkEligible.length !== sorted.length && <span>(visible)</span>}
-            </label>
-          )}
-        </div>
-      )}
-
-      {!isLoading && !isError && (
-        <PendingInvitesSection
-          accountId={account.account_id}
-          canManage={canInvite}
-          search={search}
+    <div className="space-y-4">
+      {isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load members"
+          description={error?.message}
+          action={
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Retry
+            </Button>
+          }
         />
-      )}
+      ) : null}
 
-      {selectedCount > 0 && canBulk && (
-        <div className="border-border/60 bg-primary/[0.04] flex flex-wrap items-center gap-2 border-b px-6 py-2.5 text-sm">
-          <span className="text-foreground font-medium">{selectedCount} selected</span>
-          <span className="text-muted-foreground/40">·</span>
-          {canInvite && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setBulkDialog('add_to_group')}
-              disabled={bulkBusy}
-            >
-              {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAddToGroupac0cb8ad')}
-            </Button>
-          )}
-          {canUpdateRole && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setBulkDialog('set_role')}
-              disabled={bulkBusy}
-            >
-              {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextChangeRoled818ca7f')}
-            </Button>
-          )}
-          {canRemove && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setBulkDialog('remove')}
-              disabled={bulkBusy}
-            >
-              Remove
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={clearSelection}
-            disabled={bulkBusy}
-            className="text-muted-foreground ml-auto"
-          >
-            Clear
-          </Button>
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+          ))}
         </div>
-      )}
+      ) : null}
 
-      {!isLoading && !isError && members.length > 0 && sorted.length === 0 && (
-        <div className="text-muted-foreground px-6 py-8 text-center text-sm">
-          {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextNoMembersMatch116fd46e')}
-          {search.trim()}
-          {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxText12d5475e')}
-        </div>
-      )}
-
-      {!isLoading && !isError && sorted.length > 0 && (
-        <List>
-          {sorted.map((member) => {
-            const isSelf = member.user_id === currentUserId;
-            const isLastOwner =
-              member.account_role === 'owner' &&
-              sorted.filter((m) => m.account_role === 'owner').length === 1;
-            const pending = pendingUserIds.has(member.user_id);
-            // Kebab is always available — "View & Edit permission policies"
-            // is open to anyone who can view the member; backend gates writes.
-            const showKebab = !pending;
-            // Self rows can't be bulk-acted on — would let an admin
-            // demote / remove themselves in a sweep.
-            const bulkEnabled = canBulk && !isSelf;
-            const isSelected = selectedIds.has(member.user_id);
-
-            return (
-              <ListRow
-                key={member.user_id}
-                leading={
-                  <div className="flex items-center gap-2.5">
-                    {bulkEnabled ? (
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleOne(member.user_id)}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`Select ${memberLabel(member)}`}
-                        className="border-border accent-primary h-3.5 w-3.5 cursor-pointer rounded"
-                      />
-                    ) : (
-                      // Spacer so avatars align across selectable + self rows.
-                      <span className="w-3.5" aria-hidden />
-                    )}
-                    <UserAvatar
-                      email={member.email ?? member.user_id}
-                      name={member.email ?? undefined}
-                      size="md"
-                    />
-                  </div>
-                }
-                title={memberLabel(member)}
-                badges={
-                  isSelf && (
-                    <Badge variant="secondary" size="sm">
-                      You
-                    </Badge>
-                  )
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span>Joined {formatDate(member.joined_at)}</span>
-                    {member.account_role === 'member' &&
-                    typeof member.explicit_project_count === 'number' &&
-                    member.explicit_project_count > 0 ? (
-                      <span>
-                        {member.explicit_project_count} project
-                        {member.explicit_project_count === 1 ? '' : 's'}
-                      </span>
-                    ) : null}
-                  </InlineMeta>
-                }
-                trailing={
-                  <>
-                    <div className="hidden items-center gap-1.5 sm:flex">
-                      {member.is_super_admin && (
-                        <Badge
-                          variant="warning"
-                          size="sm"
-                          title={tHardcodedUi.raw(
-                            'appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck',
-                          )}
-                        >
-                          super
-                        </Badge>
-                      )}
-                      {member.groups && member.groups.length > 0 && (
-                        <Badge
-                          variant="outline"
-                          size="sm"
-                          title={member.groups.map((g) => g.name).join(', ')}
-                        >
-                          {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
-                        </Badge>
-                      )}
-                      {typeof member.active_pat_count === 'number' &&
-                        member.active_pat_count > 0 && (
-                          <Badge
-                            variant="outline"
-                            size="sm"
-                            title={`${member.active_pat_count} active PAT${member.active_pat_count === 1 ? '' : 's'}`}
-                          >
-                            {member.active_pat_count} PAT{member.active_pat_count === 1 ? '' : 's'}
-                          </Badge>
-                        )}
-                      {member.has_verified_mfa && (
-                        <Badge
-                          variant="success"
-                          size="sm"
-                          title={tHardcodedUi.raw(
-                            'appAccountsIdPage.line952JsxAttrTitleMFAEnrolled',
-                          )}
-                        >
-                          2FA
-                        </Badge>
-                      )}
-                    </div>
-                    <RoleBadge role={member.account_role} />
-                    <div className="ml-1 w-7 shrink-0">
-                      {pending ? (
-                        <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                      ) : showKebab ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-muted-foreground hover:text-foreground h-7 w-7"
-                              aria-label={`Actions for ${memberLabel(member)}`}
-                            >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem
-                              onSelect={() =>
-                                router.push(
-                                  `/accounts/${account.account_id}/members/${member.user_id}`,
-                                )
-                              }
-                              className="gap-2"
-                            >
-                              <KeyRound className="h-3.5 w-3.5" />
-                              {tHardcodedUi.raw(
-                                'appAccountsIdPage.line883JsxTextViewAmpEditPermissionPolicies',
-                              )}
-                            </DropdownMenuItem>
-                            {canUpdateRole && !isSelf && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuLabel className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                                  {tHardcodedUi.raw('appAccountsIdPage.line889JsxTextChangeRole')}
-                                </DropdownMenuLabel>
-                                {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
-                                  <DropdownMenuItem
-                                    key={role}
-                                    disabled={role === member.account_role}
-                                    onSelect={() =>
-                                      roleMutation.mutate({
-                                        userId: member.user_id,
-                                        role,
-                                      })
-                                    }
-                                    className="gap-2"
-                                  >
-                                    <Shield className="h-3.5 w-3.5" />
-                                    {ROLE_LABEL[role]}
-                                    {role === member.account_role && (
-                                      <span className="text-muted-foreground ml-auto text-xs">
-                                        Current
-                                      </span>
-                                    )}
-                                  </DropdownMenuItem>
-                                ))}
-                              </>
-                            )}
-                            {canRemove && !isSelf && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onSelect={() => setRemoveTarget(member)}
-                                  disabled={isLastOwner}
-                                  className="gap-2"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  {tHardcodedUi.raw(
-                                    'appAccountsIdPage.line925JsxTextRemoveFromTeam',
-                                  )}
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {isSelf && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onSelect={() => setLeaveConfirmOpen(true)}
-                                  disabled={isLastOwner}
-                                  className="gap-2"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  {tHardcodedUi.raw('appAccountsIdPage.line938JsxTextLeaveTeam')}
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </div>
-                  </>
-                }
+      {/* Search filters EVERYTHING below it — pending invites + members
+          alike. Looking up "@foo.com" shouldn't care whether the person has
+          accepted yet; they're all people you're trying to find. */}
+      {!isLoading && !isError ? (
+        <>
+          <div className="flex items-center gap-2">
+            <InputGroupSearch className="flex-1">
+              <InputGroupSearchIcon>
+                <Search />
+              </InputGroupSearchIcon>
+              <InputGroupSearchInput
+                placeholder="Search members"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                variant="popover"
               />
-            );
-          })}
-          {sorted.length === 0 && (
-            <li className="text-muted-foreground px-6 py-8 text-center text-sm">
-              {tHardcodedUi.raw('appAccountsIdPage.line953JsxTextNoMembersYet')}
-            </li>
-          )}
-        </List>
-      )}
+              {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
+            </InputGroupSearch>
+            {canInvite ? (
+              <Button
+                variant="secondary"
+                className="shrink-0 gap-1.5"
+                onClick={() => setInviteOpen(true)}
+              >
+                <Icon.Plus className="size-4" />
+                Invite
+              </Button>
+            ) : null}
+          </div>
+
+          {selectedCount > 0 && canBulk ? (
+            <div className="bg-popover flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm">
+              <span className="text-foreground text-xs font-medium">{selectedCount} selected</span>
+              {canInvite ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setBulkDialog('add_to_group')}
+                  disabled={bulkBusy}
+                >
+                  Add to group
+                </Button>
+              ) : null}
+              {canUpdateRole ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setBulkDialog('set_role')}
+                  disabled={bulkBusy}
+                >
+                  Change role
+                </Button>
+              ) : null}
+              {canRemove ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setBulkDialog('remove')}
+                  disabled={bulkBusy}
+                >
+                  Remove
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={clearSelection}
+                disabled={bulkBusy}
+                className="text-muted-foreground ml-auto"
+              >
+                Clear
+              </Button>
+            </div>
+          ) : null}
+
+          <PendingInvitesSection
+            accountId={account.account_id}
+            canManage={canInvite}
+            search={search}
+          />
+
+          {members.length > 0 && sorted.length === 0 ? (
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              No members match “{search.trim()}”.
+            </p>
+          ) : null}
+
+          {sorted.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                {/* Count what THIS caller can actually see, not the raw
+                    total. The roster is visibility-filtered server-side for
+                    plain members (owners/admins + self), while
+                    account.member_count is the unfiltered COUNT(*) — using it
+                    would leak the roster size and mismatch the list below. */}
+                <span className="text-muted-foreground text-xs font-medium">
+                  Members · {sorted.length}
+                </span>
+                {canBulk && bulkEligible.length > 0 ? (
+                  <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={allEligibleSelected}
+                      onChange={toggleAllEligible}
+                      className="border-border accent-primary size-3.5 cursor-pointer rounded"
+                    />
+                    {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
+                    {bulkEligible.length !== sorted.length ? <span>(visible)</span> : null}
+                  </label>
+                ) : null}
+              </div>
+              <ul className="space-y-2">
+                {sorted.map((member) => {
+                  const isSelf = member.user_id === currentUserId;
+                  const isLastOwner =
+                    member.account_role === 'owner' &&
+                    sorted.filter((m) => m.account_role === 'owner').length === 1;
+                  const pending = pendingUserIds.has(member.user_id);
+                  // Kebab is always available — "View & edit permissions" is
+                  // open to anyone who can view the member; backend gates writes.
+                  const showKebab = !pending;
+                  // Self rows can't be bulk-acted on — would let an admin
+                  // demote / remove themselves in a sweep.
+                  const bulkEnabled = canBulk && !isSelf;
+                  const isSelected = selectedIds.has(member.user_id);
+
+                  const metaParts: string[] = [`Joined ${formatDate(member.joined_at)}`];
+                  if (
+                    member.account_role === 'member' &&
+                    typeof member.explicit_project_count === 'number' &&
+                    member.explicit_project_count > 0
+                  ) {
+                    metaParts.push(
+                      `${member.explicit_project_count} project${member.explicit_project_count === 1 ? '' : 's'}`,
+                    );
+                  }
+                  if (member.groups && member.groups.length > 0) {
+                    metaParts.push(
+                      `${member.groups.length} group${member.groups.length === 1 ? '' : 's'}`,
+                    );
+                  }
+                  if (typeof member.active_pat_count === 'number' && member.active_pat_count > 0) {
+                    metaParts.push(
+                      `${member.active_pat_count} token${member.active_pat_count === 1 ? '' : 's'}`,
+                    );
+                  }
+
+                  return (
+                    <li key={member.user_id} className={MEMBER_ROW}>
+                      {
+                        bulkEnabled ? (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleOne(member.user_id)}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Select ${memberLabel(member)}`}
+                            className="border-border accent-primary size-3.5 shrink-0 cursor-pointer rounded"
+                          />
+                        ) : canBulk ? null : null // Spacer so avatars align across selectable + self rows.
+                      }
+                      <UserAvatar
+                        email={member.email ?? member.user_id}
+                        name={member.email ?? undefined}
+                        size="md"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-foreground truncate text-sm font-medium">
+                            {memberLabel(member)}
+                          </span>
+                          {isSelf ? (
+                            <Badge variant="secondary" size="sm">
+                              You
+                            </Badge>
+                          ) : null}
+                          {member.is_super_admin ? (
+                            <Badge
+                              size="sm"
+                              className="bg-kortix-orange/15 text-kortix-orange border-transparent"
+                              title="Super admin — bypasses every IAM check"
+                            >
+                              Super
+                            </Badge>
+                          ) : null}
+                          {member.has_verified_mfa ? (
+                            <Badge variant="success" size="sm" title="MFA enrolled">
+                              2FA
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <span className="text-muted-foreground text-xs">
+                          <InlineMeta>
+                            {metaParts.map((part) => (
+                              <span key={part}>{part}</span>
+                            ))}
+                          </InlineMeta>
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <RoleBadge role={member.account_role} />
+                        <div className="w-7 shrink-0">
+                          {pending ? (
+                            <Loading className="text-muted-foreground size-4 shrink-0" />
+                          ) : showKebab ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-muted-foreground hover:text-foreground size-7"
+                                  aria-label={`Actions for ${memberLabel(member)}`}
+                                >
+                                  <MoreHorizontal className="size-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    router.push(
+                                      `/accounts/${account.account_id}/members/${member.user_id}`,
+                                    )
+                                  }
+                                  className="gap-2"
+                                >
+                                  <KeyRound className="size-3.5" />
+                                  View & edit permissions
+                                </DropdownMenuItem>
+                                {canUpdateRole && !isSelf ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">
+                                      Change role
+                                    </DropdownMenuLabel>
+                                    {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
+                                      <DropdownMenuItem
+                                        key={role}
+                                        disabled={role === member.account_role}
+                                        onSelect={() =>
+                                          roleMutation.mutate({
+                                            userId: member.user_id,
+                                            role,
+                                          })
+                                        }
+                                        className="gap-2"
+                                      >
+                                        <Shield className="size-3.5" />
+                                        {ROLE_LABEL[role]}
+                                        {role === member.account_role ? (
+                                          <span className="text-muted-foreground ml-auto text-xs">
+                                            Current
+                                          </span>
+                                        ) : null}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </>
+                                ) : null}
+                                {canRemove && !isSelf ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onSelect={() => setRemoveTarget(member)}
+                                      disabled={isLastOwner}
+                                      className="gap-2"
+                                    >
+                                      <TrashSolid className="size-3.5" />
+                                      Remove from team
+                                    </DropdownMenuItem>
+                                  </>
+                                ) : null}
+                                {isSelf ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onSelect={() => setLeaveConfirmOpen(true)}
+                                      disabled={isLastOwner}
+                                      className="gap-2"
+                                    >
+                                      <TrashSolid className="size-3.5" />
+                                      Leave team
+                                    </DropdownMenuItem>
+                                  </>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          {members.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              size="sm"
+              title="No members yet"
+              description="Invite people to work in this account."
+              action={
+                canInvite ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setInviteOpen(true)}
+                  >
+                    <UserPlus className="size-3.5" />
+                    Invite
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : null}
+        </>
+      ) : null}
 
       <InviteMemberModal
         open={inviteOpen}
@@ -1514,15 +1612,15 @@ function MembersCard({
         onOpenChange={(o) => {
           if (!o) setRemoveTarget(null);
         }}
-        title={tHardcodedUi.raw('appAccountsIdPage.line971JsxAttrTitleRemoveMember')}
+        title="Remove member"
         description={
           <span>
             Remove{' '}
             <span className="text-foreground font-medium">
               {removeTarget ? memberLabel(removeTarget) : ''}
             </span>{' '}
-            from <span className="text-foreground font-medium">{account.name}</span>
-            {tHardcodedUi.raw('appAccountsIdPage.line979JsxTextTheyWillLoseAccessImmediately')}
+            from <span className="text-foreground font-medium">{account.name}</span>? They will lose
+            access immediately.
           </span>
         }
         confirmLabel="Remove"
@@ -1533,12 +1631,11 @@ function MembersCard({
       <ConfirmDialog
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
-        title={tHardcodedUi.raw('appAccountsIdPage.line993JsxAttrTitleLeaveTeam')}
+        title="Leave team"
         description={
           <span>
-            {tHardcodedUi.raw('appAccountsIdPage.line996JsxTextYouAposLlLoseAccessTo')}{' '}
-            <span className="text-foreground font-medium">{account.name}</span>{' '}
-            {tHardcodedUi.raw('appAccountsIdPage.line998JsxTextAndItsProjects')}
+            You&apos;ll lose access to{' '}
+            <span className="text-foreground font-medium">{account.name}</span> and its projects.
           </span>
         }
         confirmLabel="Leave"
@@ -1568,31 +1665,31 @@ function MembersCard({
       <ConfirmDialog
         open={bulkDialog === 'remove'}
         onOpenChange={(o) => !o && setBulkDialog(null)}
-        title={tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxAttrTitleRemoveMembers760ca889')}
+        title="Remove members"
         description={
           <span>
             Remove{' '}
             <span className="text-foreground font-medium">
               {selectedCount} member{selectedCount === 1 ? '' : 's'}
             </span>{' '}
-            from <span className="text-foreground font-medium">{account.name}</span>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextTheyLoseAccess4aa2ae68')}
+            from <span className="text-foreground font-medium">{account.name}</span>? They lose
+            access immediately.
           </span>
         }
         confirmLabel={`Remove ${selectedCount}`}
         isPending={bulkBusy}
         onConfirm={() => bulkRun('Removed', (uid) => removeAccountMember(account.account_id, uid))}
       />
-    </SectionCard>
+    </div>
   );
 }
 
 function RoleBadge({ role }: { role: AccountRole }) {
   return (
     <Badge
-      variant={role === 'owner' ? 'outline' : 'secondary'}
+      variant="outline"
       size="sm"
-      className={cn(role === 'owner' && 'border-foreground/40 text-foreground')}
+      className={cn(role === 'owner' && 'border-foreground/30 text-foreground')}
     >
       {ROLE_LABEL[role]}
     </Badge>
@@ -1612,8 +1709,6 @@ function InviteMemberModal({
   accountId: string;
   onInvited: () => void;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [role, setRole] = useState<AccountRole>('member');
@@ -1656,32 +1751,33 @@ function InviteMemberModal({
           // Email delivery was skipped (e.g. Mailtrap not configured locally).
           // Surface the link so the admin can share it manually.
           const inviteUrl = r.res.invite_url;
-          toast.warning(`Invite created — email skipped. Share the link manually.`, {
-            action: {
-              label: 'Copy link',
-              onClick: () => copyInviteLink(inviteUrl),
-            },
+          warningToast('Invite created — email skipped. Share the link manually.', {
             duration: 10_000,
+            button: (
+              <Button size="sm" onClick={() => copyInviteLink(inviteUrl)}>
+                Copy link
+              </Button>
+            ),
           });
         } else if (r.res.status === 'pending') {
-          toast.success(`Invite sent to ${r.res.email} — they'll see it when they sign up`);
+          successToast(`Invite sent to ${r.res.email} — they'll see it when they sign up`);
         } else {
-          toast.success(`Added ${r.res.email}`);
+          successToast(`Added ${r.res.email}`);
         }
       } else if (succeeded.length > 1) {
-        toast.success(`Invited ${succeeded.length} people`);
+        successToast(`Invited ${succeeded.length} people`);
         const skipped = succeeded.filter(
           (r) => r.res.status === 'pending' && !r.res.email_sent,
         ).length;
         if (skipped > 0) {
-          toast.warning(
+          warningToast(
             `${skipped} ${skipped === 1 ? 'email was' : 'emails were'} skipped — share their links manually.`,
           );
         }
       }
 
       if (alreadyMembers.length > 0) {
-        toast.warning(
+        warningToast(
           alreadyMembers.length === 1
             ? `${alreadyMembers[0].email} is already a member.`
             : `${alreadyMembers.length} were already members.`,
@@ -1806,31 +1902,29 @@ function InviteMemberModal({
   const pendingCount = emails.length + (inputValue.trim() ? 1 : 0);
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(o) => {
         if (!o) reset();
         onOpenChange(o);
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            {tHardcodedUi.raw('appAccountsIdPage.line1109JsxTextInviteMember')}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw('appAccountsIdPage.line1112JsxTextInviteByEmailIfTheyDonAposT')}
-          </DialogDescription>
-        </DialogHeader>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Invite members</ModalTitle>
+          <ModalDescription>
+            Invite by email. If they don&apos;t have an account yet, the invite waits for them.
+          </ModalDescription>
+        </ModalHeader>
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4 px-6 py-5">
+          <ModalBody className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="invite-email">Emails</Label>
               <div
-                className="bg-card focus-within:ring-primary/50 flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-sm transition-[color] focus-within:ring-2 focus-within:outline-none"
+                className="bg-popover focus-within:border-ring flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors"
                 onClick={() => inputRef.current?.focus()}
               >
-                <Mail className="text-muted-foreground pointer-events-none h-4 w-4 shrink-0" />
+                <Mail className="text-muted-foreground pointer-events-none size-4 shrink-0" />
                 {emails.map((addr) => (
                   <Badge key={addr} variant="secondary" className="gap-1 pr-1">
                     {addr}
@@ -1844,7 +1938,7 @@ function InviteMemberModal({
                       aria-label={`Remove ${addr}`}
                       disabled={mutation.isPending}
                     >
-                      <X className="size-3" />
+                      <Icon.Close className="size-3" />
                     </button>
                   </Badge>
                 ))}
@@ -1859,20 +1953,14 @@ function InviteMemberModal({
                   }}
                   onKeyDown={handleInputKeyDown}
                   onPaste={handlePaste}
-                  placeholder={
-                    emails.length === 0
-                      ? tHardcodedUi.raw(
-                          'appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom',
-                        )
-                      : 'Add another…'
-                  }
+                  placeholder={emails.length === 0 ? 'teammate@company.com' : 'Add another…'}
                   autoFocus
                   className="placeholder:text-muted-foreground min-w-[8rem] flex-1 bg-transparent font-medium outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={mutation.isPending}
                 />
               </div>
               <p className="text-muted-foreground text-xs">
-                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAddSeveralAtb6d9bf70')}
+                Add several at once — separate with commas or spaces.
               </p>
             </div>
 
@@ -1887,25 +1975,19 @@ function InviteMemberModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">
-                    {tHardcodedUi.raw(
-                      'appAccountsIdPage.line1150JsxTextMemberCanUseAssignedProjects',
-                    )}
-                  </SelectItem>
-                  <SelectItem value="admin">
-                    {tHardcodedUi.raw('appAccountsIdPage.line1153JsxTextAdminCanInviteMembers')}
-                  </SelectItem>
+                  <SelectItem value="member">Member — can use assigned projects</SelectItem>
+                  <SelectItem value="admin">Admin — can invite members</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {inlineError && <InfoBanner tone="destructive">{inlineError}</InfoBanner>}
-          </div>
+            {inlineError ? <InfoBanner tone="destructive">{inlineError}</InfoBanner> : null}
+          </ModalBody>
 
-          <div className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
+          <ModalFooter className="sm:justify-between">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline-ghost"
               onClick={() => onOpenChange(false)}
               disabled={mutation.isPending}
             >
@@ -1917,52 +1999,16 @@ function InviteMemberModal({
               disabled={mutation.isPending || pendingCount === 0}
             >
               {mutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loading className="size-4 shrink-0" />
               ) : (
-                <UserPlus className="h-4 w-4" />
+                <UserPlus className="size-4" />
               )}
               {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
             </Button>
-          </div>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ============================== DANGER ZONE ==============================
-
-function DangerZoneCard() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <SectionCard
-      tone="destructive"
-      title={tHardcodedUi.raw('appAccountsIdPage.line1198JsxAttrTitleDangerZone')}
-      description={tHardcodedUi.raw(
-        'appAccountsIdPage.line1199JsxAttrDescriptionIrreversibleActionsForThisTeam',
-      )}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-foreground text-sm font-medium">
-            {tHardcodedUi.raw('appAccountsIdPage.line1203JsxTextDeleteAccount')}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tHardcodedUi.raw(
-              'appAccountsIdPage.line1205JsxTextPermanentlyDeleteThisAccountAndAllAssociatedProjects',
-            )}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          disabled
-          title={tHardcodedUi.raw('appAccountsIdPage.line1211JsxAttrTitleComingSoon')}
-          className="shrink-0"
-        >
-          {tHardcodedUi.raw('appAccountsIdPage.line1214JsxTextComingSoon')}
-        </Button>
-      </div>
-    </SectionCard>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -1979,7 +2025,6 @@ function PendingInvitesSection({
    *  value, hide invites whose email doesn't include the query. */
   search?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   // Per-invite spinner state. Set rather than scalar so resending one
   // invite + cancelling another (or rapid clicks across rows) don't
@@ -2009,21 +2054,22 @@ function PendingInvitesSection({
     onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: (res) => {
       if (res.email_sent) {
-        toast.success('Invite email sent');
+        successToast('Invite email sent');
       } else {
         // Mailtrap not configured (local dev or unconfigured prod). Hand the
         // admin the link directly so they can share it manually.
-        toast.warning('Email skipped — copy invite link to share manually', {
-          action: {
-            label: 'Copy link',
-            onClick: () => copyInviteLink(res.invite_url),
-          },
+        warningToast('Email skipped — copy invite link to share manually', {
           duration: 8_000,
+          button: (
+            <Button size="sm" onClick={() => copyInviteLink(res.invite_url)}>
+              Copy link
+            </Button>
+          ),
         });
       }
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to resend invite'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to resend invite'),
   });
 
   const cancelMutation = useMutation({
@@ -2031,10 +2077,10 @@ function PendingInvitesSection({
     onMutate: (id) => markPending(id),
     onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: () => {
-      toast.success('Invite cancelled');
+      successToast('Invite cancelled');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to cancel invite'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to cancel invite'),
   });
 
   const allInvites = invitesQuery.data ?? [];
@@ -2050,105 +2096,91 @@ function PendingInvitesSection({
   if (!invites.length) return null;
 
   return (
-    <div className="border-border/60 bg-muted/20 border-b">
-      <div className="text-muted-foreground px-6 pt-3 pb-1.5 text-xs font-medium tracking-wider uppercase">
-        {tHardcodedUi.raw('appAccountsIdPage.line1287JsxTextPendingInvites')}
-        {invites.length}
-      </div>
-      <List>
+    <div className="space-y-2">
+      <p className="text-muted-foreground px-1 text-xs font-medium">Invited · {invites.length}</p>
+      <ul className="space-y-2">
         {invites.map((invite) => {
           const busy = pendingIds.has(invite.invite_id);
           return (
-            <ListRow
-              key={invite.invite_id}
-              leading={
-                <div className="flex items-center gap-2.5">
-                  {/* Spacer matching the members list's checkbox column so
-                      invite avatars align with member avatars below. */}
-                  <span className="w-3.5" aria-hidden />
-                  <UserAvatar email={invite.email} size="md" />
-                </div>
-              }
-              title={invite.email}
-              badges={
-                <Badge variant="secondary" size="sm">
-                  Pending
-                </Badge>
-              }
-              subtitle={
-                <InlineMeta>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Expires {formatDate(invite.expires_at)}
+            <li key={invite.invite_id} className={cn(MEMBER_ROW, 'border-dashed')}>
+              <UserAvatar email={invite.email} size="md" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-foreground truncate text-sm font-medium">
+                    {invite.email}
                   </span>
-                </InlineMeta>
-              }
-              trailing={
-                <>
-                  <RoleBadge role={invite.initial_role} />
-                  <div className="ml-1 w-7 shrink-0">
-                    {busy ? (
-                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                    ) : canManage ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground h-7 w-7"
-                            aria-label={`Actions for ${invite.email}`}
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-52">
-                          <DropdownMenuItem
-                            onSelect={() => resendMutation.mutate(invite.invite_id)}
-                            className="gap-2"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            {tHardcodedUi.raw('appAccountsIdPage.line1336JsxTextResendInvite')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => copyInviteLink(invite.invite_url)}
-                            className="gap-2"
-                          >
-                            <LinkIcon className="h-3.5 w-3.5" />
-                            {tHardcodedUi.raw(
-                              'appAccountsIdPage.line1343JsxTextCopyInvitationLink',
-                            )}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onSelect={() => setCancelTarget(invite)}
-                            className="gap-2"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            {tHardcodedUi.raw('appAccountsIdPage.line1351JsxTextCancelInvite')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                  </div>
-                </>
-              }
-            />
+                </div>
+                <span className="text-muted-foreground text-xs">
+                  <InlineMeta>
+                    <span className="flex items-center gap-1">
+                      <Clock className="size-3" />
+                      Invite expires {formatDate(invite.expires_at)}
+                    </span>
+                  </InlineMeta>
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <RoleBadge role={invite.initial_role} />
+                <div className="w-7 shrink-0">
+                  {busy ? (
+                    <Loading className="text-muted-foreground size-4 shrink-0" />
+                  ) : canManage ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-foreground size-7"
+                          aria-label={`Actions for ${invite.email}`}
+                        >
+                          <MoreHorizontal className="size-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem
+                          onSelect={() => resendMutation.mutate(invite.invite_id)}
+                          className="gap-2"
+                        >
+                          <RefreshCw className="size-3.5" />
+                          Resend invite
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => copyInviteLink(invite.invite_url)}
+                          className="gap-2"
+                        >
+                          <LinkIcon className="size-3.5" />
+                          Copy invite link
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() => setCancelTarget(invite)}
+                          className="gap-2"
+                        >
+                          <Icon.Close className="size-3.5" />
+                          Cancel invite
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+              </div>
+            </li>
           );
         })}
-      </List>
+      </ul>
 
       <ConfirmDialog
         open={!!cancelTarget}
         onOpenChange={(o) => {
           if (!o) setCancelTarget(null);
         }}
-        title={tHardcodedUi.raw('appAccountsIdPage.line1369JsxAttrTitleCancelInvite')}
+        title="Cancel invite"
         description={
           cancelTarget
             ? `Revoke the pending invite for ${cancelTarget.email}? They'll need a new invite to join.`
             : ''
         }
-        confirmLabel={tHardcodedUi.raw('appAccountsIdPage.line1375JsxAttrConfirmlabelCancelInvite')}
+        confirmLabel="Cancel invite"
         isPending={cancelMutation.isPending}
         onConfirm={() => {
           if (!cancelTarget) return;
@@ -2177,7 +2209,6 @@ function BulkAddToGroupDialog({
   busy: boolean;
   onConfirm: (groupId: string) => void;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [groupId, setGroupId] = useState<string | undefined>(undefined);
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
@@ -2193,46 +2224,41 @@ function BulkAddToGroupDialog({
   }
   const groups = groupsQuery.data ?? [];
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            Add {selectedCount} member{selectedCount === 1 ? '' : 's'}{' '}
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextToAGroupd710c223')}
-          </DialogTitle>
-          <DialogDescription>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextPickTheGroupbdff5ffe')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-1.5 py-1">
-          <Label htmlFor="bulk-group">Group</Label>
-          {groupsQuery.isLoading ? (
-            <Skeleton className="h-9 w-full" />
-          ) : groups.length === 0 ? (
-            <p className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
-              {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextNoGroupsExista83435a9')}
-            </p>
-          ) : (
-            <Select value={groupId ?? ''} onValueChange={(v) => setGroupId(v || undefined)}>
-              <SelectTrigger id="bulk-group">
-                <SelectValue
-                  placeholder={tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdPageJsxAttrPlaceholderChooseA728f4999',
-                  )}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={g.group_id} value={g.group_id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+    <Modal open={open} onOpenChange={handleOpenChange}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>
+            Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
+          </ModalTitle>
+          <ModalDescription>Pick the group they should join.</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-1.5">
+            <Label htmlFor="bulk-group">Group</Label>
+            {groupsQuery.isLoading ? (
+              <Skeleton className="h-9 w-full rounded-lg" />
+            ) : groups.length === 0 ? (
+              <p className="bg-popover text-muted-foreground rounded-md border px-3 py-2.5 text-xs">
+                No groups exist yet. Create one in the Groups tab first.
+              </p>
+            ) : (
+              <Select value={groupId ?? ''} onValueChange={(v) => setGroupId(v || undefined)}>
+                <SelectTrigger id="bulk-group">
+                  <SelectValue placeholder="Choose a group" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((g) => (
+                    <SelectItem key={g.group_id} value={g.group_id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button variant="outline-ghost" onClick={() => handleOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -2240,12 +2266,12 @@ function BulkAddToGroupDialog({
             onClick={() => groupId && onConfirm(groupId)}
             className="gap-1.5"
           >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAddToGroupac0cb8ad')}
+            {busy ? <Loading className="size-4 shrink-0" /> : null}
+            Add to group
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -2262,55 +2288,45 @@ function BulkSetRoleDialog({
   busy: boolean;
   onConfirm: (role: AccountRole) => void;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [role, setRole] = useState<AccountRole>('member');
   function handleOpenChange(v: boolean) {
     if (v) setRole('member');
     onOpenChange(v);
   }
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextChangeRoleFor52ff6528')}
-            {selectedCount} member{selectedCount === 1 ? '' : 's'}
-          </DialogTitle>
-          <DialogDescription>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextOwnersAndAdminsb262a85e')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-1.5 py-1">
-          <Label htmlFor="bulk-role">
-            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextNewRole425b849a')}
-          </Label>
-          <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
-            <SelectTrigger id="bulk-role">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="owner">
-                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextOwnerFullControlbdd4292e')}
-              </SelectItem>
-              <SelectItem value="admin">
-                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAdminEverythingExceptfe47cdf0')}
-              </SelectItem>
-              <SelectItem value="member">
-                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextMemberNoImplicit64132e74')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+    <Modal open={open} onOpenChange={handleOpenChange}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>
+            Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
+          </ModalTitle>
+          <ModalDescription>Owners and admins can manage the whole account.</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-1.5">
+            <Label htmlFor="bulk-role">New role</Label>
+            <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
+              <SelectTrigger id="bulk-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="owner">Owner — full control</SelectItem>
+                <SelectItem value="admin">Admin — everything except ownership</SelectItem>
+                <SelectItem value="member">Member — no implicit access</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button variant="outline-ghost" onClick={() => handleOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
           <Button onClick={() => onConfirm(role)} disabled={busy} className="gap-1.5">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {busy ? <Loading className="size-4 shrink-0" /> : null}
             Apply
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

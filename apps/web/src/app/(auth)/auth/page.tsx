@@ -21,14 +21,8 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
-import { AuthLegalFooter } from '@/features/auth/auth-card-shell';
-import {
-  AuthMobileLogo,
-  CodeInput,
-  FieldLabel,
-  InfoStrip,
-  StepHeader,
-} from '@/features/auth/auth-primitives';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
@@ -36,7 +30,7 @@ import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
-import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { createClient as createBrowserSupabaseClient, fetchSamlEnabled } from '@/lib/supabase/client';
 import {
   signIn as signInWithMagicLink,
   signInWithPassword,
@@ -165,6 +159,21 @@ function AuthCardForm({
   }, []);
   const googleEnabled = enabledProviders.includes('google');
 
+  // Only probe SSO when the Supabase instance actually has SAML enabled. A fresh
+  // self-hosted deployment has it off, so probing every work-email Continue would
+  // just surface a scary `saml_provider_disabled` 404. Gate on the live setting so
+  // SSO stays an opt-in path that lights up once an operator configures a provider.
+  const [samlEnabled, setSamlEnabled] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void fetchSamlEnabled().then((enabled) => {
+      if (active) setSamlEnabled(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const clearNotices = () => {
     setErrorMessage(null);
     setInfo(null);
@@ -284,7 +293,7 @@ function AuthCardForm({
     // routing with the email flow as the always-present fallback.
     try {
       const domain = emailDomain(trimmed);
-      if (domain && isWorkEmail(trimmed)) {
+      if (samlEnabled && domain && isWorkEmail(trimmed)) {
         try {
           const supabase = createBrowserSupabaseClient();
           const callbackParams = new URLSearchParams();
@@ -670,24 +679,6 @@ function AuthCardForm({
 }
 
 /* ─── Page shell ───────────────────────────────────────────────────────── */
-
-function AuthFrame({
-  children,
-  footerVariant,
-}: {
-  children: React.ReactNode;
-  footerVariant: 'default' | 'signup';
-}) {
-  return (
-    <div className="bg-background relative flex min-h-svh flex-col">
-      <AuthMobileLogo />
-      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
-        <div className="w-full max-w-[380px]">{children}</div>
-      </main>
-      <AuthLegalFooter variant={footerVariant} />
-    </div>
-  );
-}
 
 function AuthContent() {
   const router = useRouter();

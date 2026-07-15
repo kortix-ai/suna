@@ -8,6 +8,7 @@ import { ProjectProviderModal } from '@/features/workspace/customize/sections/ll
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { hasUsableModel } from '@/hooks/opencode/use-model-store';
+import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -136,5 +137,19 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     />
   ) : null;
 
-  return { openConnectProvider, openUpgrade, modal, hasSelectableModels, entitlementsPending };
+  // Billing off (self-host default): there's no Kortix plan to upgrade to and
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
+  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
+  // "Upgrade" button would be a dead click. Callers should hide it and only
+  // offer "bring your own key" when this is false.
+  const showUpgradeOption = isBillingEnabled();
+
+  return {
+    openConnectProvider,
+    openUpgrade,
+    modal,
+    hasSelectableModels,
+    entitlementsPending,
+    showUpgradeOption,
+  };
 }

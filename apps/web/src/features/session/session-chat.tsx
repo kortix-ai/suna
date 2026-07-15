@@ -1,8 +1,8 @@
 'use client';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { SandboxImage } from '@/features/session/sandbox-image';
 import { detectCommandFromText } from '@/features/session/detect-command';
+import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
@@ -5207,7 +5207,7 @@ export function SessionChat({
           {selectionPopup && (
             <div
               data-reply-popup
-              className="animate-in fade-in-0 slide-in-from-bottom-1 absolute z-50 duration-150"
+              className="absolute z-50"
               style={{
                 left: `${selectionPopup.x}px`,
                 top: `${selectionPopup.y}px`,
@@ -5216,12 +5216,28 @@ export function SessionChat({
             >
               <Button
                 onClick={handleSelectionReply}
-                variant="outline"
-                size="toolbar"
-                className="bg-popover shadow-md"
+                size="xs"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
               >
-                <Reply className="size-3.5" />
                 Reply
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  width="24"
+                  height="24"
+                  color="currentColor"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  className="size-4"
+                >
+                  <path d="M3.99219 10H11.9922C13.8521 10 14.7821 10 15.5451 10.2044C17.6157 10.7592 19.2329 12.3765 19.7877 14.4471C19.9922 15.2101 19.9922 16.1401 19.9922 18"></path>
+                  <path
+                    d="M7.99219 6L6.83839 6.87652C4.94092 8.31801 3.99219 9.03875 3.99219 10C3.99219 10.9612 4.94092 11.682 6.83839 13.1235L7.99219 14"
+                    strokeLinejoin="round"
+                  ></path>
+                </svg>
               </Button>
             </div>
           )}
@@ -5231,7 +5247,6 @@ export function SessionChat({
             turns={turns}
             scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
             contentRef={contentRef as React.RefObject<HTMLDivElement>}
-            messages={messages || []}
           />
 
           {/* Scroll to bottom FAB */}

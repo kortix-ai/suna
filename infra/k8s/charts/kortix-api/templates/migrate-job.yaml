@@ -1,11 +1,12 @@
 {{- if .Values.migrate.enabled }}
-# Drizzle migrations as an Argo CD PreSync hook: on every sync (i.e. the promote's
-# image bump), this runs `db:migrate` BEFORE the Deployment rolls. A failed
+# Canonical packages/db migrations as an Argo CD PreSync/Helm hook: on every
+# sync (i.e. the promote's image bump), this runs the same node-pg-migrate
+# ledger as production BEFORE the Deployment rolls. A failed
 # migration fails the hook → the sync halts → the new image never rolls, so code
 # can never ship ahead of its schema. Same image + same synced secret bundle as
 # the app (DATABASE_URL lives there) — no extra credentials, nothing in CI.
-# `drizzle-kit migrate` is idempotent (it records applied migrations), so a sync
-# with nothing pending is a fast no-op.
+# `migrate.ts up` is idempotent (it records applied migrations), so a sync with
+# nothing pending is a fast no-op.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -17,6 +18,9 @@ metadata:
     argocd.argoproj.io/hook: PreSync
     # Keep the finished Job for log inspection; replace it at the next sync.
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
@@ -37,10 +41,13 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "kortix-api.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           workingDir: /app/packages/db
-          command: ["bunx", "drizzle-kit", "migrate"]
+          # Enterprise starts from an official, otherwise-empty Supabase data
+          # plane. bootstrap installs the self-host prerequisites on first run
+          # and is a no-op before applying pending migrations thereafter.
+          command: ["bun", "scripts/migrate.ts", "bootstrap"]
           # The full synced secret bundle (DATABASE_URL included), exactly as the app.
           envFrom:
             - secretRef:

@@ -1,11 +1,12 @@
-import { resolveCatalogUpstream } from "@kortix/llm-gateway";
 import {
   AUTO_MODEL_ID,
-  CATALOG,
+  type Catalog,
   type CatalogModel,
-  MANAGED_MODELS,
 } from "@kortix/llm-catalog";
+import { resolveCatalogUpstream } from './provider-registry';
 import { codexModelIds } from "./codex-models";
+import { runtimeModelCatalog } from './runtime-catalog';
+import { RUNTIME_MANAGED_MODELS } from './managed-models';
 
 interface GatewayModel {
   name: string;
@@ -19,17 +20,25 @@ interface GatewayModel {
   limit?: { context?: number; output?: number };
 }
 
-// Full catalog model (with models.dev-derived capability flags) by `provider/model` id.
-const catalogModelById = new Map<string, CatalogModel>();
-for (const provider of CATALOG.providers) {
-  for (const model of provider.models) {
-    catalogModelById.set(`${provider.id}/${model.id}`, model);
+function modelsById(catalog: Catalog): Map<string, CatalogModel> {
+  const byId = new Map<string, CatalogModel>();
+  for (const provider of catalog.providers) {
+    for (const model of provider.models) byId.set(`${provider.id}/${model.id}`, model);
   }
+  return byId;
 }
 
 function humanize(id: string): string {
   const tail = id.split("/").pop() ?? id;
   return tail.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function codexName(id: string): string {
+  if (!id.startsWith('gpt-')) return humanize(id);
+  return id
+    .split('-')
+    .map((part, index) => index === 0 ? 'GPT' : index >= 2 ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part)
+    .join('-');
 }
 
 // Conservative context window for any model models.dev doesn't declare one for.
@@ -85,6 +94,11 @@ function capabilitiesOf(
 
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
+  // RUNTIME_MANAGED_MODELS is already empty when KORTIX_MANAGED_PROVIDER_ENABLED
+  // is off (managed-models.ts) — the loop below is a no-op in that case. AUTO is
+  // "smart routing" over the managed lineup specifically, so it's meaningless
+  // (and confusing in the picker) without it: skip it too on a self-host.
+  if (RUNTIME_MANAGED_MODELS.length === 0) return out;
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
   // its default target so OpenCode sizes conversations the same.
@@ -99,7 +113,7 @@ export function managedModels(): Record<string, GatewayModel> {
   // The managed lineup is curated and its slugs don't all exist on models.dev
   // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
   // on each model. All current managed models support reasoning/tools/temperature.
-  for (const m of MANAGED_MODELS) {
+  for (const m of RUNTIME_MANAGED_MODELS) {
     out[m.id] = {
       name: m.name,
       reasoning: true,
@@ -112,9 +126,11 @@ export function managedModels(): Record<string, GatewayModel> {
   return out;
 }
 
-export function gatewayModelsAll(): Record<string, GatewayModel> {
+export function gatewayModelsAll(
+  catalog: Catalog = runtimeModelCatalog.snapshot(),
+): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  for (const provider of CATALOG.providers) {
+  for (const provider of catalog.providers) {
     if (provider.id === "opencode") continue;
     if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
@@ -131,12 +147,15 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
   return out;
 }
 
-export function gatewayCodexModels(): Record<string, GatewayModel> {
+export function gatewayCodexModels(
+  catalog: Catalog = runtimeModelCatalog.snapshot(),
+): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
+  const catalogModelById = modelsById(catalog);
   for (const id of codexModelIds()) {
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
-      name: `${model?.name ?? humanize(id)} (ChatGPT)`,
+      name: `${model?.name ?? codexName(id)} (ChatGPT)`,
       released: model?.released,
       release_date: model?.released,
       family: (model as { family?: string } | undefined)?.family,
@@ -152,21 +171,30 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
   return out;
 }
 
-// The served catalog depends only on the committed CATALOG snapshot and process
-// env (codex ids) — never on the caller. So the shapes are each built ONCE, at
-// module load, instead of rebuilt (iterating ~5k models) on every /models
-// request and sandbox boot. Free-tier accounts get no managed Kortix models;
-// BYOK/Codex are unchanged once a project is scoped.
+// Runtime catalog shapes are rebuilt once per atomic API refresh revision, not
+// once per request. The bundled snapshot is only the initial/last-known fallback.
 const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
-const BYOK_AND_CODEX: Record<string, GatewayModel> = {
-  ...gatewayModelsAll(),
-  ...gatewayCodexModels(),
-};
-const FULL_CATALOG: Record<string, GatewayModel> = {
-  ...MANAGED_ONLY,
-  ...BYOK_AND_CODEX,
-};
 const EMPTY_CATALOG: Record<string, GatewayModel> = {};
+let cachedRevision = -1;
+let cachedByokAndCodex: Record<string, GatewayModel> = {};
+let cachedFullCatalog: Record<string, GatewayModel> = MANAGED_ONLY;
+
+function refreshedCatalogs(): {
+  byokAndCodex: Record<string, GatewayModel>;
+  full: Record<string, GatewayModel>;
+} {
+  const revision = runtimeModelCatalog.status().revision;
+  if (revision !== cachedRevision) {
+    const catalog = runtimeModelCatalog.snapshot();
+    cachedByokAndCodex = {
+      ...gatewayModelsAll(catalog),
+      ...gatewayCodexModels(catalog),
+    };
+    cachedFullCatalog = { ...MANAGED_ONLY, ...cachedByokAndCodex };
+    cachedRevision = revision;
+  }
+  return { byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
+}
 
 // `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
 // `freeManagedOnly` (a free-tier account with internal billing on) hides every
@@ -176,8 +204,9 @@ export function gatewayModelCatalog(
   projectId: string | undefined,
   opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
+  const catalogs = refreshedCatalogs();
   if (opts?.freeManagedOnly) {
-    return projectId ? BYOK_AND_CODEX : EMPTY_CATALOG;
+    return projectId ? catalogs.byokAndCodex : EMPTY_CATALOG;
   }
-  return projectId ? FULL_CATALOG : MANAGED_ONLY;
+  return projectId ? catalogs.full : MANAGED_ONLY;
 }

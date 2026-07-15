@@ -79,7 +79,7 @@ describe('registerSupabaseSamlProvider', () => {
 
     await registerSupabaseSamlProvider({
       metadataUrl: 'https://idp/meta',
-      domains: ['essentia.com'],
+      domains: ['acme.com'],
       groupClaimName: 'memberOf',
     });
     expect(captured!.body.attribute_mapping).toEqual({

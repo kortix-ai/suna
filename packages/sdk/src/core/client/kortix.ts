@@ -239,6 +239,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     update: P.updateProject,
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,
+    modelPicker: P.getProjectModelPicker,
     sandboxHealth: P.getProjectSandboxHealth,
     sandboxTemplates: P.listProjectSandboxTemplates,
     sessions: P.listProjectSessions,
@@ -251,6 +252,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
     listRepositories: P.listGitHubRepositories,
+    listRepositoryBranches: P.listGitHubRepositoryBranches,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
   };
@@ -293,6 +295,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
+      modelPicker: () => P.getProjectModelPicker(projectId),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
@@ -318,26 +321,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
-
-      /** Marketplace install/updates — commits an item's files (+ lock) straight onto the default branch. */
-      marketplace: {
-        list: () => P.listInstalledMarketplaceItems(projectId),
-        install: (id: string) => P.installMarketplaceItem(projectId, id),
-        updates: () => P.getMarketplaceUpdates(projectId),
-        update: (name: string) => P.updateMarketplaceItem(projectId, name),
-        updateAll: () => P.updateAllMarketplaceItems(projectId),
-        remove: (name: string) => P.removeMarketplaceItem(projectId, name),
-      },
-
-      /** `registry.*` — compatibility alias of `marketplace.*` (identical server-side handlers). */
-      registry: {
-        list: () => P.listInstalledRegistryItems(projectId),
-        install: (id: string) => P.installRegistryItem(projectId, id),
-        updates: () => P.getRegistryUpdates(projectId),
-        update: (name: string) => P.updateRegistryItem(projectId, name),
-        updateAll: () => P.updateAllRegistryItems(projectId),
-        remove: (name: string) => P.removeRegistryItem(projectId, name),
-      },
 
       secrets: {
         list: () => P.listProjectSecrets(projectId),
@@ -542,6 +525,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         keys: () => P.getGatewayKeys(projectId),
         createKey: (name: string) => P.createGatewayKey(projectId, name),
         revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
+        routing: {
+          get: () => P.getGatewayRoutingPolicy(projectId),
+          set: (policy: Parameters<typeof P.setGatewayRoutingPolicy>[1]) =>
+            P.setGatewayRoutingPolicy(projectId, policy),
+          reset: () => P.resetGatewayRoutingPolicy(projectId),
+          preview: (input: Parameters<typeof P.previewGatewayRoute>[1]) =>
+            P.previewGatewayRoute(projectId, input),
+        },
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
         playground: (prompt: string, models: string[]) =>
           P.runGatewayPlayground(projectId, prompt, models),
@@ -584,22 +575,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
-      /** Project apps/deployments — the `/projects/:id/apps/*` family. */
-      apps: {
-        list: () => P.listProjectApps(projectId),
-        create: (input: Parameters<typeof P.createProjectApp>[1]) =>
-          P.createProjectApp(projectId, input),
-        update: (...a: DropFirst<Parameters<typeof P.updateProjectApp>>) =>
-          P.updateProjectApp(projectId, ...a),
-        remove: (slug: string) => P.deleteProjectApp(projectId, slug),
-        deploy: (slug: string) => P.deployProjectApp(projectId, slug),
-        stop: (slug: string) => P.stopProjectApp(projectId, slug),
-        logs: (slug: string) => P.getProjectAppLogs(projectId, slug),
-        /** @deprecated Use `updateExperimentalFeature('apps', enabled)` — kept for parity with the underlying client. */
-        updateConfig: (input: Parameters<typeof P.updateAppsConfig>[1]) =>
-          P.updateAppsConfig(projectId, input),
-      },
-
       /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
       updateExperimentalFeature: (
         ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>
@@ -630,7 +605,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
         buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
         /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
-        setProvider: (provider: string | null) =>
+        setProvider: (provider: Parameters<typeof P.updateProjectSandboxProvider>[1]) =>
           P.updateProjectSandboxProvider(projectId, provider),
       },
 

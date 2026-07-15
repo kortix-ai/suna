@@ -8,6 +8,7 @@
 // false) — fail-closed, so an unprovisioned account can never reach an
 // enterprise surface.
 
+import { config } from '../../config';
 import type { TierEntitlements } from '../../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getTierEntitlements, tierHasEntitlement } from './tiers';
@@ -37,6 +38,12 @@ export async function getCachedAccountTier(accountId: string): Promise<string> {
 
 /** The full enterprise entitlement set for an account. */
 export async function getAccountEntitlements(accountId: string): Promise<TierEntitlements> {
+  // Self-host enterprise license: an operator holding a Kortix Enterprise
+  // license unlocks every enterprise entitlement platform-wide, regardless of
+  // billing tier — self-host has no Stripe-backed tier to assign 'enterprise'
+  // to. Checked before the per-account demo override so a licensed operator
+  // never needs to also flip the per-account demo toggle.
+  if (config.ENTERPRISE_LICENSE_AVAILABLE) return getTierEntitlements('enterprise');
   const acct = await getCreditAccount(accountId);
   // Demo/dogfood override: an account can self-enable an interactive demo of the
   // enterprise surface from account settings. When on, it unlocks EVERY
@@ -52,6 +59,7 @@ export async function accountHasEntitlement(
   accountId: string,
   key: keyof TierEntitlements,
 ): Promise<boolean> {
+  if (config.ENTERPRISE_LICENSE_AVAILABLE) return true;
   const acct = await getCreditAccount(accountId);
   if (acct?.demoEnterprise) return true;
   return tierHasEntitlement(acct?.tier ?? 'none', key);

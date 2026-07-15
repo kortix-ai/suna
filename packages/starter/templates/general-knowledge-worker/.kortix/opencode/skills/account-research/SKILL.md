@@ -281,6 +281,39 @@ Focus on: Attendee backgrounds, recent news, relationship history
 
 ---
 
+## Answering Internal Questions About an Account (When Internal Tools Are Connected)
+
+The flow above is for building a picture of a company or person *before* outreach. Sometimes the ask is different: answering a specific question about an existing customer or account, where internal sources (docs, wiki, CRM, support tickets, chat, email) matter as much as or more than the public web. When internal tools are connected, apply this source hierarchy and confidence discipline instead of treating every source as equally trustworthy.
+
+### Source Tiers (Decreasing Authority)
+
+1. **Official internal sources** — product documentation, knowledge base/wiki, policy documents, roadmap. Confidence: **High**, unless clearly outdated.
+2. **Organizational context** — CRM notes, support tickets, internal docs, meeting notes. Confidence: **Medium-High** — may reflect one perspective.
+3. **Team communications** — chat history, email threads, calendar notes. Confidence: **Medium** — informal, may be out of context.
+4. **External sources** — web search, forums, third-party docs, news/analyst reports. Confidence: **Low-Medium** — not authoritative for internal matters.
+5. **Inferred or analogical** — similar past situations, analogous accounts, general best practices. Confidence: **Low** — flag explicitly as inference, not fact.
+
+Search in priority order, but don't stop at the first hit — cross-reference across tiers before answering.
+
+### Confidence Levels to State Explicitly
+
+- **High** — confirmed by an official/authoritative source, or corroborated by multiple sources, and current.
+- **Medium** — found in informal sources without corroboration, or possibly slightly stale.
+- **Low** — inferred from related information, sources are outdated or conflicting.
+- **Unable to determine** — no relevant information found; say so and name who to ask.
+
+When sources disagree: note the contradiction, identify which is more authoritative/recent, present both with context, and default to the most conservative answer if it's going to a customer.
+
+### When to Escalate Instead of Answering Directly
+
+Escalate or verify before answering when the question involves roadmap commitments, pricing/legal/contract terms, security/compliance/data handling, could set a precedent, has contradictory source data, involves a specific customer's custom configuration, or the account is at risk. Otherwise — clear docs, corroborated by multiple sources, factual and non-sensitive — answer directly.
+
+### Capture It for Next Time
+
+If the question took real effort to answer, is likely to recur, or corrects a common misunderstanding, write it up (question, confidence, answer, sources, review notes) into the team's knowledge base rather than letting the research evaporate after this one reply.
+
+---
+
 ## Related Skills
 
 - **call-prep** — Full meeting prep with this research plus context

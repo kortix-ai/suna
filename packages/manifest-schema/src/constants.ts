@@ -28,7 +28,7 @@ export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
 export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'] as const;
 export const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'oauth1', 'none'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'email', 'meet'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'meet'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -36,6 +36,7 @@ export const CHANNEL_PLATFORMS = ['slack', 'email', 'meet'] as const;
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_slack: 'channel',
+  kortix_teams: 'channel',
   kortix_email: 'channel',
   kortix_meet: 'channel',
   computer: 'computer',
@@ -78,13 +79,13 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.read',
   'project.write',
-  'project.deploy',
   'project.delete',
   'project.cr.open',
   'project.cr.merge',
   'project.session.read',
   'project.session.start',
   'project.session.stop',
+  'project.session.bindings.write',
   'project.members.read',
   'project.members.manage',
   'project.trigger.read',
@@ -113,6 +114,7 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.secret.read',
   'project.secret.write',
   'project.connector.read',
+  'project.connector.profiles.manage',
   'project.connector.write',
   'project.review.read',
   'project.review.submit',

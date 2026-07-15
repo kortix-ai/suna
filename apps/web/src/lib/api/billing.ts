@@ -518,21 +518,10 @@ export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoT
   return response.data!;
 }
 
-// =============================================================================
-// INSTANCES (server types) — thin re-export
-//
-// The managed-VPS ("JustAVPS") instance admin fns now live in the SDK
-// (packages/sdk/src/platform/platform-client/instance-admin.ts). Re-exported
-// here, under their original names, so existing call sites don't change.
-// =============================================================================
+// Generic legacy instance administration — thin SDK re-export.
 
 export {
-  getJustavpsServerTypes as getServerTypes,
-  createInstance,
   deleteInstance,
   markInstanceError,
   claimComputer,
-  type ServerType,
-  type ServerTypesResponse,
-  type CreateInstanceRequest,
 } from '@kortix/sdk/platform-client';

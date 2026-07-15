@@ -6,12 +6,16 @@
 
 image:
   repository: kortix/kortix-gateway
+  digest: ""
   tag: latest
   pullPolicy: IfNotPresent
 
 createNamespace: false
 
 containerPort: 8090
+
+service:
+  annotations: {}
 
 # replicas is the HPA floor. The gateway is I/O / connection-bound (long-lived
 # LLM streams), not CPU-bound, so memory is the primary scale signal.

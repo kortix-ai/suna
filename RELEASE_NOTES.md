@@ -1,10 +1,12 @@
-Idle sessions wake on their own, invitation fix, and quieter UI
+Self-hosting: one generic Docker deployment, VPS-first
 
-### Fixed
-- Opening an idle-stopped session now wakes it on its own instead of dead-ending on "OpenCode failed to load / sandbox not ready." When a real user hits a stopped-but-resumable box, the runtime resumes in place, and the session's status flips to running without a manual refresh.
-- Invitation listing and acceptance no longer error — a database column the code relied on was missing and is now added.
-- Sessions keep their sandbox identity through recovery and reprovision cleanly after a daemon boot error.
-- Quieter, more reliable UI: the transient "runtime still starting" state is no longer reported as an error, and a couple of edge-case crashes (malformed links, a non-string command template) are guarded.
+## Self-hosting, rebuilt
 
-### New
-- Executor connection profiles — group a connector's credentials under a named profile.
+One generic Docker Compose self-host that runs the full Kortix platform on any VPS/server — `kortix self-host init` + `start`, VPS-first with a persistent domain (Caddy + automatic TLS), plus Cloudflare-tunnel and local modes for evaluation.
+
+- **In-app GitHub setup** — create an org-owned GitHub App from Settings → Git (manifest flow), paste an existing App, or use a scoped access token. No CLI gymnastics, no PATs required.
+- **Self-host feature flags** — single-account mode, marketing site off by default, enterprise license unlock, billing/connectors gracefully hidden when unconfigured.
+- **Operations built in** — nightly zero-downtime rolling updates on the curated `stable` channel (promoted via the new Promote Self-Host Stable workflow), `kortix self-host secrets` management, run-any-version + local-images modes, required-secret enforcement at init.
+- **Kortix-managed models are cloud-only** — self-host deployments use your own model keys (BYOK); the managed catalog is gated behind an explicit flag.
+- **Reliability** — SSE turn-stream no longer leaks connections on retry (fixes tab-wide request starvation); stale sessions self-heal instead of dead-ending on the auth screen.
+- New self-host e2e test suite (fast CLI-artifact tier + opt-in live tier) wired into CI.

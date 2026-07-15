@@ -21,7 +21,15 @@ Backed two ways:
 - **Imported GitHub repo** — link an existing repo; Kortix operates on it via the
   GitHub API.
 
-Either way the project has a `default_branch` that every
+When importing GitHub, choose the branch that becomes this project's
+`default_branch` (the repo's default is just the default choice). Each branch of
+the same GitHub repo can be a separate Kortix project with its own sessions and
+change requests, so `main` and `dev` can be managed as independent workspaces.
+The SDK exposes branch discovery through
+`kortix.github.listRepositoryBranches` and imports via
+`kortix.github.linkRepository`.
+
+Either backing mode gives the project a `default_branch` that every
 [session](/docs/concepts/sessions) branches from and every
 [change request](/docs/concepts/change-requests) merges into.
 
@@ -54,15 +62,14 @@ repositories and tools it should work with.
 - `opencode.config_dir` — agent config location (default `.kortix/opencode`)
 - `agents` — [agent](/docs/concepts/agents) governance (connectors/secrets/CLI/skills grants) and `default_agent`
 - `triggers` — [automations](/docs/concepts/triggers)
-- `apps` — deployable apps (experimental)
 
-Unknown keys are ignored. Dashboard edits to triggers/env/apps are
+Unknown keys are ignored. Dashboard edits to triggers/env are
 read-modify-writes on the same file, so in-session and dashboard edits round-trip.
 
 <Callout type="info" title="v1 equivalents">
 In legacy `kortix.toml` (`kortix_version: 1`) these are TOML tables:
 `[project]`, `[env]`, `[[sandbox.templates]]`, `[opencode]`, `[[agents]]` (array,
-grant field named `env` instead of `secrets`), `[[triggers]]`, `[[apps]]`. v1 also
+grant field named `env` instead of `secrets`), `[[triggers]]`. v1 also
 has `[[channels]]`, removed outright in v2 — channel↔agent routing is dashboard/CLI
 managed, never committed.
 </Callout>

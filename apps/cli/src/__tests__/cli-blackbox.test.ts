@@ -146,9 +146,6 @@ function catalogItem(name: string) {
 }
 
 function startCliE2eServer() {
-  const installed = new Map<string, { name: string; type: string; source: string; installed_at: string | null; file_count: number }>();
-  let updateAvailable = true;
-  let removed = false;
   let archived = false;
 
   server = Bun.serve({
@@ -228,72 +225,7 @@ function startCliE2eServer() {
         return Response.json(catalogItem(name));
       }
 
-      if (url.pathname === '/v1/projects/proj_e2e/marketplace/install' && req.method === 'POST') {
-        const body = entry.body as { id?: string } | undefined;
-        if (!body?.id) return Response.json({ error: 'id is required' }, { status: 400 });
-        const name = body.id.split(':').pop()!;
-        installed.set(name, {
-          name,
-          type: 'registry:skill',
-          source: body.id,
-          installed_at: '2026-06-26T00:00:00.000Z',
-          file_count: 1,
-        });
-        removed = false;
-        updateAvailable = true;
-        return Response.json({
-          ok: true,
-          commit_sha: `commit_install_${name}`,
-          branch: 'main',
-          file_count: installed.get(name)!.file_count + 1,
-          installed: [{ name, type: installed.get(name)!.type }],
-          capabilities: catalogItem(name).capabilities,
-        }, { status: 201 });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/marketplace' && req.method === 'GET') {
-        return Response.json({ installed: [...installed.values()] });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/marketplace/updates' && req.method === 'GET') {
-        const updates = [...installed.values()].map((item) => ({
-          name: item.name,
-          type: item.type,
-          status: updateAvailable ? 'update-available' : 'up-to-date',
-          changed: updateAvailable ? 2 : 0,
-        }));
-        return Response.json({
-          updates,
-          update_available: updates.filter((item) => item.status === 'update-available').map((item) => item.name),
-        });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/marketplace/update' && req.method === 'POST') {
-        const body = entry.body as { name?: string } | undefined;
-        if (!body?.name || !installed.has(body.name)) return Response.json({ error: 'not installed' }, { status: 404 });
-        updateAvailable = false;
-        return Response.json({
-          ok: true,
-          updated: body.name,
-          commit_sha: `commit_update_${body.name}`,
-          branch: 'main',
-          file_count: installed.get(body.name)!.file_count + 1,
-        });
-      }
-      const remove = url.pathname.match(/^\/v1\/projects\/proj_e2e\/marketplace\/(.+)$/);
-      if (remove && req.method === 'DELETE') {
-        const name = decodeURIComponent(remove[1]!);
-        if (!installed.has(name)) return Response.json({ error: `"${name}" is not installed` }, { status: 404 });
-        const fileCount = installed.get(name)!.file_count;
-        installed.delete(name);
-        removed = true;
-        return Response.json({
-          ok: true,
-          removed: name,
-          commit_sha: `commit_remove_${name}`,
-          branch: 'main',
-          file_count: fileCount,
-        });
-      }
-
-      return Response.json({ error: 'not found', removed }, { status: 404 });
+      return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
   return `http://127.0.0.1:${server.port}`;
@@ -334,27 +266,6 @@ describe('kortix CLI black-box behavior', () => {
     expect(requests).toEqual([{
       method: 'GET',
       path: '/v1/marketplace/items?query=pdf&source=kortix',
-      authorization: 'Bearer tok_blackbox',
-    }]);
-  }, 15_000);
-
-  test('marketplace install dry-run resolves through the API before reporting output', async () => {
-    const apiBase = startMarketplaceServer();
-    const configFile = writeConfig(apiBase);
-
-    const result = await runCli(
-      ['marketplace', 'install', 'pdf', '--project', 'proj_1', '--dry-run'],
-      tmp,
-      { KORTIX_CONFIG_FILE: configFile },
-    );
-
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('PDF');
-    expect(result.stdout).toContain('Dry run');
-    expect(result.stdout).toContain('proj_1');
-    expect(requests).toEqual([{
-      method: 'GET',
-      path: '/v1/marketplace/items?query=pdf',
       authorization: 'Bearer tok_blackbox',
     }]);
   }, 15_000);
@@ -467,34 +378,13 @@ console.log(JSON.stringify({ cmd, args, body }));
     }
   });
 
-  test('apps is hidden from top-level help by default, shown behind KORTIX_APPS_EXPERIMENTAL', async () => {
-    const hidden = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: '' });
-    expect(hidden.stdout).not.toContain('apps <subcommand>');
+  test('hosted app deployment command is absent', async () => {
+    const help = await runCli(['--help']);
+    expect(help.stdout).not.toContain('apps <subcommand>');
 
-    const shown = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: 'true' });
-    expect(shown.stdout).toContain('apps <subcommand>');
-  });
-
-  test('kortix apps refuses to run without KORTIX_APPS_EXPERIMENTAL and points at the flag', async () => {
-    const result = await runCli(['apps', 'ls'], tmp, {
-      KORTIX_APPS_EXPERIMENTAL: '',
-      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
-    });
-
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('experimental');
-    expect(result.stderr).toContain('KORTIX_APPS_EXPERIMENTAL');
-  });
-
-  test('kortix apps proceeds past the experimental gate once KORTIX_APPS_EXPERIMENTAL is set', async () => {
-    const result = await runCli(['apps', 'ls'], tmp, {
-      KORTIX_APPS_EXPERIMENTAL: 'true',
-      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
-    });
-
-    // Not logged in / no linked project in this tmp dir — the point is it
-    // gets PAST the local experimental gate rather than being blocked by it.
-    expect(result.stderr).not.toContain('experimental and hidden');
+    const result = await runCli(['apps', 'ls'], tmp);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `apps`');
   });
 
   test('tunnel is no longer a top-level command', async () => {
@@ -569,12 +459,13 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(requests).toEqual([]);
   }, 15_000);
 
-  test('init --yes writes the minimal starter by default', async () => {
-    const result = await runCli(['init', 'minimal-project', '--yes', '--no-git']);
+  test('init --yes writes the full starter kit by default', async () => {
+    const result = await runCli(['init', 'default-project', '--yes', '--no-git']);
 
     expect(result.code).toBe(0);
-    const root = join(tmp, 'minimal-project');
+    const root = join(tmp, 'default-project');
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    // Managed / served-live skills still aren't committed into the repo.
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
@@ -582,7 +473,8 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(false);
+    // The full kit is the default now, so domain skills like pdf ARE present.
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('init can explicitly opt into the general knowledge worker skill pack', async () => {
@@ -601,31 +493,7 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
-  test('init can install selected bundled marketplace skills locally', async () => {
-    const result = await runCli([
-      'init',
-      'marketplace-project',
-      '--yes',
-      '--no-git',
-      '--marketplace',
-      'agent-browser',
-    ]);
-
-    expect(result.code).toBe(0);
-    const root = join(tmp, 'marketplace-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'opencode-pty', 'src', 'plugin', 'constants.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'lib', 'get-env.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-
-    const lock = JSON.parse(readFileSync(join(root, 'registry-lock.json'), 'utf8'));
-    expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toEqual(['agent-browser']);
-  });
-
-  test('E2E: CLI project setup plus marketplace install/status/update/remove lifecycle', async () => {
+  test('E2E: CLI project setup plus marketplace discovery, then unlink/relink/archive', async () => {
     const apiBase = startCliE2eServer();
     const configFile = writeConfig(apiBase);
 
@@ -668,46 +536,6 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(show.code).toBe(0);
     expect(JSON.parse(show.stdout)).toMatchObject({ id: 'kortix-starter:agent-browser', name: 'agent-browser', type: 'registry:skill' });
 
-    const dryInstall = await runCli(['marketplace', 'install', 'agent-browser', '--dry-run'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(dryInstall.code).toBe(0);
-    expect(dryInstall.stdout).toContain('Dry run');
-    expect(dryInstall.stdout).toContain('proj_e2e');
-
-    const install = await runCli(['marketplace', 'install', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(install.code).toBe(0);
-    expect(JSON.parse(install.stdout)).toMatchObject({
-      ok: true,
-      commit_sha: 'commit_install_agent-browser',
-      branch: 'main',
-      installed: [{ name: 'agent-browser', type: 'registry:skill' }],
-    });
-
-    const status = await runCli(['marketplace', 'status', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(status.code).toBe(0);
-    expect(JSON.parse(status.stdout).installed).toEqual([
-      expect.objectContaining({ name: 'agent-browser', type: 'registry:skill', source: 'kortix-starter:agent-browser', file_count: 1 }),
-    ]);
-
-    const updates = await runCli(['marketplace', 'updates', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(updates.code).toBe(0);
-    expect(JSON.parse(updates.stdout)).toMatchObject({ update_available: ['agent-browser'] });
-
-    const update = await runCli(['marketplace', 'update', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(update.code).toBe(0);
-    expect(JSON.parse(update.stdout)).toMatchObject({ ok: true, updated: 'agent-browser', commit_sha: 'commit_update_agent-browser' });
-
-    const updatesAfter = await runCli(['marketplace', 'updates', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(updatesAfter.code).toBe(0);
-    expect(JSON.parse(updatesAfter.stdout)).toMatchObject({ update_available: [] });
-
-    const remove = await runCli(['marketplace', 'remove', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(remove.code).toBe(0);
-    expect(JSON.parse(remove.stdout)).toMatchObject({ ok: true, removed: 'agent-browser', commit_sha: 'commit_remove_agent-browser' });
-
-    const statusAfterRemove = await runCli(['marketplace', 'status', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(statusAfterRemove.code).toBe(0);
-    expect(JSON.parse(statusAfterRemove.stdout).installed).toEqual([]);
-
     const unlink = await runCli(['projects', 'unlink'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(unlink.code).toBe(0);
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
@@ -728,15 +556,6 @@ console.log(JSON.stringify({ cmd, args, body }));
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/marketplace/items?query=agent-browser&source=kortix', null],
       ['GET', '/v1/marketplace/items/agent-browser', null],
-      ['GET', '/v1/marketplace/items?query=agent-browser', null],
-      ['GET', '/v1/marketplace/items?query=agent-browser', null],
-      ['POST', '/v1/projects/proj_e2e/marketplace/install', { id: 'kortix-starter:agent-browser' }],
-      ['GET', '/v1/projects/proj_e2e/marketplace', null],
-      ['GET', '/v1/projects/proj_e2e/marketplace/updates', null],
-      ['POST', '/v1/projects/proj_e2e/marketplace/update', { name: 'agent-browser' }],
-      ['GET', '/v1/projects/proj_e2e/marketplace/updates', null],
-      ['DELETE', '/v1/projects/proj_e2e/marketplace/agent-browser', null],
-      ['GET', '/v1/projects/proj_e2e/marketplace', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['DELETE', '/v1/projects/proj_e2e?purge=true', null],
@@ -744,24 +563,13 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(requests.every((r) => r.authorization === 'Bearer tok_blackbox')).toBe(true);
   }, 30_000);
 
-  test('E2E edge cases: auth, link, not-found, removed add command, and missing installs', async () => {
+  test('E2E edge cases: auth, link, not-found, and removed add command', async () => {
     const apiBase = startCliE2eServer();
     const configFile = writeConfig(apiBase);
 
     const noAuth = await runCli(['marketplace', 'search', 'pty', '--json'], tmp, { KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json') });
     expect(noAuth.code).toBe(1);
     expect(noAuth.stderr).toContain('Not logged in');
-
-    // No project bound + logged in + exactly one project in the account →
-    // the always-bound invariant auto-binds it and the command proceeds
-    // instead of dead-ending with "No project linked".
-    const noLink = await runCli(['marketplace', 'status', '--json'], tmp, { KORTIX_CONFIG_FILE: configFile });
-    expect(noLink.code).toBe(0);
-    expect(noLink.stderr).toContain('Default project:');
-    const boundConfig = JSON.parse(readFileSync(configFile, 'utf8'));
-    expect(boundConfig.hosts.test.default_project.project_id).toBe('proj_e2e');
-    delete boundConfig.hosts.test.default_project;
-    writeFileSync(configFile, JSON.stringify(boundConfig));
 
     const init = await runCli(['init', 'edge-e2e', '--yes', '--no-git']);
     expect(init.code).toBe(0);
@@ -775,26 +583,14 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(unknownShow.code).toBe(1);
     expect(unknownShow.stderr).toContain('No marketplace item matches');
 
-    const unknownInstall = await runCli(['marketplace', 'install', 'does-not-exist', '--project', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(unknownInstall.code).toBe(1);
-    expect(unknownInstall.stderr).toContain('No marketplace item matches');
-
-    const removeMissing = await runCli(['marketplace', 'remove', 'pty', '--project', 'proj_e2e', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(removeMissing.code).toBe(1);
-    expect(removeMissing.stderr).toContain('not installed');
-
     const add = await runCli(['add', 'pty', '--project', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(add.code).toBe(2);
     expect(add.stderr).toContain('unknown command `add`');
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([
-      ['GET', '/v1/projects?account_id=account_1', null],
-      ['GET', '/v1/projects/proj_e2e/marketplace', null],
       ['GET', '/v1/projects/missing', null],
       ['GET', '/v1/marketplace/items/does-not-exist', null],
       ['GET', '/v1/marketplace/items?query=does-not-exist', null],
-      ['GET', '/v1/marketplace/items?query=does-not-exist', null],
-      ['DELETE', '/v1/projects/proj_e2e/marketplace/pty', null],
     ]);
   }, 30_000);
 });

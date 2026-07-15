@@ -1,10 +1,9 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { KeyRound, Plug, Wrench } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,12 +15,12 @@ import {
   FieldLabel,
   FieldTitle,
 } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
   ModalContent,
-  ModalDescription,
   ModalFooter,
   ModalHeader,
   ModalTitle,
@@ -33,165 +32,198 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { useAuth } from '@/features/providers/auth-provider';
-import { useInstallMarketplaceItem, useInstalledItems } from '@/hooks/marketplace';
-import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { listProjectsForAccount } from '@kortix/sdk/projects-client';
-import {
-  buildInstallSuccessSummary,
-  capabilityCount,
-  hasCapabilities,
-  isInstallDisabled,
-  projectMarketplaceHref,
-} from './marketplace-install';
-import { typeMeta } from './marketplace-meta';
+import { errorToast } from '@/components/ui/toast';
+import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
+import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts, provisionProject } from '@kortix/sdk/projects-client';
+import { capabilityCount, hasCapabilities } from './marketplace-install';
+import { useProjectPicker } from './marketplace-project-picker';
 
+/** Sentinel `Select` value for "create a new project" (real project ids are
+ *  UUIDs, so this can never collide). */
+const NEW_PROJECT = '__new__';
+
+/**
+ * The ONE "install this marketplace item" modal — replaces the old
+ * clone-a-project / add-a-skill / merge-a-project-into-a-project fork with a
+ * single target choice (an existing project, or a brand new one, provisioned
+ * inline). Installing is always an agent import: a session clones the item's
+ * source repo, reads it, and merges what fits into the project's own files.
+ */
 export function AddToProjectModal({
   item,
   open,
   onOpenChange,
   fixedProjectId,
-  fixedProjectName,
 }: {
-  item: MarketplaceItem | null;
+  item: MarketplaceItemDetail | MarketplaceItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** When set, install straight into this project (no picker). */
+  /** Pre-selects this project as the target (still switchable — not a lock). */
   fixedProjectId?: string;
-  fixedProjectName?: string;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
-  const { user } = useAuth();
-  const usePicker = !fixedProjectId;
-  const [pickedProjectId, setPickedProjectId] = useState('');
-  const install = useInstallMarketplaceItem();
+  const queryClient = useQueryClient();
+  const isProject = item.type === 'registry:project';
+  const humanizedTitle = item.title.replaceAll('-', ' ');
 
-  const projectsQuery = useQuery({
-    queryKey: ['projects', 'all-for-marketplace'],
-    queryFn: () => listProjectsForAccount(),
-    enabled: !!user && open && usePicker,
-    staleTime: 30_000,
+  const { projects, projectsQuery } = useProjectPicker({
+    open,
+    preferredProjectId: fixedProjectId,
   });
-  const projects = projectsQuery.data ?? [];
 
+  const [target, setTarget] = useState<string>(fixedProjectId ?? NEW_PROJECT);
+  const [newProjectName, setNewProjectName] = useState(humanizedTitle);
+  const [busy, setBusy] = useState(false);
+
+  const installSession = useInstallMarketplaceItemAsSession();
+
+  // Reset to sensible defaults each time the modal opens for a (possibly new) item.
   useEffect(() => {
-    if (open && usePicker && !pickedProjectId && projects.length > 0) {
-      setPickedProjectId(projects[0].project_id);
-    }
-  }, [open, usePicker, projects, pickedProjectId]);
+    if (!open) return;
+    setTarget(fixedProjectId ?? NEW_PROJECT);
+    setNewProjectName(humanizedTitle);
+  }, [open, fixedProjectId, humanizedTitle]);
 
-  const targetProjectId = fixedProjectId ?? pickedProjectId;
-  const caps = item?.capabilities;
+  const caps = item.capabilities;
   const showCaps = hasCapabilities(caps);
   const capCount = capabilityCount(caps);
 
-  const installedQuery = useInstalledItems(targetProjectId || null);
-  const alreadyInstalled = !!(
-    item && installedQuery.data?.some((installed) => installed.name === item.name)
-  );
-
-  const disabled = isInstallDisabled({
-    hasItem: !!item,
-    targetProjectId,
-    pending: install.isPending,
-  });
-
   const guardedOpenChange = (next: boolean) => {
     // Block the modal from closing mid-flight — losing the pending/error
-    // feedback would leave the user unsure whether the install landed.
-    if (install.isPending) return;
+    // feedback would leave the user unsure whether the request landed.
+    if (busy) return;
     onOpenChange(next);
   };
 
-  const onInstall = async () => {
-    if (!item || disabled) return;
+  const onConfirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    // Tracked outside the try so the managed-git-unavailable catch below can
+    // still point at the right account even though it's only resolved in the
+    // NEW_PROJECT branch.
+    let resolvedAccountId: string | null = null;
     try {
-      const res = await install.mutateAsync({ projectId: targetProjectId, id: item.id });
-      const summary = buildInstallSuccessSummary(item.title, res);
-      successToast(summary.title, {
-        description: summary.description,
-        button: (
-          <Button size="sm" onClick={() => router.push(projectMarketplaceHref(targetProjectId))}>
-            View in project
-          </Button>
-        ),
-      });
+      if (target === NEW_PROJECT) {
+        const accounts = await listAccounts();
+        // No `personal_account` flag on this API — the bootstrapped personal
+        // account is the one where the caller is the primary owner.
+        const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
+        if (!account) throw new Error('No account available to create a project in');
+        resolvedAccountId = account.account_id;
+
+        const project = await provisionProject({
+          account_id: account.account_id,
+          name: newProjectName.trim() || humanizedTitle,
+          starter_template: 'general-knowledge-worker',
+          source_item_id: isProject ? item.id : undefined,
+        });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+
+        const sessionId = isProject
+          ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
+          : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
+              .session_id;
+        onOpenChange(false);
+        router.replace(
+          sessionId
+            ? `/projects/${project.project_id}/sessions/${sessionId}`
+            : `/projects/${project.project_id}`,
+        );
+        return;
+      }
+
+      const projectId = target;
+      const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
       onOpenChange(false);
+      router.push(`/projects/${projectId}/sessions/${session_id}`);
     } catch (e) {
-      errorToast('Install failed', { description: (e as Error).message });
+      if (isManagedGitUnavailableError(e)) {
+        const gitSettingsAccountId =
+          resolvedAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+        errorToast("Managed git isn't set up on this server", {
+          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          ...(gitSettingsAccountId
+            ? {
+                button: (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onOpenChange(false);
+                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
+                    }}
+                  >
+                    Open Git settings
+                  </Button>
+                ),
+              }
+            : {}),
+        });
+      } else {
+        errorToast('Could not add to project', { description: (e as Error).message });
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onInstall();
+    onConfirm();
   };
+
+  const confirmDisabled =
+    busy || (target === NEW_PROJECT && newProjectName.trim().length === 0);
 
   return (
     <Modal open={open} onOpenChange={guardedOpenChange}>
-      <ModalContent className="lg:max-w-md" closeOnOutsideClick={!install.isPending}>
+      <ModalContent className="lg:max-w-md" closeOnOutsideClick={!busy}>
         <ModalHeader>
-          <ModalTitle>
-            Add {item?.title}
-            {fixedProjectName ? ` to ${fixedProjectName}` : ''}
-          </ModalTitle>
-          <ModalDescription>
-            {tI18nHardcoded.raw(
-              'autoComponentsMarketplaceAddToProjectModalJsxTextCommitsThis7b891a43',
-            )}
-            {typeMeta(item?.type ?? '').label.toLowerCase()}{' '}
-            {tI18nHardcoded.raw('autoComponentsMarketplaceAddToProjectModalJsxTextIntoThe7714c57a')}
-          </ModalDescription>
+          <ModalTitle>Add {humanizedTitle} to a project</ModalTitle>
         </ModalHeader>
 
         <form onSubmit={handleSubmit}>
           <ModalBody>
             <FieldGroup className="gap-4">
-              {usePicker && (
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="mp-target-project">Project</FieldLabel>
+                <Select value={target} onValueChange={setTarget}>
+                  <SelectTrigger id="mp-target-project">
+                    <SelectValue
+                      placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NEW_PROJECT}>＋ New project</SelectItem>
+                    {projects.map((p) => (
+                      <SelectItem key={p.project_id} value={p.project_id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              {target === NEW_PROJECT && (
                 <Field className="gap-1.5">
-                  <FieldLabel htmlFor="mp-project">Project</FieldLabel>
-                  <Select value={pickedProjectId} onValueChange={setPickedProjectId}>
-                    <SelectTrigger id="mp-project">
-                      <SelectValue
-                        placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projects.map((p) => (
-                        <SelectItem key={p.project_id} value={p.project_id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {!projectsQuery.isLoading && projects.length === 0 && (
-                    <FieldDescription>
-                      {tI18nHardcoded.raw(
-                        'autoComponentsMarketplaceAddToProjectModalJsxTextYouHavec6bfb213',
-                      )}
-                    </FieldDescription>
-                  )}
+                  <FieldLabel htmlFor="mp-new-project-name">Name</FieldLabel>
+                  <Input
+                    id="mp-new-project-name"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder={humanizedTitle}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                  />
                 </Field>
               )}
 
-              {alreadyInstalled && (
-                <div className="bg-popover flex items-center gap-2 rounded-md border px-4 py-2.5">
-                  <Badge variant="success" size="sm">
-                    Already installed
-                  </Badge>
-                  <span className="text-muted-foreground text-xs">
-                    Adding again reinstalls it from source.
-                  </span>
-                </div>
-              )}
-
-              {item && item.dependencies.length > 0 && (
+              {item.dependencies.length > 0 && (
                 <FieldDescription>
-                  {tI18nHardcoded.raw(
-                    'autoComponentsMarketplaceAddToProjectModalJsxTextAlsoInstallsac6dcc9a',
-                  )}
+                  Also installs:{' '}
                   <span className="text-foreground">{item.dependencies.join(', ')}</span>
                 </FieldDescription>
               )}
@@ -200,11 +232,7 @@ export function AddToProjectModal({
                 <Field variant="outline">
                   <FieldContent>
                     <div className="flex items-center gap-2">
-                      <FieldTitle>
-                        {tI18nHardcoded.raw(
-                          'autoComponentsMarketplaceAddToProjectModalJsxTextThisItem2bb697bd',
-                        )}
-                      </FieldTitle>
+                      <FieldTitle>This item requires</FieldTitle>
                       <Badge variant="outline" size="sm">
                         {capCount}
                       </Badge>
@@ -253,11 +281,7 @@ export function AddToProjectModal({
                   </FieldContent>
                 </Field>
               ) : (
-                <FieldDescription>
-                  {tI18nHardcoded.raw(
-                    'autoComponentsMarketplaceAddToProjectModalJsxTextNoSpecial521751ba',
-                  )}
-                </FieldDescription>
+                <FieldDescription>No special requirements — this item just works.</FieldDescription>
               )}
             </FieldGroup>
           </ModalBody>
@@ -267,14 +291,14 @@ export function AddToProjectModal({
               type="button"
               variant="outline-ghost"
               size="sm"
-              disabled={install.isPending}
+              disabled={busy}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={disabled}>
-              {install.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-              {install.isPending ? 'Adding…' : alreadyInstalled ? 'Reinstall' : 'Add'}
+            <Button type="submit" size="sm" disabled={confirmDisabled}>
+              {busy ? <Loading className="size-3.5 shrink-0" /> : null}
+              {busy ? 'Adding…' : 'Add to project'}
             </Button>
           </ModalFooter>
         </form>

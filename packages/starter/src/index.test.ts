@@ -20,8 +20,8 @@ describe('STARTER_TEMPLATE_IDS', () => {
     expect([...STARTER_TEMPLATE_IDS]).toEqual(['minimal', 'general-knowledge-worker']);
   });
 
-  test('default template is the minimal Kortix runtime floor', () => {
-    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('minimal');
+  test('default template is the general knowledge worker (base + all domain skills)', () => {
+    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('general-knowledge-worker');
   });
 });
 
@@ -102,8 +102,8 @@ describe('getStarterFiles', () => {
 
   test('an unknown template value falls back to the default template layers', () => {
     const fallback = getStarterFiles({ projectName: 'X', template: 'bogus' as never });
-    const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(fallback.map((f) => f.path)).toEqual(minimal.map((f) => f.path));
+    const dflt = getStarterFiles({ projectName: 'X', template: DEFAULT_STARTER_TEMPLATE_ID });
+    expect(fallback.map((f) => f.path)).toEqual(dflt.map((f) => f.path));
   });
 
   test('general-knowledge-worker includes more files than minimal', () => {
@@ -144,10 +144,16 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
-  test('default starter does not ship general knowledge worker skills', () => {
-    const files = getStarterFiles({ projectName: 'X' });
-    expect(files.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
-    expect(files.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+  test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
+    // The one user-facing starter (the default) carries the full skill kit.
+    const dflt = getStarterFiles({ projectName: 'X' });
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
+
+    // `minimal` stays base-only (used internally by the project-clone seed path).
+    const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
@@ -183,11 +189,16 @@ describe('getStarterFiles', () => {
 describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   test('tracks only the first-party kortix-* skill directories', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
+      'kortix-cli',
       'kortix-computer',
       'kortix-executor',
+      'kortix-marketplace',
+      'kortix-meet',
       'kortix-memory',
+      'kortix-onboarding',
       'kortix-slack',
       'kortix-system',
+      'kortix-teams',
     ]);
 
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);
@@ -216,5 +227,81 @@ describe('listGeneralKnowledgeWorkerSkills', () => {
   test('entries are unique', () => {
     const skills = listGeneralKnowledgeWorkerSkills();
     expect(new Set(skills).size).toBe(skills.length);
+  });
+});
+
+describe('marketplace registry — first-party use-case templates', () => {
+  const files = getMarketplaceFiles();
+  const filePaths = new Set(files.map((f) => f.path));
+  const registryFile = files.find((f) => f.path === 'kortix.registry.json');
+  const registry = JSON.parse(registryFile?.content ?? '{"items":[]}') as {
+    items: Array<Record<string, unknown>>;
+  };
+  const items = registry.items;
+  const names = new Set(items.map((i) => i.name as string));
+  const templates = items.filter((i) => i.type === 'registry:template');
+
+  function fileIsPresent(p: string): boolean {
+    return filePaths.has(p) || filePaths.has(`${p}/SKILL.md`);
+  }
+
+  test('ships the registry manifest and at least the known templates', () => {
+    expect(registryFile).toBeDefined();
+    expect(templates.length).toBeGreaterThanOrEqual(30);
+  });
+
+  test('every item name is unique', () => {
+    expect(names.size).toBe(items.length);
+  });
+
+  test('every referenced payload file is shipped in the marketplace bundle', () => {
+    for (const item of items) {
+      for (const f of (item.files as Array<{ path: string }> | undefined) ?? []) {
+        expect(fileIsPresent(f.path)).toBe(true);
+      }
+    }
+  });
+
+  test('every template dependency resolves to a shipped item', () => {
+    for (const t of templates) {
+      for (const dep of (t.registryDependencies as string[] | undefined) ?? []) {
+        expect(names.has(dep)).toBe(true);
+      }
+    }
+  });
+
+  test('every template declares a cron cadence input', () => {
+    for (const t of templates) {
+      const inputs = (t.inputs as Array<{ type: string }> | undefined) ?? [];
+      expect(inputs.some((i) => i.type === 'cron')).toBe(true);
+    }
+  });
+
+  test('each trigger targets a declared agent and only references declared inputs', () => {
+    for (const t of templates) {
+      const block = (t.meta as Record<string, any>)?.template ?? {};
+      const agents = block.agents ?? {};
+      const inputKeys = new Set(
+        ((t.inputs as Array<{ key: string }> | undefined) ?? [])
+          .map((i) => i.key)
+          .concat('projectName'),
+      );
+      for (const trig of (block.triggers as Array<Record<string, any>>) ?? []) {
+        if (trig.agent) expect(Object.keys(agents)).toContain(trig.agent);
+        const refs = [...String(trig.prompt ?? '').matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map(
+          (m) => m[1],
+        );
+        for (const ref of refs) expect(inputKeys.has(ref)).toBe(true);
+      }
+    }
+  });
+
+  test('secret env keys are surfaced as optional env in the manifest block', () => {
+    for (const t of templates) {
+      const envVars = (t.envVars as Record<string, string> | undefined) ?? {};
+      if (Object.keys(envVars).length === 0) continue;
+      const optional = ((t.meta as Record<string, any>)?.template?.env_optional as string[]) ?? [];
+      for (const key of Object.keys(envVars)) expect(optional).toContain(key);
+    }
   });
 });

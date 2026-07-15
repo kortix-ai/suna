@@ -13,3 +13,11 @@ app.kubernetes.io/part-of: kortix
 app.kubernetes.io/name: {{ include "kortix-api.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+
+{{- define "kortix-api.image" -}}
+{{- if .Values.image.digest -}}
+{{ printf "%s@%s" .Values.image.repository .Values.image.digest }}
+{{- else -}}
+{{ printf "%s:%s" .Values.image.repository .Values.image.tag }}
+{{- end -}}
+{{- end -}}
