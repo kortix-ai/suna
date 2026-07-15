@@ -76,9 +76,13 @@ export KORTIX_SELF_HOST_CONFIG_DIR="$KORTIX_CONFIG_DIR"
 PROFILE
 
 # ── 4. Install the kortix CLI (the published one-click installer) ──────────
+# kortix_cli_channel selects which build the installer fetches: "prod" (the
+# default — latest tagged vX.Y.Z release) or "dev" (the continuously-rebuilt
+# dev-latest prerelease, tracking main) — use "dev" when the prod CLI hasn't
+# caught up yet to flags this module relies on (see the variable's doc comment).
 if ! command -v kortix >/dev/null 2>&1; then
-  echo "Installing the kortix CLI from ${kortix_cli_install_url}"
-  curl -fsSL "${kortix_cli_install_url}" | bash
+  echo "Installing the kortix CLI from ${kortix_cli_install_url} (channel: ${kortix_cli_channel})"
+  curl -fsSL "${kortix_cli_install_url}" | KORTIX_CHANNEL="${kortix_cli_channel}" bash
 fi
 KORTIX_BIN="$(command -v kortix || true)"
 if [ -z "$KORTIX_BIN" ] && [ -x /root/.kortix/kortix ]; then

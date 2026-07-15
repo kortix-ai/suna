@@ -36,23 +36,35 @@ output "post_apply_next_steps" {
     kortix self-host is provisioning on ${aws_eip.this.public_ip} (this takes a
     few minutes on first boot — Docker install, image pulls, ACME cert issuance).
 
-    ${var.zone_id == "" ? "DNS was NOT configured by Terraform — point A records for ${var.domain} and ${local.api_domain} at ${aws_eip.this.public_ip} now (ACME HTTP-01 needs them resolving before the cert can issue)." : "DNS: Terraform created A records for ${var.domain} and ${local.api_domain} -> ${aws_eip.this.public_ip}."}
+    ${var.zone_id != "" ? "DNS: Terraform created these Route53 A records (nothing left to do) ->" : "ACTION NEEDED — DNS was NOT configured by Terraform (var.zone_id was left empty). Create these exact records with your DNS provider before ACME can issue a cert:"}
+        Type  A
+        Name  ${var.domain}
+        Value ${aws_eip.this.public_ip}
 
-    Secrets (sandbox provider key, managed git, SMTP, ...) are NOT Terraform
-    inputs by design — set them once the box is up:
+        Type  A
+        Name  ${local.api_domain}
+        Value ${aws_eip.this.public_ip}
+
+    Secrets (sandbox provider key, managed git PAT, SMTP, ...) are NOT
+    Terraform inputs by design — set them once the box is up:
 
       aws ssm start-session --target ${aws_instance.this.id}
       sudo kortix self-host configure --instance ${var.instance_name}
       # or non-interactively:
-      sudo kortix self-host env set --instance ${var.instance_name} DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
+      sudo kortix self-host secrets set --instance ${var.instance_name} DAYTONA_API_KEY=...
       sudo kortix self-host start --instance ${var.instance_name}
 
-    Then open the dashboard at https://${var.domain} -> Settings -> Git (and
-    Settings -> Sandbox) to confirm, or finish setup from there directly.
+    Then open the dashboard at https://${var.domain} -> Settings -> Git (connect
+    a GitHub App or PAT) and Settings -> Model (connect your own model key,
+    BYOK) to finish setup.
 
     Updates: the in-compose auto-updater keeps this box current on the
-    ${var.kortix_channel} channel (auto_update=${var.auto_update}) — re-running
+    ${var.kortix_channel} channel (auto_update=${var.auto_update}), applying
+    new versions with zero downtime on its own daily schedule — re-running
     `terraform apply` does NOT redeploy the app; it only touches the AWS
     resources (instance, volume, DNS, snapshots).
+
+    Backups: EBS snapshots of the data volume run every ${var.backup_interval_hours}h,
+    keeping the last ${var.backup_retention_count}.
   EOT
 }

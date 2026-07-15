@@ -33,8 +33,11 @@ mechanism to keep in sync with the updater, on purpose.
 - **Elastic IP** (stable across instance replacement) + optional **Route53 A
   records** for `var.domain` and the API hostname when `zone_id` is set;
   otherwise point your own DNS at the `public_ip` output.
-- **Daily EBS snapshots** of the data volume (`aws_dlm_lifecycle_policy`,
-  `snapshot_retention_days` days retained, default 7).
+- **EBS snapshots** of the data volume (`aws_dlm_lifecycle_policy`) on a
+  configurable schedule — `backup_interval_hours` (default 24, i.e. once
+  daily; any of DLM's supported intervals — 1, 2, 3, 4, 6, 8, 12, 24 — work,
+  e.g. `6` for four snapshots a day) and `backup_retention_count` (default 7 —
+  stores up to this many backups before the oldest is pruned).
 
 ## What it deliberately does NOT do
 
@@ -77,12 +80,18 @@ output "next_steps" {
   (optional — default VPC/subnet otherwise).
 - `allowed_cidrs` (80/443 ingress), `ssh_ingress_cidrs` (opt-in only).
 - `data_volume_size_gb` (default 100), `data_volume_kms_key_id` (optional CMK).
-- `snapshot_retention_days` (default 7), `snapshot_time`.
+- `backup_interval_hours` (default 24 — 1/2/3/4/6/8/12/24 are the valid DLM
+  intervals), `backup_retention_count` (default 7), `snapshot_time` (only
+  used when `backup_interval_hours = 24`).
 - `zone_id` (optional Route53 zone), `api_domain`, `dns_ttl`.
 - `instance_name` (the `kortix self-host --instance` name), `kortix_channel`
   (`stable`/`latest`), `kortix_version` (pin an exact tag instead),
   `auto_update` (`on`/`off`), `single_account_mode`, `admin_email`,
   `acme_email`.
+- `kortix_cli_install_url` (the CLI installer URL) and `kortix_cli_channel`
+  (`prod`/`dev` — which CLI build the installer fetches; use `dev` if the
+  published `prod` CLI hasn't caught up yet to flags this module passes to
+  `kortix self-host init`).
 
 ## Outputs
 

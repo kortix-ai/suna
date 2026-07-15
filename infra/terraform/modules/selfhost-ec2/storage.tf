@@ -68,7 +68,7 @@ resource "aws_iam_role_policy_attachment" "dlm" {
 }
 
 resource "aws_dlm_lifecycle_policy" "data" {
-  description        = "${local.name}: daily snapshots of the data volume (/var/lib/docker, incl. Postgres)"
+  description        = "${local.name}: snapshots of the data volume (/var/lib/docker, incl. Postgres) every ${var.backup_interval_hours}h, keeping the last ${var.backup_retention_count}"
   execution_role_arn = aws_iam_role.dlm.arn
   state              = "ENABLED"
 
@@ -80,16 +80,20 @@ resource "aws_dlm_lifecycle_policy" "data" {
     }
 
     schedule {
-      name = "daily"
+      name = "kortix-backup"
 
       create_rule {
-        interval      = 24
+        interval = var.backup_interval_hours
+        # DLM only fires create_rule.times for interval=24 (once-daily)
+        # schedules; for sub-daily intervals the first run is undefined and
+        # DLM just runs every N hours from when the policy was created — so
+        # `times` is only meaningful (and only passed) in the 24h case.
         interval_unit = "HOURS"
-        times         = [var.snapshot_time]
+        times         = var.backup_interval_hours == 24 ? [var.snapshot_time] : null
       }
 
       retain_rule {
-        count = var.snapshot_retention_days
+        count = var.backup_retention_count
       }
 
       tags_to_add = {

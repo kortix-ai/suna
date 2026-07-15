@@ -96,16 +96,32 @@ variable "data_volume_kms_key_id" {
   default     = ""
 }
 
-# ── Snapshots (backup story for the data volume) ───────────────────────────
+# ── Backups: DLM snapshot schedule for the data volume ─────────────────────
 
-variable "snapshot_retention_days" {
-  description = "How many daily EBS snapshots of the data volume to retain (DLM lifecycle policy)."
+variable "backup_interval_hours" {
+  description = "How often to snapshot the data volume (DLM lifecycle policy), in hours. Must be one of the interval values AWS DLM supports: 1, 2, 3, 4, 6, 8, 12, or 24. Default 24 (once daily); set e.g. 6 for four snapshots a day."
+  type        = number
+  default     = 24
+
+  validation {
+    condition     = contains([1, 2, 3, 4, 6, 8, 12, 24], var.backup_interval_hours)
+    error_message = "backup_interval_hours must be one of the DLM-supported interval values: 1, 2, 3, 4, 6, 8, 12, 24."
+  }
+}
+
+variable "backup_retention_count" {
+  description = "How many snapshots of the data volume to keep (DLM retain_rule.count) — stores up to this many backups before the oldest is pruned. Default 7."
   type        = number
   default     = 7
+
+  validation {
+    condition     = var.backup_retention_count >= 1 && var.backup_retention_count <= 1000
+    error_message = "backup_retention_count must be between 1 and 1000 (DLM's own retain_rule.count limit)."
+  }
 }
 
 variable "snapshot_time" {
-  description = "UTC time-of-day (HH:MM) the daily data-volume snapshot runs."
+  description = "UTC time-of-day (HH:MM) the data-volume snapshot runs. Only meaningful when backup_interval_hours = 24 — DLM only accepts a fixed start time for once-daily schedules; sub-daily intervals run every N hours from policy creation instead."
   type        = string
   default     = "03:00"
 }
@@ -159,6 +175,17 @@ variable "kortix_cli_install_url" {
   description = "URL for the one-click kortix CLI installer (the canonical published path)."
   type        = string
   default     = "https://kortix.com/install"
+}
+
+variable "kortix_cli_channel" {
+  description = "Which CLI build the installer fetches: `prod` (default — latest tagged vX.Y.Z GitHub Release) or `dev` (the continuously-rebuilt `dev-latest` prerelease, tracking `main`). The published `prod` CLI can lag newly merged self-host flags/behavior (e.g. right after a feature merges to main but before the next version is cut) — set this to `dev` if `var.kortix_version`/other flags this module passes to `kortix self-host init` aren't recognized by the current prod CLI yet. Passed as `KORTIX_CHANNEL` to the installer, not to the app itself."
+  type        = string
+  default     = "prod"
+
+  validation {
+    condition     = contains(["prod", "dev"], var.kortix_cli_channel)
+    error_message = "kortix_cli_channel must be \"prod\" or \"dev\"."
+  }
 }
 
 variable "auto_update" {

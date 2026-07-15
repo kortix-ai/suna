@@ -34,11 +34,12 @@ module "kortix_selfhost" {
   zone_id = var.route53_zone_id
 
   # Everything below is optional — shown at its default for discoverability.
-  instance_type           = "t3.xlarge"
-  data_volume_size_gb     = 100
-  snapshot_retention_days = 7
-  kortix_channel          = "stable"
-  auto_update             = "on"
+  instance_type          = "t3.xlarge"
+  data_volume_size_gb    = 100
+  backup_interval_hours  = 24
+  backup_retention_count = 7
+  kortix_channel         = "stable"
+  auto_update            = "on"
 
   tags = {
     Project     = "kortix-selfhost"

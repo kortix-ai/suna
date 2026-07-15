@@ -195,8 +195,10 @@ If you'd rather provision the box declaratively than run a script by hand,
 `infra/terraform/modules/selfhost-ec2` is a **thin, optional convenience
 provisioner** — it is not a different deployment system. Terraform creates the
 EC2 instance, a separate encrypted EBS data volume, a security group (80/443),
-an Elastic IP, optional Route53 records, and a daily-snapshot policy for the
-data volume, then cloud-init runs the *exact same* `kortix self-host init` /
+an Elastic IP, optional Route53 records, and a configurable-schedule snapshot
+policy for the data volume (`backup_interval_hours` / `backup_retention_count`
+— every 24h/7 kept by default, but e.g. every 6h/10 kept works too), then
+cloud-init runs the *exact same* `kortix self-host init` /
 `kortix self-host start` described above. After `apply` finishes, the
 in-compose auto-updater — not Terraform — is what keeps the app current;
 re-running `terraform apply` never redeploys it. Secrets (the Daytona key,
