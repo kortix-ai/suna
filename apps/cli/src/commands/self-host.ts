@@ -497,7 +497,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   const tunnelCode = await reconcileTunnelReachability(flags.instance, env);
   if (tunnelCode !== 0) return tunnelCode;
 
-  registerLocalHost(DEFAULT_HOST_NAME, env.API_PUBLIC_URL);
+  registerLocalHost(DEFAULT_HOST_NAME, env.API_PUBLIC_URL, env.PUBLIC_URL);
   process.stdout.write(`${status.ok('Self-hosted Kortix is starting')}\n`);
   process.stdout.write(`${C.dim}  Dashboard: ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`);
@@ -2198,7 +2198,22 @@ function describeReachability(env: SelfHostEnv): string {
   return `${C.yellow}local-only${C.reset}${C.dim} — agent sandboxes and external callbacks will not work${C.reset}`;
 }
 
-function registerLocalHost(name: string, apiUrl: string): void {
+/**
+ * Register (or refresh) the CLI's built-in `selfhost` host entry so
+ * `kortix hosts use selfhost` + `kortix login` work against this stack
+ * out of the box.
+ *
+ * Also stamps `dashboard_url` with this instance's own frontend origin
+ * (`PUBLIC_URL` — loopback port on a laptop, `https://<domain>` once
+ * `KORTIX_DOMAIN` is set). Without it, `kortix login`'s browser flow has to
+ * *guess* the frontend from the API URL's shape (see web-url.ts), which
+ * assumes cloud conventions (`api.<domain>` → `<domain>`, `:8008` → `:3000`)
+ * — a guess that is simply wrong for a self-host stack on non-default ports
+ * (the laptop default is API `:13738` / dashboard `:13737`, not `:3000`).
+ * Storing the real value here means login never has to guess for a host
+ * this CLI itself stood up.
+ */
+function registerLocalHost(name: string, apiUrl: string, dashboardUrl: string): void {
   const existing = getHost(name);
   const sameHost = existing?.url === apiUrl;
   const host: Host = {
@@ -2207,6 +2222,7 @@ function registerLocalHost(name: string, apiUrl: string): void {
     user_id: sameHost ? existing?.user_id ?? '' : '',
     user_email: sameHost ? existing?.user_email ?? '' : '',
     account_id: sameHost ? existing?.account_id ?? '' : '',
+    dashboard_url: dashboardUrl,
     logged_in_at: sameHost ? existing?.logged_in_at ?? new Date().toISOString() : new Date().toISOString(),
   };
   upsertHost(name, host, true);

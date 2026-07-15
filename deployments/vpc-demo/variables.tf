@@ -42,9 +42,9 @@ variable "data_volume_size_gb" {
 }
 
 variable "backup_interval_hours" {
-  description = "Snapshot interval in hours. Daily (24) per the reviewed self-host default — stability over frequency."
+  description = "Snapshot interval in hours. 6 for the demo box — exercises the sub-daily DLM path (four snapshots a day)."
   type        = number
-  default     = 24
+  default     = 6
 }
 
 variable "backup_retention_count" {

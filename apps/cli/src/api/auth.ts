@@ -1,13 +1,13 @@
 import {
   DEFAULT_API_BASE,
   DEFAULT_HOST_NAME,
+  type Host,
   activeHost,
   activeHostName,
   configFilePath,
   getHost,
-  upsertHost,
   removeHost,
-  type Host,
+  upsertHost,
 } from './config.ts';
 import { sandboxEnvValue } from './sandbox-env.ts';
 
@@ -43,8 +43,21 @@ function hostToAuth(host: Host): Auth {
   };
 }
 
-function authToHost(auth: Auth): Host {
+/**
+ * Build the Host record to persist for a login. Spreads `previous` first so
+ * fields the `Auth` shape doesn't carry — `dashboard_url`, `account_slug`,
+ * `account_name`, `default_project` — survive a re-login instead of being
+ * silently wiped. `dashboard_url` in particular has no other call site that
+ * re-derives it after login (unlike account_slug/default_project, which
+ * login.ts re-sets right after via setActiveAccount/ensureDefaultProjectBinding),
+ * so without this merge, the very first successful `kortix login` on a
+ * `kortix self-host`-registered host would erase the authoritative frontend
+ * URL `registerLocalHost` had just stamped on it — reintroducing the
+ * API-shape-guessing bug (see web-url.ts) on every login after the first.
+ */
+function authToHost(auth: Auth, previous?: Host | null): Host {
   return {
+    ...previous,
     url: auth.api_base,
     token: auth.token,
     user_id: auth.user_id,
@@ -71,12 +84,12 @@ export function loadAuthForHost(name: string): Auth | null {
  * active. */
 export function saveAuth(auth: Auth): void {
   const targetName = activeHostName() ?? DEFAULT_HOST_NAME;
-  upsertHost(targetName, authToHost(auth), true);
+  upsertHost(targetName, authToHost(auth, getHost(targetName)), true);
 }
 
 /** Persist a named host explicitly. */
 export function saveAuthForHost(name: string, auth: Auth, makeActive: boolean): void {
-  upsertHost(name, authToHost(auth), makeActive);
+  upsertHost(name, authToHost(auth, getHost(name)), makeActive);
 }
 
 /** Remove the active host (or a named one). Returns true if anything was removed. */
