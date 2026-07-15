@@ -1,0 +1,45 @@
+# Kortix self-host reverse proxy (opt-in). This file is only mounted into the
+# `caddy` service, which itself only exists in the rendered Compose file when
+# KORTIX_DOMAIN is set — see compose-assets.ts renderFullDockerCompose(). Caddy
+# resolves the {$VAR} placeholders below from its own container environment
+# (KORTIX_DOMAIN / KORTIX_API_DOMAIN / KORTIX_ACME_EMAIL), terminates TLS via
+# ACME HTTP-01, and proxies to the other services by their Compose DNS names.
+{
+	email {$KORTIX_ACME_EMAIL}
+}
+
+# api.<domain> (or an explicit KORTIX_API_DOMAIN): /v1/llm* -> the LLM gateway,
+# everything else -> the API.
+{$KORTIX_API_DOMAIN} {
+	@llm path /v1/llm*
+	handle @llm {
+		reverse_proxy llm-gateway:8090 {
+			fail_duration 10s
+		}
+	}
+	handle {
+		reverse_proxy kortix-api:8008 {
+			fail_duration 10s
+			health_uri /v1/health
+			health_interval 10s
+			health_timeout 5s
+		}
+	}
+}
+
+# <domain>: the Supabase data-plane prefixes -> Kong, everything else -> the
+# frontend. Kept on the same host as the frontend so the browser never needs a
+# separate Supabase origin.
+{$KORTIX_DOMAIN} {
+	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
+	handle @supabase {
+		reverse_proxy supabase-kong:8000 {
+			fail_duration 10s
+		}
+	}
+	handle {
+		reverse_proxy frontend:3000 {
+			fail_duration 10s
+		}
+	}
+}

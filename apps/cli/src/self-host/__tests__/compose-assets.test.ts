@@ -6,12 +6,14 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 import {
+  kortixRuntimeAssets,
   officialSupabaseDockerAssets,
   renderFullDockerCompose,
   SUPABASE_IMAGE_DIGESTS,
   SUPABASE_UPSTREAM_COMMIT,
   supabaseUpstreamDockerAssets,
   supabaseVendorAssets,
+  writeKortixRuntimeAssets,
   writeOfficialSupabaseDockerAssets,
   writeSupabaseVendorAssets,
 } from '../compose-assets.ts';
@@ -32,6 +34,7 @@ describe('full self-host Docker distribution', () => {
       'frontend',
       'kortix-api',
       'kortix-migrate',
+      'kortix-updater',
       'llm-gateway',
       'supabase-analytics',
       'supabase-auth',
@@ -70,6 +73,78 @@ describe('full self-host Docker distribution', () => {
       for (const dependency of Object.keys(service.depends_on ?? {})) {
         expect(document.services[dependency], `${name} depends on missing ${dependency}`).toBeDefined();
       }
+    }
+  });
+
+  test('omits the caddy reverse-proxy service when no domain is configured', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, unknown>;
+    };
+    expect(document.services).not.toHaveProperty('caddy');
+  });
+
+  test('includes the caddy reverse-proxy service only when a domain is configured', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, {
+        image?: string;
+        ports?: string[];
+        environment?: Record<string, string>;
+        healthcheck?: { test?: string[] };
+      }>;
+    };
+    const caddy = document.services.caddy;
+    expect(caddy).toBeDefined();
+    expect(caddy?.ports).toEqual(['80:80', '443:443']);
+    expect(caddy?.environment).toMatchObject({
+      KORTIX_DOMAIN: '${KORTIX_DOMAIN}',
+      KORTIX_API_DOMAIN: '${KORTIX_API_DOMAIN}',
+    });
+  });
+
+  test('the kortix-updater service is always present and mounts the docker socket', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
+    };
+    const updater = document.services['kortix-updater'];
+    expect(updater).toBeDefined();
+    expect(updater?.volumes).toContain('/var/run/docker.sock:/var/run/docker.sock');
+    expect(updater?.environment).toHaveProperty('KORTIX_AUTO_UPDATE');
+    expect(updater?.environment).toHaveProperty('KORTIX_UPDATE_INTERVAL');
+  });
+
+  test('app service healthchecks probe the correct path with a runtime present in the image', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { healthcheck?: { test?: string[] } }>;
+    };
+    const apiTest = document.services['kortix-api']?.healthcheck?.test?.join(' ') ?? '';
+    expect(apiTest).toContain('bun');
+    expect(apiTest).toContain('/v1/health');
+
+    const gatewayTest = document.services['llm-gateway']?.healthcheck?.test?.join(' ') ?? '';
+    expect(gatewayTest).toContain('bun');
+    expect(gatewayTest).toContain('localhost:8090/health');
+
+    const frontendTest = document.services.frontend?.healthcheck?.test?.join(' ') ?? '';
+    expect(frontendTest).toContain('node');
+    expect(frontendTest).not.toContain('bun');
+  });
+
+  test('embeds the Caddyfile and updater script as runtime assets', () => {
+    expect(Object.keys(kortixRuntimeAssets).sort()).toEqual(['Caddyfile', 'updater.sh']);
+    expect(kortixRuntimeAssets.Caddyfile).toContain('{$KORTIX_DOMAIN}');
+    expect(kortixRuntimeAssets.Caddyfile).toContain('{$KORTIX_API_DOMAIN}');
+    expect(kortixRuntimeAssets['updater.sh']).toContain('docker compose');
+    expect(kortixRuntimeAssets['updater.sh']).toContain('flock');
+  });
+
+  test('writes the Caddyfile and updater script to the instance directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-runtime-assets-'));
+    try {
+      writeKortixRuntimeAssets(root);
+      expect(readFileSync(join(root, 'Caddyfile'), 'utf8')).toBe(kortixRuntimeAssets.Caddyfile);
+      expect(readFileSync(join(root, 'updater.sh'), 'utf8')).toBe(kortixRuntimeAssets['updater.sh']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

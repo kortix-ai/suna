@@ -1,27 +1,13 @@
-import type { SelfHostTarget } from './config.ts';
-
 export interface SelfHostCommandFlags {
   instance: string;
-  tag: string;
+  tag?: string;
   release?: string;
-  channel?: string;
-  target?: SelfHostTarget;
-  awsProfile?: string;
-  region?: string;
-  vpcCidr?: string;
-  apiDomain?: string;
-  frontendDomain?: string;
-  route53ZoneId?: string;
-  releaseRepositoryUrl?: string;
-  tufRootSha256?: string;
-  updaterBootstrapUrl?: string;
-  updaterBootstrapSha256?: string;
-  releasePublisherAccountId?: string;
-  maintenanceWindow?: string;
+  /** Which moving tag to track when no explicit tag/release is pinned. */
+  channel?: 'stable' | 'latest';
+  /** Enable/disable the in-compose auto-updater. */
+  autoUpdate?: boolean;
+  /** Auto-updater check interval, in seconds. */
+  updateInterval?: string;
   yes: boolean;
-  local: boolean;
-  registry: boolean;
   json: boolean;
-  force: boolean;
-  allowDowntime: boolean;
 }

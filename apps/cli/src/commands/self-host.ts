@@ -1,27 +1,28 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { randomBytes, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { fileURLToPath } from 'node:url';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
 import { prompt, selectFrom } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
-import { runAwsVpcCommand } from '../self-host/aws-vpc.ts';
 import {
-  instanceDir as targetInstanceDir,
+  instanceDir as configInstanceDir,
   loadInstanceConfig,
-  parseSelfHostTarget,
-  resolveInstanceTarget,
   writeInstanceConfig,
 } from '../self-host/config.ts';
 import type { SelfHostCommandFlags } from '../self-host/types.ts';
-import { renderFullDockerCompose, writeSupabaseVendorAssets } from '../self-host/compose-assets.ts';
+import { renderFullDockerCompose, writeKortixRuntimeAssets, writeSupabaseVendorAssets } from '../self-host/compose-assets.ts';
+import { SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
 
 const DEFAULT_INSTANCE = 'default';
-const DEFAULT_TAG = 'latest';
+const CHANNELS = ['stable', 'latest'] as const;
+type Channel = (typeof CHANNELS)[number];
+const DEFAULT_CHANNEL: Channel = 'stable';
+const DEFAULT_AUTO_UPDATE = 'true';
+const DEFAULT_UPDATE_INTERVAL_SECONDS = '86400'; // daily
 const DEFAULT_HOST_NAME = 'selfhost';
 const DEFAULT_PUBLIC_URL = 'http://localhost:13737';
 const DEFAULT_API_URL = 'http://localhost:13738';
@@ -29,79 +30,59 @@ const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
 const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
-const LOCAL_SOURCE_TAG = 'selfhost-local';
 
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
-Run Kortix on your own infrastructure. Two deployment targets:
-
-  this machine   --target docker    the full stack via Docker Compose on
-                                     whatever machine you run this on. Just works.
-  AWS EC2        --target aws-ec2    provision and manage a remote single-EC2
-                                     Kortix appliance in your AWS account.
-
-New instances default to docker. For the AWS EC2 walkthrough (Terraform,
-domains, secrets, signed updates) see docs/runbooks/enterprise-vpc-deployment.md.
-Existing Docker instances remain fully compatible.
+Run Kortix on your own infrastructure: one generic Docker Compose stack that
+runs identically on a laptop, any VPS, or a cloud box. There is no separate
+"target" to pick — ${C.cyan}kortix self-host init${C.reset} generates a
+docker-compose.yml + .env, and ${C.cyan}start${C.reset} runs it.
 
 Subcommands:
-  init                 Create a this-machine (Docker) or AWS EC2 instance config.
-  configure            Configure target integrations and secrets.
-  plan                 Preview target changes without applying them.
-  deploy               Bootstrap or converge the selected target.
+  init                 Create or refresh this instance's Compose + env config.
   start                Pull images and start your self-hosted Kortix.
-  update               Apply a selected Docker tag or signed AWS release.
-  reconcile            Check and converge to the configured release channel.
-  rollback             Roll back to a compatible signed release.
+  update               Pull the configured channel's images now and apply them.
+  reconcile            Same as update — check and converge to the configured
+                       channel/version.
   version              Show the running version and image tags.
   stop                 Stop the stack.
   restart              Restart the stack.
-  status               Show target health and deployment status.
-  doctor               Validate local tools, credentials, and target access.
+  status               Show container status.
+  doctor               Validate local Docker tooling and the Compose config.
   logs [service]       Tail logs.
-  open                 Open the target dashboard.
+  open                 Open the dashboard in a browser.
+  configure            Interactively configure integrations and update policy.
   env ls              Show persistent environment values.
   env set KEY=VALUE    Update persistent environment values.
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
-  --target <target>    docker (this machine) or aws-ec2 (AWS EC2). Default:
-                       docker for new instances.
-  --tag <tag>          Docker image tag / version (default: ${DEFAULT_TAG}).
-  --release <version>  Immutable enterprise release (for example 0.9.84-e1).
-  --channel <name>     Release channel (AWS default: stable; Docker: latest).
-  --aws-profile <name> AWS CLI profile used to bootstrap/manage the target.
-  --region <region>    AWS region (default: AWS config, then us-west-2).
-  --vpc-cidr <cidr>    Dedicated /16 CIDR for an AWS EC2 target.
-  --api-domain <name>  Public API DNS name for the AWS target.
-  --frontend-domain <name> Public dashboard DNS name for the AWS target.
-  --route53-zone-id <id> Customer Route 53 public hosted zone for DNS and ACM.
-  --release-repository-url <url> Immutable enterprise TUF repository.
-  --tuf-root-sha256 <digest> Offline-reviewed trusted TUF root digest.
-  --updater-bootstrap-url <url> Digest-pinned enterprise updater binary.
-  --updater-bootstrap-sha256 <digest> Updater binary SHA-256.
-  --release-publisher-account-id <id> Account allowed to send wake-up hints.
-  --maintenance-window <window> UTC window, for example Sun:02:00-05:00.
-  --local              Use current-source local images instead of registry images.
-  --registry           Force registry images even when running from a source checkout.
-  --force              Run now, bypassing only the configured maintenance window.
-  --allow-downtime     Permit a release whose migration is not backward-compatible
-                       to deploy with a brief, honest downtime window (stop app,
-                       migrate, start new). Without it such a release is refused.
+  --tag <tag>          Pin an explicit image tag / version (for example 0.9.84).
+  --release <version>  Alias for --tag.
+  --channel <name>     Which moving tag to track when no explicit --tag is
+                       given: stable or latest (default: stable). The
+                       auto-updater tracks whichever channel is configured.
+  --auto-update <on|off> Enable/disable the in-compose auto-updater (default: on).
+  --update-interval <seconds> How often the auto-updater checks for new
+                       images (default: 86400, i.e. daily).
   --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
 
+Public domain + TLS (optional): set KORTIX_DOMAIN (and optionally
+KORTIX_API_DOMAIN, default api.<KORTIX_DOMAIN>) via
+${C.cyan}kortix self-host env set${C.reset} to turn on the bundled Caddy
+reverse proxy, which terminates TLS via ACME HTTP-01 on ports 80/443. Leave it
+unset for the default loopback-port laptop setup.
+
 Examples:
-  kortix self-host init                    # this machine (Docker)
+  kortix self-host init
   kortix self-host start
-  kortix self-host init --target aws-ec2 --instance customer --aws-profile customer --region us-west-2
-  kortix self-host plan --instance customer
-  kortix self-host deploy --instance customer
-  kortix self-host reconcile --instance customer --channel stable
-  kortix self-host update                 # update to the latest published version
-  kortix self-host update --tag 0.9.72    # pin to a specific version
+  kortix self-host update                        # pull + apply the stable channel
+  kortix self-host update --tag 0.9.72            # pin to a specific version
+  kortix self-host update --channel latest        # track :latest instead
   kortix self-host version
+  kortix self-host env set KORTIX_DOMAIN=kortix.example.com
   kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
   kortix hosts ls
 `;
@@ -110,6 +91,12 @@ type GlobalFlags = SelfHostCommandFlags;
 
 interface SelfHostEnv {
   KORTIX_VERSION: string;
+  KORTIX_CHANNEL: string;
+  KORTIX_AUTO_UPDATE: string;
+  KORTIX_UPDATE_INTERVAL: string;
+  KORTIX_DOMAIN: string;
+  KORTIX_API_DOMAIN: string;
+  KORTIX_ACME_EMAIL: string;
   PUBLIC_URL: string;
   API_PUBLIC_URL: string;
   SUPABASE_PUBLIC_URL: string;
@@ -121,8 +108,10 @@ interface SelfHostEnv {
   API_IMAGE: string;
   GATEWAY_IMAGE: string;
   SANDBOX_IMAGE: string;
-  KORTIX_LOCAL_IMAGES: string;
-  KORTIX_PUBLIC_AUTH_METHODS: string;
+  // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
+  // and DAYTONA_TARGET are covered by the [key: string] index signature below —
+  // their defaults come from the SHARED_SELF_HOST_DEFAULTS spread in
+  // defaultEnv(), not a literal here, so TS can't see them as named properties.
   GATEWAY_INTERNAL_TOKEN: string;
   OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
@@ -132,10 +121,7 @@ interface SelfHostEnv {
   INTERNAL_SERVICE_KEY: string;
   API_KEY_SECRET: string;
   TUNNEL_SIGNING_SECRET: string;
-  ALLOWED_SANDBOX_PROVIDERS: string;
   DAYTONA_API_KEY: string;
-  DAYTONA_SERVER_URL: string;
-  DAYTONA_TARGET: string;
   KORTIX_GITHUB_APP_ID: string;
   KORTIX_GITHUB_APP_PRIVATE_KEY: string;
   KORTIX_GITHUB_APP_SLUG: string;
@@ -178,24 +164,12 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     return 2;
   }
 
-  let target;
-  try {
-    target = resolveInstanceTarget(flags.instance, flags.target);
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
-  }
-
-  if (target === 'aws-ec2') {
-    return runAwsVpcCommand(sub, args, flags);
-  }
-
   switch (sub) {
     case 'init':
     case 'setup':
       return selfHostInit(flags);
     case 'plan':
-      return selfHostDockerPlan(flags);
+      return selfHostPlan(flags);
     case 'deploy':
       return selfHostStart(flags);
     case 'start':
@@ -207,7 +181,7 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     case 'reconcile':
       return selfHostUpdate(flags);
     case 'rollback':
-      return selfHostDockerRollback(flags);
+      return selfHostRollback(flags);
     case 'version':
       return selfHostVersion(flags);
     case 'stop':
@@ -219,7 +193,7 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     case 'ps':
       return composeCommand(flags, ['ps']);
     case 'doctor':
-      return selfHostDockerDoctor(flags);
+      return selfHostDoctor(flags);
     case 'logs':
       return composeCommand(flags, ['logs', '-f', ...args]);
     case 'open':
@@ -237,59 +211,39 @@ export async function runSelfHost(argv: string[]): Promise<number> {
 
 function parseGlobalFlags(args: string[]): GlobalFlags {
   const yes = takeFlagBool(args, ['--yes', '-y']);
-  const local = takeFlagBool(args, ['--local']);
-  const registry = takeFlagBool(args, ['--registry']);
   const json = takeFlagBool(args, ['--json']);
-  const force = takeFlagBool(args, ['--force']);
-  const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
   const instance = takeFlagValue(args, ['--instance']) ?? DEFAULT_INSTANCE;
   const release = takeFlagValue(args, ['--release']);
-  const tag = takeFlagValue(args, ['--tag', '--version']) ?? release ?? DEFAULT_TAG;
-  const target = parseSelfHostTarget(takeFlagValue(args, ['--target']));
-  const awsProfile = takeFlagValue(args, ['--aws-profile']);
-  const region = takeFlagValue(args, ['--region']);
-  const channel = takeFlagValue(args, ['--channel']);
-  const vpcCidr = takeFlagValue(args, ['--vpc-cidr']);
-  const apiDomain = takeFlagValue(args, ['--api-domain']);
-  const frontendDomain = takeFlagValue(args, ['--frontend-domain']);
-  const route53ZoneId = takeFlagValue(args, ['--route53-zone-id']);
-  const releaseRepositoryUrl = takeFlagValue(args, ['--release-repository-url']);
-  const tufRootSha256 = takeFlagValue(args, ['--tuf-root-sha256']);
-  const updaterBootstrapUrl = takeFlagValue(args, ['--updater-bootstrap-url']);
-  const updaterBootstrapSha256 = takeFlagValue(args, ['--updater-bootstrap-sha256']);
-  const releasePublisherAccountId = takeFlagValue(args, ['--release-publisher-account-id']);
-  const maintenanceWindow = takeFlagValue(args, ['--maintenance-window']);
-  if (local && registry) {
-    throw new Error('use either --local or --registry, not both');
+  const tag = takeFlagValue(args, ['--tag', '--version']);
+  const channelRaw = takeFlagValue(args, ['--channel']);
+  const autoUpdateRaw = takeFlagValue(args, ['--auto-update']);
+  const updateInterval = takeFlagValue(args, ['--update-interval']);
+  if (channelRaw !== undefined && !isChannel(channelRaw)) {
+    throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
+  }
+  if (autoUpdateRaw !== undefined && autoUpdateRaw !== 'on' && autoUpdateRaw !== 'off') {
+    throw new Error(`--auto-update must be "on" or "off", got "${autoUpdateRaw}"`);
+  }
+  if (updateInterval !== undefined && (!/^\d+$/.test(updateInterval) || Number(updateInterval) <= 0)) {
+    throw new Error('--update-interval must be a positive number of seconds');
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
   }
   return {
     instance,
-    tag,
+    tag: tag ?? release,
     release,
-    channel,
-    target,
-    awsProfile,
-    region,
-    vpcCidr,
-    apiDomain,
-    frontendDomain,
-    route53ZoneId,
-    releaseRepositoryUrl,
-    tufRootSha256,
-    updaterBootstrapUrl,
-    updaterBootstrapSha256,
-    releasePublisherAccountId,
-    maintenanceWindow,
+    channel: channelRaw as Channel | undefined,
+    autoUpdate: autoUpdateRaw === undefined ? undefined : autoUpdateRaw === 'on',
+    updateInterval,
     yes,
-    local,
-    registry,
     json,
-    force,
-    allowDowntime,
   };
+}
+
+function isChannel(value: string): value is Channel {
+  return (CHANNELS as readonly string[]).includes(value);
 }
 
 async function selfHostInit(flags: GlobalFlags): Promise<number> {
@@ -299,32 +253,19 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   const existing = loadEnv(flags.instance);
   const env = { ...defaultEnv(flags), ...(existing ?? {}) };
 
-  env.KORTIX_VERSION = flags.tag;
-  if (!existing || existing.FRONTEND_IMAGE === `${DEFAULT_FRONTEND_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
-    env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`;
-  }
-  if (!existing || existing.API_IMAGE === `${DEFAULT_API_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
-    env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`;
-  }
-  if (!existing || existing.GATEWAY_IMAGE === `${DEFAULT_GATEWAY_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
-    env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`;
-  }
-  if (!existing || existing.SANDBOX_IMAGE === `${DEFAULT_SANDBOX_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
-    env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`;
-  }
+  applyChannelAndUpdatePolicy(env, flags);
+  applyImagesForTag(env, resolveTag(flags, existing));
 
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env);
   }
 
   writeEnv(flags.instance, env);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
   const existingConfig = loadInstanceConfig(flags.instance);
   writeInstanceConfig({
     schema_version: 1,
     instance: flags.instance,
-    target: 'docker',
-    channel: flags.channel ?? existingConfig?.channel ?? 'latest',
     ...(flags.release || existingConfig?.release ? { release: flags.release ?? existingConfig?.release } : {}),
   });
   renderInitSummary(flags.instance, dir, env, existing !== null);
@@ -339,7 +280,8 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}Dashboard ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}API       ${C.reset}${env.API_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
-  process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n\n`);
+  process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, every ${env.KORTIX_UPDATE_INTERVAL}s)${C.reset}\n\n`);
   renderIntegrationSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
@@ -356,22 +298,14 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env);
   }
-  const localImageMode = shouldUseLocalSourceImages(flags);
-  if (localImageMode) {
-    ensureLocalSourceImages();
-    applyLocalSourceImages(env);
-  }
   const portChanges = await reconcilePorts(flags.instance, env);
   writeEnv(flags.instance, env);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
 
   process.stdout.write(`\n  ${C.bold}kortix self-host start${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
   process.stdout.write(`  ${C.dim}images   ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}api      ${C.reset}${env.API_PUBLIC_URL}\n\n`);
-  if (localImageMode) {
-    process.stdout.write(`${C.dim}  images   current source checkout (${LOCAL_SOURCE_TAG}); pull skipped${C.reset}\n`);
-  }
   if (portChanges.length > 0) {
     process.stdout.write(`${C.dim}  ports    ${C.reset}${portChanges.join(', ')}\n\n`);
   }
@@ -394,12 +328,8 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
     );
   }
 
-  if (env.KORTIX_LOCAL_IMAGES === 'true') {
-    process.stdout.write(`${C.dim}  pull     skipped (KORTIX_LOCAL_IMAGES=true)${C.reset}\n`);
-  } else {
-    const pull = compose(flags.instance, ['pull']);
-    if (pull !== 0) return pull;
-  }
+  const pull = compose(flags.instance, ['pull']);
+  if (pull !== 0) return pull;
   const up = compose(flags.instance, ['up', '-d']);
   if (up !== 0) return up;
   const refreshApp = compose(flags.instance, ['up', '-d', '--force-recreate', '--no-deps', 'kortix-api', 'frontend']);
@@ -419,7 +349,7 @@ async function selfHostRestart(flags: GlobalFlags): Promise<number> {
   return selfHostStart(flags);
 }
 
-function selfHostDockerPlan(flags: GlobalFlags): number {
+function selfHostPlan(flags: GlobalFlags): number {
   if (!existsSync(composePath(flags.instance)) || !existsSync(envPath(flags.instance))) {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
     return 1;
@@ -429,7 +359,6 @@ function selfHostDockerPlan(flags: GlobalFlags): number {
   if (flags.json) {
     process.stdout.write(`${JSON.stringify({
       instance: flags.instance,
-      target: 'docker',
       valid: true,
       compose_file: composePath(flags.instance),
     }, null, 2)}\n`);
@@ -440,18 +369,18 @@ function selfHostDockerPlan(flags: GlobalFlags): number {
   return 0;
 }
 
-function selfHostDockerRollback(flags: GlobalFlags): Promise<number> | number {
-  const release = flags.release ?? (flags.tag !== DEFAULT_TAG ? flags.tag : undefined);
+function selfHostRollback(flags: GlobalFlags): Promise<number> | number {
+  const release = flags.release ?? flags.tag;
   if (!release) {
     process.stderr.write(
-      `${status.err('Docker rollback requires an explicit --release <version> or --tag <version>.')}\n`,
+      `${status.err('Rollback requires an explicit --release <version> or --tag <version>.')}\n`,
     );
     return 2;
   }
   return selfHostUpdate({ ...flags, tag: release });
 }
 
-function selfHostDockerDoctor(flags: GlobalFlags): number {
+function selfHostDoctor(flags: GlobalFlags): number {
   const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
   for (const [name, args] of [
     ['docker', ['--version']],
@@ -484,7 +413,7 @@ function selfHostDockerDoctor(flags: GlobalFlags): number {
   }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify({ instance: flags.instance, target: 'docker', ok, checks }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ instance: flags.instance, ok, checks }, null, 2)}\n`);
   } else {
     process.stdout.write(`\n  ${C.bold}kortix self-host doctor${C.reset}\n\n`);
     for (const check of checks) {
@@ -496,11 +425,14 @@ function selfHostDockerDoctor(flags: GlobalFlags): number {
 }
 
 /**
- * Update an existing instance to a newer version: point the image tags at the
- * requested version (default `latest`), then down→start. `start` re-pulls the
- * tags and the kortix-migrate one-shot applies any new migrations before the
- * API serves traffic. The Postgres volume is preserved across the restart, so
- * this is a true in-place upgrade. Source-image instances rebuild instead.
+ * Update an existing instance: point the image tags at the requested
+ * version/channel (default: whatever channel is already configured, i.e. the
+ * "stable" moving tag unless the operator switched channels or pinned an
+ * explicit version), then down→start. `start` re-pulls the tags and the
+ * kortix-migrate one-shot applies any new migrations before the API serves
+ * traffic. The Postgres volume is preserved across the restart, so this is a
+ * true in-place upgrade. This is exactly what the in-compose auto-updater does
+ * on its own schedule — `update`/`reconcile` just runs it once, right now.
  */
 async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   if (!existsSync(envPath(flags.instance)) || !existsSync(composePath(flags.instance))) {
@@ -510,29 +442,47 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
 
   const env = loadEnvWithDefaults(flags)!;
   const oldVersion = env.KORTIX_VERSION || 'unknown';
-  const localImageMode = env.KORTIX_LOCAL_IMAGES === 'true' || shouldUseLocalSourceImages(flags);
 
   process.stdout.write(`\n  ${C.bold}kortix self-host update${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
 
-  if (localImageMode) {
-    process.stdout.write(`  ${C.yellow}This instance runs current-source images (${LOCAL_SOURCE_TAG}).${C.reset}\n`);
-    process.stdout.write(`  ${C.dim}Rebuilding from the local checkout and applying migrations…${C.reset}\n\n`);
-    return selfHostRestart(flags);
-  }
-
-  const targetTag = flags.tag;
-  env.KORTIX_VERSION = targetTag;
-  env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${targetTag}`;
-  env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${targetTag}`;
-  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${targetTag}`;
-  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${targetTag}`;
+  applyChannelAndUpdatePolicy(env, flags);
+  applyImagesForTag(env, resolveTag(flags, env));
   writeEnv(flags.instance, env);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
 
-  process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${targetTag}${C.reset}\n\n`);
+  process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${env.KORTIX_VERSION}${C.reset}\n\n`);
   // down keeps the named Postgres volume; start re-pulls + migrates + recreates.
   return selfHostRestart(flags);
+}
+
+/** Resolve the image tag to apply: an explicit pin wins, else the channel. */
+function resolveTag(flags: GlobalFlags, existing: SelfHostEnv | null): string {
+  return flags.tag ?? flags.release ?? flags.channel ?? existing?.KORTIX_CHANNEL ?? DEFAULT_CHANNEL;
+}
+
+/** Apply KORTIX_CHANNEL / auto-update policy flags onto env, defaults preserved. */
+function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void {
+  const tag = resolveTag(flags, env);
+  if (flags.channel) {
+    env.KORTIX_CHANNEL = flags.channel;
+  } else if (isChannel(tag)) {
+    env.KORTIX_CHANNEL = tag;
+  }
+  env.KORTIX_CHANNEL ||= DEFAULT_CHANNEL;
+  if (flags.autoUpdate !== undefined) env.KORTIX_AUTO_UPDATE = flags.autoUpdate ? 'true' : 'false';
+  env.KORTIX_AUTO_UPDATE ||= DEFAULT_AUTO_UPDATE;
+  if (flags.updateInterval) env.KORTIX_UPDATE_INTERVAL = flags.updateInterval;
+  env.KORTIX_UPDATE_INTERVAL ||= DEFAULT_UPDATE_INTERVAL_SECONDS;
+}
+
+/** Point every Kortix app image (and the tracked version) at the given tag. */
+function applyImagesForTag(env: SelfHostEnv, tag: string): void {
+  env.KORTIX_VERSION = tag;
+  env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${tag}`;
+  env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${tag}`;
+  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${tag}`;
+  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${tag}`;
 }
 
 function isSemverTag(s: string): boolean {
@@ -549,14 +499,15 @@ function compareSemver(a: string, b: string): number {
 }
 
 /**
- * Resolve published version info from Docker Hub: the newest released version
- * and, when running `:latest`, the concrete version it currently points to (by
- * matching the `latest` tag's digest). Best-effort — returns nulls offline.
+ * Resolve published version info from Docker Hub: the newest released
+ * (semver-tagged) version and, when tracking a moving tag (stable/latest), the
+ * concrete version that tag currently points to (by matching digests).
+ * Best-effort — returns nulls offline.
  */
-async function fetchPublishedVersions(repo: string): Promise<{ latest: string | null; latestResolved: string | null }> {
+async function fetchPublishedVersions(repo: string, trackingTag: string): Promise<{ latest: string | null; trackingResolved: string | null }> {
   try {
     const res = await fetch(`https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100&ordering=last_updated`);
-    if (!res.ok) return { latest: null, latestResolved: null };
+    if (!res.ok) return { latest: null, trackingResolved: null };
     const data = (await res.json()) as { results?: Array<{ name: string; digest?: string; images?: Array<{ digest?: string }> }> };
     const rows = data.results ?? [];
     const digestOf = (name: string): string => {
@@ -565,13 +516,13 @@ async function fetchPublishedVersions(repo: string): Promise<{ latest: string | 
     };
     const semvers = rows.map((r) => r.name).filter(isSemverTag).sort((a, b) => compareSemver(b, a));
     const latest = semvers[0] ?? null;
-    const latestDigest = digestOf('latest');
-    const latestResolved = latestDigest
-      ? semvers.find((v) => digestOf(v) && digestOf(v) === latestDigest) ?? null
+    const trackingDigest = digestOf(trackingTag);
+    const trackingResolved = trackingDigest
+      ? semvers.find((v) => digestOf(v) && digestOf(v) === trackingDigest) ?? null
       : null;
-    return { latest, latestResolved };
+    return { latest, trackingResolved };
   } catch {
-    return { latest: null, latestResolved: null };
+    return { latest: null, trackingResolved: null };
   }
 }
 
@@ -581,30 +532,22 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
     return 1;
   }
-  const localMode = env.KORTIX_LOCAL_IMAGES === 'true';
-  const configured = env.KORTIX_VERSION || 'unknown';
-  const { latest, latestResolved } = await fetchPublishedVersions(DEFAULT_API_IMAGE_REPO);
+  const configured = env.KORTIX_VERSION || DEFAULT_CHANNEL;
+  const { latest, trackingResolved } = await fetchPublishedVersions(DEFAULT_API_IMAGE_REPO, configured);
 
-  // What you're actually running: a pinned semver is itself; `:latest` resolves
-  // to whatever version that tag currently points to on Docker Hub.
-  const running = isSemverTag(configured)
-    ? configured
-    : configured === 'latest'
-      ? latestResolved ?? latest ?? 'latest'
-      : configured;
+  // What you're actually running: a pinned semver is itself; a moving tag
+  // (stable/latest) resolves to whatever version that tag currently points to.
+  const running = isSemverTag(configured) ? configured : trackingResolved ?? latest ?? configured;
 
   process.stdout.write(`\n  ${C.bold}kortix self-host version${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
-  if (localMode) {
-    process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}current source${C.reset}${C.dim} (${LOCAL_SOURCE_TAG} images, not a released version)${C.reset}\n`);
-  } else {
-    const tagNote = configured === 'latest' ? `${C.dim} (tracking :latest)${C.reset}` : '';
-    process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}${running}${C.reset}${tagNote}\n`);
-  }
+  const tagNote = !isSemverTag(configured) ? `${C.dim} (tracking :${configured})${C.reset}` : '';
+  process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}${running}${C.reset}${tagNote}\n`);
   process.stdout.write(`  ${C.dim}latest   ${C.reset}${latest ?? C.dim + 'unknown (offline?)' + C.reset}\n`);
+  process.stdout.write(`  ${C.dim}channel  ${C.reset}${env.KORTIX_CHANNEL || DEFAULT_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, every ${env.KORTIX_UPDATE_INTERVAL}s)${C.reset}\n`);
 
-  // Update hint: only meaningful for registry installs with a known latest.
-  if (!localMode && latest) {
+  // Update hint: only meaningful for a semver pin with a known newer release.
+  if (latest) {
     if (isSemverTag(running) && compareSemver(running, latest) < 0) {
       process.stdout.write(`  ${C.yellow}update   ${C.reset}${running} ${C.dim}→${C.reset} ${C.green}${latest}${C.reset}${C.dim} available — run ${C.reset}${C.cyan}kortix self-host update${C.reset}\n`);
     } else if (isSemverTag(running)) {
@@ -617,7 +560,7 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  sandbox  ${C.reset}${env.SANDBOX_IMAGE}\n\n`);
-  process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (latest) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
+  process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (current channel) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
   return 0;
 }
 
@@ -668,7 +611,7 @@ function selfHostEnv(args: string[], flags: GlobalFlags): number {
       env[pair.slice(0, idx)] = pair.slice(idx + 1);
     }
     writeEnv(flags.instance, env);
-    writeCompose(flags.instance);
+    writeCompose(flags.instance, env);
     process.stdout.write(`${status.ok('Updated self-host environment')}\n`);
     return 0;
   }
@@ -683,11 +626,35 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
     return 1;
   }
   await configureIntegrations(env);
+  await configureUpdatePolicy(env, flags);
   writeEnv(flags.instance, env);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
   renderIntegrationSummary(env);
   return 0;
+}
+
+/** Interactive (or flag-driven) auto-update channel/interval configuration. */
+async function configureUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+  applyChannelAndUpdatePolicy(env, flags);
+  if (!shouldPrompt(flags)) return;
+
+  process.stdout.write(`\n  ${C.dim}Auto-update policy${C.reset}\n`);
+  const autoUpdate = await selectFrom(
+    'Auto-update this instance',
+    ['on', 'off'] as const,
+    env.KORTIX_AUTO_UPDATE === 'false' ? 'off' : 'on',
+  );
+  env.KORTIX_AUTO_UPDATE = autoUpdate === 'on' ? 'true' : 'false';
+  const channel = await selectFrom(
+    'Channel to track (stable is recommended; latest is bleeding-edge)',
+    CHANNELS,
+    isChannel(env.KORTIX_CHANNEL) ? env.KORTIX_CHANNEL as Channel : DEFAULT_CHANNEL,
+  );
+  env.KORTIX_CHANNEL = channel;
+  if (!isSemverTag(env.KORTIX_VERSION)) applyImagesForTag(env, channel);
+  const interval = await prompt('Check interval in seconds', env.KORTIX_UPDATE_INTERVAL || DEFAULT_UPDATE_INTERVAL_SECONDS);
+  env.KORTIX_UPDATE_INTERVAL = /^\d+$/.test(interval) && Number(interval) > 0 ? interval : DEFAULT_UPDATE_INTERVAL_SECONDS;
 }
 
 async function configureIntegrations(env: SelfHostEnv): Promise<void> {
@@ -839,71 +806,6 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
   process.stdout.write('\n');
 }
 
-function shouldUseLocalSourceImages(flags: GlobalFlags): boolean {
-  if (flags.registry) return false;
-  if (flags.local) return true;
-  return sourceRepoRoot() !== null;
-}
-
-function applyLocalSourceImages(env: SelfHostEnv): void {
-  env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
-  env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
-  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
-  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
-  env.KORTIX_LOCAL_IMAGES = 'true';
-}
-
-function ensureLocalSourceImages(): void {
-  const images = [
-    `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
-    `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
-    `${DEFAULT_GATEWAY_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
-    `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
-  ];
-  const missing = images.filter((image) => !dockerImageExists(image));
-  if (missing.length === 0) return;
-
-  const root = sourceRepoRoot();
-  if (!root) {
-    throw new Error(`local self-host images are missing: ${missing.join(', ')}`);
-  }
-
-  process.stdout.write(
-    `${C.dim}  images   building current-source local images (${missing.join(', ')})${C.reset}\n`,
-  );
-  const result = spawnSync('bash', [join(root, 'scripts', 'build-local-images.sh'), '--tag', LOCAL_SOURCE_TAG], {
-    cwd: root,
-    stdio: 'inherit',
-  });
-  if (result.error) {
-    throw result.error;
-  }
-  if ((result.status ?? 1) !== 0) {
-    throw new Error('failed to build current-source local images');
-  }
-}
-
-function dockerImageExists(image: string): boolean {
-  const result = spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' });
-  return result.status === 0;
-}
-
-function sourceRepoRoot(): string | null {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const root = resolve(here, '../../../..');
-    if (
-      existsSync(join(root, 'scripts', 'build-local-images.sh')) &&
-      existsSync(join(root, 'apps', 'cli', 'src', 'index.ts'))
-    ) {
-      return root;
-    }
-  } catch {
-    /* not a file-backed source checkout */
-  }
-  return null;
-}
-
 async function reconcilePorts(instance: string, env: SelfHostEnv): Promise<string[]> {
   if (composeHasRunningServices(instance)) return [];
 
@@ -998,8 +900,15 @@ function findFreePort(): Promise<number> {
 
 function defaultEnv(flags: GlobalFlags): SelfHostEnv {
   const jwtSecret = token(64);
+  const tag = flags.tag ?? flags.release ?? flags.channel ?? DEFAULT_CHANNEL;
   return {
-    KORTIX_VERSION: flags.tag,
+    KORTIX_VERSION: tag,
+    KORTIX_CHANNEL: flags.channel ?? (isChannel(tag) ? tag : DEFAULT_CHANNEL),
+    KORTIX_AUTO_UPDATE: flags.autoUpdate === undefined ? DEFAULT_AUTO_UPDATE : flags.autoUpdate ? 'true' : 'false',
+    KORTIX_UPDATE_INTERVAL: flags.updateInterval ?? DEFAULT_UPDATE_INTERVAL_SECONDS,
+    KORTIX_DOMAIN: '',
+    KORTIX_API_DOMAIN: '',
+    KORTIX_ACME_EMAIL: '',
     PUBLIC_URL: DEFAULT_PUBLIC_URL,
     API_PUBLIC_URL: DEFAULT_API_URL,
     SUPABASE_PUBLIC_URL: 'http://localhost:13740',
@@ -1009,12 +918,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     POSTGRES_PORT: '13741',
     POOLER_PORT: '13742',
     SUPABASE_POSTGRES_INTERNAL_PORT: '5432',
-    FRONTEND_IMAGE: `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`,
-    API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`,
-    GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`,
-    SANDBOX_IMAGE: `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`,
-    KORTIX_LOCAL_IMAGES: 'false',
-    KORTIX_PUBLIC_AUTH_METHODS: 'password',
+    FRONTEND_IMAGE: `${DEFAULT_FRONTEND_IMAGE_REPO}:${tag}`,
+    API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${tag}`,
+    GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${tag}`,
+    SANDBOX_IMAGE: `${DEFAULT_SANDBOX_IMAGE_REPO}:${tag}`,
     GATEWAY_INTERNAL_TOKEN: token(32),
     OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: token(32),
@@ -1035,12 +942,9 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     API_EXTERNAL_URL: 'http://localhost:13740/auth/v1',
     SITE_URL: DEFAULT_PUBLIC_URL,
     ADDITIONAL_REDIRECT_URLS: '',
-    DISABLE_SIGNUP: 'false',
-    ENABLE_EMAIL_SIGNUP: 'true',
-    ENABLE_EMAIL_AUTOCONFIRM: 'true',
-    ENABLE_ANONYMOUS_USERS: 'false',
-    ENABLE_PHONE_SIGNUP: 'false',
-    ENABLE_PHONE_AUTOCONFIRM: 'false',
+    // Auth + agent sandbox defaults shared with every self-host flavor — see
+    // shared-runtime-defaults.ts for why these must not be duplicated here.
+    ...SHARED_SELF_HOST_DEFAULTS,
     SMTP_ADMIN_EMAIL: 'admin@localhost',
     SMTP_HOST: 'localhost',
     SMTP_PORT: '587',
@@ -1082,10 +986,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     TUNNEL_SIGNING_SECRET: token(32),
     // Sandboxes run on a real provider, just like Kortix Cloud. Daytona is the
     // self-host sandbox provider; `kortix self-host configure` collects the API key.
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
     DAYTONA_API_KEY: '',
-    DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
-    DAYTONA_TARGET: 'us',
     KORTIX_GITHUB_APP_ID: '',
     KORTIX_GITHUB_APP_PRIVATE_KEY: '',
     KORTIX_GITHUB_APP_SLUG: '',
@@ -1105,12 +1006,13 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
   };
 }
 
-function writeCompose(instance: string): void {
+function writeCompose(instance: string, env: SelfHostEnv): void {
   const root = instanceDir(instance);
   writeSupabaseVendorAssets(root);
+  writeKortixRuntimeAssets(root);
   writeFileSync(
     composePath(instance),
-    renderFullDockerCompose(composeProject(instance)),
+    renderFullDockerCompose(composeProject(instance), { domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()) }),
     { encoding: 'utf8', mode: 0o600 },
   );
 }
@@ -1154,6 +1056,21 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   env.POSTGRES_HOST = 'supabase-db';
   env.POSTGRES_DB = 'postgres';
   env.SUPABASE_POSTGRES_INTERNAL_PORT = '5432';
+
+  // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
+  // service fronts the stack on 80/443 and every public URL becomes the real
+  // domain instead of a loopback port. api.<domain> is the default API host;
+  // an explicit KORTIX_API_DOMAIN overrides it. Supabase's data-plane routes
+  // live on the same host as the frontend (see assets/Caddyfile.txt), so the
+  // browser-facing Supabase URL is the frontend domain too.
+  if (env.KORTIX_DOMAIN?.trim()) {
+    env.KORTIX_API_DOMAIN ||= `api.${env.KORTIX_DOMAIN}`;
+    env.KORTIX_ACME_EMAIL ||= `admin@${env.KORTIX_DOMAIN}`;
+    env.PUBLIC_URL = `https://${env.KORTIX_DOMAIN}`;
+    env.API_PUBLIC_URL = `https://${env.KORTIX_API_DOMAIN}`;
+    env.SUPABASE_PUBLIC_URL = `https://${env.KORTIX_DOMAIN}`;
+  }
+
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
   env.POOLER_TENANT_ID ||= composeProject(instance);
@@ -1188,7 +1105,7 @@ function registerLocalHost(name: string, apiUrl: string): void {
 }
 
 function instanceDir(instance: string): string {
-  return targetInstanceDir(instance);
+  return configInstanceDir(instance);
 }
 
 function envPath(instance: string): string {

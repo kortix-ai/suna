@@ -20,6 +20,12 @@ services:
     depends_on:
       kortix-api:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     restart: unless-stopped
 
   kortix-migrate:
@@ -58,7 +64,6 @@ services:
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL},${API_PUBLIC_URL}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE}
       SANDBOX_NETWORK: __KORTIX_COMPOSE_PROJECT___default
-      KORTIX_LOCAL_IMAGES: ${KORTIX_LOCAL_IMAGES}
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
       KORTIX_BILLING_INTERNAL_ENABLED: "false"
       LLM_GATEWAY_ENABLED: "true"
@@ -91,4 +96,69 @@ services:
     depends_on:
       kortix-api:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:8090/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     restart: unless-stopped
+
+  # Auto-updater: on an interval, pulls this stack's image tags, and if any
+  # digest actually changed, runs the migrate one-shot and rolls the stack
+  # forward. This is the entire "update mechanism" — there is no separate
+  # systemd/SSM updater. Gated by KORTIX_AUTO_UPDATE (checked by the script
+  # itself on every cycle, default on). Always present; it just no-ops when
+  # disabled.
+  kortix-updater:
+    image: docker:cli
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "/updater/updater.sh"]
+    environment:
+      KORTIX_AUTO_UPDATE: ${KORTIX_AUTO_UPDATE}
+      KORTIX_UPDATE_INTERVAL: ${KORTIX_UPDATE_INTERVAL}
+      KORTIX_COMPOSE_PROJECT: __KORTIX_COMPOSE_PROJECT__
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
+      - ./.env:/workspace/.env:ro
+      - ./updater.sh:/updater/updater.sh:ro
+      - kortix-updater-state:/state
+    restart: unless-stopped
+
+  # Reverse proxy + TLS (opt-in). Only present in the rendered Compose file
+  # when KORTIX_DOMAIN is set — see renderFullDockerCompose() in
+  # compose-assets.ts. Terminates ACME HTTP-01 TLS on 80/443 and routes
+  # api.<domain> -> kortix-api/llm-gateway and <domain> -> frontend/Kong.
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - kortix-caddy-data:/data
+    environment:
+      KORTIX_DOMAIN: ${KORTIX_DOMAIN}
+      KORTIX_API_DOMAIN: ${KORTIX_API_DOMAIN}
+      KORTIX_ACME_EMAIL: ${KORTIX_ACME_EMAIL}
+    depends_on:
+      kortix-api:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_started
+      frontend:
+        condition: service_started
+      supabase-kong:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  kortix-updater-state:
+  kortix-caddy-data:

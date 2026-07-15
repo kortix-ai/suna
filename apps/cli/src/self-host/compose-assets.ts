@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
+import kortixCaddyfile from './assets/Caddyfile.txt' with { type: 'text' };
+import kortixUpdaterScript from './assets/updater.sh' with { type: 'text' };
 import upstreamSupabaseCompose from './assets/supabase/docker-compose.yml' with { type: 'text' };
 import upstreamSupabaseLogsCompose from './assets/supabase/docker-compose.logs.yml' with { type: 'text' };
 import supabaseImageLockText from './assets/supabase/image-lock.json' with { type: 'text' };
@@ -75,12 +77,36 @@ export const officialSupabaseDockerAssets: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The Caddyfile + updater script mounted into their respective services.
+ * These are plain runtime assets (no secrets) written next to the compose
+ * file and .env, same as the Supabase vendor assets.
+ */
+export const kortixRuntimeAssets: Readonly<Record<string, string>> = {
+  Caddyfile: kortixCaddyfile,
+  'updater.sh': kortixUpdaterScript,
+};
+
+export function writeKortixRuntimeAssets(root: string): void {
+  writeAssets(root, kortixRuntimeAssets);
+}
+
+export interface RenderComposeOptions {
+  /**
+   * Whether KORTIX_DOMAIN (and KORTIX_API_DOMAIN) are configured. When true,
+   * the `caddy` reverse-proxy/TLS service is included. When false (the
+   * laptop/loopback-port default), it is omitted entirely — not merely
+   * disabled — so a domain-less instance never binds 80/443.
+   */
+  domainConfigured?: boolean;
+}
+
+/**
  * Compose the pinned official Supabase Docker distribution with the Kortix
  * application services. The upstream service definitions and image pins stay
  * intact; we only remove globally-conflicting container names, add legacy
  * Kortix service names, and restrict every published port to loopback.
  */
-export function renderFullDockerCompose(composeProject: string): string {
+export function renderFullDockerCompose(composeProject: string, options: RenderComposeOptions = {}): string {
   const base = parse(
     officialSupabaseDockerAssets['docker-compose.yml']!.replaceAll('${POSTGRES_PORT}', '${SUPABASE_POSTGRES_INTERNAL_PORT}'),
   ) as YamlRecord;
@@ -142,6 +168,14 @@ export function renderFullDockerCompose(composeProject: string): string {
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {
     services[name] = rawService as YamlRecord;
+  }
+
+  // The Caddy reverse-proxy/TLS service is opt-in: it only makes sense (and
+  // only binds 80/443) when a public domain is configured. Omit it entirely —
+  // rather than just leaving it stopped — so a domain-less laptop/VPS
+  // instance never even has the option of a port clash on 80/443.
+  if (!options.domainConfigured) {
+    delete services.caddy;
   }
 
   const document: YamlRecord = {
