@@ -95,7 +95,7 @@ const Footer = () => {
                   {section.links
                     .filter(
                       (link) =>
-                        process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'true' ||
+                        process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' ||
                         link.href !== '/use-cases',
                     )
                     .map((link) => (

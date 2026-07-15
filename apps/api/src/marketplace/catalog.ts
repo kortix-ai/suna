@@ -103,6 +103,14 @@ export interface CatalogItemDetail extends CatalogItem {
   /** For a `registry:project`: its agents + triggers, parsed from kortix.yaml. */
   projectAgents?: ProjectAgent[];
   projectTriggers?: ProjectTrigger[];
+  /** For a `registry:template`: the full declaration an install needs — the
+   *  declared inputs, required secret env vars, and the `meta.template` block
+   *  (agent grants, connectors, channels, triggers). Surfaced here so
+   *  `kortix marketplace show <id> --json` gives an installing agent everything
+   *  in one shot. */
+  inputs?: unknown[];
+  envVars?: Record<string, string>;
+  template?: Record<string, unknown>;
 }
 
 /** Parse a project item's `kortix.yaml` (+ each agent's own `.md` frontmatter)
@@ -1676,6 +1684,17 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
+/** Resolvable-by-id (detail + file fetch) but not necessarily browse-listed.
+ *  Use-case templates and the agents they install stay OUT of the browse grid
+ *  (that's the use-case pages' job), yet `kortix marketplace show <id>` /
+ *  install-session must read them — so they resolve by id. */
+function isResolvableCatalogItem(it: CatalogItem): boolean {
+  if (isBrowseableCatalogItem(it)) return true;
+  return (
+    (it.type === "registry:template" || it.type === "registry:agent") && !it.hidden
+  );
+}
+
 
 function filterCatalogItems(
   items: CatalogItem[],
@@ -1853,7 +1872,7 @@ export async function getCatalogItemDetail(
   const entry = byId.get(id);
   if (!entry) return null;
   const base = items.find((i) => i.id === id)!;
-  if (!isBrowseableCatalogItem(base)) return null;
+  if (!isResolvableCatalogItem(base)) return null;
 
   // Files come straight from the cached catalog entry — no re-fetch, so the full
   // file tree previews instantly even for a 174-skill source.
@@ -1891,6 +1910,17 @@ export async function getCatalogItemDetail(
       ? projectAgentsAndTriggers(entry.item.files ?? [])
       : { agents: [], triggers: [] };
 
+  const templateDecl =
+    base.type === "registry:template"
+      ? {
+          ...(entry.item.inputs ? { inputs: entry.item.inputs as unknown[] } : {}),
+          ...(entry.item.envVars ? { envVars: entry.item.envVars } : {}),
+          ...(entry.item.meta?.template
+            ? { template: entry.item.meta.template as Record<string, unknown> }
+            : {}),
+        }
+      : {};
+
   return {
     ...base,
     files,
@@ -1898,6 +1928,7 @@ export async function getCatalogItemDetail(
     dependencyItems,
     ...(projectAgents.length ? { projectAgents } : {}),
     ...(projectTriggers.length ? { projectTriggers } : {}),
+    ...templateDecl,
   };
 }
 

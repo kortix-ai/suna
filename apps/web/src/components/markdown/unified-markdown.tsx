@@ -20,6 +20,7 @@ import {
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
+  shikiWasmAvailable,
 } from '@/components/markdown/unified-markdown-utils';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
@@ -106,22 +107,31 @@ const shikiTransformers: ShikiTransformer[] = [
 
 // Singleton highlighter — kicked off at module init so the grammar is usually
 // ready by first render, letting us highlight synchronously (no plain→colour flash).
+//
+// Shiki's oniguruma engine compiles to WebAssembly, so skip the eager init
+// entirely (and never leave a rejecting promise) when WebAssembly is unavailable
+// — otherwise the rejection fires `onunhandledrejection` → Sentry on every page
+// load for visitors whose browser blocks/disables WebAssembly. highlightAsync
+// treats a null highlighter as "no highlighting available" and renders plain
+// code. See Better Stack 1604d50a (`WebAssembly is not defined`).
 let highlighterReady: Highlighter | null = null;
 const loadedLangs = new Set<string>(PRELOAD_LANGS.map((l) => l.toLowerCase()));
 const langLoadPromises = new Map<string, Promise<void>>();
 
-const highlighterPromise: Promise<Highlighter> = getSingletonHighlighter({
-  themes: [SHIKI_THEME_DARK, SHIKI_THEME_LIGHT],
-  langs: PRELOAD_LANGS,
-})
-  .then((h) => {
-    highlighterReady = h;
-    return h;
-  })
-  .catch((err) => {
-    console.warn('[unified-markdown] Shiki highlighter init failed:', err);
-    throw err;
-  });
+const highlighterPromise: Promise<Highlighter | null> = shikiWasmAvailable()
+  ? getSingletonHighlighter({
+      themes: [SHIKI_THEME_DARK, SHIKI_THEME_LIGHT],
+      langs: PRELOAD_LANGS,
+    })
+      .then((h) => {
+        highlighterReady = h;
+        return h;
+      })
+      .catch((err) => {
+        console.warn('[unified-markdown] Shiki highlighter init failed:', err);
+        return null;
+      })
+  : Promise.resolve(null);
 
 function ensureLangLoaded(h: Highlighter, lang: string): Promise<void> {
   if (loadedLangs.has(lang)) return Promise.resolve();
@@ -198,6 +208,7 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
 
   const p = highlighterPromise
     .then(async (h) => {
+      if (!h) return null;
       await ensureLangLoaded(h, lang);
       return h.codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers });
     })
