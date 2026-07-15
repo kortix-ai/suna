@@ -29,3 +29,8 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # generic-api-key rule matched the ACM certificate key_algorithm field (an
 # elliptic-curve algorithm NAME, not a credential) in the since-DELETED enterprise-vpc module.
 8887265c9d328380c42805206bc6a5bcebd6ecd5:infra/terraform/modules/enterprise-vpc/acm.tf:generic-api-key:5
+
+# Fake one-shot tokens in the CLI browser-auth CORS contract tests (literal
+# test fixtures, not credentials).
+940e6b256e1a75eb87b8ea954fe8fee074c63818:apps/cli/src/__tests__/browser-auth.test.ts:generic-api-key:73
+940e6b256e1a75eb87b8ea954fe8fee074c63818:apps/cli/src/__tests__/browser-auth.test.ts:generic-api-key:86

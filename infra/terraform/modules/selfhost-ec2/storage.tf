@@ -21,6 +21,7 @@ locals {
   data_mount_path = "/mnt/kortix-data"
 }
 
+#checkov:skip=CKV2_AWS_9:backups are handled by the aws_dlm_lifecycle_policy in this module (daily snapshots, retention-capped) — an AWS Backup plan would duplicate it
 resource "aws_ebs_volume" "data" {
   availability_zone = aws_instance.this.availability_zone
   size              = var.data_volume_size_gb
