@@ -25,6 +25,7 @@ import { track } from '@/lib/track';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
+  useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -137,6 +138,11 @@ export const EasyPanel = memo(function EasyPanel({
   );
 
   const isMobile = useIsMobile();
+  // W6 — desktop keeps EasyPanel mounted behind a closed side panel; the
+  // payoff effect below must know that so it never opens a detail nobody
+  // can see. The closed-panel case is the ready chip's (W1) job, not this
+  // effect's.
+  const isPanelOpen = useIsSidePanelOpen();
 
   // The panel owns the detail, because on desktop the detail REPLACES the
   // cards — a card can't replace its own parent. Opening a file is just
@@ -325,6 +331,7 @@ export const EasyPanel = memo(function EasyPanel({
         hasPrimary: primary !== null,
         detailOpen: detail !== null,
         interactedThisRun: interactedThisRunRef.current,
+        panelOpen: isPanelOpen,
       }) &&
       primary
     ) {
@@ -332,7 +339,7 @@ export const EasyPanel = memo(function EasyPanel({
       // actually picked it from — nav must page through that same list.
       handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'auto');
     }
-  }, [isRunning, outcome, detail, apps, files, handleOpenOutput]);
+  }, [isRunning, outcome, detail, apps, files, handleOpenOutput, isPanelOpen]);
 
   // Chip tap (W1→W2 handoff): the header asked us to open the primary
   // deliverable. Subscribe to the pending-request VALUE, not the (stable)

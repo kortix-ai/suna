@@ -91,10 +91,13 @@ export function deriveIsRunning(stepsRunning: boolean, sessionBusy: boolean): bo
 /**
  * Whether the panel should present the primary deliverable on this render —
  * the payoff screen (W2). Same transition discipline as
- * `shouldAutoExpandOutputs`, with three extra refusals: a failed or stopped
+ * `shouldAutoExpandOutputs`, with four extra refusals: a failed or stopped
  * run presents its outcome, not a payoff; an open detail is never replaced;
- * and a user who opened any detail during the run has shown they're driving —
- * auto-opening would fight them.
+ * a user who opened any detail during the run has shown they're driving —
+ * auto-opening would fight them; and the panel must actually be open — desktop
+ * keeps `EasyPanel` mounted behind a closed panel, so without this refusal the
+ * payoff would silently open a detail the user can't see. The closed-panel
+ * case belongs to the ready chip (W1), not the payoff.
  */
 export function shouldAutoOpenPayoff(args: {
   wasRunning: boolean;
@@ -103,6 +106,7 @@ export function shouldAutoOpenPayoff(args: {
   hasPrimary: boolean;
   detailOpen: boolean;
   interactedThisRun: boolean;
+  panelOpen: boolean;
 }): boolean {
   return (
     args.wasRunning &&
@@ -110,6 +114,7 @@ export function shouldAutoOpenPayoff(args: {
     args.outcome === 'succeeded' &&
     args.hasPrimary &&
     !args.detailOpen &&
-    !args.interactedThisRun
+    !args.interactedThisRun &&
+    args.panelOpen
   );
 }

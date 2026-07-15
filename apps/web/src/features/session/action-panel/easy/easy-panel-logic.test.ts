@@ -105,6 +105,7 @@ describe('shouldAutoOpenPayoff (W2)', () => {
     hasPrimary: true,
     detailOpen: false,
     interactedThisRun: false,
+    panelOpen: true,
   };
 
   test('fires exactly at the successful running→idle transition with a primary', () => {
@@ -122,6 +123,13 @@ describe('shouldAutoOpenPayoff (W2)', () => {
   test('never steals from a user who is (or was) looking at a detail this run', () => {
     expect(shouldAutoOpenPayoff({ ...base, detailOpen: true })).toBe(false);
     expect(shouldAutoOpenPayoff({ ...base, interactedThisRun: true })).toBe(false);
+  });
+
+  // ─── IMPORTANT 6 — desktop keeps EasyPanel mounted behind a closed panel.
+  // Without this refusal the payoff would silently open a detail the user
+  // can't see; the closed-panel case belongs to the ready chip (W1) instead. ──
+  test('never fires behind a closed panel, even when every other condition is met', () => {
+    expect(shouldAutoOpenPayoff({ ...base, panelOpen: false })).toBe(false);
   });
 });
 
