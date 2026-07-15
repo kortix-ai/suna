@@ -196,10 +196,21 @@ export const SessionLayout = memo(function SessionLayout({
     const expandChanged = prevExpandedRef.current !== isExpanded;
     prevExpandedRef.current = isExpanded;
 
-    const shouldAnimate = expandChanged && shouldShowPanel;
+    // A detail-close collapse rides in with this flag set: snap the width, don't
+    // glide it (the detail plays its own slide-out — a width animation under it
+    // is a second, competing motion). Consume it here so the next deliberate
+    // fullscreen/minimize toggle animates as usual.
+    const skipAnimation = useKortixComputerStore.getState().skipNextExpandAnimation;
+    if (skipAnimation) useKortixComputerStore.setState({ skipNextExpandAnimation: false });
+
+    const shouldAnimate = expandChanged && shouldShowPanel && !skipAnimation;
 
     if (shouldAnimate) {
       setIsAnimating(true);
+    } else if (expandChanged) {
+      // Instant path: clear any transition left on the panels so the resize
+      // below snaps rather than inheriting a prior glide.
+      disablePanelTransition();
     }
 
     if (shouldShowPanel) {
@@ -345,7 +356,20 @@ export const SessionLayout = memo(function SessionLayout({
         className="bg-background relative flex h-full flex-col overflow-hidden"
         data-testid="session-layout"
       >
-        <div ref={panelGroupRef} className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
+        <div
+          ref={panelGroupRef}
+          className={cn(
+            'relative flex min-h-0 flex-1 overflow-hidden',
+            // Fullscreen detail: the shell's floating sidebar toggle sits at
+            // z-30 in the same stacking context this wrapper competes in, and
+            // this wrapper is the panel subtree's stacking-context root — so
+            // the whole panel is capped at z-10 and the toggle bleeds through
+            // over the detail's toolbar. Elevate to z-[35] while expanded:
+            // above the toggle (30) and the sidebar edge strip (30), still
+            // below the sidebar's hover-peek flyout (40) and fixed overlays.
+            isExpanded ? 'z-[35]' : 'z-10',
+          )}
+        >
           <ResizablePanelGroup
             direction="horizontal"
             className="h-full bg-transparent"

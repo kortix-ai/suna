@@ -144,6 +144,22 @@ export const EasyPanel = memo(function EasyPanel({
   // another detail, so Back behaves identically wherever you came from.
   const [detail, setDetail] = useState<Detail | null>(null);
 
+  // Leaving a detail always returns to the home cards, so it must also drop the
+  // panel out of fullscreen — the store `isExpanded` a detail entered when the
+  // app/file was maximized. Without this the panel stays pinned at 100% width
+  // and the home cards (progress/outputs/context/apps) render full-bleed
+  // instead of snapping back to the resizable split; worse, "Ask for changes"
+  // targets the chat composer, which fullscreen has collapsed to zero width.
+  // Paging between siblings goes through `setDetail` directly and KEEPS
+  // fullscreen — only the exits route through here.
+  const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
+  const closeDetail = useCallback(() => {
+    setDetail(null);
+    // `animate: false` — the detail slides out on its own; snapping the panel
+    // width back in the same instant avoids a second, competing motion.
+    setIsExpanded(false, { animate: false });
+  }, [setIsExpanded]);
+
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/
   // metadata URLs (it calls useSandboxProxy() itself — see
   // FullScreenPresentationViewer), so `sandboxUrl` only has to be a truthy
@@ -202,7 +218,7 @@ export const EasyPanel = memo(function EasyPanel({
         useSessionComposerPrefillStore
           .getState()
           .setPrefill(sessionId, `In ${displayName}${pathHint}, `);
-        setDetail(null);
+        closeDetail();
       };
 
       // Present (W14): only for outputs derive-panels.ts tagged with a real
@@ -247,7 +263,7 @@ export const EasyPanel = memo(function EasyPanel({
             <AppPreview
               url={output.url}
               name={displayName}
-              onClose={() => setDetail(null)}
+              onClose={closeDetail}
               onAskForChanges={askForChanges}
             />
           ),
@@ -269,14 +285,14 @@ export const EasyPanel = memo(function EasyPanel({
             path={output.path}
             name={displayName}
             fileName={output.name}
-            onClose={() => setDetail(null)}
+            onClose={closeDetail}
             onAskForChanges={askForChanges}
             onPresent={present}
           />
         ),
       });
     },
-    [sessionId, getServiceUrl],
+    [sessionId, getServiceUrl, closeDetail],
   );
 
   const outcome = useMemo(
@@ -385,7 +401,7 @@ export const EasyPanel = memo(function EasyPanel({
     clearFocusedToolCall();
   }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId]);
 
-  const goHome = useCallback(() => setDetail(null), []);
+  const goHome = closeDetail;
 
   return (
     <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>

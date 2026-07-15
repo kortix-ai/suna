@@ -28,6 +28,12 @@ interface KortixComputerState {
   _panelOpenBySession: Record<string, boolean>;
   _activeSessionId: string | null;
   isExpanded: boolean;
+  // Transient: rides along with the NEXT `isExpanded` change to tell the panel
+  // layout to snap instead of animate. Set only when a detail-close collapses
+  // fullscreen (the detail plays its own slide-out — animating the panel width
+  // underneath it reads as a second, competing motion). Consumed and cleared by
+  // the layout effect that performs the resize.
+  skipNextExpandAnimation: boolean;
 
   // Tool navigation state (for external tool click triggers)
   pendingToolNavIndex: number | null;
@@ -70,7 +76,11 @@ interface KortixComputerState {
   setActiveSession: (sessionId: string | null) => void;
   openSidePanel: () => void;
   closeSidePanel: () => void;
-  setIsExpanded: (expanded: boolean) => void;
+  /** `animate: false` snaps the panel to its new width with no transition —
+   *  used when leaving a detail, so its own slide-out isn't doubled by a
+   *  competing width animation. Omitted/`true` keeps the expand/collapse glide
+   *  (the deliberate fullscreen/minimize toggles). */
+  setIsExpanded: (expanded: boolean, opts?: { animate?: boolean }) => void;
   toggleExpanded: () => void;
 
   // Ready chip state management
@@ -90,6 +100,7 @@ const initialState = {
   _panelOpenBySession: {} as Record<string, boolean>,
   _activeSessionId: null as string | null,
   isExpanded: false,
+  skipNextExpandAnimation: false,
   pendingToolNavIndex: null as number | null,
   focusedToolCallId: null as string | null,
   readyChip: null as ReadyChipState | null,
@@ -216,12 +227,13 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         set(update);
       },
 
-      setIsExpanded: (expanded: boolean) => {
-        set({ isExpanded: expanded });
+      setIsExpanded: (expanded: boolean, opts?: { animate?: boolean }) => {
+        set({ isExpanded: expanded, skipNextExpandAnimation: opts?.animate === false });
       },
 
       toggleExpanded: () => {
-        set((state) => ({ isExpanded: !state.isExpanded }));
+        // The deliberate fullscreen/minimize button — always glides.
+        set((state) => ({ isExpanded: !state.isExpanded, skipNextExpandAnimation: false }));
       },
 
       setReadyChip: (chip: ReadyChipState) => {
