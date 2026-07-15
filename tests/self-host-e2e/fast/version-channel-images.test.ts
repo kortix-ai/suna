@@ -38,7 +38,6 @@ describe.skipIf(!caps.localImages)(
       const { code } = await sandbox.run([
         'init',
         '--yes',
-        '--allow-missing-secrets',
         '--version',
         '0.9.107',
       ]);
@@ -59,7 +58,6 @@ describe.skipIf(!caps.localImages)(
       const viaTag = await sandbox.run([
         'init',
         '--yes',
-        '--allow-missing-secrets',
         '--tag',
         '0.9.55',
       ]);
@@ -72,7 +70,6 @@ describe.skipIf(!caps.localImages)(
         const viaRelease = await other.run([
           'init',
           '--yes',
-          '--allow-missing-secrets',
           '--release',
           '0.9.60',
         ]);
@@ -88,7 +85,6 @@ describe.skipIf(!caps.localImages)(
       const { code } = await sandbox.run([
         'init',
         '--yes',
-        '--allow-missing-secrets',
         '--channel',
         'latest',
       ]);
@@ -103,7 +99,6 @@ describe.skipIf(!caps.localImages)(
       const pinnedOn = await sandbox.run([
         'init',
         '--yes',
-        '--allow-missing-secrets',
         '--version',
         '0.9.107',
       ]);
@@ -115,7 +110,6 @@ describe.skipIf(!caps.localImages)(
         const result = await channelOff.run([
           'init',
           '--yes',
-          '--allow-missing-secrets',
           '--channel',
           'latest',
           '--auto-update',
@@ -132,7 +126,6 @@ describe.skipIf(!caps.localImages)(
       const { code } = await sandbox.run([
         'init',
         '--yes',
-        '--allow-missing-secrets',
         '--version',
         'dev-abc123',
         '--local-images',
@@ -149,7 +142,6 @@ describe.skipIf(!caps.localImages)(
       const { code } = await sandbox.run([
         'init',
         '--yes',
-        '--allow-missing-secrets',
         '--local-images',
       ]);
       expect(code).toBe(0);
@@ -159,13 +151,13 @@ describe.skipIf(!caps.localImages)(
     });
 
     test('--no-pull is an accepted alias for --local-images', async () => {
-      const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets', '--no-pull']);
+      const { code } = await sandbox.run(['init', '--yes', '--no-pull']);
       expect(code).toBe(0);
       expect(sandbox.readEnv().KORTIX_IMAGE_PULL).toBe('never');
     });
 
     test('without --local-images, KORTIX_IMAGE_PULL is left unset (default Docker pull policy)', async () => {
-      const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
+      const { code } = await sandbox.run(['init', '--yes']);
       expect(code).toBe(0);
       expect(sandbox.readEnv().KORTIX_IMAGE_PULL ?? '').toBe('');
     });

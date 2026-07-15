@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 /**
  * Kortix self-host is one generic Docker-native system: generate a
  * docker-compose.yml + .env and run `docker compose up`. It runs identically
- * on a laptop, any VPS, or a cloud VM — there is no separate "target" to pick
+ * on a local machine, any VPS, or a cloud VM — there is no separate "target" to pick
  * and no cloud-specific coordinates to store. Everything cloud-specific
  * (a public domain, TLS) is just an env var (KORTIX_DOMAIN) the same compose
  * stack reacts to, not a different deployment mechanism.
@@ -14,23 +14,10 @@ export interface SelfHostInstanceConfig {
   schema_version: 1;
   instance: string;
   release?: string;
-  /**
-   * Persists an operator's `--allow-missing-secrets` choice across
-   * invocations. Without this, an operator who ran `init --allow-missing-secrets`
-   * (deliberately proceeding without the Daytona key, to configure it later)
-   * would be hard-blocked again the very next time they ran a bare `start`
-   * (ensureRequiredSecrets() re-validates independently on every invocation) —
-   * forcing them to pass the flag a second time for no new decision. Once set
-   * via any invocation that passed the flag, later `start`/`update` calls
-   * remember it instead of re-demanding it. There is no "un-acknowledge" flag;
-   * setting the actual secret (`secrets set DAYTONA_API_KEY=...`) is what
-   * naturally makes missingRequiredSecrets() stop reporting anything anyway.
-   */
-  allow_missing_secrets?: boolean;
 }
 
 const INSTANCE_PATTERN = /^[a-zA-Z][a-zA-Z0-9._-]*$/;
-const TOP_LEVEL_FIELDS = new Set(['schema_version', 'instance', 'release', 'allow_missing_secrets']);
+const TOP_LEVEL_FIELDS = new Set(['schema_version', 'instance', 'release']);
 
 export function selfHostConfigRoot(): string {
   const override = process.env.KORTIX_SELF_HOST_CONFIG_DIR?.trim();
@@ -87,13 +74,11 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
   assertInstanceName(expectedInstance);
 
   const release = optionalString(value.release, 'release');
-  const allowMissingSecrets = optionalBoolean(value.allow_missing_secrets, 'allow_missing_secrets');
 
   return {
     schema_version: 1,
     instance: expectedInstance,
     ...(release ? { release } : {}),
-    ...(allowMissingSecrets ? { allow_missing_secrets: true } : {}),
   };
 }
 
@@ -117,12 +102,6 @@ function asRequiredString(value: unknown, field: string): string {
 function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
   return asRequiredString(value, field);
-}
-
-function optionalBoolean(value: unknown, field: string): boolean | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`);
-  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

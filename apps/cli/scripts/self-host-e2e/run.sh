@@ -200,9 +200,9 @@ note "Supabase: $SUPABASE_PUBLIC_URL"
 note "Sandbox port base: $SANDBOX_PORT_BASE"
 
 section "CLI Self-host Setup"
-# --allow-missing-secrets: init enforces required secrets and fails without them;
-# this harness sets them via `env set` right after, so downgrade to a warning.
-$CLI self-host init --instance "$INSTANCE" --tag "$TAG" --allow-missing-secrets >/tmp/kortix-selfhost-init-$INSTANCE.log
+# `init` never blocks on a missing required secret (it warns and proceeds) —
+# this harness sets them via `env set` right after.
+$CLI self-host init --instance "$INSTANCE" --tag "$TAG" >/tmp/kortix-selfhost-init-$INSTANCE.log
 $CLI self-host env set --instance "$INSTANCE" \
   "PUBLIC_URL=$PUBLIC_URL" \
   "API_PUBLIC_URL=$API_PUBLIC_URL" \

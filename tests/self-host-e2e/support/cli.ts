@@ -163,8 +163,7 @@ let cachedHelp: string | undefined;
  *  "run for real" the moment a sibling agent's change lands — no manual
  *  toggle to remember to flip back. */
 export async function selfHostCapabilities(): Promise<{
-  allowMissingSecrets: boolean;
-  secretsSubcommand: boolean;
+  envRotateSubcommand: boolean;
   localImages: boolean;
 }> {
   if (cachedHelp === undefined) {
@@ -177,8 +176,10 @@ export async function selfHostCapabilities(): Promise<{
     }
   }
   return {
-    allowMissingSecrets: cachedHelp.includes('--allow-missing-secrets'),
-    secretsSubcommand: /\bsecrets\s+\[ls\]|\bsecrets set\b/.test(cachedHelp),
+    // There is no separate `secrets` command anymore — `env ls`/`env set`/
+    // `env rotate` on secrets-registry.ts is the whole surface. `env rotate`
+    // is the newest addition, so it's the meaningful capability probe here.
+    envRotateSubcommand: /\benv rotate\b/.test(cachedHelp),
     localImages: cachedHelp.includes('--local-images'),
   };
 }

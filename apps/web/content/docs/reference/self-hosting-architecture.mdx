@@ -6,18 +6,19 @@ description: How the generic Docker self-host stack fits together — one box, C
 **Kortix self-host is VPS-first.** The supported production deployment is
 your own VPS/server with a persistent domain pointed at it — that's the
 combination that gives you a stable, durable public URL for Caddy/ACME TLS
-and for agent sandboxes to call back to. A laptop can run the identical
-artifact for evaluation, but only via a Cloudflare tunnel (ephemeral URL) or
-loopback-only (no external reachability at all, agent sandboxes will not
-work) — neither is a deployment target.
+and for the cloud agent sandbox to call back to. A local machine can run the
+identical artifact for evaluation, but only via a Cloudflare tunnel
+(ephemeral URL) — with neither a domain nor a tunnel configured, agent
+sessions won't work because the sandbox has no way to call back to this API;
+neither path is a deployment target.
 
 Architecturally, Kortix self-host is **one generic Docker-native system**,
 not a family of deployment targets. `kortix self-host init` renders a
 `docker-compose.yml` + `.env` (plus a `Caddyfile` and `updater.sh` when a
 domain is configured) into `~/.config/kortix/self-host/<instance>/`, and
 `kortix self-host start` runs `docker compose up`. The exact same artifact
-runs on a laptop, any VPS, or a cloud VM (EC2, Droplet, …) — a public domain
-is just an env var (`KORTIX_DOMAIN`) the same stack reacts to, not a
+runs on a local machine, any VPS, or a cloud VM (EC2, Droplet, …) — a public
+domain is just an env var (`KORTIX_DOMAIN`) the same stack reacts to, not a
 different mechanism. See the [CLI reference](/docs/reference/cli#self-host)
 for the full command surface and the
 [self-hosting runbook](https://github.com/kortix-ai/suna/blob/main/docs/runbooks/self-hosting.md)
@@ -31,7 +32,7 @@ flowchart TB
         user["Browser / API client"]
     end
 
-    subgraph box["One host — laptop, VPS, or cloud VM"]
+    subgraph box["One host — local machine, VPS, or cloud VM"]
         subgraph compose["docker compose (one project per instance)"]
             caddy["Caddy\n(opt-in — only when\nKORTIX_DOMAIN is set)\nACME HTTP-01 on 80/443"]
             frontend["frontend"]
@@ -135,7 +136,7 @@ This is a **release-pipeline contract**, not a self-host CLI concern: the
 Kortix release flow must publish/repoint the moving `stable` tag on all three
 app images (`kortix-api`, `kortix-frontend`, `kortix-gateway`) on every
 production release, the same way it already republishes `latest` and the
-exact `X.Y.Z` tag. Self-host installs — laptop or production — consume
+exact `X.Y.Z` tag. Self-host installs — evaluation or production — consume
 whatever that pipeline publishes; they never build or sign anything
 themselves.
 
