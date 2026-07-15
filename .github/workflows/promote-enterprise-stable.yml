@@ -118,6 +118,61 @@ jobs:
             baseline_sha=$(git archive --format=tar "$source_sha" -- packages/db/migrations | sha256sum | awk '{print $1}')
             test "$(jq -er '.migrations[] | select(.id == "baseline") | .sha256' "$contract_path")" = "$baseline_sha"
           fi
+
+          # Every revision after the first must declare a working rollback path.
+          # rollback_from lists the prior published revision(s) this release can
+          # be rolled back to; it must at minimum include the immediately
+          # preceding published revision for the same production version
+          # (cross-prod-version predecessors are accepted only if listed
+          # explicitly and they too must reference a previously published
+          # contract file).
+          if [ "$REVISION" -gt 1 ]; then
+            enterprise_dir="$GITHUB_WORKSPACE/infra/enterprise-releases"
+            predecessor=""
+            predecessor_revision=0
+            shopt -s nullglob
+            for candidate in "$enterprise_dir/$PROD_VERSION"-e*.json; do
+              name=$(basename "$candidate" .json)
+              [ "$name" != "$enterprise_version" ] || continue
+              k=${name##*-e}
+              [[ "$k" =~ ^[1-9][0-9]*$ ]] || continue
+              [ "$k" -lt "$REVISION" ] || continue
+              if [ "$k" -gt "$predecessor_revision" ]; then
+                predecessor_revision=$k
+                predecessor=$name
+              fi
+            done
+            shopt -u nullglob
+            if [ -z "$predecessor" ]; then
+              echo "::error::no published predecessor revision found under infra/enterprise-releases for $enterprise_version; publish $PROD_VERSION-e$((REVISION - 1)) (or an explicit cross-version predecessor) before promoting revision $REVISION" >&2
+              exit 1
+            fi
+
+            mapfile -t rollback_from < <(jq -r '.rollback_from // [] | .[]' "$contract_path")
+            if [ "${#rollback_from[@]}" -eq 0 ]; then
+              echo "::error::compatibility contract $enterprise_version.json has an empty rollback_from; revision e$REVISION (N>1) must declare rollback_from including at least the preceding published revision $predecessor" >&2
+              exit 1
+            fi
+            for entry in "${rollback_from[@]}"; do
+              [[ "$entry" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-e[1-9][0-9]*$ ]] || {
+                echo "::error::rollback_from entry '$entry' in $enterprise_version.json is not a valid <prod-version>-e<revision> identifier" >&2
+                exit 1
+              }
+              test -f "$enterprise_dir/$entry.json" || {
+                echo "::error::rollback_from entry '$entry' in $enterprise_version.json does not reference a previously published contract file infra/enterprise-releases/$entry.json" >&2
+                exit 1
+              }
+            done
+            found_predecessor=false
+            for entry in "${rollback_from[@]}"; do
+              [ "$entry" = "$predecessor" ] && found_predecessor=true
+            done
+            if [ "$found_predecessor" != true ]; then
+              echo "::error::rollback_from for $enterprise_version must include the immediately preceding published revision '$predecessor' (found: ${rollback_from[*]:-none})" >&2
+              exit 1
+            fi
+          fi
+
           echo "prod_version=$PROD_VERSION" >> "$GITHUB_OUTPUT"
           echo "enterprise_version=$enterprise_version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
@@ -176,11 +231,15 @@ jobs:
       - name: Build deterministic platform, Supabase, and updater artifacts
         env:
           ENTERPRISE_VERSION: ${{ steps.release.outputs.enterprise_version }}
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          FRONTEND_IMAGE: ${{ steps.images.outputs.frontend }}
+          GATEWAY_IMAGE: ${{ steps.images.outputs.gateway }}
         run: |
           set -euo pipefail
           BUN_COMPILE_TARGET=bun-linux-x64 pnpm --filter "@kortix/enterprise-updater" build
           test -x apps/enterprise-updater/dist/kortix-enterprise-updater
-          bun apps/enterprise-release/src/build-bundles.ts --version "$ENTERPRISE_VERSION" --output-dir /tmp/bundles
+          bun apps/enterprise-release/src/build-bundles.ts --version "$ENTERPRISE_VERSION" --output-dir /tmp/bundles \
+            --api-image "$API_IMAGE" --frontend-image "$FRONTEND_IMAGE" --gateway-image "$GATEWAY_IMAGE"
           for bundle in platform supabase; do
             tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
               --format=posix --pax-option=delete=atime,delete=ctime \

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kubernetes_minor": ["1.32"],
+  "rollback_from": ["0.9.108-e12"],
+  "migrations": [
+    {
+      "id": "baseline",
+      "sha256": "cb19e630c106a6af6a62c5a32b443c2a65ce2ad9c13f1a4cfe368d05f445d133",
+      "reversible": false,
+      "backward_compatible": false
+    }
+  ]
+}

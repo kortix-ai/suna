@@ -34,6 +34,46 @@ const STORAGE_NULL_ACCESS_NOISE_PATTERNS = [
   "Cannot read property 'removeItem' of null",
 ] as const;
 
+// Storage-blocked browser contexts (Safari private mode, sandboxed/cross-origin
+// iframes, partitioned storage, some in-app WebViews) reject the
+// `window.localStorage` / `window.sessionStorage` accessor READ itself with a
+// `SecurityError: Failed to read the 'localStorage' property from 'window':
+// Access is denied for this document.` — distinct from the #4529 null-access
+// `TypeError` class (where the accessor resolves to `null`). The managed-storage
+// layer (`getLocalStorage`/`getSessionStorage`) wraps the accessor in try/catch
+// and returns null on throw, so call sites routed through it are safe; but a
+// direct `window.localStorage` read elsewhere in the bundle bypasses that guard
+// and the uncaught `SecurityError` reaches Sentry → Better Stack. Two sibling
+// patterns (`09b9cf65…` / `ac75f0d8…`), 1 occurrence each, 0 identified users,
+// 2026-07-12 17:54 UTC, prod — browser-environment noise, not an app defect.
+//
+// The wording is the browser's OWN access-control throw on the Web Storage
+// accessor (never an app-logic TypeError/ReferenceError), so matching the
+// canonical `Failed to read the '<storage>' property from 'window'` prefix is
+// specific. BUT a first-party call site that reads `window.localStorage`
+// directly (bypassing managed-storage) IS actionable — we want to know which
+// call site to fix — so a NEGATIVE guard preserves any event whose stack
+// carries a resolved first-party `apps/web/src/…` frame (sourcemap-de-minified).
+// Only events with NO resolved first-party frame (third-party / extension /
+// injected / unresolved-minified-chunk / frameless captures) are dropped.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there would swallow the
+// actionable first-party case the negative guard exists to preserve. The
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const STORAGE_SECURITY_ERROR_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  /^Failed to read the 'localStorage' property from 'window'/,
+  /^Failed to read the 'sessionStorage' property from 'window'/,
+];
+
+// A de-minified first-party source frame: Sentry's sourcemap resolution
+// rewrote the raw `_next/static/chunks/…` filename back to the original
+// `apps/web/src/…` source path (with or without an `app:///` origin prefix).
+// A throw from such a frame originates in our own code, so it is actionable.
+function isFirstPartyResolvedSource(filename: unknown): boolean {
+  return normalizeString(filename).includes('apps/web/src/');
+}
+
 const KNOWN_TEST_NOISE_MESSAGES = [
   'E2E FINAL:',
   'E2E test:',
@@ -314,6 +354,53 @@ function isTronLinkInjectedSource(filename: unknown): boolean {
   return /^app:\/\/\/injected\/injected\.js$/.test(normalized);
 }
 
+// EVM-wallet-extension injected `inpage.js` stream EventEmitter noise. EVM
+// wallet extensions (MetaMask and derivatives — Rabby, Bifrost, …) inject a
+// content script as `app:///inpage.js` whose provider stream is built on
+// `@metamask/post-message-stream`'s `ExtendedBroadcastMessage` (an
+// EventEmitter subclass). During extension init / port-teardown races the
+// underlying stream/port object is `undefined`, so an `.addListener` /
+// `.emit` call on it throws
+//   `TypeError: Cannot read properties of undefined (reading 'addListener')`
+//   `TypeError: Cannot read properties of undefined (reading 'emit')`
+// INSIDE `app:///inpage.js` — never in first-party code. The observed frames
+// are `?` / `fulfilled` / `ExtendedBroadcastMessage.<anonymous>`, all in
+// `app:///inpage.js`. `app:///inpage.js` is the extension's synthetic
+// content-script source (NOT an `app:///_next/…` bundle frame and NOT a
+// de-minified `apps/web/src/…` frame), so it is never a first-party Kortix
+// call site. Better Stack patterns `17a0ce67…` (addListener, 21 occ.) and
+// `3a6b00dc…` (emit, 4 occ.), Kortix Frontend (prod, application_id 2346967),
+// 0 identified users, first/last 2026-07-14, call site `app:///inpage.js`,
+// request URL `https://kortix.com/` (marketing homepage), Chrome 150.
+//
+// The `addListener` / `emit` wording is GENERIC — a first-party
+// EventEmitter-like bug (Node `EventEmitter`, `mitt`, `nanoevents`, a
+// hand-rolled emitter, or any object exposing `addListener`/`emit`) throws
+// the SAME wording, so matching on message alone would swallow real app
+// bugs. Require BOTH one of the exact message markers AND an
+// `app:///inpage.js` injected-source frame (or an extension-origin frame) so
+// a real first-party `.addListener`/`.emit` TypeError keeps reporting.
+// Returns false when there is no source anchor at all (can't confirm
+// extension origin — keep reporting rather than swallow a possible app bug).
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list
+// — that gate has no frame context, so a bare-string match there could
+// swallow a real first-party emitter TypeError; the frame-aware `beforeSend`
+// hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const INPAGE_WALLET_STREAM_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording.
+  /Cannot read properties of undefined \(reading 'addListener'\)/,
+  /Cannot read properties of undefined \(reading 'emit'\)/,
+  // Old JSC (Safari < …): "Cannot read property 'addListener' of undefined"
+  // / "'emit' of undefined" — different engine, same wallet-extension class.
+  /Cannot read property 'addListener' of undefined/,
+  /Cannot read property 'emit' of undefined/,
+];
+
+function isInpageWalletInjectedSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return /^app:\/\/\/inpage\.js$/.test(normalized);
+}
+
 function containsKnownPattern(message: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => message.includes(pattern));
 }
@@ -357,6 +444,39 @@ export function isKnownBrowserNoiseMessage(message: unknown): boolean {
 export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, STORAGE_NULL_ACCESS_NOISE_PATTERNS);
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the storage-blocked
+ * `SecurityError: Failed to read the 'localStorage'/'sessionStorage' property
+ * from 'window'` class — the browser rejecting the Web Storage accessor READ
+ * itself in a storage-blocked context (Safari private mode, sandboxed/
+ * cross-origin iframe, partitioned storage, some in-app WebViews). Distinct
+ * from #4529's null-access `TypeError` class. Requires the canonical
+ * `Failed to read the '<storage>' property from 'window'` message prefix, AND
+ * a NEGATIVE guard: if any frame (or the window.onerror filename) resolves to
+ * a de-minified first-party `apps/web/src/…` source, the event keeps reporting
+ * — that means our own code is reading `window.localStorage` directly
+ * (bypassing managed-storage) and is actionable to fix. Only events with NO
+ * resolved first-party frame are dropped. See
+ * `STORAGE_SECURITY_ERROR_NOISE_PATTERNS` for the full rationale.
+ */
+export function isStorageSecurityErrorNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!STORAGE_SECURITY_ERROR_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party frame means our own code is the
+  // direct-access culprit — keep reporting so the call site can be fixed.
+  return !sources.some(isFirstPartyResolvedSource);
 }
 
 // Sentry events whose exception carries NO message ("No error message" in
@@ -462,6 +582,39 @@ export function isTronLinkProxyNoise(input: {
   ];
   return sources.some(
     (filename) => isTronLinkInjectedSource(filename) || isExtensionSource(filename),
+  );
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the EVM-wallet-extension
+ * injected-`inpage.js` stream EventEmitter noise class: a `TypeError` from
+ * calling `.addListener` / `.emit` on an `undefined` stream object inside
+ * the extension's `app:///inpage.js` content script
+ * (`@metamask/post-message-stream`'s `ExtendedBroadcastMessage`). The throw
+ * is in the extension's injected code, never in first-party app code.
+ * Requires BOTH one of the exact message markers AND an `app:///inpage.js`
+ * injected-source frame (or an extension-origin frame) so a real first-party
+ * `.addListener`/`.emit` TypeError (Node `EventEmitter` / `mitt` /
+ * `nanoevents` / hand-rolled emitter) keeps reporting. Returns false when
+ * there is no source anchor at all (can't confirm extension origin — keep
+ * reporting rather than swallow a possible app emitter bug). See
+ * `INPAGE_WALLET_STREAM_NOISE_PATTERNS` for the full rationale.
+ */
+export function isInpageWalletStreamNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!INPAGE_WALLET_STREAM_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some(
+    (filename) => isInpageWalletInjectedSource(filename) || isExtensionSource(filename),
   );
 }
 
@@ -671,6 +824,89 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
   return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
 }
 
+// iOS WebKit (Safari, Chrome-on-iOS, Google Search App — all WKWebView/JSC)
+// stack-overflow noise. When iOS WebKit exhausts its (lower-than-desktop) call
+// stack, it surfaces `RangeError: Maximum call stack size exceeded.` through
+// `window.onerror` (Sentry mechanism `auto.browser.global_handlers.onerror`)
+// with NO usable stack: the single exception frame is the synthetic
+// `{ function: '?', filename: 'undefined', lineno: <n> }` placeholder, so
+// `call_site_file` is `undefined` and `call_site_function` is `?`. There is no
+// source location to triage and no reproduction (the engine truncated the very
+// stack that overflowed). Better Stack pattern
+// 87ccbef98ea62fbf90df2446141a26b78ba7f928a28642b099d53b40e8613031
+// (Kortix Frontend prod, application_id 2346967): 7 occurrences in the
+// now-3d inventory, ~30 lifetime, 0 identified users (all anonymous), first
+// 2026-04-21 / last 2026-07-14, 100% iOS (Chrome-on-iOS 149/150 + Google
+// Search App 415/425), across 7 different releases spanning 2.5 months — i.e.
+// browser/engine noise on iOS, NOT a deterministic app regression (which would
+// spike on one release across all browsers with identified users). Fires on the
+// marketing site (`/`, `/auth`) AND post-login surfaces (`/projects/…`,
+// `/projects/…/sessions/…`), so no route guard contains it.
+//
+// `RangeError: Maximum call stack size exceeded.` is ALSO the exact message a
+// real first-party infinite recursion produces — so this matcher is anchored on
+// BOTH the canonical message AND the absence of ANY resolvable source location
+// (every frame's filename is empty or the literal `"undefined"` placeholder, and
+// the window.onerror filename is empty/`undefined`). A real app recursion, even
+// truncated, surfaces with at least one real chunk/URL frame
+// (`app:///_next/static/chunks/…`, `https://…`, or a de-minified
+// `apps/web/src/…` frame) and is preserved by the negative guard. Only the
+// frameless synthetic-`undefined` global-onerror capture is dropped.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there would swallow a
+// real RangeError recursion; the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const STACK_OVERFLOW_NOISE_PATTERN = /^Maximum call stack size exceeded\.?$/;
+
+// A frame/filename that points at a REAL source location: non-empty AND not the
+// literal `"undefined"` placeholder the global-onerror capture uses when the
+// engine could not produce a stack. A real chunk (`app:///_next/…`), a URL
+// (`https://…`), or a de-minified `apps/web/src/…` path all qualify; the
+// synthetic `{ filename: 'undefined' }` frame does not.
+function isResolvableFrameSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return normalized !== '' && normalized !== 'undefined';
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the iOS-WebKit stack-overflow
+ * noise class: a `RangeError: Maximum call stack size exceeded.` captured via
+ * `window.onerror` with NO resolvable source location (every frame's filename
+ * is empty or the literal `"undefined"` placeholder). iOS WebKit surfaces a
+ * stack overflow this way because it truncated the very stack that overflowed;
+ * there is nothing to triage or fix. A real first-party (or third-party)
+ * recursion surfaces with at least one real chunk/URL/`apps/web/src/…` frame
+ * and is preserved by the negative guards — only the frameless
+ * synthetic-`undefined` capture is dropped. See
+ * `STACK_OVERFLOW_NOISE_PATTERN` for the full rationale.
+ */
+export function isUnresolvableStackOverflowNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  if (!STACK_OVERFLOW_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame → our own
+  // code is recursing; keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an actionable error (app or third-party recursion) with a real
+  // stack; keep reporting. Only the frameless synthetic-`undefined`
+  // global-onerror capture remains → iOS-WebKit stack-overflow noise.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -688,6 +924,18 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
   // noise, never an app defect — drop it.
   if (isStorageDisabledWebViewNoiseMessage(message)) {
+    return true;
+  }
+
+  // Storage-blocked browser contexts (Safari private mode, sandboxed/cross-
+  // origin iframe, partitioned storage, some in-app WebViews) reject the
+  // `window.localStorage`/`sessionStorage` accessor READ itself with a
+  // `SecurityError: Failed to read the '<storage>' property from 'window'`.
+  // A direct `window.localStorage` call site that bypasses managed-storage
+  // throws this uncaught. Browser-environment noise; drop it UNLESS the stack
+  // carries a resolved first-party `apps/web/src/…` frame (our own code is the
+  // culprit → actionable). See `isStorageSecurityErrorNoise`.
+  if (isStorageSecurityErrorNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -774,6 +1022,26 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // EVM-wallet-extension injected-`inpage.js` stream EventEmitter noise —
+  // MetaMask/derivatives' `app:///inpage.js` (`ExtendedBroadcastMessage`)
+  // calls `.addListener` / `.emit` on an `undefined` stream during init/tear-
+  // down races. Requires BOTH the exact message AND an `app:///inpage.js` /
+  // extension source so a real first-party emitter TypeError keeps reporting.
+  // See `isInpageWalletStreamNoise`.
+  if (isInpageWalletStreamNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // iOS-WebKit stack-overflow noise — `RangeError: Maximum call stack size
+  // exceeded.` from `window.onerror` with NO resolvable source location (the
+  // engine truncated the very stack that overflowed). Requires the canonical
+  // message AND no real frame/filename so a real first-party recursion that
+  // carries a chunk/source frame keeps reporting. See
+  // `isUnresolvableStackOverflowNoise`.
+  if (isUnresolvableStackOverflowNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
 }
 
@@ -801,6 +1069,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
   // noise, never an app defect — drop it at the Sentry gate too.
   if (isStorageDisabledWebViewNoiseMessage(message)) {
+    return true;
+  }
+
+  // Storage-blocked browser contexts (Safari private mode, sandboxed/cross-
+  // origin iframe, partitioned storage, some in-app WebViews) reject the
+  // `window.localStorage`/`sessionStorage` accessor READ itself with a
+  // `SecurityError: Failed to read the '<storage>' property from 'window'`.
+  // A direct `window.localStorage` call site that bypasses managed-storage
+  // throws this uncaught. Browser-environment noise; drop it UNLESS the stack
+  // carries a resolved first-party `apps/web/src/…` frame (our own code is the
+  // culprit → actionable). See `isStorageSecurityErrorNoise`.
+  if (isStorageSecurityErrorNoise({ message, frames })) {
     return true;
   }
 
@@ -923,6 +1203,28 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // injected/extension frame so a real first-party Proxy `set` failure keeps
   // reporting. See `isTronLinkProxyNoise`.
   if (isTronLinkProxyNoise({ message, frames })) {
+    return true;
+  }
+
+  // EVM-wallet-extension injected-`inpage.js` stream EventEmitter noise —
+  // MetaMask/derivatives' `app:///inpage.js` (`ExtendedBroadcastMessage`)
+  // calls `.addListener` / `.emit` on an `undefined` stream during init/tear-
+  // down races. Requires BOTH the exact message AND an `app:///inpage.js` /
+  // extension frame so a real first-party emitter TypeError keeps reporting.
+  // See `isInpageWalletStreamNoise`.
+  if (isInpageWalletStreamNoise({ message, frames })) {
+    return true;
+  }
+
+  // iOS-WebKit stack-overflow noise — `RangeError: Maximum call stack size
+  // exceeded.` from Sentry's `auto.browser.global_handlers.onerror` capture
+  // with a single synthetic `{ filename: 'undefined' }` frame (the engine
+  // truncated the very stack that overflowed). Requires the canonical message
+  // AND no resolvable source location so a real first-party recursion that
+  // carries a chunk/`apps/web/src/…` frame keeps reporting. See
+  // `isUnresolvableStackOverflowNoise`. NOT in `ignoreErrors` (no frame
+  // context there).
+  if (isUnresolvableStackOverflowNoise({ message, frames })) {
     return true;
   }
 

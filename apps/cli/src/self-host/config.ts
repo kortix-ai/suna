@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-export type SelfHostTarget = 'docker' | 'aws-vpc';
+export type SelfHostTarget = 'docker' | 'aws-ec2';
 
 export interface AwsVpcCoordinates {
   profile: string;
@@ -109,8 +109,12 @@ export function resolveInstanceTarget(instance: string, requested?: SelfHostTarg
 
 export function parseSelfHostTarget(value: string | undefined): SelfHostTarget | undefined {
   if (value === undefined) return undefined;
-  if (value === 'docker' || value === 'aws-vpc') return value;
-  throw new Error(`target must be "docker" or "aws-vpc", got "${value}"`);
+  if (value === 'docker' || value === 'aws-ec2') return value;
+  // Backward compatibility: the AWS target used to be called "aws-vpc". Existing
+  // instance configs on disk (and any scripts) may still say it; accept it and
+  // normalize to the current "aws-ec2" name. We only ever WRITE "aws-ec2".
+  if (value === 'aws-vpc') return 'aws-ec2';
+  throw new Error(`target must be "docker" or "aws-ec2", got "${value}"`);
 }
 
 function validateInstanceConfig(value: unknown, expectedInstance: string): SelfHostInstanceConfig {
@@ -124,19 +128,19 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
   assertInstanceName(expectedInstance);
 
   const target = parseSelfHostTarget(asRequiredString(value.target, 'target'))!;
-  if (target === 'aws-vpc') assertAwsVpcInstanceName(expectedInstance);
+  if (target === 'aws-ec2') assertAwsVpcInstanceName(expectedInstance);
   const channel = asRequiredString(value.channel, 'channel');
   if (!/^[a-zA-Z0-9._-]+$/.test(channel)) {
     throw new Error('channel may contain only letters, digits, dots, underscores, or dashes');
   }
-  if (target === 'aws-vpc' && channel !== 'stable') {
-    throw new Error('AWS VPC instances may only track the stable channel');
+  if (target === 'aws-ec2' && channel !== 'stable') {
+    throw new Error('AWS EC2 instances may only track the stable channel');
   }
 
   const release = optionalString(value.release, 'release');
   let aws: AwsVpcCoordinates | undefined;
-  if (target === 'aws-vpc') {
-    if (!isRecord(value.aws)) throw new Error('aws-vpc instance config requires aws coordinates');
+  if (target === 'aws-ec2') {
+    if (!isRecord(value.aws)) throw new Error('aws-ec2 instance config requires aws coordinates');
     rejectUnknownFields(value.aws, AWS_FIELDS, 'aws.');
     const profile = asRequiredString(value.aws.profile, 'aws.profile');
     const region = asRequiredString(value.aws.region, 'aws.region');
@@ -217,7 +221,12 @@ function assertInstanceName(instance: string): void {
 
 export function assertAwsVpcInstanceName(instance: string): void {
   if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) {
-    throw new Error('AWS VPC instance must be a 4-32 character lowercase DNS slug');
+    throw new Error('AWS EC2 instance must be a 4-32 character lowercase DNS slug');
+  }
+  // Every AWS resource is named kortix-<instance>; a kortix- prefix here would
+  // double it (kortix-kortix-...). Reject it explicitly rather than stripping.
+  if (instance.startsWith('kortix-')) {
+    throw new Error('AWS EC2 instance must not start with "kortix-"; resources are already named kortix-<instance>');
   }
 }
 

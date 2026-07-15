@@ -167,6 +167,8 @@ const TRIGGER_MANIFEST_KEYS = [
   'secretEnv',
   'session_mode',
   'sessionMode',
+  'session_id',
+  'sessionId',
 ] as const;
 
 interface SlackAuthTest {
@@ -511,6 +513,27 @@ projectsApp.openapi(
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
 
+    // A `pinned` trigger may only target a session that belongs to THIS project —
+    // never a nonexistent or another project's session.
+    if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+      const [pinned] = await db
+        .select({ sessionId: projectSessions.sessionId })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.sessionId, draft.pinnedSessionId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!pinned) {
+        return c.json(
+          { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
+          400,
+        );
+      }
+    }
+
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
@@ -648,6 +671,26 @@ projectsApp.openapi(
         { existingSlug: slug },
       );
       if ('error' in draft) return c.json({ error: draft.error }, 400);
+
+      // A `pinned` trigger may only target a session that belongs to THIS project.
+      if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+        const [pinned] = await db
+          .select({ sessionId: projectSessions.sessionId })
+          .from(projectSessions)
+          .where(
+            and(
+              eq(projectSessions.sessionId, draft.pinnedSessionId),
+              eq(projectSessions.projectId, projectId),
+            ),
+          )
+          .limit(1);
+        if (!pinned) {
+          return c.json(
+            { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
+            400,
+          );
+        }
+      }
 
       const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
       const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);

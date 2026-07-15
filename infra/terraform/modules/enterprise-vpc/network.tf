@@ -5,18 +5,6 @@ module "network" {
   az_count           = 3
   single_nat_gateway = false
   tags               = local.tags
-
-  extra_vpc_tags = {
-    "kubernetes.io/cluster/${var.name}" = "shared"
-  }
-  extra_public_subnet_tags = {
-    "kubernetes.io/role/elb"            = "1"
-    "kubernetes.io/cluster/${var.name}" = "shared"
-  }
-  extra_private_subnet_tags = {
-    "kubernetes.io/role/internal-elb"   = "1"
-    "kubernetes.io/cluster/${var.name}" = "shared"
-  }
 }
 resource "aws_security_group" "endpoints" {
   name_prefix = "${var.name}-endpoints-"

@@ -224,15 +224,25 @@
                   "type": "string",
                   "enum": [
                     "fresh",
-                    "reuse"
+                    "reuse",
+                    "pinned"
                   ]
                 },
                 "sessionMode": {
                   "type": "string",
                   "enum": [
                     "fresh",
-                    "reuse"
+                    "reuse",
+                    "pinned"
                   ]
+                },
+                "session_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
                 },
                 "prompt": {
                   "type": "string",
@@ -1167,15 +1177,25 @@
                   "type": "string",
                   "enum": [
                     "fresh",
-                    "reuse"
+                    "reuse",
+                    "pinned"
                   ]
                 },
                 "sessionMode": {
                   "type": "string",
                   "enum": [
                     "fresh",
-                    "reuse"
+                    "reuse",
+                    "pinned"
                   ]
+                },
+                "session_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
                 },
                 "prompt": {
                   "type": "string",

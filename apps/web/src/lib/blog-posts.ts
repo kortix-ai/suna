@@ -65,12 +65,12 @@ const introducingKortix: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'A company that runs on AI shouldn’t be a black box you rent. It should be a codebase you own.',
+      text: 'A company that runs on AI shouldn’t be a dashboard you rent and can’t inspect. It should be a codebase you own.',
     },
-    { type: 'h2', text: 'kortix.toml: the single source of truth' },
+    { type: 'h2', text: 'kortix.yaml: the single source of truth' },
     {
       type: 'p',
-      text: 'At the root of every project sits one file — `kortix.toml` when this was written, `kortix.yaml` today. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
+      text: 'At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
     },
     {
       type: 'code',
@@ -151,7 +151,7 @@ connectors:
     { type: 'h2', text: 'Self-hostable, open, and yours' },
     {
       type: 'p',
-      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open and source-available**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
+      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open-source and self-hostable**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
     },
     {
       type: 'p',
@@ -226,7 +226,7 @@ const kortixVsClaudeCowork: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'Same agents, a fraction of the bill — and you can run them on your own infrastructure, even your own GPUs, with your data never leaving your walls.',
+      text: 'Same agents, [a fraction of the bill](/pricing) — and you can run them on your own infrastructure, even your own GPUs, with your data never leaving your walls.',
     },
     { type: 'h2', text: 'Side by side' },
     {
@@ -287,7 +287,7 @@ const kortixVsClaudeCowork: BlogPostEntry = {
       themLabel: 'Claude Cowork',
       them: 'you want a brilliant agent on one person’s desktop, you’re happy on Anthropic’s models, and you don’t need to self-host or run a fleet.',
       kortix:
-        'you want that same do-the-work power as a company platform — many agents across departments, any model, self-hosted, with everything versioned and owned by you.',
+        'you want that same do-the-work power as a company platform — many agents [across departments](/enterprise), any model, self-hosted, with everything versioned and owned by you.',
     },
     {
       type: 'p',
@@ -864,7 +864,7 @@ const kortixVsGlean: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'No 100-seat floor, no sales process to start. Open-source means you can run one project today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
+      text: 'No 100-seat floor, no sales process to start — [see the plans](/pricing). Open-source means you can run one project today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
     },
     { type: 'h2', text: 'Side by side' },
     {
@@ -924,7 +924,7 @@ const kortixVsGlean: BlogPostEntry = {
       themLabel: 'Glean',
       them: 'you want the best permission-aware enterprise search and assistant, you’re fine with a closed SaaS and a sales-led ~100-seat contract, and “find the answer” is the job.',
       kortix:
-        'you want to run agents that actually do the work — across departments, any model, self-hosted, with everything versioned and owned by you.',
+        'you want to run agents that actually do the work — [across departments](/enterprise), any model, self-hosted, with everything versioned and owned by you.',
     },
     {
       type: 'p',

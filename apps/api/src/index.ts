@@ -62,7 +62,6 @@ import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
 } from './projects/suna-migration/suna-migration-worker';
-import { templatesApp } from './projects/templates/routes';
 import { router } from './router';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { sandboxProxyApp } from './sandbox-proxy';
@@ -743,7 +742,6 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
-app.route('/v1/templates', templatesApp); // /v1/templates — installable use-case templates (public read)
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),

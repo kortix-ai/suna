@@ -74,6 +74,7 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectSessions,
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
@@ -727,6 +728,29 @@ function AgentModelSection({
     onError: (e: Error) => errorToast(e.message || 'Failed to update model'),
   });
 
+  const [modeDraft, setModeDraft] = useState<'fresh' | 'reuse' | 'pinned'>(trigger.session_mode);
+  const [pinDraft, setPinDraft] = useState<string | null>(trigger.session_id);
+  const pinnableSessions = useQuery({
+    queryKey: ['project-sessions', projectId, 'trigger-pin'],
+    queryFn: () => listProjectSessions(projectId),
+    enabled: canWrite && modeDraft === 'pinned',
+    staleTime: 30_000,
+  });
+  const saveSession = useMutation({
+    mutationFn: (input: { session_mode: 'fresh' | 'reuse' | 'pinned'; session_id: string | null }) =>
+      updateProjectTrigger(projectId, trigger.slug, input),
+    onSuccess: () => {
+      successToast('Session strategy updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update session strategy'),
+  });
+  const sessionModeLabel: Record<'fresh' | 'reuse' | 'pinned', string> = {
+    fresh: 'New session each run',
+    reuse: "Reuse this trigger's session",
+    pinned: 'Pinned session',
+  };
+
   if (!canWrite) {
     return (
       <section className="space-y-2">
@@ -741,6 +765,17 @@ function AgentModelSection({
               label: 'Model',
               value: (
                 <span className="font-mono text-xs">{trigger.model ?? 'Agent default'}</span>
+              ),
+            },
+            {
+              label: 'Session',
+              value: (
+                <span className="text-xs">
+                  {sessionModeLabel[trigger.session_mode]}
+                  {trigger.session_mode === 'pinned' && trigger.session_id
+                    ? ` · ${trigger.session_id.slice(0, 8)}`
+                    : ''}
+                </span>
               ),
             },
           ]}
@@ -789,6 +824,67 @@ function AgentModelSection({
           Overrides the agent's default model for this trigger's runs. Leave unset to resolve the
           agent → account → platform default at fire time.
         </p>
+      </div>
+      <div className="space-y-2">
+        <Label>Session strategy</Label>
+        <div className="bg-card space-y-2 rounded-2xl border px-3 py-2">
+          <Select
+            value={modeDraft}
+            onValueChange={(v) => {
+              const m = v as 'fresh' | 'reuse' | 'pinned';
+              setModeDraft(m);
+              if (m !== 'pinned') {
+                setPinDraft(null);
+                saveSession.mutate({ session_mode: m, session_id: null });
+              }
+            }}
+            disabled={saveSession.isPending}
+          >
+            <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fresh" className="cursor-pointer">
+                New session each run
+              </SelectItem>
+              <SelectItem value="reuse" className="cursor-pointer">
+                Reuse this trigger&apos;s session (loop)
+              </SelectItem>
+              <SelectItem value="pinned" className="cursor-pointer">
+                Pin a specific session…
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          {modeDraft === 'pinned' && (
+            <Select
+              value={pinDraft ?? ''}
+              onValueChange={(sid) => {
+                setPinDraft(sid);
+                saveSession.mutate({ session_mode: 'pinned', session_id: sid });
+              }}
+              disabled={pinnableSessions.isLoading || saveSession.isPending}
+            >
+              <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
+                <SelectValue
+                  placeholder={
+                    pinnableSessions.isLoading ? 'Loading sessions…' : 'Choose a session to loop'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {(pinnableSessions.data ?? []).map((s) => (
+                  <SelectItem key={s.session_id} value={s.session_id} className="cursor-pointer">
+                    {s.name || s.branch_name || s.session_id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+            Fresh mints a new session each run; reuse loops this trigger&apos;s own session; pinned
+            loops one specific session you choose.
+          </p>
+        </div>
       </div>
     </section>
   );
@@ -1108,6 +1204,16 @@ function CreateTriggerModal({
   const [prompt, setPrompt] = useState('');
   const [agentName, setAgentName] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelKey | null>(null);
+  // Session strategy: how each fire uses sessions.
+  const [sessionMode, setSessionMode] = useState<'fresh' | 'reuse' | 'pinned'>('fresh');
+  const [pinnedSessionId, setPinnedSessionId] = useState<string | null>(null);
+  // Sessions to choose from when pinning (only fetched once the user picks 'pinned').
+  const pinnableSessions = useQuery({
+    queryKey: ['project-sessions', projectId, 'trigger-pin'],
+    queryFn: () => listProjectSessions(projectId),
+    enabled: open && sessionMode === 'pinned',
+    staleTime: 30_000,
+  });
 
   const [error, setError] = useState<string | null>(null);
 
@@ -1165,6 +1271,8 @@ function CreateTriggerModal({
         prompt_template: trimmedPrompt,
         ...(agentName ? { agent: agentName } : {}),
         ...(selectedModel ? { model: modelKeyToWire(selectedModel) } : {}),
+        ...(sessionMode !== 'fresh' ? { session_mode: sessionMode } : {}),
+        ...(sessionMode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
         ...(sourceType === 'cron'
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
@@ -1205,6 +1313,7 @@ function CreateTriggerModal({
     if (setupError) return setupError;
     if (!name.trim()) return 'Name is required';
     if (!prompt.trim()) return 'Prompt is required';
+    if (sessionMode === 'pinned' && !pinnedSessionId) return 'Pick a session to pin';
     return null;
   };
 
@@ -1452,6 +1561,70 @@ function CreateTriggerModal({
                     selectedModel={selectedModel}
                     onSelect={setSelectedModel}
                   />
+                </div>
+              </TriggerModalSection>
+
+              <TriggerModalSection
+                label="Session strategy"
+                description="How each run uses sessions: a fresh one every time, loop this trigger's own session, or pin one specific existing session."
+              >
+                <div className="bg-card space-y-2 rounded-2xl border px-3 py-2">
+                  <Select
+                    value={sessionMode}
+                    onValueChange={(v) => {
+                      setSessionMode(v as 'fresh' | 'reuse' | 'pinned');
+                      if (v !== 'pinned') setPinnedSessionId(null);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fresh" className="cursor-pointer">
+                        New session each run
+                      </SelectItem>
+                      <SelectItem value="reuse" className="cursor-pointer">
+                        Reuse this trigger&apos;s session (loop)
+                      </SelectItem>
+                      <SelectItem value="pinned" className="cursor-pointer">
+                        Pin a specific session…
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {sessionMode === 'pinned' && (
+                    <Select
+                      value={pinnedSessionId ?? ''}
+                      onValueChange={setPinnedSessionId}
+                      disabled={pinnableSessions.isLoading}
+                    >
+                      <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
+                        <SelectValue
+                          placeholder={
+                            pinnableSessions.isLoading
+                              ? 'Loading sessions…'
+                              : 'Choose a session to loop'
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(pinnableSessions.data ?? []).map((s) => (
+                          <SelectItem
+                            key={s.session_id}
+                            value={s.session_id}
+                            className="cursor-pointer"
+                          >
+                            {s.name || s.branch_name || s.session_id}
+                          </SelectItem>
+                        ))}
+                        {!pinnableSessions.isLoading &&
+                          (pinnableSessions.data ?? []).length === 0 && (
+                            <div className="text-muted-foreground px-2 py-1.5 text-xs">
+                              No sessions in this project yet.
+                            </div>
+                          )}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </TriggerModalSection>
 
