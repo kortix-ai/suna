@@ -33,7 +33,6 @@ import {
   servicesForKeys,
   type SecretDef,
 } from '../self-host/secrets-registry.ts';
-import { createPastePrompt, runConnectGithubFlow } from '../self-host/connect-github.ts';
 import {
   namedTunnelConfigured,
   reachabilityMode,
@@ -65,163 +64,50 @@ const VPS_FIRST_NOTICE =
 
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
-Run Kortix on your own VPS/server — ${C.bold}recommended: a VPS with a domain${C.reset}.
-This is one generic Docker Compose stack: ${C.cyan}kortix self-host init${C.reset}
-generates a docker-compose.yml + .env, and ${C.cyan}start${C.reset} runs it. It happens
-to run identically on a laptop too, but production self-hosting means a real
-VPS/server plus a persistent domain (${C.cyan}--domain${C.reset}) — the Cloudflare-tunnel and
-local-only modes below exist for evaluation/development only and are NOT
-recommended for real use (ephemeral URLs, browser connection limits on
-plain-HTTP localhost, and — in local-only mode — agent sandboxes can't call
-back to this instance at all). Running it on your laptop is fine to kick the
-tyres; deploying on your own VPS with a persistent domain is the way.
+Run Kortix on your own VPS — a domain is the production path; laptop modes
+(tunnel/local) are for evaluation only. Docs: kortix.com/docs/self-hosting
 
 Subcommands:
-  init                 Create or refresh this instance's Compose + env config.
-  start                Pull images and start your self-hosted Kortix.
-  update               Pull the configured channel's images now and apply them.
-  reconcile            Same as update — check and converge to the configured
-                       channel/version.
-  version              Show the running version and image tags.
-  stop                 Stop the stack.
-  restart              Restart the stack.
-  status               Show container status.
-  doctor               Validate local Docker tooling and the Compose config.
-  logs [service]       Tail logs.
-  open                 Open the dashboard in a browser.
-  configure            Interactively configure integrations and update policy.
-  connect-github       Create + install a GitHub App owned by your org (or
-                       personal account) and wire it in as managed git — the
-                       easiest GitHub setup, no personal-access-token needed.
-                       This runs automatically as part of ${C.cyan}init${C.reset} on a TTY.
-  env ls              Show persistent environment values.
-  env set KEY=VALUE    Update persistent environment values.
-  secrets [ls]         Show every secret, grouped by category (masked by
-                       default; --show reveals full values).
-  secrets set KEY=VAL  Set one or more secrets (or "secrets set KEY" to be
-    [KEY=VAL ...]      prompted) and restart only the services they affect.
-  secrets rotate KEY   Regenerate one rotatable crypto-random secret (or
-    | --all-generated  every rotatable one) and restart affected services.
+  init                    Create/refresh this instance's Compose + env config.
+  start                   Pull images and start the stack.
+  update | reconcile      Pull + apply the configured channel/version now.
+  version                 Show the running version and image tags.
+  stop | restart          Stop / restart the stack.
+  status                  Show container status.
+  doctor                  Validate Docker tooling and the Compose config.
+  logs [service]          Tail logs.
+  open                    Open the dashboard in a browser.
+  configure               Re-run the guided setup.
+  env ls | set K=V        Show / update persistent environment values.
+  secrets ls              Show every secret, grouped by category (masked).
+  secrets set K=V ...     Set secrets, restarting only affected services.
+  secrets rotate KEY      Regenerate a rotatable secret (or --all-generated).
 
 Options:
-  --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
-  --version <ref>      Run any published version or tag — a release
-                       (0.9.107), a moving channel (stable, latest), or a
-                       dev/CI build (dev-<sha>). Works on init/start/update/
-                       configure. Pinning a specific ref (anything other than
-                       stable/latest) defaults auto-update OFF for that
-                       instance — see --auto-update below. Alias: --tag.
-  --tag <tag>          Alias for --version.
-  --release <version>  Alias for --version/--tag.
-  --channel <name>     Which moving tag to track when no explicit --version/
-                       --tag is given: stable or latest (default: stable).
-                       The auto-updater tracks whichever channel is configured.
-  --auto-update <on|off> Enable/disable the in-compose auto-updater. Default
-                       depends on what's pinned: on for a channel (stable/
-                       latest), off for a specific --version/--tag/--release
-                       (pinning means "stay here" — the nightly updater must
-                       not silently move a pinned box). An explicit
-                       --auto-update always wins either way. Off just idles
-                       the updater container; ${C.cyan}update${C.reset} still applies an
-                       on-demand update regardless.
-  --local-images       Dev mode: run images built locally (not on any
-    | --no-pull        registry) — combine with ${C.cyan}--version <localtag>${C.reset} so
-                       *_IMAGE resolves to an image already present in the
-                       local Docker engine. Sets KORTIX_IMAGE_PULL=never (the
-                       updater skips ${C.cyan}docker compose pull${C.reset}) and forces
-                       auto-update off.
-  --update-time <HH:MM> Local clock time the auto-updater rolls the stack,
-                       once a day (default: ${DEFAULT_UPDATE_TIME}).
-  --update-tz <tz>     IANA timezone --update-time is interpreted in
-                       (default: ${DEFAULT_UPDATE_TZ}).
-  --allow-downtime     Accept a brief downtime window instead of a
-                       zero-downtime rolling swap — only needed for a release
-                       whose migration is not backward-compatible. Use during
-                       a maintenance window (sets KORTIX_ALLOW_DOWNTIME=1).
-  --single-account     This deployment is for exactly one account — hide
-                       "New account" and team-management UI, and block
-                       creating additional accounts (403).
-  --landing            Re-enable the marketing landing page for
-                       unauthenticated visitors hitting "/" — self-host
-                       defaults this OFF (straight to sign-in): a self-host
-                       is an app deployment, not a marketing site.
-  --no-landing         Explicitly send unauthenticated visitors hitting "/"
-                       to sign-in instead of the marketing landing page
-                       (redundant with the default — kept for scripts).
-  --enterprise-license You hold a Kortix Enterprise license — unlock SSO,
-                       SCIM, RBAC, and audit-log access platform-wide
-                       (kortix.com/enterprise).
-  --allow-missing-secrets Let "init"/"start" proceed with required secrets
-                       (managed git, sandbox, LLM) unset instead of failing.
-                       Local experimentation only — projects/agent sessions
-                       will not work until they are set.
-  --domain <domain>    Public domain reachability mode (RECOMMENDED — the
-                       VPS-first, production path): this instance is
-                       reachable at https://<domain> — turns on the bundled
-                       Caddy reverse proxy + ACME TLS. For a server/VPS/EC2 box
-                       with DNS pointed at it. Same effect as
-                       ${C.cyan}env set KORTIX_DOMAIN=<domain>${C.reset}. Pass an empty string
-                       to clear a previously configured domain.
-  --tunnel cloudflare  Cloudflare-tunnel reachability mode: no public domain —
-                       a ${C.cyan}cloudflared${C.reset} tunnel exposes the API to the internet so
-                       cloud (Daytona) sandboxes can call back to it. For
-                       evaluation on a laptop when there is no public IP/DNS —
-                       NOT recommended for production (the free quick-tunnel
-                       URL is ephemeral, reassigned on every restart and
-                       re-captured automatically; set CLOUDFLARE_TUNNEL_TOKEN +
-                       CLOUDFLARE_TUNNEL_HOSTNAME for a stable named tunnel
-                       instead — see the runbook — but a VPS + domain is still
-                       the recommended path for real use).
-  --org <name>         GitHub org to create/install the ${C.cyan}connect-github${C.reset} App
-                       under (omit, or pass "." for a personal account).
-  --manual             ${C.cyan}connect-github${C.reset}: headless mode — print URLs and accept
-                       pasted-back code/installation_id instead of opening a
-                       local browser. Automatic on a non-TTY.
-  --skip-github        Skip the guided ${C.cyan}connect-github${C.reset} offer during ${C.cyan}init${C.reset}/
-                       ${C.cyan}configure${C.reset} — drop straight to the advanced "paste an
-                       existing App or PAT" menu.
-  --json               Emit machine-readable output where supported.
-  --yes                Accept defaults in non-interactive flows.
-  -h, --help           Show this help.
-
-Reachability — VPS-first (required for agent sandboxes — see --domain/--tunnel
-above): a cloud (Daytona) sandbox calls back to this instance's API over the
-public internet via KORTIX_URL, which can never be a loopback/internal
-address. Production self-hosting is a VPS/server plus a persistent domain:
-${C.cyan}--domain${C.reset} (server/VPS/EC2 with DNS). ${C.cyan}--tunnel cloudflare${C.reset} (laptop, no DNS)
-and running with neither flag (local-only) are evaluation/development paths
-only and are NOT recommended for production — the tunnel URL is ephemeral,
-and in local-only mode agent sandboxes and other external callbacks
-(webhooks, Slack/Teams OAuth, git-proxy clone) will not work at all, only
-browser-local flows will. ${C.cyan}kortix self-host init${C.reset}/${C.cyan}configure${C.reset} ask
-interactively and default to the domain path.
-
-Public domain + TLS (recommended for production): set KORTIX_DOMAIN (and
-optionally KORTIX_API_DOMAIN, default api.<KORTIX_DOMAIN>) via ${C.cyan}--domain${C.reset} or
-${C.cyan}kortix self-host env set${C.reset} to turn on the bundled Caddy
-reverse proxy, which terminates TLS via ACME HTTP-01 on ports 80/443. Leave it
-unset only for a laptop/local evaluation setup on loopback ports.
+  --instance <name>       Instance name (default: ${DEFAULT_INSTANCE}).
+  --domain <domain>       Public domain reachability (recommended, production).
+  --tunnel cloudflare     Cloudflare-tunnel reachability (laptop, evaluation).
+  --version <ref>         Pin a release/channel/dev build. Alias: --tag/--release.
+  --channel <name>        stable|latest to track (default: stable).
+  --auto-update <on|off>  Override the default (ON everywhere except --local-images).
+  --update-time <HH:MM> / --update-tz <tz>   Auto-updater schedule.
+  --allow-downtime        Accept a brief downtime window for a breaking migration.
+  --local-images          Run locally-built images (dev mode); forces auto-update off.
+  --single-account        Hide multi-account/team UI.
+  --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
+  --allow-missing-secrets Proceed without the sandbox-provider key (evaluation only).
+  --admin-email <email>   Grant platform-admin to this account.
+  --json                  Machine-readable output where supported.
+  --yes                   Accept defaults non-interactively.
+  -h, --help              Show this help.
 
 Examples:
   kortix self-host init
   kortix self-host start
-  kortix self-host init --domain kortix.example.com  # recommended: VPS/server with DNS
-  kortix self-host init --tunnel cloudflare          # laptop evaluation only, not for production
-  kortix self-host update                         # pull + apply the stable channel
-  kortix self-host init --version 0.9.72          # pin to a specific released version
-  kortix self-host update --channel latest        # track :latest instead
-  kortix self-host init --version dev-a1b2c3d      # run a dev/CI build (auto-update off)
-  kortix self-host init --version branch-local --local-images  # run a locally-built image
-  kortix self-host version
-  kortix self-host env set KORTIX_DOMAIN=kortix.example.com
-  kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
-  kortix self-host connect-github
-  kortix self-host connect-github --org my-org
-  kortix self-host connect-github --manual        # no local browser (remote box)
-  kortix self-host secrets ls
-  kortix self-host secrets set OPENROUTER_API_KEY=sk-or-...
-  kortix self-host secrets rotate DASHBOARD_PASSWORD
-  kortix self-host secrets rotate --all-generated
+  kortix self-host init --domain kortix.example.com
+  kortix self-host init --tunnel cloudflare
+  kortix self-host update --channel latest
+  kortix self-host secrets set DAYTONA_API_KEY=dtn_...
   kortix hosts ls
 `;
 
@@ -389,22 +275,11 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const updateTz = takeFlagValue(args, ['--update-tz']);
   const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
   const singleAccount = takeFlagBool(args, ['--single-account']);
-  // Self-host defaults the marketing/landing site to OFF (an app deployment,
-  // not a marketing site — see SHARED_FEATURE_FLAG_DEFAULTS). `--landing`
-  // re-enables it; `--no-landing` is kept (now redundant with the default,
-  // but harmless) for anyone who already scripted it. Both are "undefined
-  // unless passed" so a bare re-init never resets a prior explicit choice;
-  // if both are somehow passed at once, the explicit disable wins.
-  const landingOn = takeFlagBool(args, ['--landing']);
-  const noLanding = takeFlagBool(args, ['--no-landing']);
   const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
   const allowMissingSecrets = takeFlagBool(args, ['--allow-missing-secrets']);
   const localImages = takeFlagBool(args, ['--local-images', '--no-pull']);
   const domain = takeFlagValue(args, ['--domain']);
   const tunnelRaw = takeFlagValue(args, ['--tunnel']);
-  const org = takeFlagValue(args, ['--org']);
-  const manual = takeFlagBool(args, ['--manual']);
-  const skipGithub = takeFlagBool(args, ['--skip-github']);
   const adminEmail = takeFlagValue(args, ['--admin-email']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
@@ -434,15 +309,11 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     updateTz,
     allowDowntime: allowDowntime || undefined,
     singleAccount: singleAccount || undefined,
-    disableLanding: noLanding ? true : landingOn ? false : undefined,
     enterpriseLicense: enterpriseLicense || undefined,
     allowMissingSecrets: allowMissingSecrets || undefined,
     localImages: localImages || undefined,
     domain,
     tunnel: tunnelRaw as 'cloudflare' | undefined,
-    org,
-    manual: manual || undefined,
-    skipGithub: skipGithub || undefined,
     adminEmail,
     yes,
     json,
@@ -464,34 +335,52 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   applyImagesForTag(env, resolveTag(flags, existing));
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
+  applyAdminEmail(env, flags);
 
+  // The complete guided `init` flow, in this exact order and no other
+  // questions (everything else is dashboard/env-only — see
+  // configureIntegrations()'s own doc comment): 1) reachability — the first
+  // real decision, since it decides whether agent sandboxes can work at all;
+  // 2) admin email; 3) deployment shape (single-account, enterprise
+  // license); 4) sandbox provider + its key; 5) Pipedream (optional); 6) a
+  // compact update-policy block. Only walk through it on a genuinely
+  // first-time init (no prior .env) — a refresh of an already-configured
+  // instance shouldn't re-ask any of this every time `init` happens to run
+  // again. `configure` always asks (see below), using its own fuller
+  // update-policy interrogation (configureUpdatePolicy) instead of this
+  // compact block.
+  if (shouldPrompt(flags) && existing === null) {
+    await promptReachability(env, flags, true);
+    await promptAdminEmail(env, flags);
+    await promptFeatureFlags(env, flags);
+  }
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env, flags);
   }
-  // Only walk through the deployment-configuration wizard on a genuinely
-  // first-time init (no prior .env) — a refresh of an already-configured
-  // instance shouldn't re-ask single-account/landing-page/license/reachability
-  // every time `init` happens to run again. `configure` always asks (see below).
   if (shouldPrompt(flags) && existing === null) {
-    await promptReachability(env, flags, true);
-    await promptFeatureFlags(env, flags);
+    await promptUpdatePolicyCompact(env, flags);
   }
 
-  // Required secrets (managed git, sandbox, LLM, ...) MUST be set before this
-  // instance is usable — see ensureRequiredSecrets(). Interactively this
-  // drives the guided flow until satisfied; non-interactively (or --yes) it
-  // fails loudly instead of silently producing a box that can't create
-  // projects or run agents. Persist whatever was collected either way so a
-  // follow-up `secrets set` / `configure` has something to build on.
+  // Required secrets — just the agent sandbox runtime (Daytona) now; see
+  // missingRequiredSecrets(). Managed git and the LLM key are configured in
+  // the dashboard after `start`, not gated here. Interactively this drives the
+  // guided flow until satisfied; non-interactively (or --yes) it fails loudly
+  // instead of silently producing a box that can't run agents. Persist
+  // whatever was collected either way so a follow-up `secrets set` /
+  // `configure` has something to build on.
   const secretsExit = await ensureRequiredSecrets(env, flags);
 
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
+  // Reloaded AFTER ensureRequiredSecrets (which may itself have just persisted
+  // allow_missing_secrets via recordAllowMissingSecrets) so this write below
+  // preserves it instead of clobbering it back to unset.
   const existingConfig = loadInstanceConfig(flags.instance);
   writeInstanceConfig({
     schema_version: 1,
     instance: flags.instance,
     ...(flags.release || existingConfig?.release ? { release: flags.release ?? existingConfig?.release } : {}),
+    ...(existingConfig?.allow_missing_secrets ? { allow_missing_secrets: true } : {}),
   });
   if (secretsExit !== 0) return secretsExit;
   renderInitSummary(flags.instance, dir, env, existing !== null);
@@ -517,6 +406,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use selfhost${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
+  renderAfterStartNote();
 }
 
 async function selfHostStart(flags: GlobalFlags): Promise<number> {
@@ -552,20 +442,19 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
 
   if (!sandboxProviderConfigured(env)) {
+    const provider = sandboxProviders(env)[0] ?? 'daytona';
+    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
     process.stdout.write(
       `${C.yellow}  warning${C.reset}  ${C.dim}sandbox runtime not configured — agent sessions will fail to start.${C.reset}\n`,
     );
     process.stdout.write(
-      `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to set ${C.reset}DAYTONA_API_KEY${C.dim}.${C.reset}\n\n`,
+      `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to set ${C.reset}${key}${C.dim}.${C.reset}\n\n`,
     );
   }
 
   if (!gitProviderConfigured(env)) {
     process.stdout.write(
-      `${C.yellow}  warning${C.reset}  ${C.dim}managed git not configured — creating projects will fail.${C.reset}\n`,
-    );
-    process.stdout.write(
-      `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to connect GitHub (PAT or App).${C.reset}\n\n`,
+      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating projects.${C.reset}\n\n`,
     );
   }
 
@@ -581,8 +470,20 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
     );
   }
 
-  const pull = compose(flags.instance, ['pull']);
-  if (pull !== 0) return pull;
+  // Dev mode (--local-images / KORTIX_IMAGE_PULL=never): the Kortix app
+  // images were built locally and were never pushed to any registry, so a
+  // blanket `docker compose pull` fails outright (`manifest unknown`) instead
+  // of just skipping those services — `docker compose pull` has no per-service
+  // "skip this one" short of a compose-level pull_policy this generic compose
+  // file doesn't set. Skip the whole pull step here, exactly like updater.sh's
+  // perform_update() already does for the same flag (see assets/updater.sh) —
+  // `up -d` below still pulls any *other* (e.g. Supabase/cloudflared) image
+  // that isn't already present locally, since its default pull_policy is
+  // "missing", not "never".
+  if (shouldPullImages(env)) {
+    const pull = compose(flags.instance, ['pull']);
+    if (pull !== 0) return pull;
+  }
   const up = compose(flags.instance, ['up', '-d']);
   if (up !== 0) return up;
   const refreshApp = compose(flags.instance, ['up', '-d', '--force-recreate', '--no-deps', 'kortix-api', 'frontend']);
@@ -601,6 +502,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`${C.dim}  Dashboard: ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`);
   renderIntegrationSummary(env);
+  renderAfterStartNote();
   return 0;
 }
 
@@ -711,7 +613,7 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
 
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, env));
-  // Runtime feature flags (single-account/landing-page/enterprise-license) and
+  // Runtime feature flags (single-account/enterprise-license) and
   // reachability (domain/tunnel/local) are ordinary env — an update only ever
   // moves image tags, so an explicit flag is honored (non-interactively;
   // `update` never prompts) but nothing here resets a value the operator
@@ -752,15 +654,18 @@ function resolveTag(flags: GlobalFlags, existing: SelfHostEnv | null): string {
 
 /**
  * Default auto-update policy for a given resolved tag, absent an explicit
- * --auto-update. Channel tracking (stable/latest) defaults ON, unchanged
- * from historical behavior. A specific pinned ref — a released version, a
- * `dev-<sha>` build, a local branch build — defaults OFF: pinning means
- * "stay here," and the nightly updater must not silently move a pinned
- * dev/test box off of it. An explicit --auto-update still always wins (see
- * call sites below).
+ * --auto-update. Defaults ON everywhere, including a pinned tag (a specific
+ * released version or a `dev-<sha>` build): the nightly updater re-pulling
+ * the SAME immutable pinned tag is a harmless no-op (nothing to roll — see
+ * updater.sh's service_up_to_date() check), not silent drift, so there's no
+ * real reason to default it off just because a tag is pinned. The one actual
+ * exception is `--local-images` (a locally-built image never pushed to any
+ * registry) — applyChannelAndUpdatePolicy()/defaultEnv() force it off
+ * unconditionally for that case, regardless of this default. An explicit
+ * --auto-update still always wins over both (see call sites below).
  */
-function defaultAutoUpdateFor(tag: string): 'true' | 'false' {
-  return isChannel(tag) ? (DEFAULT_AUTO_UPDATE as 'true' | 'false') : 'false';
+function defaultAutoUpdateFor(_tag: string): 'true' | 'false' {
+  return DEFAULT_AUTO_UPDATE as 'true' | 'false';
 }
 
 /** Apply KORTIX_CHANNEL / auto-update policy flags onto env, defaults preserved. */
@@ -848,6 +753,10 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshI
   if (mode === 'domain') {
     env.KORTIX_DOMAIN = await prompt('Enter your domain (recommended — VPS + DNS; its A/AAAA record — and the API subdomain\'s — must already point at this box)', env.KORTIX_DOMAIN || '');
     env.KORTIX_REACHABILITY_MODE = 'domain';
+    // Both have sane derived defaults (see normalizeFullSupabaseEnv) — asked
+    // here, with the derived value pre-filled, so enter-to-accept just works.
+    env.KORTIX_API_DOMAIN = await prompt('API subdomain (its own A/AAAA record must also point here)', env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`);
+    env.KORTIX_ACME_EMAIL = await prompt('ACME email (renewal/expiry notices for the automatic TLS certificate)', env.KORTIX_ACME_EMAIL || `admin@${env.KORTIX_DOMAIN}`);
   } else if (mode === 'tunnel') {
     env.KORTIX_DOMAIN = '';
     env.KORTIX_REACHABILITY_MODE = 'tunnel';
@@ -875,22 +784,57 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshI
   }
 }
 
+/** Apply --admin-email onto env, non-interactively — only overwrites when the
+ *  flag was actually passed, same "explicit flag always wins, bare re-init
+ *  never resets" convention as every other apply* helper here. */
+function applyAdminEmail(env: SelfHostEnv, flags: GlobalFlags): void {
+  if (flags.adminEmail !== undefined) env.KORTIX_PLATFORM_ADMIN_EMAILS = flags.adminEmail;
+}
+
 /**
- * Apply --single-account / --landing / --no-landing / --enterprise-license onto env,
- * non-interactively. Each only overwrites when the flag was actually passed
- * (undefined = "not passed", never a literal false — see parseGlobalFlags),
- * so a bare `init`/`update` with no flags never resets a value the operator
- * set via `configure` or `env set`. Applied on every init/configure/update so
- * an explicit flag always wins, same convention as
- * applyChannelAndUpdatePolicy above.
+ * Interactive follow-up to applyAdminEmail: which account(s) become platform
+ * admins on this self-host, able to configure server-wide settings (managed
+ * GitHub, SSO, etc.) in the dashboard. Optional — blank just means "no
+ * platform admin yet," which is fine for evaluation but blocks some in-app
+ * server settings until set (via a later `env set` or `configure`).
+ */
+async function promptAdminEmail(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+  if (!shouldPrompt(flags)) return;
+
+  const answer = await prompt(
+    'Admin email (grants platform-admin so you can configure GitHub etc. in the dashboard; blank to skip)',
+    env.KORTIX_PLATFORM_ADMIN_EMAILS || '',
+  );
+  env.KORTIX_PLATFORM_ADMIN_EMAILS = answer;
+  if (!answer.trim()) {
+    process.stdout.write(
+      `  ${C.yellow}warning${C.reset}  ${C.dim}No admin email set — some in-app server settings (e.g. Settings → Git)${C.reset}\n` +
+        `           ${C.dim}need at least one platform admin. Set later: ${C.reset}${C.cyan}kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com${C.reset}\n\n`,
+    );
+  }
+}
+
+/**
+ * Apply --single-account / --enterprise-license onto env, non-interactively.
+ * Each only overwrites when the flag was actually passed (undefined = "not
+ * passed", never a literal false — see parseGlobalFlags), so a bare
+ * `init`/`update` with no flags never resets a value the operator set via
+ * `configure` or `env set`. Applied on every init/configure/update so an
+ * explicit flag always wins, same convention as applyChannelAndUpdatePolicy
+ * above.
+ *
+ * The marketing landing page is NOT a guided-flow question (there's no
+ * `--landing`/`--no-landing` flag either) — it's just an env var
+ * (KORTIX_PUBLIC_DISABLE_LANDING_PAGE, defaulted 'true' in
+ * SHARED_SELF_HOST_DEFAULTS) an operator flips directly:
+ * `kortix self-host env set KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false`. It
+ * isn't a decision that needs asking — self-host is an app deployment, not a
+ * marketing site, full stop.
  */
 function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
   if (flags.singleAccount !== undefined) {
     env.KORTIX_SINGLE_ACCOUNT_MODE = flags.singleAccount ? 'true' : 'false';
     env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE = env.KORTIX_SINGLE_ACCOUNT_MODE;
-  }
-  if (flags.disableLanding !== undefined) {
-    env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE = flags.disableLanding ? 'true' : 'false';
   }
   if (flags.enterpriseLicense !== undefined) {
     env.ENTERPRISE_LICENSE_AVAILABLE = flags.enterpriseLicense ? 'true' : 'false';
@@ -898,15 +842,16 @@ function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
 }
 
 /**
- * Interactive follow-up to applyFeatureFlags: ask yes/no for anything not
- * already pinned by a flag this run, defaulting to whatever is currently in
- * .env (so re-running `configure` doesn't reset a prior answer). No-ops
- * under --yes / non-TTY (see shouldPrompt).
+ * Interactive follow-up to applyFeatureFlags: the two real deployment-shape
+ * y/n questions — single-account mode, Enterprise license — asked in order,
+ * defaulting to whatever is currently in .env (so re-running `configure`
+ * doesn't reset a prior answer). No-ops under --yes / non-TTY (see
+ * shouldPrompt).
  */
 async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   if (!shouldPrompt(flags)) return;
 
-  process.stdout.write(`\n  ${C.bold}Deployment configuration${C.reset}\n`);
+  process.stdout.write(`\n  ${C.bold}Deployment shape${C.reset}\n`);
 
   const singleAccount = await selectFrom(
     'Single-account mode? (no teams — hides "New account" and team management)',
@@ -915,13 +860,6 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
   );
   env.KORTIX_SINGLE_ACCOUNT_MODE = singleAccount === 'yes' ? 'true' : 'false';
   env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE = env.KORTIX_SINGLE_ACCOUNT_MODE;
-
-  const disableLanding = await selectFrom(
-    'Disable the marketing landing page? (send visitors straight to sign-in)',
-    ['no', 'yes'] as const,
-    env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE === 'true' ? 'yes' : 'no',
-  );
-  env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE = disableLanding === 'yes' ? 'true' : 'false';
 
   const enterpriseLicense = await selectFrom(
     'Do you have an Enterprise license? (SSO / RBAC / Directory Sync / Groups — kortix.com/enterprise)',
@@ -1369,11 +1307,14 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
     return 1;
   }
-  await configureIntegrations(env, flags);
+  // Same ordering as `init`: reachability first (the decision that determines
+  // whether agent sandboxes can work at all), then feature flags, then
+  // integrations (Daytona) — see selfHostInit() for the full rationale.
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
   await promptReachability(env, flags);
   await promptFeatureFlags(env, flags);
+  await configureIntegrations(env, flags);
   await configureUpdatePolicy(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
@@ -1388,55 +1329,22 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 }
 
 /**
- * `kortix self-host connect-github` — the standalone entry point for the
- * GitHub App manifest flow (also invoked inline from the `init`/`configure`
- * guided flow via `runConnectGithubInteractive`). Since this is an explicit,
- * directly-invoked command, it runs unconditionally (no "want to connect
- * GitHub?" confirm) — the operator already said so by typing the command.
- * `--manual` forces the headless/paste-back path; it's also forced
- * automatically on a non-TTY (no local browser to open).
+ * `kortix self-host connect-github` — DEPRECATED. The GitHub App manifest
+ * flow it used to run never worked reliably from a laptop (GitHub rejects the
+ * flow's hook/callback URLs when they aren't reachable over the public
+ * internet: "Hook url is not supported because it isn't reachable over the
+ * public Internet"), while the frontend's in-app GitHub connection flow
+ * (Settings → Git) works everywhere the dashboard itself loads — including
+ * from a laptop, since it's the browser (not this CLI) driving the OAuth
+ * dance. Kept as a no-op alias, not removed outright, so an existing script
+ * that calls it doesn't hard-fail; it prints where to go instead and exits 0.
  */
-async function selfHostConnectGithub(args: string[], flags: GlobalFlags): Promise<number> {
-  const org = takeFlagValue(args, ['--org']) ?? flags.org;
-  const manualFlag = takeFlagBool(args, ['--manual']) || Boolean(flags.manual);
-  const isTTY = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  const manual = manualFlag || !isTTY;
-
-  const env = loadEnvWithDefaults(flags);
-  if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
-    return 1;
-  }
-
-  process.stdout.write(`\n  ${C.bold}kortix self-host connect-github${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
-  process.stdout.write(`  ${C.dim}org      ${C.reset}${org?.trim() || '(personal account)'}\n`);
-  if (manual) process.stdout.write(`  ${C.dim}mode     ${C.reset}manual (headless)\n`);
-
-  const result = await runConnectGithubFlow({
-    org,
-    manual,
-    publicUrl: env.PUBLIC_URL || 'https://kortix.ai',
-    currentStateSecret: env.KORTIX_GITHUB_APP_STATE_SECRET,
-    persist: (patch) => {
-      Object.assign(env, patch);
-      writeEnv(flags.instance, env);
-      writeCompose(flags.instance, env);
-    },
-    openBrowser: openInBrowser,
-    print: (msg) => process.stdout.write(`${msg}\n`),
-    findFreePort,
-    promptPaste: manual ? createPastePrompt : undefined,
-  });
-
-  if (!result.ok) {
-    process.stderr.write(`\n${status.err(result.error ?? 'GitHub App connection failed.')}\n`);
-    return 1;
-  }
-
-  process.stdout.write(`\n${status.ok(`GitHub connected: ${result.owner} (installation ${result.installationId})`)}\n`);
-  process.stdout.write(`${C.dim}  Project creation now works against this GitHub App.${C.reset}\n\n`);
-  return restartServicesForKeys(flags.instance, env, ['MANAGED_GIT_GITHUB_OWNER']);
+async function selfHostConnectGithub(_args: string[], _flags: GlobalFlags): Promise<number> {
+  process.stdout.write(
+    `\n  ${C.yellow}kortix self-host connect-github is deprecated.${C.reset}\n` +
+      `  ${C.dim}GitHub (projects) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
+  );
+  return 0;
 }
 
 /** Interactive (or flag-driven) auto-update channel/interval configuration. */
@@ -1464,174 +1372,151 @@ async function configureUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): Prom
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
+/**
+ * The guided `init` flow's compact update-policy step — one y/n plus an
+ * opt-in follow-up, NOT the fuller interrogation configureUpdatePolicy()
+ * (channel/time/tz every time) that `configure` runs. Channel is deliberately
+ * not asked here at all: it stays whatever it already resolved to (stable by
+ * default) — power users pin a channel/version via --channel/--version
+ * instead of being asked on every init.
+ */
+async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+  if (!shouldPrompt(flags)) return;
+
+  process.stdout.write(`\n  ${C.bold}Updates${C.reset}\n`);
+  const autoUpdate = await confirm(
+    `Auto-update nightly at ${env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ}?`,
+    env.KORTIX_AUTO_UPDATE !== 'false',
+  );
+  env.KORTIX_AUTO_UPDATE = autoUpdate ? 'true' : 'false';
+  if (!autoUpdate) return;
+
+  const customize = await confirm('Change the update time/timezone?', false);
+  if (!customize) return;
+  const updateTime = await prompt('Daily update time (HH:MM, 24h)', env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME);
+  env.KORTIX_UPDATE_TIME = UPDATE_TIME_PATTERN.test(updateTime) ? updateTime : DEFAULT_UPDATE_TIME;
+  const updateTz = await prompt('Timezone (IANA, e.g. UTC)', env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ);
+  env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
+}
+
+const SANDBOX_PROVIDER_CHOICES = ['daytona', 'e2b', 'platinum'] as const;
+type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
+
+/**
+ * The CLI's guided-integrations step: the two things that genuinely cannot
+ * be set any other way — the agent sandbox runtime (an env-only credential
+ * the API reads at boot, no in-app settings surface exists for it) and
+ * Pipedream's OPERATOR-level OAuth app credentials (also env-only — the
+ * database only ever holds each user's own per-connector bindings, never the
+ * platform's Pipedream app itself). Everything else that used to live here —
+ * GitHub/managed-git, the LLM key — is configured in the web dashboard after
+ * `start` instead (GitHub at Settings → Git, the LLM key as BYOK via the
+ * model picker). "The full flow needs to be perfect, all the other bullshit
+ * needs to be removed" — this function IS that trim.
+ */
 async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
-  process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}These power the agent runtime, GitHub repo access, and app connectors.${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
+  process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
+  const currentProvider = sandboxProviders(env)[0];
+  const provider = shouldPrompt(flags)
+    ? await selectFrom(
+        'Sandbox provider',
+        SANDBOX_PROVIDER_CHOICES,
+        (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
+          ? (currentProvider as SandboxProviderChoice)
+          : 'daytona',
+      )
+    : ((currentProvider as SandboxProviderChoice) ?? 'daytona');
+  env.ALLOWED_SANDBOX_PROVIDERS = provider;
 
-  // Sandbox runtime — where agents execute. Like Kortix Cloud, self-host runs
-  // sandboxes on Daytona; the wizard just collects the API key.
-  env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
-  process.stdout.write(`  ${C.dim}Agent sandbox runtime: Daytona (https://app.daytona.io)${C.reset}\n`);
-  env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
-  env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
-  env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-
-  await configureManagedGit(env, flags);
-
-  const pdMode = await selectFrom('Pipedream connectors: skip/configure', ['skip', 'configure'] as const, pipedreamConfigured(env) ? 'configure' : 'skip');
-  if (pdMode === 'configure') {
-    env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
-    env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
-    env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
-    env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
-    env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
-    env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+  if (provider === 'daytona') {
+    process.stdout.write(`  ${C.dim}Daytona (https://app.daytona.io)${C.reset}\n`);
+    env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
+    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
+  } else if (provider === 'e2b') {
+    process.stdout.write(`  ${C.dim}E2B (https://e2b.dev)${C.reset}\n`);
+    env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
+  } else {
+    process.stdout.write(`  ${C.dim}Platinum (Kortix's own microVM sandbox provider)${C.reset}\n`);
+    env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
+    env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
+    env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
   }
-  // Frontend "Connect your tools" / connector-catalogue UI (KORTIX_PUBLIC_
-  // CONNECTORS_ENABLED) mirrors whether Pipedream is FULLY configured on the
-  // backend — same three fields apps/api/src/executor/pipedream.ts's own
-  // pipedreamConfigured() requires. Recomputed every time this runs (both the
-  // 'configure' and 'skip' branches) so turning Pipedream off here also hides
-  // the frontend surfaces again.
-  env.KORTIX_PUBLIC_CONNECTORS_ENABLED =
-    env.PIPEDREAM_CLIENT_ID && env.PIPEDREAM_CLIENT_SECRET && env.PIPEDREAM_PROJECT_ID
-      ? 'true'
-      : 'false';
+
+  // Pipedream (optional, default skip): the ONE other env-only credential
+  // that belongs here — the platform-level OAuth app Pipedream issues per
+  // operator, not a per-user connection (those live in the DB and are
+  // configured per-project in the app). Never gates init/start either way;
+  // KORTIX_PUBLIC_CONNECTORS_ENABLED is re-derived from whatever ends up set
+  // here on every write (see normalizeFullSupabaseEnv), so skipping just
+  // leaves connectors hidden in the frontend rather than half-configured.
+  if (shouldPrompt(flags)) {
+    const pdMode = await selectFrom(
+      'Pipedream connectors (optional, powers the 3,000+ app catalog): configure/skip',
+      ['skip', 'configure'] as const,
+      pipedreamConfigured(env) ? 'configure' : 'skip',
+    );
+    if (pdMode === 'configure') {
+      env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
+      env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
+      env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
+      env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
+      env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
+      env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+    }
+  }
+
   env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
 }
 
-/**
- * Managed git (GitHub) — REQUIRED to create/CRUD projects: every project is a
- * git repo the server provisions. `connect-github`'s GitHub App manifest flow
- * is the default, recommended path (no personal-access-token): it creates a
- * brand-new App owned by the operator's org and lets them pick the repo(s) at
- * install time. A low-key "advanced" menu still lets an operator paste an
- * existing App's credentials or a PAT instead, or leave it unconfigured.
- */
-async function configureManagedGit(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
-  process.stdout.write(`  ${C.dim}GitHub (managed git) is required to create projects.${C.reset}\n`);
-
-  const alreadyConfigured = gitProviderConfigured(env);
-  if (alreadyConfigured) {
-    process.stdout.write(`  ${C.dim}Already configured: ${describeGithubMode(env)}.${C.reset}\n`);
-  }
-
-  const wantsChange = alreadyConfigured ? await confirm('Change the GitHub setup?', false) : true;
-  if (!wantsChange) return;
-
-  const connectNow =
-    !flags.skipGithub &&
-    (await confirm(
-      'Connect GitHub now? (creates + installs a GitHub App owned by your org — recommended, no PAT needed)',
-      true,
-    ));
-
-  let connected = false;
-  if (connectNow) {
-    connected = await runConnectGithubInteractive(env, flags);
-  }
-  if (connected) return;
-
-  // Advanced escape hatch: paste an existing App's credentials, a PAT, or
-  // leave managed git unconfigured.
-  const githubMode = await selectFrom(
-    'GitHub for projects (advanced): pat/app/none',
-    ['pat', 'app', 'none'] as const,
-    inferGithubMode(env) === 'none' ? 'none' : inferGithubMode(env),
-  );
-  if (githubMode === 'app') {
-    env.KORTIX_GITHUB_APP_ID = await prompt('GitHub App ID', env.KORTIX_GITHUB_APP_ID);
-    env.KORTIX_GITHUB_APP_SLUG = await prompt('GitHub App slug', env.KORTIX_GITHUB_APP_SLUG);
-    env.KORTIX_GITHUB_APP_PRIVATE_KEY = await promptSecret('GitHub App private key (paste with \\n escapes)', env.KORTIX_GITHUB_APP_PRIVATE_KEY);
-    env.MANAGED_GIT_GITHUB_OWNER = await prompt('GitHub owner/org for project repos', env.MANAGED_GIT_GITHUB_OWNER || env.KORTIX_GITHUB_OWNER);
-    env.MANAGED_GIT_GITHUB_INSTALL_ID = await prompt('GitHub App installation ID (on that org)', env.MANAGED_GIT_GITHUB_INSTALL_ID);
-    env.KORTIX_GITHUB_OWNER = env.MANAGED_GIT_GITHUB_OWNER;
-    env.MANAGED_GIT_PROVIDER = 'github';
-    env.KORTIX_GITHUB_TOKEN = '';
-    env.MANAGED_GIT_GITHUB_TOKEN = '';
-  } else if (githubMode === 'pat') {
-    env.KORTIX_GITHUB_TOKEN = await promptSecret('GitHub PAT (repo scope)', env.KORTIX_GITHUB_TOKEN);
-    env.MANAGED_GIT_GITHUB_OWNER = await prompt('GitHub owner/org for project repos', env.MANAGED_GIT_GITHUB_OWNER || env.KORTIX_GITHUB_OWNER);
-    // The managed-git backend reads MANAGED_GIT_GITHUB_*; mirror the PAT + owner.
-    env.MANAGED_GIT_GITHUB_TOKEN = env.KORTIX_GITHUB_TOKEN;
-    env.KORTIX_GITHUB_OWNER = env.MANAGED_GIT_GITHUB_OWNER;
-    env.MANAGED_GIT_PROVIDER = 'github';
-    env.KORTIX_GITHUB_APP_ID = '';
-    env.KORTIX_GITHUB_APP_SLUG = '';
-    env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
-    env.MANAGED_GIT_GITHUB_INSTALL_ID = '';
-  } else if (!alreadyConfigured) {
-    env.KORTIX_GITHUB_APP_ID = '';
-    env.KORTIX_GITHUB_APP_SLUG = '';
-    env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
-    env.KORTIX_GITHUB_TOKEN = '';
-    env.MANAGED_GIT_PROVIDER = '';
-    env.MANAGED_GIT_GITHUB_TOKEN = '';
-    env.MANAGED_GIT_GITHUB_OWNER = '';
-    env.MANAGED_GIT_GITHUB_INSTALL_ID = '';
-  }
-}
-
-function describeGithubMode(env: SelfHostEnv): string {
-  const mode = inferGithubMode(env);
-  if (mode === 'app') return `GitHub App "${env.KORTIX_GITHUB_APP_SLUG || env.KORTIX_GITHUB_APP_ID}" on ${env.MANAGED_GIT_GITHUB_OWNER || '(unknown owner)'}`;
-  if (mode === 'pat') return `PAT on ${env.MANAGED_GIT_GITHUB_OWNER || '(unknown owner)'}`;
-  return 'not configured';
-}
-
-/**
- * Runs the `connect-github` GitHub App manifest flow inline (used by the
- * `init`/`configure` guided flow — as opposed to `selfHostConnectGithub`,
- * which is the same flow driven directly from the `connect-github`
- * subcommand). Returns whether it completed successfully; on failure the
- * caller falls through to the advanced paste-credentials menu instead.
- */
-async function runConnectGithubInteractive(env: SelfHostEnv, flags: GlobalFlags): Promise<boolean> {
-  const manual = Boolean(flags.manual);
-  const result = await runConnectGithubFlow({
-    org: flags.org,
-    manual,
-    publicUrl: env.PUBLIC_URL || 'https://kortix.ai',
-    currentStateSecret: env.KORTIX_GITHUB_APP_STATE_SECRET,
-    persist: (patch) => Object.assign(env, patch),
-    openBrowser: openInBrowser,
-    print: (msg) => process.stdout.write(`${msg}\n`),
-    findFreePort,
-    promptPaste: manual ? createPastePrompt : undefined,
-  });
-  if (result.ok) {
-    process.stdout.write(`\n${status.ok(`GitHub connected: ${result.owner} (installation ${result.installationId})`)}\n\n`);
-    return true;
-  }
-  process.stdout.write(`\n${C.yellow}  GitHub App connect failed: ${result.error}${C.reset}\n\n`);
-  return false;
-}
+// Managed git (GitHub) is deliberately NOT configured from this guided flow
+// anymore — see configureIntegrations() above. It's configured in-app instead
+// (Settings → Git, DB-backed) after `start`. The old configureManagedGit()/
+// runConnectGithubInteractive()/describeGithubMode()/inferGithubMode() guided
+// wizard was removed along with it; `connect-github` (the standalone
+// subcommand) is now a deprecated alias — see selfHostConnectGithub() below —
+// that also points at the dashboard instead of running the manifest flow,
+// which never worked reliably on a laptop anyway (GitHub rejects hook/
+// callback URLs that aren't reachable over the public internet).
 
 async function promptSecret(label: string, current: string): Promise<string> {
   const answer = await prompt(current ? `${label} (already set, enter to keep)` : label);
   return answer || current;
 }
 
-function inferGithubMode(env: SelfHostEnv): 'none' | 'app' | 'pat' {
-  if (env.KORTIX_GITHUB_APP_ID || env.KORTIX_GITHUB_APP_PRIVATE_KEY || env.KORTIX_GITHUB_APP_SLUG) return 'app';
-  if (env.KORTIX_GITHUB_TOKEN) return 'pat';
-  return 'none';
-}
-
 function pipedreamConfigured(env: SelfHostEnv): boolean {
   return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
+}
+
+/**
+ * Whether `start` should run `docker compose pull` at all. False for
+ * KORTIX_IMAGE_PULL=never (set by --local-images — see applyChannelAndUpdatePolicy)
+ * since those images were built locally and were never pushed to any
+ * registry, so a blanket pull fails outright (`manifest unknown`) instead of
+ * skipping just the local ones. Mirrors updater.sh's perform_update(), which
+ * already skips its own pull step under the same flag.
+ */
+export function shouldPullImages(env: Record<string, string>): boolean {
+  return env.KORTIX_IMAGE_PULL !== 'never';
 }
 
 export function sandboxProviders(env: Record<string, string>): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** A provider is "ready" if daytona has an API key. */
+/** The key each sandbox provider needs to be considered "ready" — mirrors
+ *  isProviderEnabled() in apps/api/src/config.ts. */
+const SANDBOX_PROVIDER_KEY: Record<string, string> = {
+  daytona: 'DAYTONA_API_KEY',
+  e2b: 'E2B_API_KEY',
+  platinum: 'PLATINUM_API_KEY',
+};
+
+/** A configured sandbox provider is one named in ALLOWED_SANDBOX_PROVIDERS
+ *  whose required key is actually set — whichever of daytona/e2b/platinum was
+ *  chosen at `init`/`configure` (see configureIntegrations()). */
 export function sandboxProviderConfigured(env: Record<string, string>): boolean {
-  const providers = sandboxProviders(env);
-  if (providers.includes('daytona')) return !!env.DAYTONA_API_KEY;
-  return false;
+  return sandboxProviders(env).some((provider) => !!env[SANDBOX_PROVIDER_KEY[provider] ?? '']);
 }
 
 /** Managed git provider configured? Required to create/CRUD projects. */
@@ -1688,29 +1573,33 @@ export interface MissingSecretItem {
 }
 
 /**
- * Every required secret this instance is still missing, reconciled against
- * the composite provider checks above so a PAT-mode or App-mode managed-git
- * setup each report as satisfied (not "half the fields are unset"), and a
- * scalar pass over the registry's `required: true` entries otherwise. Pure
- * function of `env` — no filesystem/process access — so it's safe to call
- * from `init`/`start` before anything is written and to unit-test directly.
+ * Every required secret this instance is still missing. The CLI's init-time
+ * gate is deliberately narrow now: ONLY the agent sandbox runtime (Daytona) is
+ * a "cannot proceed without it" secret — it's the one thing that genuinely
+ * can't be set any other way (it's an env-only credential the API reads at
+ * boot, there is no in-app settings surface for it). Managed git (GitHub) and
+ * the LLM key are BOTH configured after `start`, in the web dashboard —
+ * managed git at Settings → Git (DB-backed, not env/CLI-owned) and the LLM key
+ * as BYOK via the model picker — so neither blocks `init`/`start` here
+ * anymore; see gitProviderConfigured()/renderIntegrationSummary() for the
+ * (non-blocking) status display. Reconciled against sandboxProviderConfigured
+ * so a Daytona key configured via any accepted shape reports as satisfied.
+ * Pure function of `env` — no filesystem/process access — so it's safe to
+ * call from `init`/`start` before anything is written and to unit-test
+ * directly.
  */
 export function missingRequiredSecrets(env: Record<string, string>): MissingSecretItem[] {
   const missing: MissingSecretItem[] = [];
 
   if (!sandboxProviderConfigured(env)) {
+    // Name whichever provider is actually configured (ALLOWED_SANDBOX_PROVIDERS),
+    // defaulting to Daytona's hint when nothing has been chosen yet (a bare
+    // `init --yes` with no prior .env) — matches the guided flow's own default.
+    const provider = sandboxProviders(env)[0] ?? 'daytona';
+    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
     missing.push({
-      label: 'Agent sandbox runtime (Daytona API key)',
-      hint: 'kortix self-host secrets set DAYTONA_API_KEY=<key>',
-    });
-  }
-
-  if (!gitProviderConfigured(env)) {
-    missing.push({
-      label: 'Managed git for projects (GitHub PAT or GitHub App)',
-      hint:
-        'kortix self-host secrets set MANAGED_GIT_GITHUB_OWNER=<org> MANAGED_GIT_GITHUB_TOKEN=<pat>' +
-        '  (or KORTIX_GITHUB_APP_ID / KORTIX_GITHUB_APP_PRIVATE_KEY / MANAGED_GIT_GITHUB_INSTALL_ID for a GitHub App)',
+      label: `Agent sandbox runtime (${provider} API key)`,
+      hint: `kortix self-host secrets set ${key}=<key>`,
     });
   }
 
@@ -1728,14 +1617,47 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
 }
 
 /**
+ * Whether this instance has ever had `--allow-missing-secrets` used against
+ * it — persisted in instance.json (see SelfHostInstanceConfig) so the choice
+ * survives across separate CLI invocations. See recordAllowMissingSecrets()
+ * for why this exists.
+ */
+function persistedAllowMissingSecrets(instance: string): boolean {
+  return loadInstanceConfig(instance)?.allow_missing_secrets === true;
+}
+
+/**
+ * Persist that this instance has been explicitly allowed to run with
+ * required secrets missing, so a LATER invocation that omits the flag isn't
+ * re-blocked for a decision the operator already made. Confirmed friction
+ * live: `init --allow-missing-secrets` succeeds, but the very next `start`
+ * (with no flags) re-validates independently (ensureRequiredSecrets runs on
+ * every init/start) and hard-fails again unless the flag is repeated. Merges
+ * into whatever instance.json already has (release, etc.) rather than
+ * clobbering it. No-op (doesn't write) if already persisted.
+ */
+function recordAllowMissingSecrets(instance: string): void {
+  if (persistedAllowMissingSecrets(instance)) return;
+  const existing = loadInstanceConfig(instance);
+  writeInstanceConfig({
+    schema_version: 1,
+    instance,
+    ...(existing?.release ? { release: existing.release } : {}),
+    allow_missing_secrets: true,
+  });
+}
+
+/**
  * Enforce that required secrets are actually set before this instance can be
  * considered usable — the CLI's primary guarantee: a box never comes up
- * silently unable to create projects or run agents. Interactive TTY: drive
- * the guided integrations flow until satisfied or the operator opts out.
- * Non-interactive (`--yes` / no TTY / CI): fail loudly with an itemized list
- * and exact fix commands instead of proceeding into a broken deployment.
+ * silently unable to run agents. Interactive TTY: drive the guided
+ * integrations flow until satisfied or the operator opts out. Non-interactive
+ * (`--yes` / no TTY / CI): fail loudly with an itemized list and exact fix
+ * commands instead of proceeding into a broken deployment.
  * `--allow-missing-secrets` downgrades the non-interactive failure to a loud
- * warning — local experimentation only.
+ * warning — local experimentation only — and that choice is remembered (see
+ * recordAllowMissingSecrets) so a later bare `start`/`update` doesn't
+ * re-demand the same flag for the same still-missing secret.
  *
  * Returns 0 to proceed, non-zero to stop (caller still persists whatever was
  * collected along the way).
@@ -1765,10 +1687,11 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
 
   const lines = missing.map((item) => `    ${C.dim}- ${C.reset}${item.label}\n        ${C.cyan}${item.hint}${C.reset}`).join('\n');
 
-  if (flags.allowMissingSecrets) {
+  if (flags.allowMissingSecrets || persistedAllowMissingSecrets(flags.instance)) {
+    recordAllowMissingSecrets(flags.instance);
     process.stdout.write(
       `\n${status.warn('Proceeding with required secrets missing (--allow-missing-secrets):')}\n${lines}\n\n` +
-        `  ${C.dim}This deployment will not be able to create projects and/or run agents until they are set.${C.reset}\n\n`,
+        `  ${C.dim}This deployment will not be able to run agents until they are set.${C.reset}\n\n`,
     );
     return 0;
   }
@@ -1781,11 +1704,12 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
 }
 
 function integrationReviewNeeded(env: SelfHostEnv): boolean {
-  // Both the sandbox runtime (the API won't boot without it) and managed git
-  // (you can't create projects without it) are required, so a missing one always
-  // warrants the wizard — even after a prior review.
+  // The sandbox runtime (Daytona) is the only CLI-required integration left —
+  // the API won't boot agent sessions without it, and there is no in-app
+  // settings surface for it (unlike managed git/LLM, both configured in the
+  // dashboard after `start`). A missing key always warrants the wizard, even
+  // after a prior review.
   if (!sandboxProviderConfigured(env)) return true;
-  if (!gitProviderConfigured(env)) return true;
   if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
   return true;
 }
@@ -1795,21 +1719,17 @@ function shouldPrompt(flags: GlobalFlags): boolean {
 }
 
 function renderIntegrationSummary(env: SelfHostEnv): void {
+  // The ONLY row gated as configured/missing here is the sandbox runtime — the
+  // one integration the CLI still requires (see missingRequiredSecrets()).
+  // Everything else (managed git, LLM key, connectors, SMTP) is dashboard
+  // territory — see renderAfterStartNote() below, not a CLI configured/missing
+  // gate that would incorrectly suggest a CLI fix is needed.
+  const provider = sandboxProviders(env)[0];
   const rows = [
     {
       name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
       configured: sandboxProviderConfigured(env),
-      hint: 'DAYTONA_API_KEY (via kortix self-host configure)',
-    },
-    {
-      name: 'Managed git for projects (required)',
-      configured: gitProviderConfigured(env),
-      hint: 'connect GitHub (PAT or App) via kortix self-host configure',
-    },
-    {
-      name: 'Pipedream connectors',
-      configured: pipedreamConfigured(env),
-      hint: 'PIPEDREAM_CLIENT_ID + PIPEDREAM_CLIENT_SECRET + PIPEDREAM_PROJECT_ID',
+      hint: `${SANDBOX_PROVIDER_KEY[provider ?? 'daytona'] ?? 'DAYTONA_API_KEY'} (via kortix self-host configure)`,
     },
   ];
 
@@ -1825,6 +1745,18 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
     process.stdout.write(`  ${C.dim}Configure: ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
   }
   process.stdout.write('\n');
+}
+
+/**
+ * Everything that happens AFTER `start`, in the dashboard, not the CLI — the
+ * other half of "the CLI only handles what can't be configured in the web
+ * dashboard." Printed at the end of both `init` (renderInitSummary) and
+ * `start` (selfHostStart) so it's the last thing an operator reads either way.
+ */
+function renderAfterStartNote(): void {
+  process.stdout.write(
+    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors, SMTP — all in the dashboard.${C.reset}\n\n`,
+  );
 }
 
 async function reconcilePorts(instance: string, env: SelfHostEnv): Promise<string[]> {
@@ -2036,9 +1968,16 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    // Sandboxes run on a real provider, just like Kortix Cloud. Daytona is the
-    // self-host sandbox provider; `kortix self-host configure` collects the API key.
+    // Sandboxes run on a real provider, just like Kortix Cloud — Daytona,
+    // E2B, or Kortix's own Platinum (SandboxProviderName in
+    // apps/api/src/config.ts); `kortix self-host configure` asks which one
+    // and collects only that provider's key(s).
     DAYTONA_API_KEY: '',
+    E2B_API_KEY: '',
+    PLATINUM_API_KEY: '',
+    PLATINUM_API_URL: '',
+    PLATINUM_TEMPLATE: '',
+    PLATINUM_WEBHOOK_SECRET: '',
     KORTIX_GITHUB_APP_ID: '',
     KORTIX_GITHUB_APP_PRIVATE_KEY: '',
     KORTIX_GITHUB_APP_SLUG: '',
@@ -2071,6 +2010,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
     renderFullDockerCompose(composeProject(instance), {
       domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
+      namedTunnelConfigured: namedTunnelConfigured(env),
     }),
     { encoding: 'utf8', mode: 0o600 },
   );
@@ -2115,6 +2055,14 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   env.POSTGRES_HOST = 'supabase-db';
   env.POSTGRES_DB = 'postgres';
   env.SUPABASE_POSTGRES_INTERNAL_PORT = '5432';
+
+  // Frontend "Connect your tools" / connector-catalogue UI mirrors whether
+  // Pipedream is FULLY configured — same three fields
+  // apps/api/src/executor/pipedream.ts's own pipedreamConfigured() requires.
+  // Recomputed on every write (not just when the now-removed guided-init
+  // Pipedream question used to run) so setting/clearing PIPEDREAM_CLIENT_ID
+  // et al. via `env set`/`secrets set` directly keeps this in sync too.
+  env.KORTIX_PUBLIC_CONNECTORS_ENABLED = pipedreamConfigured(env) ? 'true' : 'false';
 
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
   // service fronts the stack on 80/443 and every public URL becomes the real
