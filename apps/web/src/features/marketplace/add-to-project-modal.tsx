@@ -35,6 +35,7 @@ import {
 import { errorToast } from '@/components/ui/toast';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { listAccounts, provisionProject } from '@kortix/sdk/projects-client';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
@@ -134,7 +135,13 @@ export function AddToProjectModal({
       onOpenChange(false);
       router.push(`/projects/${projectId}/sessions/${session_id}`);
     } catch (e) {
-      errorToast('Could not add to project', { description: (e as Error).message });
+      if (isManagedGitUnavailableError(e)) {
+        errorToast("Managed git isn't set up on this server", {
+          description: 'Creating projects needs a GitHub App — ask your admin to configure it.',
+        });
+      } else {
+        errorToast('Could not add to project', { description: (e as Error).message });
+      }
     } finally {
       setBusy(false);
     }
