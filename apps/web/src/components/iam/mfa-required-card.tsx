@@ -117,7 +117,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
           </p>
           <p className="text-muted-foreground mt-0.5 text-xs">
             When enabled, members must complete a second-factor challenge before any IAM-gated
-            action. Super-admins and Personal Access Tokens are exempt.
+            action. Super-admins and Personal Access Tokens are exempt. Members enroll an authenticator under Settings → Security.
           </p>
         </div>
         {statusQuery.isLoading ? (
