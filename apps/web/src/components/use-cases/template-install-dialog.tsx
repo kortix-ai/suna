@@ -42,7 +42,13 @@ import {
 } from '@/lib/templates-client';
 import { cn } from '@/lib/utils';
 
+import { TemplateSessionInstallDialog } from './template-session-install-dialog';
+
 const STEPS = ['Review', 'Configure', 'Connect', 'Go live'] as const;
+
+// V2: when on, "Use this template" opens a guided install *session* in the
+// project (an agent sets it up in chat) instead of the multi-step wizard.
+const SESSION_INSTALL = process.env.NEXT_PUBLIC_TEMPLATE_SESSION_INSTALL === 'true';
 
 // ── brand logos via the public Simple Icons CDN (cdn.simpleicons.org/<slug>) ──
 const LOGO_ALIAS: Record<string, string> = { gh: 'github' };
@@ -109,7 +115,11 @@ export function UseTemplateButton({
         <Sparkles className="size-4" />
         {label}
       </Button>
-      <TemplateInstallDialog templateId={templateId} open={open} onOpenChange={setOpen} />
+      {SESSION_INSTALL ? (
+        <TemplateSessionInstallDialog templateId={templateId} open={open} onOpenChange={setOpen} />
+      ) : (
+        <TemplateInstallDialog templateId={templateId} open={open} onOpenChange={setOpen} />
+      )}
     </>
   );
 }

@@ -16,7 +16,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
+import { config } from '../../config';
 import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
+import {
+  buildTemplateInstallForProject,
+  primaryManifestPath,
+} from '../templates/install-template';
 import {
   buildInstall,
   buildInstallBatch,
@@ -63,11 +68,56 @@ async function handleMarketplaceInstall(c: any) {
   const body = await readBody(c);
   const id = typeof body?.id === 'string' ? body.id.trim() : '';
   if (!id) return c.json({ error: 'id is required' }, 400);
-  const detail = await getCatalogItemDetail(id);
-  if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
 
   const project = await loadGitProject(loaded);
   const manifestRaw = await manifestRawOrNull(project);
+
+  // Template-aware: a use-case template renders its `{{inputs}}` and merges its
+  // trigger/connector block into the manifest — the same install the wizard runs,
+  // now reachable through the marketplace path. Gated by the templates kill-switch.
+  if (config.KORTIX_TEMPLATES_ENABLED) {
+    const inputs =
+      body?.inputs && typeof body.inputs === 'object'
+        ? (body.inputs as Record<string, string>)
+        : {};
+    const tpl = await buildTemplateInstallForProject({
+      projectId,
+      projectName: loaded.row.name,
+      manifestRaw,
+      manifestPath: primaryManifestPath(project.manifestPath),
+      id,
+      inputs,
+    });
+    if (tpl) {
+      await assertCommitCapabilities(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        tpl.result.files.map((f) => f.path),
+      );
+      const commit = await commitMultipleFilesToBranch(project, {
+        files: tpl.result.files,
+        message: `feat(template): install ${tpl.entry.item.title ?? tpl.entry.item.name}`,
+        branch: project.defaultBranch,
+      });
+      return c.json(
+        {
+          ok: true,
+          commit_sha: commit.commitSha,
+          branch: commit.branch,
+          file_count: commit.fileCount,
+          installed: [{ name: tpl.entry.item.name, type: 'registry:template' }],
+          requirements: tpl.result.requirements,
+          trigger_slugs: tpl.result.triggerSlugs,
+        },
+        201,
+      );
+    }
+  }
+
+  const detail = await getCatalogItemDetail(id);
+  if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
   const configDir = resolveOpencodeDir(manifestRaw);
   const existingLockRaw = await repoFileOrNull(project, 'registry-lock.json');
   const legacyLockRaw = await repoFileOrNull(project, 'skills-lock.json');

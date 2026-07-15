@@ -1442,7 +1442,16 @@ const MARKETPLACE_VISIBLE_TYPES = new Set<string>([
 ]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
-  return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
+  if (it.hidden) return false;
+  if (MARKETPLACE_VISIBLE_TYPES.has(it.type)) return true;
+  // Use-case templates join the marketplace (browse + resolve + install) only
+  // while the feature is on, so they stay invisible in prod but are installable
+  // by id/name through the same catalog the CLI and web use.
+  // Read the flag from the environment directly (not the validated `config`)
+  // so this module stays importable in unit tests without full env.
+  if (it.type === "registry:template" && process.env.KORTIX_TEMPLATES_ENABLED === "true")
+    return true;
+  return false;
 }
 
 function filterCatalogItems(

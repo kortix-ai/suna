@@ -6,28 +6,29 @@
  *   GET  /v1/templates              → list templates
  *   GET  /v1/templates/{id}         → detail: inputs + requirement preview
  *   POST /v1/templates/{id}/install → apply into a project + commit (auth)
+ *
+ * Installing shares the template-aware slice of the marketplace install system
+ * (see ./install-template): the same render + manifest-merge runs whether you
+ * come through here or `POST /projects/:id/marketplace/install`.
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
 
-import { executorConnectors } from '@kortix/db';
-import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { eq } from 'drizzle-orm';
-
-import { db } from '../../shared/db';
-
-import { findCatalogEntryByName, listTemplateCatalogItems } from '../../marketplace/catalog';
-import { buildInstall } from '../../marketplace/install-service';
+import { listTemplateCatalogItems } from '../../marketplace/catalog';
 import { config } from '../../config';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { readManifestFromRepo, readRepoFile } from '../git/files';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { assertCommitCapabilities, loadProjectForUser } from '../lib/access';
 import { loadGitProject } from '../lib/git';
-import { listProjectSecrets } from '../secrets';
-import { buildTemplateInstall, parseTemplateBlock } from './apply-template';
+import {
+  buildTemplateDetail,
+  buildTemplateInstallForProject,
+  primaryManifestPath,
+} from './install-template';
 
 export const templatesApp = makeOpenApiApp<AppEnv>();
 
@@ -41,17 +42,6 @@ templatesApp.use('*', async (c, next) => {
 // Read routes (list + detail) are public; installing requires auth.
 templatesApp.use('/:id/install', supabaseAuth);
 
-async function repoFileOrNull(
-  project: Parameters<typeof readRepoFile>[0],
-  path: string,
-): Promise<string | null> {
-  try {
-    return await readRepoFile(project, path, project.defaultBranch);
-  } catch {
-    return null;
-  }
-}
-
 async function manifestRawOrNull(
   project: Parameters<typeof readRepoFile>[0],
 ): Promise<string | null> {
@@ -61,42 +51,6 @@ async function manifestRawOrNull(
     project.defaultBranch,
   ).catch(() => null);
   return found?.content ?? null;
-}
-
-/** Resolve a template, install-plan it, and build against a target manifest. */
-async function previewOrBuild(input: {
-  id: string;
-  inputs: Record<string, string>;
-  context?: Record<string, string>;
-  manifestRaw: string | null;
-  manifestPath: string;
-  existingConnectors: Array<{ slug: string; provider: string }>;
-  existingSecretKeys: string[];
-}) {
-  const entry = await findCatalogEntryByName(input.id);
-  if (!entry || entry.item.type !== 'registry:template') return null;
-
-  const built = await buildInstall({
-    id: input.id,
-    configDir: '.kortix/opencode',
-    existingLockRaw: null,
-    legacyLockRaw: null,
-    now: new Date().toISOString(),
-  });
-
-  const result = buildTemplateInstall({
-    template: entry.item,
-    block: parseTemplateBlock(entry.item),
-    registryFiles: built.files,
-    capabilities: built.capabilities,
-    inputs: input.inputs,
-    context: input.context,
-    manifestRaw: input.manifestRaw,
-    manifestPath: input.manifestPath,
-    existingConnectors: input.existingConnectors,
-    existingSecretKeys: input.existingSecretKeys,
-  });
-  return { entry, built, result };
 }
 
 templatesApp.openapi(
@@ -123,26 +77,9 @@ templatesApp.openapi(
     responses: { 200: json(z.any(), 'Template detail + requirement preview'), ...errors(404) },
   }),
   async (c: any) => {
-    const preview = await previewOrBuild({
-      id: c.req.param('id'),
-      inputs: {},
-      manifestRaw: null,
-      manifestPath: 'kortix.yaml',
-      existingConnectors: [],
-      existingSecretKeys: [],
-    });
-    if (!preview) return c.json({ error: 'Not found' }, 404);
-    const { entry, built, result } = preview;
-    return c.json({
-      id: entry.item.name,
-      title: entry.item.title ?? entry.item.name,
-      description: entry.item.description ?? null,
-      inputs: entry.item.inputs ?? [],
-      requirements: result.requirements,
-      installs: built.installed,
-      connectors: built.capabilities.connectors,
-      secrets: built.capabilities.secrets,
-    });
+    const detail = await buildTemplateDetail(c.req.param('id'));
+    if (!detail) return c.json({ error: 'Not found' }, 404);
+    return c.json(detail);
   },
 );
 
@@ -182,21 +119,14 @@ templatesApp.openapi(
 
     const project = await loadGitProject(loaded);
     const manifestRaw = await manifestRawOrNull(project);
-    const connectors: Array<{ slug: string; providerType: string }> = await db
-      .select({ slug: executorConnectors.slug, providerType: executorConnectors.providerType })
-      .from(executorConnectors)
-      .where(eq(executorConnectors.projectId, projectId))
-      .catch(() => []);
-    const secretKeys = Object.keys(await listProjectSecrets(projectId).catch(() => ({})));
 
-    const preview = await previewOrBuild({
+    const preview = await buildTemplateInstallForProject({
+      projectId,
+      projectName: loaded.row.name,
+      manifestRaw,
+      manifestPath: primaryManifestPath(project.manifestPath),
       id,
       inputs: body?.inputs ?? {},
-      context: { projectName: loaded.row.name },
-      manifestRaw,
-      manifestPath: manifestCandidatePaths(project.manifestPath)[0].path,
-      existingConnectors: connectors.map((cn) => ({ slug: cn.slug, provider: String(cn.providerType) })),
-      existingSecretKeys: secretKeys,
     });
     if (!preview) return c.json({ error: `Unknown template "${id}"` }, 404);
     const { entry, result } = preview;

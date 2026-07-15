@@ -4,6 +4,8 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { config } from '../config';
+import { buildTemplateDetail } from '../projects/templates/install-template';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -132,7 +134,15 @@ marketplaceApp.openapi(
     },
   }),
   async (c: any) => {
-    const detail = await getCatalogItemDetail(c.req.param('id'));
+    const id = c.req.param('id');
+    // A use-case template gets its richer detail (inputs + requirements) — the
+    // generic catalog detail would otherwise shadow it now that templates
+    // resolve through the catalog.
+    if (config.KORTIX_TEMPLATES_ENABLED) {
+      const tpl = await buildTemplateDetail(id);
+      if (tpl) return c.json(tpl);
+    }
+    const detail = await getCatalogItemDetail(id);
     if (!detail) return c.json({ error: 'Not found' }, 404);
     return c.json(detail);
   },

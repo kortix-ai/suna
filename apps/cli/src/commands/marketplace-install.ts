@@ -83,6 +83,7 @@ interface Flags {
   host?: string;
   ref?: string;
   namespaces: Record<string, string>;
+  inputs: Record<string, string>;
   overwrite: boolean;
   dryRun: boolean;
   json: boolean;
@@ -93,6 +94,7 @@ function parseFlags(argv: string[]): { address?: string; flags: Flags } {
     root: process.cwd(),
     rootExplicit: false,
     namespaces: {},
+    inputs: {},
     overwrite: false,
     dryRun: false,
     json: false,
@@ -109,6 +111,11 @@ function parseFlags(argv: string[]): { address?: string; flags: Flags } {
     else if (arg === '--namespace' && argv[i + 1]) {
       const [k, v] = argv[++i].split('=');
       if (k && v) flags.namespaces[k] = v;
+    } else if (arg === '--input' && argv[i + 1]) {
+      // `--input key=value` — template inputs, forwarded to the install (repeatable).
+      const raw = argv[++i];
+      const eq = raw.indexOf('=');
+      if (eq > 0) flags.inputs[raw.slice(0, eq)] = raw.slice(eq + 1);
     } else if (arg === '--overwrite' || arg === '--force') flags.overwrite = true;
     else if (arg === '--dry-run') flags.dryRun = true;
     else if (arg === '--json') flags.json = true;
@@ -258,11 +265,20 @@ async function installToProject(address: string, flags: Flags): Promise<number> 
     return surfaceApiError(err);
   }
 
-  const match =
+  let match =
     items.find((i) => i.id === address) ??
     items.find((i) => i.name === address) ??
     items.find((i) => i.id.endsWith(`:${address}`)) ??
     (items.length === 1 ? items[0] : undefined);
+
+  // Use-case templates are kept out of the browse list but are resolvable +
+  // installable by id — fall back to the detail endpoint before giving up.
+  if (!match) {
+    match =
+      (await ctx.client
+        .get<CatalogItem>(`/marketplace/items/${encodeURIComponent(address)}`)
+        .catch(() => undefined)) ?? undefined;
+  }
 
   if (!match) {
     process.stderr.write(
@@ -305,6 +321,7 @@ async function installToProject(address: string, flags: Flags): Promise<number> 
   try {
     res = await ctx.client.post<InstallResponse>(`/projects/${ctx.projectId}/marketplace/install`, {
       id: match.id,
+      ...(Object.keys(flags.inputs).length > 0 ? { inputs: flags.inputs } : {}),
     });
   } catch (err) {
     return surfaceApiError(err);
