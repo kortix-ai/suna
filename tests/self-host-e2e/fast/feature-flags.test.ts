@@ -16,7 +16,7 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
 
   afterEach(() => sandbox.cleanup());
 
-  test('default: multi-account, marketing OFF, billing off, enterprise off, managed-git required', async () => {
+  test('default: multi-account, marketing OFF, billing off, enterprise off, git provider declared github', async () => {
     const { code } = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
     expect(code).toBe(0);
     const env = sandbox.readEnv();
@@ -32,9 +32,9 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
     // Enterprise off by default.
     expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
-    // Managed git is required (declared provider is github; init doesn't
-    // silently disable the requirement — see required-secrets.test.ts for
-    // enforcement).
+    // Managed git's declared provider is always github, but it's NOT
+    // init-required anymore — it's configured in-app (Settings → Git) after
+    // start, not gated by this CLI. See required-secrets.test.ts.
     expect(env.MANAGED_GIT_PROVIDER).toBe('github');
   });
 
@@ -51,15 +51,17 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
     expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('true');
   });
 
-  test('--no-landing sets KORTIX_PUBLIC_DISABLE_LANDING_PAGE=true', async () => {
-    const { code } = await sandbox.run([
-      'init',
-      '--yes',
-      '--allow-missing-secrets',
-      '--no-landing',
-    ]);
-    expect(code).toBe(0);
+  // There is deliberately no `--landing`/`--no-landing` flag: the landing page
+  // isn't a guided-flow decision (self-host is an app deployment, not a
+  // marketing site), it's just an ordinary env var an operator flips directly
+  // if they genuinely want it back — see the default-off assertion above.
+  test('re-enabling the landing page is a plain `env set`, no dedicated flag', async () => {
+    await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
     expect(sandbox.readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
+
+    const { code } = await sandbox.run(['env', 'set', 'KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false']);
+    expect(code).toBe(0);
+    expect(sandbox.readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
   });
 
   test('--enterprise-license sets ENTERPRISE_LICENSE_AVAILABLE=true', async () => {
@@ -79,7 +81,6 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
       '--yes',
       '--allow-missing-secrets',
       '--single-account',
-      '--no-landing',
       '--enterprise-license',
     ]);
     const env = sandbox.readEnv();

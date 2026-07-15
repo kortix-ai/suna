@@ -1,4 +1,3 @@
-import { config } from '../../config';
 import { managedGithubAppConfig } from '../../platform/services/managed-github-app';
 import {
   type GitHubAuthContext,
@@ -46,6 +45,17 @@ export function managedGithubInstallId(): string | null {
     process.env.MANAGED_GIT_GITHUB_INSTALL_ID?.trim() ||
     null
   );
+}
+
+/**
+ * The stored account type for the App-installation owner (install-callback
+ * records `account.type` straight off the installation payload — see
+ * platform/routes/github-app.ts). `undefined` for configs written before this
+ * field existed, or when running on env vars only; callers fall back to a
+ * live `isOrgAccount` lookup in that case (see `managedAdminAuth` below).
+ */
+export function managedGithubOwnerType(): 'User' | 'Organization' | undefined {
+  return managedGithubAppConfig().ownerType;
 }
 
 /**
@@ -103,16 +113,13 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
   if (!owner) throw new Error('Managed GitHub git not configured (MANAGED_GIT_GITHUB_OWNER)');
   const pat = managedGithubToken();
   if (pat) {
-    // owner may be a personal account (throwaway) → createRepo must hit
-    // /user/repos, not /orgs/{owner}/repos. Production managed repos always live
-    // under the configured org, so prod keeps the strict org-only path (no
-    // lookup); only local dev detects a personal owner (cached via isOrgAccount).
-    const ownerType =
-      config.INTERNAL_KORTIX_ENV === 'prod'
-        ? 'Organization'
-        : (await isOrgAccount(owner, { token: pat }))
-          ? 'Organization'
-          : 'User';
+    // owner may be a personal account (e.g. a throwaway bot user, not an org)
+    // → createRepo must hit /user/repos, not /orgs/{owner}/repos. Detected
+    // live every time (self-host operators can point MANAGED_GIT_GITHUB_OWNER
+    // at either kind of account; there is no "prod always means org"
+    // assumption that holds across deployments) — cached by isOrgAccount so
+    // this is a one-time lookup per owner login, not a lookup per request.
+    const ownerType = (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
     return { token: pat, source: 'pat', owner, ownerType };
   }
   const installId = managedGithubInstallId();
@@ -122,11 +129,19 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
     );
   }
   const token = await createInstallationToken(installId);
+  // Prefer the ownerType install-callback already resolved and stored from
+  // GitHub's own `account.type` (no extra API call). Configs written before
+  // that field existed (or set purely via env vars) fall back to a live
+  // lookup — same personal-vs-org detection as the PAT path above, using the
+  // installation token we already have in hand.
+  const ownerType =
+    managedGithubOwnerType() ??
+    ((await isOrgAccount(owner, { token: token.token })) ? 'Organization' : 'User');
   return {
     token: token.token,
     source: 'app_installation',
     owner,
-    ownerType: 'Organization',
+    ownerType,
     installationId: installId,
   };
 }

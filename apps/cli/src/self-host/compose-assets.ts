@@ -106,6 +106,17 @@ export interface RenderComposeOptions {
    * disabled — so an instance not using it never runs the container.
    */
   tunnelConfigured?: boolean;
+  /**
+   * Whether a STABLE named Cloudflare tunnel is configured (both
+   * CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_HOSTNAME set — see
+   * namedTunnelConfigured() in self-host/tunnel.ts). Only meaningful when
+   * tunnelConfigured is also true. Selects the cloudflared service's
+   * command/environment at COMPOSE-RENDER time (`tunnel run` + TUNNEL_TOKEN
+   * env var vs. the zero-config `tunnel --url` default already baked into
+   * kortix-compose.yml) — this can't be a runtime shell branch inside the
+   * container because the official cloudflared image ships no shell at all.
+   */
+  namedTunnelConfigured?: boolean;
 }
 
 /**
@@ -189,6 +200,22 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       '127.0.0.1:${POSTGRES_PORT}:5432',
       '127.0.0.1:${POOLER_PORT}:6543',
     ];
+    // supavisor's entrypoint (limits.sh) unconditionally runs `ulimit -n 100000`
+    // before starting. Containers with no explicit `ulimits:` inherit the
+    // HOST's default open-files limit (systemd DefaultLimitNOFILE, or
+    // /etc/security/limits.conf) rather than something generously high — on
+    // plenty of real VPS/EC2 images that default is well under 100000 (e.g.
+    // 65535), `ulimit -n 100000` then fails with EPERM, and (the script running
+    // under `set -e`) the container exits 1 and restart-loops forever, so
+    // Postgres access via the pooler never comes up. Pin it explicitly so this
+    // doesn't depend on host ulimit defaults. Matches the old enterprise
+    // appliance's docker-compose.enterprise.yml override for this service.
+    supavisor.ulimits = {
+      nofile: {
+        soft: 100000,
+        hard: 100000,
+      },
+    };
   }
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {
@@ -209,6 +236,15 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // cloudflared image.
   if (!options.tunnelConfigured) {
     delete services.cloudflared;
+  } else if (options.namedTunnelConfigured) {
+    // Stable named tunnel: authenticate with TUNNEL_TOKEN (cloudflared reads
+    // it natively — no CLI flag/shell needed) and run the tunnel bound to
+    // that token instead of minting a new zero-config quick tunnel.
+    const cloudflared = services.cloudflared;
+    if (cloudflared) {
+      cloudflared.command = ['tunnel', '--no-autoupdate', 'run'];
+      cloudflared.environment = { TUNNEL_TOKEN: '${CLOUDFLARE_TUNNEL_TOKEN}' };
+    }
   }
 
   // Prod (domain-configured) vs laptop replica/port topology. In prod mode
