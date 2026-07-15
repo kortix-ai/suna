@@ -7,7 +7,8 @@ name: Deploy Prod
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
-#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds).
+#      → :X.Y.Z + :latest + :stable (multi-arch manifest copy, zero rebuilds).
+#      :stable is the moving tag self-hosted installs auto-update to.
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
 #   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
@@ -162,10 +163,14 @@ jobs:
               echo "::error::$IMAGE: no staging/dev image is published for this release source."
               exit 1
             fi
-            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + $IMAGE:latest"
+            # :stable is the moving tag the self-host default channel tracks — a
+            # prod release IS the reviewed/released stable version, so repoint it
+            # here alongside :latest. Self-hosted boxes auto-update to it nightly.
+            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + :latest + :stable"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
+              --tag "$IMAGE:stable" \
               "$IMAGE:$SRC_TAG"
             echo "✓ $IMAGE:${VERSION} (from $SRC_TAG)"
           done
