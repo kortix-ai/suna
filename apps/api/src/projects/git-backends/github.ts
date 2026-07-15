@@ -1,3 +1,5 @@
+import { config } from '../../config';
+import { managedGithubAppConfig } from '../../platform/services/managed-github-app';
 import {
   type GitHubAuthContext,
   addCollaborator,
@@ -7,10 +9,8 @@ import {
   isGithubAppConfigured,
   isOrgAccount,
 } from '../github';
-import { config } from '../../config';
-import { managedGithubAppConfig } from '../../platform/services/managed-github-app';
+import { seedRepoViaGitPush } from './seed';
 import {
-  basicAuthHeader,
   type GitConnectionRef,
   type GitHostBackend,
   type GitScope,
@@ -19,8 +19,8 @@ import {
   type ProvisionedRepo,
   type SeedFile,
   type UpstreamGit,
+  basicAuthHeader,
 } from './types';
-import { seedRepoViaGitPush } from './seed';
 
 // DB-first, env-fallback — see projects/github.ts for the matching App
 // creds accessors. The in-app self-host setup flow (platform/routes/
@@ -57,7 +57,9 @@ export function managedGithubInstallId(): string | null {
  * sandbox only ever sees KORTIX_TOKEN via the proxy.
  */
 function managedGithubToken(): string | null {
-  return managedGithubAppConfig().pat?.trim() || process.env.MANAGED_GIT_GITHUB_TOKEN?.trim() || null;
+  return (
+    managedGithubAppConfig().pat?.trim() || process.env.MANAGED_GIT_GITHUB_TOKEN?.trim() || null
+  );
 }
 
 /** Embed an `x-access-token:<token>` basic credential into an https git URL. */
@@ -78,9 +80,14 @@ async function mintManagedWriteToken(ref: GitConnectionRef): Promise<string> {
   if (pat) return pat;
   const installId = ref.installationId ?? managedGithubInstallId();
   if (!installId) {
-    throw new Error('Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)');
+    throw new Error(
+      'Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)',
+    );
   }
-  const minted = await createInstallationToken(installId, ref.repoName ? [ref.repoName] : undefined);
+  const minted = await createInstallationToken(
+    installId,
+    ref.repoName ? [ref.repoName] : undefined,
+  );
   return minted.token;
 }
 
@@ -103,12 +110,16 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
     const ownerType =
       config.INTERNAL_KORTIX_ENV === 'prod'
         ? 'Organization'
-        : (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
+        : (await isOrgAccount(owner, { token: pat }))
+          ? 'Organization'
+          : 'User';
     return { token: pat, source: 'pat', owner, ownerType };
   }
   const installId = managedGithubInstallId();
   if (!installId) {
-    throw new Error('Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)');
+    throw new Error(
+      'Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)',
+    );
   }
   const token = await createInstallationToken(installId);
   return {
@@ -197,7 +208,11 @@ export const githubBackend: GitHostBackend = {
    * creator pull "their" repo into their own GitHub account (clone/work on
    * github.com directly). GitHub sends a pending invitation they accept.
    */
-  async inviteCollaborator(ref: GitConnectionRef, username: string, scope: GitScope): Promise<InviteResult> {
+  async inviteCollaborator(
+    ref: GitConnectionRef,
+    username: string,
+    scope: GitScope,
+  ): Promise<InviteResult> {
     if (!ref.managed) throw new Error('collaborator invites are only for managed repos');
     if (!ref.repoOwner || !ref.repoName) throw new Error('repo coordinates are required');
     const auth = await managedAdminAuth();

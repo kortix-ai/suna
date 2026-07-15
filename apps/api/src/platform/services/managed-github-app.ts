@@ -100,7 +100,10 @@ export async function refreshManagedGithubAppConfig(): Promise<void> {
 
 function ensureFresh(): void {
   if (cache && Date.now() - cache.at < TTL_MS) return;
-  if (!inflight) inflight = refreshManagedGithubAppConfig().finally(() => { inflight = null; });
+  if (!inflight)
+    inflight = refreshManagedGithubAppConfig().finally(() => {
+      inflight = null;
+    });
 }
 
 /** Sync accessor — the one every DB-first/env-fallback accessor in
@@ -144,7 +147,10 @@ export async function updateManagedGithubAppConfig(
   await db
     .insert(platformSettings)
     .values({ key: MANAGED_GITHUB_APP_KEY, value: next, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: next, updatedAt: new Date() } });
+    .onConflictDoUpdate({
+      target: platformSettings.key,
+      set: { value: next, updatedAt: new Date() },
+    });
 
   invalidateManagedGithubAppConfig();
   await refreshManagedGithubAppConfig();
@@ -168,7 +174,10 @@ export async function resetManagedGithubAppConfig(): Promise<void> {
   await db
     .insert(platformSettings)
     .values({ key: MANAGED_GITHUB_APP_KEY, value: {}, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: {}, updatedAt: new Date() } });
+    .onConflictDoUpdate({
+      target: platformSettings.key,
+      set: { value: {}, updatedAt: new Date() },
+    });
 
   invalidateManagedGithubAppConfig();
   await refreshManagedGithubAppConfig();

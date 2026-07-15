@@ -1,3 +1,4 @@
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 /**
  * In-app self-host GitHub App setup — the DB-backed replacement for the
  * `.env`-only managed GitHub App config (a web page can't write env vars or
@@ -26,12 +27,17 @@
  * Plus GET /status (admin-authed) for the setup UI to poll.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../../types';
-import { makeOpenApiApp, json, errors, auth } from '../../openapi';
+import { resolveBaseUrl } from '../../channels/slack-manifest';
+import { config } from '../../config';
 import { supabaseAuth } from '../../middleware/auth';
 import { requireAdmin } from '../../middleware/require-admin';
-import { config } from '../../config';
-import { resolveBaseUrl } from '../../channels/slack-manifest';
+import { auth, errors, json, makeOpenApiApp } from '../../openapi';
+import {
+  githubBackend,
+  managedGithubInstallId,
+  managedGithubOwner,
+  managedGithubToken,
+} from '../../projects/git-backends/github';
 import {
   buildGitHubAppInstallUrl,
   getGitHubAppInstallation,
@@ -40,19 +46,13 @@ import {
   signGitHubAppJwt,
   verifyGitHubAppInstallStatePayload,
 } from '../../projects/github';
-import {
-  githubBackend,
-  managedGithubInstallId,
-  managedGithubOwner,
-  managedGithubToken,
-} from '../../projects/git-backends/github';
+import type { AppEnv } from '../../types';
 import {
   managedGithubAppConfig,
   refreshManagedGithubAppConfig,
   resetManagedGithubAppConfig,
   updateManagedGithubAppConfig,
 } from '../services/managed-github-app';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const githubAppSetupRouter = makeOpenApiApp<AppEnv>();
 
@@ -127,7 +127,10 @@ export interface ManifestStartState {
 
 function manifestStateSecret(): string {
   const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!secret) throw new Error('SUPABASE_JWT_SECRET is not configured — cannot sign GitHub App manifest state');
+  if (!secret)
+    throw new Error(
+      'SUPABASE_JWT_SECRET is not configured — cannot sign GitHub App manifest state',
+    );
   return secret;
 }
 
@@ -164,7 +167,9 @@ export function verifyManifestStartState(
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as ManifestStartState;
+    const parsed = JSON.parse(
+      Buffer.from(body, 'base64url').toString('utf8'),
+    ) as ManifestStartState;
     if (typeof parsed.accountId !== 'string' || !parsed.accountId) return null;
     if (typeof parsed.exp !== 'number' || parsed.exp < nowMs) return null;
     return parsed;
@@ -191,14 +196,19 @@ export async function exchangeManifestCode(
   code: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ManifestConversionResult> {
-  const res = await fetchImpl(`https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`, {
-    method: 'POST',
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-api' },
-    signal: AbortSignal.timeout(15_000),
-  });
+  const res = await fetchImpl(
+    `https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`,
+    {
+      method: 'POST',
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-api' },
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`GitHub manifest conversion failed (${res.status}): ${detail || res.statusText}`);
+    throw new Error(
+      `GitHub manifest conversion failed (${res.status}): ${detail || res.statusText}`,
+    );
   }
   const body = (await res.json()) as Record<string, unknown>;
   return {
@@ -292,7 +302,10 @@ githubAppSetupRouter.openapi(
 
       return c.json({ github_create_url: githubCreateUrl, manifest, state });
     } catch (err) {
-      return c.json({ error: true, message: err instanceof Error ? err.message : String(err), status: 500 }, 500);
+      return c.json(
+        { error: true, message: err instanceof Error ? err.message : String(err), status: 500 },
+        500,
+      );
     }
   },
 );
@@ -311,7 +324,8 @@ githubAppSetupRouter.openapi(
     method: 'get',
     path: '/manifest-callback',
     tags: ['platform'],
-    summary: 'GitHub manifest-flow redirect target — exchanges the code, stores App creds, redirects to install',
+    summary:
+      'GitHub manifest-flow redirect target — exchanges the code, stores App creds, redirects to install',
     request: {
       query: z.object({
         code: z.string().optional(),
@@ -361,7 +375,10 @@ githubAppSetupRouter.openapi(
       }
       return c.redirect(installUrl, 302);
     } catch (err) {
-      console.error('[github-app] manifest-callback exchange failed', err instanceof Error ? err.message : err);
+      console.error(
+        '[github-app] manifest-callback exchange failed',
+        err instanceof Error ? err.message : err,
+      );
       return c.redirect(accountRedirect(accountId, 'error', 'exchange_failed'), 302);
     }
   },
@@ -384,7 +401,8 @@ githubAppSetupRouter.openapi(
     method: 'get',
     path: '/install-callback',
     tags: ['platform'],
-    summary: 'GitHub App install redirect target — resolves the installation owner, stores it, redirects to the frontend',
+    summary:
+      'GitHub App install redirect target — resolves the installation owner, stores it, redirects to the frontend',
     request: {
       query: z.object({
         installation_id: z.string().optional(),
@@ -422,7 +440,10 @@ githubAppSetupRouter.openapi(
       await updateManagedGithubAppConfig({ owner, installationId });
       return c.redirect(accountRedirect(accountId, 'connected'), 302);
     } catch (err) {
-      console.error('[github-app] install-callback resolve failed', err instanceof Error ? err.message : err);
+      console.error(
+        '[github-app] install-callback resolve failed',
+        err instanceof Error ? err.message : err,
+      );
       return c.redirect(accountRedirect(accountId, 'error', 'resolve_failed'), 302);
     }
   },
@@ -527,7 +548,9 @@ export async function verifyPastedGithubAppInstallation(
   try {
     jwt = signGitHubAppJwt(appId, privateKey);
   } catch {
-    throw new Error('Could not sign a JWT with that private key — check the PEM was pasted correctly');
+    throw new Error(
+      'Could not sign a JWT with that private key — check the PEM was pasted correctly',
+    );
   }
   const res = await fetchImpl(
     `https://api.github.com/app/installations/${encodeURIComponent(installationId)}`,
@@ -559,7 +582,7 @@ githubAppSetupRouter.openapi(
     method: 'post',
     path: '/app',
     tags: ['platform'],
-    summary: 'Configure managed-git by pasting an existing GitHub App\'s credentials + installation',
+    summary: "Configure managed-git by pasting an existing GitHub App's credentials + installation",
     ...auth,
     middleware: [supabaseAuth, requireAdmin] as const,
     request: {
@@ -586,12 +609,17 @@ githubAppSetupRouter.openapi(
     const body = await c.req.json().catch(() => ({}));
     const appId = typeof body?.app_id === 'string' ? body.app_id.trim() : '';
     const privateKey = typeof body?.private_key === 'string' ? body.private_key.trim() : '';
-    const installationId = typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
+    const installationId =
+      typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
     const slug = typeof body?.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
 
     if (!appId || !privateKey || !installationId) {
       return c.json(
-        { error: true, message: 'app_id, private_key and installation_id are required', status: 400 },
+        {
+          error: true,
+          message: 'app_id, private_key and installation_id are required',
+          status: 400,
+        },
         400,
       );
     }
@@ -601,7 +629,10 @@ githubAppSetupRouter.openapi(
       const verified = await verifyPastedGithubAppInstallation(appId, privateKey, installationId);
       owner = verified.owner;
     } catch (err) {
-      return c.json({ error: true, message: err instanceof Error ? err.message : String(err), status: 400 }, 400);
+      return c.json(
+        { error: true, message: err instanceof Error ? err.message : String(err), status: 400 },
+        400,
+      );
     }
 
     await updateManagedGithubAppConfig({
@@ -632,13 +663,16 @@ githubAppSetupRouter.openapi(
     method: 'post',
     path: '/pat',
     tags: ['platform'],
-    summary: 'Configure managed-git via a personal/fine-grained access token instead of a GitHub App',
+    summary:
+      'Configure managed-git via a personal/fine-grained access token instead of a GitHub App',
     ...auth,
     middleware: [supabaseAuth, requireAdmin] as const,
     request: {
       body: {
         content: {
-          'application/json': { schema: z.object({ token: z.string().min(1), owner: z.string().min(1) }) },
+          'application/json': {
+            schema: z.object({ token: z.string().min(1), owner: z.string().min(1) }),
+          },
         },
         required: true,
       },
@@ -732,7 +766,10 @@ githubAppSetupRouter.openapi(
       await resetManagedGithubAppConfig();
       return c.json({ ok: true as const });
     } catch (err) {
-      return c.json({ error: true, message: err instanceof Error ? err.message : String(err), status: 500 }, 500);
+      return c.json(
+        { error: true, message: err instanceof Error ? err.message : String(err), status: 500 },
+        500,
+      );
     }
   },
 );

@@ -81,7 +81,7 @@ describe('verifyPastedGithubAppInstallation', () => {
 
   test('rejects a malformed private key before ever calling GitHub', async () => {
     let called = false;
-    const fetchImpl = (async () => {
+    const fetchImpl = (async (_url: string | URL, _init?: RequestInit) => {
       called = true;
       return new Response('{}', { status: 200 });
     }) as typeof fetch;
@@ -94,7 +94,8 @@ describe('verifyPastedGithubAppInstallation', () => {
 
   test('rejects with a clear message on a 404 (bad app id / installation id)', async () => {
     const pem = keyPair();
-    const fetchImpl = (async () => new Response('Not Found', { status: 404, statusText: 'Not Found' })) as typeof fetch;
+    const fetchImpl = (async (_url: string | URL, _init?: RequestInit) =>
+      new Response('Not Found', { status: 404, statusText: 'Not Found' })) as typeof fetch;
 
     await expect(verifyPastedGithubAppInstallation('12345', pem, '987', fetchImpl)).rejects.toThrow(
       /App ID, private key, and installation id/,
@@ -103,7 +104,8 @@ describe('verifyPastedGithubAppInstallation', () => {
 
   test('rejects when GitHub returns no account login to resolve an owner from', async () => {
     const pem = keyPair();
-    const fetchImpl = (async () => new Response(JSON.stringify({ id: 987 }), { status: 200 })) as typeof fetch;
+    const fetchImpl = (async (_url: string | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ id: 987 }), { status: 200 })) as typeof fetch;
 
     await expect(verifyPastedGithubAppInstallation('12345', pem, '987', fetchImpl)).rejects.toThrow(
       /resolve the installation owner/,
