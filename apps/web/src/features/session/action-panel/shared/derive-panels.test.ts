@@ -642,3 +642,59 @@ describe('deriveOutputs — a show whose items arrive as a JSON STRING', () => {
     expect(out).toEqual([]);
   });
 });
+
+function partOf(tool: string, callID: string, input: Record<string, unknown>): ToolPart {
+  return { type: 'tool', tool, callID, state: { status: 'completed', input } } as unknown as ToolPart;
+}
+
+describe('deriveOutputs — titles (W3)', () => {
+  it('a shown file keeps its human title and description', () => {
+    const parts = [
+      partOf('show', 'c1', {
+        path: '/workspace/quarterly_report_v2.pdf',
+        title: 'Quarterly report',
+        description: 'Q2 numbers',
+      }),
+    ];
+    const [item] = deriveOutputs(parts);
+    expect(item.name).toBe('quarterly_report_v2.pdf');
+    expect(item.title).toBe('Quarterly report');
+    expect(item.description).toBe('Q2 numbers');
+  });
+});
+
+describe('deriveOutputs — last-write-wins + normalized keys (W11)', () => {
+  it('re-writing the same path replaces the row and keeps ONE item, keyed to the later call', () => {
+    const parts = [
+      partOf('write', 'c1', { filePath: 'report.md' }),
+      partOf('write', 'c2', { filePath: 'report.md' }),
+    ];
+    const items = deriveOutputs(parts);
+    expect(items).toHaveLength(1);
+    expect(items[0].callID).toBe('c2');
+  });
+
+  it('an absolute write and a workspace-relative re-write of the same file collapse to one row', () => {
+    const parts = [
+      partOf('write', 'c1', { filePath: '/workspace/report.md' }),
+      partOf('write', 'c2', { filePath: 'report.md' }),
+    ];
+    expect(deriveOutputs(parts)).toHaveLength(1);
+  });
+});
+
+describe('deriveOutputs — freshness (W11)', () => {
+  it('latest-run items are new; re-produced paths are updated; older items are unmarked', () => {
+    const parts = [
+      partOf('write', 'old1', { filePath: 'a.md' }),
+      partOf('write', 'old2', { filePath: 'b.md' }),
+      partOf('write', 'new1', { filePath: 'b.md' }),
+      partOf('write', 'new2', { filePath: 'c.md' }),
+    ];
+    const items = deriveOutputs(parts, { latestRun: new Set(['new1', 'new2']) });
+    const byName = Object.fromEntries(items.map((i) => [i.name, i.fresh]));
+    expect(byName['a.md']).toBeUndefined();
+    expect(byName['b.md']).toBe('updated');
+    expect(byName['c.md']).toBe('new');
+  });
+});

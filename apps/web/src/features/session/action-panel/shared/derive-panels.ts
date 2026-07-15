@@ -14,6 +14,7 @@
  */
 
 import type { ToolPart } from '@/ui';
+import { toWorkspaceRelative } from '@/features/files/api/opencode-files';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
@@ -25,6 +26,11 @@ import { createArtifactKind, familyForTool, humanizeToolName } from './narration
 interface OutputItemBase {
   callID: string;
   name: string;
+  /** Human title from the show payload (W3). Display rule: `title ?? name`. */
+  title?: string;
+  description?: string;
+  /** Set only for latest-run items: first appearance vs a re-produced path (W11). */
+  fresh?: 'new' | 'updated';
 }
 
 type ArtifactOutputItem = OutputItemBase & {
@@ -70,6 +76,13 @@ function basename(p: string): string {
   const cleaned = p.replace(/\\/g, '/').replace(/\/+$/, '');
   const idx = cleaned.lastIndexOf('/');
   return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
+}
+
+/** One dedup key per real file: slashes normalized, workspace-relative, so an
+ * absolute write and a relative patch of the same file can never be two rows. */
+function outputPathKey(path: string): string {
+  const cleaned = path.replace(/\\/g, '/').replace(/^\.\//, '');
+  return toWorkspaceRelative(cleaned);
 }
 
 function truncate(s: string, max = 60): string {
@@ -168,9 +181,34 @@ function statusOf(part: ToolPart): string | undefined {
   return (part.state as { status?: string } | undefined)?.status;
 }
 
-export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
+export function deriveOutputs(
+  parts: ToolPart[],
+  opts?: { latestRun?: Set<string> },
+): OutputItem[] {
   const out: OutputItem[] = [];
-  const seen = new Set<string>();
+  // key → index into `out`. Later occurrences of a key REPLACE the row in
+  // place (last-write-wins): a file rewritten in run 5 is the run-5 file, and
+  // showing its run-1 identity was a lie about what the user would open.
+  const seen = new Map<string, number>();
+
+  const keyOf = (item: OutputItem): string =>
+    item.url ?? (item.path ? outputPathKey(item.path) : item.name);
+
+  const push = (item: OutputItem) => {
+    const key = keyOf(item);
+    const existing = seen.get(key);
+    const isLatest = opts?.latestRun?.has(item.callID) ?? false;
+    if (existing === undefined) {
+      if (isLatest) item.fresh = 'new';
+      seen.set(key, out.length);
+      out.push(item);
+      return;
+    }
+    // Re-produced. The later item wins; if the re-production happened in the
+    // latest run it reads as an update, otherwise it stays unmarked history.
+    if (isLatest) item.fresh = 'updated';
+    out[existing] = item;
+  };
 
   for (const part of parts) {
     // A call that errored produced nothing — surfacing it here would
@@ -188,12 +226,7 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
       // apply_patch has no name in its input at all — its per-file paths
       // live only in output metadata, and one call can produce several files.
       if (normalizeName(part.tool) === 'apply_patch') {
-        for (const item of applyPatchOutputs(part)) {
-          const key = item.path ?? item.name;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push(item);
-        }
+        for (const item of applyPatchOutputs(part)) push(item);
         continue;
       }
 
@@ -201,10 +234,7 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
       const path = filePathOf(part);
       const name = getToolPrimaryArg(part);
       if (!name) continue;
-      const key = path ?? name;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ callID: part.callID, name, path, kind: 'file' });
+      push({ callID: part.callID, name, path, kind: 'file' });
       continue;
     }
 
@@ -222,12 +252,7 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
       // path, only `items[]`.
       const shown = showOutputsOf(part);
       if (shown.length > 0) {
-        for (const item of shown) {
-          const key = item.url ?? item.path ?? item.name;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          out.push(item);
-        }
+        for (const item of shown) push(item);
         continue;
       }
 
@@ -237,7 +262,7 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
       const kind = createArtifactKind(part);
       if (!kind) continue;
       const { name, path } = createArtifactName(part);
-      out.push({ callID: part.callID, name, path, kind });
+      push({ callID: part.callID, name, path, kind });
     }
   }
 
@@ -254,6 +279,7 @@ interface ShowPayload {
   path?: unknown;
   url?: unknown;
   title?: unknown;
+  description?: unknown;
 }
 
 /** A single shown thing → the row it becomes, or null if there's nothing to open. */
@@ -268,6 +294,11 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
   if (!path) return null;
 
   const name = basename(path) || path;
+  const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
+  const description =
+    typeof payload.description === 'string' && payload.description.trim()
+      ? payload.description.trim()
+      : undefined;
   // The kind drives the row's glyph AND which renderer opens: a sheet must open
   // as a grid, not as a wall of text.
   const kind: OutputItem['kind'] = IMAGE_EXT.test(name)
@@ -278,7 +309,7 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
         ? 'presentation'
         : 'file';
 
-  return { callID, name, path, kind };
+  return { callID, name, title, description, path, kind };
 }
 
 /**
