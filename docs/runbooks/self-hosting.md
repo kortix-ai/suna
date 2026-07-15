@@ -393,6 +393,55 @@ kortix self-host env set INTEGRATION_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID
 `kortix self-host env ls` lists every key (secrets masked); `kortix self-host
 doctor` validates the rendered Compose config without applying anything.
 
+## SAML SSO + SCIM (Enterprise)
+
+GoTrue SAML is enabled on every self-host instance by default: `init`
+generates a per-instance RSA SAML signing key (`SAML_PRIVATE_KEY`) the same
+way it generates `SUPABASE_JWT_SECRET`/`POSTGRES_PASSWORD`, and
+`GOTRUE_SAML_ENABLED=true` is wired straight through to the `supabase-auth`
+service. That only turns on the *capability* — no IdP is registered and the
+enterprise IAM surface (SSO/SCIM/RBAC/audit) stays hidden behind a 402 until
+you unlock the entitlement:
+
+```sh
+kortix self-host env set ENTERPRISE_LICENSE_AVAILABLE=true
+# or pass --enterprise-license to `init`/`configure`
+kortix self-host start
+```
+
+With that flag on, register an IdP exactly like on Kortix Cloud — see
+`docs/ENTRA_SSO_SCIM_SETUP.md` for the full walkthrough (Entra/Okta/Google/
+custom SAML, group→role mapping, SCIM). Two paths:
+
+- **Self-serve (recommended)**: sign in as an account owner/admin → Account →
+  Settings → Identity → SAML SSO → Configure → Import IdP metadata. Kortix
+  registers the IdP with your self-hosted Supabase Auth (`/auth/v1/admin/sso/
+  providers`) server-side — you never touch Supabase directly. Everything
+  (Entity ID, ACS URL, metadata endpoint) is derived from your own
+  `KORTIX_DOMAIN`/tunnel URL, never a Kortix Cloud URL.
+- **Advanced/operator path**: run `supabase sso add --type saml --metadata-url
+  "<idp metadata url>" --domains your-company.com` yourself against your
+  self-hosted Supabase project, then paste the returned provider UUID into the
+  same dashboard dialog (`PUT /v1/accounts/{accountId}/iam/sso/provider`).
+
+Verify the plumbing independent of any IdP with:
+
+```sh
+curl -s https://<your-domain>/auth/v1/settings -H "apikey: $(kortix self-host env ls --json --show | jq -r '.categories[] | select(.category=="database") | .secrets[] | select(.key=="SUPABASE_ANON_KEY") | .value')" | jq .saml_enabled
+# → true
+```
+
+Notes:
+- **Never rotate `SAML_PRIVATE_KEY`** once an IdP is registered — it's the SP's
+  signing identity; regenerating it breaks every already-trusted IdP
+  relationship until you re-register. `kortix self-host env rotate` refuses it
+  for this reason.
+- First-login auto-provisioning ("does every SSO sign-in land in the right
+  account automatically?") is governed by the account's `auto_create_members`
+  setting and its SSO group→role mappings — see `docs/ENTRA_SSO_SCIM_SETUP.md`
+  Part A/C; it is not a self-host-specific concern once the plumbing above is
+  in place.
+
 ## Backups
 
 There is no separate backup system — it's plain Docker volumes and bind
