@@ -1673,7 +1673,18 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   // live via `kortix skills get`, so they're not browse-and-install cards. They
   // stay installable by id (getCatalogEntry, ungated).
   if (it.managedBy === "kortix") return false;
-  return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
+  if (MARKETPLACE_VISIBLE_TYPES.has(it.type)) return !it.hidden;
+  // Use-case templates and the agents they install are surfaced (browse + show +
+  // fetch, so the install-session agent can read + place them) only while the
+  // feature is on — dark in prod. Read the flag from the environment directly (not
+  // the validated `config`) so this module stays importable in unit tests.
+  if (
+    (it.type === "registry:template" || it.type === "registry:agent") &&
+    process.env.KORTIX_TEMPLATES_ENABLED === "true"
+  ) {
+    return !it.hidden;
+  }
+  return false;
 }
 
 

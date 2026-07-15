@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import {
   clampMarketplaceItemsLimit,
   pageCatalogItems,
@@ -34,6 +34,33 @@ function synthetic(count: number, overrides: (i: number) => Partial<CatalogItem>
     item({ id: `kortix:item-${i}`, name: `item-${i}`, ...overrides(i) }),
   );
 }
+
+describe('template + agent browse visibility (flag-gated)', () => {
+  const prev = process.env.KORTIX_TEMPLATES_ENABLED;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.KORTIX_TEMPLATES_ENABLED;
+    else process.env.KORTIX_TEMPLATES_ENABLED = prev;
+  });
+
+  const mix = () => [
+    item({ type: 'registry:template', name: 't', id: 'kortix-starter:t' }),
+    item({ type: 'registry:agent', name: 'a', id: 'kortix-starter:a' }),
+    item({ type: 'registry:skill', name: 's', id: 'kortix-starter:s' }),
+  ];
+
+  test('hides templates + agents from browse when the flag is off', () => {
+    process.env.KORTIX_TEMPLATES_ENABLED = 'false';
+    expect(pageCatalogItems(mix(), {}).items.map((i) => i.type)).toEqual(['registry:skill']);
+  });
+
+  test('surfaces templates + agents when the flag is on (so the CLI can find + install them)', () => {
+    process.env.KORTIX_TEMPLATES_ENABLED = 'true';
+    const types = pageCatalogItems(mix(), {})
+      .items.map((i) => i.type)
+      .sort();
+    expect(types).toEqual(['registry:agent', 'registry:skill', 'registry:template']);
+  });
+});
 
 describe('selectTemplateItems', () => {
   test('keeps registry:template items only, and drops hidden ones', () => {
