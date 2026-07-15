@@ -12,6 +12,15 @@ import { type ReviewItem, type ReviewRisk, isSafeRisk } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
 export const EXEC_ID_PREFIX = 'exec:';
+export const PERM_ID_PREFIX = 'perm:';
+
+/** Strip the `perm:` namespace prefix, returning the underlying
+ *  `<sessionId>:<requestID>` — or `null` if `id` isn't a sandbox-permission
+ *  approval id. A permission approves through the native `/act` endpoint (which
+ *  replies to the sandbox), NOT the executor `resolveApproval` flow. */
+export function permReviewId(id: string): string | null {
+  return id.startsWith(PERM_ID_PREFIX) ? id.slice(PERM_ID_PREFIX.length) : null;
+}
 
 /** Strip the `exec:` namespace prefix, returning the underlying
  *  `executorExecutions.executionId` that `resolveApproval` expects — or
