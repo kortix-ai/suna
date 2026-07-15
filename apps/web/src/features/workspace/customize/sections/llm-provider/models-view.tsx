@@ -10,7 +10,7 @@ import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 import { invalidateComposerCapabilityQueries, useModelsPage } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plug, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ConnectModelModal } from './connect-model-modal';
 import { ConnectionRow } from './connection-row';
@@ -20,17 +20,48 @@ import { RuntimeRow } from './runtime-row';
 type ConnectState = { open: boolean; harnessFilter: HarnessId | null; initialKind: HarnessAuthKind | null };
 const CONNECT_CLOSED: ConnectState = { open: false, harnessFilter: null, initialKind: null };
 
+/** The flagship connect method per harness — "Connect Claude Code" lands the
+ *  user directly in this form (skipping the method list) as long as it isn't
+ *  connected yet. Once it is, the generic method list takes over so "connect
+ *  another service" isn't hijacked. */
+const HARNESS_SUBSCRIPTION: Partial<Record<HarnessId, HarnessAuthKind>> = {
+  claude: 'claude_subscription',
+  codex: 'codex_subscription',
+};
+
 export function ModelsView({
   projectId,
   canWrite = false,
+  connectRequest = null,
 }: {
   projectId: string;
   canWrite?: boolean;
+  /** Deep link: open the Connect modal directly on this method's form (used
+   *  by composer "Connect Claude Code"-style CTAs). The nonce distinguishes
+   *  repeat requests while the view stays mounted. */
+  connectRequest?: { kind: HarnessAuthKind; nonce: number } | null;
 }) {
   const queryClient = useQueryClient();
   const state = useModelsPage(projectId, canWrite);
   const [connectState, setConnectState] = useState<ConnectState>(CONNECT_CLOSED);
   const [manageConnectionId, setManageConnectionId] = useState<HarnessAuthKind | null>(null);
+
+  useEffect(() => {
+    if (!connectRequest || !canWrite) return;
+    setConnectState({ open: true, harnessFilter: null, initialKind: connectRequest.kind });
+  }, [connectRequest?.nonce, connectRequest?.kind, canWrite]);
+
+  const connectFromRuntime = (harness: HarnessId) => {
+    const subscription = HARNESS_SUBSCRIPTION[harness];
+    const subscriptionReady =
+      subscription != null &&
+      state.connections.some((c) => c.id === subscription && c.status === 'ready');
+    setConnectState({
+      open: true,
+      harnessFilter: harness,
+      initialKind: subscription && !subscriptionReady ? subscription : null,
+    });
+  };
 
   const manageConnection = state.connections.find((c) => c.id === manageConnectionId) ?? null;
   const initialLoad = state.isLoading && state.runtimes.length === 0 && state.connections.length === 0;
@@ -92,9 +123,7 @@ export function ModelsView({
                     runtime={runtime}
                     connections={state.connections}
                     canWrite={canWrite}
-                    onConnect={(harness) =>
-                      setConnectState({ open: true, harnessFilter: harness, initialKind: null })
-                    }
+                    onConnect={connectFromRuntime}
                     onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
                   />
                 ))}

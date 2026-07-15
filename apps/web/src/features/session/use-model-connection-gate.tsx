@@ -16,7 +16,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { listProjectSecrets } from '@kortix/sdk/projects-client';
+import { listProjectSecrets, type HarnessAuthKind } from '@kortix/sdk/projects-client';
 import type { FlatModel } from './session-chat-input';
 
 /**
@@ -50,6 +50,9 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
+  );
+  const [connectRequest, setConnectRequest] = useState<{ kind: HarnessAuthKind; nonce: number } | null>(
+    null,
   );
 
   // Same entitlement inputs ModelSelector uses: which BYOK providers are
@@ -91,15 +94,17 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     accountStatePending;
 
   const openConnectProvider = useCallback(
-    (tab: ProviderModalTab = 'providers') => {
+    (tab: ProviderModalTab = 'providers', opts?: { connectKind?: HarnessAuthKind }) => {
       if (projectId) {
         if (llmGatewayEnabled) {
           // Plus → "Add provider" (the core surface); the sliders / manage-models
           // button → "Models". Both land on LLM → Providers, never Files.
           openCustomize('llm-providers', {
             llmProvidersTab: tab === 'models' ? 'models' : 'catalog',
+            llmProvidersConnectKind: opts?.connectKind,
           });
         } else {
+          setConnectRequest(opts?.connectKind ? { kind: opts.connectKind, nonce: Date.now() } : null);
           setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
           setProjectModalOpen(true);
         }
@@ -124,6 +129,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
       onOpenChange={setProjectModalOpen}
       defaultTab={projectModalTab}
       canWrite={canWriteProviders}
+      connectRequest={connectRequest}
     />
   ) : null;
 

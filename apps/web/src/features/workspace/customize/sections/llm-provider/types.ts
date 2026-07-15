@@ -20,6 +20,9 @@ export interface ProjectProviderModalProps {
    * treated as read-only.
    */
   canWrite?: boolean;
+  /** Deep link: open the Connect modal directly on this method's form
+   *  ("Connect Claude Code" CTAs). Nonce distinguishes repeat requests. */
+  connectRequest?: { kind: import('@kortix/sdk/projects-client').HarnessAuthKind; nonce: number } | null;
 }
 
 export interface CustomFormState {

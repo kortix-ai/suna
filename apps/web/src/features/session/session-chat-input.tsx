@@ -1272,6 +1272,9 @@ export interface SessionChatInputProps {
    *  model for Local vLLM". Replaces the generic "No models available"
    *  copy for agents governed by composer-capabilities. */
   composerBlockingActionLabel?: string | null;
+  /** Deep-link kind for the blocking action (e.g. claude_subscription so
+   *  "Connect Claude Code" opens straight into that form). */
+  composerConnectKind?: import('@kortix/sdk/projects-client').HarnessAuthKind | null;
   /** True when this composer's send gate is governed by composer-capabilities
    *  (a real project + resolved agent) — makes `composerBlockingReason` the
    *  ONLY hard send gate and turns off the legacy catalog-entitlement gate
@@ -1373,6 +1376,7 @@ export function SessionChatInput({
   modelsLoading = false,
   composerBlockingReason = null,
   composerBlockingActionLabel = null,
+  composerConnectKind = null,
   composerCapabilityGoverned = false,
   autoFocus,
   placeholder = 'Ask anything...',
@@ -2626,6 +2630,7 @@ export function SessionChatInput({
         show={noModelsConnected || capabilityBlocked}
         reason={capabilityBlocked ? composerBlockingReason : null}
         action={capabilityBlocked ? composerBlockingActionLabel : null}
+        connectKind={capabilityBlocked ? composerConnectKind : null}
       />
     </div>
   );

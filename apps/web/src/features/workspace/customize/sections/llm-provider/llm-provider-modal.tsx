@@ -22,15 +22,16 @@ export function ProjectProviderModal({
   onOpenChange,
   asPanel = false,
   canWrite = false,
+  connectRequest = null,
 }: ProjectProviderModalProps) {
   if (asPanel) {
-    return <ModelsView projectId={projectId} canWrite={canWrite} />;
+    return <ModelsView projectId={projectId} canWrite={canWrite} connectRequest={connectRequest} />;
   }
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="flex h-[min(85vh,760px)] w-[calc(100vw-2rem)] max-w-[640px] flex-col gap-0 overflow-hidden p-0 lg:max-w-[640px]">
-        <ModelsView projectId={projectId} canWrite={canWrite} />
+        <ModelsView projectId={projectId} canWrite={canWrite} connectRequest={connectRequest} />
       </ModalContent>
     </Modal>
   );

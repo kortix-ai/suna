@@ -20,7 +20,10 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import {
+  ProjectProviderModal,
+  type ProjectProviderModalProps,
+} from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
@@ -58,6 +61,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
   const section = useCustomizeStore((s) => s.section);
   const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
+  const llmProvidersConnect = useCustomizeStore((s) => s.llmProvidersConnect);
   const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
 
   // The project default is the single model authority for this project. Account
@@ -133,6 +137,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           onOpenChange={() => {}}
           defaultTab={llmProvidersTab}
           canWrite={canWrite}
+          connectRequest={llmProvidersConnect as ProjectProviderModalProps['connectRequest']}
         />
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">

@@ -24,9 +24,20 @@ export type LlmProvidersTab = 'catalog' | 'connected' | 'models';
  *  "People" is the primary surface, so it's the default. */
 export type MembersTab = 'people' | 'invite';
 
+/** One-shot deep link into the Models Connect flow: opens the Connect modal
+ *  directly on this method's form ("Connect Claude Code" → the Claude
+ *  subscription form). The nonce makes each request distinct so the panel
+ *  reacts even when it is already mounted. */
+export interface LlmProvidersConnectRequest {
+  kind: string;
+  nonce: number;
+}
+
 interface CustomizeOptions {
   /** When jumping to `llm-providers`, which Providers sub-tab to open. */
   llmProvidersTab?: LlmProvidersTab;
+  /** When jumping to `llm-providers`, open the Connect modal on this method. */
+  llmProvidersConnectKind?: string;
   /** When jumping to `members`, which sub-tab to open (e.g. straight to Invite). */
   membersTab?: MembersTab;
 }
@@ -39,6 +50,8 @@ interface CustomizeState {
   /** Which Providers sub-tab the LLM panel should land on. Reset to "catalog"
    *  (Add provider) on every open unless a trigger explicitly asks otherwise. */
   llmProvidersTab: LlmProvidersTab;
+  /** Pending Connect-modal deep link, cleared on every open without one. */
+  llmProvidersConnect: LlmProvidersConnectRequest | null;
   /** Which sub-tab the Members section should land on. Reset to "people" on
    *  every open unless a trigger explicitly asks otherwise (e.g. Invite). */
   membersTab: MembersTab;
@@ -53,12 +66,16 @@ export const useCustomizeStore = create<CustomizeState>((set) => ({
   open: false,
   section: 'agents',
   llmProvidersTab: 'catalog',
+  llmProvidersConnect: null,
   membersTab: 'people',
   openCustomize: (section, opts) =>
     set((s) => ({
       open: true,
       section: section ?? s.section,
       llmProvidersTab: opts?.llmProvidersTab ?? 'catalog',
+      llmProvidersConnect: opts?.llmProvidersConnectKind
+        ? { kind: opts.llmProvidersConnectKind, nonce: Date.now() }
+        : null,
       membersTab: opts?.membersTab ?? 'people',
     })),
   setSection: (section) => set({ section }),

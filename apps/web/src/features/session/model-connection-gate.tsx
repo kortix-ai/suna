@@ -74,6 +74,7 @@ export function ModelConnectionBar({
   show,
   reason,
   action,
+  connectKind,
 }: {
   show: boolean;
   reason?: string | null;
@@ -81,6 +82,9 @@ export function ModelConnectionBar({
    *  Code"), see `deriveComposerBlockingAction`. Replaces the generic
    *  Upgrade + Connect model pair with the precise next step. */
   action?: string | null;
+  /** Deep link the action straight into that method's connect form (e.g.
+   *  claude_subscription for "Connect Claude Code") instead of the list. */
+  connectKind?: import('@kortix/sdk/projects-client').HarnessAuthKind | null;
 }) {
   const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
   const reduceMotion = useReducedMotion();
@@ -123,7 +127,9 @@ export function ModelConnectionBar({
                   {action ? (
                     <button
                       type="button"
-                      onClick={() => openConnectProvider('providers')}
+                      onClick={() =>
+                        openConnectProvider('providers', connectKind ? { connectKind } : undefined)
+                      }
                       className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
                     >
                       {action}

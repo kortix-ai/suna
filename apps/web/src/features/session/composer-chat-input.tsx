@@ -289,6 +289,16 @@ export function ComposerChatInput({
         harnessLabel,
         connectionLabel,
       });
+  // "Connect Claude Code"/"Connect Codex" deep-links straight into that
+  // harness's subscription form — the flagship connect method.
+  const composerConnectKind =
+    !live && capability.data?.auth.ready === false
+      ? activeHarness === 'claude'
+        ? ('claude_subscription' as const)
+        : activeHarness === 'codex'
+          ? ('codex_subscription' as const)
+          : null
+      : null;
   // Matches `useComposerCapabilities`'s own `enabled` condition — the query
   // only ever resolves real data for a real project + resolved agent, so that
   // is exactly when its blocking reason should be trusted as a hard gate.
@@ -350,6 +360,7 @@ export function ComposerChatInput({
       modelsLoading={capability.isLoading || providersLoading}
       composerBlockingReason={composerBlockingReason}
       composerBlockingActionLabel={composerBlockingActionLabel}
+      composerConnectKind={composerConnectKind}
       composerCapabilityGoverned={composerCapabilityGoverned}
       // Live sessions don't expose a local "thinking effort" toggle — any
       // genuine per-turn reasoning/effort ACP config option surfaces as its
