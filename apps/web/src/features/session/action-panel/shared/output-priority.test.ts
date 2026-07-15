@@ -100,4 +100,30 @@ describe('selectPrimaryDeliverable (W2)', () => {
     const noPath = { callID: 'x', name: 'Image', kind: 'image' as const };
     expect(selectPrimaryDeliverable([], [noPath])).toBeNull();
   });
+
+  // ─── Freshness outranks rank: the run that just finished owns the payoff.
+  // A stale rank-0 report.pdf from run 1 must never steal the auto-open from
+  // the rank-3 notes.docx the run that just ended actually produced. ──
+
+  test('a fresh low-rank file beats a stale top-rank file', () => {
+    const staleTop = { ...pdf, fresh: undefined };
+    const freshDocx = {
+      callID: 'd',
+      name: 'notes.docx',
+      kind: 'file' as const,
+      path: 'notes.docx',
+      fresh: 'new' as const,
+    };
+    expect(selectPrimaryDeliverable([], [staleTop, freshDocx])).toBe(freshDocx);
+  });
+
+  test('a fresh app beats a fresh higher-rank file', () => {
+    const freshApp = { ...app, fresh: 'new' as const };
+    const freshPdf = { ...pdf, fresh: 'new' as const };
+    expect(selectPrimaryDeliverable([freshApp], [freshPdf])).toBe(freshApp);
+  });
+
+  test('all-stale input still picks by rank', () => {
+    expect(selectPrimaryDeliverable([], [css, pdf])).toBe(pdf);
+  });
 });

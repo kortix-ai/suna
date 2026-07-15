@@ -73,16 +73,23 @@ export function sortOutputs(outputs: OutputItem[]): OutputItem[] {
 
 /**
  * THE deliverable — the one thing worth presenting unprompted when a run
- * finishes (W2). A live app beats every file: it's the thing the user asked
- * for by name. Files fall back to the same order the Outputs card shows.
- * Null when nothing is actually openable — auto-presenting a dead row would
- * open a detail that can't render anything.
+ * finishes (W2). The run that just finished owns the payoff: a fresh
+ * deliverable always beats a higher-ranked stale one, or finishing a quick
+ * .docx would auto-open last week's report.pdf. Within each freshness group,
+ * a live app beats every file (it's the thing the user asked for by name) and
+ * files fall back to the same order the Outputs card shows. Stale-only input
+ * still returns something — the chip-consume path may run after freshness
+ * context is gone. Null when nothing is actually openable — auto-presenting a
+ * dead row would open a detail that can't render anything.
  */
 export function selectPrimaryDeliverable(
   apps: OutputItem[],
   files: OutputItem[],
 ): OutputItem | null {
-  const app = apps.find((a) => a.url);
-  if (app) return app;
-  return sortOutputs(files).find((f) => f.path) ?? null;
+  const pick = (as: OutputItem[], fs: OutputItem[]): OutputItem | null =>
+    as.find((a) => a.url) ?? sortOutputs(fs).find((f) => f.path) ?? null;
+  return (
+    pick(apps.filter((a) => a.fresh), files.filter((f) => f.fresh)) ??
+    pick(apps.filter((a) => !a.fresh), files.filter((f) => !f.fresh))
+  );
 }
