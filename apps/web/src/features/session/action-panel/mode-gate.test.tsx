@@ -1,10 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { PanelMode } from '@/stores/user-preferences-store';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
-import { ActionPanel } from './index';
+import { ActionPanel, shouldDiscardPendingPrimaryOpen } from './index';
 
 /**
  * Panel-mode regression coverage.
@@ -93,5 +94,34 @@ describe('panel mode gate', () => {
     );
     expect(html).not.toContain('Outputs');
     expect(html).not.toContain('Context');
+  });
+});
+
+// ─── IMPORTANT 7 — a chip's pending "open with primary" request left
+// standing while the user is in Advanced mode must not survive a later
+// switch back to Easy mode and auto-open a deliverable out of nowhere.
+// `ActionPanel`'s effect can't be exercised under `renderToStaticMarkup`
+// (SSR never runs effects — see the file header), so this covers the
+// extracted pure predicate directly, plus the store mechanic it drives. ──
+describe('shouldDiscardPendingPrimaryOpen (W7)', () => {
+  test('discards only in Advanced mode, and only for the matching session', () => {
+    expect(shouldDiscardPendingPrimaryOpen('advanced', 's1', 's1')).toBe(true);
+    expect(shouldDiscardPendingPrimaryOpen('easy', 's1', 's1')).toBe(false);
+    expect(shouldDiscardPendingPrimaryOpen('advanced', 's1', 's2')).toBe(false);
+    expect(shouldDiscardPendingPrimaryOpen('advanced', null, 's1')).toBe(false);
+  });
+
+  test('end to end: Advanced mode consumes this session\'s pending request via the store', () => {
+    useKortixComputerStore.getState().reset();
+    useKortixComputerStore.getState().requestPrimaryOpen('s1');
+    expect(
+      shouldDiscardPendingPrimaryOpen(
+        'advanced',
+        useKortixComputerStore.getState().pendingPrimaryOpenSessionId,
+        's1',
+      ),
+    ).toBe(true);
+    expect(useKortixComputerStore.getState().consumePrimaryOpen('s1')).toBe(true);
+    expect(useKortixComputerStore.getState().pendingPrimaryOpenSessionId).toBeNull();
   });
 });
