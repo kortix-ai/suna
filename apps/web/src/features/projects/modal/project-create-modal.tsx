@@ -70,6 +70,7 @@ import {
   type KortixProject,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
@@ -297,7 +298,26 @@ export const ProjectCreateModal = ({
         }
       }
       if (isManagedGitUnavailableError(error)) {
-        errorToast("Managed git isn't set up on this server — ask your admin to configure GitHub.");
+        const gitSettingsAccountId =
+          effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+        errorToast("Managed git isn't set up on this server", {
+          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          ...(gitSettingsAccountId
+            ? {
+                button: (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      resetAndClose();
+                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
+                    }}
+                  >
+                    Open Git settings
+                  </Button>
+                ),
+              }
+            : {}),
+        });
         return;
       }
       errorToast(error.message || 'Failed to create project');
