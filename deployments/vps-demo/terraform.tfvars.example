@@ -1,11 +1,11 @@
 # The live vps-demo deployment uses the defaults baked into variables.tf
-# (domain, zone_id, admin_email, selfhost-rc tag, dev CLI channel, daily
-# backups retaining 10) — this file exists for parity with the other
-# terraform roots and as a template if this ever needs re-applying from a
-# clean checkout. No secrets here: DAYTONA_API_KEY etc. are set post-apply via
-# `kortix self-host secrets set` over SSM, never as Terraform inputs.
+# (domain, admin_email, selfhost-rc tag, dev CLI channel, daily backups
+# retaining 10, manual Cloudflare DNS — no zone_id) — this file exists for
+# parity with the other terraform roots and as a template if this ever needs
+# re-applying from a clean checkout. No secrets here: DAYTONA_API_KEY etc. are
+# set post-apply via `kortix self-host secrets set` over SSM, never as
+# Terraform inputs.
 
-aws_region      = "us-east-1"
-domain          = "vps-demo.kortix.com"
-route53_zone_id = "Z07380351PAIRZS9726W1"
-admin_email     = "marko@kortix.ai,marko@kortix.com"
+aws_region  = "us-east-1"
+domain      = "ec2-vps-demo.kortix.cloud"
+admin_email = "marko@kortix.ai,marko@kortix.com"

@@ -1,8 +1,15 @@
-# deployments/vps-demo — the live vps-demo.kortix.com demo box, provisioned
-# by infra/terraform/modules/selfhost-ec2. Replaces the retired
+# deployments/vps-demo — the live ec2-vps-demo.kortix.cloud demo box,
+# provisioned by infra/terraform/modules/selfhost-ec2. Replaces the retired
 # deployments/vpc-demo (vpc-demo.kortix.com) — full teardown + fresh
 # from-scratch deploy under the new name, see git log for the migration
-# notes.
+# notes. Originally deployed as vps-demo.kortix.com behind a Route53-delegated
+# subdomain zone; renamed 2026-07-16 to ec2-vps-demo.kortix.cloud with plain
+# unproxied A records in the Cloudflare kortix.cloud zone instead (manual-DNS
+# mode — no zone_id), and the old Route53 zone + kortix.com NS delegation were
+# deleted. The rename was applied on the box via
+# `kortix self-host env set KORTIX_DOMAIN=... KORTIX_API_DOMAIN=...
+# KORTIX_ACME_EMAIL=...` + `start` over SSM — Terraform never redeploys the
+# app.
 #
 # State is LOCAL (backend.tf) — this is a single demo box, not a shared
 # environment; state lives at deployments/vps-demo/terraform.tfstate on
@@ -34,7 +41,6 @@ module "vps_demo" {
 
   name        = "vps-demo-selfhost"
   domain      = var.domain
-  zone_id     = var.route53_zone_id
   admin_email = var.admin_email
 
   instance_type = var.instance_type

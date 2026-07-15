@@ -4,14 +4,9 @@ variable "aws_region" {
 }
 
 variable "domain" {
-  type    = string
-  default = "vps-demo.kortix.com"
-}
-
-variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for vps-demo.kortix.com (a delegated subdomain zone — kortix.com itself is Cloudflare-authoritative, so this subdomain is NS-delegated from the Cloudflare kortix.com zone to this Route53 zone, same pattern the retired vpc-demo.kortix.com used)."
+  description = "DNS is manual-mode (module zone_id left empty): the ec2-vps-demo / api.ec2-vps-demo A records are plain unproxied records in the Cloudflare kortix.cloud zone pointing at the module's Elastic IP output — no Route53 zone, no NS delegation (the original vps-demo.kortix.com delegated-zone setup was retired 2026-07-16)."
   type        = string
-  default     = "Z07380351PAIRZS9726W1"
+  default     = "ec2-vps-demo.kortix.cloud"
 }
 
 variable "admin_email" {
