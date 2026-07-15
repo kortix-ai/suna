@@ -1,18 +1,26 @@
 'use client';
 
 /**
- * `ProgressCard` — how far along the agent is, and nothing else.
+ * `ProgressCard` — the latest run's live story, not the model's checklist.
  *
- * It used to be a transcript of tool calls, rendered as a stepper: "Recalled
- * what you told it before", "Searched and read 6 sources", "Ran a command". That
- * was the wrong genre. It restated the chat in worse words, it grew without
- * bound (a long run made hundreds of rows to scroll), and none of it answered
- * the only question the user has — *how far along is this?* An audit trail is
- * what Advanced mode is for.
+ * This used to render the agent's own `todo_write` plan. That looked right on
+ * paper — six items in the agent's own words is nicer than a raw tool log —
+ * but it depended on the model's discipline to keep those items' statuses
+ * current, and models don't always bother. On a real run all seven items sat
+ * "in progress" while the chat streamed "PDF done, PPTX done" — the card froze
+ * mid-run and lied about it for the rest of the session. Worse, it duplicated
+ * the composer's own task strip, which already renders the server's todos
+ * (`session-chat-input.tsx` via `useOpenCodeSessionTodo`) — so the plan lived
+ * in two places, one of which could go stale.
  *
- * So this shows the agent's own PLAN: the checklist it wrote, in its own words,
- * with its own state. Six items, never six hundred — bounded by construction, so
- * it can never become a wall.
+ * The plan now lives in exactly one place: the composer. This card shows
+ * something that cannot go stale by construction — `steps`, the grouped tool
+ * calls of THIS run (`groupSteps(collectAllToolParts(latestRunMessages(...)))`,
+ * computed once in `easy-panel.tsx` and passed down). Tool calls stream
+ * whether or not the model remembers to narrate them, so the card is always
+ * exactly as current as the run itself. Bounded the same way the old plan
+ * was — grouping collapses a 60-call run into ~8 lines, and latest-run scoping
+ * means an old run's steps never bleed into a fresh, empty turn.
  *
  * **Nothing here is clickable.** Progress answers a question; it is not a place
  * you go. Every other card in the panel opens something when tapped, and a card
@@ -23,21 +31,21 @@
 
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { cn } from '@/lib/utils';
-import { TodoStatusIcon, type TodoItem } from '../../tool/shared/todo-helpers';
-import { planProgress } from '../shared/derive-plan';
+import type { Step } from '../shared/group-steps';
 import type { RunOutcome } from '../shared/run-outcome';
 import { PanelCard } from './panel-card';
 import { formatDuration } from './progress-summary';
+import { StepIcon } from './step-icon';
 
 export function ProgressCard({
-  plan,
+  steps,
   isRunning,
   elapsedMs,
   outcome,
   waitingOnUser,
 }: {
-  /** The agent's checklist. Empty when it never made one — many short runs don't. */
-  plan: TodoItem[];
+  /** The latest run's grouped steps — `easy-panel.tsx`'s `latestSteps` memo, reused as-is. */
+  steps: Step[];
   isRunning: boolean;
   elapsedMs?: number;
   /** How the run ended. Only read once settled — a running run has no outcome yet. */
@@ -45,13 +53,12 @@ export function ProgressCard({
   /** The agent is blocked on a pending question/approval — the chat holds the controls; this card redirects attention (W9). */
   waitingOnUser: boolean;
 }) {
-  const { done, total, current } = planProgress(plan);
   const duration = elapsedMs ? formatDuration(elapsedMs) : '';
 
-  // No plan yet. Waiting outranks everything else here — the agent can be
+  // No steps yet. Waiting outranks everything else here — the agent can be
   // "blocked on you" whether or not it's still marked as running, and that is
   // always the more truthful thing to say than a bare outcome or "Working…".
-  if (total === 0) {
+  if (steps.length === 0) {
     if (waitingOnUser) {
       return (
         <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
@@ -65,8 +72,8 @@ export function ProgressCard({
       );
     }
 
-    // Nothing planned, nothing running, nothing wrong: nothing truthful to say.
-    // But a FAILED or STOPPED run must say so even with no plan — silence here
+    // Nothing happened, nothing running, nothing wrong: nothing truthful to say.
+    // But a FAILED or STOPPED run must say so even with no steps — silence here
     // is the panel claiming a broken run finished fine (W7).
     if (!isRunning) {
       if (outcome === 'succeeded') return null;
@@ -84,7 +91,7 @@ export function ProgressCard({
       );
     }
 
-    // No plan, but still working. One live line is the whole message.
+    // No steps yet, but still working. One live line is the whole message.
     return (
       <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
         <TextShimmer as="span" duration={1.8} spread={1.25} className="truncate text-sm">
@@ -97,24 +104,29 @@ export function ProgressCard({
     );
   }
 
-  const OUTCOME_PREFIX: Record<RunOutcome, string> = {
-    succeeded: '',
-    failed: 'Something went wrong · ',
-    stopped: 'Stopped by you · ',
+  // The step actively narrating right now — the last one still running, else
+  // just the last step's own label (a boundary between two done steps has
+  // nothing better to say), else the generic fallback.
+  const currentStep = [...steps].reverse().find((s) => s.status === 'running') ?? steps[steps.length - 1];
+
+  const OUTCOME_LINE: Record<RunOutcome, string> = {
+    succeeded: `Done · ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`,
+    failed: 'Something went wrong',
+    stopped: 'Stopped by you',
   };
 
   const subtitle = waitingOnUser
     ? 'Waiting for your answer'
-    : isRunning && current
-      ? `Step ${Math.min(done + 1, total)} of ${total} · ${current.content}`
-      : `${OUTCOME_PREFIX[outcome]}${done} of ${total} done`;
+    : isRunning
+      ? (currentStep?.label ?? 'Working…')
+      : `${OUTCOME_LINE[outcome]}${duration ? ` · ${duration}` : ''}`;
 
   return (
     <PanelCard
       title="Progress"
       isEmpty={false}
-      // Open while it's working — watching the plan tick over IS the point. Once
-      // it's done, "6 of 6 done" in the header says everything, and the user's
+      // Open while it's working — watching the story unfold IS the point. Once
+      // it's done, the header's outcome line says everything, and the user's
       // attention belongs on Outputs.
       defaultExpanded={isRunning}
       subtitle={
@@ -125,33 +137,43 @@ export function ProgressCard({
             {subtitle}
           </TextShimmer>
         ) : (
-          <span className="text-muted-foreground truncate text-sm tabular-nums">
-            {subtitle}
-            {duration ? ` · ${duration}` : ''}
-          </span>
+          <span className="text-muted-foreground truncate text-sm tabular-nums">{subtitle}</span>
         )
       }
       contentClassName="border-border border-t px-3 py-3"
     >
       <ul className="flex flex-col gap-0.5">
-        {plan.map((todo, i) => (
-          <li key={`${i}-${todo.content}`} className="flex items-start gap-2.5 px-1 py-1">
-            <span className="flex h-5 shrink-0 items-center">
-              <TodoStatusIcon status={todo.status} />
-            </span>
-            <span
-              className={cn(
-                'min-w-0 flex-1 text-sm',
-                todo.status === 'completed' && 'text-muted-foreground line-through',
-                todo.status === 'cancelled' && 'text-muted-foreground/60 line-through',
-                todo.status === 'in_progress' && 'text-foreground font-medium',
-                todo.status === 'pending' && 'text-muted-foreground',
+        {steps.map((step) => {
+          const isCurrentRunning = step.status === 'running';
+          const stepDuration = step.durationMs ? formatDuration(step.durationMs) : '';
+          return (
+            <li key={step.id} className="flex items-start gap-2.5 px-1 py-1">
+              <span className="flex h-5 shrink-0 items-center">
+                <StepIcon family={step.family} status={step.status} />
+              </span>
+              <span
+                className={cn(
+                  'min-w-0 flex-1 text-sm',
+                  step.status === 'done' && 'text-muted-foreground',
+                  step.status === 'error' && 'text-foreground',
+                )}
+              >
+                {isCurrentRunning ? (
+                  <TextShimmer as="span" duration={1.8} spread={1.25} className="block truncate">
+                    {step.label}
+                  </TextShimmer>
+                ) : (
+                  step.label
+                )}
+              </span>
+              {stepDuration && (
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                  {stepDuration}
+                </span>
               )}
-            >
-              {todo.content}
-            </span>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </PanelCard>
   );

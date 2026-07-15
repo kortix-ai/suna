@@ -38,7 +38,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
-import { derivePlan } from '../shared/derive-plan';
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
@@ -82,16 +81,12 @@ export const EasyPanel = memo(function EasyPanel({
   const outputs = useMemo(() => deriveOutputs(parts, { latestRun: latestIds }), [parts, latestIds]);
   const context = useMemo(() => deriveContext(parts), [parts]);
 
-  // The agent's own checklist — what Progress shows now. Steps are still derived,
-  // but only to answer "is it running" and "how long has this taken"; they are no
-  // longer rendered. A transcript of tool calls is an audit trail, and that lives
-  // in Advanced mode.
-  const plan = useMemo(() => derivePlan(parts), [parts]);
-  // The latest run's own steps, not the session's — shared by `elapsedMs`
-  // (the run's wall-clock, not the session's lifetime sum: "6 of 6 done ·
-  // 3h 40m" across a week of runs answers a question nobody asked, W11) AND
-  // `outcome` below (a text-only turn must never inherit a verdict from an
-  // old errored run further back in the session).
+  // The latest run's own steps, not the session's — shared by `ProgressCard`
+  // itself (the live story it narrates), `elapsedMs` (the run's wall-clock,
+  // not the session's lifetime sum: "6 of 6 done · 3h 40m" across a week of
+  // runs answers a question nobody asked, W11), AND `outcome` below (a
+  // text-only turn must never inherit a verdict from an old errored run
+  // further back in the session).
   const latestSteps = useMemo(
     () => groupSteps(collectAllToolParts(latestRunMessages(messages))),
     [messages],
@@ -396,7 +391,7 @@ export const EasyPanel = memo(function EasyPanel({
     <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
       <div className="flex h-full flex-col gap-3 overflow-auto p-3">
         <ProgressCard
-          plan={plan}
+          steps={latestSteps}
           isRunning={isRunning}
           elapsedMs={elapsedMs}
           outcome={outcome}
