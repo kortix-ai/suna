@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
+import { deliverableKindLabel } from '../shared/output-priority';
 import { outputKey } from './easy-panel-logic';
 import { PanelCard } from './panel-card';
 
@@ -104,7 +105,17 @@ export function OutputRows({
               className="hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 text-left disabled:cursor-default"
             >
               <OutputIcon output={o} />
-              <span className="text-foreground truncate text-sm">{o.name}</span>
+              <span className="text-foreground min-w-0 flex-1 truncate text-sm">
+                {o.title ?? o.name}
+              </span>
+              {o.fresh && (
+                <span className="text-kortix-green shrink-0 text-xs font-medium">
+                  {o.fresh === 'new' ? 'New' : 'Updated'}
+                </span>
+              )}
+              <span className="text-muted-foreground shrink-0 text-xs">
+                {deliverableKindLabel(o)}
+              </span>
             </button>
           </li>
         ))}

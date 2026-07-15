@@ -59,6 +59,22 @@ export function outputRank(output: Pick<OutputItem, 'name' | 'kind'>): number {
   return RANK_OTHER;
 }
 
+/** The kind a person recognizes — the row's right-hand whisper. Never an
+ * extension, never a path (W3). */
+export function deliverableKindLabel(output: Pick<OutputItem, 'name' | 'kind'>): string {
+  if (output.kind === 'app') return 'Web app';
+  if (output.kind === 'presentation') return 'Slides';
+  if (output.kind === 'video') return 'Video';
+  const ext = extensionOf(output.name);
+  if (output.kind === 'image' || IMAGE_EXT.has(ext)) return 'Image';
+  if (ext === 'pdf') return 'PDF';
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || ext === 'tsv') return 'Spreadsheet';
+  if (ext === 'docx' || ext === 'doc') return 'Document';
+  if (ext === 'pptx' || ext === 'ppt' || ext === 'key') return 'Slides';
+  if (MEDIA_EXT.has(ext)) return 'Video';
+  return 'File';
+}
+
 /**
  * Sort by what the user came for. Stable: files of equal rank keep the order the
  * agent produced them in, so a run that wrote ten components still reads as the

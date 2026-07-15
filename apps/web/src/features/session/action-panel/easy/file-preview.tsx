@@ -52,11 +52,18 @@ const getSandboxAliveSnapshot = () => {
  */
 function PreviewShell({
   name,
+  fileName = name,
   path,
   onClose,
   children,
 }: {
+  /** The display name shown in the toolbar text — a human title when one
+   *  exists (W3). */
   name: string;
+  /** The real, on-disk filename — drives the icon glyph and the bytes
+   *  Download actually saves. Defaults to `name` for callers with no
+   *  separate display title. */
+  fileName?: string;
   path: string;
   onClose: () => void;
   children: React.ReactNode;
@@ -69,12 +76,12 @@ function PreviewShell({
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
           <span className="flex size-5 shrink-0 items-center justify-center">
-            {getFileIcon(name, { className: 'size-4', variant: 'monochrome' })}
+            {getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
           </span>
           <span className="text-foreground truncate text-sm font-medium">{name}</span>
         </span>
         <span className="flex shrink-0 items-center gap-0.5">
-          <DownloadButton path={path} fileName={name} />
+          <DownloadButton path={path} fileName={fileName} />
           <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
             <Button
               variant="ghost"
@@ -124,15 +131,23 @@ const RICH_CATEGORIES = new Set<FileCategory>([
 export function FilePreview({
   path,
   name,
+  fileName = name,
   onClose,
 }: {
   path: string;
+  /** The display name shown in the toolbar — a human title when the output
+   *  carries one (W3), the real filename otherwise. */
   name: string;
+  /** The real, on-disk filename. Drives file-category detection, the icon
+   *  glyph, what Download actually saves, and `FileViewer`'s language/markdown
+   *  detection — all of which need the real extension, not a human title that
+   *  may carry none. Defaults to `name` for callers with no separate title. */
+  fileName?: string;
   /** The detail layer's header is suppressed for files — the viewer's toolbar
    *  owns the name and the close, so there is one bar instead of two. */
   onClose: () => void;
 }) {
-  const rich = RICH_CATEGORIES.has(getFileCategory(name));
+  const rich = RICH_CATEGORIES.has(getFileCategory(fileName));
 
   const sandboxAlive = useSyncExternalStore(
     useSandboxConnectionStore.subscribe,
@@ -146,7 +161,7 @@ export function FilePreview({
 
   if (rich) {
     return (
-      <PreviewShell name={name} path={path} onClose={onClose}>
+      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
         <FileSourceProvider value={workspaceFileSource}>
           <FileContentRenderer filePath={path} showHeader={false} className="h-full" />
         </FileSourceProvider>
@@ -156,7 +171,7 @@ export function FilePreview({
 
   if (isLoading) {
     return (
-      <PreviewShell name={name} path={path} onClose={onClose}>
+      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
         <Centered>
           <Loading />
         </Centered>
@@ -166,7 +181,7 @@ export function FilePreview({
 
   if (isError || !data) {
     return (
-      <PreviewShell name={name} path={path} onClose={onClose}>
+      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
         <Centered>
           <FileWarning className="size-5" />
           <span>
@@ -185,7 +200,7 @@ export function FilePreview({
   if (data.type === 'binary') {
     const isImage = data.mimeType?.startsWith('image/') && data.encoding === 'base64';
     return (
-      <PreviewShell name={name} path={path} onClose={onClose}>
+      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
         {isImage ? (
           <div className="flex items-start justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -205,5 +220,5 @@ export function FilePreview({
     );
   }
 
-  return <FileViewer content={data.content} fileName={name} path={path} onClose={onClose} />;
+  return <FileViewer content={data.content} fileName={fileName} path={path} onClose={onClose} />;
 }

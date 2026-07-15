@@ -131,13 +131,17 @@ export const EasyPanel = memo(function EasyPanel({
    * can depend on it.
    */
   const handleOpenOutput = useCallback((output: OutputItem) => {
+    // The human title, when the output carries one (W3) — never the raw
+    // filename in a spot the user reads as the thing's name.
+    const displayName = output.title ?? output.name;
+
     if (output.kind === 'app' && output.url) {
       setDetail({
         key: `app:${output.url}`,
-        title: output.name,
+        title: displayName,
         hideHeader: true,
         padded: false,
-        body: <AppPreview url={output.url} name={output.name} onClose={() => setDetail(null)} />,
+        body: <AppPreview url={output.url} name={displayName} onClose={() => setDetail(null)} />,
       });
       return;
     }
@@ -145,11 +149,18 @@ export const EasyPanel = memo(function EasyPanel({
     if (!output.path) return;
     setDetail({
       key: `file:${output.path}`,
-      title: output.name,
+      title: displayName,
       icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
       hideHeader: true,
       padded: false,
-      body: <FilePreview path={output.path} name={output.name} onClose={() => setDetail(null)} />,
+      body: (
+        <FilePreview
+          path={output.path}
+          name={displayName}
+          fileName={output.name}
+          onClose={() => setDetail(null)}
+        />
+      ),
     });
   }, []);
 

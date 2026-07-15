@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from './derive-panels';
-import { selectPrimaryDeliverable, sortOutputs } from './output-priority';
+import { deliverableKindLabel, selectPrimaryDeliverable, sortOutputs } from './output-priority';
 
 /** A file output — never an app, which lives in its own card and is never sorted here. */
 type FileKind = Exclude<OutputItem['kind'], 'app'>;
@@ -125,5 +125,19 @@ describe('selectPrimaryDeliverable (W2)', () => {
 
   test('all-stale input still picks by rank', () => {
     expect(selectPrimaryDeliverable([], [css, pdf])).toBe(pdf);
+  });
+});
+
+describe('deliverableKindLabel (W3)', () => {
+  test('names the kind a person recognizes, never an extension', () => {
+    expect(deliverableKindLabel({ name: 'report.pdf', kind: 'file' })).toBe('PDF');
+    expect(deliverableKindLabel({ name: 'data.xlsx', kind: 'file' })).toBe('Spreadsheet');
+    expect(deliverableKindLabel({ name: 'data.csv', kind: 'file' })).toBe('Spreadsheet');
+    expect(deliverableKindLabel({ name: 'notes.docx', kind: 'file' })).toBe('Document');
+    expect(deliverableKindLabel({ name: 'deck.pptx', kind: 'presentation' })).toBe('Slides');
+    expect(deliverableKindLabel({ name: 'photo.png', kind: 'image' })).toBe('Image');
+    expect(deliverableKindLabel({ name: 'clip.mp4', kind: 'video' })).toBe('Video');
+    expect(deliverableKindLabel({ name: 'Dashboard', kind: 'app' })).toBe('Web app');
+    expect(deliverableKindLabel({ name: 'main.ts', kind: 'file' })).toBe('File');
   });
 });
