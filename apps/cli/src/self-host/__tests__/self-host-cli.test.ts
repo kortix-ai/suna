@@ -9,6 +9,11 @@ import { parse } from 'yaml';
 // docker-compose.yml + .env for this machine. These exercise the real CLI
 // entrypoint so they catch wiring mistakes a unit test on an unexported
 // function would miss.
+//
+// Every `init` call below passes `--allow-missing-secrets`: none of these
+// tests configure DAYTONA_API_KEY/managed-git/OPENROUTER_API_KEY, and `init`
+// now refuses to succeed (non-interactively) with required secrets unset —
+// see secrets.test.ts for coverage of that enforcement itself.
 const CLI_ENTRY = resolve(import.meta.dir, '..', '..', 'index.ts');
 
 describe('kortix self-host (generic Docker CLI)', () => {
@@ -62,7 +67,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
   }
 
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
-    const { code } = await run(['init', '--yes']);
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
     expect(code).toBe(0);
 
     const env = readEnv();
@@ -93,7 +98,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
   });
 
   test('--channel latest tracks the :latest tag instead of :stable', async () => {
-    const { code } = await run(['init', '--yes', '--channel', 'latest']);
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--channel', 'latest']);
     expect(code).toBe(0);
     const env = readEnv();
     expect(env.KORTIX_CHANNEL).toBe('latest');
@@ -101,7 +106,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
   });
 
   test('--tag pins an explicit version regardless of channel', async () => {
-    const { code } = await run(['init', '--yes', '--tag', '0.9.72']);
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--tag', '0.9.72']);
     expect(code).toBe(0);
     const env = readEnv();
     expect(env.KORTIX_VERSION).toBe('0.9.72');
@@ -111,13 +116,13 @@ describe('kortix self-host (generic Docker CLI)', () => {
   });
 
   test('rejects an invalid --channel value', async () => {
-    const { code, stderr } = await run(['init', '--yes', '--channel', 'nightly']);
+    const { code, stderr } = await run(['init', '--yes', '--allow-missing-secrets', '--channel', 'nightly']);
     expect(code).toBe(2);
     expect(stderr).toContain('--channel must be "stable" or "latest"');
   });
 
   test('--update-time / --update-tz configure the nightly auto-update schedule', async () => {
-    const { code } = await run(['init', '--yes', '--update-time', '03:30', '--update-tz', 'UTC']);
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--update-time', '03:30', '--update-tz', 'UTC']);
     expect(code).toBe(0);
     const env = readEnv();
     expect(env.KORTIX_UPDATE_TIME).toBe('03:30');
@@ -125,21 +130,21 @@ describe('kortix self-host (generic Docker CLI)', () => {
   });
 
   test('rejects an invalid --update-time value', async () => {
-    const { code, stderr } = await run(['init', '--yes', '--update-time', '9pm']);
+    const { code, stderr } = await run(['init', '--yes', '--allow-missing-secrets', '--update-time', '9pm']);
     expect(code).toBe(2);
     expect(stderr).toContain('--update-time must be HH:MM');
   });
 
   test('--allow-downtime sets KORTIX_ALLOW_DOWNTIME=1', async () => {
-    await run(['init', '--yes']);
+    await run(['init', '--yes', '--allow-missing-secrets']);
     expect(readEnv().KORTIX_ALLOW_DOWNTIME).toBe('0');
-    const { code } = await run(['init', '--yes', '--allow-downtime']);
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--allow-downtime']);
     expect(code).toBe(0);
     expect(readEnv().KORTIX_ALLOW_DOWNTIME).toBe('1');
   });
 
   test('KORTIX_APP_REPLICAS flips to 2 once a domain is configured, back to 1 without one', async () => {
-    await run(['init', '--yes']);
+    await run(['init', '--yes', '--allow-missing-secrets']);
     expect(readEnv().KORTIX_APP_REPLICAS).toBe('1');
 
     await run(['env', 'set', 'KORTIX_DOMAIN=kortix.example.com']);
@@ -150,7 +155,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
   });
 
   test('the rendered compose has no Caddy service until KORTIX_DOMAIN is set', async () => {
-    await run(['init', '--yes']);
+    await run(['init', '--yes', '--allow-missing-secrets']);
     const before = readCompose();
     expect(before.services).not.toHaveProperty('caddy');
     expect(before.services).toHaveProperty('kortix-updater');
@@ -177,7 +182,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
 
   describe('configuration feature flags (single-account / landing / enterprise-license / billing)', () => {
     test('default to off, and are explicit in .env (not just hard-coded in the compose template)', async () => {
-      const { code } = await run(['init', '--yes']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
       expect(code).toBe(0);
       const env = readEnv();
       expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('false');
@@ -189,7 +194,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
     });
 
     test('--single-account sets both the backend and frontend flags', async () => {
-      const { code } = await run(['init', '--yes', '--single-account']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--single-account']);
       expect(code).toBe(0);
       const env = readEnv();
       expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
@@ -197,23 +202,23 @@ describe('kortix self-host (generic Docker CLI)', () => {
     });
 
     test('--no-landing sets KORTIX_PUBLIC_DISABLE_LANDING_PAGE', async () => {
-      const { code } = await run(['init', '--yes', '--no-landing']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--no-landing']);
       expect(code).toBe(0);
       expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
     });
 
     test('--enterprise-license sets ENTERPRISE_LICENSE_AVAILABLE', async () => {
-      const { code } = await run(['init', '--yes', '--enterprise-license']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--enterprise-license']);
       expect(code).toBe(0);
       expect(readEnv().ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
     });
 
     test('a re-run of init without the flag does not reset a previously-set flag', async () => {
-      await run(['init', '--yes', '--single-account']);
+      await run(['init', '--yes', '--allow-missing-secrets', '--single-account']);
       expect(readEnv().KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
 
       // Plain re-init (e.g. a config refresh) must not silently turn it back off.
-      const { code } = await run(['init', '--yes']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
       expect(code).toBe(0);
       expect(readEnv().KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
     });
@@ -229,11 +234,11 @@ describe('kortix self-host (generic Docker CLI)', () => {
     // as `init` — see selfHostUpdate() in commands/self-host.ts.
 
     test('env set also works directly and survives a later plain init', async () => {
-      await run(['init', '--yes']);
+      await run(['init', '--yes', '--allow-missing-secrets']);
       await run(['env', 'set', 'KORTIX_BILLING_INTERNAL_ENABLED=true', 'KORTIX_PUBLIC_BILLING_ENABLED=true']);
       expect(readEnv().KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
 
-      const { code } = await run(['init', '--yes']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
       expect(code).toBe(0);
       const env = readEnv();
       expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
@@ -241,7 +246,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
     });
 
     test('the rendered compose passes the flags through as runtime env, not hard-coded literals', async () => {
-      await run(['init', '--yes']);
+      await run(['init', '--yes', '--allow-missing-secrets']);
       const compose = readCompose();
       const frontendEnv = (compose.services.frontend as any).environment;
       expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');

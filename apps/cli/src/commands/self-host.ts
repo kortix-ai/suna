@@ -6,8 +6,8 @@ import { createServer } from 'node:net';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
-import { prompt, selectFrom } from '../prompts.ts';
-import { C, help, status } from '../style.ts';
+import { confirm, prompt, selectFrom } from '../prompts.ts';
+import { C, help, pad, status } from '../style.ts';
 import {
   instanceDir as configInstanceDir,
   loadInstanceConfig,
@@ -22,6 +22,17 @@ import {
   writeSupabaseVendorAssets,
 } from '../self-host/compose-assets.ts';
 import { SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
+import {
+  CATEGORY_LABELS,
+  groupSecretsByCategory,
+  isUpdaterManagedKey,
+  maskSecretValue,
+  ROTATABLE_GENERATED_KEYS,
+  SECRET_DEFS,
+  secretDefFor,
+  servicesForKeys,
+  type SecretDef,
+} from '../self-host/secrets-registry.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const CHANNELS = ['stable', 'latest'] as const;
@@ -64,6 +75,12 @@ Subcommands:
   configure            Interactively configure integrations and update policy.
   env ls              Show persistent environment values.
   env set KEY=VALUE    Update persistent environment values.
+  secrets [ls]         Show every secret, grouped by category (masked by
+                       default; --show reveals full values).
+  secrets set KEY=VAL  Set one or more secrets (or "secrets set KEY" to be
+    [KEY=VAL ...]      prompted) and restart only the services they affect.
+  secrets rotate KEY   Regenerate one rotatable crypto-random secret (or
+    | --all-generated  every rotatable one) and restart affected services.
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
@@ -91,6 +108,10 @@ Options:
   --enterprise-license You hold a Kortix Enterprise license — unlock SSO,
                        SCIM, RBAC, and audit-log access platform-wide
                        (kortix.com/enterprise).
+  --allow-missing-secrets Let "init"/"start" proceed with required secrets
+                       (managed git, sandbox, LLM) unset instead of failing.
+                       Local experimentation only — projects/agent sessions
+                       will not work until they are set.
   --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
@@ -110,6 +131,10 @@ Examples:
   kortix self-host version
   kortix self-host env set KORTIX_DOMAIN=kortix.example.com
   kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
+  kortix self-host secrets ls
+  kortix self-host secrets set OPENROUTER_API_KEY=sk-or-...
+  kortix self-host secrets rotate DASHBOARD_PASSWORD
+  kortix self-host secrets rotate --all-generated
   kortix hosts ls
 `;
 
@@ -239,6 +264,8 @@ export async function runSelfHost(argv: string[]): Promise<number> {
       return selfHostConfigure(flags);
     case 'env':
       return selfHostEnv(args, flags);
+    case 'secrets':
+      return selfHostSecrets(args, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -259,6 +286,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const singleAccount = takeFlagBool(args, ['--single-account']);
   const noLanding = takeFlagBool(args, ['--no-landing']);
   const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
+  const allowMissingSecrets = takeFlagBool(args, ['--allow-missing-secrets']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -286,6 +314,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     singleAccount: singleAccount || undefined,
     disableLanding: noLanding || undefined,
     enterpriseLicense: enterpriseLicense || undefined,
+    allowMissingSecrets: allowMissingSecrets || undefined,
     yes,
     json,
   };
@@ -317,6 +346,14 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     await promptFeatureFlags(env, flags);
   }
 
+  // Required secrets (managed git, sandbox, LLM, ...) MUST be set before this
+  // instance is usable — see ensureRequiredSecrets(). Interactively this
+  // drives the guided flow until satisfied; non-interactively (or --yes) it
+  // fails loudly instead of silently producing a box that can't create
+  // projects or run agents. Persist whatever was collected either way so a
+  // follow-up `secrets set` / `configure` has something to build on.
+  const secretsExit = await ensureRequiredSecrets(env, flags);
+
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
   const existingConfig = loadInstanceConfig(flags.instance);
@@ -325,6 +362,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     instance: flags.instance,
     ...(flags.release || existingConfig?.release ? { release: flags.release ?? existingConfig?.release } : {}),
   });
+  if (secretsExit !== 0) return secretsExit;
   renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
 }
@@ -355,6 +393,16 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env);
   }
+
+  // `init` and `start` can run on separate invocations (init non-interactively,
+  // start later) — guard here too instead of trusting init already enforced it.
+  const secretsExit = await ensureRequiredSecrets(env, flags);
+  if (secretsExit !== 0) {
+    writeEnv(flags.instance, env);
+    writeCompose(flags.instance, env);
+    return secretsExit;
+  }
+
   const portChanges = await reconcilePorts(flags.instance, env);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
@@ -751,6 +799,279 @@ function selfHostEnv(args: string[], flags: GlobalFlags): number {
   return 2;
 }
 
+// ── kortix self-host secrets ────────────────────────────────────────────────
+//
+// `env ls`/`env set` above are the generic escape hatch for the whole .env;
+// `secrets` is the secret-aware surface on top of secrets-registry.ts's
+// SECRET_DEFS: grouped-by-category listing with masking, refusing to
+// hand-set updater-managed keys, and restarting only the Compose services a
+// changed/rotated key actually affects (servicesForKeys) instead of the
+// whole stack.
+
+function selfHostSecrets(args: string[], flags: GlobalFlags): Promise<number> | number {
+  const action = args.shift() ?? 'ls';
+  switch (action) {
+    case 'ls':
+    case 'list':
+      return selfHostSecretsLs(args, flags);
+    case 'set':
+      return selfHostSecretsSet(args, flags);
+    case 'rotate':
+      return selfHostSecretsRotate(args, flags);
+    default:
+      process.stderr.write(`${status.err(`unknown secrets subcommand "${action}"`)}\n`);
+      return 2;
+  }
+}
+
+function selfHostSecretsLs(args: string[], flags: GlobalFlags): number {
+  const show = takeFlagBool(args, ['--show']);
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  const groups = groupSecretsByCategory(env);
+  const missing = missingRequiredSecrets(env);
+
+  if (flags.json) {
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          instance: flags.instance,
+          categories: groups.map((group) => ({
+            category: group.category,
+            label: group.label,
+            secrets: group.rows.map((row) => ({
+              ...row,
+              value: show ? env[row.key] ?? '' : undefined,
+            })),
+          })),
+          missing_required: missing,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
+  }
+
+  process.stdout.write(`\n  ${C.bold}kortix self-host secrets${C.reset}${show ? C.dim + '  (values revealed — do not paste this output anywhere public)' + C.reset : ''}\n`);
+  for (const group of groups) {
+    if (group.rows.length === 0) continue;
+    process.stdout.write(`\n  ${C.white}${C.bold}${group.label}${C.reset}\n`);
+    for (const row of group.rows) {
+      const rawValue = env[row.key] ?? '';
+      const displayValue = show ? rawValue : row.masked;
+      const setMark = row.configured ? `${C.green}set${C.reset}` : row.required ? `${C.red}unset${C.reset}` : `${C.dim}unset${C.reset}`;
+      const kindMark = row.kind === 'generated' ? 'generated' : 'operator';
+      const rotatableMark = row.rotatable ? 'rotatable' : '-';
+      const managedNote = row.updaterManaged ? ` ${C.yellow}(updater-managed — use --tag/--channel/--release)${C.reset}` : '';
+      process.stdout.write(
+        `    ${pad(row.key, 34)} ${pad(row.required ? 'required' : 'optional', 9)} ${pad(setMark, 12)} ${pad(kindMark, 10)} ${pad(rotatableMark, 10)} ${C.dim}${displayValue || '(unset)'}${C.reset}${managedNote}\n`,
+      );
+    }
+  }
+
+  process.stdout.write('\n');
+  if (missing.length > 0) {
+    process.stdout.write(`  ${C.yellow}Missing required:${C.reset}\n`);
+    for (const item of missing) process.stdout.write(`    ${C.dim}- ${C.reset}${item.label}\n`);
+    process.stdout.write(`\n  ${C.dim}Fix: ${C.reset}${C.cyan}kortix self-host secrets set KEY=VALUE${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host configure${C.reset}\n\n`);
+  } else {
+    process.stdout.write(`  ${status.ok('All required secrets are set.')}\n\n`);
+  }
+  return 0;
+}
+
+function refuseUpdaterManagedKeyMessage(key: string): string {
+  return `${status.err(`"${key}" is managed by the updater and can't be hand-set.`)} Use ${C.cyan}--tag${C.reset}/${C.cyan}--channel${C.reset}/${C.cyan}--release${C.reset} on \`init\`/\`update\` instead.\n`;
+}
+
+/** Restart exactly the services a changed key set affects (or tell the
+ *  operator the stack isn't running yet, so changes apply on next `start`). */
+function restartServicesForKeys(instance: string, keys: readonly string[]): number {
+  const services = servicesForKeys(keys);
+  if (!composeHasRunningServices(instance)) {
+    process.stdout.write(`${C.dim}  stack isn't running — this takes effect on the next ${C.reset}${C.cyan}kortix self-host start${C.reset}\n\n`);
+    return 0;
+  }
+  const code = compose(instance, ['up', '-d', '--force-recreate', '--no-deps', ...services]);
+  if (code !== 0) return code;
+  process.stdout.write(`${C.dim}  restarted: ${C.reset}${services.join(', ')}\n\n`);
+  return 0;
+}
+
+async function selfHostSecretsSet(args: string[], flags: GlobalFlags): Promise<number> {
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  if (args.length === 0) {
+    process.stderr.write(`${status.err('Pass KEY=VALUE pairs, or a bare KEY to be prompted.')}\n`);
+    return 2;
+  }
+
+  const changedKeys: string[] = [];
+
+  // `secrets set KEY` (no '=') — prompt interactively for exactly one key.
+  if (args.length === 1 && !args[0]!.includes('=')) {
+    const key = args[0]!;
+    if (isUpdaterManagedKey(key)) {
+      process.stderr.write(refuseUpdaterManagedKeyMessage(key));
+      return 2;
+    }
+    if (!shouldPrompt(flags)) {
+      process.stderr.write(`${status.err(`"${key}" needs a value.`)} Pass ${C.cyan}${key}=VALUE${C.reset}, or run this interactively.\n`);
+      return 2;
+    }
+    if (!secretDefFor(key)) {
+      process.stdout.write(`  ${C.yellow}note${C.reset}  "${key}" isn't a known secret — setting it anyway.\n`);
+    }
+    env[key] = await promptSecret(key, env[key] ?? '');
+    changedKeys.push(key);
+  } else {
+    for (const pair of args) {
+      const idx = pair.indexOf('=');
+      if (idx <= 0) {
+        process.stderr.write(`${status.err(`Invalid assignment: ${pair}. Use KEY=VALUE.`)}\n`);
+        return 2;
+      }
+      const key = pair.slice(0, idx);
+      const value = pair.slice(idx + 1);
+      if (isUpdaterManagedKey(key)) {
+        process.stderr.write(refuseUpdaterManagedKeyMessage(key));
+        return 2;
+      }
+      if (!secretDefFor(key)) {
+        process.stdout.write(`  ${C.yellow}note${C.reset}  "${key}" isn't a known secret — setting it anyway.\n`);
+      }
+      env[key] = value;
+      changedKeys.push(key);
+    }
+  }
+
+  writeEnv(flags.instance, env);
+  writeCompose(flags.instance, env);
+  process.stdout.write(`${status.ok(`Updated ${changedKeys.join(', ')}`)}\n`);
+  return restartServicesForKeys(flags.instance, changedKeys);
+}
+
+// Generated secrets whose rotation cascades into a derived value elsewhere in
+// .env — rotating SUPABASE_JWT_SECRET without re-deriving the anon/service-role
+// JWTs it signs would leave the Supabase clients holding tokens signed with a
+// secret the server no longer recognizes. Returns the extra keys touched (for
+// restart-service accumulation); the primary key's own value is always
+// (re)generated by the caller first.
+function cascadeRotatedSecret(env: SelfHostEnv, key: string, freshValue: string): string[] {
+  env[key] = freshValue;
+  if (key === 'SUPABASE_JWT_SECRET') {
+    env.JWT_SECRET = freshValue;
+    env.SUPABASE_ANON_KEY = supabaseJwt('anon', freshValue);
+    env.SUPABASE_SERVICE_ROLE_KEY = supabaseJwt('service_role', freshValue);
+    env.ANON_KEY = env.SUPABASE_ANON_KEY;
+    env.SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+    return ['SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+  }
+  return [];
+}
+
+/** Fresh crypto-random bytes sized the same as this key's original generator
+ *  in defaultEnv() (see `token()` calls there) — kept in one place so rotate
+ *  can't silently drift from init's own generation. */
+function freshTokenFor(key: string): string {
+  switch (key) {
+    case 'SUPABASE_JWT_SECRET':
+      return token(64);
+    case 'DASHBOARD_PASSWORD':
+      return token(24);
+    case 'POSTGRES_PASSWORD':
+    case 'S3_PROTOCOL_ACCESS_KEY_SECRET':
+    case 'GATEWAY_INTERNAL_TOKEN':
+    case 'INTERNAL_SERVICE_KEY':
+    case 'API_KEY_SECRET':
+    case 'TUNNEL_SIGNING_SECRET':
+      return token(32);
+    case 'S3_PROTOCOL_ACCESS_KEY_ID':
+      return token(16);
+    default:
+      return token(32);
+  }
+}
+
+/** Reasons a `generated` secret is deliberately excluded from rotation —
+ *  mirrors the comment on SECRET_DEFS in secrets-registry.ts. Anything
+ *  `operator`-kind gets a generic "use secrets set" refusal instead. */
+const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
+  SECRET_KEY_BASE: 'internal Supabase-infra encryption key — rotating it would invalidate already-issued sessions.',
+  REALTIME_DB_ENC_KEY: 'internal Supabase Realtime encryption key — rotating it would leave existing encrypted state undecryptable.',
+  VAULT_ENC_KEY: 'Postgres pgsodium vault encryption key — rotating it would leave already-encrypted data undecryptable.',
+  PG_META_CRYPTO_KEY: 'internal pg-meta crypto key — rotating it would leave already-encrypted data undecryptable.',
+  LOGFLARE_PUBLIC_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
+  LOGFLARE_PRIVATE_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
+  SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `secrets rotate SUPABASE_JWT_SECRET` instead.',
+  SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `secrets rotate SUPABASE_JWT_SECRET` instead.',
+  DASHBOARD_USERNAME: 'not a rotation target — use `secrets set DASHBOARD_USERNAME=<value>` to change it.',
+};
+
+function refuseRotateMessage(key: string, def: SecretDef | undefined): string {
+  const reason =
+    NON_ROTATABLE_GENERATED_REASONS[key] ??
+    (def
+      ? `${key} is an operator-supplied secret — use \`secrets set ${key}=<value>\` instead.`
+      : `"${key}" is not a known secret.`);
+  return `${status.err(`Refusing to rotate ${key}`)}: ${C.dim}${reason}${C.reset}\n`;
+}
+
+async function selfHostSecretsRotate(args: string[], flags: GlobalFlags): Promise<number> {
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+
+  const allGenerated = takeFlagBool(args, ['--all-generated']);
+  if (allGenerated && args.length > 0) {
+    process.stderr.write(`${status.err('Pass either a key or --all-generated, not both.')}\n`);
+    return 2;
+  }
+  if (!allGenerated && args.length !== 1) {
+    process.stderr.write(`${status.err('Usage: kortix self-host secrets rotate <KEY> | --all-generated')}\n`);
+    return 2;
+  }
+  const keys = allGenerated ? [...ROTATABLE_GENERATED_KEYS] : [args[0]!];
+
+  const rotated = new Set<string>();
+  const refused: string[] = [];
+  for (const key of keys) {
+    const def = secretDefFor(key);
+    if (!def || def.kind !== 'generated' || !def.rotatable) {
+      // --all-generated only ever iterates already-rotatable keys, so this
+      // branch is reachable there only if the registry itself is inconsistent;
+      // for an explicit single-key rotate it's the normal refusal path.
+      if (!allGenerated) process.stderr.write(refuseRotateMessage(key, def));
+      refused.push(key);
+      continue;
+    }
+    rotated.add(key);
+    for (const extra of cascadeRotatedSecret(env, key, freshTokenFor(key))) rotated.add(extra);
+  }
+
+  if (rotated.size === 0) {
+    process.stderr.write(`${status.err('Nothing rotated.')}\n`);
+    return 2;
+  }
+
+  writeEnv(flags.instance, env);
+  writeCompose(flags.instance, env);
+  process.stdout.write(`${status.ok(`Rotated ${[...rotated].join(', ')}`)}\n`);
+  if (refused.length > 0) {
+    process.stdout.write(`${C.dim}  skipped (not rotatable): ${C.reset}${refused.join(', ')}\n`);
+  }
+  return restartServicesForKeys(flags.instance, [...rotated]);
+}
+
 async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
@@ -871,19 +1192,19 @@ function pipedreamConfigured(env: SelfHostEnv): boolean {
   return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
 }
 
-function sandboxProviders(env: SelfHostEnv): string[] {
+export function sandboxProviders(env: Record<string, string>): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 /** A provider is "ready" if daytona has an API key. */
-function sandboxProviderConfigured(env: SelfHostEnv): boolean {
+export function sandboxProviderConfigured(env: Record<string, string>): boolean {
   const providers = sandboxProviders(env);
   if (providers.includes('daytona')) return !!env.DAYTONA_API_KEY;
   return false;
 }
 
 /** Managed git provider configured? Required to create/CRUD projects. */
-function gitProviderConfigured(env: SelfHostEnv): boolean {
+export function gitProviderConfigured(env: Record<string, string>): boolean {
   if (env.MANAGED_GIT_PROVIDER !== 'github') return false;
   const pat = !!(env.MANAGED_GIT_GITHUB_TOKEN && env.MANAGED_GIT_GITHUB_OWNER);
   const app = !!(
@@ -893,6 +1214,139 @@ function gitProviderConfigured(env: SelfHostEnv): boolean {
     env.MANAGED_GIT_GITHUB_INSTALL_ID
   );
   return pat || app;
+}
+
+// Registry keys already covered by one of the composite checks above — a
+// scalar per-key "is it set" pass over SECRET_DEFS would either double-report
+// (e.g. MANAGED_GIT_GITHUB_OWNER alone) or under-report (a PAT-mode operator
+// never sets the App fields, and vice versa) the real requirement, which is
+// "git is configured EITHER via PAT OR via App", not "every one of these
+// fields is set". Skip them in the scalar pass; the composite checks report
+// the one accurate item instead.
+const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
+  'DAYTONA_API_KEY',
+  'MANAGED_GIT_GITHUB_OWNER',
+  'MANAGED_GIT_GITHUB_TOKEN',
+  'MANAGED_GIT_GITHUB_INSTALL_ID',
+  'KORTIX_GITHUB_APP_ID',
+  'KORTIX_GITHUB_APP_PRIVATE_KEY',
+]);
+
+/** Friendlier labels for required secrets whose bare key name isn't obvious
+ *  in a "what do I need to fix" message. Anything not listed falls back to
+ *  `KEY (Category label)`. */
+const REQUIRED_SECRET_LABELS: Record<string, string> = {
+  OPENROUTER_API_KEY: 'OpenRouter API key (LLM)',
+  POSTGRES_PASSWORD: 'Postgres password (auto-generated — regenerate via `secrets rotate`)',
+  SUPABASE_JWT_SECRET: 'Supabase JWT secret (auto-generated — regenerate via `secrets rotate`)',
+  SUPABASE_ANON_KEY: 'Supabase anon key (auto-generated, derived from the JWT secret)',
+  SUPABASE_SERVICE_ROLE_KEY: 'Supabase service role key (auto-generated, derived from the JWT secret)',
+  DASHBOARD_USERNAME: 'Supabase Studio dashboard username (auto-generated)',
+  DASHBOARD_PASSWORD: 'Supabase Studio dashboard password (auto-generated — regenerate via `secrets rotate`)',
+  GATEWAY_INTERNAL_TOKEN: 'Gateway internal token (auto-generated — regenerate via `secrets rotate`)',
+  INTERNAL_SERVICE_KEY: 'Internal service key (auto-generated — regenerate via `secrets rotate`)',
+  API_KEY_SECRET: 'API key secret (auto-generated — regenerate via `secrets rotate`)',
+  TUNNEL_SIGNING_SECRET: 'Tunnel signing secret (auto-generated — regenerate via `secrets rotate`)',
+};
+
+export interface MissingSecretItem {
+  /** Human-readable description of what's missing. */
+  label: string;
+  /** Exact command(s) to fix it. */
+  hint: string;
+}
+
+/**
+ * Every required secret this instance is still missing, reconciled against
+ * the composite provider checks above so a PAT-mode or App-mode managed-git
+ * setup each report as satisfied (not "half the fields are unset"), and a
+ * scalar pass over the registry's `required: true` entries otherwise. Pure
+ * function of `env` — no filesystem/process access — so it's safe to call
+ * from `init`/`start` before anything is written and to unit-test directly.
+ */
+export function missingRequiredSecrets(env: Record<string, string>): MissingSecretItem[] {
+  const missing: MissingSecretItem[] = [];
+
+  if (!sandboxProviderConfigured(env)) {
+    missing.push({
+      label: 'Agent sandbox runtime (Daytona API key)',
+      hint: 'kortix self-host secrets set DAYTONA_API_KEY=<key>',
+    });
+  }
+
+  if (!gitProviderConfigured(env)) {
+    missing.push({
+      label: 'Managed git for projects (GitHub PAT or GitHub App)',
+      hint:
+        'kortix self-host secrets set MANAGED_GIT_GITHUB_OWNER=<org> MANAGED_GIT_GITHUB_TOKEN=<pat>' +
+        '  (or KORTIX_GITHUB_APP_ID / KORTIX_GITHUB_APP_PRIVATE_KEY / MANAGED_GIT_GITHUB_INSTALL_ID for a GitHub App)',
+    });
+  }
+
+  for (const def of SECRET_DEFS) {
+    if (!def.required || GIT_AND_SANDBOX_SECRET_KEYS.has(def.key)) continue;
+    const value = env[def.key] ?? '';
+    if (value.trim() !== '') continue;
+    missing.push({
+      label: REQUIRED_SECRET_LABELS[def.key] ?? `${def.key} (${CATEGORY_LABELS[def.category]})`,
+      hint: `kortix self-host secrets set ${def.key}=<value>`,
+    });
+  }
+
+  return missing;
+}
+
+/**
+ * Enforce that required secrets are actually set before this instance can be
+ * considered usable — the CLI's primary guarantee: a box never comes up
+ * silently unable to create projects or run agents. Interactive TTY: drive
+ * the guided integrations flow until satisfied or the operator opts out.
+ * Non-interactive (`--yes` / no TTY / CI): fail loudly with an itemized list
+ * and exact fix commands instead of proceeding into a broken deployment.
+ * `--allow-missing-secrets` downgrades the non-interactive failure to a loud
+ * warning — local experimentation only.
+ *
+ * Returns 0 to proceed, non-zero to stop (caller still persists whatever was
+ * collected along the way).
+ */
+async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Promise<number> {
+  let missing = missingRequiredSecrets(env);
+  if (missing.length === 0) return 0;
+
+  if (shouldPrompt(flags)) {
+    process.stdout.write(`\n  ${C.yellow}Required secrets are missing:${C.reset}\n`);
+    for (const item of missing) process.stdout.write(`    ${C.dim}- ${C.reset}${item.label}\n`);
+    process.stdout.write(`\n  ${C.dim}Let's set them now.${C.reset}\n`);
+
+    while (missing.length > 0) {
+      await configureIntegrations(env);
+      missing = missingRequiredSecrets(env);
+      if (missing.length === 0) break;
+      process.stdout.write(`\n  ${C.yellow}Still missing:${C.reset}\n`);
+      for (const item of missing) process.stdout.write(`    ${C.dim}- ${C.reset}${item.label}\n`);
+      const keepGoing = await confirm('Configure the remaining required secrets now?', true);
+      if (!keepGoing) break;
+    }
+  }
+
+  missing = missingRequiredSecrets(env);
+  if (missing.length === 0) return 0;
+
+  const lines = missing.map((item) => `    ${C.dim}- ${C.reset}${item.label}\n        ${C.cyan}${item.hint}${C.reset}`).join('\n');
+
+  if (flags.allowMissingSecrets) {
+    process.stdout.write(
+      `\n${status.warn('Proceeding with required secrets missing (--allow-missing-secrets):')}\n${lines}\n\n` +
+        `  ${C.dim}This deployment will not be able to create projects and/or run agents until they are set.${C.reset}\n\n`,
+    );
+    return 0;
+  }
+
+  process.stderr.write(
+    `\n${status.err('Required secrets are missing — refusing to proceed:')}\n${lines}\n\n` +
+      `  ${C.dim}Set them and re-run, or pass ${C.reset}${C.cyan}--allow-missing-secrets${C.reset}${C.dim} for local experimentation only.${C.reset}\n\n`,
+  );
+  return 1;
 }
 
 function integrationReviewNeeded(env: SelfHostEnv): boolean {

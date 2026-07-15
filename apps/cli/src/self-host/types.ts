@@ -24,6 +24,10 @@ export interface SelfHostCommandFlags {
    *  entitlements platform-wide regardless of billing tier
    *  (ENTERPRISE_LICENSE_AVAILABLE, --enterprise-license). */
   enterpriseLicense?: boolean;
+  /** Escape hatch: let `init`/`start` proceed with required secrets unset
+   *  instead of failing — local experimentation only, never for a real
+   *  deployment (managed git / sandbox / LLM calls will fail at runtime). */
+  allowMissingSecrets?: boolean;
   yes: boolean;
   json: boolean;
 }
