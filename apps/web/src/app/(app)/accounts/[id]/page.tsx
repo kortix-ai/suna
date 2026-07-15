@@ -28,6 +28,7 @@ import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
+import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
@@ -534,7 +535,16 @@ export default function AccountSettingsPage() {
             ) : null}
 
             {activeSection === 'git' && canWriteAccount ? (
-              <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+              <div className="space-y-8">
+                {/* Self-host in-app GitHub App creation — cloud's App is
+                    env-configured (source: 'env', always configured), so this
+                    gate keeps the create-form path off cloud entirely; the
+                    connected summary + Reconfigure stay self-host-only too,
+                    since the existing installations card below already
+                    covers per-account install management on cloud. */}
+                {singleAccountMode ? <GitHubAppSetupCard canManage={canWriteAccount} /> : null}
+                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+              </div>
             ) : null}
 
             {activeSection === 'settings' && canWriteAccount ? (
