@@ -76,9 +76,21 @@ for real use) running Linux, and a domain you control.
    - **Settings → Model** — connect your own model key (BYOK: Anthropic,
      OpenAI, OpenRouter, etc.).
 
-That's a complete, working instance. See
+That's a complete, working instance. From here on, use the main `kortix` CLI
+against it like you would against Kortix Cloud:
+
+```sh
+kortix hosts use selfhost   # already registered + pointed at your instance by `init`/`start`
+kortix login
+kortix whoami
+kortix projects ls
+cd your-project && kortix ship
+```
+
+See
 [`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md) for the
-Cloudflare-tunnel (laptop) and fully-local (dev) paths, SMTP, and the full
+Cloudflare-tunnel (laptop) and fully-local (dev) paths, SMTP, using the CLI
+from a different machine than the one you self-hosted on, and the full
 `kortix self-host` command reference.
 
 ## 2. Want something more robust on AWS? There's a Terraform for that

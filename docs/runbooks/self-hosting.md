@@ -271,6 +271,48 @@ image tag), `--channel stable|latest`, `--auto-update on|off`,
 
 Full reference: [`/docs/reference/cli#self-host`](../../apps/web/content/docs/reference/cli.mdx).
 
+## Using the main `kortix` CLI against your self-host
+
+`kortix self-host …` only manages the Compose stack itself. Everything else —
+`login`, `whoami`, `projects`, `ship`, `sessions`, … — is the same CLI you'd
+point at Kortix Cloud, just aimed at your own instance via the built-in
+`selfhost` host:
+
+```sh
+kortix hosts use selfhost   # switch the CLI's active host to your self-host stack
+kortix login                # browser-based approval, same flow as Cloud
+kortix whoami                # confirm identity + active account/project
+kortix projects ls
+cd your-project && kortix ship   # first ship creates the project + repo; every ship after just syncs
+```
+
+`kortix self-host init`/`start` register the `selfhost` host for you —
+pointed at `API_PUBLIC_URL` (the API) with `PUBLIC_URL` (the dashboard)
+stamped alongside it as `dashboard_url`, so `kortix login`'s browser flow
+opens the right origin. That matters because the CLI has no other way to
+learn your dashboard's URL from the API URL alone: it normally *derives* one
+from the API URL's shape (`api.<domain>` → `<domain>`, or the `pnpm dev`
+pairing `:8008` → `:3000`), which is right for a domain deployment
+(`https://api.<domain>` → `https://<domain>`) but **wrong** for the laptop
+default (API `:13738`, dashboard `:13737` — not `:3000`) or any custom port.
+If you ever add the host by hand instead of through `kortix self-host`
+(pointing the CLI at a self-host instance from a *different* machine, for
+example) and `kortix login` opens a dead-looking `:3000`, pass the dashboard
+URL explicitly:
+
+```sh
+kortix hosts add selfhost --url http://localhost:13738 --dashboard-url http://localhost:13737   # laptop
+kortix hosts add selfhost --url https://api.kortix.example.com --dashboard-url https://kortix.example.com   # domain
+```
+
+**`kortix ship`** needs a git backend to push to — either an existing GitHub
+remote (via the GitHub App or `--github-token`, both set up in the dashboard
+under **Settings → Git**, see step 4 of the quickstart) or no origin at all
+(ship then creates a managed Kortix-hosted repo, no GitHub needed). If
+managed git isn't configured yet, `ship -n` (dry-run) still validates
+`kortix.yaml`, resolves the target project, and shows the push plan without
+needing it.
+
 ## The auto-updater + channels
 
 Every instance always has a `kortix-updater` service in its Compose file (an
