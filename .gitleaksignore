@@ -34,3 +34,7 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # test fixtures, not credentials).
 940e6b256e1a75eb87b8ea954fe8fee074c63818:apps/cli/src/__tests__/browser-auth.test.ts:generic-api-key:73
 940e6b256e1a75eb87b8ea954fe8fee074c63818:apps/cli/src/__tests__/browser-auth.test.ts:generic-api-key:86
+
+# Historical version of this file (commit 791a47c8) whose comment quoted the
+# flagged value before being reworded — same self-reference as 619d83ee.
+791a47c8930ef3a8d2daa30f971e4d48535274bc:.gitleaksignore:generic-api-key:29
