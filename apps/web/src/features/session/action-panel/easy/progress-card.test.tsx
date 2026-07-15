@@ -85,4 +85,20 @@ describe('ProgressCard waiting state (W9)', () => {
     expect(html).toContain('Waiting for your answer');
     expect(html).not.toContain('Working…');
   });
+
+  test('waiting suppresses the failed-outcome prefix — being blocked outranks being broken', () => {
+    const html = renderToStaticMarkup(
+      <ProgressCard plan={plan} isRunning={false} outcome="failed" waitingOnUser />,
+    );
+    expect(html).toContain('Waiting for your answer');
+    expect(html).not.toContain('Something went wrong');
+  });
+
+  test('waiting suppresses the stopped-outcome prefix too', () => {
+    const html = renderToStaticMarkup(
+      <ProgressCard plan={plan} isRunning={false} outcome="stopped" waitingOnUser />,
+    );
+    expect(html).toContain('Waiting for your answer');
+    expect(html).not.toContain('Stopped by you');
+  });
 });
