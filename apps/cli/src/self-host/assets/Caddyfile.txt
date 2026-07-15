@@ -4,6 +4,19 @@
 # resolves the {$VAR} placeholders below from its own container environment
 # (KORTIX_DOMAIN / KORTIX_API_DOMAIN / KORTIX_ACME_EMAIL), terminates TLS via
 # ACME HTTP-01, and proxies to the other services by their Compose DNS names.
+#
+# kortix-api / llm-gateway / frontend run as 2 replicas each in this mode (see
+# applyReplicaTopology() in compose-assets.ts) with no host ports published —
+# Caddy is the only thing that reaches them, over the Compose network, and it
+# is the sole load balancer in front of them. Each uses the `dynamic a`
+# upstream source (re-resolves the service's Docker DNS name on every
+# `refresh` instead of once at config load) plus an ACTIVE health check, so
+# the zero-downtime start-first rollout in updater.sh is picked up correctly:
+# a brand new replica's IP appears in DNS immediately, before its app is
+# actually ready, and the active health check is what keeps traffic off it
+# until it starts passing; `fail_duration` additionally ejects a replica for a
+# few seconds after any failed proxy attempt (passive check) as a second line
+# of defense, e.g. mid-way through a container being stopped.
 {
 	email {$KORTIX_ACME_EMAIL}
 }
@@ -13,12 +26,27 @@
 {$KORTIX_API_DOMAIN} {
 	@llm path /v1/llm*
 	handle @llm {
-		reverse_proxy llm-gateway:8090 {
+		reverse_proxy {
+			dynamic a {
+				name llm-gateway
+				port 8090
+				refresh 5s
+			}
+			lb_policy round_robin
 			fail_duration 10s
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
 		}
 	}
 	handle {
-		reverse_proxy kortix-api:8008 {
+		reverse_proxy {
+			dynamic a {
+				name kortix-api
+				port 8008
+				refresh 5s
+			}
+			lb_policy round_robin
 			fail_duration 10s
 			health_uri /v1/health
 			health_interval 10s
@@ -27,9 +55,10 @@
 	}
 }
 
-# <domain>: the Supabase data-plane prefixes -> Kong, everything else -> the
-# frontend. Kept on the same host as the frontend so the browser never needs a
-# separate Supabase origin.
+# <domain>: the Supabase data-plane prefixes -> Kong (single instance, not
+# rolled by the auto-updater — a rare pinned-image bump just recreates it in
+# place), everything else -> the frontend (replicated + load-balanced the
+# same way as api/gateway above).
 {$KORTIX_DOMAIN} {
 	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
 	handle @supabase {
@@ -38,8 +67,17 @@
 		}
 	}
 	handle {
-		reverse_proxy frontend:3000 {
+		reverse_proxy {
+			dynamic a {
+				name frontend
+				port 3000
+				refresh 5s
+			}
+			lb_policy round_robin
 			fail_duration 10s
+			health_uri /
+			health_interval 10s
+			health_timeout 5s
 		}
 	}
 }

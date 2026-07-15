@@ -104,20 +104,35 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  # Auto-updater: on an interval, pulls this stack's image tags, and if any
-  # digest actually changed, runs the migrate one-shot and rolls the stack
-  # forward. This is the entire "update mechanism" — there is no separate
-  # systemd/SSM updater. Gated by KORTIX_AUTO_UPDATE (checked by the script
-  # itself on every cycle, default on). Always present; it just no-ops when
-  # disabled.
+  # Auto-updater: once a day, at a fixed local clock time, pulls this stack's
+  # image tags and, if anything actually changed, runs the migrate one-shot
+  # and rolls the app tier forward with a zero-downtime start-first swap (see
+  # assets/updater.sh). This is the entire "update mechanism" — there is no
+  # separate systemd/SSM updater. Gated by KORTIX_AUTO_UPDATE (checked by the
+  # script itself; off just idles the container — `kortix self-host update`
+  # still runs an on-demand pass via the same script regardless). Always
+  # present; tzdata is installed on start so KORTIX_UPDATE_TZ (a DST-aware IANA
+  # zone, e.g. America/New_York) resolves correctly on the Alpine base image.
   kortix-updater:
     image: docker:cli
     working_dir: /workspace
-    entrypoint: ["/bin/sh", "/updater/updater.sh"]
+    # The trailing "sh" is a placeholder $0 for the `-c` script below; anything
+    # `docker compose run kortix-updater <args>` appends lands in "$@" and is
+    # forwarded to updater.sh — e.g. `run --rm --no-deps kortix-updater once`
+    # runs a single on-demand pass instead of starting the daily scheduler
+    # (see `kortix self-host update`, which shells out to exactly this).
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache tzdata >/dev/null 2>&1 || true; exec /bin/sh /updater/updater.sh \"$@\"", "sh"]
     environment:
       KORTIX_AUTO_UPDATE: ${KORTIX_AUTO_UPDATE}
-      KORTIX_UPDATE_INTERVAL: ${KORTIX_UPDATE_INTERVAL}
+      KORTIX_UPDATE_TIME: ${KORTIX_UPDATE_TIME:-02:00}
+      KORTIX_UPDATE_TZ: ${KORTIX_UPDATE_TZ:-America/New_York}
+      KORTIX_ALLOW_DOWNTIME: ${KORTIX_ALLOW_DOWNTIME:-0}
       KORTIX_COMPOSE_PROJECT: __KORTIX_COMPOSE_PROJECT__
+      # Target replica count for the api/gateway/frontend start-first roll —
+      # decided once at render time by applyReplicaTopology() in
+      # compose-assets.ts (2 in domain/prod mode, 1 in laptop mode) so the
+      # updater never has to re-derive prod-vs-laptop topology itself.
+      KORTIX_APP_REPLICAS: ${KORTIX_APP_REPLICAS:-1}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./docker-compose.yml:/workspace/docker-compose.yml:ro

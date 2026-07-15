@@ -101,6 +101,23 @@ export interface RenderComposeOptions {
 }
 
 /**
+ * The stateless app-tier services the auto-updater rolls start-first. Kept in
+ * one place so the replica/port topology below and updater.sh agree on the
+ * exact same service set.
+ */
+export const ROLLING_APP_SERVICES = ['kortix-api', 'llm-gateway', 'frontend'] as const;
+
+/**
+ * Replica count for each rolling service per topology. Exported so the CLI's
+ * env writer (commands/self-host.ts) can set the exact same number into
+ * KORTIX_APP_REPLICAS — the single source of truth the auto-updater reads to
+ * know its start-first rollout target, instead of re-deriving prod-vs-laptop
+ * topology itself.
+ */
+export const PROD_APP_REPLICAS = 2;
+export const LAPTOP_APP_REPLICAS = 1;
+
+/**
  * Compose the pinned official Supabase Docker distribution with the Kortix
  * application services. The upstream service definitions and image pins stay
  * intact; we only remove globally-conflicting container names, add legacy
@@ -178,6 +195,18 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     delete services.caddy;
   }
 
+  // Prod (domain-configured) vs laptop replica/port topology. In prod mode
+  // Caddy is the single edge and reaches every app-tier service by Docker DNS
+  // (see assets/Caddyfile.txt's `dynamic a` upstreams), so the app services run
+  // 2 replicas each with NO host-port publishing — publishing a static host
+  // port would collide the moment a second replica starts. In laptop mode
+  // there is no edge/LB and no need for zero-downtime rollouts, so each
+  // service stays a single replica on its existing loopback host port. The
+  // in-compose auto-updater (updater.sh) reads this same signal back out of
+  // .env via KORTIX_APP_REPLICAS so its start-first rollout targets the right
+  // replica count without re-deriving it from the compose file at runtime.
+  applyReplicaTopology(services, Boolean(options.domainConfigured));
+
   const document: YamlRecord = {
     services,
     volumes: deepMerge(asRecord(base.volumes), asRecord(kortix.volumes)),
@@ -216,6 +245,23 @@ function writeSupabaseDataDirectories(root: string): void {
   mkdirSync(join(root, 'volumes', 'db', 'data'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'storage'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'snippets'), { recursive: true, mode: 0o700 });
+}
+
+/**
+ * Apply the prod-vs-laptop replica/port topology to the stateless app-tier
+ * services (see ROLLING_APP_SERVICES). Prod mode: `deploy.replicas: 2`, no
+ * `ports` (Caddy is the only thing that ever needs to reach them, over the
+ * Compose network by service name). Laptop mode: single replica, existing
+ * loopback `ports` mapping left untouched.
+ */
+function applyReplicaTopology(services: Record<string, YamlRecord>, domainConfigured: boolean): void {
+  const replicas = domainConfigured ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS;
+  for (const name of ROLLING_APP_SERVICES) {
+    const service = services[name];
+    if (!service) continue;
+    if (domainConfigured) delete service.ports;
+    service.deploy = { replicas };
+  }
 }
 
 function renameDependencies(value: unknown): unknown {
