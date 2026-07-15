@@ -37,6 +37,15 @@ export interface ManagedGithubAppConfig {
   /** GitHub login (user or org) the App is installed on. */
   owner?: string;
   installationId?: string;
+  /** Managed-git via a straight PAT instead of a GitHub App — the "one
+   *  server-side key" alternative to the manifest-flow App above (mirrors the
+   *  env-only `MANAGED_GIT_GITHUB_TOKEN`/`MANAGED_GIT_GITHUB_OWNER` pair, but
+   *  settable from the web UI). Mutually exclusive with the App fields above:
+   *  setting one clears the other (see routes/github-app.ts's POST /pat and
+   *  the manifest-callback handler) so git-backends/github.ts's DB-first
+   *  resolution never has to guess which method is "active". */
+  pat?: string;
+  patOwner?: string;
 }
 
 const TTL_MS = 30_000;
@@ -61,6 +70,8 @@ function parseConfig(value: unknown): ManagedGithubAppConfig {
     stateSecret: coerceString(v.stateSecret),
     owner: coerceString(v.owner),
     installationId: coerceString(v.installationId),
+    pat: coerceString(v.pat),
+    patOwner: coerceString(v.patOwner),
   };
 }
 
@@ -138,4 +149,27 @@ export async function updateManagedGithubAppConfig(
   invalidateManagedGithubAppConfig();
   await refreshManagedGithubAppConfig();
   return next;
+}
+
+/**
+ * Wipe the entire managed-git config (App creds AND PAT) — a full overwrite,
+ * not a read-modify-write patch, since the point is an unconditional
+ * disconnect (DELETE /platform/github-app) so an operator can reconfigure
+ * from a clean slate rather than accumulate stale fields from whichever
+ * method they used before.
+ */
+export async function resetManagedGithubAppConfig(): Promise<void> {
+  const { hasDatabase, db } = await import('../../shared/db');
+  if (!hasDatabase) {
+    throw new Error('Database not configured — cannot store the managed GitHub App config');
+  }
+  const { platformSettings } = await import('@kortix/db');
+
+  await db
+    .insert(platformSettings)
+    .values({ key: MANAGED_GITHUB_APP_KEY, value: {}, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: platformSettings.key, set: { value: {}, updatedAt: new Date() } });
+
+  invalidateManagedGithubAppConfig();
+  await refreshManagedGithubAppConfig();
 }

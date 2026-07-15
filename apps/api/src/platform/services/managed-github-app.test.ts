@@ -51,6 +51,7 @@ const {
   refreshManagedGithubAppConfig,
   invalidateManagedGithubAppConfig,
   updateManagedGithubAppConfig,
+  resetManagedGithubAppConfig,
   MANAGED_GITHUB_APP_KEY,
 } = await import('./managed-github-app');
 
@@ -143,5 +144,73 @@ describe('updateManagedGithubAppConfig', () => {
       owner: 'acme-corp',
       installationId: '987',
     });
+  });
+
+  // ── PAT store round-trip ─────────────────────────────────────────────────
+  // The self-host "use a token" setup path (POST /platform/github-app/pat)
+  // writes `pat`/`patOwner` into this same row, explicitly nulling the App
+  // fields (and vice versa for POST /app and the manifest flow) so the two
+  // methods stay mutually exclusive — see routes/github-app.ts.
+
+  test('stores pat + patOwner and round-trips them', async () => {
+    const next = await updateManagedGithubAppConfig({ pat: 'ghp_abc123', patOwner: 'acme-corp' });
+    expect(next).toEqual({ pat: 'ghp_abc123', patOwner: 'acme-corp' });
+    expect(managedGithubAppConfig()).toEqual({ pat: 'ghp_abc123', patOwner: 'acme-corp' });
+  });
+
+  test('setting a PAT clears a previously-stored App config (explicit undefined patch wins over the merge)', async () => {
+    await updateManagedGithubAppConfig({
+      appId: '12345',
+      slug: 'kortix-self-host-abc',
+      privateKey: 'PEM',
+      owner: 'acme-corp',
+      installationId: '987',
+    });
+
+    const next = await updateManagedGithubAppConfig({
+      pat: 'ghp_abc123',
+      patOwner: 'acme-corp',
+      appId: undefined,
+      slug: undefined,
+      privateKey: undefined,
+      owner: undefined,
+      installationId: undefined,
+    });
+
+    expect(next).toEqual({ pat: 'ghp_abc123', patOwner: 'acme-corp' });
+  });
+
+  test('setting a GitHub App clears a previously-stored PAT', async () => {
+    await updateManagedGithubAppConfig({ pat: 'ghp_abc123', patOwner: 'acme-corp' });
+
+    const next = await updateManagedGithubAppConfig({
+      appId: '12345',
+      slug: 'kortix-self-host-abc',
+      privateKey: 'PEM',
+      pat: undefined,
+      patOwner: undefined,
+    });
+
+    expect(next).toEqual({ appId: '12345', slug: 'kortix-self-host-abc', privateKey: 'PEM' });
+  });
+});
+
+describe('resetManagedGithubAppConfig', () => {
+  test('wipes the whole row (App fields AND PAT), not a merge', async () => {
+    await updateManagedGithubAppConfig({
+      appId: '12345',
+      slug: 'kortix-self-host-abc',
+      privateKey: 'PEM',
+      owner: 'acme-corp',
+      installationId: '987',
+      pat: 'ghp_abc123',
+      patOwner: 'acme-corp',
+    });
+    expect(managedGithubAppConfig()).not.toEqual({});
+
+    await resetManagedGithubAppConfig();
+
+    expect(managedGithubAppConfig()).toEqual({});
+    expect(row?.value).toEqual({});
   });
 });

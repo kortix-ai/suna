@@ -27,7 +27,17 @@ import { seedRepoViaGitPush } from './seed';
 // github-app.ts) stores `owner`/`installationId` here once an admin installs
 // the App; until then this resolves to the existing env vars unchanged.
 export function managedGithubOwner(): string | null {
-  return managedGithubAppConfig().owner?.trim() || process.env.MANAGED_GIT_GITHUB_OWNER?.trim() || null;
+  const dbConfig = managedGithubAppConfig();
+  // PAT owner first (a self-host admin who just switched to a PAT should see
+  // its owner take effect immediately, ahead of any stale App-installation
+  // owner still sitting in the same row), then the App-installation owner,
+  // then the env fallback (covers both the App-via-env and PAT-via-env cases).
+  return (
+    dbConfig.patOwner?.trim() ||
+    dbConfig.owner?.trim() ||
+    process.env.MANAGED_GIT_GITHUB_OWNER?.trim() ||
+    null
+  );
 }
 
 export function managedGithubInstallId(): string | null {
@@ -47,7 +57,7 @@ export function managedGithubInstallId(): string | null {
  * sandbox only ever sees KORTIX_TOKEN via the proxy.
  */
 function managedGithubToken(): string | null {
-  return process.env.MANAGED_GIT_GITHUB_TOKEN?.trim() || null;
+  return managedGithubAppConfig().pat?.trim() || process.env.MANAGED_GIT_GITHUB_TOKEN?.trim() || null;
 }
 
 /** Embed an `x-access-token:<token>` basic credential into an https git URL. */

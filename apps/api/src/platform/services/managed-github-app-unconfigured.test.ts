@@ -17,9 +17,12 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-const { managedGithubAppConfig, refreshManagedGithubAppConfig, updateManagedGithubAppConfig } = await import(
-  './managed-github-app'
-);
+const {
+  managedGithubAppConfig,
+  refreshManagedGithubAppConfig,
+  updateManagedGithubAppConfig,
+  resetManagedGithubAppConfig,
+} = await import('./managed-github-app');
 
 describe('managed-github-app with no DB configured', () => {
   test('refreshManagedGithubAppConfig resolves to an empty config (callers fall back to env)', async () => {
@@ -29,5 +32,9 @@ describe('managed-github-app with no DB configured', () => {
 
   test('updateManagedGithubAppConfig throws a clear error rather than silently no-op-ing', async () => {
     await expect(updateManagedGithubAppConfig({ appId: '1' })).rejects.toThrow(/Database not configured/);
+  });
+
+  test('resetManagedGithubAppConfig throws the same clear error', async () => {
+    await expect(resetManagedGithubAppConfig()).rejects.toThrow(/Database not configured/);
   });
 });

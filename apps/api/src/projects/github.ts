@@ -223,13 +223,15 @@ function base64UrlJson(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
 
-export function createGitHubAppJwt(nowMs = Date.now()) {
-  const appId = githubAppId()?.trim();
-  const privateKey = githubAppPrivateKey();
-  if (!appId || !privateKey) {
-    throw new Error('GitHub App is not configured (set KORTIX_GITHUB_APP_ID and KORTIX_GITHUB_APP_PRIVATE_KEY)');
-  }
-
+/**
+ * Sign a GitHub App JWT for an EXPLICIT (appId, privateKey) pair — split out
+ * of `createGitHubAppJwt` so the "paste an existing App" setup route
+ * (platform/routes/github-app.ts's POST /app) can validate credentials a user
+ * just typed in *before* they're stored as the platform's active config
+ * (`createGitHubAppJwt` below only ever signs for whatever is ALREADY
+ * configured).
+ */
+export function signGitHubAppJwt(appId: string, privateKey: string, nowMs = Date.now()) {
   const now = Math.floor(nowMs / 1000);
   const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' });
   const payload = base64UrlJson({
@@ -243,6 +245,15 @@ export function createGitHubAppJwt(nowMs = Date.now()) {
   signer.end();
   const signature = signer.sign(normalizeGitHubPrivateKey(privateKey)).toString('base64url');
   return `${unsigned}.${signature}`;
+}
+
+export function createGitHubAppJwt(nowMs = Date.now()) {
+  const appId = githubAppId()?.trim();
+  const privateKey = githubAppPrivateKey();
+  if (!appId || !privateKey) {
+    throw new Error('GitHub App is not configured (set KORTIX_GITHUB_APP_ID and KORTIX_GITHUB_APP_PRIVATE_KEY)');
+  }
+  return signGitHubAppJwt(appId, privateKey, nowMs);
 }
 
 function requestToken(auth?: Pick<GitHubAuthContext, 'token'>) {

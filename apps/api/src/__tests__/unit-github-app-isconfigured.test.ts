@@ -33,7 +33,7 @@ mock.module('../platform/services/managed-github-app', () => ({
 }));
 
 const { isGithubAppConfigured } = await import('../projects/github');
-const { githubBackend } = await import('../projects/git-backends/github');
+const { githubBackend, managedGithubOwner } = await import('../projects/git-backends/github');
 
 const ENV_KEYS = [
   'KORTIX_GITHUB_APP_ID',
@@ -135,5 +135,31 @@ describe('githubBackend.isConfigured() — flips true once the DB config is comp
 
     await updateManagedGithubAppConfig({ owner: 'acme-corp', installationId: '987' });
     expect(await githubBackend.isConfigured()).toBe(true); // now fully configured
+  });
+
+  test('a DB-stored PAT (dbConfig.pat, the web "use a token" setup path) is enough, no env var needed', async () => {
+    dbConfig = { pat: 'ghp_abc123', patOwner: 'acme-corp' };
+    expect(await githubBackend.isConfigured()).toBe(true);
+  });
+});
+
+describe('managedGithubOwner — PAT owner takes precedence over a stale App-installation owner', () => {
+  test('null when nothing is configured', () => {
+    expect(managedGithubOwner()).toBeNull();
+  });
+
+  test('DB App-installation owner when set', () => {
+    dbConfig = { owner: 'app-owner-corp' };
+    expect(managedGithubOwner()).toBe('app-owner-corp');
+  });
+
+  test('DB PAT owner wins over a DB App-installation owner sitting in the same row', () => {
+    dbConfig = { owner: 'app-owner-corp', patOwner: 'pat-owner-corp' };
+    expect(managedGithubOwner()).toBe('pat-owner-corp');
+  });
+
+  test('falls back to MANAGED_GIT_GITHUB_OWNER when the DB config has neither', () => {
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'env-owner-corp';
+    expect(managedGithubOwner()).toBe('env-owner-corp');
   });
 });

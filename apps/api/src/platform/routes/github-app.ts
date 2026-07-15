@@ -37,12 +37,19 @@ import {
   getGitHubAppInstallation,
   githubAppSlug,
   isGithubAppConfigured,
+  signGitHubAppJwt,
   verifyGitHubAppInstallStatePayload,
 } from '../../projects/github';
-import { githubBackend, managedGithubInstallId, managedGithubOwner } from '../../projects/git-backends/github';
+import {
+  githubBackend,
+  managedGithubInstallId,
+  managedGithubOwner,
+  managedGithubToken,
+} from '../../projects/git-backends/github';
 import {
   managedGithubAppConfig,
   refreshManagedGithubAppConfig,
+  resetManagedGithubAppConfig,
   updateManagedGithubAppConfig,
 } from '../services/managed-github-app';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -341,6 +348,11 @@ githubAppSetupRouter.openapi(
         clientSecret: conversion.client_secret,
         webhookSecret: conversion.webhook_secret,
         stateSecret: managedGithubAppConfig().stateSecret || randomBytes(32).toString('hex'),
+        // A GitHub App and a PAT are mutually exclusive managed-git methods —
+        // clear any PAT so the active method stays unambiguous (see
+        // git-backends/github.ts's DB-first resolution + POST /pat below).
+        pat: undefined,
+        patOwner: undefined,
       });
 
       const installUrl = buildGitHubAppInstallUrl(parsedState.accountId, parsedState.nonce);
@@ -417,6 +429,36 @@ githubAppSetupRouter.openapi(
 );
 
 // ─── GET /status ──────────────────────────────────────────────────────────────
+//
+// `source` reports WHICH of the three managed-git methods (see module
+// docblock + `docs/specs` self-host git settings work) is active, in this
+// precedence order — matching how the accessors themselves resolve
+// (App-DB > App-env > PAT, PAT itself DB-first then env):
+//   'db'   — a GitHub App created via the in-app manifest flow OR pasted in
+//            via POST /app (both write the same DB config).
+//   'env'  — a GitHub App configured via KORTIX_GITHUB_APP_*/GITHUB_APP_* env
+//            vars (the hosted Kortix deployment's setup).
+//   'pat'  — a personal/fine-grained access token, via POST /pat (DB) or
+//            MANAGED_GIT_GITHUB_TOKEN (env).
+//   'none' — managed-git isn't usable via any method yet.
+
+export type ManagedGitSource = 'db' | 'env' | 'pat' | 'none';
+
+/**
+ * Pure precedence rule behind `GET /status`'s `source` field — split out so
+ * it's testable without a Hono context/DB (see unit-github-app-pat.test.ts).
+ * Mirrors the accessors' own resolution order: App-DB > App-env > PAT.
+ */
+export function resolveManagedGitSource(input: {
+  dbAppConfigured: boolean;
+  envAppConfigured: boolean;
+  patConfigured: boolean;
+}): ManagedGitSource {
+  if (input.dbAppConfigured) return 'db';
+  if (input.envAppConfigured) return 'env';
+  if (input.patConfigured) return 'pat';
+  return 'none';
+}
 
 githubAppSetupRouter.openapi(
   createRoute({
@@ -433,7 +475,7 @@ githubAppSetupRouter.openapi(
           owner: z.string().nullable(),
           slug: z.string().nullable(),
           installation_id: z.string().nullable(),
-          source: z.enum(['db', 'env', 'none']),
+          source: z.enum(['db', 'env', 'pat', 'none']),
         }),
         'Managed GitHub App status',
       ),
@@ -441,17 +483,21 @@ githubAppSetupRouter.openapi(
     },
   }),
   async (c: any) => {
+    // Reuse the git-backend's own resolution (githubBackend.isConfigured())
+    // rather than re-deriving "is managed-git usable" here — it already
+    // covers PAT + App-installation, so this route can never drift from what
+    // project creation actually does.
     const configured = await githubBackend.isConfigured();
     const owner = managedGithubOwner();
     const slug = githubAppSlug();
     const installationId = managedGithubInstallId();
 
     const dbConfig = managedGithubAppConfig();
-    const source: 'db' | 'env' | 'none' = dbConfig.appId
-      ? 'db'
-      : isGithubAppConfigured() || owner
-        ? 'env'
-        : 'none';
+    const source = resolveManagedGitSource({
+      dbAppConfigured: Boolean(dbConfig.appId),
+      envAppConfigured: isGithubAppConfigured(),
+      patConfigured: Boolean(managedGithubToken()),
+    });
 
     return c.json({
       configured,
@@ -460,5 +506,233 @@ githubAppSetupRouter.openapi(
       installation_id: installationId,
       source,
     });
+  },
+);
+
+// ─── POST /app ────────────────────────────────────────────────────────────────
+// "Paste an existing GitHub App" — an alternative to the manifest flow for an
+// operator who already has an App (created by hand, or shared across
+// instances). Validated by signing a JWT with the pasted creds and asking
+// GitHub to resolve the installation BEFORE anything is stored, so a typo'd
+// key or installation id fails loudly here instead of silently at the first
+// project creation.
+
+export async function verifyPastedGithubAppInstallation(
+  appId: string,
+  privateKey: string,
+  installationId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ owner: string }> {
+  let jwt: string;
+  try {
+    jwt = signGitHubAppJwt(appId, privateKey);
+  } catch {
+    throw new Error('Could not sign a JWT with that private key — check the PEM was pasted correctly');
+  }
+  const res = await fetchImpl(
+    `https://api.github.com/app/installations/${encodeURIComponent(installationId)}`,
+    {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${jwt}`,
+        'User-Agent': 'kortix-api',
+      },
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      res.status === 401 || res.status === 404
+        ? 'GitHub rejected those App credentials or installation id — double-check the App ID, private key, and installation id'
+        : `GitHub rejected the App credentials (${res.status}): ${detail || res.statusText}`,
+    );
+  }
+  const body = (await res.json()) as { account?: { login?: string } };
+  const owner = body.account?.login;
+  if (!owner) throw new Error('Could not resolve the installation owner from GitHub');
+  return { owner };
+}
+
+githubAppSetupRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/app',
+    tags: ['platform'],
+    summary: 'Configure managed-git by pasting an existing GitHub App\'s credentials + installation',
+    ...auth,
+    middleware: [supabaseAuth, requireAdmin] as const,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              app_id: z.string().min(1),
+              private_key: z.string().min(1),
+              installation_id: z.string().min(1),
+              slug: z.string().optional(),
+            }),
+          },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.literal(true), owner: z.string() }), 'App credentials stored'),
+      ...errors(400, 401, 403, 500),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => ({}));
+    const appId = typeof body?.app_id === 'string' ? body.app_id.trim() : '';
+    const privateKey = typeof body?.private_key === 'string' ? body.private_key.trim() : '';
+    const installationId = typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
+    const slug = typeof body?.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
+
+    if (!appId || !privateKey || !installationId) {
+      return c.json(
+        { error: true, message: 'app_id, private_key and installation_id are required', status: 400 },
+        400,
+      );
+    }
+
+    let owner: string;
+    try {
+      const verified = await verifyPastedGithubAppInstallation(appId, privateKey, installationId);
+      owner = verified.owner;
+    } catch (err) {
+      return c.json({ error: true, message: err instanceof Error ? err.message : String(err), status: 400 }, 400);
+    }
+
+    await updateManagedGithubAppConfig({
+      appId,
+      privateKey,
+      installationId,
+      owner,
+      slug,
+      stateSecret: managedGithubAppConfig().stateSecret || randomBytes(32).toString('hex'),
+      // Mutually exclusive with a PAT — see POST /pat's matching comment.
+      pat: undefined,
+      patOwner: undefined,
+    });
+
+    return c.json({ ok: true as const, owner });
+  },
+);
+
+// ─── POST /pat ────────────────────────────────────────────────────────────────
+// "Use a token" — the quickest managed-git setup, but deliberately framed
+// (here and in the web UI) as a dedicated fine-grained token scoped to the
+// repos it needs, NOT an everyday personal token. Validated against GitHub
+// before being stored so a bad token fails loudly here instead of at the
+// first project creation.
+
+githubAppSetupRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/pat',
+    tags: ['platform'],
+    summary: 'Configure managed-git via a personal/fine-grained access token instead of a GitHub App',
+    ...auth,
+    middleware: [supabaseAuth, requireAdmin] as const,
+    request: {
+      body: {
+        content: {
+          'application/json': { schema: z.object({ token: z.string().min(1), owner: z.string().min(1) }) },
+        },
+        required: true,
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.literal(true) }), 'Token stored'),
+      ...errors(400, 401, 403, 500),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => ({}));
+    const token = typeof body?.token === 'string' ? body.token.trim() : '';
+    const owner = typeof body?.owner === 'string' ? body.owner.trim() : '';
+    if (!token || !owner) {
+      return c.json({ error: true, message: 'token and owner are required', status: 400 }, 400);
+    }
+
+    try {
+      const res = await fetch('https://api.github.com/user', {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'kortix-api',
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        return c.json(
+          {
+            error: true,
+            message:
+              res.status === 401
+                ? 'GitHub rejected that token — check it was copied correctly and has not expired'
+                : `GitHub rejected the token (${res.status})`,
+            status: 400,
+          },
+          400,
+        );
+      }
+    } catch (err) {
+      return c.json(
+        {
+          error: true,
+          message: `Could not reach GitHub to validate the token: ${err instanceof Error ? err.message : String(err)}`,
+          status: 400,
+        },
+        400,
+      );
+    }
+
+    await updateManagedGithubAppConfig({
+      pat: token,
+      patOwner: owner,
+      // A PAT and a GitHub App are mutually exclusive managed-git methods —
+      // clear the App half so isConfigured()/source resolution never has to
+      // guess which one is "active" (see git-backends/github.ts).
+      appId: undefined,
+      slug: undefined,
+      privateKey: undefined,
+      clientId: undefined,
+      clientSecret: undefined,
+      webhookSecret: undefined,
+      owner: undefined,
+      installationId: undefined,
+    });
+
+    return c.json({ ok: true as const });
+  },
+);
+
+// ─── DELETE / ─────────────────────────────────────────────────────────────────
+// Disconnect managed-git entirely (App AND/OR PAT) so an operator can
+// reconfigure from a clean slate instead of the setup card guessing which of
+// several half-cleared fields is still "active".
+
+githubAppSetupRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/',
+    tags: ['platform'],
+    summary: 'Disconnect managed-git — clears the GitHub App and/or PAT configuration',
+    ...auth,
+    middleware: [supabaseAuth, requireAdmin] as const,
+    responses: {
+      200: json(z.object({ ok: z.literal(true) }), 'Cleared'),
+      ...errors(401, 403, 500),
+    },
+  }),
+  async (c: any) => {
+    try {
+      await resetManagedGithubAppConfig();
+      return c.json({ ok: true as const });
+    } catch (err) {
+      return c.json({ error: true, message: err instanceof Error ? err.message : String(err), status: 500 }, 500);
+    }
   },
 );
