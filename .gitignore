@@ -130,16 +130,24 @@ infra/terraform/**/.terraform.lock.hcl
 infra/terraform/**/*.tfstate
 infra/terraform/**/*.tfstate.*
 infra/terraform/**/*.tfvars
-kortix-selfhost/terraform/**/.terraform/
-kortix-selfhost/terraform/**/.terraform.lock.hcl
-kortix-selfhost/terraform/**/*.tfstate
-kortix-selfhost/terraform/**/*.tfstate.*
-kortix-selfhost/terraform/**/*.tfvars
+self-host/terraform/**/.terraform/
+self-host/terraform/**/.terraform.lock.hcl
+self-host/terraform/**/*.tfstate
+self-host/terraform/**/*.tfstate.*
+self-host/terraform/**/*.tfvars
+# deployments/ is kept temporarily for deployments/essentia (an in-flight
+# operator deploy mid-move to infra/deployments/ — see infra/deployments/README.md);
+# infra/deployments/ is the new canonical location (vps-demo already lives there).
 deployments/**/.terraform/
 deployments/**/.terraform.lock.hcl
 deployments/**/*.tfstate
 deployments/**/*.tfstate.*
 deployments/**/*.tfvars
+infra/deployments/**/.terraform/
+infra/deployments/**/.terraform.lock.hcl
+infra/deployments/**/*.tfstate
+infra/deployments/**/*.tfstate.*
+infra/deployments/**/*.tfvars
 .cursor
 
 apps/mobile/.env.example
