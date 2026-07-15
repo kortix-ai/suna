@@ -79,4 +79,15 @@ export const isBillingEnabled = (): boolean => {
   return getEnv().BILLING_ENABLED;
 };
 
+/**
+ * Whether this deployment is scoped to a single account (self-host,
+ * KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE). Hides "New account" affordances and
+ * team-management surfaces (members/groups/identity) that only make sense
+ * with more than one account/user. Mirrors the backend's
+ * KORTIX_SINGLE_ACCOUNT_MODE, which 403s POST /v1/accounts.
+ */
+export const isSingleAccountMode = (): boolean => {
+  return getEnv().SINGLE_ACCOUNT_MODE;
+};
+
 import { getEnv } from '@/lib/env-config';

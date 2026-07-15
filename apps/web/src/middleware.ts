@@ -299,6 +299,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/projects', request.url));
   }
 
+  // Self-host: KORTIX_PUBLIC_DISABLE_LANDING_PAGE sends UNAUTHENTICATED
+  // visitors hitting "/" straight to /auth instead of the marketing landing
+  // page (authenticated users already redirect to /projects above). Read via
+  // process.env directly — NEXT_PUBLIC_ vars are inlined at build time, so in
+  // Docker containers they'd carry the image's placeholder value; the
+  // runtime container env (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`)
+  // is what must win here, same convention as the Supabase vars below.
+  const disableLandingPage =
+    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE || process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+  if (pathname === '/' && !user && disableLandingPage) {
+    return NextResponse.redirect(new URL('/auth', request.url));
+  }
+
   // Allow all public routes — but return supabaseResponse (not NextResponse.next())
   // so that any cookie updates from getUser() token refresh are preserved.
   // Returning a fresh NextResponse.next() would discard refreshed auth cookies,
