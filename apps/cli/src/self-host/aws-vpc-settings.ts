@@ -33,7 +33,7 @@ export function completeConfiguration(config: SelfHostInstanceConfig): CompleteA
   const missing = missingConfiguration(coordinates);
   if (missing.length > 0) {
     throw new Error(
-      `AWS VPC deployment config is incomplete (${missing.join(', ')}); run kortix self-host configure --instance ${config.instance}`,
+      `AWS EC2 deployment config is incomplete (${missing.join(', ')}); run kortix self-host configure --instance ${config.instance}`,
     );
   }
   return coordinates as CompleteAwsVpcConfig;
@@ -70,11 +70,11 @@ export function parseConfigurationAssignments(args: string[]): Partial<CompleteA
   const result: Record<string, string> = {};
   const allowed = new Set<string>(CONFIG_FIELDS);
   for (const arg of args) {
-    if (arg.startsWith('-')) throw new Error(`unknown AWS VPC configure option "${arg}"`);
+    if (arg.startsWith('-')) throw new Error(`unknown AWS EC2 configure option "${arg}"`);
     const separator = arg.indexOf('=');
     if (separator < 1) throw new Error(`configure value must use key=value, got "${arg}"`);
     const key = arg.slice(0, separator).toLowerCase().replaceAll('-', '_');
-    if (!allowed.has(key)) throw new Error(`unsupported AWS VPC setting "${key}"`);
+    if (!allowed.has(key)) throw new Error(`unsupported AWS EC2 setting "${key}"`);
     result[key] = arg.slice(separator + 1);
   }
   return result as Partial<CompleteAwsVpcConfig>;

@@ -4,8 +4,19 @@ Every stable promotion requires a reviewed compatibility contract. The release
 workflow refuses to infer rollback or database safety from a version number.
 
 - `kubernetes_minor` lists the exact EKS minors certified for the artifact.
-- `rollback_from` lists newer enterprise releases that may safely roll back to
-  this release. Leave it empty until that exact downgrade has passed the drill.
+- `rollback_from` lists the prior published revision(s) that this release can
+  be safely rolled back to. The protected promotion workflow enforces this:
+  for any revision `eN` with `N > 1`, `rollback_from` MUST be non-empty and
+  MUST include the immediately preceding published revision for the same
+  production version — the highest existing `e<k>` (`k < N`) contract file
+  already committed under this directory. Every entry must itself resolve to
+  a contract file that has already been published (an existing
+  `infra/enterprise-releases/<entry>.json`); the workflow fails the promotion
+  otherwise. Additional predecessors, including ones from an earlier
+  production version (e.g. a new version's `e1` rolling back into the prior
+  version's last revision), may be listed explicitly alongside the required
+  entry. The first revision of a brand-new production version (`e1`) is
+  exempt from this check because there is no prior revision to name.
 - `migrations` lists migrations introduced relative to the preceding stable
   baseline, with the source digest and explicit rollback properties. The first
   customer-zero release may use a single reviewed `baseline` entry because

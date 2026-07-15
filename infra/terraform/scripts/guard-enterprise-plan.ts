@@ -22,9 +22,14 @@ export type GuardResult = {
 const REVIEW_TYPES = [
   /^aws_iam_/,
   /^aws_kms_/,
-  /^aws_eks_access_/,
-  /^aws_cloudwatch_event_permission$/,
+  // The appliance host and its stable public identity are THE foundational
+  // boundary (there is one box). Any change to the instance or its EIP —
+  // instance type, user-data, address — is reviewed; a replacement is blocked
+  // outright above.
+  /^aws_instance$/,
+  /^aws_eip(_association)?$/,
   /^aws_security_group(_rule)?$/,
+  /^aws_vpc_security_group_(ingress|egress)_rule$/,
   /^aws_vpc_endpoint$/,
   /^aws_route(_table)?$/,
   /^aws_route_table_association$/,

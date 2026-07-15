@@ -132,11 +132,21 @@ export interface GitTriggerSpec {
    *   triggers that should feel like a single persistent agent run.
    */
   sessionMode: GitTriggerSessionMode;
+  /**
+   * For `sessionMode === 'pinned'` only — the exact `project_sessions.session_id`
+   * this trigger loops. Null for `'fresh'`/`'reuse'`. Stored in the manifest as
+   * `session_id` (portable) AND persisted on `project_trigger_runtime.session_id`.
+   */
+  pinnedSessionId: string | null;
 }
 
-export type GitTriggerSessionMode = 'fresh' | 'reuse';
+export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned';
 
-export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = ['fresh', 'reuse'];
+export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
+  'fresh',
+  'reuse',
+  'pinned',
+];
 
 export interface GitTriggerParseError {
   slug: string;
@@ -344,8 +354,12 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   entry.enabled = spec.enabled;
   // Only emit session_mode when it deviates from the default ('fresh') so
   // existing manifests stay byte-stable on round-trip.
-  if (spec.sessionMode === 'reuse') {
+  if (spec.sessionMode !== 'fresh') {
     entry.session_mode = spec.sessionMode;
+  }
+  // `pinned` carries the exact session id to loop.
+  if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
+    entry.session_id = spec.pinnedSessionId;
   }
   if (spec.type === 'cron') {
     if (spec.runAt) {
@@ -433,10 +447,28 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
       : typeof row.sessionMode === 'string'
         ? row.sessionMode.trim().toLowerCase()
         : '';
-  if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
-    return err(slug, `session_mode must be "fresh" or "reuse" (got "${sessionModeRaw}")`);
+  if (
+    sessionModeRaw &&
+    sessionModeRaw !== 'fresh' &&
+    sessionModeRaw !== 'reuse' &&
+    sessionModeRaw !== 'pinned'
+  ) {
+    return err(slug, `session_mode must be "fresh", "reuse", or "pinned" (got "${sessionModeRaw}")`);
   }
-  const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
+  const sessionMode: GitTriggerSessionMode =
+    sessionModeRaw === 'reuse' ? 'reuse' : sessionModeRaw === 'pinned' ? 'pinned' : 'fresh';
+
+  // `pinned` carries the exact session id to loop (manifest key `session_id`).
+  const pinnedSessionIdRaw =
+    typeof row.session_id === 'string'
+      ? row.session_id.trim()
+      : typeof row.sessionId === 'string'
+        ? row.sessionId.trim()
+        : '';
+  if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
+    return err(slug, 'session_mode "pinned" requires a `session_id` to pin the trigger to');
+  }
+  const pinnedSessionId: string | null = sessionMode === 'pinned' ? pinnedSessionIdRaw : null;
 
   const path = `${filename}#triggers.${slug}`;
 
@@ -484,6 +516,7 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
           timezone,
           secretEnv: null,
           sessionMode,
+          pinnedSessionId,
         },
       };
     }
@@ -506,6 +539,7 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
         timezone,
         secretEnv: null,
         sessionMode,
+        pinnedSessionId,
       },
     };
   }
@@ -542,6 +576,7 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
       timezone: 'UTC',
       secretEnv,
       sessionMode,
+      pinnedSessionId,
     },
   };
 }

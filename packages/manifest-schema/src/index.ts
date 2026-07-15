@@ -909,15 +909,30 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
         : typeof entry.sessionMode === 'string'
           ? entry.sessionMode
           : undefined;
+    let sessionMode: string | undefined;
     if (sessionModeRaw !== undefined) {
-      const sessionMode = sessionModeRaw.trim().toLowerCase();
-      if (sessionMode !== 'fresh' && sessionMode !== 'reuse') {
+      sessionMode = sessionModeRaw.trim().toLowerCase();
+      if (sessionMode !== 'fresh' && sessionMode !== 'reuse' && sessionMode !== 'pinned') {
         issues.push({
           path: `${where}.session_mode`,
-          message: 'session_mode must be "fresh" or "reuse".',
+          message: 'session_mode must be "fresh", "reuse", or "pinned".',
           severity: 'error',
         });
       }
+    }
+    // `pinned` requires a session_id to loop; must not be empty.
+    const sessionIdRaw =
+      typeof entry.session_id === 'string'
+        ? entry.session_id
+        : typeof entry.sessionId === 'string'
+          ? entry.sessionId
+          : undefined;
+    if (sessionMode === 'pinned' && !(sessionIdRaw && sessionIdRaw.trim())) {
+      issues.push({
+        path: `${where}.session_id`,
+        message: 'session_mode "pinned" requires a non-empty session_id.',
+        severity: 'error',
+      });
     }
   });
 }

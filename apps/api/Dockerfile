@@ -47,10 +47,8 @@ COPY packages/starter ./packages/starter
 # the compiled CLI. Copy only the source graph it imports; provider caches,
 # state, and unrelated deployment environments never enter this build stage.
 COPY infra/terraform/environments/enterprise-vpc-template ./infra/terraform/environments/enterprise-vpc-template
-COPY infra/terraform/modules/enterprise-platform ./infra/terraform/modules/enterprise-platform
 COPY infra/terraform/modules/enterprise-state ./infra/terraform/modules/enterprise-state
 COPY infra/terraform/modules/enterprise-vpc ./infra/terraform/modules/enterprise-vpc
-COPY infra/terraform/modules/eks ./infra/terraform/modules/eks
 COPY infra/terraform/modules/network ./infra/terraform/modules/network
 COPY infra/terraform/scripts/guard-enterprise-plan.ts ./infra/terraform/scripts/guard-enterprise-plan.ts
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \

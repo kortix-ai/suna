@@ -999,7 +999,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
 
   const finish = () => {
     markDone(guide.steps[guide.steps.length - 1]!.id);
-    router.push(`/accounts/${accountId}?tab=settings`);
+    router.push(`/accounts/${accountId}?tab=identity`);
   };
 
   const step = guide.steps[Math.min(activeStep, guide.steps.length - 1)]!;

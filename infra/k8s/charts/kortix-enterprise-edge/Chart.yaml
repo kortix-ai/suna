@@ -1,6 +1,0 @@
-apiVersion: v2
-name: kortix-enterprise-edge
-description: Kortix enterprise frontend and shared ALB routes to API, gateway, and private Supabase
-type: application
-version: 0.1.0
-appVersion: "1.0"

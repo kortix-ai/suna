@@ -6,8 +6,9 @@ import { join, resolve } from 'node:path';
 const CLI_ENTRY = resolve(import.meta.dir, '..', '..', 'index.ts');
 const TRUSTED_ROOT = 'a'.repeat(64);
 const BOOTSTRAP_DIGEST = 'b'.repeat(64);
+const BEDROCK_KEY = 'bedrock-super-secret-value';
 
-describe('kortix self-host aws-vpc', () => {
+describe('kortix self-host aws-ec2', () => {
   let tmp: string;
   let configRoot: string;
   let fakeBin: string;
@@ -24,7 +25,7 @@ describe('kortix self-host aws-vpc', () => {
     installFakeAws();
     installFakeTerraform();
     installSuccessfulTool('kubectl', '{"clientVersion":{"gitVersion":"v1.32.0"}}');
-    installSuccessfulTool('helm', 'v3.17.0');
+    installSuccessfulTool('sleep', '');
   });
 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
@@ -41,37 +42,33 @@ case "$*" in
     case "$*" in *"--profile wrong-account"*) account="327903111249" ;; esac
     printf '{"UserId":"fake","Account":"%s","Arn":"arn:aws:iam::%s:user/fake"}\n' "$account" "$account"
     ;;
-  *"stepfunctions start-execution"*)
-    printf '%s\n' '{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:cli-1","startDate":"2026-07-13T12:00:00Z"}'
+  *"ssm get-parameters"*)
+    if [ "\${FAKE_RELEASE_EMPTY:-}" = "1" ]; then
+      printf '%s\n' '{"Parameters":[],"InvalidParameters":["/kortix/vpc-demo/release"]}'
+    else
+      printf '%s\n' '{"Parameters":[{"Value":"{\\\"version\\\":\\\"0.9.84-e1\\\",\\\"digests\\\":{\\\"api\\\":\\\"sha256:aaa\\\"},\\\"supabase_bundle_sha\\\":\\\"d\\\",\\\"deployed_at\\\":\\\"2026-07-14T12:00:00Z\\\"}"}]}'
+    fi
     ;;
-  *"stepfunctions list-executions"*)
-    printf '%s\n' '{"executions":[{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:hourly-1","name":"hourly-1","status":"SUCCEEDED","startDate":"2026-07-13T11:00:00Z","stopDate":"2026-07-13T11:05:00Z"}]}'
-    ;;
-  *"dynamodb get-item"*)
-    if [ "\${FAKE_DYNAMO_EMPTY:-}" = "1" ]; then exit 0; fi
-    printf '%s\n' '{"Item":{"instance":{"S":"kortix-vpc-demo"},"release":{"S":"0.9.84-e1"},"channel":{"S":"stable"},"status":{"S":"healthy"},"updated_at":{"S":"2026-07-13T11:05:00Z"}}}'
-    ;;
-  *"eks describe-cluster"*)
-    printf '%s\n' '{"cluster":{"name":"kortix-vpc-demo","status":"ACTIVE","version":"1.32","endpoint":"https://private.example"}}'
-    ;;
-  *"codebuild batch-get-projects"*)
-    printf '%s\n' '{"projects":[{"name":"kortix-vpc-demo-updater","arn":"arn:aws:codebuild:us-west-2:935064898258:project/kortix-vpc-demo-updater"}],"projectsNotFound":[]}'
+  *"ssm put-parameter"*) printf '%s\n' '{"Version":1}' ;;
+  *"ssm send-command"*) printf '%s\n' '{"Command":{"CommandId":"cmd-1"}}' ;;
+  *"ssm get-command-invocation"*)
+    printf '%s\n' '{"Status":"Success","StandardErrorContent":"","StandardOutputContent":"[{\\\"Service\\\":\\\"api\\\",\\\"State\\\":\\\"running\\\",\\\"Health\\\":\\\"healthy\\\"},{\\\"Service\\\":\\\"gateway\\\",\\\"State\\\":\\\"running\\\"},{\\\"Service\\\":\\\"frontend\\\",\\\"State\\\":\\\"running\\\"},{\\\"Service\\\":\\\"caddy\\\",\\\"State\\\":\\\"running\\\"}]"}'
     ;;
   *"ec2 describe-instances"*)
-    printf '%s\n' '{"Reservations":[{"Instances":[{"InstanceId":"i-0123456789","State":{"Name":"running"},"PrivateIpAddress":"10.60.16.10"}]}]}'
+    printf '%s\n' '{"Reservations":[{"Instances":[{"InstanceId":"i-0123456789","State":{"Name":"running"},"PrivateIpAddress":"10.60.16.10","PublicIpAddress":"52.10.0.5"}]}]}'
     ;;
   *"secretsmanager get-secret-value"*)
     if [ "\${FAKE_RUNTIME_MISSING:-}" = "1" ]; then
       printf '%s\n' 'ResourceNotFoundException: Secrets Manager can not find the specified secret value' >&2
       exit 254
     fi
-    printf '%s\n' '{"SecretString":"{\\\"SMTP_ADMIN_EMAIL\\\":\\\"admin@example.com\\\",\\\"SMTP_HOST\\\":\\\"smtp.example.com\\\",\\\"SMTP_PORT\\\":\\\"587\\\",\\\"SMTP_USER\\\":\\\"smtp-user\\\",\\\"SMTP_PASS\\\":\\\"smtp-pass\\\",\\\"SMTP_SENDER_NAME\\\":\\\"Kortix\\\",\\\"DAYTONA_API_KEY\\\":\\\"daytona-key\\\",\\\"OPENROUTER_API_KEY\\\":\\\"openrouter-key\\\"}"}'
+    printf '%s\n' '{"SecretString":"{\\\"SMTP_ADMIN_EMAIL\\\":\\\"admin@example.com\\\",\\\"SMTP_HOST\\\":\\\"smtp.example.com\\\",\\\"SMTP_PORT\\\":\\\"587\\\",\\\"SMTP_USER\\\":\\\"smtp-user\\\",\\\"SMTP_PASS\\\":\\\"smtp-pass\\\",\\\"SMTP_SENDER_NAME\\\":\\\"Kortix\\\",\\\"DAYTONA_API_KEY\\\":\\\"daytona-key\\\",\\\"AWS_BEDROCK_API_KEY\\\":\\\"${BEDROCK_KEY}\\\"}"}'
     ;;
   *"secretsmanager put-secret-value"*)
     cat >/dev/null
-    printf '%s\n' '{"ARN":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test","VersionId":"00000000-0000-0000-0000-000000000000"}'
+    printf '%s\n' '{"ARN":"arn:aws:secretsmanager:us-west-2:935064898258:secret:vpc-demo/runtime-test","VersionId":"00000000-0000-0000-0000-000000000000"}'
     ;;
-  *"logs tail"*) printf '%s\n' '2026-07-13T11:05:00Z updater healthy' ;;
+  *"logs tail"*) printf '%s\n' '2026-07-13T11:05:00Z deployer up to date' ;;
   *"--version"*) printf '%s\n' 'aws-cli/2.31.0' ;;
   *) printf '%s\n' "unexpected aws args: $*" >&2; exit 64 ;;
 esac
@@ -89,16 +86,16 @@ printf '%s\n' "$*" >> "$FAKE_TERRAFORM_LOG"
 case "$*" in
   "version -json") printf '%s\n' '{"terraform_version":"1.9.8"}' ;;
   *"show -json"*)
-    printf '%s\n' '{"format_version":"1.2","resource_changes":[{"address":"module.enterprise.aws_iam_role.updater","type":"aws_iam_role","change":{"actions":["create"]}}]}'
+    printf '%s\n' '{"format_version":"1.2","resource_changes":[{"address":"module.enterprise.aws_ecs_service.api","type":"aws_ecs_service","change":{"actions":["create"]}}]}'
     ;;
   *"output -json backend_config"*)
-    printf '%s\n' '{"bucket":"kortix-vpc-demo-935064898258-us-west-2-tfstate","dynamodb_table":"kortix-vpc-demo-terraform-locks","region":"us-west-2","encrypt":true,"kms_key_id":"arn:aws:kms:us-west-2:935064898258:key/state"}'
+    printf '%s\n' '{"bucket":"vpc-demo-935064898258-us-west-2-tfstate","dynamodb_table":"vpc-demo-terraform-locks","region":"us-west-2","encrypt":true,"kms_key_id":"arn:aws:kms:us-west-2:935064898258:key/state"}'
     ;;
   *"output -json permissions_boundary_arn"*)
-    printf '%s\n' '"arn:aws:iam::935064898258:policy/kortix-vpc-demo-workload-boundary"'
+    printf '%s\n' '"arn:aws:iam::935064898258:policy/vpc-demo-workload-boundary"'
     ;;
   *"output -json instance"*)
-    printf '%s\n' '{"name":"kortix-vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","state_machine_arn":"arn:aws:states:us-west-2:935064898258:stateMachine:kortix-vpc-demo-reconcile","release_state_table":"kortix-vpc-demo-release-state","supabase_instance_id":"i-0123456789","supabase_private_ip":"10.60.16.10","runtime_secret_arn":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test"}'
+    printf '%s\n' '{"name":"vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","supabase_instance_id":"i-0123456789","supabase_private_ip":"10.60.16.10","runtime_secret_arn":"arn:aws:secretsmanager:us-west-2:935064898258:secret:vpc-demo/runtime-test"}'
     ;;
   *"state pull"*)
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
@@ -186,9 +183,9 @@ esac
     return { code, stdout, stderr };
   }
 
-  function configuredInitArgs(instance = 'kortix-vpc-demo'): string[] {
+  function configuredInitArgs(instance = 'vpc-demo'): string[] {
     return [
-      'init', '--target', 'aws-vpc', '--instance', instance,
+      'init', '--target', 'aws-ec2', '--instance', instance,
       '--aws-profile', 'default', '--region', 'us-west-2', '--channel', 'stable',
       '--vpc-cidr', '10.60.0.0/16',
       '--api-domain', 'api.vpc-demo.kortix.com',
@@ -204,7 +201,7 @@ esac
     ];
   }
 
-  async function initConfigured(instance = 'kortix-vpc-demo') {
+  async function initConfigured(instance = 'vpc-demo') {
     const result = await run(configuredInitArgs(instance));
     expect(result.code, result.stderr).toBe(0);
     return result;
@@ -214,8 +211,8 @@ esac
     const result = await initConfigured();
     const config = JSON.parse(result.stdout);
     expect(config).toMatchObject({
-      instance: 'kortix-vpc-demo',
-      target: 'aws-vpc',
+      instance: 'vpc-demo',
+      target: 'aws-ec2',
       channel: 'stable',
       aws: {
         profile: 'default',
@@ -229,24 +226,20 @@ esac
       },
     });
 
-    const instanceDir = join(configRoot, 'kortix-vpc-demo');
+    const instanceDir = join(configRoot, 'vpc-demo');
     const persisted = readFileSync(join(instanceDir, 'instance.json'), 'utf8');
-    expect(JSON.parse(persisted)).toMatchObject({ target: 'aws-vpc', aws: { account_id: '935064898258' } });
+    expect(JSON.parse(persisted)).toMatchObject({ target: 'aws-ec2', aws: { account_id: '935064898258' } });
     expect(persisted).not.toContain('cloudflare_api_token');
     expect(existsSync(join(instanceDir, '.env'))).toBe(false);
     expect(readFileSync(join(instanceDir, 'terraform/environments/enterprise-vpc/state/main.tf'), 'utf8'))
       .toContain('module "state"');
     expect(readFileSync(join(instanceDir, 'terraform/modules/enterprise-vpc/supabase.tf'), 'utf8'))
-      .toContain('aws_instance" "supabase');
-    expect(readFileSync(join(instanceDir, 'terraform/modules/eks/platform/main.tf'), 'utf8'))
-      .toContain('helm_release" "argo_cd');
-    expect(readFileSync(join(instanceDir, 'terraform/modules/enterprise-platform/main.tf'), 'utf8'))
-      .toContain('argo_cd_enabled             = false');
+      .toContain('aws_instance" "appliance');
   });
 
   test('enforces Terraform-compatible lowercase DNS slugs for AWS instances', async () => {
     const result = await run([
-      'init', '--target', 'aws-vpc', '--instance', 'Essentia_VPC', '--aws-profile', 'default', '--yes',
+      'init', '--target', 'aws-ec2', '--instance', 'Essentia_VPC', '--aws-profile', 'default', '--yes',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('lowercase DNS slug');
@@ -258,11 +251,11 @@ esac
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
-    const plan = await run(['plan', '--instance', 'kortix-vpc-demo', '--json']);
+    const plan = await run(['plan', '--instance', 'vpc-demo', '--json']);
     expect(plan.code).toBe(0);
     expect(JSON.parse(plan.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
-      stages: [{ name: 'state', decision: 'manual_review' }],
+      instance: 'vpc-demo',
+      stages: [{ name: 'state', decision: 'auto_apply' }],
     });
     expect(readFileSync(terraformLog, 'utf8')).toContain('plan');
     expect(readFileSync(terraformLog, 'utf8')).not.toContain(' apply ');
@@ -270,7 +263,7 @@ esac
 
     writeFileSync(terraformLog, '');
     const mismatch = await run(
-      ['plan', '--instance', 'kortix-vpc-demo'],
+      ['plan', '--instance', 'vpc-demo'],
       { FAKE_AWS_ACCOUNT: '327903111249' },
     );
     expect(mismatch.code).toBe(1);
@@ -281,11 +274,11 @@ esac
   test('does not persist a replacement AWS profile unless it resolves to the pinned account', async () => {
     await initConfigured();
     const result = await run([
-      'configure', '--instance', 'kortix-vpc-demo', '--aws-profile', 'wrong-account', '--yes',
+      'configure', '--instance', 'vpc-demo', '--aws-profile', 'wrong-account', '--yes',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('AWS account mismatch');
-    const persisted = JSON.parse(readFileSync(join(configRoot, 'kortix-vpc-demo/instance.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(configRoot, 'vpc-demo/instance.json'), 'utf8'));
     expect(persisted.aws.profile).toBe('default');
   });
 
@@ -294,31 +287,31 @@ esac
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
-    const result = await run(['deploy', '--instance', 'kortix-vpc-demo']);
+    const result = await run(['deploy', '--instance', 'vpc-demo']);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('requires confirmation');
     expect(readFileSync(terraformLog, 'utf8')).toBe('');
     expect(readFileSync(awsLog, 'utf8')).toContain('sts get-caller-identity');
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('ssm send-command');
   });
 
-  test('applies reviewed stages, verifies state migration, and starts customer-owned bootstrap reconciliation', async () => {
+  test('applies reviewed stages, verifies state migration, and runs the on-box updater via SSM', async () => {
     await initConfigured();
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
-    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json']);
+    const result = await run(['deploy', '--instance', 'vpc-demo', '--yes', '--json']);
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       state_migration: {
         verified: true,
         lineage: 'remote-lineage',
         serial: 1,
         verification_mode: 'exact-content',
       },
-      cluster: { decision: 'manual_review', applied: true },
-      reconciliation: { execution_arn: expect.stringContaining('kortix-vpc-demo-reconcile') },
+      cluster: { decision: 'auto_apply', applied: true },
+      deployment: { status: 'DEPLOYED', command_id: 'cmd-1', instance_id: 'i-0123456789' },
     });
 
     const calls = readFileSync(terraformLog, 'utf8');
@@ -326,38 +319,37 @@ esac
     expect(calls).toContain('init -input=false -migrate-state -force-copy');
     expect(calls).toContain('cluster apply');
     expect(calls.indexOf('state apply')).toBeLessThan(calls.indexOf('cluster apply'));
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
-    expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
-    expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
-    expect(readFileSync(awsLog, 'utf8')).toContain('stepfunctions start-execution');
-    expect(readFileSync(awsLog, 'utf8')).toContain('secretsmanager put-secret-value');
-    expect(readFileSync(awsLog, 'utf8')).toContain('file://');
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('openrouter-key');
-
-    await run(['configure', '--instance', 'kortix-vpc-demo', '--maintenance-window', 'Sat:03:00-04:00', '--yes']);
-    expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
+    const awsCalls = readFileSync(awsLog, 'utf8');
+    // the updater runs on the box via SSM RunCommand, not an ECS task
+    expect(awsCalls).toContain('ssm send-command');
+    expect(awsCalls).toContain('kortix-updater run');
+    expect(awsCalls).not.toContain('ecs run-task');
+    expect(awsCalls).toContain('secretsmanager put-secret-value');
+    expect(awsCalls).toContain('file://');
+    // secrets are written through a temp file, never disclosed on the command line
+    expect(awsCalls).not.toContain(BEDROCK_KEY);
   });
 
-  test('bootstraps internal credentials but waits for operator runtime values before first reconcile', async () => {
+  test('bootstraps internal credentials but waits for operator runtime values before first deploy', async () => {
     await initConfigured();
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      ['deploy', '--instance', 'vpc-demo', '--yes', '--json'],
       { FAKE_RUNTIME_MISSING: '1' },
     );
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       runtime_secret: {
         bootstrapped: true,
-        missing: expect.arrayContaining(['SMTP_HOST', 'DAYTONA_API_KEY', 'OPENROUTER_API_KEY']),
+        missing: expect.arrayContaining(['SMTP_HOST', 'DAYTONA_API_KEY', 'AWS_BEDROCK_API_KEY']),
       },
-      reconciliation: { status: 'WAITING_FOR_RUNTIME_CONFIG', execution_arn: null },
+      deployment: { status: 'WAITING_FOR_RUNTIME_CONFIG', command_id: null },
     });
     const calls = readFileSync(awsLog, 'utf8');
     expect(calls).toContain('secretsmanager put-secret-value');
-    expect(calls).not.toContain('stepfunctions start-execution');
+    expect(calls).not.toContain('ssm send-command');
   });
 
   test('preserves local bootstrap state and restores the local backend when migration fails', async () => {
@@ -366,21 +358,21 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes'],
+      ['deploy', '--instance', 'vpc-demo', '--yes'],
       { FAKE_TERRAFORM_FAIL_MIGRATE: '1' },
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('local bootstrap state was preserved');
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    const stateRoot = join(configRoot, 'vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "local"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('ssm send-command');
   });
 
   test('surfaces Terraform diagnostics instead of a box-drawing border', async () => {
     await initConfigured();
     writeFileSync(`${terraformLog}.fail-apply`, '');
-    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes']);
+    const result = await run(['deploy', '--instance', 'vpc-demo', '--yes']);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('Terraform apply failed: Error: simulated actionable apply failure');
     expect(result.stderr).not.toContain('Terraform apply failed: ╷');
@@ -392,19 +384,19 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes'],
+      ['deploy', '--instance', 'vpc-demo', '--yes'],
       { FAKE_TERRAFORM_REMOTE_DIFFERENT: '1' },
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('remote state verification failed');
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    const stateRoot = join(configRoot, 'vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('ssm send-command');
   });
 
   test('recovers an already-remote state after provider refresh when all object identities and outputs match', async () => {
     await initConfigured();
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    const stateRoot = join(configRoot, 'vpc-demo/terraform/environments/enterprise-vpc/state');
     writeFileSync(join(stateRoot, 'backend.tf'), 'terraform { backend "s3" {} }\n');
     writeFileSync(
       join(stateRoot, 'backend.hcl'),
@@ -416,7 +408,7 @@ esac
     );
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      ['deploy', '--instance', 'vpc-demo', '--yes', '--json'],
       { FAKE_TERRAFORM_REMOTE_REFRESHED: '1' },
     );
     expect(result.code, result.stderr).toBe(0);
@@ -430,44 +422,45 @@ esac
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
   });
 
-  test('routes reconcile, force update, and rollback through the customer state machine', async () => {
+  test('routes reconcile, force update, and rollback through the on-box updater via SSM', async () => {
     await initConfigured();
     writeFileSync(awsLog, '');
 
-    const reconcile = await run(['reconcile', '--instance', 'kortix-vpc-demo', '--json']);
+    const reconcile = await run(['reconcile', '--instance', 'vpc-demo', '--json']);
     expect(reconcile.code, reconcile.stderr).toBe(0);
     const update = await run([
-      'update', '--instance', 'kortix-vpc-demo', '--release', '0.9.85-e1', '--force', '--json',
+      'update', '--instance', 'vpc-demo', '--release', '0.9.85-e1', '--force', '--json',
     ]);
     expect(update.code).toBe(0);
     const rollback = await run([
-      'rollback', '--instance', 'kortix-vpc-demo', '--release', '0.9.84-e1', '--yes', '--json',
+      'rollback', '--instance', 'vpc-demo', '--release', '0.9.84-e1', '--yes', '--json',
     ]);
     expect(rollback.code).toBe(0);
 
     const calls = readFileSync(awsLog, 'utf8');
-    expect(calls.match(/stepfunctions start-execution/g)).toHaveLength(3);
-    expect(calls).toContain('"trigger":"cli-reconcile"');
-    expect(calls).toContain('"requested_release":"0.9.85-e1"');
-    expect(calls).toContain('"force":true');
-    expect(calls).toContain('"trigger":"cli-rollback"');
-    expect(calls).toContain('"rollback_to":"0.9.84-e1"');
+    expect(calls.match(/ssm send-command/g)).toHaveLength(3);
+    expect(calls).toContain('kortix-updater run');
+    expect(calls).toContain('KORTIX_DEPLOY_RELEASE');
+    expect(calls).toContain('0.9.85-e1');
+    expect(calls).toContain('KORTIX_DEPLOY_FORCE');
+    expect(calls).toContain('KORTIX_DEPLOY_ROLLBACK');
+    expect(calls).toContain('0.9.84-e1');
   });
 
   test('manages AWS runtime environment only in customer Secrets Manager', async () => {
     await initConfigured();
     writeFileSync(awsLog, '');
 
-    const list = await run(['env', 'ls', '--instance', 'kortix-vpc-demo', '--json']);
+    const list = await run(['env', 'ls', '--instance', 'vpc-demo', '--json']);
     expect(list.code, list.stderr).toBe(0);
     expect(JSON.parse(list.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       missing_required: [],
     });
     expect(list.stdout).not.toContain('smtp-pass');
 
     const set = await run([
-      'env', 'set', 'SMTP_PASS=rotated-secret', '--instance', 'kortix-vpc-demo', '--json',
+      'env', 'set', 'SMTP_PASS=rotated-secret', '--instance', 'vpc-demo', '--json',
     ]);
     expect(set.code).toBe(0);
     expect(JSON.parse(set.stdout)).toMatchObject({ updated: ['SMTP_PASS'] });
@@ -475,45 +468,49 @@ esac
     expect(calls).toContain('secretsmanager put-secret-value');
     expect(calls).toContain('file://');
     expect(calls).not.toContain('rotated-secret');
-    expect(readFileSync(join(configRoot, 'kortix-vpc-demo/instance.json'), 'utf8')).not.toContain('rotated-secret');
+    expect(readFileSync(join(configRoot, 'vpc-demo/instance.json'), 'utf8')).not.toContain('rotated-secret');
   });
 
-  test('reports live AWS status/version and tails customer-owned updater logs', async () => {
+  test('reports live appliance status/version via docker ps + breadcrumb and tails the updater log', async () => {
     await initConfigured();
     writeFileSync(awsLog, '');
 
-    const status = await run(['status', '--instance', 'kortix-vpc-demo', '--json']);
-    expect(status.code).toBe(0);
-    expect(JSON.parse(status.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
-      cluster: { status: 'ACTIVE' },
-      supabase: { state: 'running' },
-      updater: { status: 'AVAILABLE' },
-      reconciliation: { status: 'SUCCEEDED' },
-      release: { release: '0.9.84-e1', status: 'healthy' },
+    const statusResult = await run(['status', '--instance', 'vpc-demo', '--json']);
+    expect(statusResult.code, statusResult.stderr).toBe(0);
+    expect(JSON.parse(statusResult.stdout)).toMatchObject({
+      instance: 'vpc-demo',
+      host: { state: 'running' },
+      services: expect.arrayContaining([
+        expect.objectContaining({ service: 'api', state: 'running', health: 'healthy' }),
+      ]),
+      release: { version: '0.9.84-e1' },
     });
+    // status reads container state through SSM docker ps, not ECS.
+    expect(readFileSync(awsLog, 'utf8')).toContain('ssm send-command');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('ecs describe');
 
-    const version = await run(['version', '--instance', 'kortix-vpc-demo', '--json']);
+    const version = await run(['version', '--instance', 'vpc-demo', '--json']);
     expect(version.code).toBe(0);
-    expect(JSON.parse(version.stdout)).toMatchObject({ release: '0.9.84-e1', channel: 'stable' });
+    expect(JSON.parse(version.stdout)).toMatchObject({ release: '0.9.84-e1', channel: 'stable', status: 'deployed' });
 
-    const logs = await run(['logs', 'updater', '--instance', 'kortix-vpc-demo']);
+    const logs = await run(['logs', 'updater', '--instance', 'vpc-demo']);
     expect(logs.code).toBe(0);
-    expect(logs.stdout).toContain('updater healthy');
-    expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/kortix-vpc-demo/updater');
+    expect(logs.stdout).toContain('up to date');
+    expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/vpc-demo/appliance');
   });
 
-  test('reports not-deployed release state when DynamoDB returns an empty successful response', async () => {
+  test('reports not-deployed release state when the SSM release parameter is absent', async () => {
     await initConfigured();
 
     const result = await run(
-      ['status', '--instance', 'kortix-vpc-demo', '--json'],
-      { FAKE_DYNAMO_EMPTY: '1' },
+      ['version', '--instance', 'vpc-demo', '--json'],
+      { FAKE_RELEASE_EMPTY: '1' },
     );
 
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
-      release: { release: null, channel: 'stable', status: 'not-deployed', updated_at: null },
+      release: null,
+      status: 'not-deployed',
     });
   });
 

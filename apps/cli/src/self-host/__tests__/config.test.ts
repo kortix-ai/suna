@@ -7,6 +7,7 @@ import {
   instanceConfigPath,
   instanceDir,
   loadInstanceConfig,
+  parseSelfHostTarget,
   resolveInstanceTarget,
   writeInstanceConfig,
   type SelfHostInstanceConfig,
@@ -43,8 +44,8 @@ describe('self-host instance config', () => {
   test('writes a secret-free AWS target config with owner-only permissions', () => {
     const config: SelfHostInstanceConfig = {
       schema_version: 1,
-      instance: 'kortix-vpc-demo',
-      target: 'aws-vpc',
+      instance: 'vpc-demo',
+      target: 'aws-ec2',
       channel: 'stable',
       aws: {
         profile: 'default',
@@ -60,6 +61,31 @@ describe('self-host instance config', () => {
     expect(statSync(instanceConfigPath(config.instance)).mode & 0o777).toBe(0o600);
   });
 
+  test('reads a legacy target: "aws-vpc" config on disk as the current aws-ec2 target', () => {
+    mkdirSync(instanceDir('legacy-vpc'), { recursive: true });
+    writeFileSync(
+      instanceConfigPath('legacy-vpc'),
+      JSON.stringify({
+        schema_version: 1,
+        instance: 'legacy-vpc',
+        target: 'aws-vpc',
+        channel: 'stable',
+        aws: { profile: 'default', region: 'us-west-2', account_id: '935064898258' },
+      }),
+    );
+
+    const loaded = loadInstanceConfig('legacy-vpc');
+    expect(loaded?.target).toBe('aws-ec2');
+    expect(resolveInstanceTarget('legacy-vpc')).toBe('aws-ec2');
+  });
+
+  test('parses the legacy --target aws-vpc value as aws-ec2', () => {
+    expect(parseSelfHostTarget('aws-vpc')).toBe('aws-ec2');
+    expect(parseSelfHostTarget('aws-ec2')).toBe('aws-ec2');
+    expect(parseSelfHostTarget('docker')).toBe('docker');
+    expect(() => parseSelfHostTarget('nonsense')).toThrow('docker');
+  });
+
   test('rejects invalid or secret-bearing instance configs', () => {
     mkdirSync(instanceDir('broken'), { recursive: true });
     writeFileSync(
@@ -67,7 +93,7 @@ describe('self-host instance config', () => {
       JSON.stringify({
         schema_version: 1,
         instance: 'broken',
-        target: 'aws-vpc',
+        target: 'aws-ec2',
         channel: 'stable',
         aws: { profile: 'default', region: 'us-west-2', account_id: '123456789012' },
         api_key: 'must-not-live-here',
@@ -78,6 +104,17 @@ describe('self-host instance config', () => {
     expect(() => loadInstanceConfig('broken')).toThrow('unsupported field "api_key"');
   });
 
+  test('rejects an aws-ec2 instance name that starts with kortix- (would double the resource prefix)', () => {
+    const config = {
+      schema_version: 1,
+      instance: 'kortix-vpc-demo',
+      target: 'aws-ec2',
+      channel: 'stable',
+      aws: { profile: 'default', region: 'us-west-2', account_id: '935064898258' },
+    } as SelfHostInstanceConfig;
+    expect(() => writeInstanceConfig(config)).toThrow('must not start with "kortix-"');
+  });
+
   test('requires complete AWS coordinates', () => {
     mkdirSync(instanceDir('incomplete'), { recursive: true });
     writeFileSync(
@@ -85,7 +122,7 @@ describe('self-host instance config', () => {
       JSON.stringify({
         schema_version: 1,
         instance: 'incomplete',
-        target: 'aws-vpc',
+        target: 'aws-ec2',
         channel: 'stable',
         aws: { profile: 'default', region: 'us-west-2' },
       }),
@@ -98,7 +135,7 @@ describe('self-host instance config', () => {
     const base = {
       schema_version: 1,
       instance: 'enterprise',
-      target: 'aws-vpc',
+      target: 'aws-ec2',
       channel: 'stable',
       aws: {
         profile: 'default',

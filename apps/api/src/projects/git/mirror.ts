@@ -97,6 +97,135 @@ function gitAuthEnv(token?: string | null, authHost = 'github.com'): Record<stri
   };
 }
 
+/** Default per-op timeout for `runGit` (ms). Bare clones override this via `timeoutMs`. */
+const GIT_DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Benign git progress / informational lines that git writes to **stderr** even
+ * on a SUCCESSFUL run (`Cloning into …`, `remote:`, `Counting objects`, …) and
+ * that are therefore the FIRST — and on a mid-clone timeout often the ONLY —
+ * stderr a killed `git clone`/`git fetch` leaves behind. Surfacing them as the
+ * Error message hides the real cause (timeout / signal / `fatal:`) and produced
+ * the recurring opaque Better Stack pattern `8d0cffbb…`
+ * ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…"). Strip them
+ * so a surfaced git error shows its actual `fatal:` line (or nothing, when the
+ * process was killed before emitting one).
+ */
+const GIT_PROGRESS_LINE_RE = /^(?:Cloning into|remote:|Counting objects|Compressing objects|Receiving objects|Resolving deltas|From |\s*\d+%|\s*remote:)/;
+
+export function stripGitProgress(text: string): string {
+  if (!text) return '';
+  return text
+    .split('\n')
+    .filter((line) => line.trim() !== '' && !GIT_PROGRESS_LINE_RE.test(line))
+    .join('\n')
+    .trim();
+}
+
+/**
+ * Typed error thrown by `runGit` (and anything downstream of a bare-clone /
+ * fetch failure). Replaces the old `throw new Error(stderr || stdout || …)`
+ * which surfaced git's harmless `Cloning into bare repository …` progress line
+ * — the only stderr a SIGTERM'd mid-clone leaves — as the Sentry message,
+ * completely masking the real timeout/signal cause (Better Stack `8d0cffbb…`).
+ *
+ * `kind: 'timeout'` marks a transient, retryable failure (process killed /
+ * SIGTERM'd / exceeded the timeout). The global `onError` classifies those into
+ * a retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
+ * / request-deadline de-noise pattern), since the mirror's own retry usually
+ * clears them and they are upstream/network noise, not a code bug.
+ * `kind: 'failed'` is a real non-zero exit (auth, missing repo, bad ref) —
+ * still surfaced to Sentry, but now with a meaningful `fatal:` message instead
+ * of progress noise.
+ */
+export class GitOperationError extends Error {
+  readonly kind: 'timeout' | 'failed';
+  readonly gitArgs: readonly string[];
+  readonly signal: string | null;
+  readonly exitCode: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+  constructor(opts: {
+    kind: 'timeout' | 'failed';
+    message: string;
+    gitArgs: readonly string[];
+    signal?: string | null;
+    exitCode?: number | null;
+    stdout?: string;
+    stderr?: string;
+    cause?: unknown;
+  }) {
+    super(opts.message, { cause: opts.cause });
+    this.name = 'GitOperationError';
+    this.kind = opts.kind;
+    this.gitArgs = opts.gitArgs;
+    this.signal = opts.signal ?? null;
+    this.exitCode = opts.exitCode ?? null;
+    this.stdout = opts.stdout ?? '';
+    this.stderr = opts.stderr ?? '';
+  }
+}
+
+/**
+ * Pure classifier (unit-testable without a real git process): turn a Node
+ * `execFile` rejection into a typed `GitOperationError`. A killed/timed-out
+ * process (signal set, or Node's "timed out" message) is `kind: 'timeout'`
+ * with a message naming the timeout + signal — NEVER the partial `Cloning
+ * into …` progress line Node captured on stderr before the kill. A normal
+ * non-zero exit is `kind: 'failed'` with the real `fatal:` line (progress
+ * stripped).
+ */
+export function classifyGitError(error: unknown, args: readonly string[], timeoutMs: number): GitOperationError {
+  const err = error as {
+    stderr?: Buffer | string;
+    stdout?: Buffer | string;
+    message?: string;
+    code?: string | number;
+    signal?: string;
+    killed?: boolean;
+  };
+  const stderr = err.stderr?.toString() || '';
+  const stdout = err.stdout?.toString() || '';
+  const signal = err.signal ?? null;
+  const killed = Boolean(err.killed);
+  const msg = err.message || '';
+  // Node fires `killed: true` + `signal: 'SIGTERM'` (no numeric exitCode) when
+  // the `timeout` elapses, OR sets `code: 'ETIMEDOUT'`. Either way the real
+  // cause is the timeout — the stderr git managed to write before being killed
+  // is just the `Cloning into …` / `remote: …` progress line and must NOT
+  // become the message.
+  const isTimeout = killed || Boolean(signal) || msg.includes('timed out') || err.code === 'ETIMEDOUT';
+  const subcommand = args[0] || 'git';
+  if (isTimeout) {
+    const detail = signal ? ` (signal ${signal})` : '';
+    return new GitOperationError({
+      kind: 'timeout',
+      message: `git ${subcommand} timed out after ${timeoutMs}ms${detail}`,
+      gitArgs: args,
+      signal,
+      exitCode: null,
+      stdout,
+      stderr,
+      cause: error,
+    });
+  }
+  const cleaned = stripGitProgress(stderr) || stripGitProgress(stdout) || msg || 'git failed';
+  return new GitOperationError({
+    kind: 'failed',
+    message: cleaned,
+    gitArgs: args,
+    signal,
+    exitCode: typeof err.code === 'number' ? err.code : null,
+    stdout,
+    stderr,
+    cause: error,
+  });
+}
+
+export function isGitOperationError(err: unknown): err is GitOperationError {
+  return err instanceof GitOperationError;
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,
@@ -104,6 +233,7 @@ export async function runGit(
   authToken?: string | null,
   extraEnv?: Record<string, string>,
   authHost = 'github.com',
+  timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
 ) {
   const authEnv = auth ? gitAuthEnv(authToken, authHost) : {};
   try {
@@ -111,19 +241,14 @@ export async function runGit(
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
-      // Below the API's 25s request deadline: a dead/unreachable remote must
-      // surface as a git error the caller can report, not a blanket 503.
-      timeout: 20_000,
+      timeout: timeoutMs,
     });
     return {
       stdout: result.stdout.toString(),
       stderr: result.stderr.toString(),
     };
   } catch (error) {
-    const err = error as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
-    const stderr = err.stderr?.toString() || '';
-    const stdout = err.stdout?.toString() || '';
-    throw new Error((stderr || stdout || err.message || 'git failed').trim());
+    throw classifyGitError(error, args, timeoutMs);
   }
 }
 
@@ -166,6 +291,18 @@ function refreshIntervalMs() {
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }
 
+/** Per-op timeout (ms) for a cold bare `git clone --bare` of a project mirror. */
+function bareCloneTimeoutMs(): number {
+  const value = Number(process.env.KORTIX_GIT_BARE_CLONE_TIMEOUT_MS || 90_000);
+  return Number.isFinite(value) && value > 0 ? value : 90_000;
+}
+
+const BARE_CLONE_TIMEOUT_MS = bareCloneTimeoutMs();
+/** Cold clones can transiently exceed the timeout (large repo / network blip);
+ * retry once before surfacing — most timeouts clear on a 2nd attempt. */
+const BARE_CLONE_MAX_ATTEMPTS = 2;
+const BARE_CLONE_RETRY_DELAY_MS = 500;
+
 async function doRefreshMirror(project: GitBackedProject, force = false) {
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
@@ -189,12 +326,33 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     // Bare clone with ALL branches — required for the version/checkpoint
     // viewer. Older callers cloned --single-branch; we self-heal those on
     // refresh below by rewriting the fetch refspec.
-    await runGit([
-      'clone',
-      '--bare',
-      project.repoUrl,
-      repoPath,
-    ], undefined, true, authToken, undefined, authHost);
+    //
+    // Cold clones of large repos legitimately exceed the default 30s `runGit`
+    // timeout; a SIGTERM mid-transfer leaves only git's `Cloning into …`
+    // progress line on stderr (the root of the recurring opaque Better Stack
+    // pattern `8d0cffbb…`) AND — critically — leaves a partial `.git` dir
+    // with no `shallow` marker, so the next access sees `existsSync(repoPath)`
+    // true, skips the clone, and tries to `fetch` from a broken half-repo,
+    // wedging every reader for the process lifetime. So: give the cold clone a
+    // longer budget, retry once on a transient timeout, and ALWAYS remove the
+    // partial dir on failure so the next caller re-clones cleanly.
+    const cloneArgs = ['clone', '--bare', project.repoUrl, repoPath] as const;
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= BARE_CLONE_MAX_ATTEMPTS; attempt++) {
+      try {
+        await runGit([...cloneArgs], undefined, true, authToken, undefined, authHost, BARE_CLONE_TIMEOUT_MS);
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        // Remove the partial bare repo a killed/failed clone leaves behind.
+        await rm(repoPath, { recursive: true, force: true }).catch(() => {});
+        const transient = err instanceof GitOperationError && err.kind === 'timeout';
+        if (attempt >= BARE_CLONE_MAX_ATTEMPTS || !transient) break;
+        await new Promise((resolve) => setTimeout(resolve, BARE_CLONE_RETRY_DELAY_MS));
+      }
+    }
+    if (lastErr) throw lastErr;
     lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }

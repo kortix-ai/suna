@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 
 import type { AwsVpcCoordinates, SelfHostInstanceConfig } from './config.ts';
@@ -9,47 +8,188 @@ export interface AwsIdentity {
   Arn: string;
 }
 
-export function startReconciliation(
-  config: SelfHostInstanceConfig,
-  input: Record<string, unknown>,
-  discoveredArn?: string,
-) {
+export type DeployServiceRole = 'api' | 'gateway' | 'frontend';
+export const DEPLOY_SERVICE_ROLES: DeployServiceRole[] = ['api', 'gateway', 'frontend'];
+
+export interface ReleaseRecord {
+  version?: string;
+  digests?: Record<string, string>;
+  supabase_bundle_sha?: string;
+  deployed_at?: string;
+  [key: string]: unknown;
+}
+
+export interface UpdaterIntent {
+  release?: string;
+  rollback?: string;
+  force?: boolean;
+  /** Permit a non-backward-compatible migration to deploy with brief downtime. */
+  allowDowntime?: boolean;
+}
+
+export interface UpdaterRunResult {
+  command_id: string;
+  status: string;
+  instance_id: string;
+}
+
+export interface DockerServiceStatus {
+  service: string;
+  state: string;
+  health: string | null;
+}
+
+/** The one appliance host runs the whole product as Docker; discovered by tag. */
+export function applianceInstanceName(instance: string): string {
+  return `${instance}-appliance`;
+}
+
+/** SecureString SSM breadcrumb the on-box updater writes (source of truth for status). */
+export function releaseParamName(instance: string): string {
+  return `/kortix/${instance}/release`;
+}
+
+const SSM_WAIT_ATTEMPTS = 720;
+
+export function applianceInstanceId(config: SelfHostInstanceConfig): string | null {
+  const response = awsJsonOptional<{
+    Reservations?: Array<{ Instances?: Array<{ InstanceId?: string; State?: { Name?: string }; PrivateIpAddress?: string; PublicIpAddress?: string }> }>;
+  }>(config.aws!, [
+    'ec2', 'describe-instances',
+    '--filters', `Name=tag:Name,Values=${applianceInstanceName(config.instance)}`,
+    'Name=instance-state-name,Values=pending,running',
+  ]);
+  const instance = response?.Reservations?.flatMap((entry) => entry.Instances ?? []).find((entry) => entry.InstanceId);
+  return instance?.InstanceId ?? null;
+}
+
+/**
+ * Run the on-box updater through SSM RunCommand. The updater binary, its release
+ * pinning, and instance.env all live on the appliance host (Terraform + user-data
+ * own them); the CLI only passes the deploy intent as KORTIX_DEPLOY_* env and
+ * waits. No secret ever crosses the wire — the box reads Secrets Manager itself.
+ */
+export function runUpdaterViaSsm(config: SelfHostInstanceConfig, intent: UpdaterIntent): UpdaterRunResult {
   const coordinates = config.aws!;
-  const stateMachineArn = discoveredArn || reconciliationStateMachineArn(config);
-  const executionName = `cli-${Date.now()}-${randomBytes(3).toString('hex')}`;
-  const result = awsJson<{ executionArn: string; startDate?: string }>(coordinates, [
-    'stepfunctions', 'start-execution',
-    '--state-machine-arn', stateMachineArn,
-    '--name', executionName,
-    '--input', JSON.stringify(input),
+  const instanceId = applianceInstanceId(config);
+  if (!instanceId) {
+    throw new Error(`no running appliance host found for ${config.instance}; run kortix self-host deploy first`);
+  }
+  const send = awsJson<{ Command?: { CommandId?: string } }>(coordinates, [
+    'ssm', 'send-command', '--document-name', 'AWS-RunShellScript',
+    '--instance-ids', instanceId,
+    '--comment', updaterComment(intent),
+    '--parameters', JSON.stringify({ commands: [updaterRunScript(intent)], executionTimeout: ['3600'] }),
   ]);
-  if (!result.executionArn) throw new Error('AWS did not return a Step Functions execution ARN');
-  return {
-    execution_arn: result.executionArn,
-    start_date: result.startDate ?? null,
-    input,
-  };
+  const commandId = send.Command?.CommandId;
+  if (!commandId) throw new Error('SSM did not return a command id for the updater run');
+  const invocation = waitSsmCommand(coordinates, commandId, instanceId);
+  if (invocation.Status !== 'Success') {
+    throw new Error(
+      `updater run ${invocation.Status ?? 'failed'}: ${firstLine(invocation.StandardErrorContent ?? '') || 'see kortix self-host logs updater'}`,
+    );
+  }
+  return { command_id: commandId, status: invocation.Status ?? 'Success', instance_id: instanceId };
 }
 
-export function releaseState(config: SelfHostInstanceConfig): Record<string, unknown> | null {
-  const response = awsJsonOptional<{ Item?: Record<string, DynamoAttribute> }>(config.aws!, [
-    'dynamodb', 'get-item',
-    '--table-name', `${config.instance}-release-state`,
-    '--key', JSON.stringify({ instance: { S: config.instance } }),
-    '--consistent-read',
-  ]);
-  if (!response?.Item) return null;
-  return Object.fromEntries(Object.entries(response.Item).map(([key, value]) => [key, fromDynamo(value)]));
+function updaterRunScript(intent: UpdaterIntent): string {
+  const exports: string[] = [];
+  if (intent.release) exports.push(`export KORTIX_DEPLOY_RELEASE=${shellQuote(intent.release)}`);
+  if (intent.rollback) exports.push(`export KORTIX_DEPLOY_ROLLBACK=${shellQuote(intent.rollback)}`);
+  if (intent.force) exports.push('export KORTIX_DEPLOY_FORCE=1');
+  if (intent.allowDowntime) exports.push('export KORTIX_ALLOW_DOWNTIME=1');
+  return [
+    'set -euo pipefail',
+    // The box owns every credential + release coordinate in instance.env; the CLI
+    // never sees them. Source it, layer the deploy intent, run the updater.
+    'set -a; . /etc/kortix/instance.env; set +a',
+    ...exports,
+    '/opt/kortix/bin/kortix-updater run',
+  ].join('\n');
 }
 
-type DynamoAttribute = { S?: string; N?: string; BOOL?: boolean; NULL?: boolean };
+function updaterComment(intent: UpdaterIntent): string {
+  if (intent.rollback) return `kortix updater rollback ${intent.rollback}`;
+  if (intent.release) return `kortix updater deploy ${intent.release}`;
+  return 'kortix updater reconcile';
+}
 
-function fromDynamo(value: DynamoAttribute): unknown {
-  if (value.S !== undefined) return value.S;
-  if (value.N !== undefined) return Number(value.N);
-  if (value.BOOL !== undefined) return value.BOOL;
-  if (value.NULL) return null;
-  return value;
+interface SsmInvocation {
+  Status?: string;
+  StandardOutputContent?: string;
+  StandardErrorContent?: string;
+}
+
+function waitSsmCommand(coordinates: AwsVpcCoordinates, commandId: string, instanceId: string): SsmInvocation {
+  for (let attempt = 0; attempt < SSM_WAIT_ATTEMPTS; attempt++) {
+    const invocation = awsJsonOptional<SsmInvocation>(coordinates, [
+      'ssm', 'get-command-invocation', '--command-id', commandId, '--instance-id', instanceId,
+    ]);
+    const status = invocation?.Status;
+    if (status && !['Pending', 'InProgress', 'Delayed', 'Cancelling'].includes(status)) return invocation!;
+    spawnSync('sleep', ['5']);
+  }
+  throw new Error(`SSM command ${commandId} did not reach a terminal state in time; check kortix self-host status`);
+}
+
+export function readReleaseRecord(config: SelfHostInstanceConfig): ReleaseRecord | null {
+  const response = awsJson<{ Parameters?: Array<{ Value?: string }> }>(config.aws!, [
+    'ssm', 'get-parameters', '--names', releaseParamName(config.instance), '--with-decryption',
+  ]);
+  const value = response.Parameters?.[0]?.Value;
+  if (!value || value === 'unset') return null;
+  try {
+    return JSON.parse(value) as ReleaseRecord;
+  } catch {
+    return null;
+  }
+}
+
+/** Live container status via `docker compose ps` through SSM RunCommand. */
+export function dockerPsViaSsm(config: SelfHostInstanceConfig): DockerServiceStatus[] {
+  const coordinates = config.aws!;
+  const instanceId = applianceInstanceId(config);
+  if (!instanceId) return [];
+  const send = awsJsonOptional<{ Command?: { CommandId?: string } }>(coordinates, [
+    'ssm', 'send-command', '--document-name', 'AWS-RunShellScript',
+    '--instance-ids', instanceId,
+    '--comment', 'kortix docker ps',
+    '--parameters', JSON.stringify({
+      commands: ['docker compose --project-name kortix-app ps --format json 2>/dev/null || true'],
+      executionTimeout: ['60'],
+    }),
+  ]);
+  const commandId = send?.Command?.CommandId;
+  if (!commandId) return [];
+  const invocation = waitSsmCommand(coordinates, commandId, instanceId);
+  return parseComposePs(invocation.StandardOutputContent ?? '');
+}
+
+function parseComposePs(output: string): DockerServiceStatus[] {
+  const trimmed = output.trim();
+  if (!trimmed) return [];
+  const rows: unknown[] = [];
+  // Compose emits either a JSON array or newline-delimited JSON depending on version.
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) rows.push(...parsed);
+    else rows.push(parsed);
+  } catch {
+    for (const line of trimmed.split(/\r?\n/)) {
+      try { rows.push(JSON.parse(line)); } catch { /* skip non-JSON noise */ }
+    }
+  }
+  return rows
+    .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
+    .map((row) => ({
+      service: String(row.Service ?? row.Name ?? 'unknown'),
+      state: String(row.State ?? row.Status ?? 'unknown'),
+      health: typeof row.Health === 'string' && row.Health ? row.Health : null,
+    }));
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 export function awsJson<T>(coordinates: AwsVpcCoordinates, args: string[]): T {
@@ -107,11 +247,6 @@ export function verifyPinnedIdentity(coordinates: AwsVpcCoordinates): AwsIdentit
     throw new Error(`AWS account mismatch: expected ${coordinates.account_id}, resolved ${identity.Account}`);
   }
   return identity;
-}
-
-export function reconciliationStateMachineArn(config: SelfHostInstanceConfig): string {
-  const aws = config.aws!;
-  return `arn:aws:states:${aws.region}:${aws.account_id}:stateMachine:${config.instance}-reconcile`;
 }
 
 export function firstLine(value: string): string {

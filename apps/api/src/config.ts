@@ -106,7 +106,7 @@ const envSchema = z.object({
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
-  KORTIX_TEMPLATES_ENABLED:         optBoolFalse,
+  KORTIX_TEMPLATES_ENABLED:         optBoolTrue,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),

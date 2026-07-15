@@ -60,7 +60,7 @@ function currentRunnerParts(): { command: string; args: string[] } {
   if (script && existsSync(script)) {
     return { command: exec, args: [script, 'run', '--service'] };
   }
-  return { command: 'npx', args: ['--yes', '@kortix/agent-tunnel', 'run', '--service'] };
+  return { command: 'npx', args: ['--yes', '@kortix/agent-tunnel@latest', 'run', '--service'] };
 }
 
 function currentRunnerCommand(): string {

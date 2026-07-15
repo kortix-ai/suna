@@ -505,7 +505,9 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse']),
+  session_mode: z.enum(['fresh', 'reuse', 'pinned']),
+  /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
+  session_id: z.string().nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
