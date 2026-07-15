@@ -7,12 +7,14 @@ description: New-hire onboarding runbook for {{projectName}}. Detects new-hire r
 
 <overview>
 Prepare the accounts, memberships, and first-week checklist a new hire needs
-the moment their record exists, without missing a step under time pressure.
-Each run is a fresh session — one new-hire record maps to one scoped case on
-one disposable sandbox, and nothing carries over between runs. Steps that only
-set up work in flight — Slack channel invites, the Linear checklist — run
-immediately; steps that grant systems access — Workspace account creation,
-group membership — wait for a human.
+well before their first day, without missing a step under time pressure. Each
+run is a fresh session — one new-hire record maps to one scoped case on one
+disposable sandbox, and nothing carries over between runs. A single check can
+surface more than one new hire; handle each as an independent unit — a failure
+on one never blocks or delays onboarding for the others found in the same
+check. Steps that only set up work in flight — Slack channel invites, the
+Linear checklist — run directly; steps that grant systems access — Workspace
+account creation, group membership — wait for a human.
 
 Which groups a role belongs to, which channels a team joins, and what a good
 first week looks like is the **onboarding standard**: a standing reference at
@@ -120,7 +122,8 @@ pending, not as done.
   is independent — don't infer anything about today's new hire from a previous
   session's state beyond what's recorded on the person's own case, and never
   treat `.kortix/memory/onboarding-standard.md` as anything but standing
-  policy.
+  policy. When a check finds several new hires at once, never let one case's
+  failure or pending approval block another.
 - **Isolation.** Every new hire runs in its own sandbox; only the checklist
   result leaves it.
 - **Never create an account or add a group membership without a recorded

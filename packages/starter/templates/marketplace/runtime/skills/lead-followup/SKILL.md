@@ -8,8 +8,8 @@ description: Runbook for turning a new HubSpot lead into a researched, personali
 <overview>
 Inbound leads convert on the follow-up that shows the company was actually
 read, and that follow-up has to go out while the lead is still warm. A
-periodic sweep reads HubSpot for leads on {{hubspot_pipeline}} that haven't
-been handled yet, researches each company, drafts a personalized follow-up to
+periodic sweep reads HubSpot for leads on {{hubspot_lifecycle_stage}} that
+haven't been handled yet, researches each company, drafts a personalized follow-up to
 the sales playbook with one tailored qualifying question, checks Google
 Calendar for a real opening and proposes that one slot, and writes the
 research back onto the HubSpot record. Nothing reaches a lead until a human
@@ -17,7 +17,10 @@ reviews the draft in {{approval_channel}} and sends it.
 
 Fresh session per sweep — state lives on the HubSpot lead record itself (a
 `kortix_followup_drafted` property + timestamp marks a lead handled), not in a
-local ledger file.
+local ledger file. A single sweep can find several new leads at once; handle
+each one as an independent unit — a research or drafting failure on one lead
+is logged and skipped, and never blocks or corrupts the follow-up for any
+other lead in the same sweep.
 </overview>
 
 <when-to-load>
@@ -32,13 +35,13 @@ local ledger file.
 
 ## Step 0 — Orient: find what's new
 
-Query HubSpot for contacts/leads on {{hubspot_pipeline}} that don't yet carry
-the drafted marker:
+Query HubSpot for contacts/leads on {{hubspot_lifecycle_stage}} that don't yet
+carry the drafted marker:
 
 ```
 GET /crm/v3/objects/contacts/search
   filterGroups: [
-    { propertyName: "lifecyclestage", operator: "EQ", value: "{{hubspot_pipeline}}" },
+    { propertyName: "lifecyclestage", operator: "EQ", value: "{{hubspot_lifecycle_stage}}" },
     { propertyName: "kortix_followup_drafted", operator: "NOT_HAS_PROPERTY" }
   ]
 ```

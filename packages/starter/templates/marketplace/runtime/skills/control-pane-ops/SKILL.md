@@ -35,7 +35,7 @@ Work out which connected platforms the request touches before doing anything:
 
 | Platform | Access | Typical read | Typical write |
 |---|---|---|---|
-| Database | Read-mostly via scoped `DATABASE_URL` | Account/plan lookups, counts, joins | `UPDATE`/`DELETE`/`ALTER`, or anything schema-changing — **approval gate** |
+| Database | Read-only via scoped `DATABASE_URL` | Account/plan lookups, counts, joins | Not possible with this credential — the role cannot run `UPDATE`/`DELETE`/`ALTER` or any schema-changing statement. Surface the exact change needed and hand it to a human to run directly, or route it through an approval-gated connector/tool that supports it |
 | Stripe | Pipedream connector (brokered) | Plan, invoices, subscription status | Refund, plan change, cancellation — **approval gate** |
 | Linear | Pipedream connector (brokered) | Search issues/projects | Invite a member, create a project or issue — safe to do directly |
 | GitHub | `gh` CLI + `GH_TOKEN` against `{{target_repo}}` | View/diff a PR, read issues and checks | Review, comment, and open a PR freely — **never merge** |
@@ -50,8 +50,11 @@ describe exactly what it does and what it touches.
 
 ## Step 3 — Do the safe work directly
 
-- **Database:** run the read-only query and answer in the thread. Never run a
-  write statement without going through Step 4.
+- **Database:** run the read-only query and answer in the thread.
+  `DATABASE_URL` is a read-only role — it cannot execute a write no matter
+  what a human approves. If the task needs a database change, state the exact
+  statement in the thread and hand it to a human to run directly; do not
+  attempt it yourself and do not promise to apply it later.
 - **Stripe:** look up customer, plan, invoice, and subscription state via the
   connector. Prepare the exact change (e.g. "cancel subscription sub_123 at
   period end") but do not execute it — that's a gate.
@@ -69,7 +72,11 @@ describe exactly what it does and what it touches.
 Post the exact action you're about to take — the platform, the specific
 change, and its effect — and wait for an explicit reply in the thread before
 acting. Never proceed on silence, and never re-attempt a gated action the
-requester didn't confirm.
+requester didn't confirm. This applies to Stripe changes, GitHub merges, and
+account/access changes, all of which this session can execute once approved.
+Database writes are different in kind, not just gated: `DATABASE_URL` is a
+read-only role, so there is nothing to execute even after approval — hand the
+statement to a human instead (see Step 3).
 
 ## Step 5 — Reply in the thread
 

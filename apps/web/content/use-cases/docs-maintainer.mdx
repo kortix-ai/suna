@@ -1,6 +1,6 @@
 ---
 title: "How we keep our docs in sync with the code"
-description: The docs agent we run on Kortix — connected to GitHub and our codebase. When a PR merges, it updates the docs the change affected and opens a PR for review.
+description: The docs agent we run on Kortix — connected to GitHub and our codebase. Once a day it checks the code that landed since its last run and updates the docs those changes affected, opening a PR for review.
 date: "2026-07-05"
 author: team
 tags:
@@ -17,15 +17,16 @@ owns the page it affects, so the two rarely get updated together. A renamed
 environment variable, a new setup step, or a removed endpoint is a small code
 change and a docs change that often goes unmade.
 
-We handle this by tying docs updates to the event that changes the code: the
-merge. This writes up how we run that on Kortix — the connections, the steps, and
-the guardrails — so you can set up the same thing for your own repo.
+We handle this by running a docs sweep close to when the code changes: once a
+day, over everything that merged since the last run. This writes up how we run
+that on Kortix — the connections, the steps, and the guardrails — so you can set
+up the same thing for your own repo.
 
 <KeyFacts>
   <Fact label="Team">Kortix</Fact>
   <Fact label="Source of truth">The codebase</Fact>
   <Fact label="Connected systems">GitHub · Codebase · Docs site</Fact>
-  <Fact label="Mode">Trigger-driven · PR-gated</Fact>
+  <Fact label="Mode">Daily sweep · PR-gated</Fact>
 </KeyFacts>
 
 ## The problem
@@ -40,11 +41,12 @@ merge rather than in periodic cleanups.
 
 ## What we built
 
-On Kortix, every merge to our repo triggers an agent. Each merged PR runs in its
-own isolated session — a cloud sandbox — with scoped access to what a docs update
-needs: the diff that landed, the codebase for context, and the docs. It
-determines what changed, rewrites the affected pages, and opens a docs PR for
-review. Nothing publishes without a human merge.
+On Kortix, a docs agent runs once a day in the same persistent session — a
+cloud sandbox — with scoped access to what a docs update needs: the commits
+that landed since its last run, the codebase for context, and the docs. It
+picks up from a checkpoint it kept from the previous run, determines what
+changed, rewrites the affected pages, and opens a single docs PR for review.
+Nothing publishes without a human merge.
 
 <Figure
   caption="The docs agent opening a follow-up PR after a feature merge"
@@ -56,10 +58,13 @@ review. Nothing publishes without a human merge.
 <Steps>
 <Step title="Connect GitHub as the trigger">
 
-A signed GitHub webhook points at the project. Every merge to the default branch
-fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
-with the merged diff. One PR, one session, one disposable machine. Nothing
-carries over between runs, and concurrent merges run as parallel sessions.
+A **cron trigger** fires once a day and resumes the same persistent
+**session** rather than spinning up a new one per merge. The session reads a
+checkpoint left by the previous run, then pulls every commit that landed on
+the default branch since that checkpoint — however many merges that turns out
+to be. Each affected doc page is handled as its own unit of work, so a problem
+with one page never blocks the rest of the sweep. One sweep, one PR, and the
+checkpoint advances at the end whether or not anything changed.
 
 </Step>
 <Step title="Give the agent the codebase and the docs standard">
@@ -94,11 +99,11 @@ to logs.
 </Step>
 <Step title="Let each merge update the affected docs">
 
-With that in place, a merged PR triages what changed, finds the pages that
-drifted, rewrites them to match, and opens a docs PR with its reasoning attached.
-A renamed env var becomes an update to the setup guide. A new endpoint becomes a
-reference entry drafted from the actual handler. A removed feature becomes a PR
-that strips the stale section.
+With that in place, each day's sweep triages what changed since the last
+checkpoint, finds the pages that drifted, rewrites them to match, and opens a
+docs PR with its reasoning attached. A renamed env var becomes an update to the
+setup guide. A new endpoint becomes a reference entry drafted from the actual
+handler. A removed feature becomes a PR that strips the stale section.
 
 </Step>
 </Steps>
@@ -115,9 +120,10 @@ that strips the stale section.
 Giving an agent write access to documentation is a trust question. The relevant
 controls on Kortix:
 
-- **Isolation.** Every merge runs in its own microVM sandbox on its own branch.
-  The session can read the whole repo to understand a change, and only the docs
-  PR it opens leaves the sandbox.
+- **Isolation.** The daily sweep runs in its own microVM sandbox, resuming the
+  same session across runs via a durable checkpoint rather than persisting the
+  raw repo state. The session can read the whole repo to understand a change,
+  and only the docs PR it opens leaves the sandbox.
 - **Scoped secrets.** The GitHub credential is encrypted in the secrets manager,
   injected into the sandbox at runtime, and not exposed to the model or the logs.
 - **PR-gated.** No change reaches a branch anyone reads without a person reviewing
@@ -134,16 +140,16 @@ controls on Kortix:
 ## The outcome
 
 <StatGrid>
-  <Stat value="Every merge" label="Docs re-checked against the code that changed" />
+  <Stat value="Daily" label="Docs re-checked against the code that landed since the last run" />
   <Stat value="Same-day" label="Drift caught before it reaches a reader" />
   <Stat value="3 systems" label="The diff, the codebase, and the docs — in one agent" />
 </StatGrid>
 
 The backlog of "someone should update the README" changes now arrives as small,
-reviewable PRs the day the code lands, with the reasoning written down. The team
-reviews a diff instead of reconstructing months of drift, and readers stop
-hitting instructions that are no longer accurate.
+reviewable PRs within a day of the code landing, with the reasoning written
+down. The team reviews a diff instead of reconstructing months of drift, and
+readers stop hitting instructions that are no longer accurate.
 
-The setup relies on four pieces working together: sandbox isolation per session,
-a secrets manager to broker the GitHub token, a PR gate on every change, and
-memory that carries fixes forward across merges.
+The setup relies on four pieces working together: sandbox isolation for the
+daily session, a secrets manager to broker the GitHub token, a PR gate on every
+change, and a durable checkpoint that carries the sweep forward run to run.

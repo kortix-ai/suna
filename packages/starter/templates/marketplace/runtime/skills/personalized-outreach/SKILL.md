@@ -16,9 +16,12 @@ and send — capped at {{daily_cap}} contacts per run.
 
 Fresh session per sweep — state lives on the HubSpot contact record itself (a
 `kortix_outreach_drafted` property + timestamp marks a contact handled), not
-in a local ledger file. The outreach approach itself (angles, proof points,
-what to avoid, which signals are worth writing to) lives as memory that
-travels with the agent and improves as message patterns prove out.
+in a local ledger file. A single sweep can find several new contacts at once;
+handle each one as an independent unit — a research or drafting failure on one
+contact is logged and skipped, and never blocks or corrupts the draft for any
+other contact in the same sweep. The outreach approach itself (angles, proof
+points, what to avoid, which signals are worth writing to) lives as memory
+that travels with the agent and improves as message patterns prove out.
 </overview>
 
 <when-to-load>
@@ -32,16 +35,28 @@ travels with the agent and improves as message patterns prove out.
 
 ## Step 0 — Orient: find what's new
 
-Query HubSpot for contacts in {{hubspot_list}} that don't yet carry the
-drafted marker:
+{{hubspot_list}} is a named HubSpot list, not a contact property — resolve it
+to a list ID first, then page through its memberships:
 
 ```
-GET /crm/v3/objects/contacts/search
-  filterGroups: [
-    { propertyName: "list_membership", operator: "EQ", value: "{{hubspot_list}}" },
-    { propertyName: "kortix_outreach_drafted", operator: "NOT_HAS_PROPERTY" }
-  ]
-  limit: {{daily_cap}}
+GET /crm/v3/lists/object-type-id/0-1/name/{{hubspot_list}}
+```
+
+Take the `list.listId` from the response, then page through membership
+records (100 at a time, following `after` until the response has no more
+pages):
+
+```
+GET /crm/v3/lists/{listId}/memberships?limit=100&after={after}
+```
+
+Collect the `recordId`s this returns, then batch-read those contacts and drop
+anything already carrying `kortix_outreach_drafted`:
+
+```
+POST /crm/v3/objects/contacts/batch/read
+  properties: [... the properties Steps 1-4 need ...]
+  inputs: [{ id: recordId }, ...]   // the memberships page(s) above
 ```
 
 Anything already carrying `kortix_outreach_drafted` was handled by a prior

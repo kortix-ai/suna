@@ -35,45 +35,71 @@ If no policy file exists yet, use these starting defaults and propose creating
 - **Tags** — every resource carries `owner` and `environment`.
 - **IAM roles** — no role holds `*:*` or an unscoped `iam:PassRole`.
 
+### Step 0b — Editing the policy on request
+
+If a human asked to add or change a rule in the policy itself (not run a
+sweep), that's the whole job for this run: read
+`.kortix/memory/compliance-policy.md` (Step 0 above), edit it to reflect the
+requested rule, and confirm the change back to the human. No AWS calls, no
+findings, no change request — the policy file itself is the human-authored
+input the rest of this skill checks against.
+
 ## Step 1 — Pull AWS resource state (read-only)
 
-Scope to {{aws_regions}} (comma-separated):
+S3 buckets and IAM roles are **global, account-wide resources** — `list-buckets`
+and `list-roles` return the same full set no matter which region you ask from.
+List and evaluate each one exactly once per sweep, outside any region loop:
 ```sh
-for region in $(echo "{{aws_regions}}" | tr ',' ' '); do
-  for bucket in $(aws s3api list-buckets --query 'Buckets[].Name' --output text); do
-    aws s3api get-bucket-policy-status --bucket "$bucket" --region "$region" 2>/dev/null
-    aws s3api get-bucket-tagging        --bucket "$bucket" --region "$region" 2>/dev/null
-  done
-  for role in $(aws iam list-roles --query 'Roles[].RoleName' --output text); do
-    aws iam list-attached-role-policies --role-name "$role"
-    aws iam list-role-policies          --role-name "$role"
-  done
+for bucket in $(aws s3api list-buckets --query 'Buckets[].Name' --output text); do
+  bucket_region=$(aws s3api get-bucket-location --bucket "$bucket" --query 'LocationConstraint' --output text)
+  [ "$bucket_region" = "None" ] && bucket_region="us-east-1"
+  aws s3api get-bucket-policy-status --bucket "$bucket" --region "$bucket_region" 2>/dev/null
+  aws s3api get-bucket-tagging        --bucket "$bucket" --region "$bucket_region" 2>/dev/null
+done
+for role in $(aws iam list-roles --query 'Roles[].RoleName' --output text); do
+  aws iam list-attached-role-policies --role-name "$role"
+  aws iam list-role-policies          --role-name "$role"
 done
 ```
 Every call here is a read (`list-*`, `get-*`). The credentials are brokered
 server-side and read-only — you use them, you never see the raw key.
 
+{{aws_regions}} is reserved for resources that are genuinely regional. Today's
+policy (Step 0) covers only buckets and roles, so nothing loops over
+{{aws_regions}} in this version of the sweep. If the policy is ever extended
+to a regional resource (e.g. VPCs or security groups), scope only that new
+check to `$(echo "{{aws_regions}}" | tr ',' ' ')` — never re-loop the global
+bucket/role checks above.
+
 ## Step 2 — Check against policy
 
-For each resource, evaluate against the policy loaded in Step 0:
+For each resource, evaluate against the policy loaded in Step 0. Each
+resource is listed exactly once (Step 1), so file **at most one finding per
+resource id** — never one per region pass:
 
 | Check | Violation condition | Finding type |
 |---|---|---|
 | Bucket exposure | `PolicyStatus.IsPublic = true` and the bucket isn't allow-listed | Newly public bucket |
 | Tagging | Missing a required tag key from the policy | Untagged resource |
-| IAM scope | Role holds `*:*`, an unscoped `iam:PassRole`, or a policy broader than its template | Over-broad role |
+| IAM scope | Role holds `*:*` or an unscoped `iam:PassRole` | Over-broad role |
 
 ## Step 3 — Cross-reference the audit logs
 
-For every violation from Step 2, find when it happened and who did it:
+For every violation from Step 2, find when it happened and who did it. Which
+region(s) to query depends on the resource type:
+- **Bucket finding** → query only the bucket's own region, resolved in Step 1
+  (`$bucket_region`).
+- **Role finding** → IAM is a global service with no owning region, so check
+  each region in {{aws_regions}} in turn and stop at the first hit.
 ```sh
 aws cloudtrail lookup-events \
   --lookup-attributes AttributeKey=ResourceName,AttributeValue="<resource-id>" \
-  --max-results 10 --region <region>
+  --max-results 10 --region <region-per-rule-above>
 ```
 Attach the event time, actor, and source IP (if present) to the finding. If
-nothing turns up inside the CloudTrail retention window, note the finding as
-"origin unknown — predates available audit history" rather than guessing.
+nothing turns up in any queried region within the CloudTrail retention window,
+note the finding as "origin unknown — predates available audit history"
+rather than guessing.
 
 ## Step 4 — Draft the proposed remediation (never apply it)
 

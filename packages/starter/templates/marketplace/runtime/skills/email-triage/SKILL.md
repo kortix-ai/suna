@@ -11,8 +11,11 @@ of three outcomes: a drafted reply, a filed Linear ticket, or a label-only
 hold for a human. A scheduled check spawns a fresh session with scoped,
 read/write access to Gmail and Linear and read access to {{help_doc}}; this
 skill is the standard the triage is done to, so the agent doesn't reinvent
-categories or tone on every run. Nothing customer-facing ever sends from this
-skill — a draft is the most it produces.
+categories or tone on every run. A single check can turn up several new
+messages at once — handle each as an independent unit: a failure or bad match
+on one message never blocks triage of the others found in the same pass.
+Nothing customer-facing ever sends from this skill — a draft is the most it
+produces.
 </overview>
 
 <when-to-load>

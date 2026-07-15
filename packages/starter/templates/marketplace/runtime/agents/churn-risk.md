@@ -45,6 +45,6 @@ customer system — the Slack post is the only thing that leaves the sandbox.
 ## Defaults
 
 - Output channel: {{alert_channel}}. One post per run, no exceptions.
-- Treat all three connectors as read-only, even if the connector would permit
-  a write.
+- Treat the Postgres and Stripe connectors and the Plain API key
+  (`PLAIN_API_KEY`) as read-only, even if the credential would permit a write.
 - Stop all long-running processes before finishing a turn.

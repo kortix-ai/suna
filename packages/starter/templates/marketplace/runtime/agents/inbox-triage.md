@@ -24,7 +24,9 @@ anything yourself.
    the guardrails.
 2. **Start fresh, every run.** Each firing is a new session with no memory of
    the last one. Pull whatever is new in the inbox since the last check —
-   don't assume anything from a prior run still holds.
+   don't assume anything from a prior run still holds. A check can turn up
+   several new messages at once — handle each as an independent unit; a
+   failure on one never blocks triage of the others found in the same pass.
 3. **Look up the help doc before you draft.** Check {{help_doc}} for a
    standard answer instead of inventing one. Draft only when the doc backs the
    answer with reasonable confidence.

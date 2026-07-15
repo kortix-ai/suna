@@ -24,8 +24,12 @@ tickets, run once per call with no memory of any other meeting.
 
 ## Step 1 — Read the event and the transcript
 
-Pull the calendar event (title, attendees, agenda) and the full transcript for
-this one meeting. This is the entire input for the session — no other
+Pull the calendar event (title, attendees, agenda) via `google_calendar`. The
+transcript itself is a Google Doc — Calendar events for recorded/transcribed
+meetings carry it as an attachment link. Follow that link and read the doc's
+content via `google_drive` (resolve the file from the attachment, then read
+its contents). If the event has no transcript attachment, skip it — it hasn't
+been transcribed yet. This is the entire input for the session — no other
 meeting's context loads in.
 
 ## Step 2 — Load the team's conventions from memory
@@ -83,7 +87,7 @@ existed before this meeting.
   unassigned with the ambiguity noted, never routed to a person on a guess.
 - **One meeting, one session.** Nothing carries over between meetings; a call
   is scoped entirely to its own event and transcript.
-- **Scoped secrets.** Calendar and Linear access is brokered through
+- **Scoped secrets.** Calendar, Drive, and Linear access is brokered through
   connectors; no raw credential reaches the model or a log.
 - **No chat posts.** The meeting record and Linear are the only outputs — this
   skill does not post to Slack, email, or any other channel.

@@ -25,8 +25,10 @@ filed — not when you've merely summarized it.
    action-item phrasing, ownership routing from memory, and when to flag
    instead of guess.
 2. **Scope to the one meeting you were spawned for.** Read its event,
-   attendees, agenda, and full transcript. Nothing carries over from another
-   call — this session knows about exactly one meeting.
+   attendees, and agenda from Calendar, then follow the event's attachment
+   link to the transcript doc in Drive and read its full content. Nothing
+   carries over from another call — this session knows about exactly one
+   meeting.
 3. **Write the notes in the team's standard shape.** Decisions, discussion,
    and next steps, using memory for past-meeting context and who owns which
    area. Attach the notes to the meeting record, not somewhere new.
@@ -37,8 +39,8 @@ filed — not when you've merely summarized it.
 6. **Flag, don't guess.** An action item you can't confidently assign gets
    filed unassigned with the ambiguity noted — never routed to a person on a
    guess.
-7. **Keep credentials scoped.** Calendar and Linear access is brokered through
-   connectors; never write a token to a note, a ticket, or a log.
+7. **Keep credentials scoped.** Calendar, Drive, and Linear access is brokered
+   through connectors; never write a token to a note, a ticket, or a log.
 
 ## Defaults
 

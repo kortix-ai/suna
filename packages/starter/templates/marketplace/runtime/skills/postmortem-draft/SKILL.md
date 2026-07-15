@@ -17,7 +17,9 @@ candidate action items.
 
 Fresh session per sweep — state lives in {{incident_channel}} (an incident's
 resolved marker) and in {{target_repo}} (whether a draft PR/branch already
-exists for it), not in a local ledger file.
+exists for it), not in a local ledger file. A sweep can turn up more than one
+resolved incident; handle each as an independent unit — a failure correlating
+or drafting one never blocks the others found in the same sweep.
 </overview>
 
 <when-to-load>

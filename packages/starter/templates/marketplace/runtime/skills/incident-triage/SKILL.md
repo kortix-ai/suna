@@ -13,7 +13,9 @@ then decides whether that diagnosis is enough to close the loop or whether it
 has to page.
 
 Reactive and read-only; covers every new or still-unresolved alert in
-{{sentry_project}}, one case per alert, nothing carried over between sweeps.
+{{sentry_project}} found in a sweep, nothing carried over between sweeps.
+Handle each alert as an independent unit: a failure or inconclusive diagnosis
+on one alert never blocks triage of the others found in the same sweep.
 </overview>
 
 <when-to-load>
@@ -94,6 +96,9 @@ no config change.
   commits, no deploys, no rollbacks.
 - **One diagnosis per alert.** Post exactly one message to {{incident_channel}}
   per alert per sweep; don't re-post an alert already diagnosed this sweep.
+- **Independent per alert.** Treat every alert found in a sweep as its own
+  case; a failure or inconclusive result investigating one never stops
+  triage of the others found in the same sweep.
 - **Page on doubt.** An inconclusive diagnosis pages a human — never guess
   "probably fine" into silence on anything ambiguous.
 - **Severity floor is non-negotiable.** Anything at or above

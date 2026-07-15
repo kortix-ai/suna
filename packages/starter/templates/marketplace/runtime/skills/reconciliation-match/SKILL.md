@@ -35,6 +35,18 @@ never written off.
 This is a fresh session — there is no prior turn to resume. The sheet is the
 memory.
 
+**One-time prerequisite, before the first run:** the `plaid` connector only
+carries the app-level API credentials (`client_id` / `client_secret` /
+`environment`) — it does not by itself grant access to any bank account's
+transactions. Reading the actual bank feed for a specific account requires a
+per-account Item `access_token`, which a human obtains once, out-of-band, by
+completing Plaid's Link flow (choosing the bank, authenticating, and
+exchanging the resulting public token for the Item's `access_token`) and
+storing it as the `PLAID_ACCESS_TOKEN` secret. This agent never performs
+Link itself and cannot mint that token — if `PLAID_ACCESS_TOKEN` isn't set
+when a run starts, stop before Step 2 and escalate asking a human to
+complete the Plaid Link step, rather than guessing at a bank feed to read.
+
 1. Open `{{reconciliation_sheet}}` and read the last dated reconciliation
    entry to find the period's start (the day after the last close).
 2. Read the sheet's "explained mismatches" notes (recurring fees, known
@@ -51,7 +63,8 @@ reference, and payout ID for every line — you'll need all four to match.
 
 ## Step 2 — Pull the bank feed for the period
 
-Read (never write) the connected bank feed for the same period: deposits and
+Read (never write) the connected bank feed for the same period, using the
+linked account's `PLAID_ACCESS_TOKEN` (provisioned in Step 0): deposits and
 withdrawals, with amount, date, and any reference/memo the bank provides.
 
 ## Step 3 — Match transactions against invoices
@@ -105,9 +118,11 @@ the escalation — don't act on it.
 - **No new tolerances invented mid-run.** Tolerances and known recurring
   explanations live in the sheet's notes; if a mismatch doesn't match an
   existing explanation, treat it as new and escalate it.
-- **Scoped, brokered credentials.** Stripe, bank feed, and Sheets access are
-  injected into the sandbox at runtime and never shown to the model or
-  written to logs.
+- **Scoped, brokered credentials.** Stripe and Sheets access are injected into
+  the sandbox at runtime and never shown to the model or written to logs. The
+  bank feed is read using the `PLAID_ACCESS_TOKEN` secret for the one account
+  a human linked via Plaid Link ahead of time — this agent never runs Link
+  itself and is scoped to that single linked account, not "any" bank account.
 - **One escalation per unresolved line.** Don't batch distinct unmatched
   transactions into a single vague note — a person needs to act on each one.
 </guardrails>

@@ -42,9 +42,11 @@ matching post, it's new; work the oldest unhandled file first.
 
 ## Step 1 — Read the whole contract
 
-Pull the full document from Drive, not a preview or the first page. Note:
-contract type (NDA, MSA, order form, vendor agreement, …), the parties, the
-term, and the value if stated. This becomes the top of the summary.
+Drive finds the file; Docs reads it. Open the document with the Docs API
+(`docs.documents.get`) to pull its actual body, not a Drive preview or the
+first page. Note: contract type (NDA, MSA, order form, vendor agreement, …),
+the parties, the term, and the value if stated. This becomes the top of the
+summary.
 
 ## Step 2 — Check every clause against our standard positions
 
@@ -67,10 +69,13 @@ inventing a rule — that's a note for the lawyer, not a flag.
 
 ## Step 3 — Draft redlines on the flagged clauses
 
-For each flagged clause, draft the proposed replacement language as a **suggested
-edit / comment in the Drive doc** — never as an applied change. Keep the redline
-close to our standard position (e.g., propose the 12-month cap, not a negotiating
-opener). One redline per flagged clause; reference the section number.
+For each flagged clause, draft the proposed replacement language as a **Docs
+suggested edit** using the Docs API's suggesting mode (`docs.documents.batchUpdate`
+with the request's `writeControl`/suggester identity set so the change lands as
+a suggestion, not an applied edit) — never as a direct write to the document.
+Keep the redline close to our standard position (e.g., propose the 12-month cap,
+not a negotiating opener). One redline per flagged clause; reference the section
+number.
 
 ## Step 4 — Write the summary
 
@@ -96,17 +101,18 @@ anything, goes back to the counterparty.
 </workflow>
 
 <guardrails>
-- **Redlines are drafted, never sent.** Every proposed edit stays in the Drive doc
-  as a suggestion pending a lawyer's sign-off; the agent never emails, shares, or
+- **Redlines are drafted, never sent.** Every proposed edit lands as a Docs
+  suggestion pending a lawyer's sign-off; the agent never emails, shares, or
   messages a redline to the counterparty.
 - **One contract, one session.** No cross-run ledger — re-derive state from Drive
   and {{legal_channel}} each time, and never re-summarize a contract that already
   has a posted summary.
-- **Read-only on the source document.** Suggested edits only; never overwrite,
-  delete, or move the original file.
+- **Read-only on the source document.** Suggesting-mode edits only, via the Docs
+  API; never use Drive to overwrite, delete, or move the original file, and never
+  apply a suggestion directly.
 - **No invented positions.** If the playbook has no stance on a clause, say so
   instead of guessing what "standard" means.
-- **Secrets scoped.** Drive and Slack access is brokered server-side; no
+- **Secrets scoped.** Drive, Docs, and Slack access is brokered server-side; no
   credential is ever shown to the model or written to a log.
 </guardrails>
 
