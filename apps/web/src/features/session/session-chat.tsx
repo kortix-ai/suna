@@ -128,6 +128,7 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import { useSessionPrefill } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   type KortixSendError,
@@ -3521,6 +3522,10 @@ export function SessionChat({
     files: AttachedFile[];
     id: number;
   } | null>(null);
+  // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
+  // starter line. Held (not one-shot) in the store; the composer's own
+  // `prefill.id` effect below is what makes application happen exactly once.
+  const sessionPrefill = useSessionPrefill(sessionId);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -5271,7 +5276,9 @@ export function SessionChat({
                   id: failedStartDraft.id,
                   mode: 'merge',
                 }
-              : null
+              : sessionPrefill
+                ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                : null
           }
           isBusy={isBusy}
           queuedMessages={queuedMessages}

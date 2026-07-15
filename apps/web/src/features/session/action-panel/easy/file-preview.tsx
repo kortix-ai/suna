@@ -29,7 +29,7 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { FileWarning, Maximize2, Minimize2 } from 'lucide-react';
+import { FileWarning, Maximize2, MessageSquarePlus, Minimize2 } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { CloseButton } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
@@ -57,6 +57,7 @@ function PreviewShell({
   fileName = name,
   path,
   onClose,
+  onAskForChanges,
   children,
 }: {
   /** The display name shown in the toolbar text — a human title when one
@@ -68,6 +69,10 @@ function PreviewShell({
   fileName?: string;
   path: string;
   onClose: () => void;
+  /** Seeds the composer with a starter line about this file and closes the
+   *  detail (W12). Omitted entirely (not disabled) where there's no session
+   *  composer to hand it to. */
+  onAskForChanges?: () => void;
   children: React.ReactNode;
 }) {
   const isExpanded = useIsExpanded();
@@ -84,6 +89,19 @@ function PreviewShell({
           <span className="text-foreground truncate text-sm font-medium">{name}</span>
         </span>
         <span className="flex shrink-0 items-center gap-0.5">
+          {onAskForChanges && (
+            <Hint label="Ask for changes" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Ask for changes"
+                onClick={onAskForChanges}
+                className="size-7 active:scale-[0.96]"
+              >
+                <MessageSquarePlus className="size-3.5" />
+              </Button>
+            </Hint>
+          )}
           {isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
           <DownloadButton path={path} fileName={fileName} />
           {/* The store flip is a no-op on mobile — the drawer never reads
@@ -145,6 +163,7 @@ export function FilePreview({
   name,
   fileName = name,
   onClose,
+  onAskForChanges,
 }: {
   path: string;
   /** The display name shown in the toolbar — a human title when the output
@@ -158,6 +177,10 @@ export function FilePreview({
   /** The detail layer's header is suppressed for files — the viewer's toolbar
    *  owns the name and the close, so there is one bar instead of two. */
   onClose: () => void;
+  /** Seeds the composer with a starter line about this file and closes the
+   *  detail (W12). Omitted entirely (not disabled) where there's no session
+   *  composer to hand it to. */
+  onAskForChanges?: () => void;
 }) {
   const rich = RICH_CATEGORIES.has(getFileCategory(fileName));
 
@@ -173,7 +196,13 @@ export function FilePreview({
 
   if (rich) {
     return (
-      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
+      <PreviewShell
+        name={name}
+        fileName={fileName}
+        path={path}
+        onClose={onClose}
+        onAskForChanges={onAskForChanges}
+      >
         <FileSourceProvider value={workspaceFileSource}>
           <FileContentRenderer filePath={path} showHeader={false} className="h-full" />
         </FileSourceProvider>
@@ -183,7 +212,13 @@ export function FilePreview({
 
   if (isLoading) {
     return (
-      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
+      <PreviewShell
+        name={name}
+        fileName={fileName}
+        path={path}
+        onClose={onClose}
+        onAskForChanges={onAskForChanges}
+      >
         <Centered>
           <Loading />
         </Centered>
@@ -193,7 +228,13 @@ export function FilePreview({
 
   if (isError || !data) {
     return (
-      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
+      <PreviewShell
+        name={name}
+        fileName={fileName}
+        path={path}
+        onClose={onClose}
+        onAskForChanges={onAskForChanges}
+      >
         <Centered>
           <FileWarning className="size-5" />
           <span>
@@ -212,7 +253,13 @@ export function FilePreview({
   if (data.type === 'binary') {
     const isImage = data.mimeType?.startsWith('image/') && data.encoding === 'base64';
     return (
-      <PreviewShell name={name} fileName={fileName} path={path} onClose={onClose}>
+      <PreviewShell
+        name={name}
+        fileName={fileName}
+        path={path}
+        onClose={onClose}
+        onAskForChanges={onAskForChanges}
+      >
         {isImage ? (
           <div className="flex items-start justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -232,5 +279,13 @@ export function FilePreview({
     );
   }
 
-  return <FileViewer content={data.content} fileName={fileName} path={path} onClose={onClose} />;
+  return (
+    <FileViewer
+      content={data.content}
+      fileName={fileName}
+      path={path}
+      onClose={onClose}
+      onAskForChanges={onAskForChanges}
+    />
+  );
 }

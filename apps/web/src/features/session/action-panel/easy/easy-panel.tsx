@@ -26,6 +26,7 @@ import {
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
 import { FileText } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -52,6 +53,12 @@ import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
+
+/** The path's last segment — used only to decide whether the path hint in
+ *  "Ask for changes" would just repeat the display name (W12). */
+function basenameOf(path: string): string {
+  return path.split('/').pop() ?? path;
+}
 
 export const EasyPanel = memo(function EasyPanel({
   sessionId,
@@ -143,55 +150,79 @@ export const EasyPanel = memo(function EasyPanel({
    * Declared here (not near the JSX) so the payoff/chip-consume effects below
    * can depend on it.
    */
-  const handleOpenOutput = useCallback((output: OutputItem, siblings?: OutputItem[]) => {
-    // The human title, when the output carries one (W3) — never the raw
-    // filename in a spot the user reads as the thing's name.
-    const displayName = output.title ?? output.name;
+  const handleOpenOutput = useCallback(
+    (output: OutputItem, siblings?: OutputItem[]) => {
+      // The human title, when the output carries one (W3) — never the raw
+      // filename in a spot the user reads as the thing's name.
+      const displayName = output.title ?? output.name;
 
-    const openable = (siblings ?? []).filter((s) => s.path || s.url);
-    const { prev, next, position } =
-      openable.length > 1
-        ? neighborOutputs(openable, outputKey(output))
-        : { prev: null, next: null, position: '' };
-    const nav =
-      prev || next
-        ? {
-            prev: prev ? () => handleOpenOutput(prev, siblings) : null,
-            next: next ? () => handleOpenOutput(next, siblings) : null,
-            position,
-          }
-        : undefined;
+      // "Ask for changes" (W12): hand the composer a starter line naming this
+      // deliverable and step out of the way. The path hint only earns its
+      // parenthetical when it says something the display name didn't already —
+      // most outputs have no separate title, so path and name agree.
+      const askForChanges = () => {
+        const pathHint =
+          output.path && basenameOf(output.path) !== displayName ? ` (\`${output.path}\`)` : '';
+        useSessionComposerPrefillStore
+          .getState()
+          .setPrefill(sessionId, `In ${displayName}${pathHint}, `);
+        setDetail(null);
+      };
 
-    if (output.kind === 'app' && output.url) {
+      const openable = (siblings ?? []).filter((s) => s.path || s.url);
+      const { prev, next, position } =
+        openable.length > 1
+          ? neighborOutputs(openable, outputKey(output))
+          : { prev: null, next: null, position: '' };
+      const nav =
+        prev || next
+          ? {
+              prev: prev ? () => handleOpenOutput(prev, siblings) : null,
+              next: next ? () => handleOpenOutput(next, siblings) : null,
+              position,
+            }
+          : undefined;
+
+      if (output.kind === 'app' && output.url) {
+        setDetail({
+          key: `app:${output.url}`,
+          title: displayName,
+          hideHeader: true,
+          padded: false,
+          nav,
+          body: (
+            <AppPreview
+              url={output.url}
+              name={displayName}
+              onClose={() => setDetail(null)}
+              onAskForChanges={askForChanges}
+            />
+          ),
+        });
+        return;
+      }
+
+      if (!output.path) return;
       setDetail({
-        key: `app:${output.url}`,
+        key: `file:${output.path}`,
         title: displayName,
+        icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
         hideHeader: true,
         padded: false,
         nav,
-        body: <AppPreview url={output.url} name={displayName} onClose={() => setDetail(null)} />,
+        body: (
+          <FilePreview
+            path={output.path}
+            name={displayName}
+            fileName={output.name}
+            onClose={() => setDetail(null)}
+            onAskForChanges={askForChanges}
+          />
+        ),
       });
-      return;
-    }
-
-    if (!output.path) return;
-    setDetail({
-      key: `file:${output.path}`,
-      title: displayName,
-      icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
-      hideHeader: true,
-      padded: false,
-      nav,
-      body: (
-        <FilePreview
-          path={output.path}
-          name={displayName}
-          fileName={output.name}
-          onClose={() => setDetail(null)}
-        />
-      ),
-    });
-  }, []);
+    },
+    [sessionId],
+  );
 
   const outcome = useMemo(
     () => deriveRunOutcome(messages, steps[steps.length - 1]?.status),

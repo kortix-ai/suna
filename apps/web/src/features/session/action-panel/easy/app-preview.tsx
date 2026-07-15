@@ -39,6 +39,7 @@ import {
   Check,
   Link as LinkIcon,
   Maximize2,
+  MessageSquarePlus,
   Minimize2,
   RefreshCw,
 } from 'lucide-react';
@@ -78,11 +79,16 @@ export function AppPreview({
   url,
   name,
   onClose,
+  onAskForChanges,
 }: {
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
   name: string;
   onClose: () => void;
+  /** Seeds the composer with a starter line about this app and closes the
+   *  detail (W12). Omitted entirely (not disabled) where there's no session
+   *  composer to hand it to. */
+  onAskForChanges?: () => void;
 }) {
   // The app runs on localhost *inside the sandbox*, which the browser cannot
   // reach. The proxy is what makes it openable at all.
@@ -290,6 +296,20 @@ export function AppPreview({
             )}
           </div>
         </form>
+
+        {onAskForChanges && (
+          <Hint label="Ask for changes" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Ask for changes"
+              onClick={onAskForChanges}
+              className="active:scale-[0.96]"
+            >
+              <MessageSquarePlus className="size-4" />
+            </Button>
+          </Hint>
+        )}
 
         <Hint label="Open in a new tab" side="bottom">
           <Button

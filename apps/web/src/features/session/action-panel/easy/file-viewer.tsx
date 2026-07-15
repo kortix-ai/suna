@@ -34,7 +34,16 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { Code2, Download, ExternalLink, Eye, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  Code2,
+  Download,
+  ExternalLink,
+  Eye,
+  Loader2,
+  Maximize2,
+  MessageSquarePlus,
+  Minimize2,
+} from 'lucide-react';
 import { useState } from 'react';
 import { CloseButton } from './detail-view';
 
@@ -174,6 +183,7 @@ export function FileViewer({
   fileName,
   path,
   onClose,
+  onAskForChanges,
   className,
 }: {
   content: string;
@@ -181,6 +191,10 @@ export function FileViewer({
   /** Sandbox path — needed to download the real bytes. */
   path?: string;
   onClose?: () => void;
+  /** Seeds the composer with a starter line about this file and closes the
+   *  detail (W12). Omitted entirely (not disabled) where there's no session
+   *  composer to hand it to. */
+  onAskForChanges?: () => void;
   className?: string;
 }) {
   const html = isHtml(fileName);
@@ -230,6 +244,19 @@ export function FileViewer({
 
         {/* Same actions in the same place for every file — they never move. */}
         <span className="flex shrink-0 items-center gap-0.5">
+          {onAskForChanges && (
+            <Hint label="Ask for changes" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Ask for changes"
+                onClick={onAskForChanges}
+                className="size-7 active:scale-[0.96]"
+              >
+                <MessageSquarePlus className="size-3.5" />
+              </Button>
+            </Hint>
+          )}
           <CopyButton code={content} />
           {path && isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
           {path && <DownloadButton path={path} fileName={fileName} />}
