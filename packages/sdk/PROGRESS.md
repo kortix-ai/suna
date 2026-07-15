@@ -787,3 +787,23 @@ packed, installed, imported, and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. API/web typechecks,
 focused provider tests, and UI lint also pass; live dev verification remains the
 enclosing rollout gate.
+
+---
+
+### 2026-07-15 — session `self-host-e2e-snapshot-fix`
+
+Accepted the intentionally additive public SDK surface introduced by the generic
+self-host GitHub App/PAT and managed-git clients. The runtime snapshot gained 12
+entries and the type-level snapshot gained 24 entries across the canonical root
+and compatibility subpaths; no exported name was removed or renamed.
+
+**RED evidence:** the focused public-surface guards failed 2 / 2 and reported only
+additions for `GitHubApp*`, `ManagedGitStatus`, and their client functions.
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1092 pass / 2 skip / 0 fail** across
+80 files with 4943 assertions; `pnpm --filter @kortix/sdk run smoke:install`
+built, packed, installed, imported, and constructed `@kortix/sdk` successfully.
+The exact self-host fast E2E also reported **24 pass / 0 fail**.
+
+**Shippable to production: YES** — the public additions are deliberate,
+snapshot-locked, install-verified, and the self-host CLI contract is green.
