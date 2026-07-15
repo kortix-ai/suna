@@ -19,6 +19,7 @@
  * your sandbox, not a browser.
  */
 
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
@@ -38,10 +39,23 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { GrRefresh } from 'react-icons/gr';
 import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton } from './detail-view';
+
+// zustand v5's own hook feeds React's `useSyncExternalStore` a
+// `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
+// (sandbox health can only ever be learned from a client-side poll, so it is
+// genuinely "connecting" at request time), but it means a real server-render
+// dispatcher can never observe a `setState` call that happened earlier in the
+// same process, as this component's render tests need to. Reading through
+// `getState()` for both snapshots sidesteps that — same live value, same
+// reactivity via `subscribe`, no behavior change in the browser or real SSR.
+const getSandboxAliveSnapshot = () => {
+  const s = useSandboxConnectionStore.getState();
+  return s.status === 'connected' && s.healthy === true;
+};
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */
 function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: string } | null {
@@ -92,6 +106,12 @@ export function AppPreview({
   const isExpanded = useIsExpanded();
   const toggleExpanded = useToggleExpanded();
 
+  const sandboxAlive = useSyncExternalStore(
+    useSandboxConnectionStore.subscribe,
+    getSandboxAliveSnapshot,
+    getSandboxAliveSnapshot,
+  );
+
   useEffect(() => {
     if (!isEditing) setAddressValue(current);
   }, [current, isEditing]);
@@ -103,12 +123,17 @@ export function AppPreview({
     }
   }, []);
 
-  // Cross-origin iframes frequently never fire onLoad, so the spinner would
-  // hang forever. Give up after 5s and show the app anyway.
+  // Cross-origin iframes frequently never fire onLoad OR onError, so both the
+  // spinner and the error card would otherwise hang on a dead server. After 5s
+  // of silence, assume the worst and say so — a blank frame reads as "your app
+  // is broken" with no explanation, which is worse than an honest error (W8).
   useEffect(() => {
     if (!isLoading) return;
     clearLoadTimeout();
-    loadTimeout.current = setTimeout(() => setIsLoading(false), 5000);
+    loadTimeout.current = setTimeout(() => {
+      setIsLoading(false);
+      setHasError(true);
+    }, 5000);
     return clearLoadTimeout;
   }, [isLoading, refreshKey, clearLoadTimeout]);
 
@@ -313,9 +338,11 @@ export function AppPreview({
                 {/* The single most common cause, said plainly: the agent started
                     the server a moment ago and it isn't listening yet. */}
                 <p className="text-muted-foreground mt-1 text-xs">
-                  {port
-                    ? `The app on port ${port} may not be running yet.`
-                    : 'The app may not be running yet.'}
+                  {!sandboxAlive
+                    ? 'This workspace has stopped, so the app isn’t reachable anymore.'
+                    : port
+                      ? `The app on port ${port} may not be running yet.`
+                      : 'The app may not be running yet.'}
                 </p>
               </div>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>

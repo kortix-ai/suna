@@ -13,22 +13,37 @@
  * so they get the same bar from `PreviewShell`.
  */
 
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { workspaceFileSource } from '@/features/files/file-source';
-import { useFileContent } from '@/features/files/hooks';
 import {
   type FileCategory,
   FileContentRenderer,
   FileSourceProvider,
   getFileCategory,
 } from '@/features/file-viewer';
+import { workspaceFileSource } from '@/features/files/file-source';
+import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { FileWarning, Maximize2, Minimize2 } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
 import { CloseButton } from './detail-view';
 import { DownloadButton, FileViewer } from './file-viewer';
+
+// zustand v5's own hook feeds React's `useSyncExternalStore` a
+// `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
+// (sandbox health can only ever be learned from a client-side poll, so it is
+// genuinely "connecting" at request time), but it means a real server-render
+// dispatcher can never observe a `setState` call that happened earlier in the
+// same process, as this component's render tests need to. Reading through
+// `getState()` for both snapshots sidesteps that — same live value, same
+// reactivity via `subscribe`, no behavior change in the browser or real SSR.
+const getSandboxAliveSnapshot = () => {
+  const s = useSandboxConnectionStore.getState();
+  return s.status === 'connected' && s.healthy === true;
+};
 
 /**
  * The toolbar for every state that isn't text. Same shape and same actions as
@@ -74,7 +89,7 @@ function PreviewShell({
           <CloseButton onClose={onClose} />
         </span>
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto  pb-4">{children}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">{children}</div>
     </div>
   );
 }
@@ -119,9 +134,15 @@ export function FilePreview({
 }) {
   const rich = RICH_CATEGORIES.has(getFileCategory(name));
 
+  const sandboxAlive = useSyncExternalStore(
+    useSandboxConnectionStore.subscribe,
+    getSandboxAliveSnapshot,
+    getSandboxAliveSnapshot,
+  );
+
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
-  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+  const { data, isLoading, isError } = useFileContent(path, { enabled: !rich });
 
   if (rich) {
     return (
@@ -148,7 +169,11 @@ export function FilePreview({
       <PreviewShell name={name} path={path} onClose={onClose}>
         <Centered>
           <FileWarning className="size-5" />
-          <span>{error instanceof Error ? error.message : "This file couldn't be opened."}</span>
+          <span>
+            {!sandboxAlive
+              ? "This session's workspace has ended, so its files can't be opened anymore."
+              : "This file couldn't be opened."}
+          </span>
         </Centered>
       </PreviewShell>
     );

@@ -19,14 +19,30 @@
  * unlike a live thumbnail it cannot half-load and libel a working app as broken.
  */
 
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
+import { useSyncExternalStore } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { PanelCard } from './panel-card';
 
 function portOf(url: string | undefined): number {
   return parseLocalhostUrl(url ?? '')?.port ?? 0;
 }
+
+// zustand v5's own hook feeds React's `useSyncExternalStore` a
+// `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
+// (sandbox health can only ever be learned from a client-side poll, so it is
+// genuinely "connecting" at request time), but it means a real server-render
+// dispatcher (which is exactly what `renderToStaticMarkup` uses, in this
+// component's own test) can never observe a `setState` call that happened
+// earlier in the same process. Reading through `getState()` for both
+// snapshots sidesteps that — same live value, same reactivity via
+// `subscribe`, no behavior change in the browser or in real SSR.
+const getSandboxAliveSnapshot = () => {
+  const s = useSandboxConnectionStore.getState();
+  return s.status === 'connected' && s.healthy === true;
+};
 
 export function AppsCard({
   apps,
@@ -35,6 +51,16 @@ export function AppsCard({
   apps: OutputItem[];
   onOpenApp: (app: OutputItem) => void;
 }) {
+  // One subscription for the card, not one per row: liveness is a property of
+  // the sandbox, and every app in it lives or dies together. The green pulse
+  // was static markup before this — a stopped sandbox kept "live" dots pulsing
+  // over dead servers, which is the panel lying (W8).
+  const sandboxAlive = useSyncExternalStore(
+    useSandboxConnectionStore.subscribe,
+    getSandboxAliveSnapshot,
+    getSandboxAliveSnapshot,
+  );
+
   return (
     <PanelCard
       title="Apps"
@@ -62,12 +88,22 @@ export function AppsCard({
               >
                 <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden>
                   <span className="relative flex size-2">
-                    <span className="bg-kortix-green absolute inline-flex size-2 animate-ping rounded-full opacity-60 motion-reduce:animate-none" />
-                    <span className="bg-kortix-green relative inline-flex size-2 rounded-full" />
+                    {sandboxAlive && (
+                      <span className="bg-kortix-green absolute inline-flex size-2 animate-ping rounded-full opacity-60 motion-reduce:animate-none" />
+                    )}
+                    <span
+                      className={cn(
+                        'relative inline-flex size-2 rounded-full',
+                        sandboxAlive ? 'bg-kortix-green' : 'bg-muted-foreground/40',
+                      )}
+                    />
                   </span>
                 </span>
                 <span className="text-foreground min-w-0 flex-1 truncate text-sm">{app.name}</span>
-                {port > 0 && (
+                {!sandboxAlive && (
+                  <span className="text-muted-foreground shrink-0 text-xs">stopped</span>
+                )}
+                {sandboxAlive && port > 0 && (
                   <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                     :{port}
                   </span>
