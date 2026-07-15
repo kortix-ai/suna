@@ -36,12 +36,16 @@ export type { UploadResult } from '@kortix/sdk/files';
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
 
-/** Formats a browser tab renders natively. Everything else gets Download only —
- * an omitted control beats a disabled one with no explanation (W4). */
+/** Formats that are inert as a top-level document — safe to open directly in a
+ * browser tab via a same-origin blob URL. HTML and SVG are deliberately
+ * excluded even though a browser tab "renders them natively": both can carry
+ * `<script>`, and a blob URL is same-origin, so opening one would execute
+ * arbitrary script with access to this app's origin (XSS). In-app preview
+ * already renders HTML inertly via a sandboxed iframe `srcDoc`, so nothing is
+ * lost — everything else gets Download only, since an omitted control beats a
+ * disabled one with no explanation (W4). */
 const BROWSER_VIEWABLE_EXT = new Set([
   'pdf',
-  'html',
-  'htm',
   'txt',
   'md',
   'png',
@@ -49,7 +53,6 @@ const BROWSER_VIEWABLE_EXT = new Set([
   'jpeg',
   'gif',
   'webp',
-  'svg',
   'avif',
   'bmp',
 ]);

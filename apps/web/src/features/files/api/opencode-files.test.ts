@@ -2,9 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { isBrowserViewable, uniqueZipNames } from './opencode-files';
 
 describe('isBrowserViewable (W4)', () => {
-  test('browsers render these natively', () => {
-    for (const f of ['a.pdf', 'a.html', 'a.png', 'a.jpg', 'a.svg', 'a.txt']) {
+  test('inert-as-a-top-level-document formats open in a new tab', () => {
+    for (const f of ['a.pdf', 'a.png', 'a.jpg', 'a.txt']) {
       expect(isBrowserViewable(f)).toBe(true);
+    }
+  });
+  test('HTML and SVG are excluded — a same-origin blob URL would execute them (XSS)', () => {
+    for (const f of ['a.html', 'a.htm', 'a.svg']) {
+      expect(isBrowserViewable(f)).toBe(false);
     }
   });
   test('everything else downloads instead — no disabled mystery button', () => {
