@@ -5,6 +5,7 @@ import {
   isAndroidWebViewNativeBridgePostMessageNoise,
   isClientRequestTimeoutMessage,
   isEmptyMessageUnresolvedBrowserChunkNoise,
+  isEmbedPdfTilingReactUpdateDepthNoise,
   isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
@@ -2204,6 +2205,167 @@ test('does NOT suppress a different RangeError message', () => {
       isUnresolvableStackOverflowNoise({
         message,
         frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
+// exceeded" render-loop noise
+// (Better Stack pattern 366115d4c931a6352fe8f334ff1b366f6d4b2ce9c192769ac681831354521e30,
+// Kortix Frontend prod, application_id 2346967). The `@embedpdf/plugin-tiling`
+// `TilingLayer` React component (used by `pdf-viewer.tsx`'s `<TilingLayer>`)
+// subscribes to the tiling plugin's `onTileRendering` event and calls
+// `setTiles(...)` on every emission; under a rapid zoom/scroll burst the
+// plugin re-emits synchronously during the React commit phase, tripping
+// React's 50-nested-update guard (#185). 1 occurrence, 0 identified users,
+// 2026-07-15 09:36:41 UTC, route `/projects/:id/sessions/:sessionId`, Chrome
+// 142 / Windows 10. The throw frame is `Object.r [as onTileRendering]` in a
+// `_next/static/chunks/…` bundle — never first-party `apps/web/src/…` source.
+// React #185 is ALSO a real first-party setState-loop message, so the matcher
+// requires BOTH the #185 message AND an `onTileRendering` frame, with a
+// first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact React #185 message from the production event.
+const REACT_185 =
+  'Minified React error #185; visit https://react.dev/errors/185 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.'
+
+// A representative slice of the production stack frames (oldest-first →
+// throwing frame last): the React reconciler loop (`uE`/`ux`) recursing
+// through the @embedpdf `onTileRendering` callback. All frames are raw
+// `_next/static/chunks/…` bundles — none resolve to first-party source.
+const EMBEDPDF_TILING_REACT_185_FRAMES = [
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 'uE' },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 'ux' },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 'o1' },
+  {
+    filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy',
+    function: 'Object.r [as onTileRendering]',
+  },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 't7' },
+]
+
+test('classifies the @embedpdf tiling React #185 render loop as noise', () => {
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({
+      message: REACT_185,
+      frames: EMBEDPDF_TILING_REACT_185_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned @embedpdf tiling React #185 Sentry event via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/c4d70885-ce86-4283-b373-bc2fbcd92b85/sessions/917c2468-11bf-4cf0-92e6-20d17fa58e77',
+      },
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            stacktrace: { frames: EMBEDPDF_TILING_REACT_185_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the @embedpdf tiling React #185 event even with only the onTileRendering frame', () => {
+  // A minimal capture carrying just the tiling callback frame still qualifies.
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({
+      message: REACT_185,
+      frames: [
+        {
+          filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy',
+          function: 'Object.r [as onTileRendering]',
+        },
+      ],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the @embedpdf tiling React #185 when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own component is the looping
+  // culprit → actionable; the negative guard MUST preserve it so the call site
+  // can be found + fixed. This is the whole reason the matcher is frame-aware
+  // (React #185 is also a real first-party setState-loop message).
+  for (const frames of [
+    [{ filename: 'apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'PDFViewerInner' }],
+    [
+      { filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js', function: 'Object.r [as onTileRendering]' },
+      { filename: 'app:///apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'renderPage' },
+    ],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames }),
+      false,
+      `expected first-party React #185 from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: REACT_185, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party React #185 from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a React #185 with NO onTileRendering frame (a real app or different third-party loop)', () => {
+  // A real first-party setState loop, or a #185 from a different third-party
+  // lib, carries NO `onTileRendering` frame — it must keep reporting. Only the
+  // @embedpdf-tiling #185 class is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/app.js', function: 'useEffect' }],
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    [],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames }),
+      false,
+      `expected React #185 from ${JSON.stringify(frames)} (no onTileRendering) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a different React error (#425) even with an onTileRendering frame', () => {
+  // The matcher is anchored on the EXACT #185 (Maximum update depth) code; a
+  // different React minified error from the tiling plugin is a different,
+  // actionable class and must keep reporting.
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({
+      message:
+        'Minified React error #425; visit https://react.dev/errors/425 for the full message',
+      frames: EMBEDPDF_TILING_REACT_185_FRAMES,
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-React message that happens to mention #185', () => {
+  // The matcher anchors on `Minified React error #185` — a different message
+  // wording must not be matched.
+  for (const message of [
+    'Maximum update depth exceeded',
+    'Error #185 in custom handler',
+    'react.dev/errors/185',
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingReactUpdateDepthNoise({
+        message,
+        frames: EMBEDPDF_TILING_REACT_185_FRAMES,
       }),
       false,
       `expected "${message}" to keep reporting`,
