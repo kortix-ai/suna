@@ -209,9 +209,29 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     );
   }
 
-  // Non-fatal: a hiccup here just hides this card rather than blocking the
-  // whole Git tab.
-  if (statusQuery.isError || !statusQuery.data) return null;
+  // NEVER render a blank Git tab. A 403 means the signed-in user isn't a
+  // platform admin (KORTIX_PLATFORM_ADMIN_EMAILS on self-host) — say so
+  // instead of silently hiding the only content in the pane. Any other error
+  // gets a visible, retryable state.
+  if (statusQuery.isError || !statusQuery.data) {
+    const status = (statusQuery.error as { status?: number } | null)?.status;
+    const forbidden = status === 403;
+    return (
+      <div className="space-y-2">
+        <p className="text-foreground text-sm font-medium">Managed GitHub</p>
+        <p className="text-muted-foreground text-sm">
+          {forbidden
+            ? 'Only a platform admin can view or configure the GitHub connection for this server. Ask your operator to add your email to KORTIX_PLATFORM_ADMIN_EMAILS.'
+            : 'Could not load the GitHub connection status.'}
+        </p>
+        {!forbidden ? (
+          <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
 
   const status: GitHubAppStatus = statusQuery.data;
   const showSetup = !status.configured || reconfiguring;
