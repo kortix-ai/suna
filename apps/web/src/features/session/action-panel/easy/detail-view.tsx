@@ -191,6 +191,15 @@ function useDetailKeyboard(
 const EASE = [0.22, 1, 0.36, 1] as const;
 const DURATION = 0.26;
 
+/**
+ * Motion: paging to a sibling deliverable is not a re-arrival — the card
+ * already IS there, only what's inside it changed. So the slide never plays
+ * again; the header+body+nav just crossfade, fast enough to read as a swap
+ * rather than a transition (130ms, ease-out — quicker than the 260ms open/
+ * close slide, per the doctrine that exits/swaps stay subtler than entrances).
+ */
+const CROSSFADE_TRANSITION = { duration: 0.13, ease: 'easeOut' } as const;
+
 export function DetailLayer({
   detail,
   onBack,
@@ -205,6 +214,7 @@ export function DetailLayer({
 }) {
   const reduce = useReducedMotion();
   const transition = reduce ? { duration: 0 } : { duration: DURATION, ease: EASE };
+  const crossfadeTransition = reduce ? { duration: 0 } : CROSSFADE_TRANSITION;
   const detailRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
@@ -217,12 +227,14 @@ export function DetailLayer({
   // Focus rides the layer: in on open (so Escape and the arrows work
   // immediately, and keyboard focus can never remain inside the aria-hidden
   // home), back to the invoking control on close. Keyed on `detail?.key` so
-  // paging to a sibling (nav) re-focuses the fresh container — but capture
-  // and restore happen ONLY on the closed↔open edges (`wasOpenRef`): a nav
-  // step re-runs this effect while the old container is mid-unmount, and
-  // re-capturing `document.activeElement` then would overwrite the invoking
-  // row with a dying node, losing the way home. Harmless on mobile: the
-  // desktop `detailRef` never mounts there, so `.focus()` no-ops.
+  // paging to a sibling (nav) re-focuses the container — the card itself no
+  // longer remounts on a nav step (only its inner content crossfades), but
+  // focus should still land back on it each time, the same as it would if it
+  // had. Capture and restore happen ONLY on the closed↔open edges
+  // (`wasOpenRef`): a nav step re-runs this effect too, and re-capturing
+  // `document.activeElement` then would overwrite the invoking row with
+  // whatever the nav button itself was, losing the way home. Harmless on
+  // mobile: the desktop `detailRef` never mounts there, so `.focus()` no-ops.
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = detail !== null;
@@ -244,28 +256,45 @@ export function DetailLayer({
         {children}
         <Drawer open={detail !== null} onOpenChange={(next) => !next && onBack()}>
           <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
-            {!detail?.hideHeader && (
-              <DrawerHeader className="shrink-0 px-4 py-3 text-left">
-                <DrawerTitle className="flex min-w-0 items-center justify-between gap-2 text-base">
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    {detail?.icon}
-                    <span className="truncate">{detail?.title}</span>
-                  </span>
-                  <CloseButton onClose={onBack} />
-                </DrawerTitle>
-              </DrawerHeader>
-            )}
-            <div
-              className={cn(
-                'min-h-0 min-w-0 flex-1 overflow-auto',
-                detail?.padded !== false && 'p-4',
-              )}
-            >
-              {detail?.body}
-            </div>
-            {/* Pinned below the drawer body — same row the desktop card
-                shows, so paging reads as one behavior wherever you are. */}
-            {detail?.nav && <DetailNav nav={detail.nav} />}
+            {/* The drawer itself never closes/reopens on paging — only its
+                content crossfades, same principle as the desktop card below.
+                `initial={false}` skips the fade on the drawer's own open
+                (vaul's slide-up already carries that arrival); `popLayout`
+                lets the fresh content take over the flow immediately instead
+                of stacking under the outgoing one mid-fade. */}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div
+                key={detail?.key ?? 'empty'}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={crossfadeTransition}
+                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              >
+                {!detail?.hideHeader && (
+                  <DrawerHeader className="shrink-0 px-4 py-3 text-left">
+                    <DrawerTitle className="flex min-w-0 items-center justify-between gap-2 text-base">
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        {detail?.icon}
+                        <span className="truncate">{detail?.title}</span>
+                      </span>
+                      <CloseButton onClose={onBack} />
+                    </DrawerTitle>
+                  </DrawerHeader>
+                )}
+                <div
+                  className={cn(
+                    'min-h-0 min-w-0 flex-1 overflow-auto',
+                    detail?.padded !== false && 'p-4',
+                  )}
+                >
+                  {detail?.body}
+                </div>
+                {/* Pinned below the drawer body — same row the desktop card
+                    shows, so paging reads as one behavior wherever you are. */}
+                {detail?.nav && <DetailNav nav={detail.nav} />}
+              </motion.div>
+            </AnimatePresence>
           </DrawerContent>
         </Drawer>
       </>
@@ -295,7 +324,12 @@ export function DetailLayer({
       <AnimatePresence>
         {detail && (
           <motion.div
-            key={detail.key}
+            // Constant key: this is the CARD, and paging between siblings
+            // never rebuilds it — only opening (mount) and closing (unmount)
+            // do, which is what earns the slide. A key on `detail.key` here
+            // would make AnimatePresence replay the arrival on every nav
+            // click, which is exactly the bug this layer split fixes.
+            key="detail-card"
             // No aria-modal: the detail replaces only the panel's cards — the
             // chat beside it stays live, so claiming page modality would lie
             // to assistive tech. Containment is panel-scoped instead (inert
@@ -315,31 +349,50 @@ export function DetailLayer({
             // rather than as a box that materializes in place.
             className="bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow"
           >
-            {!detail.hideHeader && (
-              // No rule under the header: the card's own border already
-              // separates this from the panel, and a second line inside it just
-              // boxes the title in. Close sits far right, where a close always
-              // is — a back chevron implies a stack the user isn't in.
-              <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
-                <span className="flex min-w-0 items-center gap-2">
-                  {detail.icon}
-                  <span className="text-foreground truncate text-sm font-semibold">
-                    {detail.title}
-                  </span>
-                </span>
-                <CloseButton onClose={onBack} />
-              </div>
-            )}
-            <div
-              className={cn(
-                'min-h-0 min-w-0 flex-1 overflow-auto',
-                detail.padded !== false && 'p-4',
-                !detail.hideHeader && detail.padded !== false && 'pt-0',
-              )}
-            >
-              {detail.body}
-            </div>
-            {detail.nav && <DetailNav nav={detail.nav} />}
+            {/* The content layer: keyed on `detail.key`, so paging to a
+                sibling swaps THIS, not the card above. `popLayout` pulls the
+                outgoing content out of flow (position: absolute) the instant
+                the new one arrives, so the incoming content owns the height
+                immediately instead of the two stacking and shoving the card
+                tall for a frame. `initial={false}` skips the fade on the
+                card's own open — the slide above already carries that
+                arrival — and only animates key changes after that, i.e. nav. */}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div
+                key={detail.key}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={crossfadeTransition}
+                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              >
+                {!detail.hideHeader && (
+                  // No rule under the header: the card's own border already
+                  // separates this from the panel, and a second line inside it just
+                  // boxes the title in. Close sits far right, where a close always
+                  // is — a back chevron implies a stack the user isn't in.
+                  <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+                    <span className="flex min-w-0 items-center gap-2">
+                      {detail.icon}
+                      <span className="text-foreground truncate text-sm font-semibold">
+                        {detail.title}
+                      </span>
+                    </span>
+                    <CloseButton onClose={onBack} />
+                  </div>
+                )}
+                <div
+                  className={cn(
+                    'min-h-0 min-w-0 flex-1 overflow-auto',
+                    detail.padded !== false && 'p-4',
+                    !detail.hideHeader && detail.padded !== false && 'pt-0',
+                  )}
+                >
+                  {detail.body}
+                </div>
+                {detail.nav && <DetailNav nav={detail.nav} />}
+              </motion.div>
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
