@@ -106,6 +106,17 @@ export interface RenderComposeOptions {
    * disabled — so an instance not using it never runs the container.
    */
   tunnelConfigured?: boolean;
+  /**
+   * Whether a STABLE named Cloudflare tunnel is configured (both
+   * CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_HOSTNAME set — see
+   * namedTunnelConfigured() in self-host/tunnel.ts). Only meaningful when
+   * tunnelConfigured is also true. Selects the cloudflared service's
+   * command/environment at COMPOSE-RENDER time (`tunnel run` + TUNNEL_TOKEN
+   * env var vs. the zero-config `tunnel --url` default already baked into
+   * kortix-compose.yml) — this can't be a runtime shell branch inside the
+   * container because the official cloudflared image ships no shell at all.
+   */
+  namedTunnelConfigured?: boolean;
 }
 
 /**
@@ -209,6 +220,15 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // cloudflared image.
   if (!options.tunnelConfigured) {
     delete services.cloudflared;
+  } else if (options.namedTunnelConfigured) {
+    // Stable named tunnel: authenticate with TUNNEL_TOKEN (cloudflared reads
+    // it natively — no CLI flag/shell needed) and run the tunnel bound to
+    // that token instead of minting a new zero-config quick tunnel.
+    const cloudflared = services.cloudflared;
+    if (cloudflared) {
+      cloudflared.command = ['tunnel', '--no-autoupdate', 'run'];
+      cloudflared.environment = { TUNNEL_TOKEN: '${CLOUDFLARE_TUNNEL_TOKEN}' };
+    }
   }
 
   // Prod (domain-configured) vs laptop replica/port topology. In prod mode

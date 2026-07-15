@@ -50,17 +50,28 @@ export function namedTunnelConfigured(env: Record<string, string | undefined>): 
   return Boolean(env.CLOUDFLARE_TUNNEL_TOKEN?.trim() && env.CLOUDFLARE_TUNNEL_HOSTNAME?.trim());
 }
 
-const QUICK_TUNNEL_URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
+const QUICK_TUNNEL_URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/g;
 
 /**
  * Extract the ephemeral https://<random>.trycloudflare.com URL cloudflared
  * prints to its stdout/stderr when it establishes a zero-config quick tunnel.
  * A pure string function so it's unit-testable without any docker/process
  * plumbing — resolveTunnelUrl below is the only caller in normal operation.
+ *
+ * Returns the LAST match, not the first: `docker compose logs` returns the
+ * cloudflared container's ENTIRE cumulative log history, not just since its
+ * most recent boot. If the container was restarted in place (e.g. it crashed
+ * and Compose's `restart: unless-stopped` brought it back, or the operator ran
+ * `docker restart cloudflared`) rather than recreated, those logs still
+ * contain the previous, now-dead quick-tunnel URL followed by the fresh one
+ * cloudflared mints on every boot. Taking the first match would silently pin
+ * KORTIX_URL to a tunnel that no longer exists — this is confirmed live: a
+ * bare `docker restart` of the cloudflared container followed by
+ * `kortix self-host start` used to re-resolve the STALE pre-restart URL.
  */
 export function parseQuickTunnelUrl(logText: string): string | null {
-  const match = logText.match(QUICK_TUNNEL_URL_PATTERN);
-  return match ? match[0] : null;
+  const matches = logText.match(QUICK_TUNNEL_URL_PATTERN);
+  return matches && matches.length > 0 ? matches[matches.length - 1] : null;
 }
 
 export interface TunnelUrlResult {

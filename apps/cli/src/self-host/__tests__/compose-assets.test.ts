@@ -114,13 +114,13 @@ describe('full self-host Docker distribution', () => {
     expect(domainOnly.services).not.toHaveProperty('cloudflared');
   });
 
-  test('includes the cloudflared tunnel service only when tunnel mode is configured', () => {
+  test('includes the cloudflared tunnel service only when tunnel mode is configured (quick-tunnel default)', () => {
     const document = parse(renderFullDockerCompose('kortix-default', { tunnelConfigured: true })) as {
       services: Record<string, {
         image?: string;
-        environment?: Record<string, string>;
+        environment?: Record<string, string> | null;
         depends_on?: Record<string, unknown>;
-        entrypoint?: string[];
+        command?: string[];
       }>;
     };
     const cloudflared = document.services.cloudflared;
@@ -128,18 +128,29 @@ describe('full self-host Docker distribution', () => {
     // Pinned to a specific version, not :latest — same immutability policy as
     // every other non-Supabase service image in this stack.
     expect(cloudflared?.image).toMatch(/^cloudflare\/cloudflared:\d+\.\d+\.\d+$/);
-    expect(cloudflared?.environment).toHaveProperty('CLOUDFLARE_TUNNEL_TOKEN');
     expect(cloudflared?.depends_on).toHaveProperty('kortix-api');
+    // No shell/entrypoint override: the official cloudflared image ships no
+    // shell at all, so branching must happen at compose-render time (see
+    // renderFullDockerCompose) — a runtime `/bin/sh -c` entrypoint can never
+    // start against this image.
+    expect(cloudflared).not.toHaveProperty('entrypoint');
     // Tunnels straight to kortix-api — Caddy is never present alongside it
     // (tunnel mode has no domain), and kortix-api already answers every
     // /v1* route the sandbox and other external callers need.
-    const script = cloudflared?.entrypoint?.join(' ') ?? '';
-    expect(script).toContain('http://kortix-api:8008');
-    // Named-tunnel branch: the same service supports a stable hostname via
-    // CLOUDFLARE_TUNNEL_TOKEN, decided at container-start (not compose-render)
-    // time so switching sub-modes is just an env change + restart.
-    expect(script).toContain('cloudflared tunnel');
-    expect(script).toContain('run --token');
+    const command = cloudflared?.command?.join(' ') ?? '';
+    expect(command).toContain('http://kortix-api:8008');
+  });
+
+  test('named tunnel (CLOUDFLARE_TUNNEL_TOKEN + hostname): cloudflared runs `tunnel run` with TUNNEL_TOKEN, not the quick-tunnel URL', () => {
+    const document = parse(
+      renderFullDockerCompose('kortix-default', { tunnelConfigured: true, namedTunnelConfigured: true }),
+    ) as {
+      services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+    };
+    const cloudflared = document.services.cloudflared;
+    expect(cloudflared).toBeDefined();
+    expect(cloudflared?.command).toEqual(['tunnel', '--no-autoupdate', 'run']);
+    expect(cloudflared?.environment).toMatchObject({ TUNNEL_TOKEN: '${CLOUDFLARE_TUNNEL_TOKEN}' });
   });
 
   test('cloudflared and caddy are independent — both, either, or neither can be present', () => {

@@ -58,6 +58,21 @@ describe('parseQuickTunnelUrl', () => {
   test('ignores a look-alike domain that is not actually trycloudflare.com', () => {
     expect(parseQuickTunnelUrl('https://evil-trycloudflare.com.attacker.net')).toBeNull();
   });
+
+  test('returns the LAST URL when logs contain more than one — a stale pre-restart URL followed by the fresh one', () => {
+    // `docker compose logs` returns the container's entire cumulative history.
+    // If cloudflared restarted in place (crash + `restart: unless-stopped`, or
+    // a manual `docker restart`) rather than being recreated, the logs contain
+    // both the dead old quick-tunnel URL and the new one minted on reboot.
+    const logs = `
+2026-07-15T00:00:00Z INF |  https://old-dead-tunnel.trycloudflare.com  |
+2026-07-15T00:00:01Z INF Registered tunnel connection connIndex=0
+2026-07-15T00:05:00Z INF Tunnel connection lost, retrying...
+2026-07-15T00:05:02Z INF |  https://fresh-tunnel-after-restart.trycloudflare.com  |
+2026-07-15T00:05:03Z INF Registered tunnel connection connIndex=0
+`;
+    expect(parseQuickTunnelUrl(logs)).toBe('https://fresh-tunnel-after-restart.trycloudflare.com');
+  });
 });
 
 describe('resolveTunnelUrl', () => {
