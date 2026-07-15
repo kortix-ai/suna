@@ -824,6 +824,89 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
   return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
 }
 
+// iOS WebKit (Safari, Chrome-on-iOS, Google Search App — all WKWebView/JSC)
+// stack-overflow noise. When iOS WebKit exhausts its (lower-than-desktop) call
+// stack, it surfaces `RangeError: Maximum call stack size exceeded.` through
+// `window.onerror` (Sentry mechanism `auto.browser.global_handlers.onerror`)
+// with NO usable stack: the single exception frame is the synthetic
+// `{ function: '?', filename: 'undefined', lineno: <n> }` placeholder, so
+// `call_site_file` is `undefined` and `call_site_function` is `?`. There is no
+// source location to triage and no reproduction (the engine truncated the very
+// stack that overflowed). Better Stack pattern
+// 87ccbef98ea62fbf90df2446141a26b78ba7f928a28642b099d53b40e8613031
+// (Kortix Frontend prod, application_id 2346967): 7 occurrences in the
+// now-3d inventory, ~30 lifetime, 0 identified users (all anonymous), first
+// 2026-04-21 / last 2026-07-14, 100% iOS (Chrome-on-iOS 149/150 + Google
+// Search App 415/425), across 7 different releases spanning 2.5 months — i.e.
+// browser/engine noise on iOS, NOT a deterministic app regression (which would
+// spike on one release across all browsers with identified users). Fires on the
+// marketing site (`/`, `/auth`) AND post-login surfaces (`/projects/…`,
+// `/projects/…/sessions/…`), so no route guard contains it.
+//
+// `RangeError: Maximum call stack size exceeded.` is ALSO the exact message a
+// real first-party infinite recursion produces — so this matcher is anchored on
+// BOTH the canonical message AND the absence of ANY resolvable source location
+// (every frame's filename is empty or the literal `"undefined"` placeholder, and
+// the window.onerror filename is empty/`undefined`). A real app recursion, even
+// truncated, surfaces with at least one real chunk/URL frame
+// (`app:///_next/static/chunks/…`, `https://…`, or a de-minified
+// `apps/web/src/…` frame) and is preserved by the negative guard. Only the
+// frameless synthetic-`undefined` global-onerror capture is dropped.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there would swallow a
+// real RangeError recursion; the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const STACK_OVERFLOW_NOISE_PATTERN = /^Maximum call stack size exceeded\.?$/;
+
+// A frame/filename that points at a REAL source location: non-empty AND not the
+// literal `"undefined"` placeholder the global-onerror capture uses when the
+// engine could not produce a stack. A real chunk (`app:///_next/…`), a URL
+// (`https://…`), or a de-minified `apps/web/src/…` path all qualify; the
+// synthetic `{ filename: 'undefined' }` frame does not.
+function isResolvableFrameSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return normalized !== '' && normalized !== 'undefined';
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the iOS-WebKit stack-overflow
+ * noise class: a `RangeError: Maximum call stack size exceeded.` captured via
+ * `window.onerror` with NO resolvable source location (every frame's filename
+ * is empty or the literal `"undefined"` placeholder). iOS WebKit surfaces a
+ * stack overflow this way because it truncated the very stack that overflowed;
+ * there is nothing to triage or fix. A real first-party (or third-party)
+ * recursion surfaces with at least one real chunk/URL/`apps/web/src/…` frame
+ * and is preserved by the negative guards — only the frameless
+ * synthetic-`undefined` capture is dropped. See
+ * `STACK_OVERFLOW_NOISE_PATTERN` for the full rationale.
+ */
+export function isUnresolvableStackOverflowNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  if (!STACK_OVERFLOW_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame → our own
+  // code is recursing; keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an actionable error (app or third-party recursion) with a real
+  // stack; keep reporting. Only the frameless synthetic-`undefined`
+  // global-onerror capture remains → iOS-WebKit stack-overflow noise.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -946,6 +1029,16 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // extension source so a real first-party emitter TypeError keeps reporting.
   // See `isInpageWalletStreamNoise`.
   if (isInpageWalletStreamNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // iOS-WebKit stack-overflow noise — `RangeError: Maximum call stack size
+  // exceeded.` from `window.onerror` with NO resolvable source location (the
+  // engine truncated the very stack that overflowed). Requires the canonical
+  // message AND no real frame/filename so a real first-party recursion that
+  // carries a chunk/source frame keeps reporting. See
+  // `isUnresolvableStackOverflowNoise`.
+  if (isUnresolvableStackOverflowNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -1120,6 +1213,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // extension frame so a real first-party emitter TypeError keeps reporting.
   // See `isInpageWalletStreamNoise`.
   if (isInpageWalletStreamNoise({ message, frames })) {
+    return true;
+  }
+
+  // iOS-WebKit stack-overflow noise — `RangeError: Maximum call stack size
+  // exceeded.` from Sentry's `auto.browser.global_handlers.onerror` capture
+  // with a single synthetic `{ filename: 'undefined' }` frame (the engine
+  // truncated the very stack that overflowed). Requires the canonical message
+  // AND no resolvable source location so a real first-party recursion that
+  // carries a chunk/`apps/web/src/…` frame keeps reporting. See
+  // `isUnresolvableStackOverflowNoise`. NOT in `ignoreErrors` (no frame
+  // context there).
+  if (isUnresolvableStackOverflowNoise({ message, frames })) {
     return true;
   }
 

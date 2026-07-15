@@ -18,6 +18,7 @@ import {
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
   isTronLinkProxyNoise,
+  isUnresolvableStackOverflowNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -1812,10 +1813,139 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
     }),
     false,
   )
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message: 'Error invoking postMessage: Java object is gone',
+        frames: [{ filename: 'app://navigation_performance_logger_androidx' }],
+      }),
+      false,
+    )
+})
+
+// ---------------------------------------------------------------------------
+// iOS-WebKit stack-overflow noise
+// (Better Stack pattern 87ccbef98ea62fbf90df2446141a26b78ba7f928a28642b099d53b40e8613031,
+// Kortix Frontend prod, application_id 2346967). iOS WebKit (Safari,
+// Chrome-on-iOS, Google Search App — all WKWebView/JSC) surfaces
+// `RangeError: Maximum call stack size exceeded.` through `window.onerror`
+// (Sentry mechanism `auto.browser.global_handlers.onerror`) with NO usable
+// stack: the single exception frame is the synthetic
+// `{ function: '?', filename: 'undefined', lineno: <n> }` placeholder, so
+// `call_site_file` is `undefined` and `call_site_function` is `?`. ~30
+// lifetime occurrences, 0 identified users, first 2026-04-21 / last
+// 2026-07-14, 100% iOS across 7 releases over 2.5 months — browser/engine
+// noise, NOT a deterministic app regression. The matcher is anchored on the
+// canonical message AND the absence of ANY resolvable source location so a
+// real first-party (or third-party) recursion that carries a real chunk/URL/
+// `apps/web/src/…` frame keeps reporting.
+// ---------------------------------------------------------------------------
+
+// The exact synthetic frame the iOS-WebKit global-onerror capture produces —
+// pulled verbatim from the production raw exception payload.
+const IOS_STACK_OVERFLOW_SYNTHETIC_FRAME = { function: '?', filename: 'undefined', lineno: 31 }
+const IOS_STACK_OVERFLOW_MESSAGES = [
+  'Maximum call stack size exceeded.',
+  'RangeError: Maximum call stack size exceeded.',
+  'Unhandled promise rejection: RangeError: Maximum call stack size exceeded.',
+]
+
+test('classifies the iOS-WebKit stack-overflow capture as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message,
+        frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      true,
+      `expected "${message}" with the synthetic undefined frame to be noise`,
+    )
+  }
+})
+
+test('suppresses the iOS-WebKit stack-overflow noise via the Sentry beforeSend gate', () => {
+  // The exact production event shape: single synthetic `{ filename: 'undefined' }`
+  // frame captured by Sentry's GlobalHandlers (window.onerror) integration.
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}" with the synthetic undefined frame`,
+    )
+  }
+  // Frameless global-onerror capture (no stacktrace at all) is also noise.
   assert.equal(
-    isAndroidWebViewNativeBridgePostMessageNoise({
-      message: 'Error invoking postMessage: Java object is gone',
-      frames: [{ filename: 'app://navigation_performance_logger_androidx' }],
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: 'Maximum call stack size exceeded.' }] },
+    }),
+    true,
+  )
+})
+
+test('suppresses the iOS-WebKit stack-overflow noise via the runtime (window.onerror) gate', () => {
+  // window.onerror for the noise capture carries no resolvable filename
+  // (event.filename is undefined/empty) — the engine truncated the stack.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: 'Maximum call stack size exceeded.' }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: '',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real first-party RangeError recursion with a resolved apps/web/src frame', () => {
+  // A genuine infinite recursion in our own code still produces a real stack;
+  // Sentry's sourcemap resolution rewrites the top frame back to
+  // `apps/web/src/…`. The negative guard MUST preserve it so the call site can
+  // be found + fixed — this is the whole reason the matcher is frame-aware.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/co-worker/recursion-loop.ts', function: 'deepRecurse' }],
+    [
+      { filename: 'apps/web/src/features/co-worker/recursion-loop.ts', function: 'deepRecurse' },
+      IOS_STACK_OVERFLOW_SYNTHETIC_FRAME,
+    ],
+  ]) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames,
+      }),
+      false,
+      `expected real first-party recursion with frames ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Maximum call stack size exceeded.',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real first-party recursion with frames ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
     }),
     false,
   )
@@ -2028,6 +2158,55 @@ test('does NOT suppress a same-worded message from a near-miss injected filename
       }),
       false,
       `expected "${filename}" frame to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real recursion that carries a resolvable chunk/URL frame', () => {
+  // A real recursion — even a third-party one — surfaces with at least one real
+  // chunk/URL source location (the engine recorded where it overflowed). The
+  // negative guard preserves it; only the frameless synthetic-`undefined`
+  // capture is dropped.
+  const realFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js' },
+    { filename: 'https://kortix.com/_next/static/chunks/main-abc.js' },
+    { filename: 'app:///apps/web/src/lib/something.ts' },
+  ]
+  for (const frame of realFrames) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames: [frame, IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      false,
+      `expected real recursion with frame ${JSON.stringify(frame)} to keep reporting`,
+    )
+  }
+  // Runtime gate with a real chunk filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a different RangeError message', () => {
+  // A RangeError with a different message (e.g. an invalid array length) is a
+  // different, actionable error class — never matched by this guard.
+  for (const message of [
+    'Invalid array length',
+    'RangeError: Invalid array length',
+    'Maximum call stack', // prefix-only, not the canonical message
+  ]) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message,
+        frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
     )
   }
 })
