@@ -80,6 +80,16 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'SMTP_PASS', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_ADMIN_EMAIL', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_SENDER_NAME', category: 'auth_email', kind: 'operator', required: false },
+  // GoTrue SAML SSO signing key — generated once at `init` (samlPrivateKeyDer()
+  // in commands/self-host.ts) so GOTRUE_SAML_ENABLED=true (the self-host
+  // default) always has a key to boot with. `required: false` here on purpose:
+  // defaultEnv() always populates it before the .env is ever written, so it is
+  // never actually missing in a real instance — this just keeps it out of the
+  // CLI's init-time blocking gate (missingRequiredSecrets), which is reserved
+  // for secrets with no other way to get set. NOT rotatable: regenerating it
+  // changes the SAML SP's signing identity and breaks every already-registered
+  // IdP until re-registered.
+  { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
   // Agent sandbox — three interchangeable providers (SandboxProviderName in
   // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
@@ -210,6 +220,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SMTP_PASS: ['supabase-auth'],
   SMTP_ADMIN_EMAIL: ['supabase-auth'],
   SMTP_SENDER_NAME: ['supabase-auth'],
+  SAML_PRIVATE_KEY: ['supabase-auth'],
 
   // Agent sandbox — all three interchangeable providers
   DAYTONA_API_KEY: ['kortix-api'],

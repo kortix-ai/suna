@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes, createHmac } from 'node:crypto';
+import { randomBytes, createHmac, generateKeyPairSync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 
@@ -171,6 +171,14 @@ interface SelfHostEnv {
   INTERNAL_SERVICE_KEY: string;
   API_KEY_SECRET: string;
   TUNNEL_SIGNING_SECRET: string;
+  // GoTrue SAML SSO — enabled by default so an operator flipping
+  // --enterprise-license (ENTERPRISE_LICENSE_AVAILABLE) is the only step left
+  // to light up the enterprise SSO/SCIM surface; SAML_PRIVATE_KEY is generated
+  // once at `init` (samlPrivateKeyDer()) and persisted, never regenerated on a
+  // later `init`/`update` (see defaultEnv()/writeEnv()). Do not rotate it once
+  // an IdP is registered — see the compose asset comment for why.
+  SAML_ENABLED: string;
+  SAML_PRIVATE_KEY: string;
   DAYTONA_API_KEY: string;
   KORTIX_GITHUB_APP_ID: string;
   KORTIX_GITHUB_APP_PRIVATE_KEY: string;
@@ -1242,6 +1250,7 @@ const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `secrets rotate SUPABASE_JWT_SECRET` instead.',
   SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `secrets rotate SUPABASE_JWT_SECRET` instead.',
   DASHBOARD_USERNAME: 'not a rotation target — use `secrets set DASHBOARD_USERNAME=<value>` to change it.',
+  SAML_PRIVATE_KEY: 'the SAML SP signing key — rotating it changes your SP identity and breaks every already-registered IdP until you re-register with them. Set a new one deliberately with `secrets set SAML_PRIVATE_KEY=<base64-der>` if you understand that tradeoff.',
 };
 
 function refuseRotateMessage(key: string, def: SecretDef | undefined): string {
@@ -1939,6 +1948,14 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     MAILER_URLPATHS_CONFIRMATION: '/auth/v1/verify',
     MAILER_URLPATHS_RECOVERY: '/auth/v1/verify',
     MAILER_URLPATHS_EMAIL_CHANGE: '/auth/v1/verify',
+    // GoTrue SAML SSO — always on so the enterprise entitlement
+    // (--enterprise-license) is the only remaining step to unlock the SAML SSO
+    // + SCIM surface (Account → Settings → Identity). The private key is a
+    // per-instance RSA-2048 keypair generated once here and persisted like
+    // SUPABASE_JWT_SECRET/POSTGRES_PASSWORD — see samlPrivateKeyDer() and the
+    // `existing` override in loadEnvWithDefaults()/selfHostInit().
+    SAML_ENABLED: 'true',
+    SAML_PRIVATE_KEY: samlPrivateKeyDer(),
     DASHBOARD_USERNAME: 'kortix',
     DASHBOARD_PASSWORD: token(24),
     SECRET_KEY_BASE: token(48),
@@ -2246,6 +2263,28 @@ function composeProject(instance: string): string {
 
 function token(bytes: number): string {
   return randomBytes(bytes).toString('hex');
+}
+
+/**
+ * A fresh RSA-2048 private key, PKCS#1/DER, base64-encoded — the exact shape
+ * GoTrue's GOTRUE_SAML_PRIVATE_KEY requires. Verified against a real GoTrue
+ * boot: PKCS8/DER is REJECTED ("SAML private key not in PKCS#1 format",
+ * fatal, crash-loops the container) even though it's the more common modern
+ * encoding and what openssl's `genpkey` (PKCS8 by default) produces — GoTrue
+ * specifically wants the legacy `openssl genrsa`/PKCS#1 container. See
+ * https://supabase.com/docs/guides/self-hosting/self-hosted-saml-sso.
+ * GoTrue uses this key to sign every outgoing SAML AuthnRequest/metadata
+ * document, so it doubles as the self-host instance's SAML SP identity —
+ * generated once at `init` and persisted (like SUPABASE_JWT_SECRET), not
+ * regenerated on every run.
+ */
+function samlPrivateKeyDer(): string {
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'der' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'der' },
+  });
+  return Buffer.from(privateKey).toString('base64');
 }
 
 function supabaseJwt(role: string, secret: string): string {
