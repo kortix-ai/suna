@@ -39,7 +39,7 @@ describe('buildGithubAppManifest', () => {
     expect(manifest.redirect_url).toBe('https://api.kortix.example/v1/platform/github-app/manifest-callback');
     expect(manifest.setup_url).toBe('https://api.kortix.example/v1/platform/github-app/install-callback');
     expect(manifest.public).toBe(false);
-    expect(manifest.hook_attributes).toEqual({ active: false });
+    expect(manifest.hook_attributes).toEqual({ url: 'https://kortix.ai', active: false });
     expect(manifest.default_events).toEqual([]);
     expect(manifest.default_permissions).toEqual({
       administration: 'write',

@@ -70,7 +70,11 @@ export interface GithubAppManifest {
    *  proven CLI implementation this ports) uses `default_permissions`. */
   default_permissions: Record<string, string>;
   default_events: string[];
-  hook_attributes: { active: boolean };
+  /** GitHub REQUIRES `url` inside hook_attributes whenever the object is present
+   *  — omit it and the manifest is rejected with the opaque "'url' wasn't
+   *  supplied" (it means the WEBHOOK url, not the homepage). We don't use
+   *  webhooks, so point it at a valid FQDN and set active:false. */
+  hook_attributes: { url: string; active: boolean };
 }
 
 export function buildGithubAppManifest(opts: {
@@ -98,7 +102,7 @@ export function buildGithubAppManifest(opts: {
       metadata: 'read',
     },
     default_events: [],
-    hook_attributes: { active: false },
+    hook_attributes: { url: opts.homepageUrl, active: false },
   };
 }
 

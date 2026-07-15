@@ -33,7 +33,7 @@ export interface GitHubAppManifest {
   public: boolean;
   default_permissions: Record<string, string>;
   default_events: string[];
-  hook_attributes: { active: boolean };
+  hook_attributes: { url: string; active: boolean };
 }
 
 /** "Kortix Self-Host <suffix>" — the suffix keeps the name globally unique on
@@ -67,7 +67,10 @@ export function buildAppManifest(opts: {
       pull_requests: 'write',
     },
     default_events: [],
-    hook_attributes: { active: false },
+    // GitHub requires `url` inside hook_attributes when present (else the
+    // manifest is rejected as "'url' wasn't supplied"). No webhooks here, so a
+    // valid FQDN + active:false.
+    hook_attributes: { url: opts.homepageUrl, active: false },
   };
 }
 

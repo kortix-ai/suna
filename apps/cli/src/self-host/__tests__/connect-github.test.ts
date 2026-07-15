@@ -52,7 +52,8 @@ describe('buildAppManifest', () => {
       pull_requests: 'write',
     });
     expect(manifest.default_events).toEqual([]);
-    expect(manifest.hook_attributes).toEqual({ active: false });
+    expect(manifest.hook_attributes.active).toBe(false);
+    expect(typeof manifest.hook_attributes.url).toBe('string');
   });
 });
 
