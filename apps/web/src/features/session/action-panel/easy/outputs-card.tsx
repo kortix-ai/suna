@@ -37,9 +37,11 @@ const KIND_ICON = {
   app: AppWindow,
 } as const;
 
-/** path → object URL, shared across rows and re-renders. Never revoked: a
- * session shows dozens of thumbs at ~28px, and revoking on unmount would
- * refetch on every expand/collapse. */
+/** `callID:path` → object URL, shared across rows and re-renders. Keyed by
+ * call, not bare path: paths repeat across sessions (`output.png`), and callID
+ * is unique per tool call, so one session can never be served another's bytes.
+ * Never revoked: a session shows dozens of thumbs at ~28px, and revoking on
+ * unmount would refetch on every expand/collapse. */
 const thumbCache = new Map<string, string>();
 
 /**
@@ -48,8 +50,9 @@ const thumbCache = new Map<string, string>();
  * and swaps to the actual bytes once loaded; stays the glyph on error rather
  * than showing a broken-image icon.
  */
-function ImageThumb({ path, name }: { path: string; name: string }) {
-  const [src, setSrc] = useState<string | null>(thumbCache.get(path) ?? null);
+function ImageThumb({ path, callID, name }: { path: string; callID: string; name: string }) {
+  const cacheKey = `${callID}:${path}`;
+  const [src, setSrc] = useState<string | null>(thumbCache.get(cacheKey) ?? null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -58,14 +61,14 @@ function ImageThumb({ path, name }: { path: string; name: string }) {
     readFileAsBlob(path)
       .then((blob) => {
         const url = URL.createObjectURL(blob);
-        thumbCache.set(path, url);
+        thumbCache.set(cacheKey, url);
         if (!cancelled) setSrc(url);
       })
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
     };
-  }, [path, src, failed]);
+  }, [path, cacheKey, src, failed]);
 
   if (!src || failed) {
     const Ico = KIND_ICON.image;
@@ -102,7 +105,7 @@ function OutputIcon({ output }: { output: OutputItem }) {
   if (output.kind === 'image' && output.path) {
     return (
       <span className={tile}>
-        <ImageThumb path={output.path} name={output.name} />
+        <ImageThumb path={output.path} callID={output.callID} name={output.name} />
       </span>
     );
   }
