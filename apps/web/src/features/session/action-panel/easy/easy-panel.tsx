@@ -185,14 +185,19 @@ export const EasyPanel = memo(function EasyPanel({
   }, [isRunning, outcome, detail, apps, files, handleOpenOutput]);
 
   // Chip tap (W1→W2 handoff): the header asked us to open the primary
-  // deliverable the moment we mount with the panel now open.
-  const consumePrimaryOpen = useKortixComputerStore((s) => s.consumePrimaryOpen);
+  // deliverable. Subscribe to the pending-request VALUE, not the (stable)
+  // consume action: on desktop this panel stays mounted while the side panel
+  // is closed, so a chip click must itself re-render us or the handoff
+  // silently dead-ends. `consumePrimaryOpen` keeps it one-shot.
+  const pendingPrimaryOpenSessionId = useKortixComputerStore(
+    (s) => s.pendingPrimaryOpenSessionId,
+  );
   useEffect(() => {
-    if (!consumePrimaryOpen(sessionId)) return;
+    if (pendingPrimaryOpenSessionId !== sessionId) return;
+    if (!useKortixComputerStore.getState().consumePrimaryOpen(sessionId)) return;
     const primary = selectPrimaryDeliverable(apps, files);
     if (primary) handleOpenOutput(primary);
-    // Deliberately once per mount-ish tick: consumePrimaryOpen is one-shot.
-  }, [consumePrimaryOpen, sessionId, apps, files, handleOpenOutput]);
+  }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
 
   /**
    * A tool call clicked in the CHAT opens that tool's real view in the panel.
