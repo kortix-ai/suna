@@ -6,18 +6,19 @@ import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import {
-  accountsRouter,
-  accountDisplayName,
-  resolveAccountDisplayNames,
-  AccountSummarySchema,
   AccountDetailSchema,
   AccountIdParam,
-  readBody,
-  normalizeString,
-  getMembership,
-  serializeAccount,
+  AccountSummarySchema,
+  accountDisplayName,
+  accountsRouter,
   autoClaimPendingInvites,
-} from "./app";
+  getMembership,
+  normalizeString,
+  readBody,
+  resolveAccountDisplayNames,
+  serializeAccount,
+} from './app';
+import { bootstrapPersonalAccount } from './bootstrap-personal-account';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -25,22 +26,19 @@ export function registerAccountRoutes(): void {
   // GET /v1/accounts — list user's accounts.
   accountsRouter.openapi(
     createRoute({
-      method: "get",
-      path: "/",
-      tags: ["accounts"],
+      method: 'get',
+      path: '/',
+      tags: ['accounts'],
       summary: "List the user's accounts",
       ...auth,
       responses: {
-        200: json(
-          z.array(AccountSummarySchema),
-          "Accounts the user belongs to",
-        ),
+        200: json(z.array(AccountSummarySchema), 'Accounts the user belongs to'),
         ...errors(401),
       },
     }),
     async (c: any) => {
-      const userId = c.get("userId") as string;
-      const userEmail = c.get("userEmail") as string;
+      const userId = c.get('userId') as string;
+      const userEmail = c.get('userEmail') as string;
 
       await autoClaimPendingInvites(userId, userEmail);
 
@@ -66,12 +64,10 @@ export function registerAccountRoutes(): void {
             account_id: m.accountId,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),
-            created_at:
-              m.createdAt?.toISOString() ?? new Date().toISOString(),
-            updated_at:
-              m.updatedAt?.toISOString() ?? new Date().toISOString(),
-            account_role: m.accountRole || "owner",
-            is_primary_owner: m.accountRole === "owner",
+            created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
+            updated_at: m.updatedAt?.toISOString() ?? new Date().toISOString(),
+            account_role: m.accountRole || 'owner',
+            is_primary_owner: m.accountRole === 'owner',
           })),
         );
       }
@@ -84,9 +80,7 @@ export function registerAccountRoutes(): void {
           .where(eq(accounts.accountId, accountId))
           .limit(1);
         if (!row) {
-          throw new Error(
-            `Personal account ${accountId} missing after bootstrap`,
-          );
+          throw new Error(`Personal account ${accountId} missing after bootstrap`);
         }
         return c.json([
           {
@@ -95,13 +89,13 @@ export function registerAccountRoutes(): void {
             slug: row.accountId.slice(0, 8),
             created_at: row.createdAt.toISOString(),
             updated_at: row.updatedAt.toISOString(),
-            account_role: "owner",
+            account_role: 'owner',
             is_primary_owner: true,
           },
         ]);
       } catch (err) {
-        console.warn("[accounts] Failed to bootstrap personal account:", err);
-        return c.json({ error: "Failed to initialize account" }, 500);
+        console.warn('[accounts] Failed to bootstrap personal account:', err);
+        return c.json({ error: 'Failed to initialize account' }, 500);
       }
     },
   );
@@ -109,15 +103,15 @@ export function registerAccountRoutes(): void {
   // POST /v1/accounts — create a new team account.
   accountsRouter.openapi(
     createRoute({
-      method: "post",
-      path: "/",
-      tags: ["accounts"],
-      summary: "Create a new team account",
+      method: 'post',
+      path: '/',
+      tags: ['accounts'],
+      summary: 'Create a new team account',
       ...auth,
       request: {
         body: {
           content: {
-            "application/json": { schema: z.object({ name: z.string() }) },
+            'application/json': { schema: z.object({ name: z.string() }) },
           },
         },
       },
@@ -130,15 +124,15 @@ export function registerAccountRoutes(): void {
       const userId = c.get("userId") as string;
       const body = await readBody(c);
       const name = normalizeString(body.name);
-      if (!name) return c.json({ error: "name is required" }, 400);
-      if (name.length > 255) return c.json({ error: "name is too long" }, 400);
+      if (!name) return c.json({ error: 'name is required' }, 400);
+      if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
 
       const [account] = await db.insert(accounts).values({ name }).returning();
 
       await db.insert(accountMembers).values({
         userId,
         accountId: account.accountId,
-        accountRole: "owner",
+        accountRole: 'owner',
         isSuperAdmin: true,
       });
 
@@ -149,7 +143,7 @@ export function registerAccountRoutes(): void {
           slug: account.accountId.slice(0, 8),
           created_at: account.createdAt.toISOString(),
           updated_at: account.updatedAt.toISOString(),
-          account_role: "owner",
+          account_role: 'owner',
           is_primary_owner: true,
         },
         201,
@@ -160,30 +154,30 @@ export function registerAccountRoutes(): void {
   // GET /v1/accounts/:accountId — details.
   accountsRouter.openapi(
     createRoute({
-      method: "get",
-      path: "/{accountId}",
-      tags: ["accounts"],
-      summary: "Get account details",
+      method: 'get',
+      path: '/{accountId}',
+      tags: ['accounts'],
+      summary: 'Get account details',
       ...auth,
       request: { params: AccountIdParam },
       responses: {
-        200: json(AccountDetailSchema, "Account details"),
+        200: json(AccountDetailSchema, 'Account details'),
         ...errors(401, 403, 404),
       },
     }),
     async (c: any) => {
-      const userId = c.get("userId") as string;
-      const accountId = c.req.param("accountId");
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
 
       const [row] = await db
         .select()
         .from(accounts)
         .where(eq(accounts.accountId, accountId))
         .limit(1);
-      if (!row) return c.json({ error: "Not found" }, 404);
+      if (!row) return c.json({ error: 'Not found' }, 404);
 
       const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: "Forbidden" }, 403);
+      if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
       // Member count EXCLUDING phantom self-memberships (user_id == account_id with
       // no auth user) — same definition as billing/countActiveMembers and the
@@ -215,13 +209,11 @@ export function registerAccountRoutes(): void {
       const [projectCountRow] = await db
         .select({ n: count() })
         .from(projects)
-        .where(
-          and(eq(projects.accountId, accountId), eq(projects.status, "active")),
-        );
+        .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
 
       const displayNames = await resolveAccountDisplayNames(
         [{ accountId: row.accountId, name: row.name }],
-        { userId, email: c.get("userEmail") as string },
+        { userId, email: c.get('userEmail') as string },
       );
 
       return c.json({
@@ -230,6 +222,7 @@ export function registerAccountRoutes(): void {
         member_count: memberCount,
         project_count: Number(projectCountRow?.n ?? 0),
         role: membership.accountRole,
+        mfa_required: row.mfaRequired ?? false,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
       });
@@ -239,43 +232,43 @@ export function registerAccountRoutes(): void {
   // PATCH /v1/accounts/:accountId — rename. Gated on account.write via IAM.
   accountsRouter.openapi(
     createRoute({
-      method: "patch",
-      path: "/{accountId}",
-      tags: ["accounts"],
-      summary: "Rename an account",
+      method: 'patch',
+      path: '/{accountId}',
+      tags: ['accounts'],
+      summary: 'Rename an account',
       ...auth,
       request: {
         params: AccountIdParam,
         body: {
           content: {
-            "application/json": { schema: z.object({ name: z.string() }) },
+            'application/json': { schema: z.object({ name: z.string() }) },
           },
         },
       },
       responses: {
-        200: json(AccountSummarySchema, "The updated account"),
+        200: json(AccountSummarySchema, 'The updated account'),
         ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {
-      const userId = c.get("userId") as string;
-      const accountId = c.req.param("accountId");
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
 
       const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: "Forbidden" }, 403);
+      if (!membership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
       const body = await readBody(c);
       const name = normalizeString(body.name);
-      if (!name) return c.json({ error: "name is required" }, 400);
-      if (name.length > 255) return c.json({ error: "name is too long" }, 400);
+      if (!name) return c.json({ error: 'name is required' }, 400);
+      if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
 
       const [row] = await db
         .update(accounts)
         .set({ name, updatedAt: new Date() })
         .where(eq(accounts.accountId, accountId))
         .returning();
-      if (!row) return c.json({ error: "Not found" }, 404);
+      if (!row) return c.json({ error: 'Not found' }, 404);
 
       return c.json(serializeAccount(row));
     },

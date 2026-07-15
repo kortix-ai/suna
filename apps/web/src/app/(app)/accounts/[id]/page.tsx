@@ -1464,6 +1464,17 @@ function MembersCard({
                             <Badge variant="success" size="sm" title="MFA enrolled">
                               2FA
                             </Badge>
+                          ) : account.mfa_required && !member.is_super_admin ? (
+                            // Account requires MFA and this member has no verified
+                            // factor — they're blocked from gated actions until they
+                            // enrol. Super-admins are exempt, so they're not flagged.
+                            <Badge
+                              variant="destructive"
+                              size="sm"
+                              title="MFA required but not enrolled — this member is blocked from gated actions"
+                            >
+                              No 2FA
+                            </Badge>
                           ) : null}
                         </div>
                         <span className="text-muted-foreground text-xs">
