@@ -856,6 +856,57 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
 // that gate has no frame context, so a bare-string match there would swallow a
 // real RangeError recursion; the frame-aware `beforeSend` hook (which calls
 // `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+// React #185 = "Maximum update depth exceeded" — the canonical React infinite-
+// setState-loop error. The `@embedpdf/plugin-tiling` `TilingLayer` React
+// component (used by `apps/web/src/components/ui/extend/pdf-viewer.tsx`'s
+// `<TilingLayer>`) subscribes to the tiling plugin's `onTileRendering` event
+// and calls `setTiles(event.tiles[pageIndex] ?? [])` on every emission. Under
+// a rapid zoom/scroll burst the tiling plugin emits `onTileRendering`
+// synchronously inside the React commit phase (a tile render resolves
+// synchronously from cache and re-emits), so `setTiles` is called during
+// commit → re-render → `TileImg` re-renders → `renderTile` → `onTileRendering`
+// → `setTiles` → … → React's 50-nested-update guard trips React #185. The
+// throw is INSIDE @embedpdf's bundled `TilingLayer`/`TileImg` (frame
+// `Object.r [as onTileRendering]` in a `_next/static/chunks/…` bundle), never
+// in first-party `apps/web/src/…` source. Better Stack pattern
+// 366115d4c931a6352fe8f334ff1b366f6d4b2ce9c192769ac681831354521e30
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-15 09:36:41 UTC, route `/projects/:id/sessions/:sessionId`,
+// Chrome 142 / Windows 10. A transient third-party render loop, not a
+// deterministic app regression (single occurrence, no identified users, no
+// first-party frame, no spike on a release across browsers).
+//
+// React #185 is ALSO the exact message a REAL first-party infinite-setState
+// loop produces, so this matcher is anchored on BOTH the #185 message AND a
+// frame whose function is `onTileRendering` (the @embedpdf tiling subscription
+// callback — never present in first-party code), AND a NEGATIVE guard: if any
+// frame resolves to a de-minified first-party `apps/web/src/…` source, the
+// event keeps reporting — that means our own component is the looping culprit
+// and is actionable to fix. A real first-party #185 surfaces with a resolved
+// `apps/web/src/…` frame (or at least no `onTileRendering` frame) and is
+// preserved; a #185 from a DIFFERENT third-party lib (no `onTileRendering`
+// frame) is preserved too. Only the @embedpdf-tiling #185 class is dropped.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare `#185` match there would swallow a
+// real first-party setState loop; the frame-aware `beforeSend` hook (which
+// calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const REACT_UPDATE_DEPTH_NOISE_PATTERN = /^Minified React error #185\b/;
+
+// The @embedpdf/plugin-tiling `TilingLayer` subscription callback frame. The
+// function name `onTileRendering` is the tiling plugin's own event name (see
+// `@embedpdf/plugin-tiling`'s `TilingLayer` → `tilingProvides.onTileRendering`);
+// it never appears in first-party `apps/web/src/…` source, so its presence is a
+// specific third-party anchor.
+const EMBEDPDF_TILING_CALLBACK_FRAME_MARKER = 'onTileRendering';
+
+function frameMatchesEmbedPdfTilingCallback(
+  frame: { function?: unknown } | undefined,
+): boolean {
+  return normalizeString(frame?.function).includes(
+    EMBEDPDF_TILING_CALLBACK_FRAME_MARKER,
+  );
+}
+
 const STACK_OVERFLOW_NOISE_PATTERN = /^Maximum call stack size exceeded\.?$/;
 
 // A frame/filename that points at a REAL source location: non-empty AND not the
@@ -905,6 +956,49 @@ export function isUnresolvableStackOverflowNoise(input: {
     return false;
   }
   return true;
+}
+
+/**
+ * Whether a Sentry exception is the `@embedpdf/plugin-tiling` `TilingLayer`
+ * React #185 "Maximum update depth exceeded" render-loop class: a
+ * `Minified React error #185` thrown from inside the tiling plugin's
+ * `onTileRendering` subscription callback (frame `Object.r [as
+ * onTileRendering]` in a `_next/static/chunks/…` bundle) with NO resolved
+ * first-party `apps/web/src/…` frame. The tiling plugin re-emits
+ * `onTileRendering` synchronously during the React commit phase under a rapid
+ * zoom/scroll burst, so its `setTiles` runs during commit → re-render →
+ * `renderTile` → re-emit → React's 50-nested-update guard trips #185. The
+ * throw is in third-party bundled code, never first-party. Requires BOTH the
+ * #185 message AND an `onTileRendering` frame, AND a NEGATIVE guard: if any
+ * frame resolves to a de-minified first-party `apps/web/src/…` source, the
+ * event keeps reporting (our own component is the looping culprit →
+ * actionable). A real first-party #185, or a #185 from a different third-party
+ * lib, is never matched. Returns false when there are no frames (can't confirm
+ * the tiling anchor — keep reporting). See
+ * `REACT_UPDATE_DEPTH_NOISE_PATTERN` for the full rationale.
+ */
+export function isEmbedPdfTilingReactUpdateDepthNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!REACT_UPDATE_DEPTH_NOISE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard: a resolved first-party frame means our own component is the
+  // looping culprit → actionable; keep reporting so the call site can be found.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Anchor: the throw must be inside @embedpdf/plugin-tiling's `onTileRendering`
+  // subscription callback. This frame is never present in first-party code, so a
+  // real first-party #185 (or a #185 from a different third-party lib) is never
+  // matched.
+  return frames.some(frameMatchesEmbedPdfTilingCallback);
 }
 
 export function shouldIgnoreBrowserRuntimeNoise(input: {
@@ -1225,6 +1319,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isUnresolvableStackOverflowNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isUnresolvableStackOverflowNoise({ message, frames })) {
+    return true;
+  }
+
+  // @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
+  // exceeded" render loop — the tiling plugin re-emits `onTileRendering`
+  // synchronously during the React commit phase under a rapid zoom/scroll
+  // burst, tripping React's nested-update guard. Requires BOTH the #185 message
+  // AND an `onTileRendering` frame, with a first-party negative guard, so a
+  // real first-party setState loop keeps reporting. See
+  // `isEmbedPdfTilingReactUpdateDepthNoise`.
+  if (isEmbedPdfTilingReactUpdateDepthNoise({ message, frames })) {
     return true;
   }
 
