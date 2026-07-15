@@ -12,13 +12,17 @@
  * `PanelCard`'s contract — no technical detail until there is something to show.
  */
 
-import { readFileAsBlob } from '@/features/files/api/opencode-files';
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
+import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
 import {
   AppWindow,
   ChevronDown,
+  Download,
   FileText,
   Image as ImageIcon,
+  Loader2,
   Presentation as PresentationIcon,
   Video as VideoIcon,
 } from 'lucide-react';
@@ -211,6 +215,57 @@ export function OutputRows({
   );
 }
 
+/**
+ * The card header's "download all" affordance (W15). Only worth offering once
+ * there's more than one file to bundle — for a single file the row's own
+ * hover `DownloadButton` already does the job with one fewer click. Same
+ * fetch-then-act shape as `DownloadButton`: a spinner while the sandbox reads
+ * bytes, and the browser's own failure reporting on error (no toast to wire).
+ */
+function DownloadAllAction({ outputs }: { outputs: OutputItem[] }) {
+  const [busy, setBusy] = useState(false);
+  const files = outputs.filter((o): o is OutputItem & { path: string } => Boolean(o.path));
+  if (files.length < 2) return null;
+
+  const handleDownload = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Zip named literally 'outputs' — the session title isn't part of this
+      // card's props, and threading it in just for a filename isn't worth the
+      // added surface. See the commit message for the same note.
+      await downloadFilesAsZip(
+        files.map((f) => ({ path: f.path, name: f.name })),
+        'outputs',
+      );
+    } catch {
+      // The browser reports its own failure; the control just needs to recover.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Hint label="Download all" side="bottom">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => void handleDownload()}
+        disabled={busy}
+        aria-label="Download all"
+        aria-busy={busy}
+        className="size-7 active:scale-[0.96] disabled:opacity-100"
+      >
+        {busy ? (
+          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+        ) : (
+          <Download className="size-3.5" />
+        )}
+      </Button>
+    </Hint>
+  );
+}
+
 export function OutputsCard({
   outputs,
   defaultExpanded,
@@ -234,6 +289,7 @@ export function OutputsCard({
       // The card body carries the horizontal padding; the rows carry none, so a
       // row's tint runs the full width of the list instead of being inset twice.
       contentClassName="border-border border-t px-2 py-2"
+      headerAction={<DownloadAllAction outputs={outputs} />}
     >
       <OutputRows outputs={outputs} onOpenOutput={onOpenOutput} />
     </PanelCard>

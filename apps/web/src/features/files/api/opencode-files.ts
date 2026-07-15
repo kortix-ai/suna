@@ -94,6 +94,41 @@ async function listAllFilesRecursive(dirPath: string): Promise<string[]> {
   return results;
 }
 
+/** Zip entry names must be unique; outputs often share basenames across dirs
+ * (`report.md` from two different tool calls). Collisions get a `-2`, `-3`, …
+ * suffix inserted before the extension, so the file stays recognizable. */
+export function uniqueZipNames(names: string[]): string[] {
+  const used = new Map<string, number>();
+  return names.map((name) => {
+    const count = (used.get(name) ?? 0) + 1;
+    used.set(name, count);
+    if (count === 1) return name;
+    const dot = name.lastIndexOf('.');
+    return dot > 0 ? `${name.slice(0, dot)}-${count}${name.slice(dot)}` : `${name}-${count}`;
+  });
+}
+
+/** Download a specific set of files as one zip (W15) — outputs are scattered
+ * paths across the sandbox, not one directory, so `downloadDirectory` doesn't
+ * fit: there is no common root to walk. */
+export async function downloadFilesAsZip(
+  files: Array<{ path: string; name: string }>,
+  zipName: string,
+): Promise<void> {
+  const zip = new JSZip();
+  const names = uniqueZipNames(files.map((f) => f.name));
+  await Promise.all(files.map(async (f, i) => zip.file(names[i], await readBlob(f.path))));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${zipName || 'outputs'}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 /** Download a directory as a zip (recursively bundled). */
 export async function downloadDirectory(
   dirPath: string,

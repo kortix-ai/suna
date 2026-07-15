@@ -34,6 +34,9 @@ export interface PanelCardProps {
   defaultExpanded?: boolean;
   /** Override the body padding — a full-bleed list (Progress) wants none. */
   contentClassName?: string;
+  /** A control beside the chevron (Outputs' "download all") — click-isolated
+   * from the header's own expand/collapse toggle. */
+  headerAction?: ReactNode;
 }
 
 /** Full-width row trigger, clipped by the parent's `overflow-hidden` so its square corners never peek past the card's rounded-md border. */
@@ -82,6 +85,7 @@ export function PanelCard({
   isEmpty,
   defaultExpanded = false,
   contentClassName = 'border-border border-t p-4',
+  headerAction,
 }: PanelCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const reduce = useReducedMotion();
@@ -112,22 +116,43 @@ export function PanelCard({
       transition={transition}
     >
       <DisclosureTrigger variant="outline">
-        <button type="button" className={cn(HEADER_CLASS, 'cursor-pointer')}>
+        {/* `div`, not `button`: `DisclosureTrigger` already clones its role
+            ("button"), tabIndex, and Enter/Space handling onto whatever child
+            it's given, so a real `<button>` here bought nothing but blocked
+            `headerAction` from ever being a real `<button>` too (nesting one
+            inside another is invalid HTML). Restructuring the trigger this
+            way — rather than faking the action as a styled `span[role=button]`
+            — keeps both controls semantically real. */}
+        <div className={cn(HEADER_CLASS, 'cursor-pointer')}>
           <CardTitleRow
             title={title}
             count={count}
             subtitle={subtitle}
             chevron={
-              <motion.span
-                animate={{ rotate: expanded ? 90 : 0 }}
-                transition={transition}
-                className="text-muted-foreground shrink-0"
-              >
-                <ChevronRight className="size-4" />
-              </motion.span>
+              <span className="flex shrink-0 items-center gap-0.5">
+                {headerAction && (
+                  // Isolated from the toggle on both input paths: `stopPropagation`
+                  // on click covers the mouse/tap case, and on keydown stops the
+                  // Enter/Space that activates the nested button from *also*
+                  // bubbling up into the trigger's own Enter/Space handler.
+                  <span
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    {headerAction}
+                  </span>
+                )}
+                <motion.span
+                  animate={{ rotate: expanded ? 90 : 0 }}
+                  transition={transition}
+                  className="text-muted-foreground shrink-0"
+                >
+                  <ChevronRight className="size-4" />
+                </motion.span>
+              </span>
             }
           />
-        </button>
+        </div>
       </DisclosureTrigger>
       <DisclosureContent variant="outline" contentClassName={contentClassName}>
         {isEmpty ? (

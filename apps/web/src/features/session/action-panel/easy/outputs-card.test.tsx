@@ -1,7 +1,7 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { OutputRows } from './outputs-card';
+import { OutputRows, OutputsCard } from './outputs-card';
 
 describe('OutputRows display (W3/W11)', () => {
   test('title wins over filename; kind label rides right; fresh mark shows', () => {
@@ -80,5 +80,49 @@ describe('OutputIcon image thumbnails (W13)', () => {
     );
     expect(html).not.toContain('<img');
     expect(html).toContain('Generated image');
+  });
+});
+
+describe('OutputsCard "download all" header action (W15)', () => {
+  test('two-or-more downloadable outputs → the header offers download-all', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <OutputsCard
+          outputs={[
+            { callID: 'c1', name: 'a.pdf', kind: 'file', path: 'a.pdf' },
+            { callID: 'c2', name: 'b.pdf', kind: 'file', path: 'b.pdf' },
+          ]}
+          defaultExpanded={false}
+          onOpenOutput={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    expect(html).toContain('aria-label="Download all"');
+  });
+
+  test('a single downloadable output → no header download-all (the row affordance already covers it)', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <OutputsCard
+          outputs={[{ callID: 'c1', name: 'a.pdf', kind: 'file', path: 'a.pdf' }]}
+          defaultExpanded={false}
+          onOpenOutput={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    expect(html).not.toContain('aria-label="Download all"');
+  });
+
+  test('no outputs with a path (e.g. a bare running app) → no header download-all', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <OutputsCard
+          outputs={[{ callID: 'a1', name: 'Dashboard', kind: 'app', url: 'http://localhost:3000' }]}
+          defaultExpanded={false}
+          onOpenOutput={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    expect(html).not.toContain('aria-label="Download all"');
   });
 });
