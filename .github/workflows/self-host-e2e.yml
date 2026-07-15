@@ -63,8 +63,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
+      # The CLI imports workspace packages (@kortix/registry, @kortix/manifest-schema,
+      # …) at startup, so the node_modules symlinks must exist — a bare `bun test`
+      # without install crashes the spawned CLI on import ("Cannot find module
+      # @kortix/registry"). Still no Docker/network at test time; this is a
+      # build-graph install, not a runtime dependency.
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
       - name: Fast self-host CLI tests (no Docker)
         run: bun test tests/self-host-e2e/fast/
 
