@@ -270,9 +270,15 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     />
   ),
   'dependency-upgrades': () => (
-    <HeroCover>
-      <img src="/usecases/logos/github.svg" alt="GitHub" className="size-9 object-contain sm:size-11" />
-    </HeroCover>
+    <RowCover>
+      <GitHub />
+      <div className={cn(TILE, 'bg-emerald-500 text-white')}>
+        <CheckCircle2 className={ic} />
+      </div>
+      <IconTile>
+        <GitPullRequest className={cn(ic, 'text-foreground/70')} />
+      </IconTile>
+    </RowCover>
   ),
   'inbox-triage': () => (
     <DuoCover
