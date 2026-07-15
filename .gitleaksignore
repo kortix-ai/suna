@@ -29,3 +29,7 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # generic-api-key rule matched the ACM certificate key_algorithm field (an
 # elliptic-curve algorithm NAME, not a credential) in the since-DELETED enterprise-vpc module.
 8887265c9d328380c42805206bc6a5bcebd6ecd5:infra/terraform/modules/enterprise-vpc/acm.tf:generic-api-key:5
+
+# The PR-range scan also walks the HISTORICAL version of this very file (commit
+# 619d83ee), whose comment quoted the flagged value before being reworded.
+619d83ee645f3d750600a4728bf441bfee147e44:.gitleaksignore:generic-api-key:29
