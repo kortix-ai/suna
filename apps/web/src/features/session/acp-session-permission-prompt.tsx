@@ -93,7 +93,7 @@ export function AcpSessionPermissionPrompt({
 
   if (autoApprove) {
     return (
-      <div className="border-border/60 bg-muted/40 mb-2 flex items-center gap-2 rounded-xl border px-3 py-1.5">
+      <div data-testid="acp-session-permission-autoapprove" className="border-border/60 bg-muted/40 mb-2 flex items-center gap-2 rounded-xl border px-3 py-1.5">
         <ShieldCheck className="text-muted-foreground size-3.5" />
         <span className="text-muted-foreground flex-1 text-[11px]">
           Auto-allowing all permission requests for this session
@@ -108,7 +108,7 @@ export function AcpSessionPermissionPrompt({
   if (permissions.length === 0) return null;
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
+    <div data-testid="acp-session-permission-prompt" className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
       <div className="flex items-center gap-2 border-amber-500/20 border-b px-3 py-1.5">
         <ShieldCheck className="size-3.5 text-amber-600 dark:text-amber-400" />
         <span className="text-foreground text-xs font-semibold tracking-tight">
@@ -175,6 +175,7 @@ export function AcpSessionPermissionPrompt({
                 <Button
                   size="xs"
                   variant="default"
+                  data-testid="acp-permission-allow-once"
                   disabled={!!busy}
                   onClick={() => void reply(permission, 'once', allowOnce)}
                 >

@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { classifyAcpMethod, emptyReducerState, reduceEnvelope } from './reduce';
 import {
   defaultAllowPermissionOption,
+  acpTranscriptHtml,
+  acpTranscriptJsonl,
+  acpTranscriptMarkdown,
   projectAcpChatItems,
   projectAcpContext,
   projectAcpPendingPrompts,
@@ -11,6 +15,7 @@ import {
   type AcpPendingOption,
   type AcpStoredEnvelope,
 } from './transcript';
+import type { AcpStreamEvent } from './types';
 
 function stored(
   ordinal: number,
@@ -18,6 +23,30 @@ function stored(
   envelope: AcpStoredEnvelope['envelope'],
 ): AcpStoredEnvelope {
   return { ordinal, direction, envelope };
+}
+
+function userPrompt(ordinal: number, text = 'hi'): AcpStoredEnvelope {
+  return stored(ordinal, 'client_to_agent', {
+    jsonrpc: '2.0', id: ordinal, method: 'session/prompt', params: { prompt: [{ type: 'text', text }] },
+  });
+}
+
+function sessionUpdate(ordinal: number, update: Record<string, unknown>): AcpStoredEnvelope {
+  return stored(ordinal, 'agent_to_client', {
+    jsonrpc: '2.0', method: 'session/update', params: { update },
+  });
+}
+
+function toolCall(id: string, status: string, ordinal = 1): AcpStoredEnvelope {
+  return sessionUpdate(ordinal, { sessionUpdate: 'tool_call', toolCallId: id, title: 'Tool', status });
+}
+
+function toolCallUpdate(id: string, status: string, ordinal = 2): AcpStoredEnvelope {
+  return sessionUpdate(ordinal, { sessionUpdate: 'tool_call_update', toolCallId: id, status });
+}
+
+function plan(ordinal: number, entries: string[]): AcpStoredEnvelope {
+  return sessionUpdate(ordinal, { sessionUpdate: 'plan', entries });
 }
 
 describe('projectAcpUsage', () => {
@@ -88,6 +117,51 @@ describe('projectAcpTurnState', () => {
         jsonrpc: '2.0', id: 'local-1', method: 'session/prompt', params: { prompt: [] },
       }),
     ]).busy).toBe(false);
+  });
+
+  // Busy-staleness policy: a reload mid-turn must never wedge the session in
+  // `busy` forever. A pending `session/prompt` stops counting toward busy the
+  // moment a LATER `session/cancel` for the same session, or a LATER
+  // `session/prompt` that supersedes it, appears in the log — with no
+  // response to the original request ever required.
+
+  function promptRow(ordinal: number, requestId: string, sessionId = 's1'): AcpStoredEnvelope {
+    return stored(ordinal, 'client_to_agent', {
+      jsonrpc: '2.0', id: requestId, method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'go' }] },
+    });
+  }
+
+  function cancelRow(ordinal: number, sessionId = 's1'): AcpStoredEnvelope {
+    return stored(ordinal, 'client_to_agent', {
+      jsonrpc: '2.0', method: 'session/cancel', params: { sessionId },
+    });
+  }
+
+  function responseRow(ordinal: number, requestId: string): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0', id: requestId, result: { stopReason: 'end_turn' },
+    });
+  }
+
+  test('a cancel notification after a pending prompt clears busy', () => {
+    const rows = [promptRow(1, 'req-1'), cancelRow(2)];
+    expect(projectAcpTurnState(rows)).toEqual({ busy: false, pendingPromptIds: [] });
+  });
+
+  test('a cancel for a DIFFERENT session leaves an unrelated pending prompt busy', () => {
+    const rows = [promptRow(1, 'req-1', 's1'), cancelRow(2, 's2')];
+    expect(projectAcpTurnState(rows)).toEqual({ busy: true, pendingPromptIds: ['req-1'] });
+  });
+
+  test('a newer prompt supersedes an orphaned pending prompt', () => {
+    const rows = [promptRow(1, 'req-1'), promptRow(3, 'req-2'), responseRow(4, 'req-2')];
+    expect(projectAcpTurnState(rows)).toEqual({ busy: false, pendingPromptIds: [] });
+  });
+
+  test('a newer prompt supersedes an orphaned prompt even before the new one is itself answered', () => {
+    const rows = [promptRow(1, 'req-1'), promptRow(3, 'req-2')];
+    expect(projectAcpTurnState(rows)).toEqual({ busy: true, pendingPromptIds: ['req-2'] });
   });
 });
 

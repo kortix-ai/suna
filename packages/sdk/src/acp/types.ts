@@ -75,3 +75,43 @@ export class AcpRpcError extends Error {
     this.name = 'AcpRpcError';
   }
 }
+
+/**
+ * Non-2xx HTTP response from the ACP transport (POST request/notify/respond,
+ * the SSE `connect()` loop, or the `transcript()` poll fetch) — distinct from
+ * `AcpRpcError`, which is a JSON-RPC-level `error` field on an otherwise-
+ * successful HTTP response.
+ *
+ * `terminal` marks statuses where retrying is pointless (4xx client errors),
+ * except `408 Request Timeout` and `429 Too Many Requests`, which are
+ * transient-by-convention and should keep retrying with backoff.
+ */
+export class AcpTransportError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly terminal: boolean,
+  ) {
+    super(message);
+    this.name = 'AcpTransportError';
+  }
+}
+
+/**
+ * Lifecycle of the live ACP transport (`AcpClient.connect()`'s SSE loop or
+ * transcript-poll fallback), surfaced via `connect()`'s `onState` callback
+ * and mirrored onto `AcpSession`'s `snapshot.connection`.
+ *
+ * Moved here (from `./session`, which re-exports it for backward
+ * compatibility) so `client.ts` — which session.ts imports — can reference it
+ * without an import cycle.
+ *
+ * `'open'` means the stream response is established (a successful fetch with
+ * a readable body) — the same moment `EventSource.onopen` would fire — not
+ * that a first event has actually arrived. An idle-but-healthy connection
+ * must read as `'open'`, not `'reconnecting'`. Backoff-reset logic is
+ * deliberately stricter than this: it only resets `retryMs` once an attempt
+ * has delivered at least one event, so UI truth (`'open'`) and retry
+ * conservatism are intentionally asymmetric.
+ */
+export type AcpConnectionState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed';

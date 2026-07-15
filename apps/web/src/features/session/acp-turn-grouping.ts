@@ -12,6 +12,7 @@ export type AcpMessageItem = Extract<AcpChatItem, { kind: 'message' }>;
 export type AcpToolItem = Extract<AcpChatItem, { kind: 'tool' }>;
 export type AcpPlanItem = Extract<AcpChatItem, { kind: 'plan' }>;
 export type AcpRawItem = Extract<AcpChatItem, { kind: 'raw' }>;
+export type AcpQuestionItem = Extract<AcpChatItem, { kind: 'question' }>;
 
 /** Groups a flat ACP item stream into turns — one turn per user message,
  *  with every following item (assistant text, thoughts, tools, plans, raw)
@@ -57,14 +58,19 @@ export type AcpTurnRenderItem =
   | { type: 'tool-single'; item: AcpToolItem }
   | { type: 'plan'; item: AcpPlanItem }
   | { type: 'raw'; item: AcpRawItem }
+  | { type: 'question'; item: AcpQuestionItem }
   | { type: 'message'; item: AcpMessageItem };
 
 /** Folds a turn's non-user items into render groups: consecutive `thought`
  *  messages collapse into one reasoning card, 2+ consecutive same-bucket
  *  tool calls collapse into one same-tool pile ("Gathered context" / "Ran N
  *  commands" / "Edit · 3x"), singles stay individual — matching main's
- *  `SameToolGroup`/`GroupedReasoningCard` folding rules. Permission/question
- *  items are intentionally dropped: they render pinned above the composer. */
+ *  `SameToolGroup`/`GroupedReasoningCard` folding rules. Permission items are
+ *  intentionally dropped: they render pinned above the composer (the
+ *  `AcpSessionPermissionPrompt`). Question items DO stay inline as their own
+ *  render item — the owner decision is that a question surfaces as BOTH a
+ *  composer chip (`QuestionPrompt`) and an inline transcript card
+ *  (`AcpQuestionCard`, via `AcpChatItemRow`). */
 export function groupAcpTurnItems(items: readonly AcpChatItem[]): AcpTurnRenderItem[] {
   const out: AcpTurnRenderItem[] = [];
   let pendingReasoning: AcpMessageItem[] = [];
@@ -122,7 +128,8 @@ export function groupAcpTurnItems(items: readonly AcpChatItem[]): AcpTurnRenderI
     if (item.kind === 'plan') out.push({ type: 'plan', item });
     else if (item.kind === 'raw') out.push({ type: 'raw', item });
     else if (item.kind === 'message') out.push({ type: 'message', item });
-    // permission/question items render pinned above the composer, not here.
+    else if (item.kind === 'question') out.push({ type: 'question', item });
+    // permission items render pinned above the composer, not here.
   }
   flushReasoning();
   flushTools();

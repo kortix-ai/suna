@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -44,6 +45,8 @@ interface SessionSiteHeaderProps {
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
   supportsCompact?: boolean;
+  /** ACP agent identity (e.g. `agentInfo.name` from `useSession().acp`) — shown as a quiet outline badge next to the title. */
+  agentName?: string;
 }
 
 export function SessionSiteHeader({
@@ -54,6 +57,7 @@ export function SessionSiteHeader({
   isMobileView,
   leadingAction,
   supportsCompact = true,
+  agentName,
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -149,6 +153,11 @@ export function SessionSiteHeader({
                 </Link>
               </Button>
             )}
+            {agentName ? (
+              <Badge variant="outline" size="sm" className="shrink-0">
+                {agentName}
+              </Badge>
+            ) : null}
             {leadingAction}
           </div>
 

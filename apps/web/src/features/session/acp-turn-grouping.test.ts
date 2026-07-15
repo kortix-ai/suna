@@ -139,13 +139,20 @@ describe('groupAcpTurnItems', () => {
     ]);
   });
 
-  test('permission and question items are dropped (pinned above the composer instead)', () => {
+  test('permission items are dropped (pinned above the composer instead); question items stay inline', () => {
     const items: AcpChatItem[] = [
       { kind: 'permission', id: 1, method: 'session/request_permission', params: {} },
       { kind: 'question', id: 2, method: 'session/elicit', questions: [], params: {} },
       assistantMsg('assistant-3'),
     ];
-    expect(groupAcpTurnItems(items)).toEqual([{ type: 'message', item: items[2] }]);
+    // Permission is dropped (rendered in the composer's `AcpSessionPermissionPrompt`),
+    // but the question survives as its own inline render item — the owner
+    // decision is that a question shows as BOTH a composer chip and an inline
+    // `AcpQuestionCard`.
+    expect(groupAcpTurnItems(items)).toEqual([
+      { type: 'question', item: items[1] },
+      { type: 'message', item: items[2] },
+    ]);
   });
 
   test('plan and raw items pass through as their own render item', () => {

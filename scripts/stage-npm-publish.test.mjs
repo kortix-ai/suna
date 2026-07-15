@@ -179,7 +179,63 @@ const run = (dir, version) =>
   rmSync(dir, { recursive: true, force: true });
 }
 
-// 5) Missing VERSION must fail.
+// 5) A package shipping a `dist/version.js` (+ `.d.ts`) build-time-version
+//    placeholder (`@kortix/sdk`'s `SDK_VERSION`) must have the placeholder
+//    replaced with the exact release version in both files; a package with
+//    no such file (every other publishable package today) must be
+//    untouched — the stamp is if-present, never assumed.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'stage-version-'));
+  mkdirSync(join(dir, 'dist'));
+  writeFileSync(join(dir, 'dist', 'index.js'), '');
+  writeFileSync(join(dir, 'dist', 'index.d.ts'), '');
+  writeFileSync(join(dir, 'dist', 'version.js'), "export const SDK_VERSION = '0.0.0-dev';\n");
+  writeFileSync(join(dir, 'dist', 'version.d.ts'), "export declare const SDK_VERSION: '0.0.0-dev';\n");
+  writeFileSync(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: '@kortix/sdk',
+        version: '0.2.0',
+        publishConfig: { access: 'public', main: './dist/index.js', exports: { '.': { import: './dist/index.js' } } },
+      },
+      null,
+      2,
+    ),
+  );
+  run(dir, '4.5.6');
+  const versionJs = readFileSync(join(dir, 'dist', 'version.js'), 'utf8');
+  const versionDts = readFileSync(join(dir, 'dist', 'version.d.ts'), 'utf8');
+  assert(versionJs.includes("SDK_VERSION = '4.5.6'"), 'dist/version.js placeholder stamped with the release version');
+  assert(!versionJs.includes('0.0.0-dev'), 'dist/version.js placeholder fully replaced');
+  assert(versionDts.includes("SDK_VERSION: '4.5.6'"), 'dist/version.d.ts placeholder stamped with the release version');
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// 6) A package with no `dist/version.js` (the common case) must stage exactly
+//    as before — the version-stamp step is a no-op for it.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'stage-noversion-'));
+  mkdirSync(join(dir, 'dist'));
+  writeFileSync(join(dir, 'dist', 'index.js'), '');
+  writeFileSync(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: '@kortix/no-version-file',
+        version: '1.0.0',
+        publishConfig: { access: 'public', main: './dist/index.js', exports: { '.': { import: './dist/index.js' } } },
+      },
+      null,
+      2,
+    ),
+  );
+  run(dir, '1.2.3'); // must not throw
+  assert(true, 'staging a package with no dist/version.js does not throw');
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// 7) Missing VERSION must fail.
 {
   const dir = mkdtempSync(join(tmpdir(), 'stage-nov-'));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@kortix/z', version: '1.0.0' }, null, 2));

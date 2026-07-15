@@ -88,8 +88,25 @@ if (missing.length) {
   process.exit(1);
 }
 
+// 5) Stamp the build-time `SDK_VERSION` placeholder in the compiled output, if
+//    this package ships one (currently only `@kortix/sdk`, `src/version.ts`).
+//    `dist/version.js` and `dist/version.d.ts` are plain generated JS/DTS with
+//    no build-time env substitution of their own, so the placeholder value
+//    ('0.0.0-dev') is replaced textually post-build — mirrors the workspace-
+//    dependency pin above (build first, then rewrite the emitted artifact).
+//    if-present, never assumed: a package with no `dist/version.js` (every
+//    other publishable package today) is untouched.
+const PLACEHOLDER_VERSION = '0.0.0-dev';
+for (const versionFile of ['dist/version.js', 'dist/version.d.ts']) {
+  if (!existsSync(versionFile)) continue;
+  const contents = readFileSync(versionFile, 'utf8');
+  const stamped = contents.split(PLACEHOLDER_VERSION).join(version);
+  if (stamped !== contents) writeFileSync(versionFile, stamped);
+}
+
 writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
 console.log(`staged ${pkg.name}@${version} for publish`);
+if (existsSync('dist/version.js')) console.log(`  version:${readFileSync('dist/version.js', 'utf8').includes(version) ? version : '(stamp failed)'}`);
 console.log(`  main:   ${pkg.main ?? '(none)'}`);
 console.log(`  types:  ${pkg.types ?? '(none)'}`);
 if (pkg.browser || pkg.unpkg || pkg.jsdelivr) {

@@ -1251,6 +1251,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.1.17)
+      '@types/react-test-renderer':
+        specifier: ^19.1.0
+        version: 19.1.0
       '@types/turndown':
         specifier: ^5.0.5
         version: 5.0.6
@@ -1269,6 +1272,9 @@ importers:
       prettier-plugin-tailwindcss:
         specifier: ^0.6.14
         version: 0.6.14(prettier-plugin-organize-imports@4.3.0)(prettier@3.9.4)
+      react-test-renderer:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.1.0)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
@@ -1477,9 +1483,15 @@ importers:
       '@types/react':
         specifier: ^19.1.17
         version: 19.1.17
+      '@types/react-test-renderer':
+        specifier: ^19.1.0
+        version: 19.1.0
       react:
         specifier: ^19.1.0
         version: 19.1.0
+      react-test-renderer:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.1.0)
       tsc-alias:
         specifier: ^1.8.17
         version: 1.9.0
@@ -11179,6 +11191,12 @@ packages:
 
   /@types/react-syntax-highlighter@15.5.13:
     resolution: {integrity: sha512-uLGJ87j6Sz8UaBAooU0T6lWJ0dBmjZgN1PZTrj05TNql2/XpC6+4HhMT5syIdFUUt+FASfCeLLv4kBygNU+8qA==}
+    dependencies:
+      '@types/react': 19.1.17
+    dev: true
+
+  /@types/react-test-renderer@19.1.0:
+    resolution: {integrity: sha512-XD0WZrHqjNrxA/MaR9O22w/RNidWR9YZmBdRGI7wcnWGrv/3dA8wKCJ8m63Sn+tLJhcjmuhOi629N66W6kgWzQ==}
     dependencies:
       '@types/react': 19.1.17
     dev: true
@@ -22620,6 +22638,16 @@ packages:
       refractor: 5.0.0
     dev: false
 
+  /react-test-renderer@19.2.7(react@19.1.0):
+    resolution: {integrity: sha512-U4TyPDJ9MsC8rFimXuJum8w40aPc9kbOZYO8Pc2/4A884i8hwJsMNA/JNyuOc/f2/37wHvk7HjpVl1V4re7Dig==}
+    peerDependencies:
+      react: ^19.2.7
+    dependencies:
+      react: 19.1.0
+      react-is: 19.2.7
+      scheduler: 0.27.0
+    dev: true
+
   /react-use-measure@2.1.7(react-dom@19.1.0)(react@19.1.0):
     resolution: {integrity: sha512-KrvcAo13I/60HpwGO5jpW7E9DfusKyLPLvuHlUyP5zqnmAPhNc6qTRjUQrdTADl0lpPpDVU2/Gg51UlOGHXbdg==}
     peerDependencies:
@@ -23272,7 +23300,6 @@ packages:
 
   /scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
-    dev: false
 
   /schema-utils@4.3.3:
     resolution: {integrity: sha512-eflK8wEtyOE6+hsaRVPxvUKYCpRgzLqDTb8krvAsRIwOGlHoSgYLgBXoubGgLd2fT41/OUYdb48v4k4WWHQurA==}

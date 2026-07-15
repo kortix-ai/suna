@@ -855,3 +855,10 @@ packed, installed, imported, and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. API/web typechecks,
 focused provider tests, and UI lint also pass; live dev verification remains the
 enclosing rollout gate.
+
+### 2026-07-15 — session `acp-sdk-hardening` (claim, LOCAL-ONLY edit, not committed)
+
+Claimed: ACP hardening WA per docs/superpowers/plans/2026-07-14-acp-sdk-hardening-web-ux.md
+(AcpSession store, transport hardening, reducer fixes, transcript exports, tool-part
+normalization, useAcpSession→useSyncExternalStore). Jay-directed, subagent-driven,
+no commits by Jay's standing rule; W0 pre-merge fixes already in this working tree.

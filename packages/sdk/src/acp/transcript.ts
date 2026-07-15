@@ -1,11 +1,25 @@
+import { contentAttachments, contentText, textFromContent } from './content';
+import { emptyReducerState, pendingFromState, reduceEnvelope, type AcpMethodClassifier } from './reduce';
 import type { AcpEnvelope, AcpJsonRpcId, AcpStreamEvent } from './types';
 
 export type AcpStoredEnvelope = {
   ordinal: number;
-  direction: 'client_to_agent' | 'agent_to_client' | string;
+  direction: 'client_to_agent' | 'agent_to_client';
   streamEventId?: number | null;
   envelope: AcpEnvelope | Record<string, unknown>;
   createdAt?: string;
+};
+
+/** The shape of one row returned by `AcpClient.transcript()` (`./client`) —
+ *  a fully-resolved, already-persisted `AcpStoredEnvelope` (no optional
+ *  fields: the server always supplies a concrete direction, stream event id,
+ *  parsed envelope, and creation timestamp for a history row). */
+export type AcpTranscriptRow = {
+  ordinal: number;
+  direction: 'client_to_agent' | 'agent_to_client';
+  streamEventId: number | null;
+  envelope: AcpEnvelope;
+  createdAt: string;
 };
 
 export type AcpToolCall = {
@@ -120,64 +134,19 @@ export type AcpTurnState = {
   pendingPromptIds: AcpJsonRpcId[];
 };
 
-export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChatItem[] {
-  const items: AcpChatItem[] = [];
-  for (const row of rows) {
-    const envelope = row.envelope as Record<string, any>;
-    if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
-      const text = contentText(envelope.params?.prompt);
-      const attachments = contentAttachments(envelope.params?.prompt);
-      if (text || attachments.length) items.push({
-        kind: 'message',
-        id: `prompt-${row.ordinal}`,
-        role: 'user',
-        text,
-        ...(attachments.length ? { attachments } : {}),
-      });
-      continue;
-    }
-    if (row.direction !== 'agent_to_client' || typeof envelope.method !== 'string') continue;
-    if (envelope.method === 'session/update') {
-      const update = envelope.params?.update ?? {};
-      const kind = update.sessionUpdate ?? update.type;
-      const text = textFromContent(update.content).join('');
-      const attachments = contentAttachments(update.content);
-      if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
-        const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
-        const previous = items.at(-1);
-        if (previous?.kind === 'message' && previous.role === role) {
-          previous.text += text;
-          if (attachments.length) previous.attachments = [...(previous.attachments ?? []), ...attachments];
-        } else items.push({
-          kind: 'message',
-          id: `${role}-${row.ordinal}`,
-          role,
-          text,
-          ...(attachments.length ? { attachments } : {}),
-        });
-      } else if (kind === 'tool_call' || kind === 'tool_call_update') {
-        const id = String(update.toolCallId ?? update.id ?? `tool-${row.ordinal}`);
-        const existing = items.find((item): item is Extract<AcpChatItem, { kind: 'tool' }> => item.kind === 'tool' && item.id === id);
-        const projected = projectToolCall(id, update);
-        if (existing) Object.assign(existing, mergeToolCall(existing, projected));
-        else items.push({ kind: 'tool', ...projected });
-      } else if (kind === 'plan') {
-        const plan = { entries: Array.isArray(update.entries) ? update.entries : [], data: update as Record<string, unknown> };
-        const existing = items.find((item): item is Extract<AcpChatItem, { kind: 'plan' }> => item.kind === 'plan');
-        if (existing) Object.assign(existing, plan);
-        else items.push({ kind: 'plan', ...plan });
-      } else items.push({ kind: 'raw', method: String(kind ?? envelope.method), data: update });
-      continue;
-    }
-    if ('id' in envelope && isPermissionMethod(envelope.method)) {
-      items.push({ kind: 'permission', id: envelope.id, method: envelope.method, params: envelope.params ?? {} });
-    } else if ('id' in envelope && isQuestionMethod(envelope.method)) {
-      const params = isRecord(envelope.params) ? envelope.params : {};
-      const question = projectQuestion(envelope.id as AcpJsonRpcId, envelope.method, params);
-      items.push({ kind: 'question', id: envelope.id, method: envelope.method, questions: question.questions, params });
-    } else items.push({ kind: 'raw', method: envelope.method, data: envelope.params });
-  }
-  return items;
+/**
+ * Fold-from-scratch wrapper over `reduceEnvelope` (`./reduce`) — the
+ * incremental reducer `AcpSession` folds row-by-row as envelopes arrive is
+ * the SAME implementation this calls here, one row at a time, starting from
+ * an empty state. Kept as its own exported entry point for callers (tests,
+ * one-shot projections of a full transcript) that don't need incremental
+ * state.
+ */
+export function projectAcpChatItems(
+  rows: readonly AcpStoredEnvelope[],
+  options: { classifyMethod?: AcpMethodClassifier } = {},
+): AcpChatItem[] {
+  return rows.reduce((state, row) => reduceEnvelope(state, row, options), emptyReducerState()).chatItems;
 }
 
 /**
@@ -187,59 +156,7 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
  * inventing a context limit.
  */
 export function projectAcpUsage(rows: readonly AcpStoredEnvelope[]): AcpUsageProjection | null {
-  let context: Omit<AcpUsageProjection, 'tokens'> | null = null;
-  let tokens: AcpTokenUsage | null = null;
-
-  for (const row of rows) {
-    if (row.direction !== 'agent_to_client') continue;
-    const envelope = row.envelope as Record<string, unknown>;
-    const params = isRecord(envelope.params) ? envelope.params : null;
-    const update = params && isRecord(params.update) ? params.update : null;
-    const updateKind = update ? firstString(update.sessionUpdate, update.type) : null;
-    if (update && updateKind === 'usage_update') {
-      const used = nonNegativeNumber(update.used);
-      const size = nonNegativeNumber(update.size);
-      if (used !== null && size !== null) {
-        const rawCost = isRecord(update.cost) ? update.cost : null;
-        const amount = rawCost ? nonNegativeNumber(rawCost.amount) : null;
-        const currency = rawCost ? firstString(rawCost.currency) : null;
-        context = {
-          used,
-          size,
-          percent: size > 0 ? Math.min(100, (used / size) * 100) : null,
-          cost: amount !== null && currency ? { amount, currency } : null,
-          source: 'usage_update',
-        };
-      }
-    }
-
-    const result = isRecord(envelope.result) ? envelope.result : null;
-    const rawUsage = result && isRecord(result.usage) ? result.usage : null;
-    if (!rawUsage) continue;
-    const total = nonNegativeNumber(rawUsage.totalTokens ?? rawUsage.total_tokens);
-    const input = nonNegativeNumber(rawUsage.inputTokens ?? rawUsage.input_tokens);
-    const output = nonNegativeNumber(rawUsage.outputTokens ?? rawUsage.output_tokens);
-    if (total === null || input === null || output === null) continue;
-    tokens = {
-      total,
-      input,
-      output,
-      thought: nonNegativeNumber(rawUsage.thoughtTokens ?? rawUsage.thought_tokens),
-      cachedRead: nonNegativeNumber(rawUsage.cachedReadTokens ?? rawUsage.cached_read_tokens),
-      cachedWrite: nonNegativeNumber(rawUsage.cachedWriteTokens ?? rawUsage.cached_write_tokens),
-    };
-  }
-
-  if (context) return { ...context, tokens };
-  if (!tokens) return null;
-  return {
-    used: null,
-    size: null,
-    percent: null,
-    cost: null,
-    tokens,
-    source: 'prompt_response',
-  };
+  return rows.reduce((state, row) => reduceEnvelope(state, row), emptyReducerState()).usage;
 }
 
 /** One harness-neutral context projection shared by web, mobile, and headless clients. */
@@ -254,304 +171,14 @@ export function projectAcpContext(rows: readonly AcpStoredEnvelope[]): AcpContex
 
 /** Recover whether a persisted ACP prompt is still in flight after reconnect/reload. */
 export function projectAcpTurnState(rows: readonly AcpStoredEnvelope[]): AcpTurnState {
-  const answered = new Set<string>();
-  for (const row of rows) {
-    if (row.direction !== 'agent_to_client') continue;
-    const envelope = row.envelope as Record<string, unknown>;
-    if (!('id' in envelope) || 'method' in envelope) continue;
-    if (!('result' in envelope) && !('error' in envelope)) continue;
-    answered.add(rpcIdKey(envelope.id));
-  }
-  const pendingPromptIds: AcpJsonRpcId[] = [];
-  for (const row of rows) {
-    if (row.direction !== 'client_to_agent') continue;
-    const envelope = row.envelope as Record<string, unknown>;
-    if (envelope.method !== 'session/prompt') continue;
-    const id = envelope.id;
-    if (typeof id !== 'string' && typeof id !== 'number') continue;
-    if (typeof id === 'string' && id.startsWith('local-')) continue;
-    if (!answered.has(rpcIdKey(id))) pendingPromptIds.push(id);
-  }
-  return { busy: pendingPromptIds.length > 0, pendingPromptIds };
+  return rows.reduce((state, row) => reduceEnvelope(state, row), emptyReducerState()).turnState;
 }
 
-function nonNegativeNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function projectToolCall(id: string, update: Record<string, unknown>): AcpToolCall {
-  return {
-    id,
-    title: firstString(update.title, update.name, update.kind, id) ?? id,
-    toolKind: firstString(update.kind) ?? null,
-    status: firstString(update.status) ?? null,
-    content: Array.isArray(update.content) ? update.content : [],
-    locations: Array.isArray(update.locations) ? update.locations : [],
-    rawInput: update.rawInput,
-    rawOutput: update.rawOutput,
-    data: update,
-  };
-}
-
-function mergeToolCall(previous: AcpToolCall, next: AcpToolCall): AcpToolCall {
-  return {
-    ...previous,
-    ...next,
-    title: next.title === next.id ? previous.title : next.title || previous.title,
-    toolKind: next.toolKind ?? previous.toolKind,
-    status: next.status ?? previous.status,
-    content: next.content.length ? next.content : previous.content,
-    locations: next.locations.length ? next.locations : previous.locations,
-    rawInput: next.rawInput ?? previous.rawInput,
-    rawOutput: next.rawOutput ?? previous.rawOutput,
-    data: { ...previous.data, ...next.data },
-  };
-}
-
-export function projectAcpPendingPrompts(rows: readonly AcpStoredEnvelope[]): AcpPendingPrompts {
-  const answered = new Set<string>();
-  for (const row of rows) {
-    const envelope = row.envelope as Record<string, unknown>;
-    if (!('id' in envelope)) continue;
-    if ('method' in envelope) continue;
-    if (!('result' in envelope) && !('error' in envelope)) continue;
-    answered.add(rpcIdKey(envelope.id));
-  }
-
-  const permissions: AcpPendingPermission[] = [];
-  const questions: AcpPendingQuestion[] = [];
-  for (const row of rows) {
-    if (row.direction !== 'agent_to_client') continue;
-    const envelope = row.envelope as Record<string, unknown>;
-    if (!('id' in envelope) || typeof envelope.method !== 'string') continue;
-    if (answered.has(rpcIdKey(envelope.id))) continue;
-    if ('result' in envelope || 'error' in envelope) continue;
-    const params = isRecord(envelope.params) ? envelope.params : {};
-    if (isPermissionMethod(envelope.method)) {
-      permissions.push(projectPermission(envelope.id as AcpJsonRpcId, envelope.method, params));
-    } else if (isQuestionMethod(envelope.method)) {
-      questions.push(projectQuestion(envelope.id as AcpJsonRpcId, envelope.method, params));
-    }
-  }
-  return { permissions, questions };
-}
-
-function projectPermission(
-  id: AcpJsonRpcId,
-  method: string,
-  params: Record<string, unknown>,
-): AcpPendingPermission {
-  const toolCall = isRecord(params.toolCall) ? params.toolCall : {};
-  const permission = firstString(
-    params.permission,
-    params.title,
-    params.name,
-    toolCall.title,
-    toolCall.kind,
-    params.kind,
-    method,
-  ) ?? method;
-  return {
-    id,
-    method,
-    sessionId: firstString(params.sessionId),
-    permission,
-    patterns: stringArray(params.patterns),
-    options: normalizeOptions(params.options),
-    params,
-  };
-}
-
-function projectQuestion(
-  id: AcpJsonRpcId,
-  method: string,
-  params: Record<string, unknown>,
-): AcpPendingQuestion {
-  const explicit = Array.isArray(params.questions)
-    ? params.questions
-        .filter(isRecord)
-        .map((question) => ({
-          key: firstString(question.key, question.name),
-          question: firstString(question.question, question.label, question.title) ?? firstString(params.message, params.prompt) ?? method,
-          header: firstString(question.header, params.message, params.title),
-          options: normalizeOptions(question.options),
-          allowText: question.allowText === true || question.type === 'text',
-        }))
-    : [];
-
-  const schemaQuestions = questionItemsFromSchema(params);
-  const fallback = explicit.length || schemaQuestions.length
-    ? []
-    : [{
-        question: firstString(params.message, params.prompt, params.question, params.title) ?? method,
-        header: firstString(params.title),
-        options: normalizeOptions(params.options),
-        allowText: params.mode !== 'url',
-      }];
-
-  return {
-    id,
-    method,
-    sessionId: firstString(params.sessionId),
-    questions: [...explicit, ...schemaQuestions, ...fallback],
-    params,
-  };
-}
-
-function questionItemsFromSchema(params: Record<string, unknown>): AcpPendingQuestionItem[] {
-  const schema = isRecord(params.requestedSchema) ? params.requestedSchema : null;
-  const properties = schema && isRecord(schema.properties) ? schema.properties : null;
-  if (!properties) return [];
-  return Object.entries(properties).map(([key, raw]) => {
-    const property = isRecord(raw) ? raw : {};
-    return {
-      key,
-      question: firstString(property.title, property.description, key) ?? key,
-      header: firstString(params.message, params.title),
-      options: normalizeSchemaOptions(property),
-      allowText: property.type !== 'boolean',
-    };
-  });
-}
-
-function normalizeSchemaOptions(property: Record<string, unknown>): AcpPendingOption[] {
-  const enumValues = Array.isArray(property.enum) ? property.enum : [];
-  if (enumValues.length > 0) {
-    const options: AcpPendingOption[] = [];
-    for (const value of enumValues) {
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        options.push({ label: String(value), value: String(value) });
-      }
-    }
-    return options;
-  }
-  const choices = Array.isArray(property.oneOf)
-    ? property.oneOf
-    : Array.isArray(property.anyOf)
-      ? property.anyOf
-      : [];
-  return choices.filter(isRecord).map((choice) => {
-    const value = firstString(choice.const, choice.value, choice.enum);
-    const label = firstString(choice.title, choice.name, choice.label, value) ?? 'Option';
-    return {
-      label,
-      value,
-      description: firstString(choice.description),
-      hint: firstString(choice.hint),
-    };
-  });
-}
-
-function normalizeOptions(value: unknown): AcpPendingOption[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((option) => {
-    const optionId = firstString(option.optionId, option.id);
-    const value = firstString(option.value, optionId);
-    const label = firstString(option.label, option.name, option.title, optionId, value) ?? 'Option';
-    return {
-      optionId,
-      id: firstString(option.id),
-      kind: firstString(option.kind),
-      label,
-      value,
-      hint: firstString(option.hint),
-      description: firstString(option.description),
-    };
-  });
-}
-
-/** Which raw {@link AcpPendingOption} answers each slot of the three-tier
- * permission UI (Deny / Allow once / Allow for session). ACP's standard
- * option kinds are `allow_once` / `allow_always` / `reject_once` /
- * `reject_always`; a harness that sends different (or no) `kind` values still
- * gets a usable mapping via `optionId`/`id` pattern matching, falling back to
- * "first unclaimed option is the primary allow action" so the UI never has
- * nothing to offer. */
-export type ResolvedPermissionActions = {
-  allowOnce: AcpPendingOption | null;
-  allowSession: AcpPendingOption | null;
-  /** Null means no explicit reject option was offered — deny by responding
-   *  with no `optionId` (`{ outcome: 'cancelled' }`). */
-  deny: AcpPendingOption | null;
-  /** Options that don't fit tha three-tier layout — render as extra buttons. */
-  extra: AcpPendingOption[];
-};
-
-function optionKey(option: AcpPendingOption): string {
-  return String(option.optionId ?? option.id ?? option.value ?? '');
-}
-
-function findByKind(options: AcpPendingOption[], kinds: string[]): AcpPendingOption | null {
-  return options.find((option) => option.kind && kinds.includes(option.kind)) ?? null;
-}
-
-function findByPattern(
-  options: AcpPendingOption[],
-  pattern: RegExp,
-  exclude: Set<AcpPendingOption>,
-): AcpPendingOption | null {
-  return options.find((option) => !exclude.has(option) && pattern.test(optionKey(option))) ?? null;
-}
-
-export function resolvePermissionActionOptions(options: AcpPendingOption[]): ResolvedPermissionActions {
-  const allowOnce =
-    findByKind(options, ['allow_once']) ?? findByPattern(options, /allow.?once/i, new Set());
-  const allowSession =
-    findByKind(options, ['allow_always']) ??
-    findByPattern(options, /allow.?(always|session)/i, new Set(allowOnce ? [allowOnce] : []));
-  const deny =
-    findByKind(options, ['reject_once', 'reject_always']) ??
-    findByPattern(
-      options,
-      /reject|deny/i,
-      new Set([allowOnce, allowSession].filter((o): o is AcpPendingOption => !!o)),
-    );
-  const claimed = new Set([allowOnce, allowSession, deny].filter((o): o is AcpPendingOption => !!o));
-  // Every permission request needs a primary allow action — if no option
-  // looked like "allow once", the first still-unclaimed option becomes it.
-  const primaryAllowOnce = allowOnce ?? options.find((option) => !claimed.has(option)) ?? null;
-  if (primaryAllowOnce) claimed.add(primaryAllowOnce);
-  const extra = options.filter((option) => !claimed.has(option));
-  return { allowOnce: primaryAllowOnce, allowSession, deny, extra };
-}
-
-/** The option `resolvePermissionActionOptions` would auto-approve with —
- *  shared by the "allow everything this session" action and the client-side
- *  auto-approve backstop so both pick the exact same option. */
-export function defaultAllowPermissionOption(options: AcpPendingOption[]): AcpPendingOption | null {
-  return resolvePermissionActionOptions(options).allowOnce;
-}
-
-function isPermissionMethod(method: string): boolean {
-  return method.includes('permission');
-}
-
-function isQuestionMethod(method: string): boolean {
-  return method.includes('elicitation') || method.includes('question') || method.includes('input') || method.includes('request');
-}
-
-function rpcIdKey(id: unknown): string {
-  return JSON.stringify(id);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function firstString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value === 'string' && value.length > 0) return value;
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-    if (Array.isArray(value)) {
-      const nested = firstString(...value);
-      if (nested) return nested;
-    }
-  }
-  return undefined;
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+export function projectAcpPendingPrompts(
+  rows: readonly AcpStoredEnvelope[],
+  options: { classifyMethod?: AcpMethodClassifier } = {},
+): AcpPendingPrompts {
+  return pendingFromState(rows.reduce((state, row) => reduceEnvelope(state, row, options), emptyReducerState()));
 }
 
 export type AcpTranscriptMessage = {
@@ -564,45 +191,6 @@ export type AcpTranscriptMessage = {
   reasoning_omitted: boolean;
   error: null;
 };
-
-function contentText(value: unknown): string {
-  if (!Array.isArray(value)) return '';
-  return value.flatMap((item) => textFromContent(item)).join('\n');
-}
-
-function contentAttachments(value: unknown): AcpMessageAttachment[] {
-  const blocks = Array.isArray(value) ? value : [value];
-  return blocks.flatMap<AcpMessageAttachment>((raw) => {
-    if (!isRecord(raw)) return [];
-    const type = firstString(raw.type);
-    if (type === 'image' || type === 'audio') {
-      return [{
-        kind: type,
-        name: firstString(raw.name) ?? null,
-        uri: firstString(raw.uri) ?? null,
-        mimeType: firstString(raw.mimeType, raw.mime_type) ?? null,
-        data: firstString(raw.data) ?? null,
-      }];
-    }
-    if (type === 'resource_link') {
-      return [{
-        kind: 'resource',
-        name: firstString(raw.name) ?? null,
-        uri: firstString(raw.uri) ?? null,
-        mimeType: firstString(raw.mimeType, raw.mime_type) ?? null,
-      }];
-    }
-    if (type === 'resource' && isRecord(raw.resource)) {
-      return [{
-        kind: 'resource',
-        name: firstString(raw.resource.name) ?? null,
-        uri: firstString(raw.resource.uri) ?? null,
-        mimeType: firstString(raw.resource.mimeType, raw.resource.mime_type) ?? null,
-      }];
-    }
-    return [];
-  });
-}
 
 /** Canonical, provider-neutral projection for persisted ACP envelopes. */
 export function projectAcpTranscript(
@@ -683,40 +271,206 @@ function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`;
 }
 
-export function acpTranscriptJsonl(events: readonly AcpStreamEvent[]): string {
-  return events.map((event) => JSON.stringify({ sequence: event.id, envelope: event.envelope })).join('\n') + (events.length ? '\n' : '');
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function textFromContent(value: unknown): string[] {
-  if (!value || typeof value !== 'object') return [];
-  const block = value as Record<string, unknown>;
-  if (block.type === 'text' && typeof block.text === 'string') return [block.text];
-  return [];
+/** Discriminates the two accepted input shapes at runtime: a live
+ *  `AcpStreamEvent` has `id` + `envelope` and neither `ordinal` nor
+ *  `direction`; a persisted `AcpStoredEnvelope` row always has both of the
+ *  latter. An empty array is ambiguous — treated as (empty) stored rows,
+ *  since that path degrades to `''`/basic empty output without throwing,
+ *  while the stream-event path would too, so either reading is safe; stored
+ *  rows is chosen as the primary, non-deprecated shape. */
+function isStreamEventInput(
+  input: readonly AcpStoredEnvelope[] | readonly AcpStreamEvent[],
+): input is readonly AcpStreamEvent[] {
+  const first = input[0];
+  return isPlainObject(first) && 'envelope' in first && 'id' in first && !('ordinal' in first) && !('direction' in first);
 }
 
-export function acpTranscriptMarkdown(events: readonly AcpStreamEvent[]): string {
+/** Adapts a live `AcpStreamEvent[]` onto the same `AcpStoredEnvelope[]` shape
+ *  stored rows already use, per the documented mapping: `ordinal` and
+ *  `streamEventId` both take the stream's monotonic event id, `direction` is
+ *  always `'agent_to_client'` (a live SSE stream only ever carries
+ *  agent-originated envelopes), and `createdAt` is omitted (unknown for a
+ *  live event). Stored-row input passes through unchanged. */
+function toStoredRows(
+  input: readonly AcpStoredEnvelope[] | readonly AcpStreamEvent[],
+): readonly AcpStoredEnvelope[] {
+  if (isStreamEventInput(input)) {
+    return input.map((event) => ({
+      ordinal: event.id,
+      direction: 'agent_to_client' as const,
+      streamEventId: event.id,
+      envelope: event.envelope,
+    }));
+  }
+  return input;
+}
+
+/**
+ * One JSON line per row: `{ordinal, direction, streamEventId, createdAt,
+ * envelope}` — a lossless, round-trippable export of a persisted ACP
+ * transcript (parse each line back and you reconstruct the original rows).
+ */
+export function acpTranscriptJsonl(rows: readonly AcpStoredEnvelope[]): string;
+/**
+ * @deprecated Pass the `AcpStoredEnvelope[]` rows from `client.transcript()`
+ * (or `AcpSession`'s persisted log) for a lossless export instead. This
+ * overload accepts live `AcpStreamEvent[]` for backward compatibility only —
+ * it preserves the original `{sequence, envelope}`-per-line shape, which
+ * drops direction/timestamps and is NOT round-trippable to a stored row.
+ */
+export function acpTranscriptJsonl(events: readonly AcpStreamEvent[]): string;
+export function acpTranscriptJsonl(input: readonly AcpStoredEnvelope[] | readonly AcpStreamEvent[]): string {
+  if (isStreamEventInput(input)) {
+    return input.map((event) => JSON.stringify({ sequence: event.id, envelope: event.envelope })).join('\n')
+      + (input.length ? '\n' : '');
+  }
+  const rows = input as readonly AcpStoredEnvelope[];
+  return rows
+    .map((row) => JSON.stringify({
+      ordinal: row.ordinal,
+      direction: row.direction,
+      streamEventId: row.streamEventId,
+      createdAt: row.createdAt,
+      envelope: row.envelope,
+    }))
+    .join('\n') + (rows.length ? '\n' : '');
+}
+
+/** Renders one markdown section per `AcpChatItem` in `projectAcpChatItems(rows)`
+ *  — one heading per coalesced message/tool/plan/permission/question, never per
+ *  raw wire chunk. Shared by both the stored-row and (adapted) stream-event
+ *  overloads of `acpTranscriptMarkdown`, and by `acpTranscriptHtml`. */
+function renderMarkdown(rows: readonly AcpStoredEnvelope[]): string {
   const lines = ['# Agent transcript', ''];
-  for (const { envelope } of events) {
-    if (!('method' in envelope) || envelope.method !== 'session/update') continue;
-    const params = envelope.params as Record<string, unknown> | undefined;
-    const update = params?.update as Record<string, unknown> | undefined;
-    if (!update) continue;
-    const kind = String(update.sessionUpdate ?? update.type ?? 'update');
-    const content = textFromContent(update.content);
-    if (content.length) lines.push(`## ${kind}`, '', ...content, '');
-    else if (kind === 'tool_call' || kind === 'tool_call_update') {
-      lines.push(`## ${kind}`, '', '```json', JSON.stringify(update, null, 2), '```', '');
+  for (const item of projectAcpChatItems(rows)) {
+    if (item.kind === 'message') {
+      lines.push(`## ${item.role}`, '', item.text, '');
+    } else if (item.kind === 'tool') {
+      lines.push(`## tool: ${item.title} (${item.status ?? 'unknown'})`, '', '```json', JSON.stringify(item.data, null, 2), '```', '');
+    } else if (item.kind === 'plan') {
+      const entries = item.entries.length ? item.entries.map((entry) => `- ${formatPlanEntry(entry)}`) : ['_(empty plan)_'];
+      lines.push('## plan', '', ...entries, '');
+    } else if (item.kind === 'permission') {
+      lines.push(`## permission: ${item.method}`, '', '```json', JSON.stringify(item.params, null, 2), '```', '');
+    } else if (item.kind === 'question') {
+      lines.push(`## question: ${item.method}`, '', '```json', JSON.stringify(item.questions, null, 2), '```', '');
+    } else {
+      lines.push(`## ${item.method}`, '', '```json', JSON.stringify(item.data, null, 2), '```', '');
     }
   }
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
-export function acpTranscriptHtml(events: readonly AcpStreamEvent[]): string {
-  const escaped = acpTranscriptMarkdown(events)
+function formatPlanEntry(entry: unknown): string {
+  if (typeof entry === 'string') return entry;
+  if (isPlainObject(entry)) {
+    const content = typeof entry.content === 'string' ? entry.content : undefined;
+    const status = typeof entry.status === 'string' ? entry.status : undefined;
+    if (content) return status ? `${content} (${status})` : content;
+  }
+  return JSON.stringify(entry);
+}
+
+/**
+ * Coalesced markdown export, built from `projectAcpChatItems(rows)`: one
+ * `## user` / `## assistant` / `## thought` section per message (chunks
+ * already joined by the reducer), one `## tool: {title} ({status})` section
+ * per tool call with its data fenced as JSON, and one `## plan` section per
+ * plan — never one heading per wire chunk.
+ */
+export function acpTranscriptMarkdown(rows: readonly AcpStoredEnvelope[]): string;
+/**
+ * @deprecated Pass the `AcpStoredEnvelope[]` rows from `client.transcript()`
+ * for the canonical, chunk-coalesced export instead. This overload accepts
+ * live `AcpStreamEvent[]` for backward compatibility — it adapts each event
+ * onto a synthetic stored row (`agent_to_client`, no `createdAt`) and renders
+ * through the same coalescing path.
+ */
+export function acpTranscriptMarkdown(events: readonly AcpStreamEvent[]): string;
+export function acpTranscriptMarkdown(input: readonly AcpStoredEnvelope[] | readonly AcpStreamEvent[]): string {
+  return renderMarkdown(toStoredRows(input));
+}
+
+/** Escaped markdown (see `acpTranscriptMarkdown`) wrapped in a `<pre>` tag. */
+export function acpTranscriptHtml(rows: readonly AcpStoredEnvelope[]): string;
+/**
+ * @deprecated Pass the `AcpStoredEnvelope[]` rows from `client.transcript()`
+ * instead. This overload accepts live `AcpStreamEvent[]` for backward
+ * compatibility, adapted the same way `acpTranscriptMarkdown` adapts them.
+ */
+export function acpTranscriptHtml(events: readonly AcpStreamEvent[]): string;
+export function acpTranscriptHtml(input: readonly AcpStoredEnvelope[] | readonly AcpStreamEvent[]): string {
+  const escaped = renderMarkdown(toStoredRows(input))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
   return `<!doctype html><meta charset="utf-8"><title>Agent transcript</title><pre>${escaped}</pre>`;
+}
+
+/** Which raw {@link AcpPendingOption} answers each slot of the three-tier
+ * permission UI (Deny / Allow once / Allow for session). ACP's standard
+ * option kinds are `allow_once` / `allow_always` / `reject_once` /
+ * `reject_always`; a harness that sends different (or no) `kind` values still
+ * gets a usable mapping via `optionId`/`id` pattern matching, falling back to
+ * "first unclaimed option is the primary allow action" so the UI never has
+ * nothing to offer. */
+export type ResolvedPermissionActions = {
+  allowOnce: AcpPendingOption | null;
+  allowSession: AcpPendingOption | null;
+  /** Null means no explicit reject option was offered — deny by responding
+   *  with no `optionId` (`{ outcome: 'cancelled' }`). */
+  deny: AcpPendingOption | null;
+  /** Options that don't fit tha three-tier layout — render as extra buttons. */
+  extra: AcpPendingOption[];
+};
+
+function optionKey(option: AcpPendingOption): string {
+  return String(option.optionId ?? option.id ?? option.value ?? '');
+}
+
+function findByKind(options: AcpPendingOption[], kinds: string[]): AcpPendingOption | null {
+  return options.find((option) => option.kind && kinds.includes(option.kind)) ?? null;
+}
+
+function findByPattern(
+  options: AcpPendingOption[],
+  pattern: RegExp,
+  exclude: Set<AcpPendingOption>,
+): AcpPendingOption | null {
+  return options.find((option) => !exclude.has(option) && pattern.test(optionKey(option))) ?? null;
+}
+
+export function resolvePermissionActionOptions(options: AcpPendingOption[]): ResolvedPermissionActions {
+  const allowOnce =
+    findByKind(options, ['allow_once']) ?? findByPattern(options, /allow.?once/i, new Set());
+  const allowSession =
+    findByKind(options, ['allow_always']) ??
+    findByPattern(options, /allow.?(always|session)/i, new Set(allowOnce ? [allowOnce] : []));
+  const deny =
+    findByKind(options, ['reject_once', 'reject_always']) ??
+    findByPattern(
+      options,
+      /reject|deny/i,
+      new Set([allowOnce, allowSession].filter((o): o is AcpPendingOption => !!o)),
+    );
+  const claimed = new Set([allowOnce, allowSession, deny].filter((o): o is AcpPendingOption => !!o));
+  // Every permission request needs a primary allow action — if no option
+  // looked like "allow once", the first still-unclaimed option becomes it.
+  const primaryAllowOnce = allowOnce ?? options.find((option) => !claimed.has(option)) ?? null;
+  if (primaryAllowOnce) claimed.add(primaryAllowOnce);
+  const extra = options.filter((option) => !claimed.has(option));
+  return { allowOnce: primaryAllowOnce, allowSession, deny, extra };
+}
+
+/** The option `resolvePermissionActionOptions` would auto-approve with —
+ *  shared by the "allow everything this session" action and the client-side
+ *  auto-approve backstop so both pick the exact same option. */
+export function defaultAllowPermissionOption(options: AcpPendingOption[]): AcpPendingOption | null {
+  return resolvePermissionActionOptions(options).allowOnce;
 }
 
 export type { AcpEnvelope };
