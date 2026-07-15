@@ -66,11 +66,20 @@ export interface GithubAppManifest {
   hook_attributes: { active: boolean };
 }
 
-export function buildGithubAppManifest(opts: { apiBaseUrl: string; appName?: string }): GithubAppManifest {
+export function buildGithubAppManifest(opts: {
+  apiBaseUrl: string;
+  homepageUrl: string;
+  appName?: string;
+}): GithubAppManifest {
+  // `apiBaseUrl` is where GitHub redirects the BROWSER after create/install, so
+  // it must be browser-reachable (http://localhost:<port> on a laptop, the
+  // public API origin on a server). `homepageUrl` is the App's cosmetic
+  // homepage — GitHub validates it as a public URL and rejects localhost/non-FQDN
+  // ("url wasn't supplied"), so it is kept separate and always a valid FQDN.
   const base = opts.apiBaseUrl.replace(/\/+$/, '');
   return {
     name: opts.appName ?? `Kortix Self-Host ${randomBytes(4).toString('hex')}`,
-    url: base,
+    url: opts.homepageUrl,
     redirect_url: `${base}/v1/platform/github-app/manifest-callback`,
     setup_url: `${base}/v1/platform/github-app/install-callback`,
     setup_on_update: true,
@@ -198,8 +207,24 @@ export async function exchangeManifestCode(
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function apiBaseUrl(c: any): string {
+  // The public API origin the BROWSER reaches (GitHub redirects the browser to
+  // the callback routes under it). Prefer the explicitly-configured public URL
+  // (API_PUBLIC_URL on self-host, KORTIX_URL) over the request URL, which behind
+  // the Caddy/Kong proxy resolves to an internal host the browser can't reach.
+  const configured = (process.env.API_PUBLIC_URL || '').replace(/\/+$/, '');
+  if (/^https?:\/\//.test(configured)) return configured;
   const override = config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
   return resolveBaseUrl(new URL(c.req.url), override);
+}
+
+/** The App's cosmetic homepage URL. GitHub validates it as a public URL and
+ *  rejects localhost / non-FQDN values (reported confusingly as "url wasn't
+ *  supplied"), so use the configured public frontend URL only when it is an
+ *  https FQDN, otherwise a stable fallback. */
+function homepageUrl(): string {
+  const pub = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+  if (/^https:\/\/[^/.]+\.[^/]+/.test(pub)) return pub;
+  return 'https://kortix.ai';
 }
 
 function frontendUrl(): string {
@@ -251,7 +276,10 @@ githubAppSetupRouter.openapi(
       const body = await c.req.json().catch(() => ({}));
       const org = typeof body?.org === 'string' && body.org.trim() ? body.org.trim() : undefined;
 
-      const manifest = buildGithubAppManifest({ apiBaseUrl: apiBaseUrl(c) });
+      const manifest = buildGithubAppManifest({
+        apiBaseUrl: apiBaseUrl(c),
+        homepageUrl: homepageUrl(),
+      });
       const state = signManifestStartState({ accountId, org });
       const githubCreateUrl = buildManifestCreateUrl(org);
 
