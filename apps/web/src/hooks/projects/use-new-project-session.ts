@@ -16,7 +16,7 @@ import {
   getProjectDetail,
   type CreateProjectSessionInput,
 } from '@kortix/sdk/projects-client';
-import { prefetchSessionStart } from '@kortix/sdk/react';
+import { prefetchSessionStart, seedCreatedRuntimeSession } from '@kortix/sdk/react';
 
 /**
  * The ONE "new empty session" path, shared by every entry point (project shell
@@ -106,7 +106,11 @@ export function useNewProjectSession(projectId: string | undefined) {
       };
 
       createWithConcreteAgent()
-        .then(() => {
+        .then((created) => {
+          // Seed the per-session cache so the instant shell renders the real
+          // bound agent immediately (no default-agent/model flash while the
+          // /start poll is still in flight).
+          seedCreatedRuntimeSession(queryClient, created);
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);
           queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });

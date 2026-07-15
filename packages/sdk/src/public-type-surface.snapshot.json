@@ -1216,6 +1216,7 @@
     "runtimeKeys",
     "safeParseJsonArray",
     "scopedModelSelectionKey",
+    "seedCreatedRuntimeSession",
     "seedGlobalDefaultFromServer",
     "serviceKeys",
     "setGlobalDefaultModel",

@@ -15,12 +15,37 @@ export interface SessionRuntimeEnvInput {
   compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }
 
+/**
+ * Translate a picker-namespaced model id for the target harness. `kortix/…` is
+ * the managed gateway's namespace: OpenCode's config declares a `kortix`
+ * provider so it keeps the qualified id, but Claude Code/Codex/Pi hand the id
+ * straight to an (gateway-proxied) API that only knows the bare model id —
+ * leaking the prefix there produces the harness's "model does not exist" error.
+ */
+export function runtimeModelForHarness(
+  model: string | null | undefined,
+  harness: string | null | undefined,
+): string | null {
+  const trimmed = model?.trim();
+  if (!trimmed) return null;
+  if (harness === 'opencode') return trimmed;
+  return trimmed.replace(/^kortix\//, '');
+}
+
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const compiled = input.compiledRuntimeConfig;
-  const acpAgent = compiled?.kind === 'acp' ? compiled.agents[input.agentName] : null;
+  // The 'default' sentinel resolves to the compiled default agent, same as the
+  // capabilities layer (legacy callers never name a concrete agent).
+  const acpAgent =
+    compiled?.kind === 'acp'
+      ? (compiled.agents[input.agentName] ??
+        (input.agentName === 'default' ? compiled.agents[compiled.defaultAgent] : undefined) ??
+        null)
+      : null;
   if (compiled?.kind === 'acp' && (!acpAgent || !acpAgent.enabled)) {
     throw new Error(`ACP agent "${input.agentName}" is not declared and enabled in kortix.yaml`);
   }
+  const runtimeModel = runtimeModelForHarness(input.runtimeModel, acpAgent?.harness);
 
   return {
     KORTIX_REPO_URL: input.repoUrl,
@@ -52,7 +77,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           KORTIX_RUNTIME_NAME: acpAgent!.runtime,
           KORTIX_RUNTIME_HARNESS: acpAgent!.harness,
           KORTIX_RUNTIME_CONFIG_DIR: compiled.runtimes[acpAgent!.runtime].configDir,
-          ...(input.runtimeModel ? { KORTIX_RUNTIME_MODEL: input.runtimeModel } : {}),
+          ...(runtimeModel ? { KORTIX_RUNTIME_MODEL: runtimeModel } : {}),
           ...(acpAgent!.nativeAgent ? { KORTIX_NATIVE_AGENT: acpAgent!.nativeAgent } : {}),
         }
       : {}),

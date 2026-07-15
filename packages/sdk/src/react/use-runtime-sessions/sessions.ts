@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useCurrentRuntime } from '../use-current-runtime';
@@ -81,6 +81,21 @@ export function useRuntimeSession(sessionId: string) {
       return sessions?.find((s) => s.id === sessionId);
     },
   });
+}
+
+/**
+ * Seed the per-session cache with a just-created row so the instant shell
+ * renders the real bound agent immediately instead of flashing a default
+ * agent/model until the `/start` poll answers. Every create-then-navigate
+ * flow should call this with the create response.
+ */
+export function seedCreatedRuntimeSession(
+  queryClient: QueryClient,
+  session: ProjectSession,
+): Session {
+  const view = projectSessionToLegacyView(session);
+  queryClient.setQueryData(runtimeKeys.session(view.id), view);
+  return view;
 }
 
 export function useCreateRuntimeSession() {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildSessionRuntimeEnv, runtimeModelForHarness } from './session-runtime-env';
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -9,6 +9,60 @@ const BASE_INPUT = {
   agentName: 'default',
   apiUrl: 'https://api.kortix.test/v1',
 };
+
+const CLAUDE_PLAN = {
+  kind: 'acp',
+  version: 3,
+  defaultAgent: 'claude',
+  runtimes: { claude: { name: 'claude', harness: 'claude', configDir: '.claude' } },
+  agents: {
+    claude: {
+      name: 'claude', runtime: 'claude', harness: 'claude', nativeAgent: null, enabled: true,
+      connectors: 'none', secrets: 'none', skills: 'none', kortixCli: 'none', workspace: 'runtime',
+    },
+  },
+} as const;
+
+describe('runtimeModelForHarness', () => {
+  test('strips the kortix/ gateway namespace for non-opencode harnesses', () => {
+    expect(runtimeModelForHarness('kortix/claude-opus-4.8', 'claude')).toBe('claude-opus-4.8');
+    expect(runtimeModelForHarness('kortix/gpt-5.4', 'codex')).toBe('gpt-5.4');
+    expect(runtimeModelForHarness('kortix/glm-5.2', 'pi')).toBe('glm-5.2');
+  });
+
+  test('keeps the provider-qualified id for opencode (its config declares the provider)', () => {
+    expect(runtimeModelForHarness('kortix/claude-opus-4.8', 'opencode')).toBe('kortix/claude-opus-4.8');
+  });
+
+  test('non-kortix ids pass through untouched (real upstream ids may contain slashes)', () => {
+    expect(runtimeModelForHarness('openai/gpt-5.4', 'codex')).toBe('openai/gpt-5.4');
+    expect(runtimeModelForHarness('claude-sonnet-4-6', 'claude')).toBe('claude-sonnet-4-6');
+    expect(runtimeModelForHarness('  ', 'claude')).toBeNull();
+    expect(runtimeModelForHarness(null, 'claude')).toBeNull();
+  });
+});
+
+describe('buildSessionRuntimeEnv — model + sentinel translation', () => {
+  test('a kortix-namespaced pick reaches a claude harness as the bare model id', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      agentName: 'claude',
+      compiledRuntimeConfig: CLAUDE_PLAN,
+      runtimeModel: 'kortix/claude-opus-4.8',
+    });
+    expect(env.KORTIX_RUNTIME_MODEL).toBe('claude-opus-4.8');
+  });
+
+  test("the 'default' sentinel resolves to the compiled default agent instead of throwing", () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      agentName: 'default',
+      compiledRuntimeConfig: CLAUDE_PLAN,
+    });
+    expect(env.KORTIX_RUNTIME_HARNESS).toBe('claude');
+    expect(env.KORTIX_RUNTIME_NAME).toBe('claude');
+  });
+});
 
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project — byte-for-byte unaffected', () => {

@@ -1,7 +1,7 @@
 'use client';
 
 /** Canonical ACP-only Kortix project-session lifecycle hook. */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
@@ -14,7 +14,9 @@ import {
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
 import { setRuntimeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
+import type { Session } from '../runtime/wire-types';
 import { useAcpSession } from './use-acp-session';
+import { runtimeKeys } from './use-runtime-sessions/keys';
 import { useRuntimePhase } from './use-runtime-phase';
 
 export type SessionPhase = 'starting' | 'ready' | 'error';
@@ -63,6 +65,12 @@ export interface UseSessionOptions {
 
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
   const { waitMs = 15_000, enabled = true, replayStartStash = true } = options;
+  // The create-then-navigate flows seed the created row here (see
+  // seedCreatedRuntimeSession) — its bound agent bridges the gap until the
+  // first `/start` poll answers, so the composer never flashes a default
+  // agent/model that isn't this session's.
+  const queryClient = useQueryClient();
+  const seededSession = queryClient.getQueryData<Session>(runtimeKeys.session(sessionId));
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId, sessionId, waitMs),
@@ -115,9 +123,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     runtimeProtocol: 'acp' as const,
-    /** The immutable agent this project session is bound to (from `/start`), if
-     *  known yet — used to lock the composer's agent/harness selectors. */
-    agentName: startData?.agent_name ?? null,
+    /** The immutable agent this project session is bound to (from `/start`,
+     *  seeded from the create response before that answers) — used to lock the
+     *  composer's agent/harness selectors. */
+    agentName: startData?.agent_name ?? seededSession?.agent ?? null,
     runtimeId: startData?.runtime_id ?? null,
     runtimeSessionId: acp.runtimeSessionId ?? startData?.runtime_session_id ?? null,
     acp,
