@@ -663,6 +663,32 @@ describe('deriveOutputs — titles (W3)', () => {
   });
 });
 
+describe('deriveOutputs — app titles (W3)', () => {
+  it('a shown app keeps its human title and description as first-class fields', () => {
+    const parts = [
+      partOf('show', 'c1', {
+        url: 'http://localhost:3000',
+        title: 'Dashboard',
+        description: 'Live metrics view',
+      }),
+    ];
+    const [item] = deriveOutputs(parts);
+    expect(item.kind).toBe('app');
+    expect(item.title).toBe('Dashboard');
+    expect(item.description).toBe('Live metrics view');
+    // `name` stays exactly what it was: the title when one exists.
+    expect(item.name).toBe('Dashboard');
+  });
+
+  it('a shown app with no title/description leaves both undefined', () => {
+    const [item] = deriveOutputs([partOf('show', 'c1', { url: 'http://localhost:5173' })]);
+    expect(item.kind).toBe('app');
+    expect(item.title).toBeUndefined();
+    expect(item.description).toBeUndefined();
+    expect(item.name).toBe('localhost:5173');
+  });
+});
+
 describe('deriveOutputs — last-write-wins + normalized keys (W11)', () => {
   it('re-writing the same path replaces the row and keeps ONE item, keyed to the later call', () => {
     const parts = [

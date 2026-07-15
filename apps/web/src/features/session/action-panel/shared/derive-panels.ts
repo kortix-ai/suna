@@ -285,7 +285,9 @@ interface ShowPayload {
 /** A single shown thing → the row it becomes, or null if there's nothing to open. */
 function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
-  if (url && /^https?:\/\//i.test(url)) return appOutput(url, payload.title, callID);
+  if (url && /^https?:\/\//i.test(url)) {
+    return appOutput(url, payload.title, payload.description, callID);
+  }
 
   const path = typeof payload.path === 'string' ? payload.path.trim() : '';
   // No path and no URL: a string, an inline chunk of text, an error message.
@@ -371,8 +373,17 @@ function parseShowItems(raw: unknown): ShowPayload[] {
  * number is the fallback name, never the first choice — `localhost:3000` means
  * nothing to someone who has never run a server.
  */
-function appOutput(url: string, rawTitle: unknown, callID: string): AppOutputItem {
+function appOutput(
+  url: string,
+  rawTitle: unknown,
+  rawDescription: unknown,
+  callID: string,
+): AppOutputItem {
   const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+  const description =
+    typeof rawDescription === 'string' && rawDescription.trim()
+      ? rawDescription.trim()
+      : undefined;
 
   let fallback = url;
   try {
@@ -382,7 +393,14 @@ function appOutput(url: string, rawTitle: unknown, callID: string): AppOutputIte
     // A URL we can't parse still opens fine — just show it as-is.
   }
 
-  return { callID, name: title || fallback, kind: 'app', url };
+  return {
+    callID,
+    name: title || fallback,
+    title: title || undefined,
+    description,
+    kind: 'app',
+    url,
+  };
 }
 
 /**
