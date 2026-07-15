@@ -42,7 +42,6 @@ import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions'
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
-import { featureFlags } from '@kortix/sdk/feature-flags';
 import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
@@ -122,7 +121,7 @@ export function ModelSelector({
   selectedModel,
   onSelect,
   defaultControls,
-  unsetLabel = 'No model',
+  unsetLabel = 'Default',
   disabled = false,
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -176,10 +175,15 @@ export function ModelSelector({
     freeTier: llmGatewayEnabled && freeTier,
   });
 
+  // Automatic — the recommended-default row. Canonical for gateway projects
+  // (not an experiment flag): the backend resolves an unset model to
+  // managed-auto, so "no explicit pick" and the AUTO model are the same state
+  // and both render as Automatic.
+  const autoAvailable = llmGatewayEnabled && !freeTier;
   const isAutoSelected =
-    featureFlags.enableAutoModel &&
-    selectedModel?.providerID === 'kortix' &&
-    selectedModel?.modelID === AUTO_MODEL_ID;
+    autoAvailable &&
+    (!selectedModel ||
+      (selectedModel.providerID === 'kortix' && selectedModel.modelID === AUTO_MODEL_ID));
 
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
@@ -268,10 +272,10 @@ export function ModelSelector({
   // still selected.
   const autoModel = useMemo(
     () =>
-      featureFlags.enableAutoModel && llmGatewayEnabled && !freeTier
+      autoAvailable
         ? baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID)
         : undefined,
-    [baseModels, llmGatewayEnabled, freeTier],
+    [baseModels, autoAvailable],
   );
 
   // ── Handlers ──
@@ -339,7 +343,9 @@ export function ModelSelector({
           {/* Context header — the resolved connection in plain words. Muted,
               not clickable; omitted once more than one group is visible. */}
           {contextLine ? (
-            <div className="text-muted-foreground border-b px-4 py-2 text-xs">{contextLine}</div>
+            <div className="text-muted-foreground/70 border-b px-4 pt-2.5 pb-2 text-[11px] font-medium tracking-wide">
+              {contextLine}
+            </div>
           ) : null}
 
           {showSearch ? (
@@ -393,19 +399,23 @@ export function ModelSelector({
                       <CommandGroup
                         key={group.providerID}
                         heading={
-                          <div className="flex items-center gap-2">
-                            <ProviderLogo
-                              providerID={group.providerID}
-                              name={group.providerName}
-                              size="small"
-                            />
-                            <span className="flex-1">
-                              {PROVIDER_LABELS[group.providerID] || group.providerName}
-                            </span>
-                            <span className="text-muted-foreground/30 text-xs normal-case tracking-normal">
-                              {group.models.length}
-                            </span>
-                          </div>
+                          // The context header already names a lone connection —
+                          // repeating it as a group heading reads twice.
+                          contextLine && grouped.length === 1 ? undefined : (
+                            <div className="flex items-center gap-2">
+                              <ProviderLogo
+                                providerID={group.providerID}
+                                name={group.providerName}
+                                size="small"
+                              />
+                              <span className="flex-1">
+                                {PROVIDER_LABELS[group.providerID] || group.providerName}
+                              </span>
+                              <span className="text-muted-foreground/30 text-xs normal-case tracking-normal">
+                                {group.models.length}
+                              </span>
+                            </div>
+                          )
                         }
                         forceMount
                       >
@@ -449,9 +459,11 @@ export function ModelSelector({
                                 >
                                   {model.modelName}
                                 </div>
-                                <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                                  {displayModelID}
-                                </p>
+                                {search ? (
+                                  <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                                    {displayModelID}
+                                  </p>
+                                ) : null}
                               </div>
                               {isFree && <Tag variant="free">Free</Tag>}
                               {isSelected && <Check className="text-foreground shrink-0" />}
