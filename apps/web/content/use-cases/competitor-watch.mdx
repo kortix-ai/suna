@@ -46,11 +46,6 @@ fetches the competitor pages we track, compares them against the previous run's
 snapshot, and writes a short summary of what changed to Slack. Cosmetic edits are
 filtered out; pricing moves, new features, and messaging changes are called out.
 
-<Figure
-  caption="The daily competitor summary posted to Slack"
-  aspect="16/9"
-/>
-
 ## How it works
 
 <Steps>
@@ -121,11 +116,6 @@ Even a read-only agent runs with the same controls as the rest of the platform:
 - **Everything is code.** The watch list, the pages to check, and the definition
   of a meaningful change are files in the repo — versioned and changed through a
   reviewed **change request** rather than a dashboard setting.
-
-<Figure
-  caption="A pricing-page change flagged in the daily diff"
-  aspect="16/9"
-/>
 
 ## The outcome
 

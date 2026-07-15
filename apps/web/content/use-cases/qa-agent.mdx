@@ -46,11 +46,6 @@ suite, a deployable test environment, and the Cloudflare edge in front of it. Th
 agent checks out the change, runs the suite, exercises the new behavior on a live
 deploy, and posts a pass/fail result on the PR.
 
-<Figure
-  caption="The QA agent posting its result as a PR check"
-  aspect="16/9"
-/>
-
 ## How it works
 
 <Steps>
@@ -128,11 +123,6 @@ scoped and contained:
 - **Everything is code.** The agent's configuration, skills, and permissions are
   files in the repo, versioned and changed through a reviewed **change request**
   rather than a dashboard setting.
-
-<Figure
-  caption="A red QA result with the failing command and repro steps attached"
-  aspect="16/9"
-/>
 
 ## The outcome
 

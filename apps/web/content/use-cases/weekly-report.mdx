@@ -49,11 +49,6 @@ and permission to post to one Slack channel. The agent runs the metric queries,
 compares them against the prior weeks, writes commentary on what moved, and posts
 the report to Slack. It cannot write to the database.
 
-<Figure
-  caption="The reporting agent posting the weekly metrics report to Slack"
-  aspect="16/9"
-/>
-
 ## How it works
 
 <Steps>
@@ -127,11 +122,6 @@ The agent reads production data, so the access is scoped and contained:
 - **Everything is code.** The agent's configuration, skills, and permissions are
   files in the repo, versioned and changed through a reviewed **change request**
   rather than a dashboard setting.
-
-<Figure
-  caption="The weekly report in Slack with commentary on what moved"
-  aspect="16/9"
-/>
 
 ## The outcome
 
