@@ -86,12 +86,19 @@ export const EasyPanel = memo(function EasyPanel({
   // longer rendered. A transcript of tool calls is an audit trail, and that lives
   // in Advanced mode.
   const plan = useMemo(() => derivePlan(parts), [parts]);
-  // The latest run's wall-clock, not the session's lifetime sum — "6 of 6 done
-  // · 3h 40m" across a week of runs answers a question nobody asked (W11).
-  const elapsedMs = useMemo(() => {
-    const latest = groupSteps(collectAllToolParts(latestRunMessages(messages)));
-    return latest.reduce((total, step) => total + (step.durationMs ?? 0), 0);
-  }, [messages]);
+  // The latest run's own steps, not the session's — shared by `elapsedMs`
+  // (the run's wall-clock, not the session's lifetime sum: "6 of 6 done ·
+  // 3h 40m" across a week of runs answers a question nobody asked, W11) AND
+  // `outcome` below (a text-only turn must never inherit a verdict from an
+  // old errored run further back in the session).
+  const latestSteps = useMemo(
+    () => groupSteps(collectAllToolParts(latestRunMessages(messages))),
+    [messages],
+  );
+  const elapsedMs = useMemo(
+    () => latestSteps.reduce((total, step) => total + (step.durationMs ?? 0), 0),
+    [latestSteps],
+  );
 
   // A running app is not "one of" the outputs — it's the thing the user asked
   // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
@@ -272,8 +279,8 @@ export const EasyPanel = memo(function EasyPanel({
   );
 
   const outcome = useMemo(
-    () => deriveRunOutcome(messages, steps[steps.length - 1]?.status),
-    [messages, steps],
+    () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),
+    [messages, latestSteps],
   );
 
   // Auto-expand Outputs the moment a run finishes with something to show —

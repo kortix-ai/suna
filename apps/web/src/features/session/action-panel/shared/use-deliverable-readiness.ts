@@ -27,7 +27,7 @@ import {
 } from './deliverable-readiness';
 import { deriveOutputs } from './derive-panels';
 import { groupSteps } from './group-steps';
-import { latestRunCallIds } from './latest-run';
+import { latestRunCallIds, latestRunMessages } from './latest-run';
 import { selectPrimaryDeliverable } from './output-priority';
 import { deriveRunOutcome } from './run-outcome';
 
@@ -75,7 +75,11 @@ export function useDeliverableReadiness(
     // (which won't re-run on this render if pendingForSession didn't change).
     if (completionYieldsToPendingInput(pendingForSession)) return;
 
-    const outcome = deriveRunOutcome(messages, steps[steps.length - 1]?.status);
+    // Scoped to the latest run's own steps, not the session's — otherwise a
+    // text-only turn after an old errored write reads as failed forever
+    // (the session-wide last step never moves off 'error').
+    const latestSteps = groupSteps(collectAllToolParts(latestRunMessages(messages)));
+    const outcome = deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status);
     const outputs = deriveOutputs(parts, { latestRun: latestRunCallIds(messages) });
     const freshDeliverables = outputs.filter((o) => o.fresh);
     const primary = selectPrimaryDeliverable(
