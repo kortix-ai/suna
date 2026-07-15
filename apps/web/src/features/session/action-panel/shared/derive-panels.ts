@@ -37,6 +37,15 @@ type ArtifactOutputItem = OutputItemBase & {
   kind: 'file' | 'image' | 'video' | 'presentation';
   path?: string;
   url?: never;
+  /**
+   * The live deck's name, as `presentation_gen` knows it — the argument
+   * `usePresentationViewerStore.openPresentation(presentationName, sandboxUrl)`
+   * needs (W14's Present action). Only ever set from the `create` branch below
+   * (a real presentation_gen call), never from a `show`ed `.pptx` FILE: that's
+   * a static binary with no metadata.json/slide-html deck behind it for the
+   * fullscreen viewer to load, so Present must not offer it one.
+   */
+  presentationName?: string;
 };
 
 type AppOutputItem = OutputItemBase & {
@@ -49,6 +58,7 @@ type AppOutputItem = OutputItemBase & {
    * output they actually wanted is the one they can't reach.
    */
   url: string;
+  presentationName?: never;
 };
 
 export type OutputItem = ArtifactOutputItem | AppOutputItem;
@@ -262,7 +272,11 @@ export function deriveOutputs(
       const kind = createArtifactKind(part);
       if (!kind) continue;
       const { name, path } = createArtifactName(part);
-      push({ callID: part.callID, name, path, kind });
+      const presentationName =
+        kind === 'presentation'
+          ? parsePresentationOutput(rawOutputOf(part))?.presentation_name
+          : undefined;
+      push({ callID: part.callID, name, path, kind, presentationName });
     }
   }
 

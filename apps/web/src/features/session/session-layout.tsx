@@ -31,8 +31,20 @@ import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type * as ResizablePrimitive from 'react-resizable-panels';
+
+// The fullscreen deck viewer (W14's Present action) was, until now, mounted
+// ONLY on the public share page — session routes had no host for it at all.
+// Lazy + Suspense, matching SharePageWrapper: it pulls in pptx export/upload
+// machinery nobody needs until someone actually clicks Present, and it
+// renders nothing (`null`) whenever the store's `isOpen` is false, so an
+// unconditional mount here costs the session route nothing until then.
+const PresentationViewerWrapper = lazy(() =>
+  import('@/stores/presentation-viewer-store').then((mod) => ({
+    default: mod.PresentationViewerWrapper,
+  })),
+);
 
 interface SessionLayoutProps {
   sessionId: string;
@@ -335,6 +347,9 @@ export const SessionLayout = memo(function SessionLayout({
             <div className="min-h-0 flex-1 overflow-hidden">{effectivePanelBody}</div>
           </DrawerContent>
         </Drawer>
+        <Suspense fallback={null}>
+          <PresentationViewerWrapper />
+        </Suspense>
       </div>
     );
   }
@@ -402,6 +417,9 @@ export const SessionLayout = memo(function SessionLayout({
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
+        <Suspense fallback={null}>
+          <PresentationViewerWrapper />
+        </Suspense>
       </div>
     </SessionWallpaperLayerContext.Provider>
   );

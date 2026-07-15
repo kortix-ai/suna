@@ -29,7 +29,15 @@ import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { Check, Copy, FileWarning, Maximize2, MessageSquarePlus, Minimize2 } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  FileWarning,
+  Maximize2,
+  MessageSquarePlus,
+  Minimize2,
+  Presentation,
+} from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { CloseButton } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
@@ -60,6 +68,7 @@ function PreviewShell({
   path,
   onClose,
   onAskForChanges,
+  onPresent,
   actions,
   children,
 }: {
@@ -76,6 +85,11 @@ function PreviewShell({
    *  detail (W12). Omitted entirely (not disabled) where there's no session
    *  composer to hand it to. */
   onAskForChanges?: () => void;
+  /** Opens this deck full-screen in the fullscreen presentation viewer (W14).
+   *  Present, not download-then-view: the deck already renders live off the
+   *  sandbox. Omitted entirely (not disabled) for anything that isn't a
+   *  presentation_gen deck. */
+  onPresent?: () => void;
   /** Extra toolbar controls specific to one preview state — rendered before
    *  Download, after the "ask for changes" control. */
   actions?: React.ReactNode;
@@ -95,6 +109,19 @@ function PreviewShell({
           <span className="text-foreground truncate text-sm font-medium">{name}</span>
         </span>
         <span className="flex shrink-0 items-center gap-0.5">
+          {onPresent && (
+            <Hint label="Present" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Present"
+                onClick={onPresent}
+                className="size-7 active:scale-[0.96]"
+              >
+                <Presentation className="size-3.5" />
+              </Button>
+            </Hint>
+          )}
           {onAskForChanges && (
             <Hint label="Ask for changes" side="bottom">
               <Button
@@ -224,6 +251,7 @@ export function FilePreview({
   fileName = name,
   onClose,
   onAskForChanges,
+  onPresent,
 }: {
   path: string;
   /** The display name shown in the toolbar — a human title when the output
@@ -241,6 +269,9 @@ export function FilePreview({
    *  detail (W12). Omitted entirely (not disabled) where there's no session
    *  composer to hand it to. */
   onAskForChanges?: () => void;
+  /** Opens this deck full-screen in the presentation viewer (W14). Omitted
+   *  entirely (not disabled) for anything that isn't a presentation_gen deck. */
+  onPresent?: () => void;
 }) {
   const rich = RICH_CATEGORIES.has(getFileCategory(fileName));
 
@@ -262,6 +293,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
+        onPresent={onPresent}
       >
         <FileSourceProvider value={workspaceFileSource}>
           <FileContentRenderer filePath={path} showHeader={false} className="h-full" />
@@ -278,6 +310,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
+        onPresent={onPresent}
       >
         <Centered>
           <Loading />
@@ -294,6 +327,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
+        onPresent={onPresent}
       >
         <Centered>
           <FileWarning className="size-5" />
@@ -319,6 +353,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onAskForChanges={onAskForChanges}
+        onPresent={onPresent}
         actions={isImage && <CopyImageButton mimeType={data.mimeType!} base64={data.content} />}
       >
         {isImage ? (

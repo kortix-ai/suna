@@ -222,6 +222,29 @@ describe('deriveOutputs', () => {
     expect(out[0].name).not.toBe('Presentation Gen');
   });
 
+  // ─── W14: Present mode needs to know WHICH deck to hand to the fullscreen
+  // viewer (openPresentation(presentationName, sandboxUrl)) — the deck name is
+  // only ever available on the tool's OUTPUT payload, never guaranteed on the
+  // input, so this is read the same way createArtifactName already reads it. ──
+
+  it('carries presentationName on a completed presentation_gen output so Present mode knows which deck to open', () => {
+    const out = deriveOutputs([
+      part(
+        'presentation_gen',
+        { action: 'create_slide' },
+        { output: JSON.stringify({ success: true, presentation_name: 'Pitch' }) },
+      ),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].presentationName).toBe('Pitch');
+  });
+
+  it('leaves presentationName unset for non-presentation outputs', () => {
+    const out = deriveOutputs([part('write', { filePath: '/a/report.md' })]);
+    expect(out).toHaveLength(1);
+    expect(out[0].presentationName).toBeUndefined();
+  });
+
   it('names an image_gen generate output something other than "Image Gen"', () => {
     const out = deriveOutputs([
       part('image_gen', { action: 'generate', prompt: 'a red panda in a garden' }),

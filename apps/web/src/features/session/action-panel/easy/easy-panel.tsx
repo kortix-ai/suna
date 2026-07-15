@@ -19,6 +19,7 @@
  * and the Context card's "Files read" bucket.
  */
 
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import {
   useClearFocusedToolCall,
@@ -26,8 +27,10 @@ import {
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { FileText } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
@@ -131,6 +134,19 @@ export const EasyPanel = memo(function EasyPanel({
   // another detail, so Back behaves identically wherever you came from.
   const [detail, setDetail] = useState<Detail | null>(null);
 
+  // Present mode (W14): the fullscreen deck viewer fetches its own slide/
+  // metadata URLs (it calls useSandboxProxy() itself — see
+  // FullScreenPresentationViewer), so `sandboxUrl` only has to be a truthy
+  // proxied base URL the viewer can build its PDF/PPTX export and Google
+  // Slides upload requests against (`${sandboxUrl}/presentation/convert-to-*`
+  // — the /presentation router the sandbox agent server mounts at its root,
+  // i.e. Kortix Master, port 8000). It is never a raw sandbox host: the old
+  // daytona-style "sandbox_url" this component was written against
+  // (apps/web/src/types/project.ts) doesn't exist in the opencode/proxy
+  // architecture Easy mode runs on — every sandbox surface here (AppPreview,
+  // browser/desktop tabs) reaches its port through this same proxy.
+  const { getServiceUrl } = useSandboxProxy();
+
   /**
    * Opening an output shows the THING, not the machinery around it: a running
    * app opens as the app, a file opens as that one file — never the file
@@ -168,6 +184,21 @@ export const EasyPanel = memo(function EasyPanel({
           .setPrefill(sessionId, `In ${displayName}${pathHint}, `);
         setDetail(null);
       };
+
+      // Present (W14): only for outputs derive-panels.ts tagged with a real
+      // deck name (a presentation_gen create/export call — never a `show`n
+      // .pptx FILE, which has no metadata.json/slide-html behind it).
+      const present =
+        output.kind === 'presentation' && output.presentationName
+          ? () => {
+              const kortixMasterPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
+              const sandboxBaseUrl = getServiceUrl(kortixMasterPort)?.replace(/\/+$/, '');
+              if (!sandboxBaseUrl) return;
+              usePresentationViewerStore
+                .getState()
+                .openPresentation(output.presentationName!, sandboxBaseUrl);
+            }
+          : undefined;
 
       const openable = (siblings ?? []).filter((s) => s.path || s.url);
       const { prev, next, position } =
@@ -217,11 +248,12 @@ export const EasyPanel = memo(function EasyPanel({
             fileName={output.name}
             onClose={() => setDetail(null)}
             onAskForChanges={askForChanges}
+            onPresent={present}
           />
         ),
       });
     },
-    [sessionId],
+    [sessionId, getServiceUrl],
   );
 
   const outcome = useMemo(
