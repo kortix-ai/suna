@@ -1001,6 +1001,18 @@ export default function DebugToolsPage() {
               />
             </div>
           </div>
+          {/* Same FAILED_MESSAGES data through Advanced mode — this is where
+              the errored write step's real narration ("Couldn't write
+              budget.csv") is visible; Easy mode deliberately never surfaces
+              raw step text, only the settled outcome banner (W7). */}
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Advanced — same failed run
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <AdvancedPanel sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
+            </div>
+          </div>
           <div>
             <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
               Easy — stopped by you (W7)
