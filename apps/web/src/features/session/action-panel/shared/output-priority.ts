@@ -70,3 +70,19 @@ export function sortOutputs(outputs: OutputItem[]): OutputItem[] {
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((entry) => entry.output);
 }
+
+/**
+ * THE deliverable — the one thing worth presenting unprompted when a run
+ * finishes (W2). A live app beats every file: it's the thing the user asked
+ * for by name. Files fall back to the same order the Outputs card shows.
+ * Null when nothing is actually openable — auto-presenting a dead row would
+ * open a detail that can't render anything.
+ */
+export function selectPrimaryDeliverable(
+  apps: OutputItem[],
+  files: OutputItem[],
+): OutputItem | null {
+  const app = apps.find((a) => a.url);
+  if (app) return app;
+  return sortOutputs(files).find((f) => f.path) ?? null;
+}

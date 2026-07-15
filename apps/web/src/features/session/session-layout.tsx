@@ -8,6 +8,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
+import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
@@ -98,6 +99,10 @@ export const SessionLayout = memo(function SessionLayout({
   // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
   const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
   const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+
+  // W1/W9 — announce finished deliverables and blocked-on-you states while the
+  // panel is closed. Headless: writes the ready chip; the header renders it.
+  useDeliverableReadiness(sessionId, messages, isSessionBusy);
 
   // Easy mode is only ever the card home — the other views are engineer
   // surfaces reached through the (hidden) tab strip. Force the view and skip

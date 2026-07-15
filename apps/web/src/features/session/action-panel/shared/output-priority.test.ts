@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from './derive-panels';
-import { sortOutputs } from './output-priority';
+import { selectPrimaryDeliverable, sortOutputs } from './output-priority';
 
 /** A file output — never an app, which lives in its own card and is never sorted here. */
 type FileKind = Exclude<OutputItem['kind'], 'app'>;
@@ -79,5 +79,25 @@ describe('sortOutputs', () => {
 
   it('handles an empty list', () => {
     expect(sortOutputs([])).toEqual([]);
+  });
+});
+
+describe('selectPrimaryDeliverable (W2)', () => {
+  const app = { callID: 'a', name: 'Dashboard', kind: 'app' as const, url: 'http://localhost:3000' };
+  const pdf = { callID: 'f', name: 'report.pdf', kind: 'file' as const, path: 'report.pdf' };
+  const css = { callID: 'g', name: 'globals.css', kind: 'file' as const, path: 'globals.css' };
+
+  test('a live app outranks every file', () => {
+    expect(selectPrimaryDeliverable([app], [pdf])).toBe(app);
+  });
+
+  test('no app → the top-ranked file', () => {
+    expect(selectPrimaryDeliverable([], [css, pdf])).toBe(pdf);
+  });
+
+  test('nothing openable → null', () => {
+    expect(selectPrimaryDeliverable([], [])).toBeNull();
+    const noPath = { callID: 'x', name: 'Image', kind: 'image' as const };
+    expect(selectPrimaryDeliverable([], [noPath])).toBeNull();
   });
 });
