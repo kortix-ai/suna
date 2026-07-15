@@ -35,7 +35,9 @@ import {
 import { errorToast } from '@/components/ui/toast';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts, provisionProject } from '@kortix/sdk/projects-client';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
@@ -100,6 +102,10 @@ export function AddToProjectModal({
   const onConfirm = async () => {
     if (busy) return;
     setBusy(true);
+    // Tracked outside the try so the managed-git-unavailable catch below can
+    // still point at the right account even though it's only resolved in the
+    // NEW_PROJECT branch.
+    let resolvedAccountId: string | null = null;
     try {
       if (target === NEW_PROJECT) {
         const accounts = await listAccounts();
@@ -107,6 +113,7 @@ export function AddToProjectModal({
         // account is the one where the caller is the primary owner.
         const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
         if (!account) throw new Error('No account available to create a project in');
+        resolvedAccountId = account.account_id;
 
         const project = await provisionProject({
           account_id: account.account_id,
@@ -134,7 +141,30 @@ export function AddToProjectModal({
       onOpenChange(false);
       router.push(`/projects/${projectId}/sessions/${session_id}`);
     } catch (e) {
-      errorToast('Could not add to project', { description: (e as Error).message });
+      if (isManagedGitUnavailableError(e)) {
+        const gitSettingsAccountId =
+          resolvedAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+        errorToast("Managed git isn't set up on this server", {
+          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          ...(gitSettingsAccountId
+            ? {
+                button: (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onOpenChange(false);
+                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
+                    }}
+                  >
+                    Open Git settings
+                  </Button>
+                ),
+              }
+            : {}),
+        });
+      } else {
+        errorToast('Could not add to project', { description: (e as Error).message });
+      }
     } finally {
       setBusy(false);
     }

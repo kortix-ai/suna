@@ -29,6 +29,7 @@ import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
+import { GitHubAppSetupCard, useGitHubAppStatus } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
@@ -90,6 +91,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
+import { isBillingEnabled, isSingleAccountMode } from '@/lib/config';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -322,6 +324,11 @@ export default function AccountSettingsPage() {
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
+  // Lifted (rather than read only inside GitHubAppSetupCard) so the Git tab
+  // can also gate the cloud GitHubConnectionCard on it below — same query,
+  // same cache entry, so this doesn't add a second network round-trip.
+  const githubAppStatusQuery = useGitHubAppStatus(canWriteAccount === true);
+
   const prefersReducedMotion = useReducedMotion();
 
   if (authLoading || !user) {
@@ -336,22 +343,33 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
   const requestedTab: AccountSection =
     tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
+  // Self-host single-account mode: no teams, so member/group management has
+  // nothing to manage. Self-host billing-disabled: no Stripe/credit ledger
+  // to show — see isBillingEnabled() (mirrors the backend's
+  // KORTIX_BILLING_INTERNAL_ENABLED) instead of only checking permission.
+  const singleAccountMode = isSingleAccountMode();
+  const billingActive = isBillingEnabled();
+
   // Which rail items this caller can see. Mirrors the per-section gates the
   // content rendering applies below, so a deep link to a section the caller
   // can't use falls back to Members instead of an empty pane.
   const sectionVisible: Record<AccountSection, boolean> = {
-    members: true,
-    groups: true,
+    members: !singleAccountMode,
+    groups: !singleAccountMode,
     roles: canManageRoles === true,
-    identity: canWriteAccount === true,
-    billing: canWriteAccount === true,
-    transactions: canWriteAccount === true,
+    identity: canWriteAccount === true && !singleAccountMode,
+    billing: canWriteAccount === true && billingActive,
+    transactions: canWriteAccount === true && billingActive,
     git: canWriteAccount === true,
     tokens: canWriteAccount === true,
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
   };
-  const activeSection: AccountSection = sectionVisible[requestedTab] ? requestedTab : 'members';
+  const activeSection: AccountSection = sectionVisible[requestedTab]
+    ? requestedTab
+    : sectionVisible.members
+      ? 'members'
+      : 'settings';
   const paneMeta = PANE_META[activeSection];
   const navigate = (section: AccountSection) =>
     router.replace(`/accounts/${accountId}?tab=${section}`, { scroll: false });
@@ -565,7 +583,22 @@ export default function AccountSettingsPage() {
             ) : null}
 
             {activeSection === 'git' && canWriteAccount ? (
-              <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+              <div className="space-y-8">
+                {/* One coherent managed-git card covering all three setup
+                    methods (manifest App, pasted App, PAT) — rendered for any
+                    admin regardless of source. The cloud per-account
+                    installations card below is a DIFFERENT thing (per-account
+                    App installs on the hosted deployment) and only makes
+                    sense when managed-git itself is env-configured (source
+                    'env'); on self-host (source 'db' | 'pat' | 'none') it
+                    would just confusingly show "No connections yet" next to
+                    the card above, so it's hidden until the status query
+                    resolves to 'env'. */}
+                <GitHubAppSetupCard canManage={canWriteAccount} />
+                {githubAppStatusQuery.data?.source === 'env' ? (
+                  <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+                ) : null}
+              </div>
             ) : null}
 
             {/* Tokens — the machine-access surface: PAT lifecycle policy +

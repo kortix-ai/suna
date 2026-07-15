@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, FolderOpen, Plus, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import {
@@ -47,6 +47,7 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import { isSingleAccountMode } from '@/lib/config';
 import {
   addGroupMembers,
   deleteGroup,
@@ -108,7 +109,18 @@ export default function GroupDetailPage() {
     resourceId: groupId,
   }).allowed;
 
-  if (authLoading || !user) {
+  // Single-account deployments have no groups to manage — the account
+  // settings nav already hides the Groups tab (sectionVisible.groups in
+  // accounts/[id]/page.tsx), but this detail route is still directly
+  // linkable/bookmarkable. Bounce back to the account page instead of
+  // showing group-policy management that doesn't apply here.
+  useEffect(() => {
+    if (isSingleAccountMode() && accountId) {
+      router.replace(`/accounts/${accountId}`);
+    }
+  }, [accountId, router]);
+
+  if (authLoading || !user || isSingleAccountMode()) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 

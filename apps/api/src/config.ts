@@ -107,6 +107,21 @@ const envSchema = z.object({
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
   KORTIX_TEMPLATES_ENABLED:         optBoolTrue,
+  // Self-host single-account mode: this deployment is meant for exactly one
+  // account (no teams). Blocks POST /v1/accounts (creating additional
+  // accounts) with 403 — see registerAccountRoutes(). The frontend mirrors
+  // this with KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE to hide the "New account" UI.
+  // Off by default (cloud + multi-account self-host both need it false).
+  KORTIX_SINGLE_ACCOUNT_MODE:       optBoolFalse,
+  // Self-host enterprise license: when the operator has purchased/holds a
+  // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
+  // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
+  // audit access) regardless of the account's billing tier — see
+  // getAccountEntitlements()/accountHasEntitlement() in
+  // billing/services/entitlements.ts. Off by default; billing is irrelevant
+  // for a self-host license check, unlike the `demoEnterprise` per-account
+  // preview toggle this mirrors.
+  ENTERPRISE_LICENSE_AVAILABLE:     optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -251,6 +266,18 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // CLOUD-ONLY. Whether KORTIX's own managed model lineup (Claude/GLM/Qwen/
+  // DeepSeek/…, routed through Kortix's SHARED Bedrock/OpenRouter credentials
+  // and billed as platform credits — "Managed · Included with your plan" in
+  // the picker) exists at all on this deployment. Independent of
+  // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
+  // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
+  // must never see or route to Kortix's shared credentials. Off by default;
+  // Kortix Cloud sets this true in its own env. See RUNTIME_MANAGED_MODELS
+  // (managed-models.ts) and managedCandidates() (descriptors.ts) — both are
+  // gated on this and read NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY
+  // for managed routing when it's off.
+  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolFalse,
   // Fleet default for projects with no explicit per-project override. Defaults
   // ON: wherever the gateway is available (master switch above), the managed
   // gateway is the default routing mechanism and every project inherits it
@@ -608,6 +635,8 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
+  KORTIX_SINGLE_ACCOUNT_MODE: env.KORTIX_SINGLE_ACCOUNT_MODE,
+  ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
@@ -692,6 +721,7 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  KORTIX_MANAGED_PROVIDER_ENABLED: env.KORTIX_MANAGED_PROVIDER_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,

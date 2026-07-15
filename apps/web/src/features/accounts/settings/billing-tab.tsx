@@ -272,28 +272,33 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             </section>
           )}
 
-          <section className="space-y-4">
-            <Label>Billing portal</Label>
-            <div className="bg-popover rounded-md border px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-muted-foreground min-w-0 text-xs">
-                  Manage your subscription, payment methods, and invoices.
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 gap-1.5"
-                  onClick={handleManageSubscription}
-                  disabled={createPortalSessionMutation.isPending}
-                >
-                  {createPortalSessionMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : null}
-                  Manage billing
-                </Button>
+          {/* The Stripe billing portal doesn't exist without billing enabled
+              (self-host with KORTIX_BILLING_INTERNAL_ENABLED=false) — hide the
+              button rather than let it 404/error on click. */}
+          {isBillingEnabled() ? (
+            <section className="space-y-4">
+              <Label>Billing portal</Label>
+              <div className="bg-popover rounded-md border px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-muted-foreground min-w-0 text-xs">
+                    Manage your subscription, payment methods, and invoices.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 gap-1.5"
+                    onClick={handleManageSubscription}
+                    disabled={createPortalSessionMutation.isPending}
+                  >
+                    {createPortalSessionMutation.isPending ? (
+                      <Loading className="size-4 shrink-0" />
+                    ) : null}
+                    Manage billing
+                  </Button>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
         </>
       )}
     </div>

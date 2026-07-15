@@ -24,6 +24,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,13 +51,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Separator } from '@/components/ui/separator';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
-import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
   getMarketplaceItem,
   listMarketplaceItems,
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
+  getManagedGitStatus,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -68,6 +70,7 @@ import {
   type KortixProject,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
@@ -163,6 +166,20 @@ export const ProjectCreateModal = ({
     staleTime: 60_000,
     enabled: open,
   });
+
+  // Pre-check whether managed git (the "Create project" quick path, backed by
+  // POST /projects/provision) is usable BEFORE the user hits its 503 —
+  // self-host with no MANAGED_GIT_* configured is the primary case. Only
+  // gates 'managed'/'template' modes; the BYO GitHub import ('github' mode)
+  // doesn't depend on it. `configured` defaults true while loading so the
+  // form isn't disabled by a flash of "unavailable".
+  const managedGitStatusQuery = useQuery({
+    queryKey: ['managed-git-status'],
+    queryFn: getManagedGitStatus,
+    staleTime: 60_000,
+    enabled: open,
+  });
+  const managedGitUnavailable = managedGitStatusQuery.data?.configured === false;
   const accountSelection = useMemo(
     () => resolveCreateAccountSelection(accountsQuery.data, accountId, pickedAccountId),
     [accountsQuery.data, accountId, pickedAccountId],
@@ -279,6 +296,29 @@ export const ProjectCreateModal = ({
         } catch {
           // Fall through to the generic toast below.
         }
+      }
+      if (isManagedGitUnavailableError(error)) {
+        const gitSettingsAccountId =
+          effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+        errorToast("Managed git isn't set up on this server", {
+          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          ...(gitSettingsAccountId
+            ? {
+                button: (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      resetAndClose();
+                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
+                    }}
+                  >
+                    Open Git settings
+                  </Button>
+                ),
+              }
+            : {}),
+        });
+        return;
       }
       errorToast(error.message || 'Failed to create project');
     },
@@ -502,6 +542,20 @@ export const ProjectCreateModal = ({
                     )}
                   />
 
+                  {managedGitUnavailable ? (
+                    <InfoBanner tone="warning" title="Managed git isn't set up on this server">
+                      Ask your admin to configure GitHub, or{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2"
+                        onClick={switchToGitHubMode}
+                      >
+                        import an existing GitHub repo
+                      </button>{' '}
+                      instead.
+                    </InfoBanner>
+                  ) : null}
+
                   {cloningFromSource ? (
                     <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
                       <div className="flex items-start gap-3 px-3.5 py-3">
@@ -560,8 +614,9 @@ export const ProjectCreateModal = ({
                         variant="ghost"
                         size="sm"
                         className="gap-1.5"
-                        disabled={submitting}
+                        disabled={submitting || managedGitUnavailable}
                         onClick={switchToTemplateMode}
+                        title={managedGitUnavailable ? "Managed git isn't set up on this server" : undefined}
                       >
                         <Boxes className="size-4" />
                         Clone from a template
@@ -587,7 +642,7 @@ export const ProjectCreateModal = ({
                 <Button
                   type="submit"
                   className="w-full sm:w-auto"
-                  disabled={submitting || !effectiveAccountId}
+                  disabled={submitting || !effectiveAccountId || managedGitUnavailable}
                 >
                   {submitting ? <Loading /> : <Icon.Plus />}
                   {tHardcodedUi.raw(

@@ -1,5 +1,13 @@
 # Enterprise VPC on ECS — simplification refactor + A-to-Z deployment plan
 
+> **Superseded again (generic self-host refactor).** The single-EC2 appliance
+> this spec was superseded by (below) has itself since been replaced: `kortix
+> self-host` is now ONE generic Docker Compose system with no target flag, no
+> Terraform, no TUF/signing, no SSM — identical on a laptop, any VPS, or a
+> cloud VM. Read `docs/runbooks/self-hosting.md` and
+> `apps/web/content/docs/reference/self-hosting-architecture.mdx` for the
+> current design. Kept as design history.
+
 > **SUPERSEDED (2026-07-14) by
 > [`docs/specs/2026-07-14-enterprise-appliance.md`](2026-07-14-enterprise-appliance.md).**
 > The ECS/ALB/deployer runtime described below was replaced by a single-EC2, 100%
@@ -10,7 +18,8 @@
 > digest pinning, image mirroring, account pinning, secret generation, and the
 > `kortix self-host` CLI surface. Read the appliance spec for the current runtime,
 > `infra/terraform/modules/enterprise-vpc/README.md` for the module, and
-> `docs/runbooks/enterprise-vpc-deployment.md` for operations.
+> `docs/runbooks/enterprise-vpc-deployment.md` for operations (this runbook path
+> itself is gone — see the generic self-host note above).
 
 Date: 2026-07-14. Status: SUPERSEDED (runtime half). Supersedes the EKS-based
 deployment in `docs/specs/2026-07-13-enterprise-vpc-single-tenant-deployment.md`
@@ -139,7 +148,7 @@ project).
 - **WS-LIVE**: stop the zombie Step Functions execution on customer-zero; tear
   down the EKS-era stack; fresh A-to-Z `init → doctor → plan → deploy`;
   certify (authenticated app flow + agent turn on Bedrock + backup recovery
-  point); then Essentia (account 327903111249) from the same signed revision.
+  point); then the customer (account 327903111249) from the same signed revision.
 
 ## Certification checklist (per deployment)
 

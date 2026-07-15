@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, Eye, FolderOpen, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import { isSingleAccountMode } from '@/lib/config';
 import {
   listMemberGroups,
   listMemberProjectAccess,
@@ -53,6 +54,7 @@ function formatDate(iso: string | null | undefined) {
 }
 
 export default function MemberDetailPage() {
+  const router = useRouter();
   const params = useParams<{ id: string; userId: string }>();
   const accountId = params?.id;
   const memberUserId = params?.userId;
@@ -61,6 +63,18 @@ export default function MemberDetailPage() {
   const [grantConfirmOpen, setGrantConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
   const [viewAsOpen, setViewAsOpen] = useState(false);
+
+  // Single-account deployments have nothing to manage here — the account
+  // settings nav already hides the Members tab (see accounts/[id]/page.tsx's
+  // sectionVisible.members), but this detail route is still directly
+  // linkable/bookmarkable. Bounce back to the account page rather than
+  // showing a "team member" screen that doesn't apply to a single-user
+  // instance.
+  useEffect(() => {
+    if (isSingleAccountMode() && accountId) {
+      router.replace(`/accounts/${accountId}`);
+    }
+  }, [accountId, router]);
 
   const accountQuery = useQuery({
     queryKey: ['account', accountId],
@@ -107,7 +121,7 @@ export default function MemberDetailPage() {
   const canPromoteSuperAdmin = usePermission(accountId, 'member.super_admin.grant').allowed;
   void canPromoteSuperAdmin;
 
-  if (authLoading || !user) {
+  if (authLoading || !user || isSingleAccountMode()) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 

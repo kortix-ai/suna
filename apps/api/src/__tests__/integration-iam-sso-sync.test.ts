@@ -60,7 +60,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     supabaseSsoProviderId: SUPA_SSO,
     name: 'Azure AD',
-    primaryDomain: 'essentia-inc.com',
+    primaryDomain: 'acme-inc.com',
     groupClaimName: 'memberOf',
     autoCreateMembers: true,
   });
@@ -83,7 +83,7 @@ describe('Azure AD directory-sync → authorization', () => {
     // Denied before any login (no member, no group).
     expect(await canWrite(user)).toBe(false);
 
-    const out = await syncSsoMembership({ userId: user, email: 'jo@essentia-inc.com', jwtPayload: jwt([AAD_CLAIM]) });
+    const out = await syncSsoMembership({ userId: user, email: 'jo@acme-inc.com', jwtPayload: jwt([AAD_CLAIM]) });
     expect(out.skipped).toBe(false);
     expect(out.memberCreated).toBe(true);
     expect(out.groupsAdded).toEqual([MKT_GROUP]);
@@ -99,21 +99,21 @@ describe('Azure AD directory-sync → authorization', () => {
 
     // Entra removes the user from the group → claim disappears on next login →
     // membership revoked (syncSsoMembership busts the cache), access gone.
-    const out2 = await syncSsoMembership({ userId: user, email: 'jo@essentia-inc.com', jwtPayload: jwt([]) });
+    const out2 = await syncSsoMembership({ userId: user, email: 'jo@acme-inc.com', jwtPayload: jwt([]) });
     expect(out2.groupsRemoved).toEqual([MKT_GROUP]);
     expect(await canWrite(user)).toBe(false);
   });
 
   test('case-insensitive: Entra shipping a different casing still syncs the group', async () => {
     const user = crypto.randomUUID();
-    const out = await syncSsoMembership({ userId: user, email: 'al@essentia-inc.com', jwtPayload: jwt(['MARKETING-AAD']) });
+    const out = await syncSsoMembership({ userId: user, email: 'al@acme-inc.com', jwtPayload: jwt(['MARKETING-AAD']) });
     expect(out.groupsAdded).toEqual([MKT_GROUP]);
     expect(await canWrite(user)).toBe(true);
   });
 
   test('an unmapped claim value confers nothing (and still creates the member)', async () => {
     const user = crypto.randomUUID();
-    const out = await syncSsoMembership({ userId: user, email: 'sam@essentia-inc.com', jwtPayload: jwt(['Finance-AAD']) });
+    const out = await syncSsoMembership({ userId: user, email: 'sam@acme-inc.com', jwtPayload: jwt(['Finance-AAD']) });
     expect(out.memberCreated).toBe(true);
     expect(out.groupsAdded ?? []).toEqual([]);
     expect(await canWrite(user)).toBe(false);
@@ -123,7 +123,7 @@ describe('Azure AD directory-sync → authorization', () => {
     await db.update(accountSsoProviders).set({ autoCreateMembers: false }).where(eq(accountSsoProviders.accountId, ACCOUNT));
     try {
       const user = crypto.randomUUID();
-      const out = await syncSsoMembership({ userId: user, email: 'ghost@essentia-inc.com', jwtPayload: jwt([AAD_CLAIM]) });
+      const out = await syncSsoMembership({ userId: user, email: 'ghost@acme-inc.com', jwtPayload: jwt([AAD_CLAIM]) });
       expect(out.memberCreated).toBe(false);
       const rows = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, user)));
       expect(rows.length).toBe(0);
@@ -138,7 +138,7 @@ describe('Azure AD directory-sync → authorization', () => {
       const user = crypto.randomUUID();
       const claim = 'Engineering-AAD'; // not mapped by beforeAll — auto-provision must create it
 
-      const out = await syncSsoMembership({ userId: user, email: 'eng@essentia-inc.com', jwtPayload: jwt([claim]) });
+      const out = await syncSsoMembership({ userId: user, email: 'eng@acme-inc.com', jwtPayload: jwt([claim]) });
       expect(out.memberCreated).toBe(true);
 
       // A group named after the claim was auto-created with source 'sso'.
@@ -160,7 +160,7 @@ describe('Azure AD directory-sync → authorization', () => {
       expect(gm.length).toBe(1);
 
       // Idempotent: a second user with the same claim reuses the one group — no duplicate.
-      await syncSsoMembership({ userId: crypto.randomUUID(), email: 'eng2@essentia-inc.com', jwtPayload: jwt([claim]) });
+      await syncSsoMembership({ userId: crypto.randomUUID(), email: 'eng2@acme-inc.com', jwtPayload: jwt([claim]) });
       const groups = await db.select().from(accountGroups).where(and(eq(accountGroups.accountId, ACCOUNT), eq(accountGroups.name, claim)));
       expect(groups.length).toBe(1);
     } finally {

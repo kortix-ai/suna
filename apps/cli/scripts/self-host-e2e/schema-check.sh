@@ -91,7 +91,10 @@ PY
 ok "instance $INSTANCE (api port $API_PORT)"
 
 section "CLI Self-host Setup"
-$CLI self-host init --instance "$INSTANCE" >/dev/null
+# --allow-missing-secrets: init now enforces required secrets (managed-git /
+# Daytona / OpenRouter) and fails without them; this schema-only gate supplies
+# dummy creds via `env set` immediately below, so downgrade the gate to a warning.
+$CLI self-host init --instance "$INSTANCE" --allow-missing-secrets >/dev/null
 # Schema-only gate: this never provisions a sandbox. `self-host init` defaults
 # the provider to daytona, which makes env-validation require Daytona creds, so
 # supply dummy ones — they only need to be present for the API to boot; Daytona

@@ -72,53 +72,55 @@ One Kortix login can belong to many accounts (personal, a company account, …).
 
 ### Self-host
 
-`kortix self-host` manages two targets: a local Docker Compose stack
-(`--target docker`, the default for new instances) and a production Enterprise
-AWS VPC stack (`--target aws-vpc`). Existing Docker instances remain fully
-compatible.
+`kortix self-host` is one generic Docker-native system — no separate "target"
+to pick. `init` generates a `docker-compose.yml` + `.env` (plus a `Caddyfile`
+and `updater.sh` when a domain is configured) into
+`~/.config/kortix/self-host/<instance>/`, and `start` pulls the images and
+runs `docker compose up`. It's identical on a laptop, any VPS, or a cloud VM —
+there is no AWS profile, no Terraform, no TUF/signing, no SSM.
 
-For Docker, `start` creates config if needed, starts Supabase/API/web locally,
-and collects the Daytona sandbox key, managed GitHub access, and optional
-Pipedream connector integration. Local ports, generated secrets, and Docker
-defaults are handled automatically.
+`start` creates config if needed, starts Supabase/API/gateway/frontend
+locally, and collects the Daytona sandbox key, managed GitHub access, and
+optional Pipedream connector integration via the `configure` wizard. Local
+ports, generated secrets, and image tags are handled automatically. A public
+domain + TLS is opt-in: set `KORTIX_DOMAIN` (and optionally
+`KORTIX_API_DOMAIN`, default `api.<domain>`) via `env set` to turn on the
+bundled Caddy reverse proxy, which terminates TLS via ACME HTTP-01 on ports
+80/443 — leave it unset for the default loopback-port setup.
 
-For AWS VPC, `init --target aws-vpc` stores secret-free desired settings and the
-CLI materializes the reviewed Terraform roots plus signed enterprise updater
-assets. `init`, `configure`, `doctor`, and `plan` are non-mutating; `deploy`
-requires confirmation (or `--yes`) and migrates bootstrap state into customer
-S3. After bootstrap, `reconcile`, `update`, and `rollback` start the
-customer-owned updater workflow and cannot bypass TUF signature, digest,
-compatibility, account, Terraform-plan, migration, or health gates. The full
-operator runbook lives at `docs/runbooks/enterprise-vpc-deployment.md` in the
-repository.
+An always-present in-compose `kortix-updater` service (gated by
+`KORTIX_AUTO_UPDATE`, on by default) pulls the configured channel's images on
+an interval (`KORTIX_UPDATE_INTERVAL`, default daily) and rolls the stack
+forward when anything actually changed — `update`/`reconcile` just runs that
+same logic once, immediately. The full operator runbook lives at
+`docs/runbooks/self-hosting.md` in the repository, and the architecture is
+documented at [Self-hosting architecture](/docs/reference/self-hosting-architecture).
+
+For a bare Linux box (VPS/EC2), `scripts/kortix-selfhost-up.sh` installs
+Docker + the CLI and runs `init`/`start` for you — see the runbook.
 
 | Command | Effect |
 | --- | --- |
-| `kortix self-host init [--target docker\|aws-vpc]` | Create the self-host config with production defaults, without starting the target. |
-| `kortix self-host configure` | Re-run the target credential/config wizard. |
-| `kortix self-host doctor` | Validate local tools, credentials, and target access. Non-mutating. |
-| `kortix self-host plan` | Preview target changes without applying them. Non-mutating. |
-| `kortix self-host deploy` | Bootstrap or converge an AWS VPC target from a saved plan. |
-| `kortix self-host start` | Docker only: create config if needed, start the local stack, and register the `selfhost` host. |
-| `kortix self-host update [--tag <v> \| --release <v>]` | Docker: pull a newer image tag and recreate the stack in place. AWS VPC: start the signed updater for an immutable enterprise release. |
-| `kortix self-host reconcile` | Ask an AWS VPC target to converge to its configured release channel. |
-| `kortix self-host rollback --release <v>` | Roll an AWS VPC target back to a compatible signed release. |
-| `kortix self-host version` | Show the running version and image tags. |
-| `kortix self-host restart` | Docker only: restart the local stack. |
-| `kortix self-host status` | Show Docker Compose service status or AWS target health/deployment status. |
-| `kortix self-host open` | Open the local dashboard in your browser. |
+| `kortix self-host init` | Create or refresh the self-host config, without starting the stack. Non-mutating to a running stack. |
+| `kortix self-host configure` | Interactive wizard for integrations (Daytona, GitHub, Pipedream) and update policy (channel, auto-update, interval). |
+| `kortix self-host doctor` | Validate local Docker tooling and the rendered Compose config. Non-mutating. |
+| `kortix self-host start` | Create config if needed, start the stack, and register the `selfhost` host. |
+| `kortix self-host update [--tag <v> \| --channel stable\|latest]` | Pull the configured (or given) channel/tag's images and recreate the stack in place — migrates first, then rolls forward. |
+| `kortix self-host reconcile` | Alias for `update` — converge to the configured channel/version right now. |
+| `kortix self-host rollback --release <v>` | Roll back to an explicit older version (same mechanics as `update`, pinned). |
+| `kortix self-host version` | Show the running version, configured channel, and whether a newer release is available. |
+| `kortix self-host restart` | Restart the stack. |
+| `kortix self-host status` | Show Docker Compose service status. |
+| `kortix self-host open` | Open the dashboard in your browser. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
-| `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
-| `kortix self-host logs [service]` | Tail Docker Compose logs (Docker) or CloudWatch/SSM service logs (AWS VPC: `updater`, `supabase`, `app`, `watchdog`, `api`, `gateway`, `frontend`, `caddy`). |
-| `kortix self-host stop` | Docker only: stop the local stack. |
+| `kortix self-host env set KEY=VALUE …` | Update persistent env values (domain, integrations, update policy, …) before the next start. |
+| `kortix self-host logs [service]` | Tail Docker Compose logs. |
+| `kortix self-host stop` | Stop the stack. |
 
-Common target flags: `--instance`, `--target`, `--json`, and `--yes`. Docker
-adds `--tag`, `--local`, and `--registry`. AWS VPC adds `--release`,
-`--channel`, `--aws-profile`, `--region`, `--vpc-cidr`, `--api-domain`,
-`--frontend-domain`, `--route53-zone-id`, `--release-repository-url`,
-`--tuf-root-sha256`, `--updater-bootstrap-url`,
-`--updater-bootstrap-sha256`, `--release-publisher-account-id`,
-`--maintenance-window`, and `--force`.
+Common flags: `--instance <name>` (default `default`), `--tag <version>` /
+`--release <version>` (pin an explicit image tag), `--channel stable|latest`
+(default `stable`), `--auto-update on|off` (default `on`),
+`--update-interval <seconds>` (default `86400`), `--json`, and `--yes`.
 
 ### Projects
 
@@ -586,6 +588,6 @@ The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare pr
 
 ## What the CLI is not
 
-- **Not a separate runtime.** Use `kortix self-host start` for local Docker or `kortix self-host deploy --target aws-vpc` for Enterprise AWS VPC, then switch between Cloud and self-hosted APIs with `kortix hosts use`.
+- **Not a separate runtime.** Use `kortix self-host start` to run the generic Docker self-host stack (laptop, VPS, or cloud VM — all identical), then switch between Cloud and self-hosted APIs with `kortix hosts use`.
 - **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
 - **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

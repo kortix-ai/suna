@@ -1,5 +1,14 @@
 # Enterprise VPC (Single-Tenant, Kortix-Managed) Deployment
 
+> **Superseded by the generic self-host refactor.** The whole enterprise-VPC
+> lineage this spec started (EKS → ECS → single-EC2 appliance) has been
+> replaced: `kortix self-host` is now ONE generic Docker Compose system with no
+> target flag, no Terraform, no TUF/signing, no SSM — identical on a laptop,
+> any VPS, or a cloud VM. The BYOC thesis and account model here are kept as
+> history; read `docs/runbooks/self-hosting.md` and
+> `apps/web/content/docs/reference/self-hosting-architecture.mdx` for the
+> current design.
+
 > **Superseded (architecture).** The runtime/deploy architecture below — EKS +
 > Helm + External Secrets + Step Functions + CodeBuild + EventBridge + DynamoDB —
 > is replaced by the ECS Fargate model in

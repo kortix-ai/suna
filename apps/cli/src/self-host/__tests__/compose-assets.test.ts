@@ -6,12 +6,14 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 import {
+  kortixRuntimeAssets,
   officialSupabaseDockerAssets,
   renderFullDockerCompose,
   SUPABASE_IMAGE_DIGESTS,
   SUPABASE_UPSTREAM_COMMIT,
   supabaseUpstreamDockerAssets,
   supabaseVendorAssets,
+  writeKortixRuntimeAssets,
   writeOfficialSupabaseDockerAssets,
   writeSupabaseVendorAssets,
 } from '../compose-assets.ts';
@@ -32,6 +34,7 @@ describe('full self-host Docker distribution', () => {
       'frontend',
       'kortix-api',
       'kortix-migrate',
+      'kortix-updater',
       'llm-gateway',
       'supabase-analytics',
       'supabase-auth',
@@ -70,6 +73,237 @@ describe('full self-host Docker distribution', () => {
       for (const dependency of Object.keys(service.depends_on ?? {})) {
         expect(document.services[dependency], `${name} depends on missing ${dependency}`).toBeDefined();
       }
+    }
+  });
+
+  test('omits the caddy reverse-proxy service when no domain is configured', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, unknown>;
+    };
+    expect(document.services).not.toHaveProperty('caddy');
+  });
+
+  test('includes the caddy reverse-proxy service only when a domain is configured', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, {
+        image?: string;
+        ports?: string[];
+        environment?: Record<string, string>;
+        healthcheck?: { test?: string[] };
+      }>;
+    };
+    const caddy = document.services.caddy;
+    expect(caddy).toBeDefined();
+    expect(caddy?.ports).toEqual(['80:80', '443:443']);
+    expect(caddy?.environment).toMatchObject({
+      KORTIX_DOMAIN: '${KORTIX_DOMAIN}',
+      KORTIX_API_DOMAIN: '${KORTIX_API_DOMAIN}',
+    });
+  });
+
+  test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, unknown>;
+    };
+    expect(document.services).not.toHaveProperty('cloudflared');
+
+    // Also absent in domain mode alone — the two are independent toggles.
+    const domainOnly = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, unknown>;
+    };
+    expect(domainOnly.services).not.toHaveProperty('cloudflared');
+  });
+
+  test('includes the cloudflared tunnel service only when tunnel mode is configured', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { tunnelConfigured: true })) as {
+      services: Record<string, {
+        image?: string;
+        environment?: Record<string, string>;
+        depends_on?: Record<string, unknown>;
+        entrypoint?: string[];
+      }>;
+    };
+    const cloudflared = document.services.cloudflared;
+    expect(cloudflared).toBeDefined();
+    // Pinned to a specific version, not :latest — same immutability policy as
+    // every other non-Supabase service image in this stack.
+    expect(cloudflared?.image).toMatch(/^cloudflare\/cloudflared:\d+\.\d+\.\d+$/);
+    expect(cloudflared?.environment).toHaveProperty('CLOUDFLARE_TUNNEL_TOKEN');
+    expect(cloudflared?.depends_on).toHaveProperty('kortix-api');
+    // Tunnels straight to kortix-api — Caddy is never present alongside it
+    // (tunnel mode has no domain), and kortix-api already answers every
+    // /v1* route the sandbox and other external callers need.
+    const script = cloudflared?.entrypoint?.join(' ') ?? '';
+    expect(script).toContain('http://kortix-api:8008');
+    // Named-tunnel branch: the same service supports a stable hostname via
+    // CLOUDFLARE_TUNNEL_TOKEN, decided at container-start (not compose-render)
+    // time so switching sub-modes is just an env change + restart.
+    expect(script).toContain('cloudflared tunnel');
+    expect(script).toContain('run --token');
+  });
+
+  test('cloudflared and caddy are independent — both, either, or neither can be present', () => {
+    const neither = parse(renderFullDockerCompose('kortix-default')) as { services: Record<string, unknown> };
+    expect(neither.services).not.toHaveProperty('caddy');
+    expect(neither.services).not.toHaveProperty('cloudflared');
+
+    const both = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
+      services: Record<string, unknown>;
+    };
+    expect(both.services).toHaveProperty('caddy');
+    expect(both.services).toHaveProperty('cloudflared');
+  });
+
+  test('prod (domain-configured) mode: 2 replicas + no host ports for api/gateway/frontend, Caddy present', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, { ports?: string[]; deploy?: { replicas?: number } }>;
+    };
+    for (const name of ['kortix-api', 'llm-gateway', 'frontend'] as const) {
+      const service = document.services[name];
+      expect(service, name).toBeDefined();
+      expect(service?.deploy?.replicas, `${name} replicas`).toBe(2);
+      expect(service?.ports, `${name} must publish no host port in prod mode`).toBeUndefined();
+    }
+    expect(document.services.caddy).toBeDefined();
+  });
+
+  test('laptop (no domain) mode: single replica + loopback host ports for api/gateway/frontend, no Caddy', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { ports?: string[]; deploy?: { replicas?: number } }>;
+    };
+    const api = document.services['kortix-api'];
+    const frontend = document.services.frontend;
+    const gateway = document.services['llm-gateway'];
+    expect(api?.deploy?.replicas).toBe(1);
+    expect(frontend?.deploy?.replicas).toBe(1);
+    expect(gateway?.deploy?.replicas).toBe(1);
+    expect(api?.ports?.[0]).toStartWith('127.0.0.1:');
+    expect(frontend?.ports?.[0]).toStartWith('127.0.0.1:');
+    // llm-gateway is never reached directly by a client in either mode.
+    expect(gateway?.ports).toBeUndefined();
+    expect(document.services).not.toHaveProperty('caddy');
+  });
+
+  test('the kortix-updater service is always present and mounts the docker socket', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
+    };
+    const updater = document.services['kortix-updater'];
+    expect(updater).toBeDefined();
+    expect(updater?.volumes).toContain('/var/run/docker.sock:/var/run/docker.sock');
+    expect(updater?.environment).toHaveProperty('KORTIX_AUTO_UPDATE');
+    expect(updater?.environment).toHaveProperty('KORTIX_UPDATE_TIME');
+    expect(updater?.environment).toHaveProperty('KORTIX_UPDATE_TZ');
+    expect(updater?.environment).toHaveProperty('KORTIX_ALLOW_DOWNTIME');
+    expect(updater?.environment).toHaveProperty('KORTIX_APP_REPLICAS');
+  });
+
+  test('app service healthchecks probe the correct path with a runtime present in the image', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { healthcheck?: { test?: string[] } }>;
+    };
+    const apiTest = document.services['kortix-api']?.healthcheck?.test?.join(' ') ?? '';
+    expect(apiTest).toContain('bun');
+    expect(apiTest).toContain('/v1/health');
+
+    const gatewayTest = document.services['llm-gateway']?.healthcheck?.test?.join(' ') ?? '';
+    expect(gatewayTest).toContain('bun');
+    expect(gatewayTest).toContain('localhost:8090/health');
+
+    const frontendTest = document.services.frontend?.healthcheck?.test?.join(' ') ?? '';
+    expect(frontendTest).toContain('node');
+    expect(frontendTest).not.toContain('bun');
+  });
+
+  test('embeds the Caddyfile and updater script as runtime assets', () => {
+    expect(Object.keys(kortixRuntimeAssets).sort()).toEqual(['Caddyfile', 'updater.sh']);
+    expect(kortixRuntimeAssets.Caddyfile).toContain('{$KORTIX_DOMAIN}');
+    expect(kortixRuntimeAssets.Caddyfile).toContain('{$KORTIX_API_DOMAIN}');
+    expect(kortixRuntimeAssets['updater.sh']).toContain('docker compose');
+    expect(kortixRuntimeAssets['updater.sh']).toContain('flock');
+  });
+
+  test('Caddyfile load-balances every replicated service with dynamic a + active health checks', () => {
+    const caddyfile = kortixRuntimeAssets.Caddyfile;
+    for (const [name, port, healthPath] of [
+      ['kortix-api', '8008', '/v1/health'],
+      ['llm-gateway', '8090', '/health'],
+      ['frontend', '3000', '/'],
+    ] as const) {
+      expect(caddyfile, name).toContain(`name ${name}`);
+      expect(caddyfile, name).toContain(`port ${port}`);
+      expect(caddyfile, name).toContain(`health_uri ${healthPath}`);
+    }
+    expect(caddyfile).toContain('dynamic a');
+    expect(caddyfile).toContain('fail_duration');
+  });
+
+  test('updater.sh implements the start-first rollout: scale up new before stopping old', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const rollFn = script.slice(script.indexOf('roll_service()'), script.indexOf('recreate_service()'));
+    expect(rollFn).toContain('--no-recreate');
+    expect(rollFn).toContain('--scale');
+
+    const scaleUpIdx = rollFn.indexOf('$COMPOSE up -d --no-deps --no-recreate --scale');
+    const waitHealthyIdx = rollFn.indexOf('wait_healthy');
+    const removeOldIdx = rollFn.indexOf('remove_containers $old_ids');
+    expect(scaleUpIdx).toBeGreaterThan(-1);
+    expect(waitHealthyIdx).toBeGreaterThan(scaleUpIdx);
+    expect(removeOldIdx).toBeGreaterThan(waitHealthyIdx);
+  });
+
+  test('updater.sh runs migrations before any service is rolled (migrate-before-swap)', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const perform = script.slice(script.indexOf('perform_update()'), script.indexOf('next_run_epoch()'));
+    const migrateIdx = perform.indexOf('run_migrate');
+    const rollIdx = perform.indexOf('roll_or_recreate');
+    expect(migrateIdx).toBeGreaterThan(-1);
+    expect(rollIdx).toBeGreaterThan(migrateIdx);
+    // A failed migration aborts before anything is swapped.
+    expect(perform).toContain('run_migrate || return 1');
+  });
+
+  test('updater.sh leaves the old version serving when the new replicas never become healthy', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('never became healthy; removing them and keeping the previous version serving');
+    const rollFn = script.slice(script.indexOf('roll_service()'), script.indexOf('recreate_service()'));
+    // The failure branch removes the NEW containers, never the old ones.
+    expect(rollFn).toContain('remove_containers $new_ids');
+    const failureBranch = rollFn.slice(rollFn.indexOf('else'));
+    expect(failureBranch).not.toContain('remove_containers $old_ids');
+  });
+
+  test('updater.sh has a KORTIX_ALLOW_DOWNTIME escape hatch: stop-old then migrate then start-new', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('KORTIX_ALLOW_DOWNTIME');
+    const downtimeFn = script.slice(script.indexOf('downtime_swap()'), script.indexOf('reconcile_stateful_services()'));
+    const stopIdx = downtimeFn.indexOf('rm --stop --force');
+    const migrateIdx = downtimeFn.indexOf('run_migrate');
+    const startIdx = downtimeFn.indexOf("up -d --no-deps --scale");
+    expect(stopIdx).toBeGreaterThan(-1);
+    expect(migrateIdx).toBeGreaterThan(stopIdx);
+    expect(startIdx).toBeGreaterThan(migrateIdx);
+  });
+
+  test('updater.sh supports a one-shot "once" mode for a manual on-demand update', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('"${1:-}" = "once"');
+  });
+
+  test('updater.sh falls back to an in-place recreate for a service publishing a host port (laptop mode)', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('publishes_host_port');
+    expect(script).toContain('recreate_service');
+  });
+
+  test('writes the Caddyfile and updater script to the instance directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-runtime-assets-'));
+    try {
+      writeKortixRuntimeAssets(root);
+      expect(readFileSync(join(root, 'Caddyfile'), 'utf8')).toBe(kortixRuntimeAssets.Caddyfile);
+      expect(readFileSync(join(root, 'updater.sh'), 'utf8')).toBe(kortixRuntimeAssets['updater.sh']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
