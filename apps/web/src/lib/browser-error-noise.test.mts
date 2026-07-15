@@ -7,6 +7,7 @@ import {
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isEmbedPdfTilingReactUpdateDepthNoise,
   isExpectedBillingGateMessage,
+  isExtensionRejectedObjectNoise,
   isExtensionSource,
   isInjectedAppSource,
   isInpageWalletStreamNoise,
@@ -2212,6 +2213,7 @@ test('does NOT suppress a different RangeError message', () => {
   }
 })
 
+
 // ---------------------------------------------------------------------------
 // @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
 // exceeded" render-loop noise
@@ -2371,4 +2373,227 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
       `expected "${message}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// Browser-extension EIP-1193 wallet-provider plain-object rejection noise
+// (Better Stack pattern
+// 0f78b2f8e9efa79fe9b2ea534e275c704f113eafea86bae5470f33174ebacebc,
+// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// wallet extension (extension id `lgmpcpglpngdoalbgeoldeajfclnhafa`) injects
+// an EIP-1193 provider whose content script
+// (`chrome-extension://<id>/content-script.js`) rejects pending JSON-RPC
+// requests with a PLAIN OBJECT — not an Error — of shape
+// `{ code: 4900, message: "The provider is disconnected from all chains.",
+// stack: "Error: …\\n    at … (chrome-extension://…/content-script.js)" }`
+// (EIP-1193 code 4900 = "provider is disconnected"). Because the rejected
+// value is not an Error, Sentry's GlobalHandlers `onunhandledrejection`
+// integration cannot extract a stack: it serializes the object's enumerable
+// keys into `extra.__serialized__` and sets the exception value to the
+// synthetic "Object captured as promise rejection with keys: code, message,
+// stack" with NO stacktrace frames. The extension origin therefore lives
+// ONLY in `extra.__serialized__.stack` — the frame-aware extension guards
+// (`isExtensionSource`, `isInpageWalletStreamNoise`, `isTronLinkProxyNoise`)
+// all miss it (no frames to anchor on). 2 occurrences, 0 identified users,
+// first 2026-07-06 / last 2026-07-15, mechanism
+// `auto.browser.global_handlers.onunhandledrejection`, request URL
+// `https://kortix.com/auth`, Chrome 150. The matcher requires BOTH the
+// synthetic signature AND an extension-origin frame inside the serialized
+// stack so a real first-party `Promise.reject({...})` keeps reporting.
+// ---------------------------------------------------------------------------
+
+// The exact serialized rejection payload from the raw production event.
+const EIP1193_PROVIDER_DISCONNECTED_SERIALIZED = {
+  message: 'The provider is disconnected from all chains.',
+  stack:
+    'Error: The provider is disconnected from all chains.\n' +
+    '    at s (chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:13:100356)\n' +
+    '    at Object.disconnected (chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:13:101769)\n' +
+    '    at chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:26:51970\n' +
+    '    at E.rejectWaitingRequests (chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:26:51985)\n' +
+    '    at chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:26:59539',
+  code: 4900,
+}
+
+const SYNTHETIC_OBJECT_REJECTION_VALUE =
+  'Object captured as promise rejection with keys: code, message, stack'
+
+test('classifies the EIP-1193 provider-disconnected plain-object rejection as noise', () => {
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned Sentry event via the beforeSend gate (frameless synthetic capture)', () => {
+  // Exact shape of the production event: synthetic exception value, NO
+  // stacktrace frames, extension origin only in extra.__serialized__.stack.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      exception: {
+        values: [{ value: SYNTHETIC_OBJECT_REJECTION_VALUE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Firefox (moz-extension://) wallet variant', () => {
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {
+        __serialized__: {
+          message: 'The provider is disconnected from all chains.',
+          stack: 'Error: The provider is disconnected from all chains.\n    at Object.disconnected (moz-extension://abcdef/content-script.js:1:1)',
+          code: 4900,
+        },
+      },
+    }),
+    true,
+  )
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {
+        __serialized__: {
+          message: 'foo',
+          stack: 'Error: foo\n    at x (safari-web-extension://com.example.ext/content.js:1:1)',
+          code: 1,
+        },
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the wallet-provider rejection via the runtime (unhandledrejection) gate', () => {
+  // The runtime gate receives the raw rejected object as `reason`; its
+  // `message` is the provider's own ("The provider is disconnected…"), NOT
+  // Sentry's synthetic wording, so the gate anchors on the rejected value's
+  // own `stack` tracing through the extension content script.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ error: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED }),
+    true,
+  )
+})
+
+test('does NOT suppress a synthetic plain-object rejection with NO serialized payload (conservative — keep reporting)', () => {
+  // No `extra.__serialized__` to confirm extension origin → a first-party
+  // `Promise.reject({code, message, stack})` could produce the same synthetic
+  // signature, so keep reporting.
+  assert.equal(
+    isExtensionRejectedObjectNoise({ message: SYNTHETIC_OBJECT_REJECTION_VALUE }),
+    false,
+  )
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {},
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: SYNTHETIC_OBJECT_REJECTION_VALUE }] },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a synthetic plain-object rejection whose serialized stack has NO extension origin', () => {
+  // The serialized stack traces through our own app chunk, not an extension
+  // content script → a real first-party plain-object rejection; keep reporting.
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {
+        __serialized__: {
+          message: 'boom',
+          stack: 'Error: boom\n    at handleClick (app:///_next/static/chunks/app.js:42:10)',
+          code: 500,
+        },
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a synthetic plain-object rejection whose stacktrace resolves to a first-party frame', () => {
+  // Negative guard: a resolved `apps/web/src/…` frame means our own code
+  // rejected the plain object — actionable, keep reporting.
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      frames: [{ filename: 'apps/web/src/lib/wallet-provider.ts' }],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      exception: {
+        values: [
+          {
+            value: SYNTHETIC_OBJECT_REJECTION_VALUE,
+            stacktrace: {
+              frames: [{ filename: 'app:///apps/web/src/lib/wallet-provider.ts' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a real Error rejection (not the synthetic plain-object signature)', () => {
+  // A genuine rejected Error carries a real message and stacktrace, never the
+  // synthetic "Object captured as promise rejection with keys: …" wording.
+  for (const value of [
+    'The provider is disconnected from all chains.',
+    'TypeError: Cannot read properties of undefined (reading id)',
+    'Internal server error',
+  ]) {
+    assert.equal(
+      isExtensionRejectedObjectNoise({
+        message: value,
+        extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected real Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a runtime rejection whose reason is a real Error with an app-only stack', () => {
+  // A real Error from app code has a stack of app/chunk frames, never an
+  // extension content-script frame → keep reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      reason: {
+        message: 'something failed',
+        stack: 'Error: something failed\n    at handleClick (app:///_next/static/chunks/app.js:42:10)',
+      },
+    }),
+    false,
+  )
 })
