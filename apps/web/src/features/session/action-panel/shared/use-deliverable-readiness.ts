@@ -31,6 +31,18 @@ import { latestRunCallIds } from './latest-run';
 import { selectPrimaryDeliverable } from './output-priority';
 import { deriveRunOutcome } from './run-outcome';
 
+/**
+ * Sessions whose CURRENT pending-input episode has already been reported to
+ * telemetry. Module scope on purpose: the hook lives in `SessionLayout`, which
+ * remounts per session (`key={chatSessionId}`), so any per-mount ref would
+ * forget and re-fire `ready_chip_shown` for the SAME unanswered episode every
+ * time the user switches away and back. The global readyChip slot can't serve
+ * as the memory either — another session's chip overwrites it. An entry is
+ * cleared when that session's pending count drops to 0 (the episode ended; a
+ * future question is genuinely new).
+ */
+const needsInputReported = new Set<string>();
+
 export function useDeliverableReadiness(
   sessionId: string,
   messages: MessageWithParts[] | undefined,
@@ -86,16 +98,21 @@ export function useDeliverableReadiness(
   // holds for as long as the question does, and yields to nothing (a
   // needs-input chip outranks a ready chip; being blocked outranks being done).
   useEffect(() => {
+    // The episode-memory reset lives above the isPanelOpen early-return on
+    // purpose: an episode can resolve while the panel is open, and the next
+    // question after that must still count as a new episode.
+    if (pendingForSession === 0) needsInputReported.delete(sessionId);
     if (isPanelOpen) return;
     const store = useKortixComputerStore.getState();
     if (pendingForSession > 0) {
-      // Guard against spamming: this effect re-runs on every pendingForSession
-      // change while the agent stays blocked, but the chip should only be
-      // reported once per needs_input episode — not on every re-render of an
-      // already-showing chip.
-      const alreadyShown =
-        store.readyChip?.outcome === 'needs_input' && store.readyChip.sessionId === sessionId;
-      if (!alreadyShown) track('ready_chip_shown', { outcome: 'needs_input' });
+      // One `ready_chip_shown` per pending-input episode — see
+      // `needsInputReported` for why the memory is module-scope, not the
+      // (single, globally shared) readyChip slot or a per-mount ref. Only the
+      // telemetry emission is gated; the chip write itself stays unconditional.
+      if (!needsInputReported.has(sessionId)) {
+        needsInputReported.add(sessionId);
+        track('ready_chip_shown', { outcome: 'needs_input' });
+      }
       store.setReadyChip({ sessionId, outcome: 'needs_input', count: 0 });
     } else if (store.readyChip?.outcome === 'needs_input' && store.readyChip.sessionId === sessionId) {
       store.clearReadyChip();
