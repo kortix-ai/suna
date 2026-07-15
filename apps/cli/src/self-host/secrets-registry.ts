@@ -81,11 +81,23 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'SMTP_ADMIN_EMAIL', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_SENDER_NAME', category: 'auth_email', kind: 'operator', required: false },
 
-  // Agent sandbox
+  // Agent sandbox — three interchangeable providers (SandboxProviderName in
+  // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
+  // runs on (default daytona) and only collect that provider's key(s); the
+  // actual required-secret gate is the composite sandboxProviderConfigured()
+  // check in commands/self-host.ts (whichever provider ALLOWED_SANDBOX_
+  // PROVIDERS names), not a blanket `required` flag per key here — Daytona
+  // stays `required: true` below only because it's the default/recommended
+  // provider, not because it's unconditionally needed.
   { key: 'DAYTONA_API_KEY', category: 'sandbox', kind: 'operator', required: true },
+  { key: 'E2B_API_KEY', category: 'sandbox', kind: 'operator', required: false },
+  { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: false },
+  { key: 'PLATINUM_WEBHOOK_SECRET', category: 'sandbox', kind: 'operator', required: false },
 
-  // Managed git
-  { key: 'MANAGED_GIT_GITHUB_OWNER', category: 'managed_git', kind: 'operator', required: true },
+  // Managed git — NOT init-required: configured in-app (Settings → Git,
+  // DB-backed) after `start`, not by the CLI. See missingRequiredSecrets() in
+  // commands/self-host.ts.
+  { key: 'MANAGED_GIT_GITHUB_OWNER', category: 'managed_git', kind: 'operator', required: false },
   { key: 'MANAGED_GIT_GITHUB_TOKEN', category: 'managed_git', kind: 'operator', required: false },
   { key: 'MANAGED_GIT_GITHUB_INSTALL_ID', category: 'managed_git', kind: 'operator', required: false },
   { key: 'KORTIX_GITHUB_APP_ID', category: 'managed_git', kind: 'operator', required: false },
@@ -103,8 +115,9 @@ export const SECRET_DEFS: SecretDef[] = [
   // (if unset) alongside the App credentials.
   { key: 'KORTIX_GITHUB_APP_STATE_SECRET', category: 'managed_git', kind: 'generated', required: false, rotatable: true },
 
-  // LLM
-  { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: true },
+  // LLM — NOT init-required: BYOK via the frontend's model picker after
+  // `start`, not collected by the CLI.
+  { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: false },
   { key: 'AWS_BEDROCK_API_KEY', category: 'llm', kind: 'operator', required: false },
   { key: 'AWS_BEDROCK_REGION', category: 'llm', kind: 'operator', required: false },
 
@@ -198,10 +211,15 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SMTP_ADMIN_EMAIL: ['supabase-auth'],
   SMTP_SENDER_NAME: ['supabase-auth'],
 
-  // Agent sandbox
+  // Agent sandbox — all three interchangeable providers
   DAYTONA_API_KEY: ['kortix-api'],
   DAYTONA_SERVER_URL: ['kortix-api'],
   DAYTONA_TARGET: ['kortix-api'],
+  E2B_API_KEY: ['kortix-api'],
+  PLATINUM_API_KEY: ['kortix-api'],
+  PLATINUM_API_URL: ['kortix-api'],
+  PLATINUM_TEMPLATE: ['kortix-api'],
+  PLATINUM_WEBHOOK_SECRET: ['kortix-api'],
 
   // Managed git
   MANAGED_GIT_GITHUB_OWNER: ['kortix-api'],

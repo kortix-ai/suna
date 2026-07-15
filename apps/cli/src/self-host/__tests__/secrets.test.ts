@@ -11,7 +11,12 @@ import {
   ROTATABLE_GENERATED_KEYS,
   servicesForKeys,
 } from '../secrets-registry.ts';
-import { gitProviderConfigured, missingRequiredSecrets, sandboxProviderConfigured } from '../../commands/self-host.ts';
+import {
+  gitProviderConfigured,
+  missingRequiredSecrets,
+  sandboxProviderConfigured,
+  shouldPullImages,
+} from '../../commands/self-host.ts';
 
 // ── Pure registry helpers (no filesystem/process access) ────────────────────
 
@@ -111,17 +116,32 @@ function baseEnv(overrides: Record<string, string> = {}): Record<string, string>
 }
 
 describe('missingRequiredSecrets', () => {
-  test('a fresh (just-initialized, nothing configured) env reports sandbox, managed git, and LLM', () => {
+  // The CLI's init-time gate is deliberately narrow: ONLY the agent sandbox
+  // runtime (Daytona) is required — the one credential with no in-app
+  // settings surface. Managed git (GitHub, Settings → Git) and the LLM key
+  // (BYOK via the model picker) are both configured in the dashboard after
+  // `start` and no longer block init/start — see missingRequiredSecrets() in
+  // commands/self-host.ts. gitProviderConfigured() itself is unchanged (still
+  // a useful composite "is git set up" check for the dashboard-pointer note
+  // in renderIntegrationSummary), it just no longer feeds this gate.
+  test('a fresh (just-initialized, nothing configured) env reports only the sandbox runtime', () => {
     const missing = missingRequiredSecrets(baseEnv());
     const labels = missing.map((m) => m.label).join(' | ');
     expect(labels).toContain('Agent sandbox');
-    expect(labels).toContain('Managed git');
-    expect(missing.some((m) => m.hint.includes('OPENROUTER_API_KEY'))).toBe(true);
+    expect(labels).not.toContain('Managed git');
+    expect(missing.some((m) => m.hint.includes('OPENROUTER_API_KEY'))).toBe(false);
     expect(sandboxProviderConfigured(baseEnv())).toBe(false);
     expect(gitProviderConfigured(baseEnv())).toBe(false);
   });
 
-  test('a fully-configured env (Daytona + GitHub PAT + OpenRouter) reports nothing missing', () => {
+  test('Daytona alone (no managed git, no OpenRouter) reports nothing missing', () => {
+    const env = baseEnv({ DAYTONA_API_KEY: 'dtn_live_key' });
+    expect(missingRequiredSecrets(env)).toEqual([]);
+    expect(sandboxProviderConfigured(env)).toBe(true);
+    expect(gitProviderConfigured(env)).toBe(false);
+  });
+
+  test('a fully-configured env (Daytona + GitHub PAT + OpenRouter) also reports nothing missing', () => {
     const env = baseEnv({
       DAYTONA_API_KEY: 'dtn_live_key',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
@@ -133,18 +153,17 @@ describe('missingRequiredSecrets', () => {
     expect(gitProviderConfigured(env)).toBe(true);
   });
 
-  test('managed-git owner set but no PAT/App credentials still counts as missing', () => {
+  test('managed-git owner set but no PAT/App credentials: gitProviderConfigured is still false, but this no longer blocks init/start', () => {
     const env = baseEnv({
       DAYTONA_API_KEY: 'dtn_live_key',
       OPENROUTER_API_KEY: 'sk-or-fake',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai', // owner alone is not enough
     });
     expect(gitProviderConfigured(env)).toBe(false);
-    const missing = missingRequiredSecrets(env);
-    expect(missing.some((m) => m.label.includes('Managed git'))).toBe(true);
+    expect(missingRequiredSecrets(env)).toEqual([]);
   });
 
-  test('a complete GitHub App credential set (no PAT) satisfies managed git', () => {
+  test('a complete GitHub App credential set (no PAT) satisfies gitProviderConfigured', () => {
     const env = baseEnv({
       DAYTONA_API_KEY: 'dtn_live_key',
       OPENROUTER_API_KEY: 'sk-or-fake',
@@ -154,10 +173,10 @@ describe('missingRequiredSecrets', () => {
       MANAGED_GIT_GITHUB_INSTALL_ID: '987654',
     });
     expect(gitProviderConfigured(env)).toBe(true);
-    expect(missingRequiredSecrets(env).some((m) => m.label.includes('Managed git'))).toBe(false);
+    expect(missingRequiredSecrets(env)).toEqual([]);
   });
 
-  test('a corrupted/blanked-out internal generated secret is reported even though every provider is configured', () => {
+  test('a corrupted/blanked-out internal generated secret is reported even though the sandbox provider is configured', () => {
     const env = baseEnv({
       DAYTONA_API_KEY: 'dtn_live_key',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
@@ -167,6 +186,21 @@ describe('missingRequiredSecrets', () => {
     });
     const missing = missingRequiredSecrets(env);
     expect(missing.some((m) => m.hint.includes('TUNNEL_SIGNING_SECRET'))).toBe(true);
+  });
+});
+
+describe('shouldPullImages', () => {
+  test('true when KORTIX_IMAGE_PULL is unset (normal registry pull behavior)', () => {
+    expect(shouldPullImages({})).toBe(true);
+  });
+
+  test('false for KORTIX_IMAGE_PULL=never (--local-images dev mode) — a blanket `docker compose pull` would fail with "manifest unknown" against images that were only ever built locally', () => {
+    expect(shouldPullImages({ KORTIX_IMAGE_PULL: 'never' })).toBe(false);
+  });
+
+  test('true for any other value (defensive — only the literal "never" opts out)', () => {
+    expect(shouldPullImages({ KORTIX_IMAGE_PULL: '' })).toBe(true);
+    expect(shouldPullImages({ KORTIX_IMAGE_PULL: 'always' })).toBe(true);
   });
 });
 
@@ -376,13 +410,31 @@ describe('kortix self-host init/start required-secrets enforcement (CLI)', () =>
     expect(stdout).not.toContain('unknown');
   });
 
-  test('a fully-configured init via env set + secrets set on top of --allow-missing-secrets, then a plain start guard still enforces on a later start', async () => {
-    // init once, letting secrets stay unset...
+  // `start` genuinely shells out to `docker compose pull`/`up` once past this
+  // gate, which this "fast, no Docker" suite must never trigger for real —
+  // so this exercises the exact same ensureRequiredSecrets()/
+  // persistedAllowMissingSecrets() code path `start` uses via a second `init`
+  // call instead (selfHostInit never touches docker).
+  test('--allow-missing-secrets is remembered: a later plain `init` (no flag) on the same instance no longer re-demands it', async () => {
+    // First call actually uses the escape hatch and persists the choice
+    // (recordAllowMissingSecrets, instance.json `allow_missing_secrets`).
+    const first = await run(['init', '--yes', '--allow-missing-secrets']);
+    expect(first.code).toBe(0);
+
+    // Second call, same instance, WITHOUT the flag: must not be re-blocked —
+    // this is the exact friction fixed (previously a bare re-run of the same
+    // gate, e.g. via `start`, hard-failed again until the flag was repeated).
+    const second = await run(['init', '--yes']);
+    expect(second.code).toBe(0);
+    expect(second.stderr).not.toContain('Required secrets are missing');
+  });
+
+  test('once the actual secret is set, missingRequiredSecrets naturally clears regardless of any persisted allow-missing choice', async () => {
     await run(['init', '--yes', '--allow-missing-secrets']);
-    // ...then run `start` on the already-initialized instance without the
-    // escape hatch: it must refuse too, not just `init`.
-    const { code, stderr } = await run(['start', '--yes']);
-    expect(code).not.toBe(0);
-    expect(stderr).toContain('Required secrets are missing');
+    await run(['env', 'set', 'DAYTONA_API_KEY=dtn-test-key']);
+
+    const { code, stdout } = await run(['init', '--yes']);
+    expect(code).toBe(0);
+    expect(stdout).not.toContain('Proceeding with required secrets missing');
   });
 });

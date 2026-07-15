@@ -2,8 +2,8 @@
 
 import { KeyRound, Plug, Wrench } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,12 +33,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast } from '@/components/ui/toast';
+import {
+  GitHubSetupRequiredPanel,
+  isAccountGitAdmin,
+} from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, provisionProject } from '@kortix/sdk/projects-client';
+import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk/projects-client';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
 
@@ -80,6 +84,33 @@ export function AddToProjectModal({
   const [busy, setBusy] = useState(false);
 
   const installSession = useInstallMarketplaceItemAsSession();
+
+  // Pre-check managed git the same way the New Project modal does — self-host
+  // with nothing configured should route to Git settings instead of letting
+  // the "new project" target hit the provision 503 first.
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+    enabled: open && target === NEW_PROJECT,
+  });
+  // No `personal_account` flag on this API — the bootstrapped personal
+  // account is the one where the caller is the primary owner. Mirrors the
+  // resolution in `onConfirm` below.
+  const candidateAccount = useMemo(() => {
+    const accounts = accountsQuery.data ?? [];
+    return accounts.find((a) => a.is_primary_owner) ?? accounts[0] ?? null;
+  }, [accountsQuery.data]);
+  const isGitAdmin = isAccountGitAdmin(candidateAccount?.account_role);
+
+  const managedGitStatusQuery = useQuery({
+    queryKey: ['managed-git-status'],
+    queryFn: getManagedGitStatus,
+    staleTime: 10_000,
+    enabled: open && target === NEW_PROJECT,
+  });
+  const managedGitUnavailable =
+    target === NEW_PROJECT && managedGitStatusQuery.data?.configured === false;
 
   // Reset to sensible defaults each time the modal opens for a (possibly new) item.
   useEffect(() => {
@@ -176,7 +207,8 @@ export function AddToProjectModal({
   };
 
   const confirmDisabled =
-    busy || (target === NEW_PROJECT && newProjectName.trim().length === 0);
+    busy ||
+    (target === NEW_PROJECT && (managedGitUnavailable || newProjectName.trim().length === 0));
 
   return (
     <Modal open={open} onOpenChange={guardedOpenChange}>
@@ -207,7 +239,14 @@ export function AddToProjectModal({
                 </Select>
               </Field>
 
-              {target === NEW_PROJECT && (
+              {target === NEW_PROJECT && managedGitUnavailable ? (
+                <GitHubSetupRequiredPanel
+                  accountId={candidateAccount?.account_id ?? null}
+                  isAdmin={isGitAdmin}
+                  onNavigate={() => onOpenChange(false)}
+                  size="sm"
+                />
+              ) : target === NEW_PROJECT ? (
                 <Field className="gap-1.5">
                   <FieldLabel htmlFor="mp-new-project-name">Name</FieldLabel>
                   <Input
@@ -219,7 +258,7 @@ export function AddToProjectModal({
                     autoCorrect="off"
                   />
                 </Field>
-              )}
+              ) : null}
 
               {item.dependencies.length > 0 && (
                 <FieldDescription>

@@ -36,6 +36,16 @@ export interface ManagedGithubAppConfig {
   stateSecret?: string;
   /** GitHub login (user or org) the App is installed on. */
   owner?: string;
+  /**
+   * Whether `owner` is an Organization or a personal User account — resolved
+   * from the installation's `account.type` at install-callback time (GitHub
+   * tells us this for free; no need to guess or re-detect on every repo
+   * create). Repo-create/list routing (git-backends/github.ts) reads this to
+   * pick `/orgs/{owner}/repos` vs `/user/repos`; a self-host operator can
+   * install the App on either kind of account (e.g. a personal bot account
+   * with no org), and getting this wrong 404s every managed-git operation.
+   */
+  ownerType?: 'User' | 'Organization';
   installationId?: string;
   /** Managed-git via a straight PAT instead of a GitHub App — the "one
    *  server-side key" alternative to the manifest-flow App above (mirrors the
@@ -57,6 +67,10 @@ function coerceString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+function coerceOwnerType(value: unknown): 'User' | 'Organization' | undefined {
+  return value === 'User' || value === 'Organization' ? value : undefined;
+}
+
 function parseConfig(value: unknown): ManagedGithubAppConfig {
   if (!value || typeof value !== 'object') return {};
   const v = value as Record<string, unknown>;
@@ -69,6 +83,7 @@ function parseConfig(value: unknown): ManagedGithubAppConfig {
     webhookSecret: coerceString(v.webhookSecret),
     stateSecret: coerceString(v.stateSecret),
     owner: coerceString(v.owner),
+    ownerType: coerceOwnerType(v.ownerType),
     installationId: coerceString(v.installationId),
     pat: coerceString(v.pat),
     patOwner: coerceString(v.patOwner),

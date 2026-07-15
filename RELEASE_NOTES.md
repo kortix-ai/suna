@@ -1,12 +1,9 @@
-Self-hosting: one generic Docker deployment, VPS-first
+Self-host: verified laptop and VPS deployments, guided setup
 
-## Self-hosting, rebuilt
+## Self-host hardening — everything live-verified
 
-One generic Docker Compose self-host that runs the full Kortix platform on any VPS/server — `kortix self-host init` + `start`, VPS-first with a persistent domain (Caddy + automatic TLS), plus Cloudflare-tunnel and local modes for evaluation.
-
-- **In-app GitHub setup** — create an org-owned GitHub App from Settings → Git (manifest flow), paste an existing App, or use a scoped access token. No CLI gymnastics, no PATs required.
-- **Self-host feature flags** — single-account mode, marketing site off by default, enterprise license unlock, billing/connectors gracefully hidden when unconfigured.
-- **Operations built in** — nightly zero-downtime rolling updates on the curated `stable` channel (promoted via the new Promote Self-Host Stable workflow), `kortix self-host secrets` management, run-any-version + local-images modes, required-secret enforcement at init.
-- **Kortix-managed models are cloud-only** — self-host deployments use your own model keys (BYOK); the managed catalog is gated behind an explicit flag.
-- **Reliability** — SSE turn-stream no longer leaks connections on retry (fixes tab-wide request starvation); stale sessions self-heal instead of dead-ending on the auth screen.
-- New self-host e2e test suite (fast CLI-artifact tier + opt-in live tier) wired into CI.
+- **Agent sessions work everywhere**: fixed the LLM base URL handed to cloud sandboxes and the in-API gateway path shape — BYOK model keys now carry real agent turns on local machines (Cloudflare tunnel) and VPS (domain) alike, proven end-to-end.
+- **Guided setup, VPS-first**: `kortix self-host init` walks domain/reachability → admin email → deployment shape → sandbox provider (Daytona/E2B/Platinum) → optional connectors → update schedule. Help text cut to a page. Auto-update on by default.
+- **GitHub connection hardening**: personal-account installs route correctly, torn configs are detected, the Git settings tab never renders blank, and 'New project' takes you to Git settings when GitHub isn't connected yet.
+- **CLI against your self-host**: `kortix login` opens your deployment's dashboard and the full login → projects → ship flow is verified.
+- **kortix-selfhost/**: one-README distribution with an optional thin Terraform for AWS/EC2 — durable data volume, automatic EBS-snapshot backups (configurable cadence, keeps N), DNS via Route53 or your own provider.

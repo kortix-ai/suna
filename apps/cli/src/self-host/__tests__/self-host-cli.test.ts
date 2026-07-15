@@ -11,9 +11,10 @@ import { parse } from 'yaml';
 // function would miss.
 //
 // Every `init` call below passes `--allow-missing-secrets`: none of these
-// tests configure DAYTONA_API_KEY/managed-git/OPENROUTER_API_KEY, and `init`
-// now refuses to succeed (non-interactively) with required secrets unset —
-// see secrets.test.ts for coverage of that enforcement itself.
+// tests configure DAYTONA_API_KEY (the ONLY secret `init` gates on
+// non-interactively now — managed git and the LLM key are configured in the
+// dashboard after `start`, not by this CLI), and `init` refuses to succeed
+// with it unset — see secrets.test.ts for coverage of that enforcement.
 const CLI_ENTRY = resolve(import.meta.dir, '..', '..', 'index.ts');
 
 describe('kortix self-host (generic Docker CLI)', () => {
@@ -115,27 +116,32 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_CHANNEL).toBe('stable');
   });
 
-  test('--version is an alias for --tag: pins the image ref AND defaults auto-update off (pin implies no drift)', async () => {
+  // Auto-update defaults ON everywhere, including a pinned --version/--tag —
+  // the nightly updater re-pulling the SAME immutable pinned tag is a
+  // harmless no-op (nothing to roll), not silent drift, so pinning alone is
+  // no longer a reason to default it off. --local-images (a locally-built
+  // image never pushed to any registry) is the one real exception — see the
+  // --local-images test below.
+  test('--version is an alias for --tag: pins the image ref, auto-update still defaults ON (a no-op nightly re-pull of the same pinned tag)', async () => {
     const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--version', 'dev-a1b2c3d']);
     expect(code).toBe(0);
     const env = readEnv();
     expect(env.KORTIX_VERSION).toBe('dev-a1b2c3d');
     expect(env.API_IMAGE).toBe('kortix/kortix-api:dev-a1b2c3d');
     expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:dev-a1b2c3d');
-    // A pinned ref is not a channel; the auto-updater must not silently move it.
-    expect(env.KORTIX_AUTO_UPDATE).toBe('false');
+    expect(env.KORTIX_AUTO_UPDATE).toBe('true');
   });
 
-  test('--channel latest (channel tracking, not a pin) keeps auto-update on by default', async () => {
+  test('--channel latest (channel tracking) also keeps auto-update on by default', async () => {
     const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--channel', 'latest']);
     expect(code).toBe(0);
     expect(readEnv().KORTIX_AUTO_UPDATE).toBe('true');
   });
 
-  test('an explicit --auto-update on wins even for a pinned --version', async () => {
-    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--version', '0.9.99', '--auto-update', 'on']);
+  test('an explicit --auto-update off wins even without --local-images', async () => {
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--version', '0.9.99', '--auto-update', 'off']);
     expect(code).toBe(0);
-    expect(readEnv().KORTIX_AUTO_UPDATE).toBe('true');
+    expect(readEnv().KORTIX_AUTO_UPDATE).toBe('false');
   });
 
   test('--local-images (dev mode): sets KORTIX_IMAGE_PULL=never and forces auto-update off, even over --auto-update on', async () => {
@@ -250,24 +256,21 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('true');
     });
 
-    test('--no-landing sets KORTIX_PUBLIC_DISABLE_LANDING_PAGE (redundant with the default, kept for scripts)', async () => {
-      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--no-landing']);
-      expect(code).toBe(0);
+    // There is deliberately no `--landing`/`--no-landing` flag: the landing
+    // page isn't a guided-flow decision (self-host is an app deployment, not
+    // a marketing site — full stop), it's just an ordinary env var an
+    // operator can flip directly if they genuinely want it back.
+    test('re-enabling the landing page is a plain `env set`, no dedicated flag', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets']);
       expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
-    });
 
-    test('--landing re-enables the marketing landing page (the inverse of the self-host default)', async () => {
-      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--landing']);
+      const { code } = await run(['env', 'set', 'KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false']);
       expect(code).toBe(0);
       expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
-    });
 
-    test('a re-run of init without --landing does not reset a previously-enabled landing page', async () => {
-      await run(['init', '--yes', '--allow-missing-secrets', '--landing']);
-      expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
-
-      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
-      expect(code).toBe(0);
+      // A later plain re-init must not silently flip it back off.
+      const reinit = await run(['init', '--yes', '--allow-missing-secrets']);
+      expect(reinit.code).toBe(0);
       expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
     });
 
@@ -426,5 +429,19 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const { code } = await run(['secrets', 'set', 'CLOUDFLARE_TUNNEL_TOKEN=faketoken']);
       expect(code).toBe(0);
     });
+  });
+
+  // `connect-github` is deprecated: managed git is now configured in the web
+  // dashboard (Settings → Git), not by this CLI — the App-manifest flow it
+  // used to run never worked reliably from a laptop (GitHub rejects
+  // hook/callback URLs unreachable over the public internet). The dispatch
+  // case is kept as a no-op alias (not removed outright) so a script that
+  // still calls it doesn't hard-fail.
+  test('connect-github is a deprecated no-op alias: exits 0 and points at the dashboard instead of running the App-manifest flow', async () => {
+    await run(['init', '--yes', '--allow-missing-secrets']);
+    const { code, stdout } = await run(['connect-github']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('deprecated');
+    expect(stdout.toLowerCase()).toContain('settings');
   });
 });

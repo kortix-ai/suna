@@ -28,7 +28,13 @@ describe.skipIf(!caps.localImages)(
 
     afterEach(() => sandbox.cleanup());
 
-    test('--version 0.9.107 pins every *_IMAGE tag to :0.9.107 and defaults auto-update OFF', async () => {
+    // Auto-update defaults ON everywhere, including a pinned --version/--tag:
+    // the nightly updater re-pulling the SAME immutable pinned tag is a
+    // harmless no-op (nothing to roll), not silent drift — so pinning alone
+    // is no longer a reason to default it off. --local-images is the one real
+    // exception (a locally-built image was never pushed to any registry —
+    // see the --local-images tests below).
+    test('--version 0.9.107 pins every *_IMAGE tag to :0.9.107, auto-update still defaults ON', async () => {
       const { code } = await sandbox.run([
         'init',
         '--yes',
@@ -46,9 +52,7 @@ describe.skipIf(!caps.localImages)(
       expect(env.SANDBOX_IMAGE).toBe('kortix/kortix-sandbox:0.9.107');
       // Pinning an explicit version doesn't invent/overwrite the channel name.
       expect(env.KORTIX_CHANNEL).toBe('stable');
-      // A pinned ref means "stay here" — the nightly updater must not silently
-      // move a pinned box off it.
-      expect(env.KORTIX_AUTO_UPDATE).toBe('false');
+      expect(env.KORTIX_AUTO_UPDATE).toBe('true');
     });
 
     test('--tag and --release are accepted aliases for --version', async () => {
@@ -61,7 +65,7 @@ describe.skipIf(!caps.localImages)(
       ]);
       expect(viaTag.code).toBe(0);
       expect(sandbox.readEnv().API_IMAGE).toBe('kortix/kortix-api:0.9.55');
-      expect(sandbox.readEnv().KORTIX_AUTO_UPDATE).toBe('false');
+      expect(sandbox.readEnv().KORTIX_AUTO_UPDATE).toBe('true');
 
       const other = new SelfHostSandbox();
       try {
@@ -74,13 +78,13 @@ describe.skipIf(!caps.localImages)(
         ]);
         expect(viaRelease.code).toBe(0);
         expect(other.readEnv().API_IMAGE).toBe('kortix/kortix-api:0.9.60');
-        expect(other.readEnv().KORTIX_AUTO_UPDATE).toBe('false');
+        expect(other.readEnv().KORTIX_AUTO_UPDATE).toBe('true');
       } finally {
         other.cleanup();
       }
     });
 
-    test('--channel latest tracks :latest and keeps auto-update ON (a moving channel, not a pin)', async () => {
+    test('--channel latest tracks :latest and keeps auto-update ON (a moving channel)', async () => {
       const { code } = await sandbox.run([
         'init',
         '--yes',
@@ -95,15 +99,13 @@ describe.skipIf(!caps.localImages)(
       expect(env.KORTIX_AUTO_UPDATE).toBe('true');
     });
 
-    test('an explicit --auto-update always wins over the pin/channel default', async () => {
+    test('an explicit --auto-update off always wins over the (now-ON-by-default) pin/channel default', async () => {
       const pinnedOn = await sandbox.run([
         'init',
         '--yes',
         '--allow-missing-secrets',
         '--version',
         '0.9.107',
-        '--auto-update',
-        'on',
       ]);
       expect(pinnedOn.code).toBe(0);
       expect(sandbox.readEnv().KORTIX_AUTO_UPDATE).toBe('true');

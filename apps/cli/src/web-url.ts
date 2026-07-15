@@ -9,15 +9,23 @@
  * links — so we never guess when an authoritative value is available.
  *
  * Resolution order, most authoritative first:
- *   1. `project.dashboard_url` — the server's own `config.FRONTEND_URL`, baked
- *      into every serialized project. Use it whenever you hold a project object
- *      (see {@link projectWebUrl}).
+ *   1. An explicit `dashboardUrl` argument — e.g. a `Host`'s stored
+ *      `dashboard_url` (see {@link Host} in api/config.ts), captured
+ *      authoritatively at the source: `kortix self-host` knows its own
+ *      `PUBLIC_URL` and stamps it on the `selfhost` host it registers, or
+ *      `project.dashboard_url` — the server's own `config.FRONTEND_URL`,
+ *      baked into every serialized project (see {@link projectWebUrl}).
  *   2. `KORTIX_FRONTEND_URL` — injected into every sandbox right next to
  *      `KORTIX_API_URL` (the server's `config.FRONTEND_URL`, verbatim). Also
  *      settable locally.
  *   3. `KORTIX_DASHBOARD_URL` — legacy local override, kept for back-compat.
  *   4. Derive from the API host (handles `api.`, `api-<env>.`, `<env>-api.`,
- *      localhost) — a best-effort fallback for old servers that don't inject (2).
+ *      localhost) — a best-effort fallback for old servers/hosts that carry
+ *      neither (1) nor (2). NOTE: this guess assumes cloud URL conventions
+ *      and a fixed local dev port pairing (`:8008` → `:3000`); it is WRONG
+ *      for a self-host stack on other ports (e.g. the laptop default
+ *      `:13738` API / `:13737` dashboard) — always prefer (1) when you have
+ *      it, which is why a `Host` should carry `dashboard_url`.
  *   5. https://kortix.com.
  */
 import { sandboxEnvValue } from './api/sandbox-env.ts';
@@ -26,8 +34,16 @@ function stripTrailingSlash(s: string): string {
   return s.replace(/\/+$/, '');
 }
 
-/** The frontend dashboard base URL (no trailing slash), never the API host. */
-export function webDashboardUrl(apiBase: string): string {
+/**
+ * The frontend dashboard base URL (no trailing slash), never the API host.
+ *
+ * @param dashboardUrl An authoritative override when the caller already
+ *   knows it (e.g. `host.dashboard_url` from api/config.ts) — always pass
+ *   this when available so a self-host stack on non-default ports resolves
+ *   correctly instead of falling through to the API-shape guess.
+ */
+export function webDashboardUrl(apiBase: string, dashboardUrl?: string | null): string {
+  if (dashboardUrl && dashboardUrl.trim()) return stripTrailingSlash(dashboardUrl.trim());
   const explicit = sandboxEnvValue('KORTIX_FRONTEND_URL') || process.env.KORTIX_DASHBOARD_URL;
   if (explicit && explicit.trim()) return stripTrailingSlash(explicit.trim());
   return stripTrailingSlash(deriveFrontendFromApiBase(apiBase));
@@ -71,7 +87,11 @@ function deriveFrontendFromApiBase(apiBase: string): string {
  * Web (dashboard) URL for a project. Prefers the server-provided `dashboardUrl`
  * (authoritative) and only falls back to {@link webDashboardUrl} when absent.
  */
-export function projectWebUrl(apiBase: string, projectId: string, dashboardUrl?: string | null): string {
+export function projectWebUrl(
+  apiBase: string,
+  projectId: string,
+  dashboardUrl?: string | null,
+): string {
   if (dashboardUrl && dashboardUrl.trim()) return stripTrailingSlash(dashboardUrl.trim());
   return `${webDashboardUrl(apiBase)}/projects/${projectId}`;
 }

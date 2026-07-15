@@ -189,6 +189,40 @@ kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGE
 kortix self-host start           # re-applies env + restarts affected services
 ```
 
+### Provisioning a VPS with Terraform (optional)
+
+If you'd rather provision the box declaratively than run a script by hand,
+`infra/terraform/modules/selfhost-ec2` is a **thin, optional convenience
+provisioner** — it is not a different deployment system. Terraform creates the
+EC2 instance, a separate encrypted EBS data volume, a security group (80/443),
+an Elastic IP, optional Route53 records, and a configurable-schedule snapshot
+policy for the data volume (`backup_interval_hours` / `backup_retention_count`
+— every 24h/7 kept by default, but e.g. every 6h/10 kept works too), then
+cloud-init runs the *exact same* `kortix self-host init` /
+`kortix self-host start` described above. After `apply` finishes, the
+in-compose auto-updater — not Terraform — is what keeps the app current;
+re-running `terraform apply` never redeploys it. Secrets (the Daytona key,
+managed git, SMTP, ...) are deliberately not Terraform inputs; the module's
+`post_apply_next_steps` output tells you how to set them (SSM in, `kortix
+self-host configure`, or the dashboard) once the box is up.
+
+```hcl
+module "kortix_selfhost" {
+  source = "github.com/kortix-ai/suna//infra/terraform/modules/selfhost-ec2"
+
+  domain = "kortix.example.com"
+  tags   = { Project = "kortix-selfhost" }
+}
+```
+
+See `infra/terraform/examples/selfhost-ec2` for a runnable root module and
+`infra/terraform/modules/selfhost-ec2/README.md` for the full variable/output
+reference — including why the data volume is mounted the way it is (Postgres
+is a bind mount under the CLI's instance directory, not a Docker named volume,
+so the module points `KORTIX_SELF_HOST_CONFIG_DIR` at the EBS volume rather
+than just bind-mounting `/var/lib/docker`) and how an instance can be replaced
+without losing data (daily EBS snapshots + `delete_on_termination = false`).
+
 ### Evaluating on a laptop (not for production)
 
 This path is for kicking the tyres on your own machine — it is **not**
@@ -236,6 +270,48 @@ image tag), `--channel stable|latest`, `--auto-update on|off`,
 (reachability — see above), `--json`, `--yes`.
 
 Full reference: [`/docs/reference/cli#self-host`](../../apps/web/content/docs/reference/cli.mdx).
+
+## Using the main `kortix` CLI against your self-host
+
+`kortix self-host …` only manages the Compose stack itself. Everything else —
+`login`, `whoami`, `projects`, `ship`, `sessions`, … — is the same CLI you'd
+point at Kortix Cloud, just aimed at your own instance via the built-in
+`selfhost` host:
+
+```sh
+kortix hosts use selfhost   # switch the CLI's active host to your self-host stack
+kortix login                # browser-based approval, same flow as Cloud
+kortix whoami                # confirm identity + active account/project
+kortix projects ls
+cd your-project && kortix ship   # first ship creates the project + repo; every ship after just syncs
+```
+
+`kortix self-host init`/`start` register the `selfhost` host for you —
+pointed at `API_PUBLIC_URL` (the API) with `PUBLIC_URL` (the dashboard)
+stamped alongside it as `dashboard_url`, so `kortix login`'s browser flow
+opens the right origin. That matters because the CLI has no other way to
+learn your dashboard's URL from the API URL alone: it normally *derives* one
+from the API URL's shape (`api.<domain>` → `<domain>`, or the `pnpm dev`
+pairing `:8008` → `:3000`), which is right for a domain deployment
+(`https://api.<domain>` → `https://<domain>`) but **wrong** for the laptop
+default (API `:13738`, dashboard `:13737` — not `:3000`) or any custom port.
+If you ever add the host by hand instead of through `kortix self-host`
+(pointing the CLI at a self-host instance from a *different* machine, for
+example) and `kortix login` opens a dead-looking `:3000`, pass the dashboard
+URL explicitly:
+
+```sh
+kortix hosts add selfhost --url http://localhost:13738 --dashboard-url http://localhost:13737   # laptop
+kortix hosts add selfhost --url https://api.kortix.example.com --dashboard-url https://kortix.example.com   # domain
+```
+
+**`kortix ship`** needs a git backend to push to — either an existing GitHub
+remote (via the GitHub App or `--github-token`, both set up in the dashboard
+under **Settings → Git**, see step 4 of the quickstart) or no origin at all
+(ship then creates a managed Kortix-hosted repo, no GitHub needed). If
+managed git isn't configured yet, `ship -n` (dry-run) still validates
+`kortix.yaml`, resolves the target project, and shows the push plan without
+needing it.
 
 ## The auto-updater + channels
 
