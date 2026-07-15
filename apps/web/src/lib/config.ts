@@ -80,6 +80,21 @@ export const isBillingEnabled = (): boolean => {
 };
 
 /**
+ * Whether Kortix's own managed model lineup ("Managed · Included with your
+ * plan" — Claude/GLM/Qwen/DeepSeek/… routed through Kortix's shared Bedrock/
+ * OpenRouter credentials) can appear anywhere in the UI. CLOUD-ONLY: mirrors
+ * the backend's KORTIX_MANAGED_PROVIDER_ENABLED, which already keeps managed
+ * models out of the served model catalog when off. Use this for a surface
+ * that reasons about "is `kortix` connected" independently of the live
+ * catalog (so it hides the managed entry outright instead of rendering it
+ * with zero models) — most surfaces need no extra check since the catalog
+ * itself is already empty of managed models on a self-host.
+ */
+export const isManagedProviderEnabled = (): boolean => {
+  return getEnv().MANAGED_PROVIDER_ENABLED;
+};
+
+/**
  * Whether this deployment is scoped to a single account (self-host,
  * KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE). Hides "New account" affordances and
  * team-management surfaces (members/groups/identity) that only make sense

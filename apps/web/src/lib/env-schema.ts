@@ -65,6 +65,16 @@ const RuntimeEnvSchema = z.object({
   /** Whether billing/paywall UI is enabled. Mirrors the backend's
    *  KORTIX_BILLING_INTERNAL_ENABLED. Set via NEXT_PUBLIC_BILLING_ENABLED. */
   BILLING_ENABLED: z.boolean().default(false),
+  /** CLOUD-ONLY. Whether Kortix's own managed model lineup ("Managed ·
+   *  Included with your plan") can appear in the UI at all. Mirrors the
+   *  backend's KORTIX_MANAGED_PROVIDER_ENABLED, which already empties the
+   *  served model catalog when off — this lets a surface that reasons about
+   *  connected providers independently of that catalog (e.g. the LLM
+   *  Provider "Connected" list) hide the managed entry outright instead of
+   *  showing it with zero models. Off by default (self-host); Kortix Cloud
+   *  sets NEXT_PUBLIC_MANAGED_PROVIDER_ENABLED / KORTIX_PUBLIC_MANAGED_PROVIDER_ENABLED
+   *  to 'true'. */
+  MANAGED_PROVIDER_ENABLED: z.boolean().default(false),
   /** Whether Pipedream-backed "Connect your tools" / connector-catalogue UI is
    *  enabled. Cloud always has Pipedream configured, so this defaults true;
    *  self-host without PIPEDREAM_* set should flip it off. Set via

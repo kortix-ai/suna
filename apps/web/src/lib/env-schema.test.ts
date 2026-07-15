@@ -35,3 +35,18 @@ describe('RuntimeEnvSchema — self-host configuration flags', () => {
     expect(env.BILLING_ENABLED).toBe(false);
   });
 });
+
+// CLOUD-ONLY: Kortix's own managed model lineup ("Managed · Included with
+// your plan") must never appear on a self-host by default. Mirrors the
+// backend's KORTIX_MANAGED_PROVIDER_ENABLED.
+describe('RuntimeEnvSchema — MANAGED_PROVIDER_ENABLED', () => {
+  test('defaults false (self-host)', () => {
+    const env = parseRuntimeEnv(REQUIRED);
+    expect(env.MANAGED_PROVIDER_ENABLED).toBe(false);
+  });
+
+  test('flips on when Kortix Cloud sets it true', () => {
+    const env = parseRuntimeEnv({ ...REQUIRED, MANAGED_PROVIDER_ENABLED: true });
+    expect(env.MANAGED_PROVIDER_ENABLED).toBe(true);
+  });
+});
