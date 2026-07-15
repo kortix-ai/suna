@@ -189,6 +189,38 @@ kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGE
 kortix self-host start           # re-applies env + restarts affected services
 ```
 
+### Provisioning a VPS with Terraform (optional)
+
+If you'd rather provision the box declaratively than run a script by hand,
+`infra/terraform/modules/selfhost-ec2` is a **thin, optional convenience
+provisioner** — it is not a different deployment system. Terraform creates the
+EC2 instance, a separate encrypted EBS data volume, a security group (80/443),
+an Elastic IP, optional Route53 records, and a daily-snapshot policy for the
+data volume, then cloud-init runs the *exact same* `kortix self-host init` /
+`kortix self-host start` described above. After `apply` finishes, the
+in-compose auto-updater — not Terraform — is what keeps the app current;
+re-running `terraform apply` never redeploys it. Secrets (the Daytona key,
+managed git, SMTP, ...) are deliberately not Terraform inputs; the module's
+`post_apply_next_steps` output tells you how to set them (SSM in, `kortix
+self-host configure`, or the dashboard) once the box is up.
+
+```hcl
+module "kortix_selfhost" {
+  source = "github.com/kortix-ai/suna//infra/terraform/modules/selfhost-ec2"
+
+  domain = "kortix.example.com"
+  tags   = { Project = "kortix-selfhost" }
+}
+```
+
+See `infra/terraform/examples/selfhost-ec2` for a runnable root module and
+`infra/terraform/modules/selfhost-ec2/README.md` for the full variable/output
+reference — including why the data volume is mounted the way it is (Postgres
+is a bind mount under the CLI's instance directory, not a Docker named volume,
+so the module points `KORTIX_SELF_HOST_CONFIG_DIR` at the EBS volume rather
+than just bind-mounting `/var/lib/docker`) and how an instance can be replaced
+without losing data (daily EBS snapshots + `delete_on_termination = false`).
+
 ### Evaluating on a laptop (not for production)
 
 This path is for kicking the tyres on your own machine — it is **not**
