@@ -547,7 +547,6 @@ export function AcpSessionChat({
           turns={minimapTurns}
           scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
           contentRef={contentRef as React.RefObject<HTMLDivElement>}
-          messages={contextMessages}
         />
       </div>
       <div className="border-border border-t px-4 py-3">

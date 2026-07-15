@@ -214,7 +214,7 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
     })
     .catch(() => codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers }))
     .then((html) => {
-      cacheHtml(key, html);
+      if (html !== null) cacheHtml(key, html);
       shikiPending.delete(key);
       return html;
     })
