@@ -1,5 +1,6 @@
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
+import { managedGithubAppConfig } from '../platform/services/managed-github-app';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -87,16 +88,36 @@ export interface CreateRepoInput {
   auth?: GitHubAuthContext;
 }
 
-function githubAppId() {
-  return process.env.KORTIX_GITHUB_APP_ID || process.env.GITHUB_APP_ID || null;
+// DB-first, env-fallback: the in-app self-host setup flow
+// (platform/routes/github-app.ts) writes the App's creds into
+// kortix.platform_settings (managed-github-app.ts); a self-host operator who
+// still configures everything via `.env` keeps working unchanged since the DB
+// config resolves to `{}` until someone runs the setup flow.
+export function githubAppId() {
+  return (
+    managedGithubAppConfig().appId?.trim() ||
+    process.env.KORTIX_GITHUB_APP_ID ||
+    process.env.GITHUB_APP_ID ||
+    null
+  );
 }
 
 function githubAppPrivateKey() {
-  return process.env.KORTIX_GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY || null;
+  return (
+    managedGithubAppConfig().privateKey?.trim() ||
+    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY ||
+    process.env.GITHUB_APP_PRIVATE_KEY ||
+    null
+  );
 }
 
-function githubAppSlug() {
-  return process.env.KORTIX_GITHUB_APP_SLUG || process.env.GITHUB_APP_SLUG || null;
+export function githubAppSlug() {
+  return (
+    managedGithubAppConfig().slug?.trim() ||
+    process.env.KORTIX_GITHUB_APP_SLUG ||
+    process.env.GITHUB_APP_SLUG ||
+    null
+  );
 }
 
 export function isGithubAppConfigured() {
@@ -105,6 +126,7 @@ export function isGithubAppConfigured() {
 
 function githubAppStateSecret() {
   return (
+    managedGithubAppConfig().stateSecret?.trim() ||
     process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
     process.env.SUPABASE_JWT_SECRET ||
     githubAppPrivateKey() ||

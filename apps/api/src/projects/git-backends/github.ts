@@ -4,9 +4,11 @@ import {
   createInstallationToken,
   createRepo as ghCreateRepo,
   deleteRepo as ghDeleteRepo,
+  isGithubAppConfigured,
   isOrgAccount,
 } from '../github';
 import { config } from '../../config';
+import { managedGithubAppConfig } from '../../platform/services/managed-github-app';
 import {
   basicAuthHeader,
   type GitConnectionRef,
@@ -20,12 +22,20 @@ import {
 } from './types';
 import { seedRepoViaGitPush } from './seed';
 
-function managedGithubOwner(): string | null {
-  return process.env.MANAGED_GIT_GITHUB_OWNER?.trim() || null;
+// DB-first, env-fallback — see projects/github.ts for the matching App
+// creds accessors. The in-app self-host setup flow (platform/routes/
+// github-app.ts) stores `owner`/`installationId` here once an admin installs
+// the App; until then this resolves to the existing env vars unchanged.
+export function managedGithubOwner(): string | null {
+  return managedGithubAppConfig().owner?.trim() || process.env.MANAGED_GIT_GITHUB_OWNER?.trim() || null;
 }
 
 export function managedGithubInstallId(): string | null {
-  return process.env.MANAGED_GIT_GITHUB_INSTALL_ID?.trim() || null;
+  return (
+    managedGithubAppConfig().installationId?.trim() ||
+    process.env.MANAGED_GIT_GITHUB_INSTALL_ID?.trim() ||
+    null
+  );
 }
 
 /**
@@ -104,7 +114,17 @@ export const githubBackend: GitHostBackend = {
   id: 'github',
 
   async isConfigured(): Promise<boolean> {
-    return Boolean(managedGithubOwner() && (managedGithubToken() || managedGithubInstallId()));
+    const owner = managedGithubOwner();
+    if (!owner) return false;
+    // PAT path: a straight org token needs no App creds at all.
+    if (managedGithubToken()) return true;
+    // App-installation path: an installation id is useless without the App's
+    // own id+private key to sign the JWT that mints installation tokens — so
+    // this flips true only once appId+privateKey+owner+installationId are ALL
+    // present (matches the DB config the in-app setup flow writes across its
+    // two steps: manifest-callback stores appId/privateKey, install-callback
+    // stores owner/installationId).
+    return Boolean(managedGithubInstallId() && isGithubAppConfigured());
   },
 
   async createRepo(input: ProvisionInput): Promise<ProvisionedRepo> {
