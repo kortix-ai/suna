@@ -174,6 +174,22 @@ const nextConfig = (): NextConfig => ({
     ],
   },
 
+  async redirects() {
+    return [
+      // Canonical self-host doc lives at /docs/self-hosting (fumadocs derives
+      // the slug from content/docs/self-hosting.mdx). The CLI, README, and
+      // most people say "self-host" (no -ing) out loud and in links, which
+      // 404'd here before this redirect existed. Keep this even if the CLI
+      // copy changes — it's cheap insurance against the shorter form living
+      // on in bookmarks, chat history, and muscle memory.
+      {
+        source: '/docs/self-host',
+        destination: '/docs/self-hosting',
+        permanent: true,
+      },
+    ];
+  },
+
   async rewrites() {
     return [
       // Proxy API calls to backend to avoid CORS in local dev. The target is
