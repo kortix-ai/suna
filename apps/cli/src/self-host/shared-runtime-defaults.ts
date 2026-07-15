@@ -56,6 +56,14 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   ENTERPRISE_LICENSE_AVAILABLE: 'false',
   KORTIX_BILLING_INTERNAL_ENABLED: 'false',
   KORTIX_PUBLIC_BILLING_ENABLED: 'false',
+  // Pipedream-backed connector UI (the "Connect your tools" onboarding step,
+  // the "Easy connect" app catalogue) off by default — a fresh self-host has
+  // no PIPEDREAM_CLIENT_ID/SECRET/PROJECT_ID configured, and those surfaces
+  // would otherwise dead-end in a 501. `kortix self-host configure` flips
+  // this to 'true' once Pipedream credentials are set (see selfHostConfigure
+  // in commands/self-host.ts). Custom connectors (OpenAPI/GraphQL/MCP/HTTP)
+  // and Slack/email channels are unaffected — they don't depend on Pipedream.
+  KORTIX_PUBLIC_CONNECTORS_ENABLED: 'false',
 };
 
 /** Every target-agnostic default in one object, for a single spread. */

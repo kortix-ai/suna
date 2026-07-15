@@ -208,11 +208,11 @@ interface SelfHostEnv {
   // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
   // DAYTONA_TARGET, KORTIX_SINGLE_ACCOUNT_MODE, KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE,
   // KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
-  // KORTIX_BILLING_INTERNAL_ENABLED, and KORTIX_PUBLIC_BILLING_ENABLED are
-  // covered by the [key: string] index signature below — their defaults come
-  // from the SHARED_SELF_HOST_DEFAULTS spread in defaultEnv() (see
-  // shared-runtime-defaults.ts), not a literal here, so TS can't see them as
-  // named properties.
+  // KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_PUBLIC_BILLING_ENABLED, and
+  // KORTIX_PUBLIC_CONNECTORS_ENABLED are covered by the [key: string] index
+  // signature below — their defaults come from the SHARED_SELF_HOST_DEFAULTS
+  // spread in defaultEnv() (see shared-runtime-defaults.ts), not a literal
+  // here, so TS can't see them as named properties.
   GATEWAY_INTERNAL_TOKEN: string;
   OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
@@ -1271,6 +1271,16 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
     env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
   }
+  // Frontend "Connect your tools" / connector-catalogue UI (KORTIX_PUBLIC_
+  // CONNECTORS_ENABLED) mirrors whether Pipedream is FULLY configured on the
+  // backend — same three fields apps/api/src/executor/pipedream.ts's own
+  // pipedreamConfigured() requires. Recomputed every time this runs (both the
+  // 'configure' and 'skip' branches) so turning Pipedream off here also hides
+  // the frontend surfaces again.
+  env.KORTIX_PUBLIC_CONNECTORS_ENABLED =
+    env.PIPEDREAM_CLIENT_ID && env.PIPEDREAM_CLIENT_SECRET && env.PIPEDREAM_PROJECT_ID
+      ? 'true'
+      : 'false';
   env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
 }
 

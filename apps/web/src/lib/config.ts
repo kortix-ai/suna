@@ -90,4 +90,17 @@ export const isSingleAccountMode = (): boolean => {
   return getEnv().SINGLE_ACCOUNT_MODE;
 };
 
+/**
+ * Whether Pipedream-backed connector UI (the "Connect your tools" onboarding
+ * step, the "Easy connect" app catalogue) is enabled. Cloud always has
+ * Pipedream configured (defaults true); self-host without PIPEDREAM_client
+ * credentials set should flip NEXT_PUBLIC_CONNECTORS_ENABLED to 'false' so
+ * those surfaces don't dead-end in a 501. Custom connectors (OpenAPI/
+ * GraphQL/MCP/HTTP) and Slack/email channels are unaffected — they don't
+ * depend on Pipedream.
+ */
+export const isConnectorsEnabled = (): boolean => {
+  return getEnv().CONNECTORS_ENABLED;
+};
+
 import { getEnv } from '@/lib/env-config';

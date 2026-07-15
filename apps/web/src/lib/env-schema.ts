@@ -65,6 +65,11 @@ const RuntimeEnvSchema = z.object({
   /** Whether billing/paywall UI is enabled. Mirrors the backend's
    *  KORTIX_BILLING_INTERNAL_ENABLED. Set via NEXT_PUBLIC_BILLING_ENABLED. */
   BILLING_ENABLED: z.boolean().default(false),
+  /** Whether Pipedream-backed "Connect your tools" / connector-catalogue UI is
+   *  enabled. Cloud always has Pipedream configured, so this defaults true;
+   *  self-host without PIPEDREAM_* set should flip it off. Set via
+   *  KORTIX_PUBLIC_CONNECTORS_ENABLED / NEXT_PUBLIC_CONNECTORS_ENABLED. */
+  CONNECTORS_ENABLED: z.boolean().default(true),
   /** Self-host single-account mode: this deployment is meant for exactly one
    *  account (no teams). Hides "New account" UI + team-management
    *  surfaces. Mirrors the backend's KORTIX_SINGLE_ACCOUNT_MODE, which
