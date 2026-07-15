@@ -19,11 +19,13 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { SessionReadyChip } from '@/features/session/header/session-ready-chip';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
+import { useReadyChip } from '@/stores/kortix-computer-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -116,6 +118,8 @@ export function SessionSiteHeader({
     },
   });
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
+
+  const readyChip = useReadyChip();
 
   return (
     <>
@@ -251,6 +255,8 @@ export function SessionSiteHeader({
               </DropdownMenuContent>
             </DropdownMenu>
 
+            <SessionReadyChip sessionId={sessionId} />
+
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
@@ -276,7 +282,15 @@ export function SessionSiteHeader({
                 onClick={onToggleSidePanel}
                 className={cn('text-foreground cursor-pointer transition-colors')}
               >
-                <PanelRight className="h-4 w-4" />
+                <span className="relative inline-flex">
+                  <PanelRight className="h-4 w-4" />
+                  {readyChip && !isSidePanelOpen && (
+                    <span
+                      className="bg-kortix-green ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
+                      aria-hidden
+                    />
+                  )}
+                </span>
               </Button>
             </Hint>
           </div>
