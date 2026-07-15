@@ -10,6 +10,7 @@ import {
   verifyPinnedIdentity,
 } from './aws-vpc-control-plane.ts';
 import type { AwsVpcCoordinates } from './config.ts';
+import { SHARED_SELF_HOST_DEFAULTS } from './shared-runtime-defaults.ts';
 
 export const REQUIRED_OPERATOR_RUNTIME_KEYS = [
   'SMTP_ADMIN_EMAIL',
@@ -159,10 +160,7 @@ export function generateRuntimeDefaults(
     KORTIX_PUBLIC_BACKEND_URL: `${apiUrl}/v1`,
     KORTIX_PUBLIC_SUPABASE_URL: frontendUrl,
     KORTIX_PUBLIC_SUPABASE_ANON_KEY: anonKey,
-    // Lead the sign-in UI with password (not magic-link) so a fresh appliance
-    // works with NO SMTP configured — pairs with ENABLE_EMAIL_AUTOCONFIRM=true.
-    // Operators add 'magic' once SMTP is set up. Matches the docker self-host.
-    KORTIX_PUBLIC_AUTH_METHODS: 'password',
+    // KORTIX_PUBLIC_AUTH_METHODS now comes from SHARED_SELF_HOST_DEFAULTS.
     INTERNAL_KORTIX_ENV: 'prod',
     KORTIX_BILLING_INTERNAL_ENABLED: 'false',
   };
@@ -214,20 +212,9 @@ function generatedInternalDefaults(instance: string, region: string): Record<str
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
-    DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
-    DAYTONA_TARGET: 'us',
-    ENABLE_EMAIL_SIGNUP: 'true',
-    // Auto-confirm email signups by default so a fresh appliance works with NO
-    // SMTP configured (matches the local docker self-host default). GoTrue only
-    // sends confirmation/magic-link email once an operator sets real SMTP creds
-    // and flips this to 'false'; until then, requiring email would make the very
-    // first account impossible (chicken-and-egg). Maps to GOTRUE_MAILER_AUTOCONFIRM.
-    ENABLE_EMAIL_AUTOCONFIRM: 'true',
-    ENABLE_ANONYMOUS_USERS: 'false',
-    ENABLE_PHONE_SIGNUP: 'false',
-    ENABLE_PHONE_AUTOCONFIRM: 'false',
-    DISABLE_SIGNUP: 'false',
+    // Auth + sandbox behavior is target-agnostic — the SAME on docker, AWS EC2,
+    // and any VPS — so it lives in one shared object both generators consume.
+    ...SHARED_SELF_HOST_DEFAULTS,
   };
 }
 
