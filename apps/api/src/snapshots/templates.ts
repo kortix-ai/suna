@@ -42,6 +42,7 @@ import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { harnessVersionKey as _harnessVersionKey, sandboxVersionStr as _sandboxVersionStrBuilder } from './version-keys';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -824,15 +825,11 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
-const harnessVersionKey = () => [
-  `oc:${OPENCODE_VERSION}`,
-  `claude-acp:${CLAUDE_AGENT_ACP_VERSION}`,
-  `codex-acp:${CODEX_ACP_VERSION}`,
-  `pi-acp:${PI_ACP_VERSION}`,
-  `pi:${PI_CODING_AGENT_VERSION}`,
-].join(':');
+// Re-export version key builders (imported from version-keys.ts)
+export const harnessVersionKey = _harnessVersionKey;
+export const sandboxVersionStr = () => _sandboxVersionStrBuilder(SANDBOX_VERSION, RUNTIME_LAYER_VERSION);
+
 const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${harnessVersionKey()}:${AGENT_BROWSER_VERSION}`;
-const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:harnesses:${harnessVersionKey()}:ab:${AGENT_BROWSER_VERSION}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

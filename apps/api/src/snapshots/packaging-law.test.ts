@@ -27,6 +27,7 @@ import {
 
 import { buildLayeredDockerfile } from './dockerfile-layer';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import { harnessVersionKey } from './version-keys';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -162,22 +163,13 @@ describe('packaging law: image build verifies each adapter via a version/help pr
 
 describe('packaging law: the runtime fingerprint folds all four adapter pins', () => {
   test('a fingerprint built from the real harness-version formula contains all four pin values as substrings', async () => {
-    // Mirrors templates.ts harnessVersionKey()/sandboxVersionStr() EXACTLY
-    // (templates.ts:827-835): `oc:<v>:claude-acp:<v>:codex-acp:<v>:pi-acp:<v>:pi:<v>`
-    // folded into `sandboxVersion`. buildRuntimeArtifactFingerprint (imported
-    // for real, not reimplemented) writes `sandboxVersion` as a literal
+    // Uses the REAL harnessVersionKey() from templates.ts (now exported).
+    // buildRuntimeArtifactFingerprint writes `sandboxVersion` as a literal
     // PREFIX of its return value (runtime-fingerprint.ts:47) rather than
-    // hashing it away — so this is the same law templates.ts enforces in
-    // production, exercised without templates.ts's `../config`/`../shared/db`
-    // imports (which `process.exit(1)` on incomplete local secrets).
-    const harnessVersionKey = [
-      `oc:${OPENCODE_VERSION}`,
-      `claude-acp:${CLAUDE_AGENT_ACP_VERSION}`,
-      `codex-acp:${CODEX_ACP_VERSION}`,
-      `pi-acp:${PI_ACP_VERSION}`,
-      `pi:${PI_CODING_AGENT_VERSION}`,
-    ].join(':');
-    const sandboxVersion = `dev-sandbox:layer:1:harnesses:${harnessVersionKey}:ab:${AGENT_BROWSER_VERSION}`;
+    // hashing it away — so this exercises the same law templates.ts enforces
+    // in production.
+    const key = harnessVersionKey();
+    const sandboxVersion = `dev-sandbox:layer:1:harnesses:${key}:ab:${AGENT_BROWSER_VERSION}`;
 
     const fingerprint = await buildRuntimeArtifactFingerprint({
       sandboxVersion,
@@ -185,6 +177,7 @@ describe('packaging law: the runtime fingerprint folds all four adapter pins', (
       artifacts: [],
     });
 
+    // Assert all four pinned adapter versions are substrings of the output.
     for (const pin of [
       `oc:${OPENCODE_VERSION}`,
       `claude-acp:${CLAUDE_AGENT_ACP_VERSION}`,
