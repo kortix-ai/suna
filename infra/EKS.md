@@ -36,7 +36,7 @@ model is built to fix. This stack layers self-healing at every level:
 
 ```
 api-eks.kortix.com ─► Cloudflare (proxied, Full-strict)
-                       └─► ALB (ACM TLS, :80→:443)         ← AWS LB Controller, from the Ingress
+                       └─► ALB (ACM TLS, :443 only)        ← AWS LB Controller, from the Ingress
                             └─► EKS pods (kortix-api, 3 AZ) ← managed node group, private subnets
                                  envFrom ─► kortix-api-env  ← External Secrets, from Secrets Manager
                                                                (SAME bundle ECS uses: kortix-prod-env-omifd2)
