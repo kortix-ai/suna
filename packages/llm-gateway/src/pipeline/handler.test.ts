@@ -1337,6 +1337,41 @@ describe("gateway.chatCompletions — BILLING-CORRECTNESS: discarded-attempt usa
     expect(usage).toHaveLength(0);
     expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(false);
   });
+
+  test("a stream that fails mid-flight (upstream error frame, zero usage) does NOT trigger the zero-usage-extraction warning — a failed turn legitimately bills $0, that's not a usage-extraction bug", async () => {
+    const warnCalls: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (msg: string) => warnCalls.push(msg),
+      error: () => {},
+      debug: () => {},
+    };
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] }); // billable (markup 2)
+    // Real content streamed, then the upstream dies mid-flight with a
+    // structured error frame and no usage — exactly the "mid-stream failure"
+    // case PR #4821 (streaming reliability) surfaces as a real error, not a
+    // clean empty completion.
+    const midStreamErrorSse =
+      'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n' +
+      'data: {"error":{"message":"Overloaded","type":"overloaded_error","code":"overloaded_error"}}\n\n';
+    const fetchImpl: FetchImpl = async () => sseResponse(midStreamErrorSse);
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl, logger },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    // Nothing billable — but this must read as a FAILED turn, not silence.
+    expect(usage).toHaveLength(0);
+    expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(false);
+  });
 });
 
 describe("gateway.chatCompletions — BILLING-CORRECTNESS: atomic admission-hold reconciliation", () => {

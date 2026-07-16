@@ -831,7 +831,13 @@ export async function handleChatCompletions(
     // streaming completions bill $0 with no signal at all (the check below
     // that gates recordUsage would otherwise skip silently). Distinct from the
     // $0-pricing warning above, which fires only when tokens WERE counted.
-    if (markup > 0 && billedTokenTotal === 0) {
+    //
+    // Gated on `!streamError`: a stream that failed mid-flight (upstream error
+    // frame, dropped connection — see streaming.ts's abort/mid-stream-error
+    // handling) legitimately delivers nothing and legitimately bills $0 —
+    // that's a failed turn, not a usage-extraction bug, and must not be
+    // conflated with "billing quietly broke" noise.
+    if (markup > 0 && billedTokenTotal === 0 && !streamError) {
       logger.warn(
         `[llm-gateway] billable ${streaming ? 'streaming' : 'non-streaming'} request settled with ZERO extracted usage — usage extraction likely broken for this upstream shape ${requestId} model=${usedModel} provider=${finalDescriptor.provider}`,
       );
