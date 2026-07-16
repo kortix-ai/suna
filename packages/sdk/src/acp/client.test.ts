@@ -612,4 +612,160 @@ describe('ACP client', () => {
     expect(capturedHeaders.length).toBe(1);
     expect(capturedHeaders[0]['Last-Event-ID']).toBe('0');
   });
+
+  // WS3-P0-a parity pins. Written and confirmed GREEN against the
+  // hand-rolled `consumeSse` in `client.ts` BEFORE the SSE/JSON-RPC core was
+  // extracted to `sse-core.ts`, and left untouched (still green) after — see
+  // packages/sdk/PROGRESS.md and the WS3-P0-a report for the before/after
+  // evidence. These pin the exact parsing behavior of the CURRENT client, not
+  // an idealized one: CRLF holdback across multiple chunk boundaries
+  // (including a boundary that lands mid-terminator), poison-block tolerance
+  // sandwiched between good blocks, id<=lastEventId dedupe bookkeeping, and
+  // silently-skipped keepalive/comment-only blocks.
+  describe('SSE/JSON-RPC parity pins (WS3-P0-a)', () => {
+    test('clean multi-block stream: permission/question/tool_call/error-response envelopes all delivered in order', async () => {
+      // Envelope shapes reused from __fixtures__/acp-session-mixed.json
+      // (ordinals 6, 13, 37, 39) to pin against realistic wire shapes rather
+      // than synthetic ones.
+      const permission = {
+        jsonrpc: '2.0',
+        id: 'perm-1',
+        method: 'session/request_permission',
+        params: {
+          permission: 'bash',
+          patterns: ['rm -rf *'],
+          options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }],
+          toolCall: { title: 'Shell' },
+        },
+      };
+      const question = {
+        jsonrpc: '2.0',
+        id: 11,
+        method: 'session/request_input',
+        params: {
+          questions: [{ key: 'confirm', question: 'Proceed?', options: [{ optionId: 'yes', label: 'Yes' }, { optionId: 'no', label: 'No' }] }],
+        },
+      };
+      const toolCall = {
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          update: { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'Read file', kind: 'read', status: 'pending', rawInput: { path: 'a.pdf' } },
+        },
+      };
+      const cancelled = { jsonrpc: '2.0', id: 'perm-3', error: { code: -32000, message: 'cancelled' } };
+      const blocks = [permission, question, toolCall, cancelled]
+        .map((envelope, i) => `id: ${101 + i}\ndata: ${JSON.stringify(envelope)}\n\n`)
+        .join('');
+      const client = createAcpClient({
+        endpoint: 'https://api.test/acp/s1',
+        streamTransport: 'sse',
+        fetch: (async () => sseResponse([blocks])) as unknown as typeof fetch,
+      });
+      const events: any[] = [];
+      await new Promise<void>((resolve) => {
+        client.connect({
+          reconnect: false,
+          onEvent: (event) => { events.push(event); if (events.length === 4) resolve(); },
+        });
+      });
+      expect(events.map((e) => e.id)).toEqual([101, 102, 103, 104]);
+      expect(events[0].envelope.method).toBe('session/request_permission');
+      expect(events[1].envelope.method).toBe('session/request_input');
+      expect(events[2].envelope.params.update.sessionUpdate).toBe('tool_call');
+      expect(events[3].envelope.error.message).toBe('cancelled');
+    });
+
+    test('connect parses a CRLF terminator split across 3 chunk reads (mid-terminator boundary)', async () => {
+      const client = createAcpClient({
+        endpoint: 'https://api.test/acp/s1',
+        streamTransport: 'sse',
+        fetch: (async () => sseResponse([
+          'id: 1\r\ndata: {"jsonrpc":"2.0","method":"m1"}\r', // holds back the terminator's first CR
+          '\n\r', // completes CRLF #1, opens CR of CRLF #2
+          '\nid: 2\r\ndata: {"jsonrpc":"2.0","method":"m2"}\r\n\r\n', // completes CRLF #2, then a whole second block
+        ])) as unknown as typeof fetch,
+      });
+      const events: number[] = [];
+      await new Promise<void>((resolve) => {
+        client.connect({
+          reconnect: false,
+          onEvent: (event) => { events.push(event.id); if (events.length === 2) resolve(); },
+        });
+      });
+      expect(events).toEqual([1, 2]);
+    });
+
+    test('a poison block sandwiched between two valid blocks: both valid events delivered, exactly one onError, single fetch (no reconnect storm)', async () => {
+      let calls = 0;
+      const client = createAcpClient({
+        endpoint: 'https://api.test/acp/s1',
+        streamTransport: 'sse',
+        fetch: (async () => {
+          calls += 1;
+          return sseResponse([
+            'id: 1\ndata: {"jsonrpc":"2.0","method":"m1"}\n\n' +
+            'id: 2\ndata: {not valid json\n\n' +
+            'id: 3\ndata: {"jsonrpc":"2.0","method":"m3"}\n\n',
+          ]);
+        }) as unknown as typeof fetch,
+      });
+      const events: number[] = [];
+      const errors: unknown[] = [];
+      await new Promise<void>((resolve) => {
+        client.connect({
+          reconnect: false,
+          onEvent: (event) => { events.push(event.id); if (events.length === 2) resolve(); },
+          onError: (error) => errors.push(error),
+        });
+      });
+      expect(events).toEqual([1, 3]);
+      expect(errors.length).toBe(1);
+      expect(calls).toBe(1);
+    });
+
+    test('a stream event with id <= the resume lastEventId is deduped and never delivered to onEvent', async () => {
+      const client = createAcpClient({
+        endpoint: 'https://api.test/acp/s1',
+        streamTransport: 'sse',
+        fetch: (async () => sseResponse([
+          'id: 5\ndata: {"jsonrpc":"2.0","method":"stale"}\n\n' +
+          'id: 6\ndata: {"jsonrpc":"2.0","method":"fresh"}\n\n',
+        ])) as unknown as typeof fetch,
+      });
+      const events: any[] = [];
+      await new Promise<void>((resolve) => {
+        client.connect({
+          reconnect: false,
+          lastEventId: 5,
+          onEvent: (event) => { events.push(event); resolve(); },
+        });
+      });
+      expect(events.length).toBe(1);
+      expect(events[0].id).toBe(6);
+      expect(events[0].envelope.method).toBe('fresh');
+    });
+
+    test('a keepalive/comment-only block (no id:, no data:) is silently skipped: no event, no error', async () => {
+      const client = createAcpClient({
+        endpoint: 'https://api.test/acp/s1',
+        streamTransport: 'sse',
+        fetch: (async () => sseResponse([
+          ': keepalive\n\n' +
+          'id: 1\ndata: {"jsonrpc":"2.0","method":"m1"}\n\n',
+        ])) as unknown as typeof fetch,
+      });
+      const events: number[] = [];
+      const errors: unknown[] = [];
+      await new Promise<void>((resolve) => {
+        client.connect({
+          reconnect: false,
+          onEvent: (event) => { events.push(event.id); resolve(); },
+          onError: (error) => errors.push(error),
+        });
+      });
+      expect(events).toEqual([1]);
+      expect(errors.length).toBe(0);
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import { authenticatedFetch } from '../core/http/auth';
+import { createSseBlockParser, isAcpResponseEnvelope, isDeliverableSseBlock } from './sse-core';
 import type { AcpTranscriptRow } from './transcript';
 import type {
   AcpConnectionState,
@@ -44,10 +45,6 @@ export type AcpClientOptions = {
   transcriptPollIntervalMs?: number;
 };
 
-function isResponse(value: AcpEnvelope): value is AcpResponse {
-  return 'id' in value && ('result' in value || 'error' in value) && !('method' in value);
-}
-
 export class AcpClient {
   private nextId = 0;
   /**
@@ -82,7 +79,7 @@ export class AcpClient {
   async request<T = unknown>(method: string, params?: unknown): Promise<T> {
     const id = `${this.idPrefix}-${++this.nextId}`;
     const envelope = await this.post({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
-    if (!envelope || !isResponse(envelope)) throw new Error(`ACP method ${method} returned no JSON-RPC response`);
+    if (!envelope || !isAcpResponseEnvelope(envelope)) throw new Error(`ACP method ${method} returned no JSON-RPC response`);
     if (envelope.id !== id) {
       throw new Error(`ACP response id mismatch for ${method}: expected ${JSON.stringify(id)}, got ${JSON.stringify(envelope.id)}`);
     }
@@ -444,46 +441,25 @@ async function consumeSse(
   onParseError?: (id: number, error: unknown) => void,
 ): Promise<void> {
   const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+  const parser = createSseBlockParser();
   while (true) {
     const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    let holdback = '';
-    if (!done && buffer.endsWith('\r')) {
-      holdback = '\r';
-      buffer = buffer.slice(0, -1);
-    }
-    buffer = buffer.replace(/\r\n|\r/g, '\n');
-    // A finite test/server response may close immediately after the final
-    // event's terminating newline instead of sending another blank line.
-    if (done && buffer.trim()) buffer += '\n\n';
-    let boundary: number;
-    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      let id: number | null = null;
-      const data: string[] = [];
-      for (const line of block.split('\n')) {
-        if (line.startsWith('id:')) id = Number(line.slice(3).trim());
-        else if (line.startsWith('data:')) data.push(line.startsWith('data: ') ? line.slice(6) : line.slice(5));
-      }
-      if (id !== null && Number.isSafeInteger(id) && data.length) {
-        // A poison event (a well-formed `id:` line but unparseable `data:`)
-        // must not throw out of `consumeSse` — that would tear down the
-        // whole stream (and trigger a reconnect loop) over one bad event.
-        // Report it via `onParseError` and keep consuming the rest of the
-        // stream; the caller still advances its `lastEventId` past this id
-        // so a reconnect never re-requests the same poison event forever.
-        try {
-          const envelope = JSON.parse(data.join('\n')) as AcpEnvelope;
-          emit({ id, envelope });
-        } catch (error) {
-          onParseError?.(id, error);
-        }
+    const blocks = parser.push(value, done);
+    for (const block of blocks) {
+      if (!isDeliverableSseBlock(block)) continue;
+      // A poison event (a well-formed `id:` line but unparseable `data:`)
+      // must not throw out of `consumeSse` — that would tear down the
+      // whole stream (and trigger a reconnect loop) over one bad event.
+      // Report it via `onParseError` and keep consuming the rest of the
+      // stream; the caller still advances its `lastEventId` past this id
+      // so a reconnect never re-requests the same poison event forever.
+      try {
+        const envelope = JSON.parse(block.data.join('\n')) as AcpEnvelope;
+        emit({ id: block.id, envelope });
+      } catch (error) {
+        onParseError?.(block.id, error);
       }
     }
-    buffer += holdback;
     if (done) return;
   }
 }
