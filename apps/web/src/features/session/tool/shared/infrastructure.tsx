@@ -1005,8 +1005,10 @@ function PanelTool({
               onSubtitleClick={onSubtitleClick}
             />
           ) : (
-            <div className="[&>span:first-child>svg]:text-muted-foreground flex items-center gap-2.5 [&>span:first-child>svg]:size-4">
-              {trigger}
+            <div className="flex items-start justify-between gap-3">
+              <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 text-sm font-medium [&>span:first-child>svg]:size-4">
+                {trigger}
+              </div>
             </div>
           )}
         </div>
