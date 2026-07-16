@@ -12,6 +12,7 @@ import {
   renderTelegramStatus,
   shouldRespondInChat,
   stripBotMention,
+  telegramGroupLockedText,
   telegramGroupWelcomeText,
 } from './inbound';
 
@@ -261,6 +262,28 @@ describe('telegramGroupWelcomeText', () => {
     expect(telegramGroupWelcomeText(true)).toBe(TELEGRAM_GROUP_WELCOME_TEXT);
     expect(telegramGroupWelcomeText(null)).toBe(TELEGRAM_GROUP_WELCOME_TEXT);
     expect(TELEGRAM_GROUP_WELCOME_TEXT).toContain('@mention me');
+  });
+
+  test('both welcomes explain pairing (only paired users can drive the agent)', () => {
+    for (const text of [TELEGRAM_GROUP_WELCOME_TEXT, TELEGRAM_GROUP_WELCOME_PRIVACY_TEXT]) {
+      expect(text).toContain('paired users');
+      expect(text).toContain('/start <code>');
+    }
+  });
+});
+
+describe('telegramGroupLockedText', () => {
+  test('acknowledges the ping, routes pairing to a DM with the bot handle', () => {
+    const text = telegramGroupLockedText('KortixBot');
+    expect(text).toContain('not paired');
+    expect(text).toContain('@KortixBot'); // DM target
+    expect(text).toContain('/start <code>');
+  });
+
+  test('degrades gracefully with no known bot username', () => {
+    const text = telegramGroupLockedText(null);
+    expect(text).toContain('DM me privately');
+    expect(text).not.toContain('@');
   });
 });
 

@@ -71,6 +71,7 @@ import {
   renderTelegramFollowUpPrompt,
   renderTelegramStatus,
   shouldRespondInChat,
+  telegramGroupLockedText,
   telegramGroupWelcomeText,
 } from './telegram/inbound';
 import {
@@ -237,6 +238,23 @@ async function handleUpdate(
   if (command) {
     const token = await loadTelegramTokenForProject(projectId);
     if (!token) return;
+    // Allowlist gate for the ACTING commands: /new deletes the chat's session
+    // mapping (a stranger could sever a paired user's conversation) and
+    // /status /agent /model leak the project name, agent roster and model
+    // catalog. Telegram delivers /commands even to privacy-mode bots, so an
+    // unpaired group member reaches this block — gate it. /start (the pairing
+    // entry) and /help (generic copy) stay open.
+    const gatedCommand =
+      command.command === 'new' ||
+      command.command === 'status' ||
+      command.command === 'agent' ||
+      command.command === 'model';
+    if (gatedCommand && (await telegramSenderLocked(projectId, message))) {
+      await telegramSendMessage(token, message.chat.id, TELEGRAM_LOCKED_TEXT, {
+        replyToMessageId: message.message_id,
+      });
+      return;
+    }
     if (command.command === 'new') {
       // Forget EVERYTHING that would make the next message resume this chat's
       // session instead of starting a fresh one:
@@ -678,15 +696,23 @@ async function createOrJoinChatSession(input: {
       projectId,
       message.from?.id,
     );
-    // Tell the human how to pair instead of ghosting them — private chats
-    // only (a group hint would answer arbitrary bystanders), throttled via
-    // the dedup table so a chatty stranger can't turn us into a reply bot.
-    if (message.chat.type === 'private' && message.from?.id != null) {
+    // Tell the human how to pair instead of ghosting them. In GROUPS this only
+    // runs once shouldRespondInChat passed — i.e. they @mentioned or replied to
+    // the bot, deliberately addressing it, not arbitrary bystander chatter — so
+    // a reply is warranted (the group welcome even promises one). Throttled
+    // per-sender via the dedup table so a chatty stranger can't turn us into a
+    // reply bot. Group copy points to a DM (pairing codes are single-use and
+    // shouldn't be burned publicly in the group).
+    if (message.from?.id != null) {
       const hintKey = `telegram:pairhint:${botId}:${chatId}:${message.from.id}`;
       if (await claimOnce(hintKey)) {
         const token = await loadTelegramTokenForProject(projectId);
         if (token) {
-          await telegramSendMessage(token, message.chat.id, TELEGRAM_LOCKED_TEXT, {
+          const hint =
+            message.chat.type === 'private'
+              ? TELEGRAM_LOCKED_TEXT
+              : telegramGroupLockedText(botUsername);
+          await telegramSendMessage(token, message.chat.id, hint, {
             replyToMessageId: message.message_id,
           }).catch(() => {});
         }

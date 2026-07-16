@@ -307,6 +307,9 @@ export const TELEGRAM_GROUP_WELCOME_TEXT = [
   'In groups I stay quiet until you need me — @mention me or reply to one of my',
   'messages and an agent picks the task up, then answers right here.',
   '',
+  'I only run for paired users: ask a project admin for a code, then DM me',
+  '/start <code> to get access.',
+  '',
   '/help for what I can do · /status for this chat’s agent & model.',
 ].join('\n');
 
@@ -324,6 +327,9 @@ export const TELEGRAM_GROUP_WELCOME_PRIVACY_TEXT = [
   "⚠️ I can't see @mentions yet — this bot's Telegram privacy mode is on.",
   'To enable mentions: @BotFather → /setprivacy → Disable, then remove and',
   're-add me to this group.',
+  '',
+  'I only run for paired users: ask a project admin for a code, then DM me',
+  '/start <code> to get access.',
   '',
   '/help for what I can do · /status for this chat’s agent & model.',
 ].join('\n');
@@ -357,6 +363,20 @@ export const TELEGRAM_LOCKED_TEXT = [
   'Ask a project admin for a pairing code (dashboard → Customize → Channels →',
   'Telegram → Pair), then send: /start <code>',
 ].join('\n');
+
+/** The unpaired-sender reply for a GROUP: acknowledges the deliberate ping
+ *  (they @mentioned/replied) but sends pairing to a DM — a single-use code
+ *  should never be burned publicly in the group. */
+export function telegramGroupLockedText(botUsername: string | null): string {
+  const dm = botUsername ? `DM me (@${botUsername})` : 'DM me privately';
+  return [
+    "👋 I can see you, but you're not paired with this project yet, so I can't",
+    'run the agent for you here.',
+    '',
+    `To get access: ask a project admin for a pairing code, then ${dm} and`,
+    'send: /start <code>',
+  ].join('\n');
+}
 
 // ─── Session prompts ─────────────────────────────────────────────────────────
 
