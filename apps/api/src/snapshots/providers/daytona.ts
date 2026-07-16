@@ -114,7 +114,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       // reports as "Path does not exist: …/scaffold.git". Re-staging self-heals
       // it so the auto/background build recovers on its own instead of needing a
       // manual rebuild (the "always have to manually start" symptom).
-      const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
+      const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
       const buildLogs: string[] = [];
       try {
         await daytona.snapshot.create(

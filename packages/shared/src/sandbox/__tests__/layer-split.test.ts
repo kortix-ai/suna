@@ -146,7 +146,7 @@ describe('the halves join without a seam', () => {
     // stage. (The type system enforces it; this pins the rendered output too.)
     const toolchain = kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION });
     expect(toolchain).not.toContain('COPY ');
-    expect(toolchain).toContain('RUN apt-get update \\');
+    expect(toolchain).toContain('    && apt-get update \\');
   });
 
   test('the optional catalog COPY only appears when catalogPath is set', () => {

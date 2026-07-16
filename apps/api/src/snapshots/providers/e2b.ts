@@ -60,7 +60,7 @@ class E2BAdapter implements SandboxProviderAdapter {
       throw new Error('E2BAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const context = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
+    const context = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     observeTemplates.invalidate();
     try {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start
