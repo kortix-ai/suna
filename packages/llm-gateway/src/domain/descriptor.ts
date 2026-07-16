@@ -11,6 +11,11 @@ export interface UpstreamPricing {
   inputPerMillion: number;
   outputPerMillion: number;
   cachedInputPerMillion?: number;
+  // Prompt-cache WRITE rate (Anthropic's cache-creation premium — ~1.25x base
+  // input for the default 5-minute TTL, ~2x for a 1-hour TTL). Falls back to a
+  // documented multiple of inputPerMillion when a live source doesn't provide
+  // it (see usage/pricing.ts).
+  cacheWritePerMillion?: number;
 }
 
 export interface UpstreamDescriptor {

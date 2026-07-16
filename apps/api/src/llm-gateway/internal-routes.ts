@@ -93,8 +93,8 @@ export function createInternalGatewayRoutes() {
   app.post('/billing', async (c) => {
     const { accountId } = await c.req.json();
     try {
-      await assertBillingActive(accountId);
-      return c.json({ active: true });
+      const result = await assertBillingActive(accountId);
+      return c.json({ active: true, holdUsd: result?.holdUsd });
     } catch (err) {
       return c.json({
         active: false,

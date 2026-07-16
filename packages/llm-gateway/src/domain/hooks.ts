@@ -35,7 +35,11 @@ export interface GatewayHooks {
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
-  assertBillingActive: (accountId: string) => Promise<void>;
+  // Resolves (or throws) once the account's billing state is checked. May
+  // return a `holdUsd` when it took an atomic admission hold against the
+  // wallet — the handler attaches it to the principal so settle() can
+  // reconcile it to the real cost (see AuthedPrincipal.billingHold).
+  assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
   assertBudget?: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace?: (trace: GatewayTrace) => Promise<void>;

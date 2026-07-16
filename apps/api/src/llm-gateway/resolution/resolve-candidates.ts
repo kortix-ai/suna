@@ -3,7 +3,7 @@ import {
   GatewayResolutionError,
   type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
-import { getAccountTier } from '../../billing/services/entitlements';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import {
@@ -18,24 +18,18 @@ import { resolveGatewayRoute } from '../routing';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
-const TIER_CACHE_TTL_MS = 30_000;
 
-const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
-
-// `now` is injectable (defaults to Date.now()) purely so the 30s TTL boundary
-// is unit-testable without a real wall-clock sleep — every production call
-// site leaves it unset and gets the real clock.
-export async function resolveCachedAccountTier(
-  accountId: string,
-  now: number = Date.now(),
-): Promise<string> {
-  const cached = accountTierCache.get(accountId);
-  if (cached && cached.expiresAt > now) return cached.tier;
-
-  const tier = await getAccountTier(accountId);
-  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
-  return tier;
-}
+// Tier resolution is the SHARED 30s-TTL cache in billing/services/entitlements
+// (getCachedAccountTier) — this used to keep its own independent cache/Map
+// here, so the BYOK fee-waiver decision below and the managed-model free-tier
+// gate a few lines later could each see a different (stale-vs-fresh) tier for
+// up to 30s after an upgrade/downgrade, resolved at different wall-clock
+// instants. One cache, one invalidation point (entitlements.
+// invalidateCachedAccountTier) removes that skew. `getCachedAccountTier`
+// itself takes an injectable `now` (defaults to Date.now()) so the 30s TTL
+// boundary stays unit-testable without a real wall-clock sleep — this is a
+// thin re-export, not a second implementation.
+export const resolveCachedAccountTier = getCachedAccountTier;
 
 // A managed model to fall over to when a BYOK key hits a limit (429/402/403).
 // Gated on the managed gateway being on + the managed provider being on (CLOUD-
