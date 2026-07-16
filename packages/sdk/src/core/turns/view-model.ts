@@ -39,6 +39,14 @@
  * `permission` isn't included: it's a request keyed by `{messageID,callID}`
  * pointing AT a tool call (see `RequestWithToolLike` in types.ts), not a
  * tool call itself — there's no tool named `permission` on the wire.
+ *
+ * @deprecated Part of the OpenCode-wire projection stack, superseded by the
+ * ACP projection layer's `AcpToolCall` (`./acp/transcript.ts`'s
+ * `AcpChatItem` with `kind: 'tool'`, fed by `./acp/reduce.ts`) — the live
+ * conversation surface renders tool cards from that shape, not from
+ * `ToolViewModel`. Kept working (session-list previews, `?oc` deep-links,
+ * `apps/mobile`), not removed; frozen by `../../transcript.golden.test.ts`.
+ * No new callers, please.
  */
 
 import { normalizeToolName } from './tool-registry';
@@ -471,6 +479,11 @@ function genericViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'gener
  * session_, agent_, project_, trigger_ prefixed plugin tools, pty_*, …) falls back
  * to `generic`, which is always safe to render (pretty-printed input/output,
  * capped).
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — see the module
+ * doc at the top of this file. The ACP replacement (`AcpToolCall`) does not
+ * have a per-family view-model dispatcher; renderers read `toolKind`/
+ * `content`/`rawInput`/`rawOutput` directly off the `AcpChatItem`.
  */
 export function toolViewModel(tool: ToolView): ToolViewModel {
   const name = normalizeToolName(tool.name);

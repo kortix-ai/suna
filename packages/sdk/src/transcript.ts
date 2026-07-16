@@ -4,6 +4,16 @@
  *
  * Ported from the Runtime TUI:
  * packages/opencode/src/cli/cmd/tui/util/transcript.ts
+ *
+ * @deprecated Part of the OpenCode-wire projection stack, superseded by the
+ * ACP projection layer (`./acp/transcript.ts`'s `acpTranscriptMarkdown` /
+ * `acpTranscriptHtml` / `acpTranscriptJsonl`, fed by `./acp/reduce.ts`). The
+ * live conversation surface (`apps/web`'s `acp-session-chat`) already
+ * renders exclusively from the ACP engine — this module today serves only
+ * session-list previews, `?oc` deep-link exports, and `apps/mobile`. Kept
+ * working, not removed: still exported, still covered by the golden parity
+ * harness (`./transcript.golden.test.ts`). No new callers, please — reach
+ * for the ACP projections above instead.
  */
 
 import type { Message, Part } from './runtime/wire-types';
@@ -12,6 +22,10 @@ import type { Message, Part } from './runtime/wire-types';
 // Types
 // ============================================================================
 
+/** @deprecated OpenCode-wire formatting options for {@link formatTranscript}.
+ *  The ACP replacements (`acpTranscriptMarkdown`/`acpTranscriptHtml` in
+ *  `./acp/transcript.ts`) take no options — they always render the full
+ *  coalesced chat-item stream. */
 export interface TranscriptOptions {
   /** Include reasoning / thinking blocks. */
   thinking: boolean;
@@ -21,17 +35,25 @@ export interface TranscriptOptions {
   assistantMetadata: boolean;
 }
 
+/** @deprecated OpenCode-wire session header shape for {@link formatTranscript}.
+ *  ACP callers already have this from `client.transcript()`'s session
+ *  metadata or the platform `ProjectSession` — no equivalent type is needed. */
 export interface SessionInfo {
   id: string;
   title: string;
   time: { created: number; updated: number };
 }
 
+/** @deprecated OpenCode-wire message+parts shape for {@link formatTranscript}
+ *  and `classifyTurn` (`./core/turns/classify.ts`). The ACP replacement is
+ *  `AcpStoredEnvelope[]` (`./acp/transcript.ts`), fed to
+ *  `acpTranscriptMarkdown`/`acpTranscriptHtml`/`projectAcpChatItems`. */
 export interface MessageWithParts {
   info: Message;
   parts: Part[];
 }
 
+/** @deprecated Defaults for the deprecated {@link TranscriptOptions}. */
 export const DEFAULT_TRANSCRIPT_OPTIONS: TranscriptOptions = {
   thinking: false,
   toolDetails: true,
@@ -150,6 +172,12 @@ function formatMessage(
 
 /**
  * Format an entire session as a Markdown transcript.
+ *
+ * @deprecated Part of the OpenCode-wire projection stack. Use
+ * `acpTranscriptMarkdown`/`acpTranscriptHtml` (`./acp/transcript.ts`) with
+ * `AcpStoredEnvelope[]` rows instead — same "one section per message/tool"
+ * shape, sourced from the ACP engine that already owns the live conversation
+ * surface. Frozen behavior, pinned by `./transcript.golden.test.ts`.
  */
 export function formatTranscript(
   session: SessionInfo,

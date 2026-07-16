@@ -106,6 +106,11 @@ export {
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
  * Markdown, zero DOM deps, so any host (web, mobile, CLI) exports a transcript
  * the same way.
+ *
+ * `@deprecated` — OpenCode-wire projection stack, superseded by the ACP
+ * projection layer (`acpTranscriptMarkdown`/`acpTranscriptHtml` above, from
+ * `./acp`). Kept working (session-list previews, `?oc` deep-links,
+ * `apps/mobile`), not removed. See `./transcript.ts`'s module doc.
  */
 export {
   DEFAULT_TRANSCRIPT_OPTIONS,
@@ -166,6 +171,12 @@ export {
  * failure" as silent nothingness. `toolInfo` is a zero-icon tool-name ->
  * {label, category} registry a host maps to its own icon set. Also available
  * from `@kortix/sdk/turns`.
+ *
+ * `@deprecated` — OpenCode-wire projection stack, superseded by the ACP
+ * projection layer's `AcpChatItem`/`AcpToolCall` (`projectAcpChatItems`
+ * above, from `./acp`). Kept working (session-list previews, `?oc`
+ * deep-links, `apps/mobile`), not removed. See `./core/turns/classify.ts`'s
+ * module doc.
  */
 export {
   type ClassifiedAgentPart,
@@ -308,6 +319,10 @@ export { stripTrailingSlashes } from './platform/strings';
  * router/executor tools like `web_search` commonly return on failure — now
  * classifies as `status: 'error'` instead of rendering as a success with raw
  * JSON inside). Also available from `@kortix/sdk/turns`.
+ *
+ * `@deprecated` — OpenCode-wire projection stack, superseded by the ACP
+ * `AcpToolCall` shape. Kept working, not removed. See
+ * `./core/turns/view-model.ts`'s module doc.
  */
 export {
   type DiffLine,

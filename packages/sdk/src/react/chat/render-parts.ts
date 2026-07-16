@@ -13,12 +13,19 @@
  * "silently drops subtask/patch/snapshot/agent/retry/compaction" bug class at
  * the CALL site the same way `classifyPart` closes it at the classification
  * site.
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — dispatches over
+ * `ClassifiedPart` (`../../core/turns/classify.ts`), superseded by the ACP
+ * `AcpChatItem` union. `apps/whitelabel-demo`'s `tool-call.tsx`/
+ * `message-view.tsx` are the one real consumer today; kept working, not
+ * removed.
  */
 
 import type { ClassifiedPart } from '../../core/turns';
 
 type PartOfKind<K extends ClassifiedPart['kind']> = Extract<ClassifiedPart, { kind: K }>;
 
+/** @deprecated See the module doc above. */
 export type PartRenderers<T> = {
   [K in ClassifiedPart['kind']]: (part: PartOfKind<K>) => T;
 } & {
@@ -35,6 +42,9 @@ export type PartRenderers<T> = {
  * this should be unreachable given `PartRenderers<T>`'s type (every kind is
  * required), so hitting it means the renderers object was built unsafely
  * (e.g. via `as PartRenderers<T>`).
+ *
+ * @deprecated Part of the OpenCode-wire projection stack — see the module
+ * doc above.
  */
 export function renderParts<T>(parts: ClassifiedPart[], renderers: PartRenderers<T>): T[] {
   return parts.map((part) => {
