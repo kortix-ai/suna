@@ -1,5 +1,6 @@
 'use client';
 
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { Check, ChevronRight, Copy, Laptop } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export function SessionTerminalConnectBar({ projectSessionId }: { projectSessionId: string }) {
   const [expanded, setExpanded] = useState(false);
   const connectCmd = `kortix sessions connect ${projectSessionId}`;
-  const installCmd = 'npm i -g @kortix/cli';
+  const installCmd = KORTIX_CLI_INSTALL_COMMAND;
 
   return (
     <div className="shrink-0 border-b border-white/10 bg-[#15151d] text-[13px]">
@@ -32,10 +33,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
         <span className="shrink-0 font-medium">Connect from your machine</span>
         <span className="min-w-0 flex-1 truncate font-mono text-white/35">{connectCmd}</span>
         <ChevronRight
-          className={cn(
-            'h-3.5 w-3.5 shrink-0 transition-transform',
-            expanded && 'rotate-90',
-          )}
+          className={cn('h-3.5 w-3.5 shrink-0 transition-transform', expanded && 'rotate-90')}
         />
       </button>
 

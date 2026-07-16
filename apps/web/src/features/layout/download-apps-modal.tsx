@@ -15,11 +15,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { errorToast } from '@/components/ui/toast';
 import { desktopDownloadUrl, startDownload } from '@/lib/desktop';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { Check, Copy, Monitor, Smartphone, Terminal } from 'lucide-react';
 import { useEffect, useState } from 'react';
-
-const CLI_INSTALL_CMD = 'curl -fsSL https://kortix.com/install | bash';
 
 type PlatformId = 'macos' | 'windows' | 'linux';
 
@@ -140,8 +139,7 @@ function TerminalMockup() {
       </div>
       <div className="space-y-1 p-3 font-mono text-[9px] leading-relaxed text-zinc-300">
         <div>
-          <span className="text-emerald-400">$</span>{' '}
-          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextCurlFsSLKortix0e6a96da')}
+          <span className="text-emerald-400">$</span> {KORTIX_CLI_INSTALL_COMMAND}
         </div>
         <div className="text-zinc-500">
           {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextInstalledKortix44ca8439')}
@@ -230,7 +228,7 @@ export function DownloadAppsModal({
 
   const copyCli = async () => {
     try {
-      await navigator.clipboard.writeText(CLI_INSTALL_CMD);
+      await navigator.clipboard.writeText(KORTIX_CLI_INSTALL_COMMAND);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -326,7 +324,7 @@ export function DownloadAppsModal({
                       'autoFeaturesLayoutDownloadAppsModalJsxAttrTitleClickTob497d6e9',
                     )}
                   >
-                    <span className="truncate">{CLI_INSTALL_CMD}</span>
+                    <span className="truncate">{KORTIX_CLI_INSTALL_COMMAND}</span>
                     {copied ? (
                       <Check className="size-3.5 shrink-0 text-emerald-500" />
                     ) : (
