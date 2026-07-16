@@ -208,6 +208,108 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 </table>
 `;
 
+// ---------------------------------------------------------------------------
+// Task 10 fixtures — the converted Advanced-mode views from T5-T7: get-mem,
+// memory-search (full rebuilds), agent-spawn/agent-status (bypasser family),
+// an executor call (tokens + OutputBlock), session-stats + dcp-compress (one
+// representative each), triggers' non-bracket fallback path (OutputBlock,
+// not the parsed row list), and project-delete (chrome-only, no output).
+// ---------------------------------------------------------------------------
+// NOTE: parseMemoryEntryOutput's Tool/Prompt/Session/Created regexes don't
+// stop at a following "Facts:" label, so whichever of those fields sits
+// directly before Facts swallows the entire Facts block into its own value
+// (pre-existing bug in lib/utils/memory-entry-output.ts — present in its own
+// passing test fixture too, just not asserted against). A second, related
+// bug collapses multi-bullet Facts sections into one entry. Both are out of
+// scope for this fixtures pass (see task-10-report.md); going straight from
+// Narrative to Facts here (no Tool/Session/Created) sidesteps them so the
+// debug page itself reads clean.
+const GET_MEM_OUTPUT = `=== Observation #482 [insight] ===
+Title: Pricing page conversion insight
+Narrative:
+Users bounce from the pricing page when the enterprise tier shows no price. Adding "Custom — talk to sales" reduced bounce by 12%.
+Facts:
+- Enterprise tier previously showed a blank price field before the fix shipped
+Concepts: pricing, conversion, enterprise
+Files read: apps/web/src/app/pricing/page.tsx, apps/web/src/lib/pricing.ts`;
+
+const MEMORY_SEARCH_OUTPUT = JSON.stringify({
+  query: 'pricing page bounce rate',
+  source: 'ltm',
+  results: [
+    {
+      id: 'mem_482',
+      type: 'insight',
+      source: 'ltm',
+      confidence: 0.91,
+      content:
+        'Users bounce from the pricing page when the enterprise tier shows no price. Adding "Custom — talk to sales" reduced bounce by 12%.',
+      files: ['apps/web/src/app/pricing/page.tsx'],
+    },
+    {
+      id: 'obs_117',
+      type: 'note',
+      source: 'obs',
+      confidence: 0.64,
+      content: 'Earlier run flagged the same bounce pattern on the mobile breakpoint.',
+      files: [],
+    },
+  ],
+});
+
+const AGENT_SPAWN_OUTPUT = `## Worker Result
+**Agent:** writer
+**Task:** Draft the pricing comparison report
+**Status:** completed
+**Session:** ses_7a41
+**Duration:** 48s
+---
+Wrote the pricing comparison report covering Acme, Globex, and Initech. Flagged that Acme undercuts on annual billing discounts.`;
+
+const AGENT_STATUS_OUTPUT = [
+  '**task-a1b2c3d4** Draft the pricing comparison report — completed ses_7a41',
+  '**task-e5f6a7b8** Generate the cover image — in_progress',
+  '**task-c9d0e1f2** QA the report on mobile — pending',
+].join('\n');
+
+const EXECUTOR_CALL_OUTPUT = JSON.stringify({
+  ok: true,
+  status: 'ok',
+  risk: 'read',
+  data: {
+    issues: [
+      { id: 'ENG-142', title: 'Pricing page bounce on enterprise tier', status: 'In Progress' },
+      { id: 'ENG-138', title: 'Add favicon fallback for unresolved domains', status: 'Done' },
+    ],
+  },
+});
+
+const SESSION_STATS_OUTPUT = `## Session stats
+
+- Messages: 42
+- Tool calls: 118
+- Tokens: 284,102 in / 19,884 out
+- Duration: 26m 12s
+- Cost: $1.84`;
+
+const DCP_COMPRESS_OUTPUT = `Compressed 6 tool results about "pricing research" into a 3-sentence summary:
+
+Acme and Globex both gate SSO behind their top tier. Our Growth plan undercuts Acme's equivalent by $10/mo while matching seat count. Recommendation: lead with the SSO parity + price gap in the launch page hero.`;
+
+const TRIGGERS_GET_OUTPUT = JSON.stringify(
+  {
+    id: 'trg_9f21',
+    name: 'Nightly pricing sync',
+    source_type: 'cron',
+    schedule: '0 3 * * *',
+    status: 'active',
+    agent: 'agent_writer',
+    last_run: '2026-07-15T03:00:00Z',
+  },
+  null,
+  2,
+);
+
 type Row = { label: string; node: React.ReactNode };
 type Group = { title: string; rows: Row[] };
 
@@ -594,6 +696,74 @@ const GROUPS: Group[] = [
             '',
           ),
         ),
+      },
+    ],
+  },
+  {
+    title: 'Advanced-mode conversions (T5-T7)',
+    rows: [
+      {
+        label: 'get_mem',
+        node: part('get_mem', done({ source: 'ltm', id: 482 }, GET_MEM_OUTPUT)),
+      },
+      {
+        label: 'memory_search',
+        node: part(
+          'memory_search',
+          done({ query: 'pricing page bounce rate', source: 'ltm' }, MEMORY_SEARCH_OUTPUT),
+        ),
+      },
+      {
+        label: 'agent_spawn',
+        node: part(
+          'agent_spawn',
+          done(
+            {
+              title: 'Draft the pricing comparison report',
+              agent_id: 'agent_writer',
+              verification_condition:
+                'The report file exists at /workspace/reports/pricing-comparison.md and covers at least 3 competitors.',
+            },
+            AGENT_SPAWN_OUTPUT,
+          ),
+        ),
+      },
+      {
+        label: 'agent_status',
+        node: part('agent_status', done({}, AGENT_STATUS_OUTPUT)),
+      },
+      {
+        label: 'kortix-executor_call',
+        node: part(
+          'kortix-executor_call',
+          done(
+            {
+              connector: 'linear',
+              action: 'list_issues',
+              args: { teamId: 'ENG', limit: 5 },
+            },
+            EXECUTOR_CALL_OUTPUT,
+          ),
+        ),
+      },
+      {
+        label: 'session_stats',
+        node: part('session_stats', done({}, SESSION_STATS_OUTPUT)),
+      },
+      {
+        label: 'compress (dcp)',
+        node: part('compress', done({ topic: 'pricing research' }, DCP_COMPRESS_OUTPUT)),
+      },
+      {
+        label: 'triggers (get, fallback dump)',
+        node: part(
+          'triggers',
+          done({ action: 'get', trigger_id: 'trg_9f21' }, TRIGGERS_GET_OUTPUT),
+        ),
+      },
+      {
+        label: 'project_delete',
+        node: part('project_delete', done({ project: 'kortix-marketing-site' }, '')),
       },
     ],
   },
