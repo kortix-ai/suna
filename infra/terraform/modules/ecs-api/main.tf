@@ -138,12 +138,25 @@ resource "aws_lb" "this" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets = [
-    var.public_subnet_ids[0],
-    var.public_subnet_ids[1],
-  ]
+
+  # Keep the two AZ attachments structurally explicit. Besides documenting the
+  # availability invariant, this lets static IaC analysis verify redundancy
+  # without having to evaluate a computed subnet list.
+  subnet_mapping {
+    subnet_id = var.public_subnet_ids[0]
+  }
+  subnet_mapping {
+    subnet_id = var.public_subnet_ids[1]
+  }
+
   idle_timeout = var.alb_idle_timeout
-  tags         = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-alb"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_lb_target_group" "this" {
