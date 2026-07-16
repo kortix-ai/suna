@@ -297,6 +297,38 @@ describe('translateResponsesResponse (failure + incomplete events)', () => {
     expect(finishReasons(chunks)).not.toContain('stop');
     expect(extractUsageFromSseBuffer(sse)?.completionTokens).toBe(3);
   });
+
+  // Regression coverage for the "mid-stream network failure laundered into a
+  // clean success" finding: previously a raw `reader.read()` exception hit a
+  // bare `finally { enqueue([DONE]); close(); }` with no `catch` at all — the
+  // exception was fully swallowed and the client saw a clean, silent [DONE].
+  test('a raw read() exception mid-stream is surfaced as an error chunk, not silently swallowed into [DONE]', async () => {
+    const upstream = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `event: response.created\ndata: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_x', model: 'gpt-5.5' } })}\n\n` +
+                `event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: 'partial' })}\n\n`,
+            ),
+          );
+        },
+        pull() {
+          throw new Error('codex upstream socket reset');
+        },
+      }),
+      { status: 200 },
+    );
+
+    const translated = await translateResponsesResponse(upstream, { streaming: true });
+    const sse = await translated.text();
+    const chunks = dataChunks(sse);
+
+    const errors = errorChunks(chunks);
+    expect(errors).toHaveLength(1);
+    expect((errors[0].error as Record<string, unknown>).message).toContain('codex upstream socket reset');
+    expect(sse).toContain('data: [DONE]'); // the finally's terminal frame still fires
+  });
 });
 
 describe('callUpstream with openai-responses transport', () => {

@@ -92,6 +92,7 @@ function translateStreaming(response: Response): Response {
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
   };
 
+  let doneSent = false;
   const stream = new ReadableStream({
     async start(controller) {
       const reader = response.body!.getReader();
@@ -180,12 +181,31 @@ function translateStreaming(response: Response): Response {
               };
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalChunk)}\n\n`));
               controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              doneSent = true;
             }
           }
         }
-      } catch {
-        // upstream stream broke; close what we have
+      } catch (err) {
+        // A network-level failure while reading the upstream body (dropped
+        // connection, timeout, TLS reset) must not be laundered into a clean
+        // stop — surface it as an OpenAI-shaped error frame (matching the
+        // `t === 'error'` handling above) so probeStream/relayStream — and
+        // settle() — see a real failure instead of a silent empty completion.
+        const message = err instanceof Error ? err.message : String(err);
+        const errChunk = {
+          error: {
+            message: message || 'anthropic upstream stream failed',
+            type: 'upstream_stream_error',
+            code: 'upstream_stream_error',
+          },
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(errChunk)}\n\n`));
       } finally {
+        // Every path out of this stream — a clean `message_stop`, a mid-flight
+        // `error` event with no following `message_stop`, or a raw read
+        // exception above — must end with a terminal [DONE] so a client (or
+        // the probe/relay layer) waiting on that frame never hangs.
+        if (!doneSent) controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
       }
     },

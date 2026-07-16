@@ -147,6 +147,27 @@ describe('bedrockEventStreamToSse', () => {
     const sse = await collectSse(bedrockEventStreamToSse(upstream));
     expect(sse).toContain('event: error');
   });
+
+  // Regression coverage for the mid-stream-network-failure-laundered-into-a-
+  // clean-success finding: a raw `reader.read()` exception on the event-stream
+  // body itself (not an AWS exception FRAME, an actual dropped connection) hit
+  // a bare `catch { close } finally { close }` with no error ever surfaced —
+  // the client saw a clean, silently truncated 200 stream.
+  test('a raw read() exception on the event-stream body is surfaced as an error, not silently closed', async () => {
+    const upstream = new Response(
+      new ReadableStream<Uint8Array>({
+        pull() {
+          throw new Error('bedrock socket reset');
+        },
+      }),
+      { status: 200 },
+    );
+    const sse = await collectSse(bedrockEventStreamToSse(upstream));
+    expect(sse).toContain('event: error');
+    const dataLine = sse.split('\n').find((l) => l.startsWith('data:'))!;
+    const parsed = JSON.parse(dataLine.slice(5).trim());
+    expect(parsed.error.message).toContain('bedrock socket reset');
+  });
 });
 
 describe('translateBedrockResponse (streaming) — end to end through the Anthropic SSE translator', () => {

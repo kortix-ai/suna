@@ -301,4 +301,55 @@ describe('translateAnthropicResponse (streaming)', () => {
     expect(parsed.error.type).toBe('overloaded_error');
     expect(parsed.error.code).toBe('overloaded_error');
   });
+
+  // Regression coverage for the "no guaranteed terminal frame" finding: Anthropic
+  // never sends a `message_stop` after a mid-stream `error` event, so without an
+  // explicit guarantee the translated stream ends with no [DONE] at all — a
+  // client/proxy waiting on that terminator can hang.
+  test('still terminates with data: [DONE] even though Anthropic sent no message_stop after the error', async () => {
+    const upstream = anthropicSse(
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":10}}}\n\n',
+      'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
+    );
+    const out = await translateAnthropicResponse(upstream, { streaming: true });
+    const text = await new Response(out.body).text();
+    expect(text.trim().endsWith('data: [DONE]')).toBe(true);
+  });
+
+  // Regression coverage for the "mid-stream network failures laundered into a
+  // clean success" finding: a raw read() exception (dropped connection, TLS
+  // reset) previously hit a bare `catch { /* close what we have */ }` that
+  // swallowed it with no trace and no terminal frame.
+  test('a raw read() exception is surfaced as an error frame, not silently swallowed', async () => {
+    const upstream = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_2","model":"claude-sonnet-4-6","usage":{"input_tokens":5}}}\n\n' +
+                'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n',
+            ),
+          );
+        },
+        pull() {
+          throw new Error('upstream socket reset');
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+
+    const out = await translateAnthropicResponse(upstream, { streaming: true });
+    const text = await new Response(out.body).text();
+
+    expect(text).toContain('partial'); // whatever streamed before the break is preserved
+    const frame = text
+      .split('\n')
+      .find((l) => l.startsWith('data:') && l.includes('"error"'))!
+      .slice(5)
+      .trim();
+    const parsed = JSON.parse(frame) as { error: { message: string; code: string } };
+    expect(parsed.error.message).toContain('upstream socket reset');
+    expect(parsed.error.code).toBe('upstream_stream_error');
+    expect(text.trim().endsWith('data: [DONE]')).toBe(true);
+  });
 });
