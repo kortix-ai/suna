@@ -57,8 +57,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
    cross-referenced against a provider's own request logs instead of manual
    timestamp/payload matching. requestId was already in logs/traces
    (`pipeline/trace.ts`) — only the wire hop to the provider was missing.
-   *(test: call-upstream.test.ts)* — PR test(llm-gateway): close coverage gaps
-   + backlog hygiene (correlation id, key validation).
+   *(test: call-upstream.test.ts)* — PR #4815.
 
 10. **`GATEWAY_INTERNAL_TOKEN` weak-secret boot warning** — `internal-auth.ts`
     + `internal-routes.ts`. `weakInternalTokenWarnings()` logs a loud
@@ -68,7 +67,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     mTLS/HMAC upgrade should ever refuse traffic — it just makes a
     trivial/default static bearer secret impossible to leave unnoticed in a
     prod config. *(test: internal-auth.test.ts)* — cheap hardening only; see 7b
-    for the real gap this doesn't close.
+    for the real gap this doesn't close. PR #4815.
 
 11. **Gateway-key validation test coverage** — `gateway-keys.ts`.
     `validateGatewayKey` (the sole auth gate for every `kgw_...` request through
@@ -77,7 +76,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     accepts, revoked rejects, past-expiry rejects, the exact expiry-boundary
     instant, `createdBy` null → `userId` falls back to `accountId`, an unknown
     secret, and the fire-and-forget `lastUsedAt` stamp. *(test:
-    gateway-keys.test.ts)*
+    gateway-keys.test.ts)* — PR #4815.
 
 12. **Tier gating + BYOK free-tier `billingMode` test coverage** —
     `resolution/resolve-candidates.ts`. `resolveCandidates` (BYOK markup/
@@ -86,7 +85,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     TTL cache now takes an injectable `now` (defaults to `Date.now()`, every
     production call site unaffected) so the TTL boundary and the "tier change
     during the cache window" bug shape are both unit-testable without a real
-    wall-clock sleep. *(test: resolution/resolve-candidates.test.ts)*
+    wall-clock sleep. *(test: resolution/resolve-candidates.test.ts)* — PR #4815.
 
 ## ◻️ Remaining (need design / infra, not a code tweak)
 
