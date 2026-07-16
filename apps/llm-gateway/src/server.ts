@@ -163,13 +163,21 @@ export function buildServer(): GatewayServer {
   });
 
   const chatCompletions = async (c: {
-    req: { header: (k: string) => string | undefined; text: () => Promise<string> };
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+      raw?: { signal?: AbortSignal };
+    };
   }) => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
       const res = await gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
+        // `c.req.raw` is Hono's underlying standard Request — its `.signal`
+        // fires on client disconnect, so a caller that goes away mid-request
+        // stops the upstream fetch/stream instead of running to completion.
+        signal: c.req.raw?.signal,
       });
       recordOutcome(res.status);
       return res;

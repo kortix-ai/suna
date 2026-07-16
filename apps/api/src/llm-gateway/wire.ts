@@ -37,6 +37,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
+        // `c.req.raw` is the underlying standard Request — its `.signal` fires
+        // when the client disconnects, so the gateway can stop reading (and
+        // billing for) upstream tokens no one is listening for anymore.
+        signal: c.req.raw.signal,
       });
     const models = (c: import('hono').Context) =>
       gateway.listModels(c.req.header('authorization'));

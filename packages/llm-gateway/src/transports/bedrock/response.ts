@@ -176,8 +176,18 @@ function bedrockEventStreamToSse(response: Response): Response {
             }
           }
         }
-      } catch {
-        // upstream stream broke; close with what was relayed
+      } catch (err) {
+        // A network-level failure while reading the raw event-stream body
+        // (dropped connection, socket reset) is not an AWS exception FRAME —
+        // it never reaches `isExceptionFrame` above — but must not be
+        // laundered into a clean close either. Surface it the same way,
+        // matching the `event: error` shape used for a genuine exception frame.
+        const message = err instanceof Error ? err.message : String(err);
+        const errorEvent = {
+          type: 'error',
+          error: { type: 'upstream_stream_error', message: message || 'bedrock upstream stream failed' },
+        };
+        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify(errorEvent)}\n\n`));
       } finally {
         controller.close();
       }

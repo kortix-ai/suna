@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { callUpstream, type FetchImpl } from './call-upstream';
 import { buildUpstreamRequest } from '../transports';
 import { CircuitBreaker } from '../resilience';
-import { CircuitOpenError, UpstreamHttpError } from '../errors';
+import { ClientAbortError, CircuitOpenError, UpstreamHttpError } from '../errors';
 import type { UpstreamDescriptor } from '../domain';
 
 const descriptor: UpstreamDescriptor = {
@@ -261,5 +261,68 @@ describe('callUpstream — translation sidecar mode', () => {
       { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
     );
     expect(capture.requests[0].headers.authorization).toBeUndefined();
+  });
+});
+
+// Regression coverage for the client-disconnect finding: an inbound abort
+// signal must reach the actual `fetch()` call (so a real upstream fetch is
+// cancelled, not just logically ignored), and must never be retried or trip
+// the shared provider circuit breaker — there's no one left to serve either
+// way, so failing over would only waste more upstream spend for nothing.
+describe('callUpstream client abort propagation', () => {
+  test('an inbound signal is combined into the actual fetch call and aborts it', async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      receivedSignal = init.signal as AbortSignal;
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    const ac = new AbortController();
+    await callUpstream({}, descriptor, { retry: fastRetry, fetchImpl, signal: ac.signal });
+    expect(receivedSignal).toBeTruthy();
+    expect(receivedSignal!.aborted).toBe(false);
+    ac.abort();
+    expect(receivedSignal!.aborted).toBe(true);
+  });
+
+  test('an already-aborted inbound signal fails fast as ClientAbortError, never reaching fetch', async () => {
+    let fetchCalls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      return new Response('{}', { status: 200 });
+    };
+    const ac = new AbortController();
+    ac.abort();
+    await expect(
+      callUpstream({}, descriptor, { retry: fastRetry, fetchImpl, signal: ac.signal }),
+    ).rejects.toBeInstanceOf(ClientAbortError);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('a client abort mid-fetch is never retried (unlike a genuine network failure)', async () => {
+    let calls = 0;
+    const ac = new AbortController();
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      ac.abort();
+      throw new DOMException('The operation was aborted', 'AbortError');
+    };
+    await expect(
+      callUpstream({}, descriptor, { retry: fastRetry, fetchImpl, signal: ac.signal }),
+    ).rejects.toBeInstanceOf(ClientAbortError);
+    expect(calls).toBe(1); // no retry attempts spent on a caller that's already gone
+  });
+
+  test('a client abort never trips the shared provider circuit breaker', async () => {
+    const breaker = new CircuitBreaker({ failureThreshold: 1, cooldownMs: 10_000 });
+    const binding = { provider: descriptor.provider, breaker };
+    const ac = new AbortController();
+    const fetchImpl: FetchImpl = async () => {
+      ac.abort();
+      throw new DOMException('The operation was aborted', 'AbortError');
+    };
+    await callUpstream({}, descriptor, { retry: fastRetry, fetchImpl, signal: ac.signal, binding }).catch(
+      () => {},
+    );
+    expect(breaker.current).toBe('closed');
   });
 });

@@ -4,7 +4,7 @@ import type {
   ModelFallbackCondition,
   UpstreamDescriptor,
 } from '../domain';
-import { CircuitOpenError, UpstreamHttpError } from '../errors';
+import { ClientAbortError, CircuitOpenError, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
@@ -77,6 +77,9 @@ export interface FailoverContext {
   trace: Partial<TraceFields>;
   capturedRequest: unknown;
   fallbackOn: ModelFallbackCondition;
+  /** Inbound client's abort signal — aborts an in-flight candidate attempt
+   *  immediately if the caller disconnects before any upstream is chosen. */
+  signal?: AbortSignal;
 }
 
 export interface RoutedUpstreamCandidate {
@@ -97,7 +100,7 @@ export type FailoverResult = { kind: 'response'; response: Response } | { kind: 
 export async function runFailover(ctx: FailoverContext): Promise<FailoverResult> {
   const {
     candidates, payload, config, fetchImpl, breakerFor, emit, logger,
-    requestId, trace, capturedRequest, fallbackOn,
+    requestId, trace, capturedRequest, fallbackOn, signal,
   } = ctx;
   const tried: string[] = [];
   const modelsTried: string[] = [];
@@ -149,6 +152,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         binding: { provider: descriptor.provider, breaker },
         fetchImpl,
         translationSidecar: config.translationSidecar,
+        signal,
       });
       chosen = candidate;
       debug('upstream_attempt_ok', {
@@ -166,6 +170,36 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         error: errorMessage(err),
         breakerState: breaker.current,
       });
+      if (err instanceof ClientAbortError) {
+        // The caller is gone — trying the next candidate would only spend more
+        // upstream tokens/money for a response no one will ever receive. Stop
+        // the whole dispatch loop immediately instead of failing over.
+        debug('client_aborted', { provider: descriptor.provider });
+        emit({
+          ...trace, resolvedModel: descriptor.resolvedModel, provider: descriptor.provider,
+          billingMode: descriptor.billingMode, status: 499, ok: false,
+          errorCode: 'client_disconnected', errorMessage: 'Client disconnected before a response was ready',
+          attempts, candidatesTried: tried, request: capturedRequest,
+        });
+        return {
+          kind: 'response',
+          // 499 (nginx's "client closed request") — there's no real HTTP
+          // client left to observe this status, but it keeps the trace/logs
+          // honest about why the dispatch loop stopped.
+          response: json(
+            gatewayErrorBody({
+              message: 'Client disconnected before a response was ready',
+              code: 'client_disconnected',
+              provider: descriptor.provider,
+              requestedModel: trace.requestedModel ?? '',
+              resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
+              requestId,
+              suggestion: 'No action needed — the client already disconnected.',
+            }),
+            499,
+          ),
+        };
+      }
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
         // A rate-limit / quota / billing error (429/402/403) on a candidate that
         // has a fallback behind it — e.g. a user's BYOK key out of quota, with a

@@ -1,4 +1,4 @@
-import { NetworkError, UpstreamHttpError } from '../errors';
+import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
 import { withResilience, type BreakerBinding, type RetryOptions } from '../resilience';
 import { transportFor } from '../transports';
 import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
@@ -12,6 +12,10 @@ export interface CallUpstreamOptions {
   fetchImpl?: FetchImpl;
   /** See GatewayConfig.translationSidecar. Unset = direct upstream (current behavior). */
   translationSidecar?: TranslationSidecarConfig;
+  /** Inbound client's abort signal — combined with the per-attempt timeout
+   *  signal so a caller disconnect aborts the in-flight upstream fetch too,
+   *  instead of only bounding it by the retry timeout. */
+  signal?: AbortSignal;
 }
 
 export async function callUpstream(
@@ -27,9 +31,15 @@ export async function callUpstream(
       ? buildSidecarRequest(direct, descriptor, opts.translationSidecar)
       : direct;
   const streaming = body.stream === true;
+  const clientSignal = opts.signal;
 
   const raw = await withResilience(
-    async (signal) => {
+    async (attemptSignal) => {
+      if (clientSignal?.aborted) throw new ClientAbortError();
+      // Combine the per-attempt timeout controller with the inbound client's
+      // signal so either one aborts this fetch — `AbortSignal.any` is a plain
+      // union, so whichever fires first wins and the other is simply unused.
+      const signal = clientSignal ? AbortSignal.any([attemptSignal, clientSignal]) : attemptSignal;
       let response: Response;
       try {
         response = await fetchImpl(request.url, {
@@ -39,6 +49,10 @@ export async function callUpstream(
           signal,
         });
       } catch (err) {
+        // Disambiguate WHY the fetch aborted: a client disconnect must never be
+        // retried/failed-over (there's no one left to serve), unlike a genuine
+        // upstream timeout or network failure.
+        if (clientSignal?.aborted) throw new ClientAbortError();
         throw new NetworkError(`fetch to ${descriptor.provider} failed`, err);
       }
       if (!response.ok) {
