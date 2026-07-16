@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Open the active session's Terminal or Audit surface from OUTSIDE the panel
- * (the command palette, the session header). One shared implementation
+ * Open the active session's Terminal, Audit, or Browser surface from OUTSIDE
+ * the panel (the command palette, the session header). One shared implementation
  * because the branching is id-space-sensitive and was already burned once:
  *
  * - Easy mode routes through `requestQuickView`, which resolves the active
@@ -21,7 +21,7 @@ import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/sessio
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 export function openSessionQuickView(
-  view: 'terminal' | 'audit',
+  view: 'terminal' | 'audit' | 'browser',
   source: 'palette' | 'header',
 ): void {
   const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;

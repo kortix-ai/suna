@@ -36,6 +36,7 @@ import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FileDown,
+  Globe,
   Layers,
   MoreHorizontal,
   PanelRight,
@@ -281,6 +282,22 @@ export function SessionSiteHeader({
                 className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
               >
                 <SquareTerminal className="h-4 w-4" />
+              </Button>
+            </Hint>
+
+            {/* Browser, same one-tap placement as Terminal above — opens the
+                in-panel port browser (AppPreview) on the first running app,
+                or localhost:3000 as a starting point when nothing's running
+                yet. */}
+            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Browser">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open browser"
+                onClick={() => openSessionQuickView('browser', 'header')}
+                className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+              >
+                <Globe className="h-4 w-4" />
               </Button>
             </Hint>
 

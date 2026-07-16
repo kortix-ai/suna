@@ -289,6 +289,23 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'audit governed actions approvals trail session',
     requiresSession: true,
   },
+  // Distinct id/actionId from the legacy 'agent-browser-cmd'/'internal-browser-cmd'
+  // entries below (both hidden from the palette via LEGACY_PALETTE_HIDDEN in
+  // command-palette.tsx, and both standalone workspace tabs) — this one opens
+  // THIS session's own in-panel port browser (Easy detail layer / Advanced
+  // Browser tab), the same distinction 'open-session-terminal' draws from the
+  // legacy 'open-terminal'.
+  {
+    id: 'open-session-browser',
+    label: 'Open Browser',
+    icon: Globe,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionBrowser',
+    keywords: 'browser preview app port localhost session',
+    requiresSession: true,
+  },
 
   {
     id: 'restart-config',

@@ -55,6 +55,7 @@ import {
   isWideDeliverable,
   neighborOutputs,
   outputKey,
+  quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
   stepForCallId,
@@ -262,14 +263,15 @@ export const EasyPanel = memo(function EasyPanel({
    *
    * `source` is telemetry-only (W5): where the open was triggered from — a
    * row click ('row', the default), the payoff effect ('auto'), the ready
-   * chip's consume effect ('chip'), or a prev/next nav closure ('nav'). Never
-   * read for behavior, only reported alongside `deliverable_opened`.
+   * chip's consume effect ('chip'), a prev/next nav closure ('nav'), or the
+   * header/palette "Open Browser" quick-view ('quick'). Never read for
+   * behavior, only reported alongside `deliverable_opened`.
    */
   const handleOpenOutput = useCallback(
     (
       output: OutputItem,
       siblings?: OutputItem[],
-      source: 'row' | 'auto' | 'chip' | 'nav' = 'row',
+      source: 'row' | 'auto' | 'chip' | 'nav' | 'quick' = 'row',
     ) => {
       // The human title, when the output carries one (W3) — never the raw
       // filename in a spot the user reads as the thing's name.
@@ -490,15 +492,33 @@ export const EasyPanel = memo(function EasyPanel({
     });
   }, [openDetail, projectId, projectSessionId]);
 
-  // Command palette "Open Terminal"/"Open Audit" (W1→W2-shaped handoff, same
-  // pattern as the chip-consume effect above): subscribe to the pending
-  // request VALUE, not the stable `consumeQuickView` action — desktop keeps
-  // this panel mounted behind a closed side panel, so a palette selection
-  // must itself re-render us or the handoff silently dead-ends. Audit with no
-  // project context (booting/transient session) is a deliberate no-op: the
-  // panel is already open by the time this runs, there's just nothing to
-  // drill into yet — Advanced mode's Audit tab shows its own empty state
-  // instead (this command routes through Advanced's own `setView`, not here).
+  /**
+   * Header/palette "Open Browser": the in-panel port browser (`AppPreview`),
+   * defaulting to the first running app's url when the session has one, else
+   * `http://localhost:3000` (a hint, not a guess — `AppPreview`'s own address
+   * bar placeholder teaches ports the same way). Routes through
+   * `handleOpenOutput` with a synthetic app `OutputItem` rather than opening
+   * `AppPreview` directly: that's the one path that already carries the wide
+   * split, the terminal mutual-exclusion, and `deliverable_opened` telemetry,
+   * so this reads as "click the first Apps-card row" instead of a second,
+   * parallel way to open the same detail that could drift from it later. The
+   * synthetic `callID` never collides with a real tool call's, so it can't be
+   * mistaken for one if it ever leaked into a siblings list.
+   */
+  const openBrowser = useCallback(() => {
+    handleOpenOutput(quickBrowserOutput(apps), undefined, 'quick');
+  }, [apps, handleOpenOutput]);
+
+  // Command palette "Open Terminal"/"Open Audit"/"Open Browser" (W1→W2-shaped
+  // handoff, same pattern as the chip-consume effect above): subscribe to the
+  // pending request VALUE, not the stable `consumeQuickView` action — desktop
+  // keeps this panel mounted behind a closed side panel, so a palette
+  // selection must itself re-render us or the handoff silently dead-ends.
+  // Audit with no project context (booting/transient session) is a
+  // deliberate no-op: the panel is already open by the time this runs,
+  // there's just nothing to drill into yet — Advanced mode's Audit tab shows
+  // its own empty state instead (this command routes through Advanced's own
+  // `setView`, not here).
   useEffect(() => {
     if (pendingQuickView?.sessionId !== sessionId) return;
     const view = useKortixComputerStore.getState().consumeQuickView(sessionId);
@@ -506,8 +526,18 @@ export const EasyPanel = memo(function EasyPanel({
       openTerminal();
     } else if (view === 'audit' && projectId && projectSessionId) {
       openAudit();
+    } else if (view === 'browser') {
+      openBrowser();
     }
-  }, [pendingQuickView, sessionId, projectId, projectSessionId, openTerminal, openAudit]);
+  }, [
+    pendingQuickView,
+    sessionId,
+    projectId,
+    projectSessionId,
+    openTerminal,
+    openAudit,
+    openBrowser,
+  ]);
 
   const goHome = closeDetail;
 

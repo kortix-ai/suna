@@ -39,6 +39,15 @@ describe('ready chip state (W1)', () => {
     expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
   });
 
+  test('quick-view request round-trips the browser view', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.requestQuickView('browser');
+    expect(useKortixComputerStore.getState().consumeQuickView('other')).toBeNull();
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBe('browser');
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
+  });
+
   test('an explicit session id works when no active session is set — the standalone-route case', () => {
     // On /projects/:id/sessions/:id the session is not in the tab system, so
     // `_activeSessionId` stays null; without the explicit id the pending view

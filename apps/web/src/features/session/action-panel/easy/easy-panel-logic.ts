@@ -18,6 +18,25 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
 }
 
 /**
+ * The synthetic app `OutputItem` behind the header/palette "Open Browser"
+ * quick-view — defaults to the first running app's url when the session has
+ * one, else `http://localhost:3000` (`AppPreview`'s own address-bar
+ * placeholder teaches ports the same way, so this default reads as a hint
+ * rather than a guess). `callID: 'quick-browser'` never collides with a real
+ * tool call's, so it can't be mistaken for one if it ever leaked into a
+ * siblings list. Pulled out of `EasyPanel` so it's testable without mounting
+ * the component (same reasoning as the rest of this file).
+ */
+export function quickBrowserOutput(apps: OutputItem[]): OutputItem {
+  return {
+    callID: 'quick-browser',
+    name: 'Browser',
+    kind: 'app',
+    url: apps[0]?.url ?? 'http://localhost:3000',
+  };
+}
+
+/**
  * Whether an output deliverable should grow the Easy-mode panel to its
  * widest split (70/30) instead of the default 35/65 — landscape-shaped
  * content needs real width to read, unlike a text file or a screenshot.

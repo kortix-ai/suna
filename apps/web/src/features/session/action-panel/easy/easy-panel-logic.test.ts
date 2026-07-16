@@ -6,15 +6,21 @@ import {
   isWideDeliverable,
   neighborOutputs,
   outputKey,
+  quickBrowserOutput,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
   stepForCallId,
 } from './easy-panel-logic';
 
 type FileOutputItem = Exclude<OutputItem, { kind: 'app' }> & { kind: 'file' };
+type AppOutputItem = Extract<OutputItem, { kind: 'app' }>;
 
 function output(overrides: Partial<FileOutputItem> = {}): FileOutputItem {
   return { callID: 'call-1', name: 'report.md', kind: 'file', ...overrides };
+}
+
+function appOutput(overrides: Partial<AppOutputItem> = {}): AppOutputItem {
+  return { callID: 'app-1', name: 'my-app', kind: 'app', url: 'http://localhost:5173', ...overrides };
 }
 
 describe('outputKey', () => {
@@ -196,5 +202,25 @@ describe('neighborOutputs (W10)', () => {
     expect(neighborOutputs(items, 'c:img.png').next).toBeNull();
     expect(neighborOutputs(items, 'zz').prev).toBeNull();
     expect(neighborOutputs(items, 'zz').next).toBeNull();
+  });
+});
+
+describe('quickBrowserOutput (header/palette "Open Browser")', () => {
+  it('defaults to localhost:3000 when the session has no running app', () => {
+    expect(quickBrowserOutput([])).toEqual({
+      callID: 'quick-browser',
+      name: 'Browser',
+      kind: 'app',
+      url: 'http://localhost:3000',
+    });
+  });
+
+  it('defaults to the first running app\'s url when one exists', () => {
+    const apps = [appOutput({ url: 'http://localhost:5173' }), appOutput({ callID: 'app-2', url: 'http://localhost:8080' })];
+    expect(quickBrowserOutput(apps).url).toBe('http://localhost:5173');
+  });
+
+  it('always uses a synthetic callID that cannot collide with a real tool call', () => {
+    expect(quickBrowserOutput([appOutput()]).callID).toBe('quick-browser');
   });
 });
