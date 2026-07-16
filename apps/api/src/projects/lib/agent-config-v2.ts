@@ -27,6 +27,7 @@ import {
   validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
+import { HARNESSES } from '@kortix/shared/harnesses';
 import type { ParsedManifest } from '../triggers';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
@@ -81,11 +82,14 @@ export type RuntimeProfileV3 = {
   config_dir?: string;
 };
 
+// Config-dir values derive from the canonical `@kortix/shared` harness
+// descriptor (do not re-hardcode them here); key/insertion order is pinned —
+// WS1-P1-b tests assert this exact shape.
 export const DEFAULT_RUNTIME_PROFILES_V3: Record<string, RuntimeProfileV3> = {
-  opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
-  claude: { harness: 'claude', config_dir: '.claude' },
-  codex: { harness: 'codex', config_dir: '.codex' },
-  pi: { harness: 'pi', config_dir: '.pi' },
+  opencode: { harness: 'opencode', config_dir: HARNESSES.opencode.configDir },
+  claude: { harness: 'claude', config_dir: HARNESSES.claude.configDir },
+  codex: { harness: 'codex', config_dir: HARNESSES.codex.configDir },
+  pi: { harness: 'pi', config_dir: HARNESSES.pi.configDir },
 };
 
 /** Losslessly promote v2 governance to ACP-native v3 routing. Native OpenCode

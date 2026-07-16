@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
+import { HARNESS_IDS, HARNESSES } from '@kortix/shared/harnesses';
 
 import {
   CompileRuntimeConfigError,
   compileRuntimeConfig,
+  DEFAULT_CONFIG_DIR,
   syntheticLegacyRuntimeConfig,
   type CompiledRuntimeConfig,
 } from './compile-runtime-config';
@@ -182,6 +184,13 @@ agents:
       kind: 'acp', version: 2, defaultAgent: 'kortix',
       agents: { kortix: { harness: 'opencode', nativeAgent: null, secrets: 'all' } },
     });
+  });
+
+  test('DEFAULT_CONFIG_DIR derives from the shared HARNESSES descriptor', () => {
+    const expected = Object.fromEntries(
+      HARNESS_IDS.map((id) => [id, HARNESSES[id].configDir]),
+    ) as Record<(typeof HARNESS_IDS)[number], string>;
+    expect(DEFAULT_CONFIG_DIR).toEqual(expected);
   });
 });
 

@@ -35,6 +35,7 @@ import {
   type ManifestIssue,
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
+import { HARNESS_IDS } from '@kortix/shared/harnesses';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
@@ -92,7 +93,7 @@ const AgentBlockSchema = z
 
 const DefaultAgentBodySchema = z.object({ agent: z.string().min(1).max(200) });
 const RuntimeProfileSchema = z.object({
-  harness: z.enum(['claude', 'codex', 'opencode', 'pi']),
+  harness: z.enum(HARNESS_IDS),
   config_dir: z.string().min(1).max(500).optional(),
 }).strict();
 const RuntimeProfilesBodySchema = z.object({

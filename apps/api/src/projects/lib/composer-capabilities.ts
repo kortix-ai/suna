@@ -1,4 +1,5 @@
 import { CATALOG, type CatalogModel } from '@kortix/llm-catalog';
+import { HARNESS_IDS, type HarnessId } from '@kortix/shared/harnesses';
 
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
@@ -10,7 +11,7 @@ import {
   type LogicalAgentLaunchPlan,
 } from './compile-runtime-config';
 
-export type HarnessId = 'claude' | 'codex' | 'opencode' | 'pi';
+export type { HarnessId };
 export type HarnessAuthKind =
   | 'managed_gateway'
   | 'claude_subscription'
@@ -124,7 +125,7 @@ const CONNECTIONS: Record<
   },
   native_config: {
     label: 'Harness-native config',
-    compatible_harnesses: ['claude', 'codex', 'opencode', 'pi'],
+    compatible_harnesses: [...HARNESS_IDS],
     source: 'native_config',
   },
 };
@@ -140,7 +141,7 @@ export function readHarnessAuthRoutes(metadata: unknown): Partial<Record<Harness
   const raw = (metadata as Record<string, unknown>)[ACTIVE_ROUTES_METADATA_KEY];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const routes: Partial<Record<HarnessId, HarnessAuthKind>> = {};
-  for (const harness of ['claude', 'codex', 'opencode', 'pi'] as const) {
+  for (const harness of HARNESS_IDS) {
     const value = (raw as Record<string, unknown>)[harness];
     if (isHarnessAuthKind(value)) routes[harness] = value;
   }

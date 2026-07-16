@@ -1,3 +1,5 @@
+import { HARNESS_IDS, type HarnessId } from '@kortix/shared/harnesses';
+
 import {
   buildSandboxUpstreamHeaders,
   resolveSandboxIngress,
@@ -10,7 +12,7 @@ export type SandboxRuntimeHealth = {
   runtime: 'acp' | 'legacy';
   runtimeReady: boolean;
   acpServerId: string | null;
-  acpHarness: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+  acpHarness: HarnessId | null;
   bootError: string | null;
 };
 
@@ -52,7 +54,7 @@ export async function inspectSandboxRuntime(
     });
     if (!response.ok) return null;
     const body = (await response.json()) as Record<string, unknown>;
-    const harness = ['claude', 'codex', 'opencode', 'pi'].includes(String(body.acp_harness))
+    const harness = (HARNESS_IDS as readonly string[]).includes(String(body.acp_harness))
       ? body.acp_harness as SandboxRuntimeHealth['acpHarness']
       : null;
     return {

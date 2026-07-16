@@ -18,6 +18,7 @@ import {
   type RuntimeBlockV3,
   type WorkspaceModeV2,
 } from "@kortix/manifest-schema";
+import { HARNESS_IDS, HARNESSES } from "@kortix/shared/harnesses";
 
 import { readManifestFromRepo } from "../git/files";
 import type { GitBackedProject } from "../git/types";
@@ -51,12 +52,11 @@ export type AcpRuntimeLaunchPlan = {
 
 export type CompiledRuntimeConfig = AcpRuntimeLaunchPlan;
 
-const DEFAULT_CONFIG_DIR: Record<HarnessV3, string> = {
-  claude: ".claude",
-  codex: ".codex",
-  opencode: ".kortix/opencode",
-  pi: ".pi",
-};
+// Derived from the canonical `@kortix/shared` harness descriptor — do not
+// redeclare the harness-id -> config-dir mapping here (see harnesses.ts).
+export const DEFAULT_CONFIG_DIR: Record<HarnessV3, string> = Object.fromEntries(
+  HARNESS_IDS.map((id) => [id, HARNESSES[id].configDir]),
+) as Record<HarnessV3, string>;
 
 export class CompileRuntimeConfigError extends Error {}
 

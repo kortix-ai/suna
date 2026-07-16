@@ -1,5 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
+import { HARNESS_IDS } from '@kortix/shared/harnesses';
 import { eq } from 'drizzle-orm';
 
 import { PROJECT_ACTIONS } from '../../iam';
@@ -16,7 +17,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { readBody } from '../lib/serializers';
 import { projectsApp } from '../lib/app';
 
-const HarnessSchema = z.enum(['claude', 'codex', 'opencode', 'pi']);
+const HarnessSchema = z.enum(HARNESS_IDS);
 const ConnectionSchema = z.enum([
   'managed_gateway',
   'claude_subscription',
