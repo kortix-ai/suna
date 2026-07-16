@@ -44,7 +44,8 @@ kortix self-host init --domain kortix.example.com
    you have no public domain (local machine / evaluation only).
 2. **Admin email** — which account gets platform-admin on first sign-up.
 3. **Deployment shape** — whether you hold an Enterprise license
-   (SSO/SCIM/RBAC/audit).
+   (SSO/SCIM/RBAC/audit), and whether to restrict account creation to the
+   admin (on by default — see "Configuration" below).
 4. **Sandbox provider** — `daytona` (default), `e2b`, or `platinum`, plus its
    API key.
 5. **Pipedream** (optional) — the 3,000+ app connector catalog.
@@ -132,6 +133,17 @@ kortix self-host env ls --show                # reveal masked values
 kortix self-host env set DAYTONA_API_KEY=...  # set anything; restarts only the services it affects
 kortix self-host env rotate SUPABASE_JWT_SECRET   # regenerate a rotatable generated secret
 kortix self-host env rotate --all-generated   # regenerate every rotatable generated secret
+```
+
+By default, only the admin (the account(s) listed in `KORTIX_PLATFORM_ADMIN_EMAILS`)
+can create new accounts/organizations on a self-hosted instance — everyone
+else joins an existing account by invitation or SSO. This doesn't touch
+signups, teams, or SSO/JIT provisioning; it only gates spinning up a brand
+new organization, and `init`/`configure` ask about it as part of "Deployment
+shape". Disable it to let any signed-in user create accounts freely:
+
+```sh
+kortix self-host env set KORTIX_RESTRICT_ACCOUNT_CREATION=false KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION=false
 ```
 
 ## Updates

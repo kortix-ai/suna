@@ -61,6 +61,19 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   // in commands/self-host.ts). Custom connectors (OpenAPI/GraphQL/MCP/HTTP)
   // and Slack/email channels are unaffected — they don't depend on Pipedream.
   KORTIX_PUBLIC_CONNECTORS_ENABLED: 'false',
+  // Account-creation restriction: DEFAULT ON for self-host — a VPS operator
+  // usually wants to be the only one who can spin up new organizations on
+  // their own instance. Signups, existing teams, and SSO/JIT membership are
+  // entirely unaffected; only POST /v1/accounts (creating an ADDITIONAL/org
+  // account) is gated to platform admins (KORTIX_PLATFORM_ADMIN_EMAILS) — see
+  // registerAccountRoutes() in apps/api/src/accounts/core/accounts.ts.
+  // KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION mirrors it on the frontend to
+  // hide "New account" UI for non-admins. `kortix self-host init/configure`'s
+  // deployment-shape question (promptFeatureFlags) flips both; disable via
+  // `env set KORTIX_RESTRICT_ACCOUNT_CREATION=false
+  // KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION=false` or `--no-restrict-account-creation`.
+  KORTIX_RESTRICT_ACCOUNT_CREATION: 'true',
+  KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'true',
 };
 
 /** Every target-agnostic default in one object, for a single spread. */

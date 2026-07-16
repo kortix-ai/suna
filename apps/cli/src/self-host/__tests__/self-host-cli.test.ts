@@ -274,6 +274,47 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
     });
 
+    // Account-creation restriction is the one feature flag that defaults ON
+    // for self-host (every other flag in this describe block defaults off) —
+    // a VPS operator usually wants to be the only one who can spin up new
+    // organizations on their own instance.
+    test('account-creation restriction defaults ON (both the api and frontend-mirroring vars)', async () => {
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('true');
+      expect(env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('true');
+    });
+
+    test('--no-restrict-account-creation opts out of the default (both vars)', async () => {
+      const { code } = await run(['init', '--yes', '--no-restrict-account-creation']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('false');
+      expect(env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('false');
+    });
+
+    test('--restrict-account-creation and --no-restrict-account-creation together is a usage error', async () => {
+      const { code, stderr } = await run([
+        'init',
+        '--yes',
+        '--restrict-account-creation',
+        '--no-restrict-account-creation',
+      ]);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain('mutually exclusive');
+    });
+
+    test('a re-run of init without the flag does not reset a previously opted-out account-creation restriction', async () => {
+      await run(['init', '--yes', '--no-restrict-account-creation']);
+      expect(readEnv().KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('false');
+
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('false');
+      expect(readEnv().KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('false');
+    });
+
     // There is deliberately no `--landing`/`--no-landing` flag: the landing
     // page isn't a guided-flow decision (self-host is an app deployment, not
     // a marketing site — full stop), it's just an ordinary env var an
@@ -336,6 +377,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const frontendEnv = (compose.services.frontend as any).environment;
       expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
       expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}');
+      expect(frontendEnv.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}');
 
       // kortix-api gets these via `env_file: .env` (loads every .env key) —
       // no explicit `environment:` entry, since one would win over env_file
@@ -343,6 +385,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const apiEnv = (compose.services['kortix-api'] as any).environment;
       expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
       expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
+      expect(apiEnv.KORTIX_RESTRICT_ACCOUNT_CREATION).toBeUndefined();
       expect((compose.services['kortix-api'] as any).env_file).toContain('.env');
     });
   });

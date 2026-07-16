@@ -94,6 +94,8 @@ Options:
   --local-images          Run locally-built images (dev mode); forces auto-update off.
   --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
   --admin-email <email>   Grant platform-admin to this account.
+  --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
+  --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
   --json                  Machine-readable output where supported.
   --yes                   Accept defaults non-interactively.
   -h, --help              Show this help.
@@ -306,6 +308,8 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const domain = takeFlagValue(args, ['--domain']);
   const tunnelRaw = takeFlagValue(args, ['--tunnel']);
   const adminEmail = takeFlagValue(args, ['--admin-email']);
+  const restrictAccountCreationOn = takeFlagBool(args, ['--restrict-account-creation']);
+  const restrictAccountCreationOff = takeFlagBool(args, ['--no-restrict-account-creation']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -320,6 +324,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   }
   if (tunnelRaw !== undefined && tunnelRaw !== 'cloudflare') {
     throw new Error(`--tunnel only supports "cloudflare", got "${tunnelRaw}"`);
+  }
+  if (restrictAccountCreationOn && restrictAccountCreationOff) {
+    throw new Error('--restrict-account-creation and --no-restrict-account-creation are mutually exclusive');
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
@@ -337,6 +344,11 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     domain,
     tunnel: tunnelRaw as 'cloudflare' | undefined,
     adminEmail,
+    restrictAccountCreation: restrictAccountCreationOn
+      ? true
+      : restrictAccountCreationOff
+        ? false
+        : undefined,
     yes,
     json,
   };
@@ -893,13 +905,19 @@ function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
   if (flags.enterpriseLicense !== undefined) {
     env.ENTERPRISE_LICENSE_AVAILABLE = flags.enterpriseLicense ? 'true' : 'false';
   }
+  if (flags.restrictAccountCreation !== undefined) {
+    const value = flags.restrictAccountCreation ? 'true' : 'false';
+    env.KORTIX_RESTRICT_ACCOUNT_CREATION = value;
+    env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = value;
+  }
 }
 
 /**
- * Interactive follow-up to applyFeatureFlags: the one real deployment-shape
- * y/n question — Enterprise license — defaulting to whatever is currently in
- * .env (so re-running `configure` doesn't reset a prior answer). No-ops
- * under --yes / non-TTY (see shouldPrompt).
+ * Interactive follow-up to applyFeatureFlags: the two deployment-shape y/n
+ * questions — Enterprise license, then account-creation restriction — each
+ * defaulting to whatever is currently in .env (so re-running `configure`
+ * doesn't reset a prior answer). No-ops under --yes / non-TTY (see
+ * shouldPrompt).
  */
 async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   if (!shouldPrompt(flags)) return;
@@ -912,6 +930,15 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
     env.ENTERPRISE_LICENSE_AVAILABLE === 'true' ? 'yes' : 'no',
   );
   env.ENTERPRISE_LICENSE_AVAILABLE = enterpriseLicense === 'yes' ? 'true' : 'false';
+
+  // Default Yes: signups/teams/SSO all keep working either way — this only
+  // gates who can spin up a brand-new organization (POST /v1/accounts).
+  const restrictAccountCreation = await confirm(
+    'Restrict account creation to the admin? (new organizations can only be created by platform admins; users join by invite or SSO)',
+    env.KORTIX_RESTRICT_ACCOUNT_CREATION !== 'false',
+  );
+  env.KORTIX_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
+  env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
 }
 
 /** Point every Kortix app image (and the tracked version) at the given tag. */
