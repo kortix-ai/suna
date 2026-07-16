@@ -19,7 +19,12 @@ let codexCredential: { access: string; accountId?: string } | null = null;
 const resolveCodexCredential = mock(async () => codexCredential);
 mock.module('../credentials/codex', () => ({ resolveCodexCredential }));
 
-const fallbackCandidate = { provider: 'kortix-fallback', kind: 'openai-compat', baseUrl: 'https://fb.test', apiKey: 'fb' };
+const fallbackCandidate = {
+  provider: 'kortix-fallback',
+  kind: 'openai-compat',
+  baseUrl: 'https://fb.test',
+  apiKey: 'fb',
+};
 mock.module('./descriptors', () => ({
   codexDescriptor: (credential: { access: string }, model: string) => ({
     provider: 'openai-codex',
@@ -32,7 +37,15 @@ mock.module('./descriptors', () => ({
   }),
   livePricing: () => undefined,
   managedCandidates: (managed: { id: string }) => [
-    { provider: 'kortix-managed', kind: 'bedrock', baseUrl: 'https://managed.test', apiKey: 'm', billingMode: 'credits', markup: 1, resolvedModel: managed.id },
+    {
+      provider: 'kortix-managed',
+      kind: 'bedrock',
+      baseUrl: 'https://managed.test',
+      apiKey: 'm',
+      billingMode: 'credits',
+      markup: 1,
+      resolvedModel: managed.id,
+    },
   ],
 }));
 
@@ -47,7 +60,8 @@ mock.module('../routing', () => ({
 
 let runtimeManagedModel: { id: string } | undefined;
 mock.module('../models/managed-models', () => ({
-  getRuntimeManagedModel: (id: string) => (runtimeManagedModel?.id === id ? runtimeManagedModel : undefined),
+  getRuntimeManagedModel: (id: string) =>
+    runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
 }));
 
 const { resolveCandidates, resolveCachedAccountTier } = await import('./resolve-candidates');
@@ -76,7 +90,11 @@ beforeEach(() => {
 
 describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback', () => {
   test('paid tier: platform-fee billing, 10% markup, managed fallback queued behind the BYOK key', async () => {
-    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
     resolvedSecret = 'sk-user-key';
     runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
     const p = principal();
@@ -85,12 +103,20 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
 
     expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toMatchObject({ billingMode: 'platform-fee', markup: 0.1, apiKey: 'sk-user-key' });
+    expect(candidates[0]).toMatchObject({
+      billingMode: 'platform-fee',
+      markup: 0.1,
+      apiKey: 'sk-user-key',
+    });
     expect(candidates[1]).toMatchObject({ provider: 'kortix-managed' });
   });
 
   test('free tier: BYOK key is billing-free (markup 0, billingMode none) with no managed fallback', async () => {
-    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
     resolvedSecret = 'sk-user-key';
     const p = principal();
     tierByAccount[p.accountId] = 'free';
@@ -103,7 +129,11 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
   test('self-hosted (billing disabled): no tier lookup, still gets the platform markup and a managed fallback', async () => {
     config.KORTIX_BILLING_INTERNAL_ENABLED = false;
-    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
     resolvedSecret = 'sk-user-key';
     runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
 
@@ -115,7 +145,11 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
   });
 
   test('no BYOK secret configured for the project falls through to the managed/empty path', async () => {
-    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
     resolvedSecret = null;
 
     expect(await resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6')).toEqual([]);
@@ -158,14 +192,20 @@ describe('resolveCandidates — managed model tier gating', () => {
 
 describe('resolveCandidates — codex + unknown provider', () => {
   test('codex provider requires a projectId', async () => {
-    expect(await resolveCandidates(principal({ projectId: undefined }), 'codex/gpt-5.5')).toEqual([]);
+    expect(await resolveCandidates(principal({ projectId: undefined }), 'codex/gpt-5.5')).toEqual(
+      [],
+    );
   });
 
   test('codex provider resolves to the codex descriptor when a credential exists', async () => {
     codexCredential = { access: 'codex-token' };
     const candidates = await resolveCandidates(principal(), 'codex/gpt-5.5');
     expect(candidates).toEqual([
-      expect.objectContaining({ provider: 'openai-codex', apiKey: 'codex-token', resolvedModel: 'codex/gpt-5.5' }),
+      expect.objectContaining({
+        provider: 'openai-codex',
+        apiKey: 'codex-token',
+        resolvedModel: 'codex/gpt-5.5',
+      }),
     ]);
   });
 

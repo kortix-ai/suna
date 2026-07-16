@@ -1,18 +1,21 @@
 import {
   type AuthedPrincipal,
-  type UpstreamDescriptor,
   GatewayResolutionError,
+  type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
-import { getResolvedProjectSecretValue, projectSecretExistsForAnyOwner } from '../../projects/secrets';
+import {
+  getResolvedProjectSecretValue,
+  projectSecretExistsForAnyOwner,
+} from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
-import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
-import { resolveCatalogUpstream } from '../models/provider-registry';
 import { capabilitiesForModel } from '../models/catalog-models';
-import { resolveGatewayRoute } from '../routing';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
+import { resolveCatalogUpstream } from '../models/provider-registry';
+import { resolveGatewayRoute } from '../routing';
+import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 const TIER_CACHE_TTL_MS = 30_000;
@@ -72,12 +75,15 @@ export async function resolveCandidates(
   // resolve it against the same account/agent default the control plane used.
   // Free-tier principals cannot use managed Kortix models, so stale AUTO below
   // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel = model === 'auto' || model === 'kortix/auto'
-    ? (await resolveGatewayRoute(principal, {
-        requestedModel: model,
-        requires: { imageInput: false },
-      })).primaryModel
-    : model;
+  const effectiveModel =
+    model === 'auto' || model === 'kortix/auto'
+      ? (
+          await resolveGatewayRoute(principal, {
+            requestedModel: model,
+            requires: { imageInput: false },
+          })
+        ).primaryModel
+      : model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
@@ -127,7 +133,11 @@ export async function resolveCandidates(
     // PRIVATE key (never another member's) so a member who saved a personal
     // provider key isn't left with a "connected" provider that silently
     // routes nothing — see pickResolvedSecretRow's doc comment.
-    const key = await getResolvedProjectSecretValue(principal.projectId, byok.envVar, principal.userId);
+    const key = await getResolvedProjectSecretValue(
+      principal.projectId,
+      byok.envVar,
+      principal.userId,
+    );
     if (key) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)

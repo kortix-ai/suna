@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
 import { accounts, gatewayApiKeys, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { eq } from 'drizzle-orm';
 import { hashSecretKey } from '../shared/crypto';
+import { db } from '../shared/db';
 import { validateGatewayKey } from './gateway-keys';
 
 const ACCOUNT = crypto.randomUUID();

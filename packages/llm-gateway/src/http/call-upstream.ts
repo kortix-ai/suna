@@ -1,8 +1,8 @@
+import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
-import { withResilience, type BreakerBinding, type RetryOptions } from '../resilience';
+import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
 import { transportFor } from '../transports';
 import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
-import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
