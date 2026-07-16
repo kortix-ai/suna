@@ -117,6 +117,19 @@ export interface RenderComposeOptions {
    * container because the official cloudflared image ships no shell at all.
    */
   namedTunnelConfigured?: boolean;
+  /**
+   * Whether the operator selected the EXPERIMENTAL `local-docker` sandbox
+   * provider (ALLOWED_SANDBOX_PROVIDERS includes it — see
+   * configureIntegrations() in commands/self-host.ts). Only then does
+   * kortix-api get the host's Docker socket mounted in (root-equivalent host
+   * access) and LOCAL_DOCKER_NETWORK pointed at this Compose project's own
+   * default network, so sandbox containers created by the provider
+   * (apps/api/src/platform/providers/local-docker.ts) are reachable by
+   * Docker DNS name. Omitted entirely — not merely unset — for every other
+   * provider, so a Daytona/Platinum/E2B instance never grants kortix-api
+   * Docker access it doesn't need.
+   */
+  localDockerConfigured?: boolean;
 }
 
 /**
@@ -220,6 +233,28 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {
     services[name] = rawService as YamlRecord;
+  }
+
+  // local-docker (EXPERIMENTAL) is opt-in, same shape as the Caddy/cloudflared
+  // blocks below: mutate the already-parsed kortix-api service object rather
+  // than baking a static (always-present) block into kortix-compose.yml, so a
+  // non-local-docker instance's rendered compose never even mentions the
+  // Docker socket.
+  if (options.localDockerConfigured) {
+    const api = services['kortix-api'];
+    if (api) {
+      const existingVolumes = Array.isArray(api.volumes) ? api.volumes : [];
+      api.volumes = [...existingVolumes, '/var/run/docker.sock:/var/run/docker.sock'];
+      const existingEnv = isRecord(api.environment) ? api.environment : {};
+      api.environment = {
+        ...existingEnv,
+        // Sandbox containers land on THIS Compose project's own default
+        // network (the same one every other service here joins), so
+        // kortix-api reaches them by Docker DNS name
+        // (http://kortix-sb-<id>:<port> — see local-docker.ts).
+        LOCAL_DOCKER_NETWORK: `${composeProject}_default`,
+      };
+    }
   }
 
   // The Caddy reverse-proxy/TLS service is opt-in: it only makes sense (and

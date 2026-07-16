@@ -118,6 +118,26 @@ describe('full self-host Docker distribution', () => {
     });
   });
 
+  test('never mounts the Docker socket into kortix-api unless local-docker is selected', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
+    };
+    const api = document.services['kortix-api'];
+    expect(api?.volumes ?? []).not.toContain('/var/run/docker.sock:/var/run/docker.sock');
+    expect(api?.environment?.LOCAL_DOCKER_NETWORK).toBeUndefined();
+  });
+
+  test('mounts the Docker socket + points LOCAL_DOCKER_NETWORK at this Compose project\'s own network when local-docker is selected', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { localDockerConfigured: true })) as {
+      services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
+    };
+    const api = document.services['kortix-api'];
+    expect(api?.volumes).toContain('/var/run/docker.sock:/var/run/docker.sock');
+    expect(api?.environment?.LOCAL_DOCKER_NETWORK).toBe('kortix-default_default');
+    // Existing env (ALLOWED_SANDBOX_PROVIDERS etc.) must survive the merge.
+    expect(api?.environment?.ALLOWED_SANDBOX_PROVIDERS).toBe('${ALLOWED_SANDBOX_PROVIDERS}');
+  });
+
   test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, unknown>;
