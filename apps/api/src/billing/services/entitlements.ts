@@ -36,11 +36,17 @@ const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
  * expire at the same wall-clock instant for a given account). Tiers change
  * rarely; 30s is fine.
  */
-export async function getCachedAccountTier(accountId: string): Promise<string> {
+// `now` is injectable (defaults to Date.now()) purely so the 30s TTL boundary
+// is unit-testable without a real wall-clock sleep — every production call
+// site leaves it unset and gets the real clock.
+export async function getCachedAccountTier(
+  accountId: string,
+  now: number = Date.now(),
+): Promise<string> {
   const cached = accountTierCache.get(accountId);
-  if (cached && cached.expiresAt > Date.now()) return cached.tier;
+  if (cached && cached.expiresAt > now) return cached.tier;
   const tier = await getAccountTier(accountId);
-  accountTierCache.set(accountId, { tier, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
+  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
   return tier;
 }
 

@@ -3,7 +3,24 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
-mock.module('../../billing/services/entitlements', () => ({ getAccountTier }));
+
+// resolveCandidates now calls the SAME cached tier resolver the rest of the
+// gateway uses (entitlements.getCachedAccountTier) instead of keeping its own
+// duplicate cache — resolve-candidates.ts's `resolveCachedAccountTier` is a
+// thin re-export of this, not a second implementation. Mirrors the real
+// implementation's TTL-cache-with-injectable-`now` shape (see
+// entitlements.ts) so the TTL-boundary suite below still exercises real
+// caching semantics through the mock.
+const TIER_CACHE_TTL_MS = 30_000;
+const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
+const getCachedAccountTier = mock(async (accountId: string, now: number = Date.now()) => {
+  const cached = accountTierCache.get(accountId);
+  if (cached && cached.expiresAt > now) return cached.tier;
+  const tier = await getAccountTier(accountId);
+  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
+  return tier;
+});
+mock.module('../../billing/services/entitlements', () => ({ getAccountTier, getCachedAccountTier }));
 
 mock.module('../../billing/services/tiers', () => ({
   accountIsFreeTierForModels: (tier: string) => tier === 'free',
@@ -102,6 +119,7 @@ beforeEach(() => {
   knownManagedModelId = null;
   capabilities = { reasoning: false, temperature: true };
   getAccountTier.mockClear();
+  getCachedAccountTier.mockClear();
   getResolvedProjectSecretValue.mockClear();
   projectSecretExistsForAnyOwner.mockClear();
   resolveCodexCredential.mockClear();
