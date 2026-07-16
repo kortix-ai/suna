@@ -1,14 +1,15 @@
 import { acpSessionEnvelopes, projectSessions, sessionSandboxes } from '@kortix/db';
+import type { SseBlock } from '@kortix/sdk/acp';
 import { and, asc, eq, gt } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { isAcpPromptEnvelope } from '../lib/acp-envelope';
+import { createPersistedSseProxy } from '../lib/acp-sse-proxy';
 import { projectsApp } from '../lib/app';
 import { decodedResponseHeaders } from '../lib/proxy-headers';
-import { inspectSandboxRuntime, sandboxRuntimeEndpoint } from '../runtime-inspection';
-import { createPersistedSseProxy } from '../lib/acp-sse-proxy';
-import { isAcpPromptEnvelope } from '../lib/acp-envelope';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { inspectSandboxRuntime, sandboxRuntimeEndpoint } from '../runtime-inspection';
 
 type Envelope = Record<string, unknown>;
 
@@ -60,26 +61,18 @@ async function appendEnvelope(input: {
 }
 
 async function persistSseBlock(
-  block: string,
+  block: SseBlock,
   target: NonNullable<Awaited<ReturnType<typeof resolveAcpTarget>>>,
 ) {
-  let eventId: number | null = null;
-  const data: string[] = [];
-  for (const line of block.split('\n')) {
-    if (line.startsWith('id:')) eventId = Number(line.slice(3).trim());
-    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
-  }
-  if (eventId !== null && Number.isSafeInteger(eventId) && data.length) {
-    try {
-      await appendEnvelope({
-        ...target,
-        direction: 'agent_to_client',
-        streamEventId: eventId,
-        envelope: JSON.parse(data.join('\n')) as Envelope,
-      });
-    } catch (error) {
-      console.warn(`[acp] failed to persist SSE event ${eventId} for ${target.sessionId}:`, error);
-    }
+  try {
+    await appendEnvelope({
+      ...target,
+      direction: 'agent_to_client',
+      streamEventId: block.id,
+      envelope: JSON.parse(block.data.join('\n')) as Envelope,
+    });
+  } catch (error) {
+    console.warn(`[acp] failed to persist SSE event ${block.id} for ${target.sessionId}:`, error);
   }
 }
 

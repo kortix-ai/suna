@@ -1,6 +1,8 @@
+import { createSseBlockParser, isDeliverableSseBlock, type SseBlock } from '@kortix/sdk/acp';
+
 export type PersistedSseProxyOptions = {
   sessionId: string;
-  persistBlock: (block: string) => Promise<void>;
+  persistBlock: (block: { id: number; data: string[] }) => Promise<void>;
 };
 
 export function createPersistedSseProxy(
@@ -8,8 +10,7 @@ export function createPersistedSseProxy(
   options: PersistedSseProxyOptions,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+  const parser = createSseBlockParser();
   let clientCancelled = false;
 
   const isExpectedClose = (error: unknown) => {
@@ -20,12 +21,12 @@ export function createPersistedSseProxy(
     return /controller is already closed|stream is closed|cancel/i.test(message);
   };
 
-  const consumeBufferedEvents = async () => {
-    let boundary: number;
-    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-      const block = buffer.slice(0, boundary).replace(/\r/g, '');
-      buffer = buffer.slice(boundary + 2);
-      await options.persistBlock(block);
+  const persistParsedBlocks = async (chunk: Uint8Array | undefined, done: boolean) => {
+    const blocks: SseBlock[] = parser.push(chunk, done);
+    for (const block of blocks) {
+      if (isDeliverableSseBlock(block)) {
+        await options.persistBlock(block);
+      }
     }
   };
 
@@ -41,15 +42,10 @@ export function createPersistedSseProxy(
               if (isExpectedClose(error)) return;
               throw error;
             }
-            buffer += decoder.decode(value, { stream: !done });
-            await consumeBufferedEvents();
+            await persistParsedBlocks(value, false);
           }
           if (done) {
-            buffer += decoder.decode(undefined, { stream: false });
-            if (buffer.trim()) {
-              buffer += '\n\n';
-              await consumeBufferedEvents();
-            }
+            await persistParsedBlocks(undefined, true);
             try {
               controller.close();
             } catch (error) {
