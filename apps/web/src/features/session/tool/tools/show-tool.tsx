@@ -30,6 +30,7 @@ import {
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { Globe } from 'lucide-react';
@@ -111,23 +112,31 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   // so both the loading body and the main body can feed the same safe title
   // into the inline row below — mirrors the `showLabel`-style precedence
   // (title > description/domain fallback > generic label), never the raw
-  // path/URL.
+  // path/URL. `showDomain` echoes its input verbatim when URL parsing fails,
+  // so the type==='url' fallback is gated through `safeHttpUrl` first (the
+  // same pattern show-content-renderer.tsx uses): a relative or non-http(s)
+  // value never reaches the always-visible subtitle — it degrades to 'Link'.
+  const safeSubtitleUrl = type === 'url' ? safeHttpUrl(url) : null;
   const displayTitle = isCarousel
     ? title || `${items!.length} items`
-    : title || (type === 'error' ? 'Error' : type === 'url' ? showDomain(url) || 'Link' : 'Output');
+    : title ||
+      (type === 'error'
+        ? 'Error'
+        : type === 'url'
+          ? (safeSubtitleUrl && showDomain(safeSubtitleUrl)) || 'Link'
+          : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
 
   let body: ReactNode;
 
   if (running && !type && !items) {
-    body = (
-      <div
-        className={cn(
-          'bg-card overflow-hidden',
-          fill ? 'flex h-full items-center justify-center' : 'border-border/50 rounded-2xl border',
-        )}
-      >
+    // Only the panel surface (no shell header) still needs the bespoke
+    // loading card. Inline, the BasicTool header already shows the standard
+    // running chrome (spinner + shimmering subtitle) — rendering the card too
+    // would double up the loading indicators.
+    body = fill ? (
+      <div className="bg-card flex h-full items-center justify-center overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4">
           <Loading className="text-muted-foreground size-4" />
           <TextShimmer duration={1} spread={2} className="text-sm">
@@ -135,7 +144,7 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
           </TextShimmer>
         </div>
       </div>
-    );
+    ) : null;
   } else if (
     isShowContentUnavailable({
       running,
