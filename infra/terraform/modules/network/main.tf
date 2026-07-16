@@ -28,14 +28,8 @@ locals {
   # use explicit maps at the resource boundary so static compliance analysis
   # can verify their required tags without evaluating locals or merge().
   internet_gateway_tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-igw" })
-  public_subnet_tags = [for i in range(var.az_count) : merge(
-    { ManagedBy = "terraform" },
-    var.tags,
-    var.extra_public_subnet_tags,
-    { Name = "${var.name}-public-${local.azs[i]}", Tier = "public" },
-  )]
   public_subnet_tag_assignments = merge([for i in range(var.az_count) : {
-    for key, value in local.public_subnet_tags[i] : "${i}:${key}" => {
+    for key, value in var.extra_public_subnet_tags : "${i}:${key}" => {
       subnet_index = i
       key          = key
       value        = value
@@ -47,14 +41,8 @@ locals {
   nat_gateway_tags = [for i in range(local.nat_count) : merge(
     { ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-${i}" },
   )]
-  private_subnet_tags = [for i in range(var.az_count) : merge(
-    { ManagedBy = "terraform" },
-    var.tags,
-    var.extra_private_subnet_tags,
-    { Name = "${var.name}-private-${local.azs[i]}", Tier = "private" },
-  )]
   private_subnet_tag_assignments = merge([for i in range(var.az_count) : {
-    for key, value in local.private_subnet_tags[i] : "${i}:${key}" => {
+    for key, value in var.extra_private_subnet_tags : "${i}:${key}" => {
       subnet_index = i
       key          = key
       value        = value
@@ -103,14 +91,11 @@ resource "aws_subnet" "public" {
     Tier        = "public"
   }
 
-  # All tags are enforced by aws_ec2_tag.public_subnet below. Ignoring this
-  # aggregate attribute prevents the provider from fighting those individual
-  # tag resources while keeping a literal inventory map visible to scanners.
-  lifecycle {
-    ignore_changes = [tags]
-  }
 }
 
+# Kubernetes discovery tags use dynamic keys, so they are owned individually.
+# EKS callers configure the AWS provider to ignore the kubernetes.io/ prefix on
+# aggregate resource tags, preventing this resource from fighting aws_ec2_tag.
 resource "aws_ec2_tag" "public_subnet" {
   for_each    = local.public_subnet_tag_assignments
   resource_id = aws_subnet.public[each.value.subnet_index].id
@@ -157,11 +142,6 @@ resource "aws_subnet" "private" {
     Tier        = "private"
   }
 
-  # See the public subnet comment above. Individual resources remain the
-  # enforcement boundary for every caller-supplied and discovery tag.
-  lifecycle {
-    ignore_changes = [tags]
-  }
 }
 
 resource "aws_ec2_tag" "private_subnet" {
