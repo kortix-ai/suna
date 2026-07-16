@@ -1,0 +1,62 @@
+{
+  "kind": "acp",
+  "version": 2,
+  "defaultAgent": "kortix",
+  "runtimes": {
+    "opencode": {
+      "name": "opencode",
+      "harness": "opencode",
+      "configDir": ".kortix/opencode"
+    }
+  },
+  "agents": {
+    "kortix": {
+      "name": "kortix",
+      "runtime": "opencode",
+      "harness": "opencode",
+      "nativeAgent": "kortix",
+      "enabled": true,
+      "connectors": "all",
+      "secrets": "all",
+      "skills": "all",
+      "kortixCli": "all",
+      "workspace": "runtime"
+    },
+    "auditor": {
+      "name": "auditor",
+      "runtime": "opencode",
+      "harness": "opencode",
+      "nativeAgent": "auditor",
+      "enabled": true,
+      "connectors": [
+        "slack",
+        "github"
+      ],
+      "secrets": [
+        "OPENAI_API_KEY",
+        "GITHUB_TOKEN"
+      ],
+      "skills": [
+        "code-review",
+        "testing"
+      ],
+      "kortixCli": [
+        "project.session.read",
+        "project.session.start"
+      ],
+      "workspace": "read"
+    },
+    "support": {
+      "name": "support",
+      "runtime": "opencode",
+      "harness": "opencode",
+      "nativeAgent": "support",
+      "enabled": true,
+      "connectors": "none",
+      "secrets": "none",
+      "skills": "none",
+      "kortixCli": "none",
+      "workspace": "branch"
+    }
+  }
+}

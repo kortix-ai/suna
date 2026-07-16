@@ -1,0 +1,26 @@
+{
+  "kind": "acp",
+  "version": 2,
+  "defaultAgent": "kortix",
+  "runtimes": {
+    "opencode": {
+      "name": "opencode",
+      "harness": "opencode",
+      "configDir": ".kortix/opencode"
+    }
+  },
+  "agents": {
+    "kortix": {
+      "name": "kortix",
+      "runtime": "opencode",
+      "harness": "opencode",
+      "nativeAgent": null,
+      "enabled": true,
+      "connectors": "all",
+      "secrets": "all",
+      "skills": "all",
+      "kortixCli": "all",
+      "workspace": "runtime"
+    }
+  }
+}

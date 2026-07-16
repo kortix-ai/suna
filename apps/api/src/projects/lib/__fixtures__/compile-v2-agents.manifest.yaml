@@ -1,0 +1,27 @@
+# Golden fixture input — WS1-P3-a backwards-compat guard.
+# See compile-v2-agents.expected.json (frozen output) and
+# compile-runtime-config.test.ts's "golden compile-output fixtures" describe
+# block. Do NOT hand-edit the paired .expected.json after regenerating it —
+# regenerate from the compiler and re-certify by hand instead.
+kortix_version: 2
+default_agent: kortix
+opencode:
+  config_dir: .kortix/opencode
+agents:
+  # Grants: "all" across every grant dimension (connectors/secrets/skills/kortix_cli).
+  kortix:
+    connectors: all
+    secrets: all
+    skills: all
+    kortix_cli: all
+    workspace: runtime
+  # Grants: explicit allowlists on every grant dimension.
+  auditor:
+    connectors: [slack, github]
+    secrets: [OPENAI_API_KEY, GITHUB_TOKEN]
+    skills: [code-review, testing]
+    kortix_cli: [project.session.read, project.session.start]
+    workspace: read
+  # Grants: omitted entirely — v2 deny-by-default resolves every grant to "none".
+  support:
+    workspace: branch

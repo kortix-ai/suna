@@ -1,0 +1,89 @@
+{
+  "kind": "acp",
+  "version": 3,
+  "defaultAgent": "kortix",
+  "runtimes": {
+    "claude": {
+      "name": "claude",
+      "harness": "claude",
+      "configDir": ".claude"
+    },
+    "codex": {
+      "name": "codex",
+      "harness": "codex",
+      "configDir": "tools/codex"
+    },
+    "opencode": {
+      "name": "opencode",
+      "harness": "opencode",
+      "configDir": ".kortix/opencode"
+    },
+    "pi": {
+      "name": "pi",
+      "harness": "pi",
+      "configDir": ".pi"
+    }
+  },
+  "agents": {
+    "kortix": {
+      "name": "kortix",
+      "runtime": "claude",
+      "harness": "claude",
+      "nativeAgent": null,
+      "enabled": true,
+      "connectors": "all",
+      "secrets": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "skills": "all",
+      "kortixCli": "none",
+      "workspace": "runtime"
+    },
+    "reviewer": {
+      "name": "reviewer",
+      "runtime": "codex",
+      "harness": "codex",
+      "nativeAgent": "reviewer-native",
+      "enabled": true,
+      "connectors": "none",
+      "secrets": "none",
+      "skills": [
+        "code-review"
+      ],
+      "kortixCli": "none",
+      "workspace": "read"
+    },
+    "archivist": {
+      "name": "archivist",
+      "runtime": "opencode",
+      "harness": "opencode",
+      "nativeAgent": null,
+      "enabled": false,
+      "connectors": [
+        "github"
+      ],
+      "secrets": "all",
+      "skills": "none",
+      "kortixCli": [
+        "project.session.read"
+      ],
+      "workspace": "branch"
+    },
+    "scout": {
+      "name": "scout",
+      "runtime": "pi",
+      "harness": "pi",
+      "nativeAgent": null,
+      "enabled": true,
+      "connectors": [
+        "slack"
+      ],
+      "secrets": "none",
+      "skills": [
+        "research"
+      ],
+      "kortixCli": "all",
+      "workspace": "runtime"
+    }
+  }
+}

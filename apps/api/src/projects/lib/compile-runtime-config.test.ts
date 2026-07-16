@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
@@ -5,7 +7,18 @@ import {
   CompileRuntimeConfigError,
   compileRuntimeConfig,
   syntheticLegacyRuntimeConfig,
+  type CompiledRuntimeConfig,
 } from './compile-runtime-config';
+
+const FIXTURES_DIR = join(import.meta.dir, '__fixtures__');
+
+function readExpected(name: string): CompiledRuntimeConfig {
+  return JSON.parse(readFileSync(join(FIXTURES_DIR, name), 'utf8')) as CompiledRuntimeConfig;
+}
+
+function readManifestYaml(name: string): Record<string, unknown> {
+  return parseYaml(readFileSync(join(FIXTURES_DIR, name), 'utf8')) as Record<string, unknown>;
+}
 
 const manifest = parseYaml(`
 kortix_version: 3
@@ -169,5 +182,34 @@ agents:
       kind: 'acp', version: 2, defaultAgent: 'kortix',
       agents: { kortix: { harness: 'opencode', nativeAgent: null, secrets: 'all' } },
     });
+  });
+});
+
+/**
+ * Golden compile-output fixtures — v1/v2/v3 backwards-compat guard.
+ *
+ * A diff here means the compiler's output changed for existing projects;
+ * that is a breaking change unless explicitly intended (see cycle plan
+ * WS1-P3-a). These fixtures freeze TODAY's compileRuntimeConfig /
+ * syntheticLegacyRuntimeConfig output so a later refactor (WS2-P0-a moving
+ * this file onto the shared HARNESSES descriptor) can prove byte-identical
+ * launch plans for existing projects instead of just "the tests still pass".
+ */
+describe('golden compile-output fixtures (v1/v2/v3 backwards-compat guard)', () => {
+  test('v1 legacy: syntheticLegacyRuntimeConfig() matches the frozen golden plan', () => {
+    const plan = syntheticLegacyRuntimeConfig();
+    expect(plan).toEqual(readExpected('compile-v1-legacy.expected.json'));
+  });
+
+  test('v2 agents manifest compiles to the frozen golden plan', () => {
+    const manifest = readManifestYaml('compile-v2-agents.manifest.yaml');
+    const plan = compileRuntimeConfig(manifest);
+    expect(plan).toEqual(readExpected('compile-v2-agents.expected.json'));
+  });
+
+  test('v3 multi-harness manifest compiles to the frozen golden plan', () => {
+    const manifest = readManifestYaml('compile-v3-multi.manifest.yaml');
+    const plan = compileRuntimeConfig(manifest);
+    expect(plan).toEqual(readExpected('compile-v3-multi.expected.json'));
   });
 });
