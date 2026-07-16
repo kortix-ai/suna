@@ -192,7 +192,19 @@ describe('callUpstream — translation sidecar mode', () => {
     expect(capture.requests[0].url).toBe('https://up.test/v1/chat/completions');
   });
 
-  test('genuine OpenAI + sidecar enabled: our own max_tokens hotfix (openai-compat/index.ts) still fires ahead of the sidecar rewrite, so the sidecar/LiteLLM sees max_completion_tokens already — harmless overlap, not a double-translation, and exactly what keeps old self-host boxes correct the moment they flip the flag without also upgrading LiteLLM', async () => {
+  // COEXISTENCE with the direct-path quirk translations that live inside
+  // buildUpstreamRequest (openai-compat/index.ts): the max_tokens ->
+  // max_completion_tokens hotfix (#4805) AND the reasoning-restricted
+  // sampling-param strip + Perplexity role normalization (#4814). callUpstream
+  // runs transport.buildRequest() UNCONDITIONALLY and only THEN rewrites into
+  // the sidecar shape, so every one of those direct-path fixes still fires
+  // even with the sidecar on. LiteLLM's own equivalent quirk tables would
+  // handle the same cases, so this is harmless overlap (our translation is
+  // idempotent / already-clean by the time LiteLLM sees it), never a
+  // double-translation or a bypass — and it's exactly what keeps a box correct
+  // the moment it flips the flag on without also upgrading LiteLLM, and keeps
+  // #4814's fixes intact when the flag is off (the no-sidecar fallback).
+  test('genuine OpenAI + sidecar enabled: the max_tokens hotfix still fires ahead of the sidecar rewrite', async () => {
     const capture = makeCapturingFetch();
     await callUpstream(
       { model: 'x', messages: [], max_tokens: 4096 },
@@ -201,6 +213,44 @@ describe('callUpstream — translation sidecar mode', () => {
     );
     expect(capture.requests[0].body).toMatchObject({ max_completion_tokens: 4096 });
     expect(capture.requests[0].body).not.toHaveProperty('max_tokens');
+  });
+
+  test('genuine OpenAI reasoning model + sidecar enabled: #4814 reasoning-restricted sampling-param strip still fires ahead of the sidecar rewrite', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      { model: 'x', messages: [], temperature: 0.7, top_p: 0.9, presence_penalty: 1 },
+      {
+        ...descriptor,
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        resolvedModel: 'gpt-5.6-sol',
+        temperature: false,
+      },
+      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
+    );
+    const body = capture.requests[0].body as Record<string, unknown>;
+    expect('temperature' in body).toBe(false);
+    expect('top_p' in body).toBe(false);
+    expect('presence_penalty' in body).toBe(false);
+  });
+
+  test('Perplexity + sidecar enabled: #4814 role-alternation normalization still fires ahead of the sidecar rewrite', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'x',
+        messages: [
+          { role: 'user', content: 'a' },
+          { role: 'user', content: 'b' },
+        ],
+      },
+      { ...descriptor, provider: 'perplexity', baseUrl: 'https://api.perplexity.ai' },
+      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
+    );
+    const body = capture.requests[0].body as { messages: unknown[] };
+    // The two consecutive user turns were merged into one before the sidecar
+    // rewrite ever saw them.
+    expect(body.messages).toHaveLength(1);
   });
 
   test('sidecar auth token is optional (no master key configured)', async () => {

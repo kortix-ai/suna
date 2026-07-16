@@ -86,15 +86,16 @@ describe('buildSidecarRequest', () => {
     expect(req.payload.stream_options).toEqual({ include_usage: true });
   });
 
-  // The genuine-OpenAI max_tokens -> max_completion_tokens rename (the hotfix
-  // this migration replaces) still fires in direct mode's buildUpstreamRequest
-  // before the sidecar rewrite ever sees the payload — but under sidecar mode
-  // this rename should come from LiteLLM's own quirk tables instead, not ours
-  // (that's the entire point of the migration). This just pins that the
-  // sidecar rewrite itself passes max_tokens through untouched — it is NOT
-  // where any quirk translation happens; the config-side flag decides which
-  // one applies (see the call-upstream sidecar tests for the direct-vs-sidecar
-  // request comparison).
+  // Every direct-path quirk translation (the genuine-OpenAI max_tokens ->
+  // max_completion_tokens rename, #4814's reasoning-restricted sampling-param
+  // strip, #4814's Perplexity role normalization) lives in
+  // buildUpstreamRequest and runs BEFORE the sidecar rewrite ever sees the
+  // payload — so under sidecar mode LiteLLM's own equivalent quirk tables get
+  // an already-clean payload (harmless overlap). This just pins that the
+  // sidecar rewrite ITSELF is not where any quirk translation happens: it
+  // passes the transport's output through untouched; the config-side flag
+  // decides which layer owns the quirk (see the call-upstream sidecar tests
+  // for the direct-vs-sidecar request comparison covering all three quirks).
   test('does not itself touch max_tokens — that is LiteLLM/the direct-transport concern, not this rewrite', () => {
     const direct = buildUpstreamRequest(
       { model: 'kortix/glm-5.2', messages: [], max_tokens: 4096 },
