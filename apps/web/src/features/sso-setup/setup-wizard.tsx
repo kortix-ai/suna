@@ -855,7 +855,7 @@ function ScimTokenStep({
             visible, and you'd mint a new token from the SCIM card in Settings.
           </p>
           <Button onClick={onDone}>
-            Continue to Entra
+            Continue
             <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
           </Button>
         </div>
@@ -1164,12 +1164,23 @@ function StepBody({
           {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
           <div className="flex flex-wrap items-center gap-3">
             {flow === 'sso' && (
-              <Button asChild variant="outline">
-                <a href="/auth" target="_blank" rel="noreferrer">
-                  Open the sign-in page
-                  <ExternalLink className="ml-1.5 size-3.5 shrink-0" />
-                </a>
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    copyValue(
+                      `${typeof window === 'undefined' ? '' : window.location.origin}/auth`,
+                      'Sign-in URL copied — open it in a private/incognito window',
+                    )
+                  }
+                >
+                  Copy sign-in URL
+                  <Copy className="ml-1.5 size-3.5 shrink-0" />
+                </Button>
+                <span className="text-muted-foreground text-xs">
+                  Test in a private/incognito window so your own session doesn’t auto-complete it.
+                </span>
+              </>
             )}
             <Button onClick={onFinish}>
               Finish

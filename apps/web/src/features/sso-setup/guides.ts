@@ -150,14 +150,17 @@ const testStep = (extra?: string): GuideStep => ({
   title: 'Test single sign-on',
   kind: 'test',
   intro:
-    'Open the sign-in page in a private window, enter a test user’s work email, and complete the sign-in at your identity provider.',
+    'Copy the sign-in URL below and open it in a PRIVATE / incognito window (so your own logged-in session doesn’t auto-complete the test), enter a test user’s work email, and complete the sign-in at your identity provider.',
   bullets: [
-    'The user lands in Kortix as an auto-provisioned member.',
-    'Map their IdP groups on the "SAML SSO" card → "Group mappings" (claim value → Kortix group), then grant those groups project roles — a synced group confers no access until you grant it one.',
-    'On the user’s next sign-in their groups reconcile and the granted roles apply.',
-    'Access changes in the IdP apply on their next sign-in — removing them from a group revokes the mapped access.',
+    'The test user must be one you assigned to the app — otherwise the IdP rejects the sign-in with a “not assigned” error.',
+    'On success the user lands in Kortix and appears under Members on the account’s Identity page.',
+    'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a project role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → Kortix group).',
+    'Either way a group confers NO access until you grant it a project role; changes in the IdP (add/remove from a group) apply on the user’s next sign-in.',
     ...(extra ? [extra] : []),
   ],
+  warning:
+    'If the sign-in fails: “not assigned” → assign the user to the app (assign-users step). An attribute/email error → recheck the email claim maps to the IdP’s login attribute (attributes step). Signed in but no groups → recheck the group claim NAME matches what you set at connect.',
+  success: 'The test user shows up under Members on the Identity page — that’s a confirmed round-trip.',
 });
 
 export const PROVIDER_GUIDES: ProviderGuide[] = [
@@ -776,8 +779,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'basic-saml',
         title: 'Service provider details',
         intro: 'On the "Service provider details" step, paste these two values.',
-        showSpValues: true,
         content: [
+          {
+            kind: 'sp-values',
+            acsLabel: 'ACS URL',
+            entityIdLabel: 'Entity ID',
+            acsFirst: true,
+          },
           {
             kind: 'image',
             src: '/sso-setup/google/basic-saml-1.png',
@@ -898,8 +906,11 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'metadata',
-        title: 'Get the IdP metadata',
-        intro: 'Export your IdP’s SAML metadata — either a metadata URL or the raw XML.',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
+        intro:
+          'Export your IdP’s SAML metadata — paste its metadata URL, or switch to Manual and paste the raw XML. It carries into the connect step automatically.',
+        doneLabel: 'I’ve added the identity provider metadata',
       },
       importStep('groups'),
       testStep(),
@@ -932,35 +943,20 @@ const scimTokenStep: GuideStep = {
     'The secret is shown once at mint time — after that only its prefix is visible. If you lose it before finishing, mint a new one and revoke the old one from the SCIM card in Settings.',
 };
 
-const scimTestStep = (extra?: string): GuideStep => ({
+const scimTestStep = (opts: { extra?: string; content?: StepBlock[] } = {}): GuideStep => ({
   id: 'test',
   title: 'Verify provisioning',
   kind: 'test',
   where: 'idp',
   intro:
     'Back in Kortix, watch the live status below while you push or wait for the sync — no need to tab back and forth to check.',
-  content: [
-    {
-      kind: 'image',
-      src: '/sso-setup/entra/scim-verify-1.png',
-      alt: 'Entra Provisioning overview showing a completed cycle with Import, Scope, Match, and Provision all reporting Success',
-      schematic: {
-        title: 'Provisioning → Overview → Current cycle',
-        rows: [
-          { label: 'Import', value: 'Success', as: 'badge' },
-          { label: 'Scope', value: 'Success', as: 'badge' },
-          { label: 'Match', value: 'Success', as: 'badge' },
-          { label: 'Provision', value: 'Success', as: 'badge' },
-        ],
-      },
-    },
-  ],
+  ...(opts.content ? { content: opts.content } : {}),
   bullets: [
     'A pushed user appears under Members (as a pending invite until their first sign-in).',
     'Deactivating the user in the IdP removes their membership and revokes their tokens.',
     'Pushed groups appear under Groups — grant them project roles to confer access.',
     'Group membership for a user who hasn’t signed in yet is held on their invite and applies automatically at their FIRST sign-in — an empty group before that is expected, not a failure.',
-    ...(extra ? [extra] : []),
+    ...(opts.extra ? [opts.extra] : []),
   ],
   success:
     'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
@@ -1096,9 +1092,26 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           '#1 failure mode: Test Connection fails. Almost always a hand-typed or truncated Tenant URL — re-copy it exactly from the panel on the left (it is not the regular Kortix API URL and has no /v1 suffix). Assigning a whole GROUP (rather than individual users) needs Entra ID P1/P2; on Free, assign users one at a time.',
         doneLabel: 'I’ve configured, mapped, assigned, and started provisioning',
       },
-      scimTestStep(
-        'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again — or run "Provision on demand" to apply it immediately.',
-      ),
+      scimTestStep({
+        extra:
+          'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again — or run "Provision on demand" to apply it immediately.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/scim-verify-1.png',
+            alt: 'Entra Provisioning overview showing a completed cycle with Import, Scope, Match, and Provision all reporting Success',
+            schematic: {
+              title: 'Provisioning → Overview → Current cycle',
+              rows: [
+                { label: 'Import', value: 'Success', as: 'badge' },
+                { label: 'Scope', value: 'Success', as: 'badge' },
+                { label: 'Match', value: 'Success', as: 'badge' },
+                { label: 'Provision', value: 'Success', as: 'badge' },
+              ],
+            },
+          },
+        ],
+      }),
     ],
   },
   {

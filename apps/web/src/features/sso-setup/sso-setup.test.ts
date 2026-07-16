@@ -302,3 +302,42 @@ describe('guide screenshots ship with the guides', () => {
     expect(missing).toEqual([]);
   });
 });
+
+// Novice-walkthrough regressions — each pins a real gap the audit found.
+describe('novice-walkthrough fixes stay fixed', () => {
+  test('the SAML test step reconciles with the auto-provision default (no flat "must hand-map")', () => {
+    const entra = getProviderGuide('entra')!;
+    const test = entra.steps.find((s) => s.id === 'test')!;
+    const groupBullet = (test.bullets ?? []).join(' ');
+    // Must acknowledge auto-provision being ON (the connect-step default),
+    // not just tell the admin to hand-map.
+    expect(groupBullet).toContain('Auto-provision groups');
+  });
+
+  test('the SAML test step has a failure/troubleshooting path', () => {
+    const test = getProviderGuide('entra')!.steps.find((s) => s.id === 'test')!;
+    expect(test.warning).toBeTruthy();
+    expect(test.warning!.toLowerCase()).toContain('fail');
+  });
+
+  test('the SCIM continue button is provider-agnostic (not hardcoded to Entra)', () => {
+    expect(wizardSource).not.toContain('Continue to Entra');
+  });
+
+  test('Google shows its own field labels (ACS URL), not Entra defaults', () => {
+    const google = getProviderGuide('google')!;
+    const basic = google.steps.find((s) => s.id === 'basic-saml')!;
+    const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
+      | { acsLabel?: string; acsFirst?: boolean }
+      | undefined;
+    expect(sp?.acsLabel).toBe('ACS URL');
+    expect(sp?.acsFirst).toBe(true);
+  });
+
+  test('every SAML guide captures metadata interactively (custom included)', () => {
+    for (const g of PROVIDER_GUIDES) {
+      const meta = g.steps.find((s) => s.id === 'metadata');
+      if (meta) expect(meta.kind).toBe('metadata-input');
+    }
+  });
+});
