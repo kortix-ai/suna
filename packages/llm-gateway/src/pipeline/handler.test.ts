@@ -7,6 +7,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from "../domain";
+import { GatewayResolutionError } from "../errors";
 import type { FetchImpl } from "../http";
 
 const principal = {
@@ -128,6 +129,31 @@ describe("gateway.chatCompletions", () => {
     expect((await res.json()).code).toBe("subscription_required");
   });
 
+  // A host's billing gate (e.g. apps/api's BillingGateError) can attach the
+  // REAL reason as a `.reason` string on the thrown error — insufficient_credits
+  // and no_account are just as real a 402 cause as subscription_required, and
+  // used to always report the same hardcoded code regardless. admit() must
+  // read it instead of hardcoding, without needing to import the host's class.
+  test("402 surfaces the billing gate's real reason instead of hardcoding subscription_required", async () => {
+    const { hooks } = makeHooks({
+      assertBillingActive: async () => {
+        const err = new Error("Out of credits. Top up to continue.");
+        (err as Error & { reason: string }).reason = "insufficient_credits";
+        throw err;
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: fastRetry,
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.code).toBe("insufficient_credits");
+    expect(body.message).toBe("Out of credits. Top up to continue.");
+  });
+
   test("400 on invalid JSON", async () => {
     const { hooks } = makeHooks();
     const res = await createGateway(hooks, {
@@ -149,6 +175,75 @@ describe("gateway.chatCompletions", () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()).code).toBe("model_unavailable");
+  });
+
+  // A host's resolveUpstream hook (e.g. apps/api's resolveCandidates) can throw
+  // a GatewayResolutionError instead of returning [] when it knows exactly WHY
+  // there's no upstream — "No upstream configured" used to be the ONE message
+  // for every one of these causes. The specific code/message/suggestion must
+  // survive into the response instead of collapsing to the generic fallback.
+  test("400 surfaces a GatewayResolutionError's specific code/message/suggestion instead of the generic model_unavailable", async () => {
+    const { hooks } = makeHooks({
+      resolveUpstream: async () => {
+        throw new GatewayResolutionError(
+          "provider_key_private",
+          "A openai API key is connected by a teammate, but it's private and not shared with this project.",
+          "Ask them to share the openai key with the project, or add your own openai API key.",
+        );
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: fastRetry,
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"openai/gpt-4.1"}',
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("provider_key_private");
+    expect(body.message).toBe(
+      "A openai API key is connected by a teammate, but it's private and not shared with this project.",
+    );
+    expect(body.suggestion).toBe(
+      "Ask them to share the openai key with the project, or add your own openai API key.",
+    );
+  });
+
+  // Multiple fallback route models can each fail resolution for a different
+  // reason — the FIRST (the model the caller actually asked for) should win,
+  // not whichever fallback happened to run last.
+  test("400 prefers the PRIMARY route model's resolution reason over a later fallback's", async () => {
+    const { hooks } = makeHooks({
+      resolveRoute: async () => ({
+        policyId: "test",
+        primaryModel: "primary",
+        fallbackModels: ["secondary"],
+        fallbackOn: "any-error",
+      }),
+      resolveUpstream: async (_p, model) => {
+        if (model === "primary") {
+          throw new GatewayResolutionError(
+            "plan_upgrade_required",
+            "primary requires a paid plan.",
+            "Upgrade your plan.",
+          );
+        }
+        throw new GatewayResolutionError(
+          "model_not_found",
+          "secondary is not a recognized model.",
+          "Check the model id.",
+        );
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: fastRetry,
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"primary"}',
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("plan_upgrade_required");
   });
 
   test("200 success records usage and a full trace", async () => {
