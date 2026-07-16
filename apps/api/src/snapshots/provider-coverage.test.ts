@@ -5,23 +5,32 @@ import {
   resolveConfiguredProjectProviderPin,
   resolveRoutedTemplateState,
   resolveUsableProjectProviderPin,
+  SANDBOX_TEMPLATE_PROVIDERS,
 } from './provider-coverage';
 
 describe('sandbox template provider coverage', () => {
-  test('synchronizes reusable templates to every enabled provider regardless of routing pins', () => {
-    expect(enabledTemplateBuildProviders({
-      allowed: ['daytona', 'platinum', 'e2b'],
-      isEnabled: () => true,
-    })).toEqual(['daytona', 'platinum', 'e2b']);
-    expect(enabledTemplateBuildProviders({
-      allowed: ['daytona', 'platinum', 'e2b'],
-      isEnabled: (provider) => provider !== 'platinum',
-    })).toEqual(['daytona', 'e2b']);
+  test('every canonical provider is registered as a template-build provider (parity guard)', () => {
+    // Extends automatically as SANDBOX_TEMPLATE_PROVIDERS grows — this is the
+    // test the reinforcement asked for: adding a provider without wiring it
+    // in here fails loudly instead of silently under-covering it.
+    expect(SANDBOX_TEMPLATE_PROVIDERS).toContain('local-docker');
+    expect(SANDBOX_TEMPLATE_PROVIDERS).toEqual(['daytona', 'platinum', 'e2b', 'local-docker']);
   });
 
-  test('observes the current image independently on Daytona, Platinum, and E2B', async () => {
+  test('synchronizes reusable templates to every enabled provider regardless of routing pins', () => {
+    expect(enabledTemplateBuildProviders({
+      allowed: ['daytona', 'platinum', 'e2b', 'local-docker'],
+      isEnabled: () => true,
+    })).toEqual(['daytona', 'platinum', 'e2b', 'local-docker']);
+    expect(enabledTemplateBuildProviders({
+      allowed: ['daytona', 'platinum', 'e2b', 'local-docker'],
+      isEnabled: (provider) => provider !== 'platinum',
+    })).toEqual(['daytona', 'e2b', 'local-docker']);
+  });
+
+  test('observes the current image independently on Daytona, Platinum, E2B, and local-docker', async () => {
     const calls: string[] = [];
-    const states = { daytona: 'active', platinum: 'building', e2b: 'missing' } as const;
+    const states = { daytona: 'active', platinum: 'building', e2b: 'missing', 'local-docker': 'active' } as const;
 
     const result = await observeTemplateProviderCoverage('kortix-default-current', {
       isProviderEnabled: () => true,
@@ -38,12 +47,14 @@ describe('sandbox template provider coverage', () => {
       'daytona:kortix-default-current',
       'platinum:kortix-default-current',
       'e2b:kortix-default-current',
+      'local-docker:kortix-default-current',
     ]);
     expect(result.map(({ provider, status, launch_ready }) => ({ provider, status, launch_ready })))
       .toEqual([
         { provider: 'daytona', status: 'ready', launch_ready: true },
         { provider: 'platinum', status: 'building', launch_ready: false },
         { provider: 'e2b', status: 'not_built', launch_ready: false },
+        { provider: 'local-docker', status: 'ready', launch_ready: true },
       ]);
   });
 

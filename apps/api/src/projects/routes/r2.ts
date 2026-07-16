@@ -468,7 +468,7 @@ interface SandboxHealthPayload {
   latest_build: ReturnType<typeof serializeBuildSummary> | null;
   latest_failure: ReturnType<typeof serializeBuildSummary> | null;
   provider_mode: 'automatic' | 'pinned';
-  selected_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  selected_provider: 'daytona' | 'platinum' | 'e2b' | 'local-docker' | null;
 }
 
 // Safe degraded payload: same shape as the happy path, surfaced when any
