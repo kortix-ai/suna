@@ -127,6 +127,22 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'experimental_harnesses',
+    name: 'Experimental harnesses',
+    description:
+      'Select the Claude Code, Codex, and Pi runtimes in addition to OpenCode — moving targets, may change between versions.',
+    stability: 'experimental',
+    // The ACP adapters ship with the platform (kortix.yaml can already declare
+    // all four runtimes) — no operator service dependency to gate on. Always
+    // available; a project opts in per Settings before claude/codex/pi become
+    // SELECTABLE (composer-capabilities `can_start`, the runtime-profiles
+    // write route). OpenCode is the only stable harness and is never gated by
+    // this flag.
+    available: () => true,
+    // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(

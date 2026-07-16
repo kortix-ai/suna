@@ -1,6 +1,7 @@
 import { CATALOG, type CatalogModel } from '@kortix/llm-catalog';
-import { HARNESS_IDS, HARNESSES, type HarnessId } from '@kortix/shared/harnesses';
+import { HARNESS_IDS, HARNESSES, harnessesByStability, type HarnessId } from '@kortix/shared/harnesses';
 
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import type { GitBackedProject } from '../git/types';
@@ -327,6 +328,24 @@ export function computeDefaultAllowed(input: {
   return input.presetsLength > 0 || input.active === 'native_config' || input.active === 'managed_gateway';
 }
 
+// Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
+// `HARNESSES.opencode.stability === 'stable'`, the sole entry never in this
+// set. Claude/Codex/Pi (`harnessesByStability('experimental')`, zero
+// hardcoded harness lists) are selectable ONLY once a project opts into the
+// `experimental_harnesses` feature (`experimental/features.ts`). This gates
+// SELECTION/START only — parsing/compiling a manifest that declares all four
+// runtimes (the shipped base template) is never gated, see
+// `compile-runtime-config.ts` and `agent-config-v2.ts`'s `migrateManifestV2ToV3`.
+const EXPERIMENTAL_HARNESSES = new Set<HarnessId>(harnessesByStability('experimental'));
+
+/** Whether `harness` may currently be SELECTED to start a session under
+ *  `metadata`'s project. Pure so the predicate is unit-testable without a
+ *  compiled runtime config. */
+export function isExperimentalHarnessGated(harness: HarnessId, metadata: unknown): boolean {
+  if (!EXPERIMENTAL_HARNESSES.has(harness)) return false;
+  return !resolveExperimentalFeature(metadata, 'experimental_harnesses');
+}
+
 function agentView(agent: LogicalAgentLaunchPlan) {
   return {
     name: agent.name,
@@ -414,7 +433,10 @@ export async function resolveProjectComposerState(input: {
           ? 'harness-catalog'
           : 'launch-override';
       const defaultAllowed = computeDefaultAllowed({ active, harness: agent.harness, presetsLength: presets.length });
-      const blockingReason = resolved.reason ?? (!defaultAllowed ? `No usable model is available for ${agent.harness}.` : null);
+      const harnessGated = isExperimentalHarnessGated(agent.harness, input.metadata);
+      const blockingReason = harnessGated
+        ? `${HARNESSES[agent.harness].label} is an experimental harness — enable "Experimental harnesses" for this project in Settings → Experimental before selecting it.`
+        : (resolved.reason ?? (!defaultAllowed ? `No usable model is available for ${agent.harness}.` : null));
       return {
         agent,
         auth: {
@@ -430,7 +452,7 @@ export async function resolveProjectComposerState(input: {
           live_change: HARNESSES[agent.harness].liveModelChange,
           presets,
         },
-        can_start: Boolean(resolved.active) && defaultAllowed,
+        can_start: !harnessGated && Boolean(resolved.active) && defaultAllowed,
         blocking_reason: blockingReason,
       };
     },

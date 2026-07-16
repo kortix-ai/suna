@@ -20,6 +20,7 @@ import {
   applyAgentBlockV3,
   applyRuntimeProfilesV3,
   DEFAULT_RUNTIME_PROFILES_V3,
+  experimentalHarnessesInRuntimeProfiles,
   migrateManifestV2ToV3,
   readAgentBlockV3,
 } from './agent-config-v2';
@@ -289,6 +290,42 @@ describe('applyRuntimeProfilesV3', () => {
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('kortix_version 3');
+  });
+});
+
+/* ─── 5b. experimentalHarnessesInRuntimeProfiles (WS2-P1-b) ─────────────── */
+
+describe('experimentalHarnessesInRuntimeProfiles', () => {
+  test('a runtimes map naming only opencode (the stable harness) is never gated', () => {
+    expect(
+      experimentalHarnessesInRuntimeProfiles({
+        opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+      }),
+    ).toEqual([]);
+  });
+
+  test('claude/codex/pi are flagged, deduped, in first-seen order', () => {
+    expect(
+      experimentalHarnessesInRuntimeProfiles({
+        opencode: { harness: 'opencode' },
+        claude: { harness: 'claude' },
+        'claude-fast': { harness: 'claude' },
+        codex: { harness: 'codex' },
+        pi: { harness: 'pi' },
+      }),
+    ).toEqual(['claude', 'codex', 'pi']);
+  });
+
+  test('the shipped-template default runtime map (all four harnesses) flags exactly the three experimental ones', () => {
+    expect(experimentalHarnessesInRuntimeProfiles(DEFAULT_RUNTIME_PROFILES_V3)).toEqual([
+      'claude',
+      'codex',
+      'pi',
+    ]);
+  });
+
+  test('an empty runtimes map is never gated', () => {
+    expect(experimentalHarnessesInRuntimeProfiles({})).toEqual([]);
   });
 });
 

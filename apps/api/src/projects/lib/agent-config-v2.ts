@@ -27,7 +27,7 @@ import {
   validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
-import { HARNESSES } from '@kortix/shared/harnesses';
+import { HARNESSES, harnessesByStability } from '@kortix/shared/harnesses';
 import type { ParsedManifest } from '../triggers';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
@@ -121,6 +121,31 @@ export function migrateManifestV2ToV3(manifest: ParsedManifest): ApplyAgentBlock
   return errorIssues.length
     ? { ok: false, error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), issues: errorIssues }
     : { ok: true, raw: nextRaw };
+}
+
+// Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
+// zero hardcoded harness lists, derived from `HARNESSES[id].stability` via
+// `harnessesByStability('experimental')`.
+const EXPERIMENTAL_HARNESS_IDS = new Set(harnessesByStability('experimental'));
+
+/**
+ * Harness ids present in `runtimes` that are gated behind the
+ * `experimental_harnesses` feature (claude/codex/pi today — OpenCode is
+ * `stable` and never appears here). Deduped, in `runtimes` insertion order.
+ * Pure so the write route's 422 gate (`../routes/agent-config.ts`,
+ * `PUT /runtime-profiles`) is unit-testable without a manifest/DB fixture.
+ * Gates SELECTION/WRITE only — reading or re-committing an already-declared
+ * v3 manifest (e.g. via the shipped base template, or `migrateManifestV2ToV3`
+ * which always declares all four) is a separate, ungated path.
+ */
+export function experimentalHarnessesInRuntimeProfiles(
+  runtimes: Record<string, RuntimeProfileV3>,
+): string[] {
+  const seen = new Set<string>();
+  for (const profile of Object.values(runtimes)) {
+    if (EXPERIMENTAL_HARNESS_IDS.has(profile.harness)) seen.add(profile.harness);
+  }
+  return Array.from(seen);
 }
 
 /** Replace the complete v3 runtime-profile map and validate every agent

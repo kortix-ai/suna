@@ -38,6 +38,7 @@ import {
 import { HARNESS_IDS } from '@kortix/shared/harnesses';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { readRepoFile } from '../git';
@@ -48,6 +49,7 @@ import {
   applyAgentBlockV3,
   applyDefaultAgentV2,
   applyRuntimeProfilesV3,
+  experimentalHarnessesInRuntimeProfiles,
   migrateManifestV2ToV3,
   readAgentBlockV2,
   readAgentBlockV3,
@@ -230,7 +232,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: RuntimeProfilesBodySchema } } },
     },
-    responses: { 200: json(z.any(), 'Updated runtime profiles'), ...errors(400, 403, 404) },
+    responses: { 200: json(z.any(), 'Updated runtime profiles'), ...errors(400, 403, 404, 422) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -239,6 +241,17 @@ projectsApp.openapi(
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const parsed = RuntimeProfilesBodySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
+    // Gate SELECTION/WRITE only (never parsing/compiling — an already-declared
+    // v3 manifest with all four runtimes, the shipped base template, keeps
+    // reading and compiling regardless of this flag). OpenCode is `stable`
+    // and is never in `experimentalHarnessesInRuntimeProfiles`'s result.
+    const gatedHarnesses = experimentalHarnessesInRuntimeProfiles(parsed.data.runtimes);
+    if (gatedHarnesses.length > 0 && !resolveExperimentalFeature(loaded.row.metadata, 'experimental_harnesses')) {
+      return c.json({
+        error: `Enable "Experimental harnesses" for this project (Settings → Experimental) before selecting ${gatedHarnesses.join(', ')}.`,
+        code: 'experimental_harness_disabled',
+      }, 422);
+    }
     const manifest = await loadManifestForEdit(loaded.row).catch(() => null);
     if (!manifest) return c.json({ error: 'failed to read manifest', code: 'manifest_read' }, 400);
     const applied = applyRuntimeProfilesV3(manifest, parsed.data.runtimes);

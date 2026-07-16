@@ -51,6 +51,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   meet: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
+  experimental_harnesses: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 

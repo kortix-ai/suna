@@ -54,6 +54,23 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
+  test('experimental_harnesses is explicit opt-in (off by default, no operator kill switch)', () => {
+    expect(findCatalogFeature('experimental_harnesses').available).toBe(true);
+    expect(resolveExperimentalFeature({}, 'experimental_harnesses')).toBe(false);
+    expect(
+      resolveExperimentalFeature(
+        { experimental: { experimental_harnesses: true } },
+        'experimental_harnesses',
+      ),
+    ).toBe(true);
+    expect(
+      resolveExperimentalFeature(
+        { experimental: { experimental_harnesses: false } },
+        'experimental_harnesses',
+      ),
+    ).toBe(false);
+  });
+
   test('llm_gateway is platform-gated and defaults on when available', () => {
     const available = findCatalogFeature('llm_gateway').available;
     // No explicit project choice → inherits the platform: on wherever the

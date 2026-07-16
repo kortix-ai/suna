@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { HARNESS_IDS, HARNESSES } from '@kortix/shared/harnesses';
 
 import {
   buildHarnessConnections,
   computeDefaultAllowed,
+  isExperimentalHarnessGated,
   modelPresets,
   newestCatalogModels,
   readHarnessAuthRoutes,
@@ -133,6 +135,29 @@ describe('composer capability auth resolution', () => {
     expect(readHarnessAuthRoutes(metadata)).toEqual({ codex: 'codex_subscription' });
     expect(metadata.existing).toBe(true);
     expect(readHarnessAuthRoutes(writeHarnessAuthRoute(metadata, 'codex', null))).toEqual({});
+  });
+});
+
+describe('isExperimentalHarnessGated (WS2-P1-b: experimental_harnesses selection gate)', () => {
+  test('opencode (the only stable harness) is NEVER gated, flag off or on', () => {
+    expect(isExperimentalHarnessGated('opencode', {})).toBe(false);
+    expect(isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: true } })).toBe(false);
+    expect(isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: false } })).toBe(false);
+  });
+
+  test('every non-stable harness (claude/codex/pi today) is gated when the flag is off', () => {
+    for (const id of HARNESS_IDS) {
+      if (HARNESSES[id].stability === 'stable') continue;
+      expect(isExperimentalHarnessGated(id, {})).toBe(true);
+      expect(isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: false } })).toBe(true);
+    }
+  });
+
+  test('every non-stable harness is un-gated once the project opts in', () => {
+    for (const id of HARNESS_IDS) {
+      if (HARNESSES[id].stability === 'stable') continue;
+      expect(isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: true } })).toBe(false);
+    }
   });
 });
 
