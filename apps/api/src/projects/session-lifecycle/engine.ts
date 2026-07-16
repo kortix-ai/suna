@@ -1,4 +1,5 @@
 import { acpSessionEnvelopes, executorExecutions, projectSessions, projects } from '@kortix/db';
+import { isAcpResponseEnvelope, type AcpEnvelope } from '@kortix/sdk/acp';
 import { eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
@@ -650,7 +651,15 @@ async function postAcpPrompt(input: {
   };
   const call = async (method: string, params: unknown) => {
     const envelope = await postEnvelope({ jsonrpc: '2.0', id: rpcId++, method, params });
-    if (!envelope) throw new Error(`ACP ${method} returned no response`);
+    // Same JSON-RPC response shape guard `AcpClient.request()` applies via
+    // `isAcpResponseEnvelope` before trusting `.error`/`.result` — this used
+    // to be hand-approximated by the `!envelope` check alone, which let a
+    // malformed response (missing both `result` and `error`, or echoing a
+    // request/notification shape back) through silently as a success with
+    // `result: undefined`.
+    if (!envelope || !isAcpResponseEnvelope(envelope as AcpEnvelope)) {
+      throw new Error(`ACP ${method} returned no JSON-RPC response`);
+    }
     if (envelope.error) throw new Error(envelope.error.message || `ACP ${method} failed`);
     return envelope.result;
   };

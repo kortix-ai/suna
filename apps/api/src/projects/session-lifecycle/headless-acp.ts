@@ -1,3 +1,5 @@
+import { createSseBlockParser, isDeliverableSseBlock } from '@kortix/sdk/acp';
+
 export type HeadlessAcpEnvelope = Record<string, unknown>;
 
 export function selectHeadlessPermissionOption(params: unknown): string | null {
@@ -21,27 +23,31 @@ export async function consumeHeadlessAcpSse(
   const reader = body.getReader();
   const abort = () => { void reader.cancel(); };
   signal?.addEventListener('abort', abort, { once: true });
-  const decoder = new TextDecoder();
-  let buffer = '';
+  const parser = createSseBlockParser();
   try {
     while (true) {
       const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      if (done && buffer.trim()) buffer += '\n\n';
-      let boundary: number;
-      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-        const block = buffer.slice(0, boundary).replace(/\r/g, '');
-        buffer = buffer.slice(boundary + 2);
-        let eventId: number | null = null;
-        const data: string[] = [];
-        for (const line of block.split('\n')) {
-          if (line.startsWith('id:')) eventId = Number(line.slice(3).trim());
-          else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+      const blocks = parser.push(value, done);
+      for (const block of blocks) {
+        if (!isDeliverableSseBlock(block)) continue;
+        // Poison tolerance (WS3-P0-c fixed defect): a malformed `data:`
+        // payload must not throw out of this loop — that would kill the
+        // whole headless run (one bad SSE frame aborting a cron/trigger
+        // turn). Skip it, log once, and keep consuming the rest of the
+        // stream, exactly like `AcpClient`'s own `consumeSse` tolerates a
+        // poison event via `onParseError`. The permission auto-answer flow
+        // for any other event in the same stream is unaffected.
+        let envelope: HeadlessAcpEnvelope;
+        try {
+          envelope = JSON.parse(block.data.join('\n')) as HeadlessAcpEnvelope;
+        } catch (error) {
+          console.warn('[session-lifecycle] skipping poison ACP SSE event', {
+            eventId: block.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          continue;
         }
-        if (eventId !== null && Number.isSafeInteger(eventId) && data.length) {
-          const parsed = JSON.parse(data.join('\n')) as HeadlessAcpEnvelope;
-          await onEnvelope(eventId, parsed);
-        }
+        await onEnvelope(block.id, envelope);
       }
       if (done) return;
     }

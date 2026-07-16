@@ -210,6 +210,59 @@ describe('createPersistedSseProxy', () => {
     ]);
   });
 
+  // --- Carried over from the WS3-P0-b review (documented there, unpinned): -
+  // the OLD hand-rolled `persistSseBlock` (apps/api/src/projects/routes/acp.ts,
+  // pre-8664eb3f1) stripped `data:` line content with `.trimStart()` — ALL
+  // leading whitespace. The shared core (same as `client.ts`) strips exactly
+  // one canonical SSE space (`'data: '` -> `slice(6)`, else `slice(5)`),
+  // leaving residual whitespace on a multi-space `data:` line in the
+  // `SseBlock.data` array this proxy now hands to `persistBlock`. Pinned here
+  // with a dedicated leading-multi-space fixture, closing the same divergence
+  // class WS3-P0-c pins for the headless consumer
+  // (`session-lifecycle/__tests__/headless-acp.test.ts`).
+  //
+  // Verdict: PURE REFACTOR at the layer this proxy owns (block extraction),
+  // not a fixed defect — `persistSseBlock`'s downstream `JSON.parse(data.join('\n'))`
+  // ignores insignificant leading whitespace outside string literals, so the
+  // persisted envelope is byte-identical either way even though the
+  // intermediate `data` string differs. Checked against the only known real
+  // producer (`apps/kortix-sandbox-agent-server/src/routes/acp.ts:79`,
+  // `` `id: ${event.id}\ndata: ${JSON.stringify(event.envelope)}\n\n` ``):
+  // `JSON.stringify` never emits leading whitespace, so this fixture (three
+  // spaces) exercises a shape the real emitter never produces — inert on the
+  // one real producer, pinned purely to close the divergence class.
+  test('a data: line with multiple leading spaces still frames with the canonical single-space strip (residual whitespace, parses identically downstream)', async () => {
+    const encoder = new TextEncoder();
+    const persisted: Array<{ id: number | null; data: string[] }> = [];
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('id: 1\ndata:   {"a":1}\n\n'));
+        controller.close();
+      },
+    });
+
+    const proxy = createPersistedSseProxy(upstream, {
+      sessionId: 'session-multi-space',
+      persistBlock: async (block) => {
+        persisted.push(block);
+      },
+    });
+
+    const reader = proxy.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    // Two residual spaces (three in the source minus the one canonical
+    // space the shared core strips) — NOT the fully-trimmed `'{"a":1}'` the
+    // old `.trimStart()` behavior produced.
+    expect(persisted).toEqual([{ id: 1, data: ['  {"a":1}'] }]);
+    // ...and it is still valid, identical JSON once parsed — the divergence
+    // is invisible at the layer that actually matters.
+    expect(JSON.parse(persisted[0].data.join('\n'))).toEqual({ a: 1 });
+  });
+
   test('non-deliverable blocks (keepalive comments, id-less blocks) are never handed to persistBlock', async () => {
     const encoder = new TextEncoder();
     const persisted: Array<{ id: number | null; data: string[] }> = [];
