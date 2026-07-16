@@ -93,7 +93,15 @@ ok "instance $INSTANCE (api port $API_PORT)"
 section "CLI Self-host Setup"
 # `init` never blocks on a missing required secret (it warns and proceeds);
 # this schema-only gate supplies dummy creds via `env set` immediately below.
-$CLI self-host init --instance "$INSTANCE" >/dev/null
+# Image selection goes through init's supported surface: image env keys
+# (API_IMAGE etc.) are updater-managed and `env set` refuses them, so pin the
+# locally-built image via --local-images + --tag instead.
+API_TAG="${API_IMAGE##*:}"
+case "$API_IMAGE" in
+  kortix/kortix-api:*) ;;
+  *) die "API_IMAGE must be kortix/kortix-api:<tag> (got '$API_IMAGE') — init derives images from the tag" ;;
+esac
+$CLI self-host init --instance "$INSTANCE" --local-images --tag "$API_TAG" >/dev/null
 # Schema-only gate: this never provisions a sandbox. `self-host init` defaults
 # the provider to daytona, which makes env-validation require Daytona creds, so
 # supply dummy ones — they only need to be present for the API to boot; Daytona
@@ -106,9 +114,7 @@ $CLI self-host env set --instance "$INSTANCE" \
   "ALLOWED_SANDBOX_PROVIDERS=daytona" \
   "DAYTONA_API_KEY=schema-check-dummy" \
   "DAYTONA_SERVER_URL=https://daytona.invalid" \
-  "DAYTONA_TARGET=schema-check" \
-  "KORTIX_LOCAL_IMAGES=true" \
-  "API_IMAGE=$API_IMAGE" >/dev/null
+  "DAYTONA_TARGET=schema-check" >/dev/null
 ok "config initialized"
 
 section "Bring Up Data Plane (db, auth, rest, kong, migrate, api)"

@@ -51,6 +51,15 @@ const optBoolFalse = z
   .optional()
   .default('false')
   .transform((v) => ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()));
+/** Tri-state boolean: stays `undefined` when unset so a deployment-aware
+ * default can be derived after parsing (see KORTIX_MANAGED_PROVIDER_ENABLED,
+ * which follows the billing flag when not explicitly set). */
+const optBoolUnset = z
+  .string()
+  .optional()
+  .transform((v) =>
+    v === undefined ? undefined : ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()),
+  );
 
 /** Declarative, operator-defined model fallback policies. */
 const optFallbackPolicies = z
@@ -282,12 +291,14 @@ const envSchema = z.object({
   // the picker) exists at all on this deployment. Independent of
   // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
   // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
-  // must never see or route to Kortix's shared credentials. Off by default;
-  // Kortix Cloud sets this true in its own env. See RUNTIME_MANAGED_MODELS
-  // (managed-models.ts) and managedCandidates() (descriptors.ts) — both are
-  // gated on this and read NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY
-  // for managed routing when it's off.
-  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolFalse,
+  // must never see or route to Kortix's shared credentials. When unset it
+  // follows KORTIX_BILLING_INTERNAL_ENABLED (derived below): billing on =
+  // managed cloud where the managed lineup is the product; billing off =
+  // self-host where it must stay dark. An explicit true/false always wins.
+  // See RUNTIME_MANAGED_MODELS (managed-models.ts) and managedCandidates()
+  // (descriptors.ts) — both are gated on this and read NEITHER
+  // AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY for managed routing when off.
+  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
   // Fleet default for projects with no explicit per-project override. Defaults
   // ON: wherever the gateway is available (master switch above), the managed
   // gateway is the default routing mechanism and every project inherits it
@@ -739,7 +750,10 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
-  KORTIX_MANAGED_PROVIDER_ENABLED: env.KORTIX_MANAGED_PROVIDER_ENABLED,
+  // Unset → follow billing (cloud keeps its revenue lineup even if the env
+  // blob misses the var; self-host stays off). Explicit value always wins.
+  KORTIX_MANAGED_PROVIDER_ENABLED:
+    env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
