@@ -1,18 +1,16 @@
+import { HARNESS_IDS, HARNESSES } from '@kortix/shared/harnesses';
 import type { AcpHarness, RuntimeProfile } from '@kortix/sdk/projects-client';
 
-export const ACP_HARNESSES: readonly AcpHarness[] = ['claude', 'codex', 'opencode', 'pi'];
-export const ACP_HARNESS_LABELS: Record<AcpHarness, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-};
-export const ACP_HARNESS_CONFIG_DIRS: Record<AcpHarness, string> = {
-  claude: '.claude',
-  codex: '.codex',
-  opencode: '.kortix/opencode',
-  pi: '.pi',
-};
+// Identity, labels, and config dirs derive from the canonical `@kortix/shared`
+// harness descriptor — do not re-hardcode the harness tuple, labels, or
+// config-dir strings here (see packages/shared/src/harnesses.ts).
+export const ACP_HARNESSES: readonly AcpHarness[] = HARNESS_IDS;
+export const ACP_HARNESS_LABELS: Record<AcpHarness, string> = Object.fromEntries(
+  HARNESS_IDS.map((id) => [id, HARNESSES[id].label]),
+) as Record<AcpHarness, string>;
+export const ACP_HARNESS_CONFIG_DIRS: Record<AcpHarness, string> = Object.fromEntries(
+  HARNESS_IDS.map((id) => [id, HARNESSES[id].configDir]),
+) as Record<AcpHarness, string>;
 
 export function withAllAcpHarnesses(
   current: Record<string, RuntimeProfile>,

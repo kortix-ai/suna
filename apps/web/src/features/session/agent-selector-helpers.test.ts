@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { shouldGroupAgentsByHarness } from './agent-selector-helpers';
+import { HARNESS_IDS } from '@kortix/shared/harnesses';
+
+import { AGENT_GROUP_ORDER, shouldGroupAgentsByHarness } from './agent-selector-helpers';
 
 describe('shouldGroupAgentsByHarness', () => {
   test('a single harness renders flat, no group headers', () => {
@@ -20,5 +22,11 @@ describe('shouldGroupAgentsByHarness', () => {
 
   test('empty list never groups', () => {
     expect(shouldGroupAgentsByHarness([])).toBe(false);
+  });
+});
+
+describe('AGENT_GROUP_ORDER', () => {
+  test('is every canonical harness in HARNESS_IDS order, followed by "other"', () => {
+    expect(AGENT_GROUP_ORDER).toEqual([...HARNESS_IDS, 'other']);
   });
 });

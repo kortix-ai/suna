@@ -1,3 +1,5 @@
+import { HARNESS_IDS } from '@kortix/shared/harnesses';
+
 /**
  * Whether the agent picker should group rows under harness headings.
  * Grouping only earns its place once agents actually span more than one
@@ -10,3 +12,12 @@ export function shouldGroupAgentsByHarness(harnesses: Array<string | null>): boo
   const distinct = new Set(harnesses.map((harness) => harness ?? 'other'));
   return distinct.size > 1;
 }
+
+/**
+ * Display order for the agent picker's harness group headings: every
+ * canonical harness in `HARNESS_IDS` order, followed by the catch-all
+ * "other" bucket for agents with no resolvable harness. Derived from the
+ * `@kortix/shared` harness descriptor — do not re-hardcode the harness tuple
+ * here.
+ */
+export const AGENT_GROUP_ORDER: readonly [...typeof HARNESS_IDS, 'other'] = [...HARNESS_IDS, 'other'];

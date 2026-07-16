@@ -50,7 +50,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { shouldGroupAgentsByHarness } from './agent-selector-helpers';
+import { AGENT_GROUP_ORDER, shouldGroupAgentsByHarness } from './agent-selector-helpers';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   mergeFailedSubmissionFiles,
@@ -283,7 +283,7 @@ export function AgentSelector({
       const key = agentHarness(agent) ?? 'other';
       groups.set(key, [...(groups.get(key) ?? []), agent]);
     }
-    const order: Array<KortixHarness | 'other'> = ['claude', 'codex', 'opencode', 'pi', 'other'];
+    const order: ReadonlyArray<KortixHarness | 'other'> = AGENT_GROUP_ORDER;
     return order
       .map((harness) => ({ harness, agents: groups.get(harness) ?? [] }))
       .filter((group) => group.agents.length > 0);

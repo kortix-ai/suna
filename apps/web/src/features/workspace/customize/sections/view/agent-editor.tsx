@@ -66,6 +66,7 @@ import { useMemo, useState } from 'react';
 import { FieldRow, SectionHeader, LayerHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
 import { RuntimeLayerFields } from './runtime-layer-fields';
+import { ACP_HARNESS_LABELS } from './runtime-profile-options';
 
 export {
   AGENT_MODE_HELP,
@@ -226,7 +227,7 @@ function AgentEditorModal({
                     <SelectContent>
                       {Object.entries(runtimes).map(([name, profile]) => (
                         <SelectItem key={name} value={name}>
-                          {profile.harness === 'claude' ? 'Claude Code' : profile.harness === 'codex' ? 'Codex' : profile.harness === 'opencode' ? 'OpenCode' : 'Pi'}
+                          {ACP_HARNESS_LABELS[profile.harness]}
                           {name !== profile.harness ? ` · ${name}` : ''}
                         </SelectItem>
                       ))}
