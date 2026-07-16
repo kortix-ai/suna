@@ -4,7 +4,7 @@
 # "the same thing with bigger numbers and min_capacity >= 2".
 #
 # Inputs: a VPC + subnets (from modules/network), a container image, env/secrets,
-# and an optional ACM cert. Outputs the ALB DNS name so the environment can point
+# and an ACM cert. Outputs the ALB DNS name so the environment can point
 # Cloudflare DNS at it.
 
 terraform {
@@ -21,9 +21,6 @@ locals {
   name = var.name
   # PORT is always injected so the app binds the port the target group checks.
   environment = merge(var.environment, { PORT = tostring(var.container_port) })
-  # Gate the HTTPS listener on a STATIC flag (count can't depend on the ACM
-  # cert ARN, which is unknown until apply).
-  https = var.enable_https
 }
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
@@ -95,13 +92,6 @@ resource "aws_security_group" "alb" {
   description = "Ingress to the ${local.name} ALB"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.alb_ingress_cidrs
-  }
   ingress {
     description = "HTTPS"
     from_port   = 443
@@ -196,35 +186,7 @@ resource "aws_lb_target_group" "this" {
   tags                 = var.tags
 }
 
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  # With a cert, force HTTPS; without one, serve HTTP directly (e.g. behind a
-  # TLS-terminating proxy like Cloudflare in dev).
-  dynamic "default_action" {
-    for_each = local.https ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-  dynamic "default_action" {
-    for_each = local.https ? [] : [1]
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.this.arn
-    }
-  }
-}
-
 resource "aws_lb_listener" "https" {
-  count             = local.https ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
@@ -344,12 +306,9 @@ resource "aws_ecs_service" "this" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  # Both listeners must exist before the service: the HTTPS listener (when
-  # enabled) is what associates the target group with the load balancer, and ECS
-  # rejects CreateService against a target group that has no associated LB.
-  # Without this, the service can race ahead of the HTTPS listener on a fresh
-  # apply ("target group ... does not have an associated load balancer").
-  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
+  # The selected listener must exist before the service so the target group is
+  # associated with the load balancer before ECS validates CreateService.
+  depends_on = [aws_lb_listener.https]
   tags = {
     ManagedBy   = "terraform"
     Name        = local.name

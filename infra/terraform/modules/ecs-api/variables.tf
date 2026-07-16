@@ -124,15 +124,13 @@ variable "requests_per_target_target" {
 
 # ── Options ───────────────────────────────────────────────────────────────────
 variable "certificate_arn" {
-  description = "ACM cert ARN for the HTTPS listener (used when enable_https = true)."
+  description = "ACM cert ARN for the required HTTPS listener."
   type        = string
-  default     = ""
-}
 
-variable "enable_https" {
-  description = "Create the HTTPS :443 listener (certificate_arn) and make :80 redirect to it. false = HTTP-only :80 forward. Must be a static value (gates count)."
-  type        = bool
-  default     = false
+  validation {
+    condition     = length(trimspace(var.certificate_arn)) > 0
+    error_message = "certificate_arn is required; the ecs-api module is HTTPS-only."
+  }
 }
 
 variable "use_fargate_spot" {
