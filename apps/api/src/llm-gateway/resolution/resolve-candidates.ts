@@ -170,7 +170,10 @@ export async function resolveCandidates(
     // provider at all" from "a teammate connected their own key but kept it
     // private" — both used to read as the same generic "No upstream
     // configured" message with no clue which of the two applies.
-    const anyOwnerConnected = await projectSecretExistsForAnyOwner(principal.projectId, byok.envVar);
+    const anyOwnerConnected = await projectSecretExistsForAnyOwner(
+      principal.projectId,
+      byok.envVar,
+    );
     byokFailure = anyOwnerConnected
       ? new GatewayResolutionError(
           'provider_key_private',
