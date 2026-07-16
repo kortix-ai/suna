@@ -1,4 +1,5 @@
-# Argo CD Application for the EKS prod LLM gateway (gateway.kortix.com).
+# Argo CD Application for the EKS prod LLM gateway origin
+# (gateway-eks.kortix.com, behind the gateway.kortix.com Cloudflare router).
 #
 # SINGLE source (mirrors kortix-prod): render the kortix-gateway chart with the
 # prod gateway value file via a relative path in the same repo — one revision, so

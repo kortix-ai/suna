@@ -90,7 +90,7 @@ module "platform" {
   oidc_provider_url = local.cluster.oidc_provider_url
   api_domain        = local.cluster.api_domain
   # Let external-dns also manage the standalone LLM gateway host.
-  extra_domain_filters = ["gateway.kortix.com"]
+  extra_domain_filters = ["gateway-eks.kortix.com"]
 
   cloudflare_api_token = var.cloudflare_api_token
   cloudflare_zone_id   = var.cloudflare_zone_id
