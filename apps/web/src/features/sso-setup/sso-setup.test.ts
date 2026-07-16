@@ -276,3 +276,26 @@ describe('domain field explains its consequence in the guided wizard (live incid
     expect(flatWizardSource).toContain('this will route YOUR next sign-in to the IdP');
   });
 });
+
+// Every screenshot a guide references must exist in public/ — the GuideImage
+// component self-hides on a missing file, which silently degrades a step to
+// text-only (exactly the "no screenshots that guide you" regression). This
+// walks every image src in guides.ts and fails on the first dead slot, so a
+// guide edit can never reference an asset that was never shipped.
+describe('guide screenshots ship with the guides', () => {
+  test('every referenced /sso-setup image exists on disk', () => {
+    const refs = [...guidesSource.matchAll(/['"](\/sso-setup\/[a-z-]+\/[a-z0-9-]+\.png)['"]/g)].map(
+      (m) => m[1],
+    );
+    expect(refs.length).toBeGreaterThan(0);
+    const missing = refs.filter((ref) => {
+      try {
+        readFileSync(join(dir, '../../../public', ref));
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(missing).toEqual([]);
+  });
+});
