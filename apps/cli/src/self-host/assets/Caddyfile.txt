@@ -24,6 +24,15 @@
 # api.<domain> (or an explicit KORTIX_API_DOMAIN): /v1/llm* -> the LLM gateway,
 # everything else -> the API.
 {$KORTIX_API_DOMAIN} {
+	# Caddy's automatic HTTPS already redirects any plain :80 request to :443
+	# for every site block below with no extra config (it's the default
+	# behavior of a domain-form site address, not opt-in) — this header is
+	# the one piece that isn't automatic. Conservative max-age (30 days), no
+	# `preload`: preload-list submission is a one-way door (every subdomain
+	# forever, removal takes months), not something to default on for an
+	# operator-owned domain we don't control the lifecycle of.
+	header Strict-Transport-Security "max-age=2592000"
+
 	@llm path /v1/llm*
 	handle @llm {
 		reverse_proxy {
@@ -60,6 +69,8 @@
 # place), everything else -> the frontend (replicated + load-balanced the
 # same way as api/gateway above).
 {$KORTIX_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
 	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
 	handle @supabase {
 		reverse_proxy supabase-kong:8000 {

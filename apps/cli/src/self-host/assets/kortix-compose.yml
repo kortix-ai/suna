@@ -165,7 +165,20 @@ services:
   # home directory is mountable both ways; on native Linux Docker the path
   # trivially exists on "the host" because the daemon IS the host.
   kortix-updater:
-    image: docker:cli
+    # Pinned by digest, not a floating :latest/:cli tag: this container holds
+    # the mounted Docker socket (root-equivalent on the host), so an
+    # unreviewed upstream tag move is a direct supply-chain risk, not just an
+    # update-stability one. `docker:29.6.1-cli`, digest resolved and recorded
+    # 2026-07 from Docker Official Images (multi-arch manifest-list digest —
+    # resolves the right arch per host). Trust model: this is the official
+    # `docker` image on Docker Hub, the same publisher/registry every other
+    # `docker compose pull` in this stack already trusts; the digest pin means
+    # a compromised/rotated tag can never silently change what this
+    # privileged container runs — bumping it is a reviewed, explicit change
+    # to this file (see apps/cli/src/self-host/assets/kortix-compose.yml in
+    # git history), the same way every supabase-* image is pinned by digest
+    # in compose-assets.ts's pinSupabaseImages().
+    image: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     working_dir: ${KORTIX_INSTANCE_DIR}
     # The trailing "sh" is a placeholder $0 for the `-c` script below; anything
     # `docker compose run kortix-updater <args>` appends lands in "$@" and is
@@ -192,19 +205,40 @@ services:
       # compose-assets.ts (2 in domain/prod mode, 1 in laptop mode) so the
       # updater never has to re-derive prod-vs-laptop topology itself.
       KORTIX_APP_REPLICAS: ${KORTIX_APP_REPLICAS:-1}
+      # Advanced/rarely-changed updater knobs — every one of these has a
+      # sensible built-in default in updater.sh itself (the `${VAR:-default}`
+      # on the right); they are only listed here so `kortix self-host env set
+      # KORTIX_ROLLOUT_TIMEOUT=...` (etc.) actually reaches the container.
+      # Without an explicit `environment:` entry, a key merely present in
+      # .env is invisible to this service (unlike kortix-api, this service
+      # has no `env_file: .env`, by design — see the volumes comment below).
+      KORTIX_ROLLOUT_TIMEOUT: ${KORTIX_ROLLOUT_TIMEOUT:-300}
+      KORTIX_CRASH_WATCH_S: ${KORTIX_CRASH_WATCH_S:-20}
+      KORTIX_MIN_FREE_DISK_MB: ${KORTIX_MIN_FREE_DISK_MB:-2048}
+      # Optional push notification for every run's outcome (ok/degraded/
+      # failed/skipped) — one generic env var, no vendor-specific
+      # integration. Unset by default (no-op). See notify_webhook() in
+      # updater.sh.
+      KORTIX_UPDATE_WEBHOOK_URL: ${KORTIX_UPDATE_WEBHOOK_URL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Read-write: `docker compose run --rm ... kortix-updater` itself needs
-      # no write access here (write_breadcrumb only ever writes under the
-      # separate /state volume below) — but `docker compose`'s OWN bind-mount
-      # resolution for OTHER services (kong.yml, the Postgres data dir, ...)
-      # is a read of this same tree from the host daemon's side, not through
-      # this mount, so :ro here would be cosmetic either way. Left read-write
-      # simply because there is no meaningful confidentiality/integrity
-      # boundary between this container (which already holds the Docker
-      # socket, i.e. root-equivalent on the host) and the instance directory.
+      # no write access here (write_status()/write_breadcrumb() only ever
+      # write under the separate /state volume below) — but `docker
+      # compose`'s OWN bind-mount resolution for OTHER services (kong.yml,
+      # the Postgres data dir, ...) is a read of this same tree from the host
+      # daemon's side, not through this mount, so :ro here would be cosmetic
+      # either way. Left read-write simply because there is no meaningful
+      # confidentiality/integrity boundary between this container (which
+      # already holds the Docker socket, i.e. root-equivalent on the host)
+      # and the instance directory.
       - ${KORTIX_INSTANCE_DIR}:${KORTIX_INSTANCE_DIR}
       - kortix-updater-state:/state
+    # Second layer behind updater.sh's own internal resilience (the scheduler
+    # loop never exits on a failed run — see the `run_locked nightly || log
+    # ...` call in updater.sh): if this container is ever OOM-killed or
+    # crashes outright, Docker restarts it and the scheduler loop resumes
+    # from next_run_epoch() on its own, no operator action needed.
     restart: unless-stopped
 
   # Cloudflare tunnel (opt-in): the "tunnel" reachability mode's zero-config

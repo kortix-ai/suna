@@ -301,6 +301,177 @@ describe('full self-host Docker distribution', () => {
     expect(caddyfile).toContain('fail_duration');
   });
 
+  test('Caddyfile sends a conservative HSTS header (no preload) on both site blocks', () => {
+    const caddyfile = kortixRuntimeAssets.Caddyfile;
+    const matches = [...caddyfile.matchAll(/Strict-Transport-Security "([^"]+)"/g)];
+    expect(matches.length).toBe(2);
+    for (const [, value] of matches) {
+      expect(value).toMatch(/^max-age=\d+$/);
+      expect(value).not.toContain('preload');
+      const maxAge = Number(value!.replace('max-age=', ''));
+      // Conservative: at most 90 days. Caddy's automatic-HTTPS redirect
+      // (verified separately below/at render time) already covers the
+      // http->https requirement without needing an aggressive HSTS value.
+      expect(maxAge).toBeLessThanOrEqual(60 * 60 * 24 * 90);
+      expect(maxAge).toBeGreaterThan(0);
+    }
+  });
+
+  test('every service in the rendered stack has bounded, rotated logging', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
+      services: Record<string, { logging?: { driver?: string; options?: Record<string, string> } }>;
+    };
+    const names = Object.keys(document.services);
+    expect(names.length).toBeGreaterThan(15);
+    for (const [name, service] of Object.entries(document.services)) {
+      expect(service.logging?.driver, name).toBe('json-file');
+      expect(service.logging?.options?.['max-size'], name).toBe('10m');
+      expect(service.logging?.options?.['max-file'], name).toBe('3');
+    }
+  });
+
+  test('every service has a memory ceiling; Postgres is protected, analytics/vector are the tightest-capped', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
+      services: Record<string, { mem_limit?: string; mem_reservation?: string; oom_score_adj?: number }>;
+    };
+    const toMb = (value: string) => Number(value.replace(/m$/, ''));
+    for (const [name, service] of Object.entries(document.services)) {
+      expect(service.mem_limit, name).toBeDefined();
+      expect(service.mem_reservation, name).toBeDefined();
+    }
+    const db = document.services['supabase-db'];
+    expect(db?.oom_score_adj).toBeLessThan(0);
+    const analytics = document.services['supabase-analytics'];
+    const vector = document.services['supabase-vector'];
+    expect(analytics?.oom_score_adj).toBeGreaterThan(0);
+    expect(vector?.oom_score_adj).toBeGreaterThan(0);
+    // The full worst-case (every STEADY-STATE service simultaneously at its
+    // own ceiling) must still fit comfortably on an 8GB box — these are
+    // circuit-breaker ceilings, not a steady-state budget, but they must not
+    // be so generous that the documented floor is fiction. kortix-migrate is
+    // excluded: it's a one-shot job that runs to completion and exits before
+    // the app tier is ever rolled, never concurrent with the rest at steady
+    // state (see kortix-compose.yml: `restart: "no"`).
+    const totalCeilingMb = Object.entries(document.services)
+      .filter(([name]) => name !== 'kortix-migrate')
+      .map(([, service]) => (service.mem_limit ? toMb(service.mem_limit) : 0))
+      .reduce((a, b) => a + b, 0);
+    expect(totalCeilingMb).toBeLessThan(8 * 1024);
+  });
+
+  test('kortix-updater image is pinned by digest, never :latest or a bare floating :cli tag', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { image?: string }>;
+    };
+    const image = document.services['kortix-updater']?.image ?? '';
+    expect(image).toMatch(/^docker:\d+\.\d+\.\d+-cli@sha256:[a-f0-9]{64}$/);
+  });
+
+  test('supabase-kong no longer gates on supabase-studio (Studio/Logflare must never block kortix-api cold boot)', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { depends_on?: Record<string, unknown> }>;
+    };
+    const kong = document.services['supabase-kong'];
+    expect(kong?.depends_on ?? {}).not.toHaveProperty('supabase-studio');
+    // kortix-api still (correctly) depends on Kong itself — only the
+    // unnecessary Kong -> Studio -> Analytics tail behind it is cut.
+    const api = document.services['kortix-api'];
+    expect(api?.depends_on).toHaveProperty('supabase-kong');
+  });
+
+  test('GoTrue rate limiting is actually active (GOTRUE_RATE_LIMIT_HEADER set)', () => {
+    // GoTrue no-ops every per-IP rate limit whenever this header is unset,
+    // regardless of the numeric limit values — see performRateLimitingWithHeader
+    // in supabase/auth. Upstream's own compose file never sets it.
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    const auth = document.services['supabase-auth'];
+    expect(auth?.environment?.GOTRUE_RATE_LIMIT_HEADER).toBeTruthy();
+    expect(auth?.environment?.GOTRUE_RATE_LIMIT_EMAIL_SENT).toBeTruthy();
+    expect(auth?.environment?.GOTRUE_RATE_LIMIT_OTP).toBeTruthy();
+  });
+
+  test('updater.sh: a failed per-service swap does not abort the remaining services (no silent mixed-version state)', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const perform = script.slice(script.indexOf('\nperform_update() {'), script.indexOf('next_run_epoch()'));
+    expect(perform).toContain('for svc in $ROLL_SERVICES; do');
+    // The old early-return-on-first-failure shape must be gone...
+    expect(perform).not.toContain('leaving remaining services untouched');
+    // ...replaced by a loop that keeps going and stamps a degraded outcome.
+    expect(perform).toContain('degraded, not mixed-and-silent');
+    expect(script).toContain('write_status "degraded"');
+  });
+
+  test('updater.sh: the scheduler loop never lets a failed run exit/crash the standing container', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const loop = script.slice(script.lastIndexOf('while true; do'));
+    expect(loop).toContain('run_locked nightly ||');
+    expect(loop).not.toMatch(/\n\s*run_locked nightly\s*\n/);
+  });
+
+  test('updater.sh: every run stamps a machine-readable outcome, and `status`/`report` subcommands surface it', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('STATUS_FILE="$STATE_DIR/update-status.json"');
+    expect(script).toContain('write_status()');
+    expect(script).toContain('"${1:-}" = "status"');
+    expect(script).toContain('"${1:-}" = "report"');
+  });
+
+  test('updater.sh: drift between declared and running images is detected explicitly', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('check_drift()');
+    expect(script).toContain('drift_report_json()');
+    expect(script).toContain('DRIFT:');
+  });
+
+  test('updater.sh: disk-space preflight runs before any pull, and image GC runs only after a fully successful run', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const perform = script.slice(script.indexOf('\nperform_update() {'), script.indexOf('next_run_epoch()'));
+    const preflightIdx = perform.indexOf('disk_preflight');
+    const pullIdx = perform.indexOf('$COMPOSE pull');
+    expect(preflightIdx).toBeGreaterThan(-1);
+    expect(pullIdx).toBeGreaterThan(preflightIdx);
+    // Restrict to the "some service actually changed" branch (after the
+    // pending_version() read below the early-return "nothing to roll" path,
+    // which has its own separate degraded stamp for a stateful-service
+    // health-gate failure and isn't what this assertion is about).
+    const swapBranch = perform.slice(perform.indexOf('to_version=$(pending_version)'));
+    const gcIdx = swapBranch.indexOf('gc_images');
+    const degradedIdx = swapBranch.indexOf('write_status "degraded"');
+    expect(gcIdx).toBeGreaterThan(-1);
+    expect(degradedIdx).toBeGreaterThan(-1);
+    expect(gcIdx).toBeLessThan(degradedIdx);
+  });
+
+  test('updater.sh: a lock-contention loser reports who currently holds the lock instead of silently no-op\'ing', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('HOLDER_FILE=');
+    expect(script).toContain('another update run is already in progress');
+    expect(script).toContain('exit 75');
+  });
+
+  test('updater.sh: a stateful service recreate is health-gated with an explicit go/no-go', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const fn = script.slice(script.indexOf('reconcile_stateful_services()'), script.indexOf('check_drift()'));
+    expect(fn).toContain('wait_healthy');
+    expect(fn).toContain('(go)');
+    expect(fn).toContain('(no-go)');
+  });
+
+  test('updater.sh: a post-swap crash-loop is watched for and stamped, with a one-line rollback hint', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('watch_for_crash_loop()');
+    expect(script).toContain('RestartCount');
+    expect(script).toContain('rollback with: kortix self-host update');
+  });
+
+  test('updater.sh: the scheduler re-execs itself when the on-disk script changes (CLI-shipped fixes take effect without a manual recreate)', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('maybe_reexec_self');
+    expect(script).toContain('exec /bin/sh "$SCRIPT_FILE"');
+  });
+
   test('updater.sh implements the start-first rollout: scale up new before stopping old', () => {
     const script = kortixRuntimeAssets['updater.sh'];
     const rollFn = script.slice(script.indexOf('roll_service()'), script.indexOf('recreate_service()'));
@@ -322,8 +493,14 @@ describe('full self-host Docker distribution', () => {
     const rollIdx = perform.indexOf('roll_or_recreate');
     expect(migrateIdx).toBeGreaterThan(-1);
     expect(rollIdx).toBeGreaterThan(migrateIdx);
-    // A failed migration aborts before anything is swapped.
-    expect(perform).toContain('run_migrate || return 1');
+    // A failed migration aborts before anything is swapped — and stamps a
+    // "failed" outcome (not just a bare return) so `kortix self-host status`
+    // shows exactly why nothing rolled.
+    expect(perform).toContain('if ! run_migrate; then');
+    const migrateGuardIdx = perform.indexOf('if ! run_migrate; then');
+    const migrateFailureBlock = perform.slice(migrateGuardIdx, perform.indexOf('fi', migrateGuardIdx));
+    expect(migrateFailureBlock).toContain('write_status "failed"');
+    expect(migrateFailureBlock).toContain('return 1');
   });
 
   test('updater.sh leaves the old version serving when the new replicas never become healthy', () => {

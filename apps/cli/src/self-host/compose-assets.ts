@@ -169,7 +169,49 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   }
 
   const kong = services['supabase-kong'];
-  if (kong) kong.ports = ['127.0.0.1:${SUPABASE_PORT}:8000'];
+  if (kong) {
+    kong.ports = ['127.0.0.1:${SUPABASE_PORT}:8000'];
+    // Upstream declares `depends_on: studio: condition: service_healthy` —
+    // but Kong here runs fully declarative (KONG_DATABASE=off, its routes
+    // come from the mounted kong.yml), so it has no runtime dependency on
+    // Studio at all. Left in place, that one line puts Studio — and, once
+    // docker-compose.logs.yml is merged in (always, in self-host — see
+    // upstreamServices above), Studio's OWN dependency on Logflare/Analytics
+    // — on the critical path of every service that itself depends on Kong
+    // (kortix-api's SUPABASE_URL points at Kong, so kortix-api transitively
+    // waited on the admin dashboard and the analytics pipeline before it
+    // could even start). None of Studio/Logflare/Analytics are on the
+    // customer-facing request path; un-gating Kong from Studio removes them
+    // from kortix-api's cold-boot chain without touching either service.
+    if (isRecord(kong.depends_on)) {
+      const dependencies = { ...kong.depends_on };
+      delete dependencies['supabase-studio'];
+      kong.depends_on = Object.keys(dependencies).length > 0 ? dependencies : undefined;
+    }
+  }
+  const auth = services['supabase-auth'];
+  if (auth) {
+    // GoTrue silently no-ops EVERY per-IP rate limit (email/SMS/OTP sent,
+    // token refresh, anonymous sign-ins, ...) when GOTRUE_RATE_LIMIT_HEADER
+    // is unset — see performRateLimitingWithHeader() in supabase/auth: "If no
+    // rate limit header was set, ignore rate limiting". Upstream's compose
+    // file never sets it, so a self-host instance runs with every one of
+    // these protections silently disabled regardless of their (non-zero)
+    // numeric defaults. Kong/Caddy both set X-Forwarded-For on proxied
+    // requests by default, so pointing GoTrue at that header is enough to
+    // turn the existing defaults into real protection; the explicit values
+    // below just make the floor visible instead of relying on GoTrue's own
+    // internal defaults changing out from under this file on a version bump.
+    const authEnv = { ...asRecord(auth.environment) } as Record<string, string>;
+    authEnv.GOTRUE_RATE_LIMIT_HEADER ||= 'X-Forwarded-For';
+    authEnv.GOTRUE_RATE_LIMIT_EMAIL_SENT ||= '30';
+    authEnv.GOTRUE_RATE_LIMIT_SMS_SENT ||= '30';
+    authEnv.GOTRUE_RATE_LIMIT_VERIFY ||= '30';
+    authEnv.GOTRUE_RATE_LIMIT_TOKEN_REFRESH ||= '150';
+    authEnv.GOTRUE_RATE_LIMIT_OTP ||= '30';
+    authEnv.GOTRUE_RATE_LIMIT_ANONYMOUS_USERS ||= '30';
+    auth.environment = authEnv;
+  }
   const database = services['supabase-db'];
   if (database) {
     // `pg_isready` succeeds against the temporary server that the Postgres
@@ -259,6 +301,18 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // replica count without re-deriving it from the compose file at runtime.
   applyReplicaTopology(services, Boolean(options.domainConfigured));
 
+  // Every one of the ~20 containers in this stack logged to stdout with no
+  // rotation — an unattended VPS eventually fills its disk from container
+  // logs alone. Applied uniformly, after every other service-specific tweak
+  // above, so nothing here can be silently skipped for one service and not
+  // another (a hand-maintained per-file `logging:`/`x-logging` block invites
+  // exactly that drift).
+  applyLogging(services);
+  // Sensible memory ceilings so one hungry/leaking service can't starve the
+  // host and get Postgres OOM-killed — see applyMemLimits() for the
+  // measurements this table is derived from.
+  applyMemLimits(services);
+
   const document: YamlRecord = {
     services,
     volumes: deepMerge(asRecord(base.volumes), asRecord(kortix.volumes)),
@@ -313,6 +367,85 @@ function applyReplicaTopology(services: Record<string, YamlRecord>, domainConfig
     if (!service) continue;
     if (domainConfigured) delete service.ports;
     service.deploy = { replicas };
+  }
+}
+
+/**
+ * Bounded, rotated logs for every container in the stack (compose's own
+ * `logging:` key — the default `json-file` driver otherwise grows without
+ * bound). One shared literal applied uniformly at render time is this
+ * generator's equivalent of a compose-level `x-logging` anchor: every
+ * service gets exactly this, and a future service added to either the
+ * upstream Supabase file or kortix-compose.yml picks it up automatically
+ * with no per-file edit required.
+ */
+const DEFAULT_LOGGING: YamlRecord = {
+  driver: 'json-file',
+  options: { 'max-size': '10m', 'max-file': '3' },
+};
+
+function applyLogging(services: Record<string, YamlRecord>): void {
+  for (const service of Object.values(services)) {
+    service.logging = structuredClone(DEFAULT_LOGGING);
+  }
+}
+
+/**
+ * Per-service memory ceiling/floor, keyed by the FINAL (post-SERVICE_NAMES
+ * rename) service name. Not a strict admission-control budget — these are
+ * hard per-container ceilings sized well above ordinary usage, meant to stop
+ * a single runaway/leaking service before it can starve the host and get
+ * Postgres OOM-killed (the actual live-audit failure mode: a 16GB box
+ * idling at ~4GB total, with Logflare/analytics alone accounting for
+ * ~500MB of that). `mem_limit`/`mem_reservation` are plain Compose-spec
+ * fields honored by a bare `docker compose up` — unlike `deploy.resources`,
+ * they don't require Swarm mode. `oomScoreAdj` (compose's `oom_score_adj`,
+ * -1000..1000) biases the kernel OOM-killer directly: very negative for
+ * Postgres (protect it hard), positive for the least-critical
+ * logs/analytics pipeline (first to go if the host is ever actually under
+ * memory pressure). Every limit here is a conservative ceiling chosen so the
+ * full table summed together still comfortably fits an 8GB box even though
+ * no realistic self-host workload pegs every service at its cap
+ * simultaneously.
+ */
+interface MemSpec {
+  limit: string;
+  reservation: string;
+  oomScoreAdj?: number;
+}
+
+const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
+  'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
+  'kortix-api': { limit: '640m', reservation: '256m' },
+  'llm-gateway': { limit: '512m', reservation: '128m' },
+  frontend: { limit: '512m', reservation: '128m' },
+  'kortix-migrate': { limit: '512m', reservation: '128m' },
+  'kortix-updater': { limit: '256m', reservation: '64m' },
+  'supabase-kong': { limit: '384m', reservation: '128m' },
+  'supabase-auth': { limit: '256m', reservation: '64m' },
+  'supabase-rest': { limit: '256m', reservation: '64m' },
+  'supabase-realtime': { limit: '384m', reservation: '128m' },
+  'supabase-storage': { limit: '384m', reservation: '128m' },
+  'supabase-imgproxy': { limit: '384m', reservation: '64m' },
+  'supabase-meta': { limit: '256m', reservation: '64m' },
+  'supabase-functions': { limit: '384m', reservation: '128m' },
+  'supabase-supavisor': { limit: '384m', reservation: '128m' },
+  'supabase-studio': { limit: '384m', reservation: '128m' },
+  // The audit's confirmed hog (~500MB observed) — tightest cap, and the
+  // first thing the kernel OOM-killer should reach for.
+  'supabase-analytics': { limit: '640m', reservation: '256m', oomScoreAdj: 500 },
+  'supabase-vector': { limit: '192m', reservation: '64m', oomScoreAdj: 500 },
+  caddy: { limit: '256m', reservation: '64m' },
+  cloudflared: { limit: '128m', reservation: '32m' },
+};
+
+function applyMemLimits(services: Record<string, YamlRecord>): void {
+  for (const [name, spec] of Object.entries(MEM_LIMITS)) {
+    const service = services[name];
+    if (!service) continue;
+    service.mem_limit = spec.limit;
+    service.mem_reservation = spec.reservation;
+    if (spec.oomScoreAdj !== undefined) service.oom_score_adj = spec.oomScoreAdj;
   }
 }
 
