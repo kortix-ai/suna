@@ -63,6 +63,7 @@ export function buildServer(): GatewayServer {
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
       maxRequestBytes: config.maxRequestBytes || undefined,
+      translationSidecar: config.translationSidecar,
     },
     { logger },
   );

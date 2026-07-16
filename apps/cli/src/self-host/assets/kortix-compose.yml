@@ -102,6 +102,16 @@ services:
       # never the sandbox-facing base URL in self-host.
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Stateless LiteLLM translation sidecar (see packages/llm-gateway's
+      # GatewayConfig.translationSidecar). Empty when
+      # LLM_TRANSLATION_SIDECAR_ENABLED=false (the render-time default below
+      # ≥16GB boxes — see defaultTranslationSidecarEnabled() in
+      # commands/self-host.ts) — an empty value here is exactly today's direct
+      # behavior, matching every self-host box that predates this feature.
+      # LLM_TRANSLATION_SIDECAR_URL is recomputed from the flag on every
+      # render (normalizeFullSupabaseEnv()), never hand-set independently.
+      LLM_TRANSLATION_SIDECAR_URL: ${LLM_TRANSLATION_SIDECAR_URL}
+      LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: ${LITELLM_MASTER_KEY}
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -134,6 +144,42 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+    restart: unless-stopped
+
+  # Stateless LiteLLM translation sidecar — see packages/llm-gateway's
+  # GatewayConfig.translationSidecar and litellm-config.yaml (mounted below)
+  # for the full architecture. Present in the rendered Compose file ONLY when
+  # LLM_TRANSLATION_SIDECAR_ENABLED=true (renderFullDockerCompose() deletes
+  # this whole block otherwise — see RenderComposeOptions.
+  # translationSidecarConfigured in compose-assets.ts) so a box that isn't
+  # using it never even pulls the image. No `ports:` — internal network only,
+  # exactly like `llm-gateway` above; kortix-api is the only caller, over the
+  # Compose network by service name.
+  #
+  # It owns zero credentials/model config of its own: no database, no virtual
+  # keys, no budgets, `--num_workers 1` (this is a translation hop, not a
+  # horizontally-scaled router), and its config.yaml disables its own
+  # retries/fallbacks entirely — Kortix's llm-gateway control plane
+  # (packages/llm-gateway's failover + circuit-breaker) stays the ONLY retry
+  # brain. Every request carries the resolved upstream's api_key/api_base
+  # per-request (see transports/sidecar.ts); LITELLM_MASTER_KEY below is only
+  # this proxy's OWN auth gate.
+  litellm:
+    image: ${LITELLM_IMAGE}
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+    # The image ships neither wget nor curl (verified: only python3 in
+    # /app/.venv) — every other healthcheck in this file uses one of those, so
+    # this one uses the interpreter that's actually there instead.
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     restart: unless-stopped
 
   # Auto-updater: once a day, at a fixed local clock time, pulls this stack's

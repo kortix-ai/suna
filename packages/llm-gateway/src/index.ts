@@ -62,6 +62,7 @@ export type {
   ModelInfo,
   ProviderKind,
   TokenCounts,
+  TranslationSidecarConfig,
   UpstreamDescriptor,
   UsageEvent,
 } from './domain';

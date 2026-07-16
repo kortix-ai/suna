@@ -5,6 +5,7 @@ import { parse, stringify } from 'yaml';
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
 import kortixCaddyfile from './assets/Caddyfile.txt' with { type: 'text' };
 import kortixUpdaterScript from './assets/updater.sh' with { type: 'text' };
+import kortixLitellmConfig from './assets/litellm-config.yaml' with { type: 'text' };
 import upstreamSupabaseCompose from './assets/supabase/docker-compose.yml' with { type: 'text' };
 import upstreamSupabaseLogsCompose from './assets/supabase/docker-compose.logs.yml' with { type: 'text' };
 import supabaseImageLockText from './assets/supabase/image-lock.json' with { type: 'text' };
@@ -84,6 +85,11 @@ export const officialSupabaseDockerAssets: Readonly<Record<string, string>> = {
 export const kortixRuntimeAssets: Readonly<Record<string, string>> = {
   Caddyfile: kortixCaddyfile,
   'updater.sh': kortixUpdaterScript,
+  // Mounted read-only into the `litellm` service (see kortix-compose.yml).
+  // Written unconditionally (like Caddyfile) — harmless when the service is
+  // omitted from the rendered Compose file (translationSidecarConfigured
+  // false); one less render-time branch to get wrong.
+  'litellm-config.yaml': kortixLitellmConfig,
 };
 
 export function writeKortixRuntimeAssets(root: string): void {
@@ -130,6 +136,17 @@ export interface RenderComposeOptions {
    * Docker access it doesn't need.
    */
   localDockerConfigured?: boolean;
+  /**
+   * Whether the stateless LiteLLM translation sidecar is enabled
+   * (LLM_TRANSLATION_SIDECAR_ENABLED — see defaultTranslationSidecarEnabled()
+   * in commands/self-host.ts, RAM-gated by default). When true, the
+   * `litellm` service is included and kortix-api's LLM_TRANSLATION_SIDECAR_URL
+   * points at it (set in normalizeFullSupabaseEnv(), not here). When false, it
+   * is omitted entirely — not merely stopped — so a smaller box never even
+   * pulls the ~1GiB-idle image (measured live; see the PR this shipped with
+   * for the full RAM writeup) it isn't using.
+   */
+  translationSidecarConfigured?: boolean;
 }
 
 /**
@@ -311,6 +328,10 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // tunnel reachability mode is selected. Omitted entirely (not just
   // stopped) otherwise, so an instance not using it never even pulls the
   // cloudflared image.
+  if (!options.translationSidecarConfigured) {
+    delete services.litellm;
+  }
+
   if (!options.tunnelConfigured) {
     delete services.cloudflared;
   } else if (options.namedTunnelConfigured) {
@@ -453,6 +474,13 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
   'kortix-api': { limit: '640m', reservation: '256m' },
   'llm-gateway': { limit: '512m', reservation: '128m' },
+  // Stateless LiteLLM translation sidecar — measured live (docker stats,
+  // idle, ghcr.io/berriai/litellm:main-stable, single worker, no traffic):
+  // ~1.0 GiB resident. That is the real floor for this image, not a leak —
+  // sized with headroom above it rather than the ~128-512m every other
+  // stateless service here gets (see the PR this shipped with for the full
+  // measurement and why the service defaults ON only on ≥16GB boxes).
+  litellm: { limit: '1536m', reservation: '1024m' },
   frontend: { limit: '512m', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },
