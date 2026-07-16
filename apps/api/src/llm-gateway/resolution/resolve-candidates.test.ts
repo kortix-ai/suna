@@ -60,8 +60,15 @@ mock.module('../routing', () => ({
 
 let runtimeManagedModel: { id: string } | undefined;
 mock.module('../models/managed-models', () => ({
+  RUNTIME_MANAGED_MODELS: [],
   getRuntimeManagedModel: (id: string) =>
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
+  isRuntimeManagedModelId: (id: string) => runtimeManagedModel?.id === id,
+}));
+
+let capabilities = { reasoning: false, temperature: true };
+mock.module('../models/catalog-models', () => ({
+  capabilitiesForModel: () => capabilities,
 }));
 
 const { resolveCandidates, resolveCachedAccountTier } = await import('./resolve-candidates');
@@ -83,6 +90,7 @@ beforeEach(() => {
   codexCredential = null;
   catalogUpstream = null;
   runtimeManagedModel = undefined;
+  capabilities = { reasoning: false, temperature: true };
   getAccountTier.mockClear();
   getResolvedProjectSecretValue.mockClear();
   resolveCodexCredential.mockClear();
@@ -109,6 +117,21 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       apiKey: 'sk-user-key',
     });
     expect(candidates[1]).toMatchObject({ provider: 'kortix-managed' });
+  });
+
+  test('BYOK descriptor carries the model capability flags for the transport', async () => {
+    catalogUpstream = {
+      baseUrl: 'https://api.openai.com/v1',
+      envVar: 'OPENAI_API_KEY',
+      kind: 'openai-compat',
+    };
+    resolvedSecret = 'sk-user-key';
+    capabilities = { reasoning: true, temperature: false };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'openai/gpt-5.5');
+    expect(candidates[0]).toMatchObject({ reasoning: true, temperature: false });
   });
 
   test('free tier: BYOK key is billing-free (markup 0, billingMode none) with no managed fallback', async () => {
