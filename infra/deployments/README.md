@@ -28,15 +28,12 @@ it is **never** committed. That means:
 - Never run `terraform` against a root here speculatively — these are real,
   live customer/demo infrastructure.
 
-## `essentia` moved out of this monorepo entirely
+## Retired: single-tenant customer deployments now live in their own repos
 
-Essentia's single-tenant box (`essentia.kortix.cloud`) used to be provisioned
-from `deployments/essentia` at the repo root (a laptop-local, unlocked
-`terraform.tfstate`). It has been fully adopted into its own repo,
-[`Essentia-Innovation/kortix-infra`](https://github.com/Essentia-Innovation/kortix-infra),
-with state in an S3 backend inside Essentia's own AWS account
-(`327903111249`). That repo pins the same
-[`infra/terraform/modules/selfhost-ec2`](../terraform/modules/selfhost-ec2)
-module by `?ref=` tag — this monorepo has no other artifact tied to that box
-anymore. Don't recreate `deployments/essentia` here; if you need to touch
-that box, do it from `kortix-infra`.
+Single-tenant customer boxes provisioned from this directory have been fully
+adopted into their own dedicated infra repos, each with its own S3-backed
+Terraform state inside the customer's own AWS account. Those repos pin the
+same [`infra/terraform/modules/selfhost-ec2`](../terraform/modules/selfhost-ec2)
+module by `?ref=` tag — this monorepo has no other artifact tied to those
+boxes anymore. Don't recreate a retired deployment directory here; if you
+need to touch one of those boxes, do it from the customer's own infra repo.

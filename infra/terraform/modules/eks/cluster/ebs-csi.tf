@@ -29,7 +29,14 @@ resource "aws_iam_role" "ebs_csi" {
   name                 = "${aws_eks_cluster.this.name}-ebs-csi-driver"
   assume_role_policy   = data.aws_iam_policy_document.ebs_csi_assume.json
   permissions_boundary = var.permissions_boundary_arn
-  tags                 = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${aws_eks_cluster.this.name}-ebs-csi-driver"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {

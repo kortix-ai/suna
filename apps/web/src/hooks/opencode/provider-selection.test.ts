@@ -7,10 +7,14 @@ import {
   mergeProjectSecretConnectedProviders,
   mergeProviderLists,
   normalizeProviderList,
+  privateOnlyProviderIdsFromSecretNames,
+  privateOnlySecretNamesForViewer,
   projectLlmCatalogToProviderList,
   providerListHasGateway,
   providerListHasModels,
+  usableSecretNamesForViewer,
   type ProviderListResponse,
+  type SecretUsabilityItem,
 } from './provider-selection';
 
 function providers(ids: string[]): ProviderListResponse {
@@ -132,5 +136,64 @@ describe('provider-selection', () => {
     expect(merged.connected).toEqual(['kortix']);
     expect(merged.all?.map((p) => p.id)).toEqual(['kortix']);
     expect(merged.all?.find((p) => p.id === 'opencode')).toBeUndefined();
+  });
+});
+
+// BYOK gateway blindness fix: the LLM-provider "Connected" UI used to treat
+// any project_secrets row (shared OR someone else's private override) as
+// "connected", so a lingering private-only row made every viewer see
+// "Connected" even though the gateway couldn't route anyone else's sessions
+// with it. These helpers replace that blind name check with the same
+// per-viewer rule gateway resolution applies (getResolvedProjectSecretValue).
+describe('usableSecretNamesForViewer / privateOnlySecretNamesForViewer / privateOnlyProviderIdsFromSecretNames', () => {
+  const item = (overrides: Partial<SecretUsabilityItem>): SecretUsabilityItem => ({
+    name: 'ANTHROPIC_API_KEY',
+    configured: false,
+    effective_source: 'none',
+    ...overrides,
+  });
+
+  test('a configured (shared) secret is usable and not private-only', () => {
+    const items = [item({ configured: true, effective_source: 'shared' })];
+    expect(usableSecretNamesForViewer(items)).toEqual(new Set(['ANTHROPIC_API_KEY']));
+    expect(privateOnlySecretNamesForViewer(items)).toEqual(new Set());
+  });
+
+  test("the viewer's own active private override is usable AND private-only when no shared row exists", () => {
+    const items = [item({ configured: false, effective_source: 'mine' })];
+    expect(usableSecretNamesForViewer(items)).toEqual(new Set(['ANTHROPIC_API_KEY']));
+    expect(privateOnlySecretNamesForViewer(items)).toEqual(new Set(['ANTHROPIC_API_KEY']));
+  });
+
+  test('a shared row plus the viewer\'s own override is usable but NOT private-only (shared covers everyone)', () => {
+    const items = [item({ configured: true, effective_source: 'mine' })];
+    expect(usableSecretNamesForViewer(items)).toEqual(new Set(['ANTHROPIC_API_KEY']));
+    expect(privateOnlySecretNamesForViewer(items)).toEqual(new Set());
+  });
+
+  test('a row that resolves to neither shared nor mine (e.g. someone else\'s private-only row) is NOT usable by this viewer', () => {
+    const items = [item({ configured: false, effective_source: 'none' })];
+    expect(usableSecretNamesForViewer(items)).toEqual(new Set());
+    expect(privateOnlySecretNamesForViewer(items)).toEqual(new Set());
+  });
+
+  test('a connected provider whose only key is private-only is flagged for the "make shared" warning', () => {
+    const usable = usableSecretNamesForViewer([item({ configured: false, effective_source: 'mine' })]);
+    const privateOnly = privateOnlySecretNamesForViewer([
+      item({ configured: false, effective_source: 'mine' }),
+    ]);
+    expect(privateOnlyProviderIdsFromSecretNames(usable, privateOnly)).toEqual(new Set(['anthropic']));
+  });
+
+  test('a connected provider backed by a shared key is NOT flagged', () => {
+    const usable = usableSecretNamesForViewer([item({ configured: true, effective_source: 'shared' })]);
+    const privateOnly = privateOnlySecretNamesForViewer([
+      item({ configured: true, effective_source: 'shared' }),
+    ]);
+    expect(privateOnlyProviderIdsFromSecretNames(usable, privateOnly)).toEqual(new Set());
+  });
+
+  test('an unconnected provider (no usable key at all) is never flagged', () => {
+    expect(privateOnlyProviderIdsFromSecretNames(new Set(), new Set())).toEqual(new Set());
   });
 });

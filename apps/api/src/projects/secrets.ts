@@ -360,3 +360,75 @@ export async function getProjectSecretValue(
   const row = canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
   return decryptProjectSecret(projectId, row.valueEnc);
 }
+
+interface ResolvableSecretRow {
+  identifier: string;
+  ownerUserId: string | null;
+  valueEnc: string;
+  updatedAt: Date;
+}
+
+/**
+ * Pure pick logic for `getResolvedProjectSecretValue` (factored out so it's
+ * unit-testable without a DB): given every row visible to `userId` for a KEY
+ * (the SHARED row plus, if `userId` is set, THAT user's own PRIVATE row —
+ * never anyone else's), decide which one resolves.
+ *
+ * The SHARED row always wins when one exists — it's the workspace's
+ * deliberate resource, and one member's private key should never silently
+ * swap in for it. The private row is only a FALLBACK for when NO shared key
+ * has been configured for this provider at all, so a member who saved their
+ * own key can still use it in their OWN sessions instead of hitting
+ * "No upstream configured" while every other secret-scoping surface reports
+ * it as connected (the 2026-07-07 / recurring self-host incident).
+ */
+export function pickResolvedSecretRow<T extends ResolvableSecretRow>(
+  rows: T[],
+  normalizedName: string,
+  userId: string | null,
+): T | null {
+  const pick = (candidates: T[]): T | null => {
+    if (candidates.length === 0) return null;
+    const canonical = candidates.find((r) => r.identifier === normalizedName);
+    return canonical ?? [...candidates].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
+  };
+  const shared = pick(rows.filter((r) => r.ownerUserId === null));
+  if (shared) return shared;
+  if (!userId) return null;
+  return pick(rows.filter((r) => r.ownerUserId === userId));
+}
+
+/**
+ * Resolve a BYOK provider credential (by env-var KEY) for a specific session's
+ * ACTING user: the project's SHARED key, falling back to that user's own
+ * PRIVATE override when no shared key exists. Used by gateway upstream
+ * resolution (`resolveCandidates`) instead of `getProjectSecretValue` so a
+ * member's own private key routes their own sessions instead of leaving the
+ * gateway blind to it. `userId` null (no acting human, e.g. a webhook-
+ * triggered session) behaves exactly like `getProjectSecretValue` (shared-only).
+ */
+export async function getResolvedProjectSecretValue(
+  projectId: string,
+  name: string,
+  userId: string | null,
+): Promise<string | null> {
+  const normalizedName = name.trim().toUpperCase();
+  const rows = await db
+    .select({
+      identifier: projectSecrets.identifier,
+      valueEnc: projectSecrets.valueEnc,
+      updatedAt: projectSecrets.updatedAt,
+      ownerUserId: projectSecrets.ownerUserId,
+    })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, normalizedName),
+      userId
+        ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
+        : isNull(projectSecrets.ownerUserId),
+    ));
+  const chosen = pickResolvedSecretRow(rows, normalizedName, userId);
+  if (!chosen) return null;
+  return decryptProjectSecret(projectId, chosen.valueEnc);
+}

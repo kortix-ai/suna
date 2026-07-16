@@ -61,6 +61,68 @@ fi
 DATA_UUID="$(blkid -s UUID -o value "$DATA_DEVICE")"
 grep -q "$DATA_UUID" /etc/fstab || echo "UUID=$DATA_UUID $DATA_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
 
+# ── 1b. Auto-grow the data volume's filesystem to match the EBS volume ─────
+# gp3 supports live, in-place volume-size increases (bump
+# var.data_volume_size_gb -> terraform apply -> AWS resizes the EBS volume
+# with no detach/reboot needed) and the guest kernel sees the larger block
+# device within seconds. But growing the volume does NOT grow the
+# filesystem sitting on it — that needs an on-box step. This is a whole-disk
+# ext4 filesystem (mkfs ran directly against $DATA_DEVICE above, no partition
+# table), so the only step needed is `resize2fs`, no `growpart` — and
+# resize2fs is a safe no-op ("Nothing to do!") when the filesystem already
+# fills the device, so it's fine to (re)run this unconditionally, on every
+# boot and on a recurring timer, rather than trying to detect "did it grow"
+# ourselves. This is what makes a data-volume resize genuinely "change
+# tfvar, apply, done" — no SSM session, no manual resize2fs.
+cat > /usr/local/sbin/kortix-data-volume-growfs.sh <<'GROWFS'
+#!/bin/bash
+set -euo pipefail
+DATA_MOUNT="${data_mount_path}"
+DATA_DEVICE="$(findmnt -n -o SOURCE --target "$DATA_MOUNT" 2>/dev/null || true)"
+if [ -z "$DATA_DEVICE" ]; then
+  echo "kortix-data-volume-growfs: $DATA_MOUNT is not mounted, skipping"
+  exit 0
+fi
+echo "kortix-data-volume-growfs: checking $DATA_DEVICE ($DATA_MOUNT) against the underlying block device size"
+resize2fs "$DATA_DEVICE"
+GROWFS
+chmod +x /usr/local/sbin/kortix-data-volume-growfs.sh
+
+cat > /etc/systemd/system/kortix-data-volume-growfs.service <<'UNIT'
+[Unit]
+Description=Grow the kortix self-host data volume's filesystem to match the EBS volume (online gp3 resize)
+After=mnt-kortix\x2ddata.mount
+Requires=mnt-kortix\x2ddata.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kortix-data-volume-growfs.sh
+UNIT
+
+cat > /etc/systemd/system/kortix-data-volume-growfs.timer <<'UNIT'
+[Unit]
+Description=Periodically grow the kortix self-host data volume's filesystem if the EBS volume has grown
+
+[Timer]
+# Runs shortly after every boot (covers a resize applied while the box was
+# stopped) AND every 10 minutes thereafter (covers a live gp3 resize applied
+# while the box keeps running — the whole point of an online resize is that
+# it needs no reboot, so this is what actually completes the job without one).
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=kortix-data-volume-growfs.service
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now kortix-data-volume-growfs.timer
+# Also run it once right now (harmless no-op on a fresh mkfs — device and
+# filesystem are already the same size) so a box that boots after a
+# same-apply resize doesn't wait for the timer's first tick.
+/usr/local/sbin/kortix-data-volume-growfs.sh || true
+
 DOCKER_DATA_ROOT="$DATA_MOUNT/docker"
 CONTAINERD_ROOT="$DATA_MOUNT/containerd"
 KORTIX_CONFIG_DIR="$DATA_MOUNT/kortix-self-host"

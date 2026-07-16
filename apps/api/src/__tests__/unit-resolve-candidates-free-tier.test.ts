@@ -49,10 +49,23 @@ mock.module('../billing/services/entitlements', () => ({
   },
 }));
 
+// `getResolvedProjectSecretValue` stands in for the shared-vs-private BYOK
+// fallback (see projects/secrets.ts `pickResolvedSecretRow`, unit-tested in
+// unit-secrets-v2.test.ts). Defaults to the old unconditional 'user-key' so
+// every pre-existing test below is unaffected; the BYOK-fallback describe
+// block further down overrides it per-test and records call args to assert
+// resolveCandidates actually threads the session's principal.userId through.
+let resolvedSecretValue: string | null = 'user-key';
+let lastResolvedSecretCall: { projectId: string; name: string; userId: string | null } | null = null;
+
 mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',
+  getResolvedProjectSecretValue: async (projectId: string, name: string, userId: string | null) => {
+    lastResolvedSecretCall = { projectId, name, userId };
+    return resolvedSecretValue;
+  },
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({
@@ -119,6 +132,8 @@ describe('resolveCandidates free-tier premium gate', () => {
     accountTier = 'free';
     accountTierCalls = 0;
     managedProviderEnabled = true;
+    resolvedSecretValue = 'user-key';
+    lastResolvedSecretCall = null;
   });
 
   test('blocks managed premium candidates for free accounts', async () => {
@@ -213,5 +228,66 @@ describe('resolveCandidates free-tier premium gate', () => {
     );
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('platform-fee');
+  });
+});
+
+describe('resolveCandidates BYOK gateway fallback wiring (private-key blindness fix)', () => {
+  afterAll(() => {
+    mock.restore();
+  });
+
+  beforeEach(() => {
+    billingEnabled = true;
+    accountTier = 'per_seat';
+    accountTierCalls = 0;
+    managedProviderEnabled = true;
+    resolvedSecretValue = 'user-key';
+    lastResolvedSecretCall = null;
+  });
+
+  test('threads the SESSION-CREATOR principal.userId through to secret resolution (the actual bug: this used to be dropped)', async () => {
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(2);
+    expect(lastResolvedSecretCall).toEqual({
+      projectId: 'project-1',
+      name: 'OPENAI_API_KEY',
+      userId: 'user-alice',
+    });
+  });
+
+  test("own-session-with-private-key routes: resolver finding only the caller's own private key still produces a candidate", async () => {
+    resolvedSecretValue = 'alice-private-key';
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]?.apiKey).toBe('alice-private-key');
+  });
+
+  test("other member's session does NOT see it: when resolution finds nothing for THIS user (no shared key, no key of their own), no candidates are produced", async () => {
+    resolvedSecretValue = null;
+    const candidates = await resolveCandidates(
+      { userId: 'user-bob', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toEqual([]);
+    expect(lastResolvedSecretCall).toEqual({
+      projectId: 'project-1',
+      name: 'OPENAI_API_KEY',
+      userId: 'user-bob',
+    });
+  });
+
+  test('shared key still wins when both exist: resolveCandidates uses whatever value resolution returns (shared-vs-private precedence is pickResolvedSecretRow\'s job, unit-tested separately) and never asks twice', async () => {
+    resolvedSecretValue = 'the-shared-key';
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates[0]?.apiKey).toBe('the-shared-key');
   });
 });
