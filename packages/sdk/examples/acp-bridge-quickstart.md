@@ -8,16 +8,27 @@ consumers should go through `createKortix(...).session(...)` (see
 Reach for this recipe only when you are talking to the bridge directly, e.g.
 from inside the platform API itself, or from a test harness.
 
-Every line below is exactly what
+This recipe is assembled from the same calls
 `apps/kortix-sandbox-agent-server/src/__tests__/sdk-bridge.e2e.test.ts`
-(DISC-06) proved passing against a **real** bridge (`buildAcpApp` +
-`Bun.serve`) and a **real** spawned ACP agent process — nothing here is
-aspirational.
+(DISC-06) exercises against a **real** bridge (`buildAcpApp` + `Bun.serve`)
+and a **real** spawned ACP agent process, in the same sequence — nothing here
+is aspirational. The block below is prose-oriented and intentionally
+abbreviated; the typechecked, runnable version of this exact flow is
+[`09-acp-bridge.ts`](./09-acp-bridge.ts), which `pnpm --filter @kortix/sdk
+typecheck` verifies on every change.
 
 ```ts
 // As a workspace consumer: import { AcpClient } from '@kortix/sdk/acp';
 // As an npm consumer:       import { AcpClient } from '@kortix/sdk/acp';
-import { AcpClient, type AcpStreamEvent } from '@kortix/sdk/acp';
+import { AcpClient, type AcpEnvelope, type AcpRequest, type AcpStreamEvent } from '@kortix/sdk/acp';
+
+// Local narrowing guard, named to match the SDK's own exported
+// `isAcpResponseEnvelope`. `'method' in envelope` alone narrows only to
+// `AcpRequest | AcpNotification` — still missing `.id` under `tsc --strict`.
+// Checking for `'id'` too is what actually narrows to `AcpRequest`.
+function isAcpRequestEnvelope(envelope: AcpEnvelope): envelope is AcpRequest {
+  return 'method' in envelope && 'id' in envelope;
+}
 
 // The bridge authenticates every /acp/* request with a signed
 // `X-Kortix-User-Context` HMAC header, not a bearer token — `getToken()`
@@ -53,27 +64,56 @@ async function main() {
   await client.initialize({ protocolVersion: 1, clientCapabilities: {} });
   const session = await client.newSession({ cwd: '/workspace' });
 
-  // Real streamed updates, over the real SSE connect() path.
-  const handle = client.connect({
-    onEvent: (event: AcpStreamEvent) => {
-      if ('method' in event.envelope && event.envelope.method === 'session/request_permission') {
-        // A real harness pauses mid-turn here to ask for a permission
-        // decision — answer it with respond(), keyed by the request's id.
-        void client.respond(event.envelope.id as string, {
-          outcome: { outcome: 'selected', optionId: 'allow_once' },
-        });
-        return;
-      }
-      if ('method' in event.envelope && event.envelope.method === 'session/update') {
-        console.log('update:', event.envelope.params);
-      }
-    },
-  });
+  // Real streamed updates, over the real SSE connect() path. Buffer events
+  // instead of auto-responding from inside `onEvent` — `event.envelope` is
+  // `AcpRequest | AcpNotification | AcpResponse`, and `'method' in envelope`
+  // alone only narrows away `AcpResponse`, leaving `.id` (present on
+  // `AcpRequest`, absent on `AcpNotification`) unsafe to read under
+  // `tsc --strict`. The proven pattern — see `09-acp-bridge.ts` and
+  // `sdk-bridge.e2e.test.ts` — awaits the permission event OUTSIDE the
+  // callback and answers it with the id it already knows.
+  const events: AcpStreamEvent[] = [];
+  const handle = client.connect({ onEvent: (event) => events.push(event) });
 
-  const result = await client.prompt(session.sessionId, [{ type: 'text', text: 'work' }]);
+  const promptPromise = client.prompt(session.sessionId, [{ type: 'text', text: 'work' }]);
+
+  const permissionEvent = await waitForEvent(events, (e) => isMethod(e.envelope, 'session/request_permission'));
+  if (isAcpRequestEnvelope(permissionEvent.envelope)) {
+    // A real harness pauses mid-turn here to ask for a permission decision —
+    // answer it with respond(), keyed by the request's own id.
+    await client.respond(permissionEvent.envelope.id, {
+      outcome: { outcome: 'selected', optionId: 'allow_once' },
+    });
+  }
+
+  const result = await promptPromise;
   console.log('turn finished:', result.stopReason); // 'end_turn' | 'cancelled' | ...
 
   handle.close();
+}
+
+function isMethod(envelope: AcpStreamEvent['envelope'], method: string): boolean {
+  return 'method' in envelope && envelope.method === method;
+}
+
+// Polls the buffered events — `connect()` delivers events via callback, not
+// a readable stream `main()` can `await` directly. See `09-acp-bridge.ts`
+// for the full, typechecked version.
+function waitForEvent(
+  events: readonly AcpStreamEvent[],
+  predicate: (event: AcpStreamEvent) => boolean,
+  timeoutMs = 5_000,
+): Promise<AcpStreamEvent> {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + timeoutMs;
+    const tick = () => {
+      const found = events.find(predicate);
+      if (found) return resolve(found);
+      if (Date.now() > deadline) return reject(new Error('expected ACP stream event did not arrive in time'));
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
 }
 
 main().catch((error) => {
