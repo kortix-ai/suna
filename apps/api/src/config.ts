@@ -116,6 +116,22 @@ const envSchema = z.object({
   // for a self-host license check, unlike the `demoEnterprise` per-account
   // preview toggle this mirrors.
   ENTERPRISE_LICENSE_AVAILABLE:     optBoolFalse,
+  // Self-host account-creation restriction: when true, POST /v1/accounts
+  // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
+  // except a platform admin (KORTIX_PLATFORM_ADMIN_EMAILS — see
+  // shared/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
+  // the removed KORTIX_SINGLE_ACCOUNT_MODE: signups still work, teams/orgs
+  // still fully function, SSO/JIT still lands users in their org — only the
+  // CREATION of new accounts by ordinary users is gated. The personal-account
+  // bootstrap path (bootstrapPersonalAccount, called directly from GET
+  // /v1/accounts on first login) does NOT route through this gate — every
+  // user still gets their own landing account. Off by default (cloud is
+  // unaffected); the self-host CLI defaults this to 'true'
+  // (SHARED_FEATURE_FLAG_DEFAULTS) since a VPS operator usually wants to be
+  // the only one who can spin up new organizations. The frontend mirrors this
+  // with KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION to hide "New account" UI for
+  // non-admins.
+  KORTIX_RESTRICT_ACCOUNT_CREATION: optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -638,6 +654,7 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
+  KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
