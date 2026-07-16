@@ -219,4 +219,27 @@ describe('extractTriggers — kortix_version 3 native agent-ref resolution', () 
     expect(specs.map((s) => s.slug)).toEqual(['ok-one']);
     expect(errors.map((e) => e.slug).sort()).toEqual(['bad-one', 'bad-two']);
   });
+
+  test('v3: blank agent string is rejected (pins current strictness — product decision pending, see cycle ledger WS1-P1-c note)', () => {
+    // Pins post-3ac27d3d9 contract: before that commit, blank agent silently defaulted to "default";
+    // flipping this back is a product decision, not a regression. v3 validates blank agents as errors.
+    const parsed = parseManifestString(
+      v3ManifestWith(`triggers:
+  - slug: blank-agent
+    type: cron
+    agent: ""
+    cron: "0 0 9 * * 1-5"
+    prompt: This has a blank agent field.
+`),
+      'yaml',
+      'kortix.yaml',
+    );
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      slug: 'blank-agent',
+      error: 'agent must be a non-empty string naming a declared agent.',
+    });
+  });
 });
