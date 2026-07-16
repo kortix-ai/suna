@@ -271,7 +271,7 @@ jobs:
           git fetch origin staging:refs/remotes/origin/staging --quiet
           git checkout -B staging origin/staging
           yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$VALUES"
-          yq -i '.image.tag = strenv(TAG)' "$GATEWAY_VALUES"
+          yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$GATEWAY_VALUES"
           if git diff --quiet -- "$VALUES" "$GATEWAY_VALUES"; then
             echo "staging GitOps values already pinned to ${TAG}."
           else
