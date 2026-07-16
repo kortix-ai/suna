@@ -246,7 +246,7 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
             <span className="text-muted-foreground/50 ml-auto text-xs">#{msg.index}</span>
             {msg.cost > 0 && (
               <span className="text-muted-foreground/50 text-xs">
-                ${(msg.cost * 1.2).toFixed(4)}
+                ${msg.cost.toFixed(4)}
               </span>
             )}
           </div>
