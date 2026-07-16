@@ -110,16 +110,12 @@ describe('panel mode gate', () => {
   });
 });
 
-describe('EasyPanel Terminal/Audit footer row (PanelQuickNav)', () => {
-  test('Terminal always renders; Audit is absent without projectId/projectSessionId', () => {
-    const html = renderToStaticMarkup(
-      withQueryClient(<EasyPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
-    );
-    expect(html).toContain('Terminal');
-    expect(html).not.toContain('Audit');
-  });
-
-  test('Audit renders once projectId && projectSessionId are both known', () => {
+// The Terminal/Audit footer row (PanelQuickNav) was removed by owner
+// direction — Terminal moved to the session header (icon-only, see
+// session-site-header.tsx), Audit stays reachable via the command palette.
+// This pins the removal: the Easy home renders NO quick-nav labels.
+describe('EasyPanel home has no Terminal/Audit footer row', () => {
+  test('neither label renders in the card column', () => {
     const html = renderToStaticMarkup(
       withQueryClient(
         <EasyPanel
@@ -131,8 +127,8 @@ describe('EasyPanel Terminal/Audit footer row (PanelQuickNav)', () => {
         />,
       ),
     );
-    expect(html).toContain('Terminal');
-    expect(html).toContain('Audit');
+    expect(html).not.toContain('>Terminal<');
+    expect(html).not.toContain('>Audit<');
   });
 });
 

@@ -1,0 +1,42 @@
+'use client';
+
+/**
+ * Open the active session's Terminal or Audit surface from OUTSIDE the panel
+ * (the command palette, the session header). One shared implementation
+ * because the branching is id-space-sensitive and was already burned once:
+ *
+ * - Easy mode routes through `requestQuickView`, which resolves the active
+ *   session from the kortix-computer-store's own `_activeSessionId` —
+ *   callers outside the panel have no reliable id of their own (the URL id
+ *   is a DIFFERENT id space from the OpenCode `chatSessionId` panel state is
+ *   keyed by; see `session-browser-store.ts`'s `getActivePanelSessionId`).
+ * - Advanced mode has no pending-view consumer (its tab strip reads
+ *   `session-browser-store` directly), so it writes `setView` onto the
+ *   active panel session via that same helper, then opens the panel.
+ */
+
+import { track } from '@/lib/track';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/session-browser-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+
+export function openSessionQuickView(
+  view: 'terminal' | 'audit',
+  source: 'palette' | 'header',
+): void {
+  const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+  const panelMode =
+    useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
+
+  if (panelMode === 'advanced') {
+    const activePanelSessionId = getActivePanelSessionId();
+    if (activePanelSessionId) {
+      useSessionBrowserStore.getState().setView(activePanelSessionId, view);
+    }
+    useKortixComputerStore.getState().openSidePanel();
+  } else {
+    useKortixComputerStore.getState().requestQuickView(view);
+  }
+
+  if (!wasOpen) track('panel_opened', { source });
+}

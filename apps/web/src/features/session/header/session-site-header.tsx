@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -33,7 +34,15 @@ import {
 } from '@kortix/sdk/projects-client';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw, Square } from 'lucide-react';
+import {
+  FileDown,
+  Layers,
+  MoreHorizontal,
+  PanelRight,
+  RotateCcw,
+  Square,
+  SquareTerminal,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -259,6 +268,21 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {/* Terminal, one tap from the header (product owner's placement —
+                it used to be a labeled row under the Easy cards). Icon-only
+                like every trailing-cluster control; the Hint carries the name. */}
+            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Terminal">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open terminal"
+                onClick={() => openSessionQuickView('terminal', 'header')}
+                className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+              >
+                <SquareTerminal className="h-4 w-4" />
+              </Button>
+            </Hint>
 
             <Hint
               side="bottom"

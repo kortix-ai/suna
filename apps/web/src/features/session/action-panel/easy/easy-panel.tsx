@@ -21,7 +21,6 @@
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
-import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
@@ -62,7 +61,6 @@ import {
 } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
-import { PanelQuickNav } from './panel-quick-nav';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
 
@@ -83,9 +81,9 @@ export const EasyPanel = memo(function EasyPanel({
   messages: MessageWithParts[] | undefined;
   /** The session's own busy/retry status — see `deriveIsRunning`. */
   isSessionBusy?: boolean;
-  /** Route ids the Audit button/detail need to resolve a session's audit
-   *  trail — see `session-audit-shared.ts`. Absent while booting/transient,
-   *  in which case the Audit button doesn't render at all (see `PanelQuickNav`). */
+  /** Route ids the Audit detail needs to resolve a session's audit trail —
+   *  see `session-audit-shared.ts`. Absent while booting/transient, in which
+   *  case the palette's "Open Audit" consume below becomes a no-op. */
   projectId?: string;
   projectSessionId?: string;
 }) {
@@ -483,19 +481,6 @@ export const EasyPanel = memo(function EasyPanel({
     clearFocusedToolCall();
   }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId, openDetail]);
 
-  // Pending-approval count for the Audit button's amber pill — shares the
-  // same query key `session-layout.tsx`'s header nudge and Advanced-mode
-  // Audit tab use (`useSessionAudit`/`sessionAuditKey`), so this is one
-  // deduped request and every surface agrees on the count. `enabled`-gated,
-  // not conditionally called — the hook itself always runs (React rule),
-  // it just does nothing until both ids are known.
-  const auditReady = !!projectId && !!projectSessionId;
-  const { data: auditData } = useSessionAudit(projectId, projectSessionId, {
-    enabled: auditReady,
-    silent: true,
-  });
-  const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
-
   const openAudit = useCallback(() => {
     openDetail({
       key: 'audit',
@@ -552,12 +537,6 @@ export const EasyPanel = memo(function EasyPanel({
           {apps.length > 0 && (
             <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />
           )}
-          <PanelQuickNav
-            onOpenTerminal={openTerminal}
-            showAudit={auditReady}
-            onOpenAudit={openAudit}
-            auditPending={auditPendingCount}
-          />
         </div>
       </DetailLayer>
 
