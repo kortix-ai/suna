@@ -89,6 +89,8 @@ ingress:
   enabled: true
   host: gateway-eks.kortix.com
   certificateArn: ""
+  # Regional WAFv2 Web ACL ARN. Required when ingress is enabled.
+  wafAclArn: ""
   extraHosts: []
   extraCertificateArns: []
   albGroup: ""

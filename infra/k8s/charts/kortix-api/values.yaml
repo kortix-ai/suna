@@ -146,6 +146,8 @@ ingress:
   host: api-eks.kortix.com
   # ACM cert ARN for the ALB HTTPS listener (from TF output acm_certificate_arn).
   certificateArn: ""
+  # Regional WAFv2 Web ACL ARN. Required when ingress is enabled.
+  wafAclArn: ""
   # Extra hostnames this ALB should also serve (each gets an Ingress rule), and
   # the extra ACM cert ARNs to attach for them (ALB picks the right cert by SNI).
   # Used for cutover: serve the real domain (e.g. dev-api.kortix.com) alongside
