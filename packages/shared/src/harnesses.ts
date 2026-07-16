@@ -1,6 +1,10 @@
 /**
  * Canonical harness descriptor.
  *
+ * See `packages/shared/README.md` for the full field guide, the harness
+ * matrix, the founder auth decisions, the experimental gating rules, and
+ * "how to add a harness".
+ *
  * The single source of truth for harness identity, capability, and stability
  * across the platform. `manifest-schema`, `apps/api`, `apps/web`, and the
  * sandbox agent-server all derive their harness knowledge from this module —
