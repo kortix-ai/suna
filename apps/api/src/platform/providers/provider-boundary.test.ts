@@ -20,7 +20,7 @@ describe('sandbox provider architecture boundary', () => {
     for (const relativePath of GENERIC_DATA_PATHS) {
       const source = readFileSync(resolve(API_SRC, relativePath), 'utf8');
       expect(source, relativePath).not.toMatch(
-        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b)['"]/i,
+        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b|local-docker)['"]/i,
       );
       expect(source, relativePath).not.toMatch(
         /x-daytona-|x-access-token|e2b-traffic-access-token/i,
