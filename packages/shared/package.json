@@ -9,7 +9,8 @@
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/upload-limits.ts",
-    "./runtime-versions": "./src/runtime-versions.ts"
+    "./runtime-versions": "./src/runtime-versions.ts",
+    "./harnesses": "./src/harnesses.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
