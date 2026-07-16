@@ -256,7 +256,7 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             />
           ) : isImageLoading ? (
             <div className="px-2 py-1.5 text-xs">
-              <TextShimmer duration={1} spread={2}>
+              <TextShimmer duration={1} spread={2} className="text-xs">
                 {tHardcodedUi.raw(
                   'componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview',
                 )}

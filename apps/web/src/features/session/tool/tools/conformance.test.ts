@@ -11,6 +11,9 @@ import { join } from 'node:path';
 // not immediately preceded by a `<TextShimmer>` open tag — so it doesn't
 // false-positive on "Loading..." used as a plain string value (e.g. a
 // trigger `subtitle`, which the shell auto-shimmers while running).
+// Note: the lookbehind only recognizes a bare `<TextShimmer>` open tag — a
+// prop-bearing tag (`<TextShimmer className=...>Loading...`) would
+// false-positive; none exist today, tighten if one legitimately appears.
 const FORBIDDEN =
   /rounded-2xl|shadow-(sm|md|lg|xl)|bg-gradient|text-(sky|emerald|purple)-\d|text-amber-\d|(?<!TextShimmer)>\s*Loading\.\.\.\s*</;
 
