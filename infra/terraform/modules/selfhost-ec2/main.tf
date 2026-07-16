@@ -137,7 +137,14 @@ resource "aws_security_group" "this" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = "${local.name}-sg"
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 }
 
 # ── IAM: SSM Session Manager only — no SSH key required to administer ─────
@@ -154,7 +161,14 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "this" {
   name               = "${local.name}-role"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = "${local.name}-role"
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "ssm" {
@@ -212,7 +226,14 @@ resource "aws_instance" "this" {
   })
   user_data_replace_on_change = false
 
-  tags = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = local.name
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 
   # The data volume is attached out-of-band (aws_volume_attachment below) and
   # deliberately NOT recreated when the instance is (delete_on_termination =

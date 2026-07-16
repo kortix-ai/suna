@@ -24,7 +24,14 @@ resource "aws_sns_topic" "alarms" {
   #checkov:skip=CKV_AWS_26:no sensitive payloads pass through this topic (alarm text only) — SNS-managed encryption is the default and adds an unnecessary CMK dependency for a demo/self-host box
   count = var.enable_alarms && var.alarm_sns_topic_arn == "" ? 1 : 0
   name  = "${local.name}-alarms"
-  tags  = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = "${local.name}-alarms"
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 }
 
 resource "aws_sns_topic_subscription" "alarm_email" {

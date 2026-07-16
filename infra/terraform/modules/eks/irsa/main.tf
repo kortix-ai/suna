@@ -51,7 +51,14 @@ resource "aws_iam_role" "this" {
   assume_role_policy   = data.aws_iam_policy_document.assume.json
   permissions_boundary = var.permissions_boundary_arn
   max_session_duration = var.max_session_duration
-  tags                 = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = var.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy" "inline" {

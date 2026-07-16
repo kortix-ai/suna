@@ -63,7 +63,14 @@ data "aws_iam_policy_document" "preview_secrets_read" {
 resource "aws_iam_role" "preview_app" {
   name               = "${local.name}-preview-app"
   assume_role_policy = data.aws_iam_policy_document.preview_assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-preview-app"
+    Environment = "preview"
+    Project     = lookup(local.tags, "Project", "kortix")
+    Service     = "application"
+    Platform    = "eks"
+  }
 }
 
 resource "aws_iam_role_policy" "preview_secrets_read" {

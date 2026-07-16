@@ -47,7 +47,13 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "execution" {
   name               = "${local.name}-exec"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-exec"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "execution" {
@@ -74,7 +80,13 @@ resource "aws_iam_role_policy" "secrets" {
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-task"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -97,7 +109,13 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = var.alb_ingress_cidrs
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-alb"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_security_group" "service" {
@@ -118,7 +136,13 @@ resource "aws_security_group" "service" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-svc"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # The ALB only needs to reach the application port on ECS tasks. Keeping this
@@ -138,17 +162,10 @@ resource "aws_lb" "this" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-
-  # Keep the two AZ attachments structurally explicit. Besides documenting the
-  # availability invariant, this lets static IaC analysis verify redundancy
-  # without having to evaluate a computed subnet list.
-  subnet_mapping {
-    subnet_id = var.public_subnet_ids[0]
-  }
-  subnet_mapping {
-    subnet_id = var.public_subnet_ids[1]
-  }
-
+  subnets = [
+    var.public_subnet_ids[0],
+    var.public_subnet_ids[1],
+  ]
   idle_timeout = var.alb_idle_timeout
   tags = {
     ManagedBy   = "terraform"
@@ -227,7 +244,13 @@ resource "aws_ecs_cluster" "this" {
     name  = "containerInsights"
     value = var.container_insights ? "enabled" : "disabled"
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_ecs_cluster_capacity_providers" "this" {
@@ -273,7 +296,13 @@ resource "aws_ecs_task_definition" "this" {
     # authoritative gate for routing + the deployment circuit breaker.
   }])
 
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_ecs_service" "this" {
@@ -321,7 +350,13 @@ resource "aws_ecs_service" "this" {
   # Without this, the service can race ahead of the HTTPS listener on a fresh
   # apply ("target group ... does not have an associated load balancer").
   depends_on = [aws_lb_listener.http, aws_lb_listener.https]
-  tags       = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # ── Autoscaling (target tracking on CPU + memory) ─────────────────────────────

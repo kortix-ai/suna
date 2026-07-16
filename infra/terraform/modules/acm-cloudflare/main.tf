@@ -24,7 +24,13 @@ resource "aws_acm_certificate" "this" {
   lifecycle {
     create_before_destroy = true
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = var.domain_name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", "certificate")
+  }
 }
 
 # One Cloudflare DNS record per distinct validation option.

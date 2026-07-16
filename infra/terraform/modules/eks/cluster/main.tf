@@ -61,7 +61,14 @@ resource "aws_eks_cluster" "this" {
     }
   }
 
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = var.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "eks")
+  }
 
   depends_on = [aws_iam_role_policy_attachment.cluster]
 }
