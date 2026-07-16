@@ -297,3 +297,19 @@ These mirror the automated integration tests
   emits, or a claim value has no mapping, the user simply gets no groups (no
   error, no partial access). Double-check the claim name if groups aren't syncing.
 - **One IdP per account** in v1.
+- **Only add a domain your IdP actually controls.** Every sign-in from the
+  configured domain is routed to the IdP instead of password login — including
+  the admin's own account if it happens to sit on that domain. Live incident:
+  an admin registered their own domain on a test provider and their next
+  sign-in was silently routed to the IdP, then came back authenticated as a
+  *different* person because the IdP reused an existing browser SSO session
+  (IdP session reuse) — not a Kortix bug, but genuinely confusing from the
+  Kortix side with no explanation shown.
+  `TODO(sso-identity-mismatch-notice)`: after an SSO return, if the
+  authenticated identity differs from the email the user originally typed on
+  `/auth`, surface a "You signed in as `{actual_email}`" notice instead of
+  silently proceeding as that account. Land this in the `/auth/callback`
+  route (`apps/web/src/app/(auth)/auth/callback/route.ts`) — it already has
+  `data.user` post-exchange; it would need the originally-typed email carried
+  through the redirect (query param or short-lived cookie set before the
+  IdP hop) to compare against.
