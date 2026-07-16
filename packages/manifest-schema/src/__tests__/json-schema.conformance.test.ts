@@ -634,6 +634,246 @@ connectors:
     input:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site\n',
   },
+
+  // ─── v3 ──────────────────────────────────────────────────────────────
+  {
+    name: 'v3: valid minimal manifest (one opencode runtime, one agent, default_agent resolves)',
+    format: 'yaml',
+    valid: true,
+    input: `
+kortix_version: 3
+default_agent: w
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+agents:
+  w:
+    runtime: opencode
+`,
+  },
+  {
+    name: 'v3: valid multi-harness manifest (all four runtimes, agents routing across 4 of them, mixed grant sets, every workspace mode)',
+    format: 'yaml',
+    valid: true,
+    input: `
+kortix_version: 3
+default_agent: primary
+
+runtimes:
+  claude:
+    harness: claude
+    config_dir: .claude
+  codex:
+    harness: codex
+    config_dir: .codex
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+  pi:
+    harness: pi
+    config_dir: .pi
+
+agents:
+  primary:
+    runtime: claude
+    connectors: all
+    secrets: none
+    skills: [pdf-export]
+    kortix_cli: [project.read]
+    workspace: runtime
+  cr-bot:
+    runtime: codex
+    connectors: [github]
+    secrets: all
+    skills: none
+    workspace: read
+  triager:
+    runtime: opencode
+    connectors: none
+    secrets: [STRIPE_KEY]
+    skills: all
+    workspace: branch
+  notifier:
+    runtime: pi
+    connectors: [slack]
+    secrets: [SLACK_TOKEN]
+    skills: [web-research]
+
+connectors:
+  - slug: github
+    provider: pipedream
+    app: github
+  - slug: slack
+    provider: channel
+    platform: slack
+`,
+  },
+  {
+    name: 'v3: native `agent:` id + `enabled: false` on a non-default agent',
+    format: 'yaml',
+    valid: true,
+    input: `
+kortix_version: 3
+default_agent: primary
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+agents:
+  primary:
+    runtime: opencode
+  helper:
+    runtime: opencode
+    agent: helper-profile
+    enabled: false
+`,
+  },
+  {
+    name: 'v3: unknown harness value rejected',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: bogus
+agents:
+  x:
+    runtime: x
+`,
+  },
+  {
+    name: 'v3: runtime config_dir rejects a ".." traversal segment',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: opencode
+    config_dir: ../x
+agents:
+  x:
+    runtime: x
+`,
+  },
+  {
+    name: 'v3: runtime config_dir rejects an absolute path',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: opencode
+    config_dir: /x
+agents:
+  x:
+    runtime: x
+`,
+  },
+  {
+    name: 'v3: OpenCode behavior field `model` on a v3 agent block rejected',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: opencode
+agents:
+  x:
+    runtime: x
+    model: gpt-5
+`,
+  },
+  {
+    name: 'v3: OpenCode behavior field `permission` on a v3 agent block rejected',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: opencode
+agents:
+  x:
+    runtime: x
+    permission: allow
+`,
+  },
+  {
+    name: 'v3: top-level legacy `runtime:` key rejected',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtime: opencode
+runtimes:
+  x:
+    harness: opencode
+agents:
+  x:
+    runtime: x
+`,
+  },
+  {
+    name: 'v3: top-level `opencode:` sub-object rejected',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+opencode:
+  config_dir: .kortix/opencode
+runtimes:
+  x:
+    harness: opencode
+agents:
+  x:
+    runtime: x
+`,
+  },
+  {
+    name: 'v3: top-level `[[channels]]` rejected',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: opencode
+agents:
+  x:
+    runtime: x
+channels:
+  - platform: slack
+`,
+  },
+  {
+    name: 'v3: kortix_cli grant list with a legacy no-op action is a hard error (v3, like v2, has no warn-only tolerance)',
+    format: 'yaml',
+    valid: false,
+    input: `
+kortix_version: 3
+default_agent: x
+runtimes:
+  x:
+    harness: opencode
+agents:
+  x:
+    runtime: x
+    kortix_cli: [project.schedule.read]
+`,
+  },
 ];
 
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
@@ -714,5 +954,44 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
       'kortix_version = 1\n[[connectors]]\nslug = "g"\nprovider = "graphql"\nendpoint = "https://x/graphql"\n[connectors.auth]\ntype = "oauth1"\n';
     expect(validateManifest(toml, 'toml').valid).toBe(false);
     expect(validateCombined(parseToml(toml))).toBe(true);
+  });
+
+  // v3 has the exact same class of cross-field/dynamic-set gap as v2's
+  // `default_agent` / trigger-`agent` cases above: `agents.<name>.runtime`
+  // must name a key present in the (arbitrary, project-defined) `runtimes`
+  // map, and `default_agent` must name a declared, enabled agent — both
+  // require reading OTHER parts of the same document, which a static JSON
+  // Schema document cannot express without non-standard `$data` references.
+  test('v3: agent referencing an undeclared runtime: imperative rejects, schema (structurally) accepts', () => {
+    const yaml =
+      'kortix_version: 3\ndefault_agent: w\nruntimes:\n  opencode:\n    harness: opencode\nagents:\n  w:\n    runtime: ghost\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('v3: default_agent naming an undeclared agent: imperative rejects, schema (structurally) accepts', () => {
+    const yaml =
+      'kortix_version: 3\ndefault_agent: ghost\nruntimes:\n  opencode:\n    harness: opencode\nagents:\n  w:\n    runtime: opencode\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('v3: default_agent naming a disabled agent: imperative rejects, schema (structurally) accepts', () => {
+    const yaml =
+      'kortix_version: 3\ndefault_agent: w\nruntimes:\n  opencode:\n    harness: opencode\nagents:\n  w:\n    runtime: opencode\n    enabled: false\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('v3: kortix_version 3 in a .toml file: imperative rejects (format-aware, YAML-only), schema n/a', () => {
+    const toml =
+      'kortix_version = 3\ndefault_agent = "w"\n[runtimes.opencode]\nharness = "opencode"\n[agents.w]\nruntime = "opencode"\n';
+    const result = validateManifest(toml, 'toml');
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some(
+        (issue) => issue.severity === 'error' && /yaml/i.test(issue.message),
+      ),
+    ).toBe(true);
   });
 });

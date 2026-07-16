@@ -15,6 +15,15 @@ function warningPaths(input: string | Record<string, unknown>): string[] {
   return validateManifest(input).issues.filter((i) => i.severity === 'warning').map((i) => i.path);
 }
 
+// kortix_version 3 is YAML-only (`validateRoot` hard-errors any v3 doc
+// parsed with `format: 'toml'`, the default above) — so every v3 fuzz case
+// below must pin `format: 'yaml'` explicitly, whether the input is a raw
+// string or an already-parsed object (the format check runs regardless of
+// input shape).
+function errorPathsV3(input: string | Record<string, unknown>): string[] {
+  return validateManifest(input, 'yaml').issues.filter((i) => i.severity === 'error').map((i) => i.path);
+}
+
 describe('validateManifest — object input', () => {
   test('accepts an already-parsed object without re-parsing TOML', () => {
     const result = validateManifest({ kortix_version: 1 });
@@ -486,5 +495,171 @@ describe('validateManifest — non-blocking warnings (runtime enforces; gate adv
 
   test('trigger with a non-IANA timezone warns (would never fire) but does not block', () => {
     assertWarnsButValid('kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"', 'triggers[0].timezone');
+  });
+});
+
+// kortix_version 3 structural-fuzz parity with the v1 sweeps above: every
+// wrong-type input below must come back as a normal, structured
+// ManifestIssue (never a thrown exception) — if any of these crashed instead
+// of returning `{ valid: false, issues: [...] }`, the calling `errorPathsV3`
+// itself would throw and fail the test with an uncaught error rather than a
+// plain assertion failure.
+describe('validateManifest — kortix_version 3 structural fuzz (coverage parity with v1/v2)', () => {
+  const baseValidV3: Record<string, unknown> = {
+    kortix_version: 3,
+    default_agent: 'x',
+    runtimes: { x: { harness: 'opencode' } },
+    agents: { x: { runtime: 'x' } },
+  };
+
+  test('a fully valid minimal v3 manifest passes as a sanity baseline', () => {
+    expect(validateManifest(baseValidV3, 'yaml').valid).toBe(true);
+  });
+
+  test('runtimes as an array is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, runtimes: [{ harness: 'opencode' }] })).toContain('runtimes');
+  });
+
+  test('runtimes as a string is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, runtimes: 'opencode' })).toContain('runtimes');
+  });
+
+  test('runtimes as a number is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, runtimes: 5 })).toContain('runtimes');
+  });
+
+  test('agents as a v1/v2-style array is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: [{ name: 'x', runtime: 'x' }] })).toContain('agents');
+  });
+
+  test('default_agent as a number is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, default_agent: 5 })).toContain('default_agent');
+  });
+
+  test('a runtime block that is itself the wrong type is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, runtimes: { x: 'opencode' } })).toContain('runtimes.x');
+  });
+
+  test('runtime block harness wrong-typed (number) is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, runtimes: { x: { harness: 5 } } })).toContain('runtimes.x.harness');
+  });
+
+  test('runtime block config_dir wrong-typed (number) is rejected', () => {
+    expect(
+      errorPathsV3({ ...baseValidV3, runtimes: { x: { harness: 'opencode', config_dir: 5 } } }),
+    ).toContain('runtimes.x.config_dir');
+  });
+
+  test('an agent block that is itself the wrong type is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: 'primary' } })).toContain('agents.x');
+  });
+
+  test('agent block runtime wrong-typed (number) is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 5 } } })).toContain('agents.x.runtime');
+  });
+
+  test('agent block agent (native id) wrong-typed (number) is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', agent: 5 } } })).toContain('agents.x.agent');
+  });
+
+  test('agent block enabled wrong-typed (string) is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', enabled: 'yes' } } })).toContain(
+      'agents.x.enabled',
+    );
+  });
+
+  test('agent block workspace wrong-typed (number) is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', workspace: 5 } } })).toContain(
+      'agents.x.workspace',
+    );
+  });
+
+  test('agent block connectors grant set as an object is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', connectors: {} } } })).toContain(
+      'agents.x.connectors',
+    );
+  });
+
+  test('agent block secrets grant set as an object is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', secrets: {} } } })).toContain(
+      'agents.x.secrets',
+    );
+  });
+
+  test('agent block skills grant set as an object is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', skills: {} } } })).toContain(
+      'agents.x.skills',
+    );
+  });
+
+  test('agent block kortix_cli grant set as an object is rejected', () => {
+    expect(errorPathsV3({ ...baseValidV3, agents: { x: { runtime: 'x', kortix_cli: {} } } })).toContain(
+      'agents.x.kortix_cli',
+    );
+  });
+
+  // "Kitchen-sink valid v3": every optional lever pulled at once (multiple
+  // runtimes/harnesses, a native `agent:` id, a disabled non-default agent,
+  // mixed grant-set shapes, every workspace mode, top-level project/env/
+  // sandbox/connectors/triggers sections) — asserts the whole document still
+  // validates AND that object input is echoed back unmodified (mirrors the
+  // v1 "object input echoes the same object back as parsed" case above).
+  test('kitchen-sink valid v3 manifest is accepted and echoes `parsed` back unmodified', () => {
+    const kitchenSink: Record<string, unknown> = {
+      kortix_version: 3,
+      default_agent: 'primary',
+      project: { name: 'acme-support', description: 'Customer support automation' },
+      env: { required: ['ANTHROPIC_API_KEY'], optional: ['STRIPE_KEY'] },
+      runtimes: {
+        claude: { harness: 'claude', config_dir: '.claude' },
+        codex: { harness: 'codex', config_dir: '.codex' },
+        opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+        pi: { harness: 'pi', config_dir: '.pi' },
+      },
+      agents: {
+        primary: {
+          runtime: 'claude',
+          connectors: 'all',
+          secrets: 'none',
+          skills: ['pdf-export'],
+          kortix_cli: ['project.read', 'project.cr.open'],
+          workspace: 'runtime',
+        },
+        'cr-bot': {
+          runtime: 'codex',
+          connectors: ['github'],
+          secrets: 'all',
+          skills: 'none',
+          workspace: 'read',
+        },
+        triager: {
+          runtime: 'opencode',
+          agent: 'triage-profile',
+          connectors: 'none',
+          secrets: ['STRIPE_KEY'],
+          skills: 'all',
+          workspace: 'branch',
+        },
+        archived: {
+          runtime: 'pi',
+          enabled: false,
+        },
+      },
+      connectors: [{ slug: 'github', provider: 'pipedream', app: 'github' }],
+      sandbox: { templates: [{ slug: 'py', image: 'python:3.12-slim' }] },
+      triggers: [
+        {
+          slug: 'nightly-digest',
+          type: 'cron',
+          cron: '0 9 * * *',
+          prompt: 'Summarize open PRs and support tickets',
+          agent: 'primary',
+        },
+      ],
+    };
+
+    const result = validateManifest(kitchenSink, 'yaml');
+    expect(result.valid).toBe(true);
+    expect(result.parsed).toBe(kitchenSink);
   });
 });
