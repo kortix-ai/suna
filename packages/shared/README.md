@@ -177,7 +177,7 @@ this order:
    `ACP_HARNESS_IDS`, a `DEFAULTS` entry (display name, adapter, launch
    command/args), a `nativeConfigEnv()` branch (its own distinct
    `*_CONFIG_DIR`-style env var — see the comment at
-   `harness-registry.ts:41-51` on why this must be distinct per harness), and
+   `harness-registry.conformance.test.ts:41-51` on why this must be distinct per harness), and
    a `resolveAcpHarnessLaunchEnv()` branch for its auth wiring. Its
    conformance test,
    `apps/kortix-sandbox-agent-server/src/acp/harness-registry.conformance.test.ts`,
@@ -201,8 +201,8 @@ this order:
    both violate the packaging law).
    `apps/api/src/snapshots/packaging-law.test.ts` pins this — but note its
    `for (const pin of [...])` list and its `probes` map (lines 98-104,
-   135-141) are **hand-maintained hardcoded lists of the current four
-   adapters, not derived from `HARNESS_IDS`**. Nothing fails automatically if
+   135-141) are **hand-maintained hardcoded lists of the current adapter
+   set (five pins covering the four harnesses), not derived from `HARNESS_IDS`**. Nothing fails automatically if
    you simply forget to add the harness's install line at all; what the test
    *does* catch, once you've added it, is a non-pinned version, an `@latest`
    tag, a missing probe, or a probe that runs after `ENTRYPOINT`
