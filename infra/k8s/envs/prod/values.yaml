@@ -89,6 +89,7 @@ ingress:
   enabled: true
   host: api-eks.kortix.com
   certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/27dd2310-c468-428c-b97a-ec46b1eed6fd
+  wafAclArn: arn:aws:wafv2:eu-west-2:935064898258:regional/webacl/kortix-alb-waf/8ac41166-f4f0-4a53-9d23-f4aae0963a22
   cloudflareProxied: true
   # Lock the origin ALB to Cloudflare's edge ranges so api.kortix.com can only be
   # reached THROUGH Cloudflare — no direct-to-origin WAF/rate-limit bypass. Same
