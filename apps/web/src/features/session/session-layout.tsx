@@ -218,8 +218,13 @@ export const SessionLayout = memo(function SessionLayout({
         sidePanelRef.current?.resize(100);
         mainPanelRef.current?.resize(0);
       } else {
-        sidePanelRef.current?.resize(50);
-        mainPanelRef.current?.resize(50);
+        // Easy mode opens at the panel's MINIMUM width (35/65): the cards are a
+        // narrow column and the chat is where the user lives — a 50/50 split
+        // steals half the screen for whitespace. Advanced keeps 50/50 (its
+        // stepper/terminal/browser views earn the room). The drag handle still
+        // lets either mode go wider.
+        sidePanelRef.current?.resize(isEasy ? 35 : 50);
+        mainPanelRef.current?.resize(isEasy ? 65 : 50);
       }
     } else {
       sidePanelRef.current?.resize(0);
@@ -233,7 +238,7 @@ export const SessionLayout = memo(function SessionLayout({
       }, 320);
       return () => clearTimeout(timer);
     }
-  }, [shouldShowPanel, isExpanded, sessionId, disablePanelTransition]);
+  }, [shouldShowPanel, isExpanded, sessionId, disablePanelTransition, isEasy]);
 
   useEffect(() => {
     if (!isAnimating) return;
@@ -243,12 +248,12 @@ export const SessionLayout = memo(function SessionLayout({
         sidePanelRef.current?.resize(100);
         mainPanelRef.current?.resize(0);
       } else {
-        sidePanelRef.current?.resize(50);
-        mainPanelRef.current?.resize(50);
+        sidePanelRef.current?.resize(isEasy ? 35 : 50);
+        mainPanelRef.current?.resize(isEasy ? 65 : 50);
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [isAnimating, enablePanelTransition, isExpanded]);
+  }, [isAnimating, enablePanelTransition, isExpanded, isEasy]);
 
   const panelHeader = (
     <PanelHeaderSwitcher
@@ -377,7 +382,7 @@ export const SessionLayout = memo(function SessionLayout({
           >
             <ResizablePanel
               ref={mainPanelRef}
-              defaultSize={shouldShowPanel ? 50 : 100}
+              defaultSize={shouldShowPanel ? (isEasy ? 65 : 50) : 100}
               minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 0 : 30) : 100}
               maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
               collapsible={isExpanded || isAnimating}
@@ -402,7 +407,7 @@ export const SessionLayout = memo(function SessionLayout({
 
             <ResizablePanel
               ref={sidePanelRef}
-              defaultSize={shouldShowPanel ? 50 : 0}
+              defaultSize={shouldShowPanel ? (isEasy ? 35 : 50) : 0}
               minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 100 : 35) : 0}
               maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 100 : 70) : 0}
               collapsible={!isExpanded || isAnimating}
