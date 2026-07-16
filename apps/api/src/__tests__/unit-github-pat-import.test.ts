@@ -53,17 +53,17 @@ describe('serializeGitHubInstallations — PAT fallback for the "Use a token" se
   });
 
   test('no App installation, PAT fallback owner given -> synthesizes a connected installation', () => {
-    const result = serializeGitHubInstallations([], ACCOUNT_ID, null, 'Essentia-Innovation');
+    const result = serializeGitHubInstallations([], ACCOUNT_ID, null, 'globex-corp');
 
     expect(result.installed).toBe(true);
     expect(result.configured).toBe(true);
     expect(result.requires_installation).toBe(false);
     expect(result.installation_id).toBe(PAT_MANAGED_GIT_INSTALLATION_ID);
-    expect(result.owner_login).toBe('Essentia-Innovation');
+    expect(result.owner_login).toBe('globex-corp');
     expect(result.installations).toEqual([
       expect.objectContaining({
         installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-        owner_login: 'Essentia-Innovation',
+        owner_login: 'globex-corp',
         installed: true,
         configured: true,
       }),
@@ -72,7 +72,7 @@ describe('serializeGitHubInstallations — PAT fallback for the "Use a token" se
 
   test('a real App installation row wins — the PAT fallback is ignored, no duplicate/synthetic entry', () => {
     const row = installationRow();
-    const result = serializeGitHubInstallations([row], ACCOUNT_ID, null, 'Essentia-Innovation');
+    const result = serializeGitHubInstallations([row], ACCOUNT_ID, null, 'globex-corp');
 
     expect(result.installed).toBe(true);
     expect(result.installations).toHaveLength(1);
