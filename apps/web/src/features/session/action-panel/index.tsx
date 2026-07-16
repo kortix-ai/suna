@@ -66,6 +66,17 @@ export function ActionPanel({
     useKortixComputerStore.getState().consumePrimaryOpen(sessionId);
   }, [mode, pendingPrimaryOpenSessionId, sessionId]);
 
+  // Same discard contract for the palette's quick-view request: only
+  // `EasyPanel` consumes it, so in Advanced mode it would otherwise survive a
+  // later mode switch and replay a Terminal/Audit open the user never asked
+  // that render for. (Advanced handles the palette command directly via
+  // session-browser-store — see command-palette.tsx.)
+  const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
+  useEffect(() => {
+    if (mode !== 'advanced' || pendingQuickView?.sessionId !== sessionId) return;
+    useKortixComputerStore.getState().consumeQuickView(sessionId);
+  }, [mode, pendingQuickView, sessionId]);
+
   return mode === 'advanced' ? (
     <AdvancedPanel sessionId={sessionId} messages={messages} />
   ) : (
