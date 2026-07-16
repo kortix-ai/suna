@@ -193,83 +193,38 @@ import {
 } from '@/ui';
 
 
-export function AgentMessageTool({ part }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+export function AgentMessageTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
   const rawMessage = (input.message as string) || '';
   const taskId = (input.id as string) || (input.agent_id as string) || '';
-  const isRunning = status === 'running' || status === 'pending';
   const isError = status === 'error' || (status === 'completed' && isErrorOutput(output));
-  const [expanded, setExpanded] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-
-  const preview = rawMessage.length > 120 ? rawMessage.slice(0, 120).trim() + '…' : rawMessage;
-  const isLong = rawMessage.length > 120;
 
   const childSessionId = useMemo(() => getChildSessionId(part), [part]);
   const hasSession = !!childSessionId;
 
   return (
     <>
-      <div className={cn('w-full overflow-hidden text-xs', hasSession && 'cursor-pointer')}>
-        <div
-          className="p-3"
-          onClick={() => {
-            if (hasSession) {
-              setModalOpen(true);
-              return;
-            }
-            if (isLong) setExpanded(!expanded);
-          }}
-        >
-          <div className="flex items-center gap-2.5">
-            <MessageCircle className="text-muted-foreground size-4 flex-shrink-0" />
-            <span className="text-foreground flex-1 truncate text-sm font-medium">
-              {tHardcodedUi.raw('componentsSessionToolRenderers.line6574JsxTextMessage')}
-              {taskId ? taskId.slice(-12) : 'worker'}
-            </span>
-            {isRunning && (
-              <span className="text-muted-foreground bg-muted flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium">
-                <Loader2 className="size-2.5 animate-spin" />
-                Sending
-              </span>
-            )}
-            {!isRunning && !isError && (
-              <Badge variant="success" size="sm" className="flex-shrink-0 gap-1">
-                <Check className="size-2.5" />
-                Sent
-              </Badge>
-            )}
-            {isError && (
-              <span className="text-destructive bg-destructive/10 flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium">
-                Failed
-              </span>
-            )}
-            {(hasSession || isLong) && (
-              <ChevronRight
-                className={cn(
-                  'text-muted-foreground/20 group-hover:text-muted-foreground/50 size-3 flex-shrink-0 transition-all',
-                  expanded && !hasSession && 'rotate-90',
-                )}
-              />
-            )}
+      <BasicTool
+        icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+        trigger={{
+          title: 'Message agent',
+          subtitle: taskId ? taskId.slice(-12) : undefined,
+          args: isError ? ['failed'] : undefined,
+        }}
+        onSubtitleClick={hasSession ? () => setModalOpen(true) : undefined}
+        forceOpen={forceOpen}
+      >
+        {isError ? (
+          <ToolOutputFallback output={output} toolName="agent_message" />
+        ) : rawMessage ? (
+          <div className="text-muted-foreground px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap">
+            {rawMessage}
           </div>
-
-          {isError ? (
-            <div className="mt-1.5 pl-[26px]">
-              <ToolOutputFallback output={output} toolName="agent_message" />
-            </div>
-          ) : rawMessage ? (
-            <div className="mt-1.5 pl-[26px]">
-              <span className="text-muted-foreground/70 text-xs leading-relaxed">
-                {expanded ? rawMessage : preview}
-              </span>
-            </div>
-          ) : null}
-        </div>
-      </div>
+        ) : null}
+      </BasicTool>
 
       {hasSession && (
         <SubSessionModal

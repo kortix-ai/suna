@@ -193,27 +193,26 @@ import {
 } from '@/ui';
 
 
-export function TaskDeleteTool({ part }: ToolProps) {
+export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const output = partOutput(part);
   const status = partStatus(part);
-
-  if (status === 'completed' && isErrorOutput(output)) {
-    return (
-      <BasicTool
-        icon={<Trash2 className="size-3.5 flex-shrink-0" />}
-        trigger={{ title: 'Delete task', subtitle: 'failed' }}
-      >
-        <ToolOutputFallback output={output} toolName="task_delete" />
-      </BasicTool>
-    );
-  }
+  const isError = status === 'completed' && isErrorOutput(output);
 
   return (
-    <div className="text-muted-foreground/40 flex items-center gap-2 px-2.5 py-1 text-xs">
-      <Trash2 className="size-3 flex-shrink-0" />
-      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6903JsxTextTaskRemoved')}</span>
-    </div>
+    <BasicTool
+      icon={<Trash2 className="size-3.5 flex-shrink-0" />}
+      trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
+      forceOpen={forceOpen}
+    >
+      {isError ? (
+        <ToolOutputFallback output={output} toolName="task_delete" />
+      ) : (
+        <div className="text-muted-foreground px-3 py-2 text-xs leading-relaxed">
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line6903JsxTextTaskRemoved')}
+        </div>
+      )}
+    </BasicTool>
   );
 }
 ToolRegistry.register('task_delete', TaskDeleteTool);

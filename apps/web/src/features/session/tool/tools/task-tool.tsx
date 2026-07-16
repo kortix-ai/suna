@@ -228,7 +228,7 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<SquareKanban />}
+        icon={<SquareKanban className="size-3.5 flex-shrink-0" />}
         trigger={{
           title: `Agent · ${subagentType}`,
           subtitle,

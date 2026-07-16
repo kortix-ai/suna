@@ -193,9 +193,10 @@ import {
 } from '@/ui';
 
 
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { cleanWorkerOutput, parseTaskRows } from '@/features/session/tool/shared/agent-helpers';
 
-export function AgentStatusTool({ part }: ToolProps) {
+export function AgentStatusTool({ part, forceOpen }: ToolProps) {
   const status = partStatus(part);
   const output = partOutput(part);
   const isRunning = status === 'running' || status === 'pending';
@@ -207,28 +208,21 @@ export function AgentStatusTool({ part }: ToolProps) {
 
   return (
     <>
-      <div className="w-full overflow-hidden text-xs">
-        <div className="p-3">
-          <div className="flex items-center gap-2.5">
-            <Layers className="text-muted-foreground size-4 flex-shrink-0" />
-            <span className="text-foreground flex-1 truncate text-sm font-medium">Tasks</span>
-            {isRunning && (
-              <span className="text-muted-foreground bg-muted flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium">
-                <Loader2 className="size-2.5 animate-spin" />
-                Loading
-              </span>
-            )}
-            {!isRunning && taskRows.length > 0 && (
-              <span className="text-muted-foreground bg-muted flex-shrink-0 rounded px-1.5 py-0.5 font-mono text-xs">
-                {taskRows.length} task{taskRows.length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-        </div>
-
+      <BasicTool
+        icon={<Layers className="size-3.5 flex-shrink-0" />}
+        trigger={{ title: 'Agent status' }}
+        badge={
+          !isRunning && taskRows.length > 0 ? (
+            <Badge variant="muted" size="sm">
+              {taskRows.length} task{taskRows.length !== 1 ? 's' : ''}
+            </Badge>
+          ) : undefined
+        }
+        forceOpen={forceOpen}
+      >
         {!isRunning && taskRows.length > 0 && (
-          <div className="border-border/30 border-t">
-            {taskRows.map((row) => {
+          <div>
+            {taskRows.map((row, i) => {
               const hasSession = !!row.sessionId;
               const isActive = row.status === 'in_progress';
               return (
@@ -249,7 +243,8 @@ export function AgentStatusTool({ part }: ToolProps) {
                     }
                   }}
                   className={cn(
-                    'border-border/20 flex items-center gap-2.5 border-b px-3 py-2 last:border-0',
+                    'border-border/20 flex items-center gap-2.5 px-3 py-2',
+                    i > 0 && 'border-t',
                     hasSession && 'hover:bg-accent/50 cursor-pointer transition-colors',
                   )}
                 >
@@ -281,17 +276,13 @@ export function AgentStatusTool({ part }: ToolProps) {
         )}
 
         {!isRunning && isErrorOutput(output) && (
-          <div className="border-border/30 border-t">
-            <ToolOutputFallback output={output} toolName="agent_status" />
-          </div>
+          <ToolOutputFallback output={output} toolName="agent_status" />
         )}
 
         {!isRunning && !isErrorOutput(output) && taskRows.length === 0 && cleanedOutput && (
-          <div className="border-border/30 border-t px-3 py-2.5">
-            <div className="text-muted-foreground text-xs whitespace-pre-wrap">{cleanedOutput}</div>
-          </div>
+          <OutputBlock text={cleanedOutput} />
         )}
-      </div>
+      </BasicTool>
 
       {modalSessionId && (
         <SubSessionModal

@@ -192,20 +192,20 @@ import {
 } from '@/ui';
 
 
-export function TaskCreateTool({ part }: ToolProps) {
+export function TaskCreateTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const title = (input.title as string) || '';
   const priority = (input.priority as string) || 'medium';
   return (
-    <div className="text-muted-foreground/70 flex items-center gap-1.5 py-0.5 text-xs">
-      <Circle className="text-muted-foreground/40 size-3 flex-shrink-0" />
-      <span className="text-foreground/80 flex-1 truncate">{title}</span>
-      {priority === 'high' && (
-        <span className="text-foreground/50 bg-muted/60 rounded px-1.5 py-px text-xs font-medium">
-          high
-        </span>
-      )}
-    </div>
+    <BasicTool
+      icon={<Circle className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Create task',
+        subtitle: title || undefined,
+        args: priority === 'high' ? ['high'] : undefined,
+      }}
+      forceOpen={forceOpen}
+    />
   );
 }
 

@@ -192,29 +192,19 @@ import {
 } from '@/ui';
 
 
-export function AgentStopTool({ part }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+export function AgentStopTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const agentId = (input.agent_id as string) || '';
   return (
-    <div className="w-full overflow-hidden text-xs">
-      <div className="p-3">
-        <div className="flex items-center gap-2.5">
-          <StopCircle className="text-muted-foreground size-4 flex-shrink-0" />
-          <span className="text-foreground flex-1 truncate text-sm font-medium">
-            {tHardcodedUi.raw('componentsSessionToolRenderers.line6678JsxTextAgentStopped')}
-          </span>
-          {agentId && (
-            <span className="text-muted-foreground bg-muted flex-shrink-0 rounded px-1.5 py-0.5 font-mono text-xs">
-              {agentId.slice(-12)}
-            </span>
-          )}
-          <span className="text-muted-foreground/60 bg-muted/60 flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium">
-            Stopped
-          </span>
-        </div>
-      </div>
-    </div>
+    <BasicTool
+      icon={<StopCircle className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Stop agent',
+        subtitle: agentId ? agentId.slice(-12) : undefined,
+        args: ['stopped'],
+      }}
+      forceOpen={forceOpen}
+    />
   );
 }
 ToolRegistry.register('agent_stop', AgentStopTool);
