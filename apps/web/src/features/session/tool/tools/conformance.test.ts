@@ -13,7 +13,15 @@ const FORBIDDEN = /rounded-2xl|shadow-(sm|md|lg|xl)|bg-gradient|text-(sky|emeral
 // to this array — rather than skipping failing files — means the test stays
 // honest (RED until a file is actually converted, GREEN once it lands) at
 // every commit in between.
-export const CONVERTED: string[] = ['get-mem-tool.tsx', 'memory-search-tool.tsx'];
+export const CONVERTED: string[] = [
+  'get-mem-tool.tsx',
+  'memory-search-tool.tsx',
+  'executor-tools.tsx',
+  'dcp-compress-tool.tsx',
+  'dcp-distill-tool.tsx',
+  'dcp-prune-tool.tsx',
+  'context-info-tool.tsx',
+];
 
 describe('tool/tools/ conformance — no bespoke design system in converted files', () => {
   const dir = join(__dirname);

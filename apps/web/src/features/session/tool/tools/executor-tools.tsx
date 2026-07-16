@@ -15,9 +15,10 @@ import {
 import {
   ExecutorJson,
   ExecutorRiskBadge,
-  ExecutorSectionLabel,
   parseExecutorOutput,
 } from '@/features/session/tool/shared/error-and-executor';
+import { ToolSection } from '@/features/session/tool/shared/output-block';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import { Code2, Plug, Search, Terminal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -62,9 +63,7 @@ export function ExecutorConnectorsTool({ part, defaultOpen, forceOpen, locked }:
                 <span
                   className={cn(
                     'text-[10px] font-semibold uppercase',
-                    c.status === 'active'
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-muted-foreground/60',
+                    c.status === 'active' ? STATUS_TEXT.success : 'text-muted-foreground/60',
                   )}
                 >
                   {String(c.status ?? '')}
@@ -178,12 +177,13 @@ export function ExecutorDescribeTool({ part, defaultOpen, forceOpen, locked }: T
                 {String(parsed.description)}
               </p>
             ) : null}
-            <div>
-              <ExecutorSectionLabel>
-                {tI18nHardcoded.raw('autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6')}
-              </ExecutorSectionLabel>
+            <ToolSection
+              label={tI18nHardcoded.raw(
+                'autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6',
+              )}
+            >
               <ExecutorJson value={parsed.inputSchema ?? { type: 'object', properties: {} }} />
-            </div>
+            </ToolSection>
           </>
         ) : output ? (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
@@ -222,13 +222,13 @@ export function ExecutorCallTool({ part, defaultOpen, forceOpen, locked }: ToolP
           : '';
   const outcome =
     callStatus === 'pending_approval'
-      ? { label: 'Needs approval', tint: 'text-amber-600 dark:text-amber-400' }
+      ? { label: 'Needs approval', tint: STATUS_TEXT.warning }
       : callStatus === 'denied'
-        ? { label: 'Denied', tint: 'text-destructive' }
+        ? { label: 'Denied', tint: STATUS_TEXT.destructive }
         : ok
-          ? { label: 'OK', tint: 'text-emerald-600 dark:text-emerald-400' }
+          ? { label: 'OK', tint: STATUS_TEXT.success }
           : parsed
-            ? { label: 'Error', tint: 'text-destructive' }
+            ? { label: 'Error', tint: STATUS_TEXT.destructive }
             : null;
 
   return (
@@ -258,23 +258,21 @@ export function ExecutorCallTool({ part, defaultOpen, forceOpen, locked }: ToolP
         </div>
 
         {Object.keys(args).length > 0 && (
-          <div>
-            <ExecutorSectionLabel>Request</ExecutorSectionLabel>
+          <ToolSection label="Request">
             <ExecutorJson value={args} />
-          </div>
+          </ToolSection>
         )}
 
         {isErrorOutput(output) ? (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
         ) : parsed ? (
-          <div>
-            <ExecutorSectionLabel>Response</ExecutorSectionLabel>
+          <ToolSection label="Response">
             {parsed.reason && !ok ? (
               <p className="text-destructive font-mono text-xs">{String(parsed.reason)}</p>
             ) : (
               <ExecutorJson value={'data' in parsed ? parsed.data : parsed} />
             )}
-          </div>
+          </ToolSection>
         ) : output ? (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
         ) : (

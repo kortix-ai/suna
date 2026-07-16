@@ -82,6 +82,7 @@ import {
   ExecutorSectionLabel,
   parseExecutorOutput,
 } from '@/features/session/tool/shared/error-and-executor';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
@@ -201,11 +202,13 @@ export function DCPCompressTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="size-3.5 flex-shrink-0 text-purple-500" />}
+      icon={<Scissors className="text-muted-foreground/50 size-3.5 flex-shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">Compress</span>
-          <span className="text-xs font-medium whitespace-nowrap text-purple-500">DCP</span>
+          <span className="text-muted-foreground/50 text-xs font-medium whitespace-nowrap">
+            DCP
+          </span>
           {topic && (
             <span className="text-muted-foreground/70 max-w-[200px] truncate text-xs">{topic}</span>
           )}
@@ -216,10 +219,8 @@ export function DCPCompressTool({ part }: ToolProps) {
       {isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="compress" />
       ) : output ? (
-        <div data-scrollable className="max-h-48 overflow-auto p-2">
-          <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
-            {output}
-          </pre>
+        <div className="p-2">
+          <OutputBlock text={output} />
         </div>
       ) : null}
     </BasicTool>

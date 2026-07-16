@@ -82,6 +82,7 @@ import {
   ExecutorSectionLabel,
   parseExecutorOutput,
 } from '@/features/session/tool/shared/error-and-executor';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
@@ -220,10 +221,8 @@ export function DCPPruneTool({ part }: ToolProps) {
       {isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="prune" />
       ) : output ? (
-        <div data-scrollable className="max-h-48 overflow-auto p-2">
-          <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
-            {output}
-          </pre>
+        <div className="p-2">
+          <OutputBlock text={output} />
         </div>
       ) : null}
     </BasicTool>

@@ -1,6 +1,7 @@
 'use client';
 
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
@@ -114,10 +115,10 @@ export function ExecutorRiskBadge({ risk }: { risk?: unknown }) {
   if (typeof risk !== 'string' || !risk) return null;
   const tint =
     risk === 'read'
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? STATUS_TEXT.success
       : risk === 'destructive'
-        ? 'text-destructive'
-        : 'text-amber-600 dark:text-amber-400';
+        ? STATUS_TEXT.destructive
+        : STATUS_TEXT.warning;
   return (
     <span className={cn('flex-shrink-0 text-[10px] font-semibold tracking-wide uppercase', tint)}>
       {risk}
@@ -130,16 +131,19 @@ export function ExecutorJson({ value }: { value: unknown }) {
     return <span className="text-muted-foreground/60 font-mono text-xs">{'{}'}</span>;
   }
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-  return (
-    <pre className="border-border/50 bg-muted/40 text-foreground/90 max-h-72 overflow-auto rounded-2xl border p-2.5 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
-      {text}
-    </pre>
-  );
+  return <OutputBlock text={text} />;
 }
 
+/**
+ * @deprecated Superseded by `ToolSection` (shared/output-block) — no live
+ * call site renders this anymore (executor-tools.tsx now uses `ToolSection`
+ * directly). Kept as a one-line wrapper delegating to the same label classes
+ * so the ~40 tool files that still import it (unused, pre-existing dead
+ * imports out of this task's scope) keep compiling.
+ */
 export function ExecutorSectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="text-muted-foreground/60 mb-1.5 text-[10px] font-semibold tracking-[0.18em] uppercase">
+    <div className="text-muted-foreground/60 text-[10px] font-medium tracking-wider uppercase">
       {children}
     </div>
   );
