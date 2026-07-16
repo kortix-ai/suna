@@ -409,9 +409,12 @@ jobs:
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: [
-              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"},
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
-              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"}
+              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_EKS", text:"https://gateway-staging-eks.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
             ]
           }')"
           curl -fsS -X PUT \
@@ -439,6 +442,26 @@ jobs:
               --data "$route_body" >/dev/null
           fi
           echo "deployed ${WORKER_NAME} and route ${WORKER_ROUTE}"
+
+          # A Worker script upload replaces its bindings. Prove the gateway
+          # bindings above survived the deploy before declaring staging ready.
+          for attempt in $(seq 1 12); do
+            response_headers="$(mktemp)"
+            response_body="$(mktemp)"
+            status="$(curl -sS --max-time 15 -D "$response_headers" -o "$response_body" -w '%{http_code}' "https://${GATEWAY_HOST}/health" || true)"
+            backend_service="$(awk 'BEGIN { IGNORECASE=1 } /^x-backend-service:/ { gsub(/\r/, "", $2); print $2 }' "$response_headers" | tail -n1)"
+            healthy="$(jq -r '.status == "healthy"' "$response_body" 2>/dev/null || echo false)"
+            rm -f "$response_headers" "$response_body"
+            if [ "$status" = "200" ] && [ "$backend_service" = "gateway" ] && [ "$healthy" = "true" ]; then
+              echo "staging gateway Worker verified"
+              break
+            fi
+            if [ "$attempt" = "12" ]; then
+              echo "::error::staging gateway Worker failed verification (status=$status service=$backend_service healthy=$healthy)"
+              exit 1
+            fi
+            sleep 5
+          done
 
   deploy-web:
     name: Deploy staging web to Vercel
@@ -542,3 +565,37 @@ jobs:
             echo "- Web: https://${WEB_HOST} serves staging runtime config"
             echo "- GitOps: API ALB ${{ needs.deploy-k8s.outputs.api_alb }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Move the self-host `:staging` channel tag onto the images just verified ─
+  # `kortix self-host init/update --tag staging` pulls `kortix/kortix-*:staging`
+  # — a MOVING tag self-hosters track for the current staging environment (may
+  # break at any time). Gated on `verify` (the last job — live staging
+  # confirmed serving this exact build), so `:staging` never points at a
+  # rollout that didn't actually land. Re-tag by digest only (imagetools
+  # create — zero rebuild) from the immutable staging-<sha8> images
+  # build-staging.yml already pushed for this commit.
+  #
+  # kortix/kortix-sandbox is NOT included: it has no CI publish pipeline at
+  # all (see the note in deploy-dev.yml) — the Docker Hub repo doesn't exist,
+  # so there is nothing to re-tag it from.
+  promote-staging-channel:
+    name: Move :staging → staging-${{ needs.preflight.outputs.sha8 }}
+    needs: [preflight, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Re-tag api/gateway/frontend → :staging
+        env:
+          SHA8: ${{ needs.preflight.outputs.sha8 }}
+        run: |
+          set -euo pipefail
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
+            docker buildx imagetools create \
+              --tag "$IMAGE:staging" \
+              "$IMAGE:staging-${SHA8}"
+            echo "✓ $IMAGE:staging → staging-${SHA8}"
+          done

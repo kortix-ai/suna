@@ -155,6 +155,12 @@ describe('missingRequiredSecrets', () => {
     expect(gitProviderConfigured(env)).toBe(false);
   });
 
+  test('local-docker (EXPERIMENTAL) alone reports nothing missing — no provider API key required', () => {
+    const env = baseEnv({ ALLOWED_SANDBOX_PROVIDERS: 'local-docker', DAYTONA_API_KEY: '' });
+    expect(missingRequiredSecrets(env)).toEqual([]);
+    expect(sandboxProviderConfigured(env)).toBe(true);
+  });
+
   test('a fully-configured env (Daytona + GitHub PAT + OpenRouter) also reports nothing missing', () => {
     const env = baseEnv({
       DAYTONA_API_KEY: 'dtn_live_key',

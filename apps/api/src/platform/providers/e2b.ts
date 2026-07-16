@@ -137,6 +137,7 @@ async function ensureKortixEntrypoint(
 
 export class E2BProvider implements SandboxProvider {
   readonly name: ProviderName = 'e2b';
+  readonly requiresPublicCallback = true;
 
   readonly provisioning: ProvisioningTraits = {
     async: false,

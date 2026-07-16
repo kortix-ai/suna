@@ -23,7 +23,21 @@ locals {
 
 #checkov:skip=CKV2_AWS_9:backups are handled by the aws_dlm_lifecycle_policy in this module (daily snapshots, retention-capped) — an AWS Backup plan would duplicate it
 resource "aws_ebs_volume" "data" {
-  availability_zone = aws_instance.this.availability_zone
+  # DELIBERATELY NOT aws_instance.this.availability_zone: AZ is ForceNew on
+  # aws_ebs_volume, so if this depended on the instance's (post-apply-known)
+  # AZ attribute, ANY instance replacement (taint, -replace, instance_type
+  # change, AMI swap that isn't ignore_changes-suppressed, ...) makes this
+  # value "known after apply" and forces Terraform to destroy and recreate the
+  # DATA VOLUME along with the instance — silently destroying the database.
+  # local.availability_zone is derived from the subnet (var.subnet_id /
+  # data.aws_subnet.selected in main.tf), which is stable across instance
+  # replacement, so the volume's AZ never depends on the instance at all.
+  #
+  # Verified via repro: seed state with the instance's AZ known, then
+  # `terraform plan -replace=aws_instance.this` — with this fixed, the plan
+  # shows the volume unchanged; before the fix, the same repro showed the
+  # volume as "must be replaced" purely because of the AZ dependency.
+  availability_zone = local.availability_zone
   size              = var.data_volume_size_gb
   type              = "gp3"
   encrypted         = true
@@ -33,6 +47,16 @@ resource "aws_ebs_volume" "data" {
     Name   = "${local.name}-data"
     Backup = "${local.name}-data"
   })
+
+  # Belt-and-suspenders against the class of bug above (and any other future
+  # change that would force a replace on this resource): refuse to destroy
+  # the data volume via `terraform destroy` / a replace, full stop. To
+  # actually retire this box's data on purpose, remove this block in its own
+  # dedicated, reviewed apply first (see README "Replacing the instance
+  # without losing data").
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_volume_attachment" "data" {

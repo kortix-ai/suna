@@ -73,6 +73,7 @@ describe('kortix enums', () => {
       'daytona',
       'platinum',
       'e2b',
+      'local-docker',
     ]);
   });
 

@@ -357,6 +357,47 @@ export async function listInstallationRepositories(
   return repositories;
 }
 
+/**
+ * List repositories for the managed-git PAT backend ("Use a token" self-host
+ * setup) — the token equivalent of `listInstallationRepositories`, which only
+ * works for a GitHub App installation id. A PAT has no "installation" to
+ * enumerate repos from, so this hits the same org-vs-personal-account
+ * endpoint `createRepo`/`resolveDefaultOwner` already branch on: an org owner
+ * lists via `/orgs/{owner}/repos` (what a fine-grained token scoped to an
+ * organization resource-owner can see), a personal owner via `/user/repos`
+ * (filtered back down to that owner — a classic token can see collaborator
+ * repos under other owners too, which don't belong in "repos for this
+ * configured owner").
+ */
+export async function listOwnerRepositories(input: {
+  owner: string;
+  ownerType?: 'User' | 'Organization';
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubRepo[]> {
+  const isOrg = input.ownerType
+    ? input.ownerType !== 'User'
+    : await isOrgAccount(input.owner, input.auth);
+  const path = isOrg
+    ? `/orgs/${encodeURIComponent(input.owner)}/repos?type=all`
+    : '/user/repos?affiliation=owner,collaborator';
+  const perPage = 100;
+  const repositories: GitHubRepo[] = [];
+  for (let page = 1; ; page += 1) {
+    const pageRepositories = await ghFetch<GitHubRepo[]>(
+      `${path}&per_page=${perPage}&page=${page}`,
+      { method: 'GET' },
+      input.auth,
+    );
+    repositories.push(...pageRepositories);
+    if (pageRepositories.length < perPage) break;
+  }
+  return isOrg
+    ? repositories
+    : repositories.filter(
+        (repo) => repo.full_name.split('/')[0]?.toLowerCase() === input.owner.toLowerCase(),
+      );
+}
+
 export async function listRepositoryBranches(input: {
   owner: string;
   repo: string;

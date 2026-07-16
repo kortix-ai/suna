@@ -1263,3 +1263,42 @@ jobs:
         env:
           MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
         run: bash scripts/ci-maintenance-banner.sh off
+
+  # ── Move the self-host `:prod` channel tag onto the release that just went live ─
+  # `kortix self-host init/update --tag prod` pulls `kortix/kortix-*:prod` — a
+  # MOVING tag self-hosters track for whatever is live on api.kortix.com right
+  # now (may break at any time; it is NOT the curated `:stable` channel —
+  # see promote-self-host-stable.yml). Deliberately placed AFTER
+  # verify-live-version (default `if: success()`, same gate as
+  # maintenance-banner-off/github-release) so `:prod` never points at a build
+  # that failed to actually reach prod, exactly like the v0.10.0/v0.10.1
+  # incident this whole verify-live-version gate exists to prevent. Re-tag by
+  # digest only (imagetools create — zero rebuild) from the already-published
+  # :VERSION manifest (retag-images already proved it matches the promoted
+  # staging/dev source).
+  #
+  # kortix/kortix-sandbox is NOT included: it has no CI publish pipeline at
+  # all (see the note in deploy-dev.yml) — the Docker Hub repo doesn't exist,
+  # so there is nothing to re-tag it from. (This is a pre-existing gap: even
+  # promote-self-host-stable.yml's `:stable` channel has never covered it.)
+  promote-prod-channel:
+    name: Move :prod → v${{ needs.version.outputs.version }}
+    needs: [version, retag-images, verify-live-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Re-tag api/gateway/frontend → :prod
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
+            docker buildx imagetools create \
+              --tag "$IMAGE:prod" \
+              "$IMAGE:${VERSION}"
+            echo "✓ $IMAGE:prod → ${VERSION}"
+          done

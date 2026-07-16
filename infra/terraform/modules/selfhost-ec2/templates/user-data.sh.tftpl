@@ -1,12 +1,23 @@
 #!/bin/bash
 # Kortix self-host — EC2 bootstrap (runs once, as root, via cloud-init).
 #
-# This does exactly what any self-host user does by hand (see
-# scripts/kortix-selfhost-up.sh and docs/runbooks/self-hosting.md): install
-# Docker, install the kortix CLI, `kortix self-host init`, `kortix self-host
-# start`. Terraform's only value-add here is doing it once on a fresh box with
-# a durable data volume wired up first. It does NOT run again on its own —
-# ongoing updates are the in-compose kortix-updater's job, not Terraform's.
+# This installs exactly what any self-host user installs by hand (see
+# scripts/kortix-selfhost-up.sh and docs/runbooks/self-hosting.md): Docker,
+# the kortix CLI, and (if var.enable_alarms) the CloudWatch agent. Terraform's
+# only value-add here is doing it once on a fresh box with a durable data
+# volume wired up first.
+#
+# IMPORTANT — this script is deliberately ONLY prerequisites + a systemd unit
+# install, not the `kortix self-host init`/`start` calls themselves. Those run
+# out of kortix-selfhost-bootstrap.service (below), a systemd oneshot with
+# Restart=on-failure. This split exists because of a confirmed production
+# incident: cloud-init has no retry of its own, ran init/start inline, and
+# failed identically on two live boxes on a slow-cold-start dependency race
+# (`kortix-api` didn't report healthy before compose's dependency wait gave
+# up) — cloud-init reported the box as permanently broken even though a
+# second attempt (started by hand) succeeded fine. Moving init/start into a
+# retried, reboot-surviving systemd unit means that race self-heals with zero
+# human intervention.
 set -euo pipefail
 exec > >(tee -a /var/log/kortix-bootstrap.log) 2>&1
 echo "=== kortix self-host bootstrap: $(date -u --iso-8601=seconds) ==="
@@ -15,6 +26,8 @@ echo "=== kortix self-host bootstrap: $(date -u --iso-8601=seconds) ==="
 # installer (kortix.com/install) and the CLI itself dereference $HOME under
 # `set -u`, so an unset HOME kills the bootstrap ("HOME: unbound variable").
 export HOME="$${HOME:-/root}"
+
+DATA_MOUNT="${data_mount_path}"
 
 # ── 1. Find + mount the data volume ─────────────────────────────────────────
 # Requested attach point is ${data_volume_device_name}, but Nitro-based
@@ -41,38 +54,80 @@ else
   echo "$DATA_DEVICE already has a filesystem — leaving its contents alone (this is the durable Postgres/Docker state across instance replacement)"
 fi
 
-mkdir -p "${data_mount_path}"
-if ! mountpoint -q "${data_mount_path}"; then
-  mount "$DATA_DEVICE" "${data_mount_path}"
+mkdir -p "$DATA_MOUNT"
+if ! mountpoint -q "$DATA_MOUNT"; then
+  mount "$DATA_DEVICE" "$DATA_MOUNT"
 fi
 DATA_UUID="$(blkid -s UUID -o value "$DATA_DEVICE")"
-grep -q "$DATA_UUID" /etc/fstab || echo "UUID=$DATA_UUID ${data_mount_path} ext4 defaults,nofail 0 2" >> /etc/fstab
+grep -q "$DATA_UUID" /etc/fstab || echo "UUID=$DATA_UUID $DATA_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
 
-DOCKER_DATA_ROOT="${data_mount_path}/docker"
-KORTIX_CONFIG_DIR="${data_mount_path}/kortix-self-host"
-mkdir -p "$DOCKER_DATA_ROOT" "$KORTIX_CONFIG_DIR"
+DOCKER_DATA_ROOT="$DATA_MOUNT/docker"
+CONTAINERD_ROOT="$DATA_MOUNT/containerd"
+KORTIX_CONFIG_DIR="$DATA_MOUNT/kortix-self-host"
+mkdir -p "$DOCKER_DATA_ROOT" "$CONTAINERD_ROOT" "$KORTIX_CONFIG_DIR"
 
-# ── 2. Docker: point data-root at the data volume BEFORE first start ───────
-# Every Docker-managed volume (images, containers, the updater/Caddy named
-# volumes) then lives on the data volume too.
+# ── 2. Docker + containerd: point BOTH data stores at the data volume BEFORE
+#    first start ─────────────────────────────────────────────────────────────
+# Docker's own data-root (dockerd: images/containers metadata, the
+# updater/Caddy named volumes) is one thing, but with the modern
+# containerd-snapshotter setup the ACTUAL image/container filesystem layers
+# live under containerd's own root (/var/lib/containerd by default) — setting
+# only dockerd's data-root does NOT move that. This was root-caused live: both
+# boxes had 14-16GB under /var/lib/containerd on their 30GB root volumes
+# (59-65% full) while the 100GB data volume sat nearly empty. containerd's
+# `root` (its snapshot/content store) has to be repointed too, and — since
+# containerd starts as its own systemd unit as soon as the package is
+# installed — that has to happen before containerd's first start, or it lays
+# its state down on the root volume before we get a chance to redirect it.
+#
+# NOTE: this whole section only runs to completion on a NEW box (first
+# install). On an existing box already running with containerd's root on the
+# OS volume, do NOT let this silently "fix" a live install out from under
+# running containers — see the README's documented migration steps for
+# existing boxes (an ops agent applies those separately, deliberately not
+# automated here).
+NEW_DOCKER_INSTALL=0
 if ! command -v docker >/dev/null 2>&1; then
-  echo "Installing Docker Engine + Compose plugin"
-  mkdir -p /etc/docker
-  cat > /etc/docker/daemon.json <<JSON
+  NEW_DOCKER_INSTALL=1
+  echo "Installing Docker Engine + Compose plugin (containerd.io is bundled)"
+  curl --fail --silent --show-error --location https://get.docker.com | sh
+  # get.docker.com's postinst enables+starts docker (and containerd as its
+  # dependency) immediately — stop both right away so we can repoint
+  # containerd's root before anything writes to it.
+  systemctl stop docker.service containerd.service 2>/dev/null || true
+fi
+
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<JSON
 {
-  "data-root": "$DOCKER_DATA_ROOT"
+  "data-root": "$DOCKER_DATA_ROOT",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
 }
 JSON
-  curl --fail --silent --show-error --location https://get.docker.com | sh
-  systemctl enable --now docker
+
+if [ "$NEW_DOCKER_INSTALL" = "1" ] || ! grep -q "root = \"$CONTAINERD_ROOT\"" /etc/containerd/config.toml 2>/dev/null; then
+  echo "Pointing containerd's root at $CONTAINERD_ROOT (unset fields keep containerd's own defaults)"
+  mkdir -p /etc/containerd
+  cat > /etc/containerd/config.toml <<TOML
+version = 2
+root = "$CONTAINERD_ROOT"
+state = "/run/containerd"
+TOML
 fi
+
+systemctl enable --now containerd.service
+systemctl enable --now docker.service
 docker compose version >/dev/null 2>&1 || { echo "FATAL: docker compose plugin unavailable after install" >&2; exit 1; }
 
 # ── 3. Pin KORTIX_SELF_HOST_CONFIG_DIR — every kortix invocation (this
-#    script, and any later `kortix self-host ...` an operator runs over SSM)
-#    must agree on where the instance lives, or the CLI creates a second
-#    instance on the (small, ephemeral) root volume instead of reusing the
-#    one on the data volume. Persist it for future root shells too.
+#    script's systemd unit, and any later `kortix self-host ...` an operator
+#    runs over SSM) must agree on where the instance lives, or the CLI creates
+#    a second instance on the (small, ephemeral) root volume instead of
+#    reusing the one on the data volume. Persist it for future root shells too.
 export KORTIX_SELF_HOST_CONFIG_DIR="$KORTIX_CONFIG_DIR"
 grep -q '^KORTIX_SELF_HOST_CONFIG_DIR=' /etc/environment 2>/dev/null \
   || echo "KORTIX_SELF_HOST_CONFIG_DIR=$KORTIX_CONFIG_DIR" >> /etc/environment
@@ -94,8 +149,72 @@ if [ -z "$KORTIX_BIN" ] && [ -x /root/.kortix/kortix ]; then
   KORTIX_BIN=/root/.kortix/kortix
 fi
 [ -n "$KORTIX_BIN" ] || { echo "FATAL: kortix CLI install did not produce a runnable binary" >&2; exit 1; }
+# Systemd units don't inherit this script's $PATH/$KORTIX_BIN resolution, so
+# pin a stable, absolute path for kortix-selfhost-bootstrap.sh to call.
+ln -sf "$KORTIX_BIN" /usr/local/bin/kortix
 
-# ── 5. Generate the self-host config ────────────────────────────────────────
+%{ if enable_alarms ~}
+# ── 5. CloudWatch agent (disk + memory metrics feeding this module's alarms) ─
+if ! dpkg -s amazon-cloudwatch-agent >/dev/null 2>&1; then
+  echo "Installing the CloudWatch agent"
+  CWA_DEB="/tmp/amazon-cloudwatch-agent.deb"
+  ARCH="$(dpkg --print-architecture)"
+  curl --fail --silent --show-error --location \
+    "https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/$ARCH/latest/amazon-cloudwatch-agent.deb" \
+    -o "$CWA_DEB"
+  dpkg -i "$CWA_DEB" || apt-get install -f -y
+  rm -f "$CWA_DEB"
+fi
+
+mkdir -p /opt/aws/amazon-cloudwatch-agent/etc
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWJSON'
+{
+  "agent": {
+    "metrics_collection_interval": 60
+  },
+  "metrics": {
+    "namespace": "${cloudwatch_namespace}",
+    "append_dimensions": {
+      "InstanceId": "$${aws:InstanceId}"
+    },
+    "metrics_collected": {
+      "disk": {
+        "measurement": ["used_percent"],
+        "resources": ["/", "$DATA_MOUNT"],
+        "drop_device": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent"]
+      }
+    }
+  }
+}
+CWJSON
+# $DATA_MOUNT is a shell variable (resolved by this script), not a Terraform
+# template variable — substitute it into the JSON now that it's on disk (the
+# heredoc above is single-quoted specifically so $${aws:InstanceId} — a
+# CloudWatch-agent-syntax placeholder, not a shell variable — reaches disk
+# literally rather than being shell-expanded).
+sed -i "s#\$DATA_MOUNT#$DATA_MOUNT#" /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+systemctl enable amazon-cloudwatch-agent
+%{ endif ~}
+
+# ── 6. The actual app bootstrap: retried, reboot-surviving systemd unit ─────
+# `kortix self-host init`/`env set`/`start` are idempotent (safe to rerun),
+# which is exactly what lets a systemd Restart=on-failure loop — and a fresh
+# run on every reboot — self-heal the dependency-health race that broke this
+# on both live boxes, without ever needing an operator to SSM in by hand.
+cat > /usr/local/sbin/kortix-selfhost-bootstrap.sh <<'BOOTSTRAP'
+#!/bin/bash
+set -euo pipefail
+export HOME="$${HOME:-/root}"
+export KORTIX_SELF_HOST_CONFIG_DIR="${data_mount_path}/kortix-self-host"
+KORTIX_BIN=/usr/local/bin/kortix
+
 INIT_ARGS=(
   --instance "${instance_name}"
   --domain "${domain}"
@@ -120,14 +239,53 @@ echo "Running: kortix self-host init $${INIT_ARGS[*]}"
 "$KORTIX_BIN" self-host env set --instance "${instance_name}" "KORTIX_ACME_EMAIL=${acme_email}"
 %{ endif ~}
 
-# ── 6. Start ─────────────────────────────────────────────────────────────────
-# `start` re-checks required secrets (the sandbox key etc.) and warns rather
-# than refusing — this module's whole design is that secrets are NOT
-# Terraform inputs and get set post-boot (kortix self-host env set /
-# configure / the dashboard).
-echo "Starting the stack (pulling images — this can take a few minutes on first boot)"
+echo "Starting the stack (pulling images — this can take a few minutes on first attempt)"
 "$KORTIX_BIN" self-host start --instance "${instance_name}" --yes
 
-echo "=== kortix self-host bootstrap done: $(date -u --iso-8601=seconds) ==="
+echo "kortix self-host bootstrap done: $(date -u --iso-8601=seconds)"
 echo "Secrets (sandbox provider key, managed git, ...) were NOT set — configure them with:"
 echo "  kortix self-host configure --instance ${instance_name}"
+BOOTSTRAP
+chmod +x /usr/local/sbin/kortix-selfhost-bootstrap.sh
+
+cat > /etc/systemd/system/kortix-selfhost-bootstrap.service <<'UNIT'
+[Unit]
+Description=kortix self-host init + start (idempotent; retried on failure)
+After=network-online.target docker.service mnt-kortix\x2ddata.mount
+Wants=network-online.target
+Requires=docker.service mnt-kortix\x2ddata.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/kortix-selfhost-bootstrap.sh
+TimeoutStartSec=1800
+Restart=on-failure
+RestartSec=30
+# Give this a generous but bounded retry budget per boot (20 attempts/hour) —
+# enough to ride out a slow-cold-start health-check race like the one that
+# broke both live boxes, without crash-looping forever if the box is
+# genuinely misconfigured. A reboot resets this budget and reruns the unit
+# fresh (WantedBy=multi-user.target below), which is the other half of
+# "self-heal": even a box that exhausts its retry budget picks back up on the
+# next reboot.
+StartLimitIntervalSec=3600
+StartLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable kortix-selfhost-bootstrap.service
+# --no-block: hand it off to systemd's own supervision (Restart=on-failure)
+# and return immediately. This is deliberate — cloud-init itself must never
+# be the thing waiting on (and failing because of) the app's first-boot
+# health-check race; that coupling is exactly what turned a transient,
+# self-healing hiccup into a permanent "cloud-init failed" status on both
+# live boxes. `systemctl enable` (not `--now`) is what makes a reboot rerun
+# it too, since we don't rely on `--now`'s implicit start for that.
+systemctl start --no-block kortix-selfhost-bootstrap.service
+
+echo "=== kortix self-host bootstrap (prerequisites) done: $(date -u --iso-8601=seconds) ==="
+echo "kortix-selfhost-bootstrap.service is now running init/start in the background (retried on failure — see: systemctl status kortix-selfhost-bootstrap.service, journalctl -u kortix-selfhost-bootstrap.service)."

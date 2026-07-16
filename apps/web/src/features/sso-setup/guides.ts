@@ -140,6 +140,7 @@ const importStep = (claimHint: string): GuideStep => ({
   id: 'connect',
   title: 'Connect to Kortix',
   kind: 'import',
+  where: 'kortix',
   intro:
     'Paste the federation metadata from the previous step. Kortix registers your IdP and routes sign-ins for your email domain through it.',
   note: `Group claim is prefilled with ${claimHint} — it must match the claim name your IdP emits, or group sync silently finds nothing.`,
@@ -149,6 +150,7 @@ const testStep = (extra?: string): GuideStep => ({
   id: 'test',
   title: 'Test single sign-on',
   kind: 'test',
+  where: 'kortix',
   intro:
     'Copy the sign-in URL below and open it in a PRIVATE / incognito window (so your own logged-in session doesn’t auto-complete the test), enter a test user’s work email, and complete the sign-in at your identity provider.',
   bullets: [
@@ -160,7 +162,8 @@ const testStep = (extra?: string): GuideStep => ({
   ],
   warning:
     'If the sign-in fails: “not assigned” → assign the user to the app (assign-users step). An attribute/email error → recheck the email claim maps to the IdP’s login attribute (attributes step). Signed in but no groups → recheck the group claim NAME matches what you set at connect.',
-  success: 'The test user shows up under Members on the Identity page — that’s a confirmed round-trip.',
+  success:
+    'The test user shows up under Members on the Identity page — that’s a confirmed round-trip.',
 });
 
 export const PROVIDER_GUIDES: ProviderGuide[] = [
@@ -181,6 +184,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     steps: [
       {
         id: 'create-app',
+        where: 'idp',
+        menuPath: 'Entra ID → Enterprise applications',
         title: 'Create an enterprise application',
         intro:
           'Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.',
@@ -228,6 +233,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'basic-saml',
+        where: 'idp',
+        menuPath: 'Your app → Single sign-on → SAML',
         title: 'Basic SAML configuration',
         intro:
           'In the left navigation menu, select the "Single sign-on" tab. Click on the "SAML" tile.',
@@ -278,10 +285,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
+        note: 'After Save, Entra pops its own "Test single sign-on with Kortix?" dialog — choose "No, I\'ll test later". Kortix isn\'t connected yet; the guided test comes at the last step.',
         doneLabel: 'I’ve completed basic SAML configuration',
       },
       {
         id: 'email-claim',
+        where: 'idp',
+        menuPath: 'Single sign-on → Attributes & Claims',
         title: 'Configure attributes and claims',
         intro:
           'On the same page, locate the "Attributes & Claims" section and click the "Edit" icon in its top right corner.',
@@ -345,11 +355,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
         ],
         warning:
-          'Entra maps email to user.mail by default, which is EMPTY for accounts without a mailbox (any *.onmicrosoft.com user). An empty email breaks sign-in with no useful error — the UPN is always populated.',
+          'Entra maps email to user.mail by default, which is EMPTY for accounts without a mailbox (any *.onmicrosoft.com user). An empty email breaks sign-in with no useful error. The UPN (User Principal Name — the username people sign in with, e.g. jane@yourtenant.onmicrosoft.com) is always populated, which is why every mapping here points at it.',
         doneLabel: 'I’ve configured the attributes and claims',
       },
       {
         id: 'group-claim',
+        where: 'idp',
+        menuPath: 'Attributes & Claims → Add a group claim',
         title: 'Add the group claim',
         intro: 'Still in "Attributes & Claims", click "Add a group claim".',
         content: [
@@ -382,11 +394,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           'Advanced options → check "Customize the name of the group claim" → Name: memberOf.',
         ],
         warning:
-          'Display names and assigning groups to the app require Entra ID P1/P2. On the Free tier pick "Security groups" + "Group ID" instead — groups arrive as Object IDs (GUIDs), and you map those GUIDs in Kortix. Both work; names are just easier to read.',
+          'Display names and assigning groups to the app require Entra ID P1/P2 (check yours: Entra admin center → Overview → the License row). On the Free tier pick "Security groups" + "Group ID" instead — groups arrive as Object IDs (GUIDs; copy a group\'s Object ID from Entra ID → Groups) and you map those GUIDs in Kortix. EITHER WAY, you must still rename the claim to memberOf under "Advanced options" → "Customize the name of the group claim" — skipping the rename is the #1 cause of groups silently not syncing.',
         doneLabel: 'I’ve added the memberOf group claim',
       },
       {
         id: 'assign-users',
+        where: 'idp',
+        menuPath: 'Your app → Users and groups',
         title: 'Assign users and groups',
         intro:
           'In the left navigation menu, select "Users and groups". Only assigned users can sign in through this application.',
@@ -422,6 +436,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'metadata',
+        where: 'idp',
+        menuPath: 'Single sign-on → SAML Certificates',
         title: 'Set identity provider metadata',
         kind: 'metadata-input',
         intro:

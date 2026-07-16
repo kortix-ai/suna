@@ -482,6 +482,32 @@ jobs:
             echo "Live: \`$(printf '%s' "$h" | jq -c '{version,commit,environment}' 2>/dev/null || echo '?')\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # ── Move the self-host `:dev` channel tag onto the image that just deployed ─
+  # `kortix self-host init/update --tag dev` (or `--channel dev` once that
+  # lands) pulls `kortix/kortix-api:dev` — a MOVING tag self-hosters track for
+  # the current dev environment (may break at any time). Re-tag by digest ONLY
+  # (docker buildx imagetools create — zero rebuild) and ONLY after BOTH dev
+  # backends (ECS active + EKS standby) report success, so `:dev` never points
+  # at a build that failed to actually reach the dev environment.
+  promote-dev-channel-api:
+    name: Move :dev → this build (API)
+    needs: [detect-changes, tag-api, deploy-api, deploy-api-ecs]
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Re-tag ${{ needs.tag-api.outputs.image }} → kortix/kortix-api:dev
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag kortix/kortix-api:dev \
+            "${{ needs.tag-api.outputs.image }}"
+          echo "✓ kortix/kortix-api:dev → ${{ needs.tag-api.outputs.image }}"
+
   # ── Build + push the multi-arch gateway image ───────────────────────────────
   # Standalone LLM gateway (apps/llm-gateway). Same dev-<sha8> versioning + GitOps
   # roll as the API, into the SAME kortix-dev namespace (reuses kortix-api-env).
@@ -669,6 +695,34 @@ jobs:
           done
           echo "::warning::dev gateway not rolled out to :${TAG} (likely missing ACM cert ARN in gateway-values, or Argo lag)."
 
+  # ── Move the self-host `:dev` channel tag onto the image that just deployed ─
+  # Same idea as promote-dev-channel-api. NOTE: the gateway rollout wait above
+  # is `continue-on-error: true` (a not-yet-certed Ingress can't roll out on the
+  # very first deploy), so "deploy-gateway succeeded" is weaker than the API's
+  # gate — it means the image was pushed and Argo was asked to reconcile it,
+  # not necessarily that pods are Ready. Accepted trade-off: gating on a hard
+  # rollout here would make :dev gateway stall on the same pre-cert case the
+  # deploy job itself tolerates.
+  promote-dev-channel-gateway:
+    name: Move :dev → this build (gateway)
+    needs: [detect-changes, tag-gateway, deploy-gateway]
+    if: needs.detect-changes.outputs.gateway == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Re-tag kortix/kortix-gateway:dev-${{ github.sha }} → :dev
+        run: |
+          set -euo pipefail
+          SHA8="${GITHUB_SHA::8}"
+          docker buildx imagetools create \
+            --tag kortix/kortix-gateway:dev \
+            "kortix/kortix-gateway:dev-${SHA8}"
+          echo "✓ kortix/kortix-gateway:dev → dev-${SHA8}"
+
   # ── Build + push the multi-arch frontend image ──────────────────────────────
   # dev.kortix.com is served by Vercel (auto-deploys from `main`); this image is
   # for self-hosters, so there is no deploy step here.
@@ -722,6 +776,41 @@ jobs:
             --tag "kortix/kortix-frontend:dev-${SHA8}" \
             "kortix/kortix-frontend:dev-latest"
           echo "Pushed kortix/kortix-frontend:dev-${SHA8} + :dev-latest"
+
+  # ── Move the self-host `:dev` channel tag onto the image that just built ────
+  # Frontend has no separate "deploy" job in this pipeline (dev.kortix.com is
+  # Vercel's own Git integration off `main`, not this image) — the image build
+  # succeeding IS the self-host artifact's release event, so gate on
+  # build-frontend directly.
+  promote-dev-channel-frontend:
+    name: Move :dev → this build (frontend)
+    needs: [detect-changes, build-frontend]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Re-tag kortix/kortix-frontend:dev-${{ github.sha }} → :dev
+        run: |
+          set -euo pipefail
+          SHA8="${GITHUB_SHA::8}"
+          docker buildx imagetools create \
+            --tag kortix/kortix-frontend:dev \
+            "kortix/kortix-frontend:dev-${SHA8}"
+          echo "✓ kortix/kortix-frontend:dev → dev-${SHA8}"
+
+  # NOTE (gap, out of scope for this PR): kortix/kortix-sandbox is NOT built or
+  # pushed by ANY pipeline — dev, staging, or prod. It only exists as a LOCAL
+  # build (scripts/build-local-images.sh) used by the self-host-e2e test. The
+  # Docker Hub repo `kortix/kortix-sandbox` does not exist today (verified: GET
+  # https://hub.docker.com/v2/repositories/kortix/kortix-sandbox returns 404),
+  # so there is nothing to re-tag :dev from here — even the existing :stable
+  # self-host channel has no sandbox image. Wiring up a real build+publish for
+  # apps/sandbox/Dockerfile is a separate, larger effort; until then a
+  # self-hosted box on any channel keeps whatever SANDBOX_IMAGE it already has.
 
   # ── Build dev CLI (4 targets on one Linux runner via Bun cross-compile) ─────
   build-cli:

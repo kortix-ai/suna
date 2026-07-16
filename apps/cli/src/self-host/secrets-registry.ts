@@ -192,7 +192,6 @@ export const UPDATER_MANAGED_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'FRONTEND_IMAGE',
   'API_IMAGE',
   'GATEWAY_IMAGE',
-  'SANDBOX_IMAGE',
   'KORTIX_APP_REPLICAS',
   // The instance directory's absolute HOST path — recomputed from
   // instanceDir() on every render (see normalizeFullSupabaseEnv() in

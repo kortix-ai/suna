@@ -13,7 +13,13 @@ import {
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
-import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
+import {
+  createOpencodeSupervisor,
+  OPENCODE_HOME,
+  refreshGatewayCatalogFile,
+  waitForOpencodeReady,
+  type Opencode,
+} from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
@@ -626,6 +632,31 @@ async function runWarmSeedMode(
       await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
         logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
       )
+      // A warm snapshot freezes OpenCode's provider model registry at capture
+      // time. Managed/BYOK catalogs can change independently of that snapshot,
+      // so refresh from the now-authenticated project gateway before deciding
+      // whether the no-restart fast path is safe. OpenCode only reads provider
+      // models at process start: a changed catalog requires one controlled
+      // restart; an identical catalog keeps the hot-swap path.
+      let gatewayCatalogChanged = false
+      const llmBaseUrl = process.env.KORTIX_LLM_BASE_URL
+      const llmApiKey = process.env.KORTIX_LLM_API_KEY
+      if (llmBaseUrl && llmApiKey) {
+        const currentCatalogFile =
+          process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json'
+        const targetCatalogFile = `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`
+        const refresh = await refreshGatewayCatalogFile({
+          currentCatalogFile,
+          targetCatalogFile,
+          fetchBaseURL: llmBaseUrl,
+          fetchApiKey: llmApiKey,
+        })
+        if (refresh) {
+          process.env.KORTIX_LLM_CATALOG_FILE = refresh.catalogFile
+          gatewayCatalogChanged = refresh.changed
+          if (refresh.changed) bootMark('adopt-gateway-catalog-refreshed')
+        }
+      }
       // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
       // session-independent opencode config routed through the localhost LLM +
       // executor proxies, so inject the per-session tokens LIVE and reuse the
@@ -639,6 +670,7 @@ async function runWarmSeedMode(
         !!process.env.KORTIX_LLM_PROXY_URL &&
         llmProxyBaseUrl() != null &&
         opencode.getState() === 'ok' &&
+        !gatewayCatalogChanged &&
         !bootState.repoMaterializationError
       ) {
         // LLM gateway: required for the session to function.
@@ -657,6 +689,7 @@ async function runWarmSeedMode(
           if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
           logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
             executorReady: executorProxyReady(),
+            gatewayCatalogChanged,
           })
         }
       }

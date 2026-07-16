@@ -20,11 +20,43 @@ locals {
   vpc_id    = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.default[0].id
   subnet_id = var.subnet_id != "" ? var.subnet_id : data.aws_subnets.default[0].ids[0]
 
+  # The data volume's AZ MUST NOT be derived from aws_instance.this — AZ is
+  # ForceNew on aws_ebs_volume, so if it ever depended on the (replaceable)
+  # instance, any instance replacement makes the AZ "known after apply" and
+  # forces a destroy/recreate of the DATA VOLUME. Derive it independently from
+  # the subnet instead (the subnet is what actually pins the instance's AZ —
+  # aws_instance.this has no explicit availability_zone of its own), with an
+  # explicit override for cases where that inference isn't right.
+  availability_zone = var.availability_zone != "" ? var.availability_zone : data.aws_subnet.selected.availability_zone
+
+  # Graviton (arm64) instance-type family prefixes — used to guard against
+  # launching an arm64 instance type against the amd64-only default AMI (see
+  # the precondition on aws_instance.this below).
+  is_graviton_instance_type = can(regex("^(a1|c6g|c6gd|c6gn|c7g|c7gd|c7gn|c7gh|c8g|c8gd|c8gn|g5g|hpc7g|hpc7g4|im4gn|is4gen|m6g|m6gd|m7g|m7gd|m8g|m8gd|r6g|r6gd|r7g|r7gd|r8g|r8gd|t4g|x2gd|i4g|i8g)\\.", var.instance_type))
+
+  # Namespace CloudWatch agent metrics + alarms both key off (see monitoring.tf).
+  cloudwatch_namespace = "KortixSelfHost"
+
   tags = merge(var.tags, {
     Name      = local.name
     ManagedBy = "terraform"
     Module    = "selfhost-ec2"
   })
+}
+
+# Used solely to pin the data volume's AZ independently of the (replaceable)
+# instance — see local.availability_zone above and storage.tf.
+data "aws_subnet" "selected" {
+  id = local.subnet_id
+}
+
+# Used solely to guard against an arch mismatch between var.instance_type and
+# the resolved AMI (see the precondition on aws_instance.this below).
+data "aws_ami" "selected" {
+  filter {
+    name   = "image-id"
+    values = [local.ami_id]
+  }
 }
 
 # ── AMI (Ubuntu 24.04 LTS via Canonical's public SSM parameter) ────────────
@@ -166,6 +198,8 @@ resource "aws_instance" "this" {
     acme_email              = var.acme_email
     data_volume_device_name = local.data_volume_device_name
     data_mount_path         = local.data_mount_path
+    enable_alarms           = var.enable_alarms
+    cloudwatch_namespace    = local.cloudwatch_namespace
   })
   user_data_replace_on_change = false
 
@@ -176,5 +210,21 @@ resource "aws_instance" "this" {
   # false on the volume) — an instance replacement must not touch it.
   lifecycle {
     ignore_changes = [ami]
+
+    # nonsensitive(): aws_ssm_parameter.value is always marked sensitive by
+    # the provider (it might be a SecureString), even though the Canonical
+    # Ubuntu AMI-id parameter this module resolves is public, non-secret
+    # data — without unwrapping it here, Terraform redacts the whole
+    # precondition error_message down to a useless generic warning the one
+    # time this guard actually needs to explain itself.
+    precondition {
+      condition     = !local.is_graviton_instance_type || data.aws_ami.selected.architecture == "arm64"
+      error_message = "instance_type '${var.instance_type}' looks like a Graviton (arm64) family, but the resolved AMI (${nonsensitive(local.ami_id)}) is architecture '${data.aws_ami.selected.architecture}'. Pass a matching arm64 ami_id (or ami_ssm_parameter), or switch instance_type to an x86_64 family."
+    }
+
+    precondition {
+      condition     = local.is_graviton_instance_type || data.aws_ami.selected.architecture == "x86_64"
+      error_message = "instance_type '${var.instance_type}' is x86_64, but the resolved AMI (${nonsensitive(local.ami_id)}) is architecture '${data.aws_ami.selected.architecture}'. This module's default ami_ssm_parameter tracks the amd64 Ubuntu AMI — if you intentionally set an arm64 ami_id, switch instance_type to a Graviton (*g) family instead."
+    }
   }
 }
