@@ -98,12 +98,15 @@ resource "aws_security_group" "this" {
   description = "kortix self-host box: 80/443 in, all out"
   vpc_id      = local.vpc_id
 
-  ingress {
-    description = "HTTP (ACME HTTP-01)"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.http_ingress_cidrs == null ? var.allowed_cidrs : var.http_ingress_cidrs
+  dynamic "ingress" {
+    for_each = length(var.http_ingress_cidrs == null ? var.allowed_cidrs : var.http_ingress_cidrs) > 0 ? [1] : []
+    content {
+      description = "HTTP (ACME HTTP-01)"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = var.http_ingress_cidrs == null ? var.allowed_cidrs : var.http_ingress_cidrs
+    }
   }
 
   ingress {
