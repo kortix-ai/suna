@@ -1,5 +1,5 @@
 import { CATALOG, type CatalogModel } from '@kortix/llm-catalog';
-import { HARNESS_IDS, type HarnessId } from '@kortix/shared/harnesses';
+import { HARNESS_IDS, HARNESSES, type HarnessId } from '@kortix/shared/harnesses';
 
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
@@ -308,12 +308,14 @@ export function modelPresets(kind: HarnessAuthKind, env: Record<string, string>,
  * Whether a resolved connection has a usable default model with no explicit
  * choice needed (§9 "A valid harness default does not require the user to
  * select a model", docs/specs/2026-07-14-provider-auth-model-management.md).
- * Claude/Codex/Pi always own their default natively. OpenCode is the one
- * harness that consumes an explicit launch model — but a preset catalog OR a
- * ready managed-gateway route (managed-auto) is itself a usable default; only
- * a genuinely empty, non-managed catalog (e.g. a custom endpoint with no
- * configured default model) requires the user to pick one. Exported (and
- * kept pure) so this rule is unit-testable without a compiled runtime config.
+ * A harness with `HARNESSES[id].ownsDefaultModel === true` (Claude/Codex/Pi)
+ * always owns its default natively. A harness with `ownsDefaultModel ===
+ * false` (OpenCode is the only one today) consumes an explicit launch model —
+ * but a preset catalog OR a ready managed-gateway route (managed-auto) is
+ * itself a usable default; only a genuinely empty, non-managed catalog (e.g.
+ * a custom endpoint with no configured default model) requires the user to
+ * pick one. Exported (and kept pure) so this rule is unit-testable without a
+ * compiled runtime config.
  */
 export function computeDefaultAllowed(input: {
   active: HarnessAuthKind | null;
@@ -321,7 +323,7 @@ export function computeDefaultAllowed(input: {
   presetsLength: number;
 }): boolean {
   if (!input.active) return false;
-  if (input.harness !== 'opencode') return true;
+  if (HARNESSES[input.harness].ownsDefaultModel) return true;
   return input.presetsLength > 0 || input.active === 'native_config' || input.active === 'managed_gateway';
 }
 
@@ -425,7 +427,7 @@ export async function resolveProjectComposerState(input: {
           policy,
           default_allowed: defaultAllowed,
           custom_allowed: true,
-          live_change: agent.harness === 'opencode',
+          live_change: HARNESSES[agent.harness].liveModelChange,
           presets,
         },
         can_start: Boolean(resolved.active) && defaultAllowed,

@@ -1,3 +1,5 @@
+import { HARNESS_IDS, HARNESSES, type HarnessId } from '@kortix/shared/harnesses';
+
 import type { CompiledRuntimeConfig } from './compile-runtime-config';
 
 export interface SessionRuntimeEnvInput {
@@ -15,12 +17,18 @@ export interface SessionRuntimeEnvInput {
   compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }
 
+function isHarnessId(value: string | null | undefined): value is HarnessId {
+  return typeof value === 'string' && (HARNESS_IDS as readonly string[]).includes(value);
+}
+
 /**
  * Translate a picker-namespaced model id for the target harness. `kortix/…` is
- * the managed gateway's namespace: OpenCode's config declares a `kortix`
- * provider so it keeps the qualified id, but Claude Code/Codex/Pi hand the id
- * straight to an (gateway-proxied) API that only knows the bare model id —
- * leaking the prefix there produces the harness's "model does not exist" error.
+ * the managed gateway's namespace: a `HARNESSES[id].modelNamespacing ===
+ * 'gateway-prefixed'` harness (OpenCode's config declares a `kortix`
+ * provider) keeps the qualified id, but a `'bare'` harness (Claude Code/
+ * Codex/Pi) hands the id straight to an (gateway-proxied) API that only knows
+ * the bare model id — leaking the prefix there produces the harness's "model
+ * does not exist" error.
  */
 export function runtimeModelForHarness(
   model: string | null | undefined,
@@ -28,7 +36,7 @@ export function runtimeModelForHarness(
 ): string | null {
   const trimmed = model?.trim();
   if (!trimmed) return null;
-  if (harness === 'opencode') return trimmed;
+  if (isHarnessId(harness) && HARNESSES[harness].modelNamespacing === 'gateway-prefixed') return trimmed;
   return trimmed.replace(/^kortix\//, '');
 }
 
