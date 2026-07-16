@@ -6,6 +6,8 @@ import {
   normalizeTelegramPairingCode,
   removeTelegramAllowedUser,
   telegramAllowedUserIds,
+  telegramAllowedUserProfiles,
+  telegramAllowedUsers,
   telegramPairingMatches,
 } from './pairing';
 
@@ -99,5 +101,60 @@ describe('allowlist metadata helpers', () => {
     const miss = removeTelegramAllowedUser(metadata, '999');
     expect(miss.removed).toBe(false);
     expect(telegramAllowedUserIds(miss.metadata)).toEqual(['777', '888']);
+  });
+});
+
+describe('allowlist profile capture', () => {
+  test('addTelegramAllowedUser stores name/@username beside the id', () => {
+    const merged = addTelegramAllowedUser(null, 6925313519, {
+      firstName: 'Ivan',
+      lastName: 'Ino',
+      username: 'ivan',
+      pairedAt: '2026-07-16T00:00:00.000Z',
+    });
+    expect(telegramAllowedUserIds(merged)).toEqual(['6925313519']);
+    expect(telegramAllowedUsers(merged)).toEqual([
+      {
+        id: '6925313519',
+        firstName: 'Ivan',
+        lastName: 'Ino',
+        username: 'ivan',
+        pairedAt: '2026-07-16T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  test('telegramAllowedUsers renders a bare id (legacy, no profile) gracefully', () => {
+    const meta = { telegram: { allowedUserIds: ['777', '888'] } };
+    expect(telegramAllowedUsers(meta)).toEqual([{ id: '777' }, { id: '888' }]);
+  });
+
+  test('re-pair keeps the original pairedAt and only fills blank fields', () => {
+    const first = addTelegramAllowedUser(null, 777, {
+      username: 'ivan',
+      pairedAt: '2026-01-01T00:00:00.000Z',
+    });
+    // A later backfill supplies a name but must not overwrite pairedAt.
+    const second = addTelegramAllowedUser(first, 777, {
+      firstName: 'Ivan',
+      pairedAt: '2026-09-09T00:00:00.000Z',
+    });
+    expect(telegramAllowedUsers(second)).toEqual([
+      { id: '777', firstName: 'Ivan', username: 'ivan', pairedAt: '2026-01-01T00:00:00.000Z' },
+    ]);
+  });
+
+  test('removeTelegramAllowedUser drops the profile too (no orphan)', () => {
+    const meta = addTelegramAllowedUser(null, 777, { username: 'ivan' });
+    const { metadata, removed } = removeTelegramAllowedUser(meta, '777');
+    expect(removed).toBe(true);
+    expect(telegramAllowedUserProfiles(metadata)).toEqual({});
+    expect(telegramAllowedUsers(metadata)).toEqual([]);
+  });
+
+  test('adding an id with no profile does not fabricate an empty profile map entry', () => {
+    const meta = addTelegramAllowedUser(null, 777);
+    expect(telegramAllowedUserProfiles(meta)).toEqual({});
+    expect(telegramAllowedUsers(meta)).toEqual([{ id: '777' }]);
   });
 });

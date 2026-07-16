@@ -40,12 +40,27 @@ export async function connectSlack(
 
 // ─── Telegram (optional channel — BYO bot from @BotFather) ──────────────────
 
+/** A paired Telegram sender as shown in the dashboard: the numeric id plus any
+ *  captured name/@username and, when photos were requested, an avatar data URI. */
+export interface TelegramAllowedUser {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  pairedAt?: string;
+  /** Avatar `data:` URI when requested and available; null = none; absent =
+   *  not requested (call getTelegramInstallation with `{ photos: true }`). */
+  photo?: string | null;
+}
+
 export interface TelegramInstallation {
   botId: string;
   botUsername: string | null;
   installedAt: string;
   /** Telegram user ids allowed to drive the agent (the pairing allowlist). */
   allowedUserIds?: string[];
+  /** The same allowlist enriched for display (name/@username/avatar). */
+  allowedUsers?: TelegramAllowedUser[];
   /** Whether the server enforces the sender allowlist (TELEGRAM_REQUIRE_USER_IDENTITY). */
   pairingRequired?: boolean;
   /** Whether Telegram delivers group @mentions to this bot. `false` = BotFather
@@ -62,9 +77,13 @@ export interface TelegramPairing {
 
 export async function getTelegramInstallation(
   projectId: string,
+  opts: { photos?: boolean } = {},
 ): Promise<TelegramInstallation | null> {
+  // `photos` inlines each paired user's avatar as a data URI — an extra
+  // Telegram round-trip per user, so it's opt-in (the modal, not the base load).
+  const qs = opts.photos ? '?photos=true' : '';
   const res = await backendApi.get<TelegramInstallation | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation${qs}`,
     { showErrors: false },
   );
   if (!res.success) return null;

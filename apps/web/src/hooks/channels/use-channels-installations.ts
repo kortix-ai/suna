@@ -121,6 +121,18 @@ export function useTelegramInstall(projectId: string | null) {
   });
 }
 
+/** Paired users WITH avatars — an extra Telegram round-trip per user, so it's a
+ *  separate query gated on `enabled` (fetched only when the pairing modal is
+ *  open, not on every channels-view load). */
+export function useTelegramPairedUsers(projectId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['channels', 'telegram-install-photos', projectId ?? 'none'] as const,
+    enabled: !!projectId && enabled,
+    staleTime: 60_000,
+    queryFn: () => (projectId ? getTelegramInstallation(projectId, { photos: true }) : null),
+  });
+}
+
 export function useConnectTelegram() {
   const qc = useQueryClient();
   return useMutation({

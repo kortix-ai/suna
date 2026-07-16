@@ -65,10 +65,12 @@ import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import {
+  type TelegramUserCard,
   buildTelegramWebhookUrl,
   isValidTelegramBotToken,
   telegramBotIdFromToken,
   telegramDeleteWebhook,
+  telegramFetchUserCard,
   telegramGetMe,
   telegramSetMyCommands,
   telegramSetWebhook,
@@ -78,9 +80,11 @@ import { downloadTelegramFile, uploadTelegramFile } from '../../channels/telegra
 import { TELEGRAM_BOT_COMMANDS } from '../../channels/telegram/inbound';
 import {
   TELEGRAM_PAIRING_TTL_MS,
+  addTelegramAllowedUser,
   generateTelegramPairingCode,
   removeTelegramAllowedUser,
   telegramAllowedUserIds,
+  telegramAllowedUsers,
 } from '../../channels/telegram/pairing';
 import { postTelegramQuestion } from '../../channels/telegram/questions';
 import {
@@ -983,12 +987,58 @@ projectsApp.openapi(
     // breaks the installation read.
     const token = await loadTelegramTokenForProject(projectId);
     const me = token ? await telegramGetMe(token).catch(() => null) : null;
+    // The paired-users list, enriched so the dashboard shows a name/@username
+    // (and an avatar when ?photos=true) instead of a bare id. Names captured at
+    // pairing time need no fetch; legacy ids are backfilled via getChat and the
+    // result persisted (a one-time cache warm). Photos are fetched on demand
+    // only — they're never stored (base64 in a hot metadata row would bloat it).
+    const wantPhotos = c.req.query('photos') === 'true';
+    const stored = telegramAllowedUsers(loaded.row.metadata);
+    const cards =
+      token && stored.length > 0
+        ? await Promise.all(
+            stored.map(async (u) => {
+              const missingName = !u.firstName && !u.username;
+              if (!missingName && !wantPhotos) return { u, card: null as TelegramUserCard | null };
+              const card = await telegramFetchUserCard(token, u.id, {
+                withPhoto: wantPhotos,
+              }).catch(() => null);
+              return { u, card };
+            }),
+          )
+        : stored.map((u) => ({ u, card: null as TelegramUserCard | null }));
+    let backfilled = loaded.row.metadata;
+    const allowedUsers = cards.map(({ u, card }) => {
+      if (card && !u.firstName && !u.username && (card.firstName || card.username)) {
+        backfilled = addTelegramAllowedUser(backfilled, u.id, {
+          firstName: card.firstName,
+          lastName: card.lastName,
+          username: card.username,
+        });
+      }
+      return {
+        id: u.id,
+        firstName: u.firstName ?? card?.firstName,
+        lastName: u.lastName ?? card?.lastName,
+        username: u.username ?? card?.username,
+        pairedAt: u.pairedAt,
+        ...(wantPhotos ? { photo: card?.photo ?? null } : {}),
+      };
+    });
+    if (backfilled !== loaded.row.metadata) {
+      await db
+        .update(projects)
+        .set({ metadata: backfilled })
+        .where(eq(projects.projectId, projectId))
+        .catch(() => {});
+    }
     return c.json({
       ...install,
       groupMentionsEnabled: me?.ok ? (me.bot.can_read_all_group_messages ?? false) : null,
       // Who may drive the agent from Telegram (see telegram/pairing.ts) and
       // whether the identity gate is enforcing — the dashboard's pairing UI.
       allowedUserIds: telegramAllowedUserIds(loaded.row.metadata),
+      allowedUsers,
       pairingRequired: telegramRequireUserIdentityForTest(),
     });
   },

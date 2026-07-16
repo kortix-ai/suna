@@ -64,7 +64,9 @@ import {
   useSlackManifest,
   useSlackMode,
   useTelegramInstall,
+  useTelegramPairedUsers,
 } from '@/hooks/channels/use-channels-installations';
+import type { TelegramAllowedUser } from '@kortix/sdk/projects-client';
 import {
   useDisconnectTeams,
   useTeamsInstall,
@@ -832,6 +834,39 @@ function TelegramPairingContent({
   );
 }
 
+/** Best display label for a paired sender: full name, else @username, else a
+ *  generic fallback (a legacy id whose profile was never captured). */
+function telegramUserDisplayName(user: TelegramAllowedUser): string {
+  const name = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+  if (name) return name;
+  if (user.username) return `@${user.username}`;
+  return 'Telegram user';
+}
+
+function telegramUserInitials(user: TelegramAllowedUser): string {
+  const base =
+    [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.username || user.id;
+  const words = base.split(/\s+/).filter(Boolean);
+  const letters = words.length >= 2 ? `${words[0][0]}${words[1][0]}` : base.slice(0, 2);
+  return letters.toUpperCase();
+}
+
+/** Round avatar: the Telegram profile photo (inlined data URI) when available,
+ *  otherwise initials — the pairing list only fetches photos while it's open. */
+function TelegramUserAvatar({ user }: { user: TelegramAllowedUser }) {
+  if (user.photo) {
+    return (
+      // biome-ignore lint/performance/noImgElement: a self-contained data: URI, not a remote asset next/image could optimize.
+      <img src={user.photo} alt="" className="size-8 shrink-0 rounded-full object-cover" />
+    );
+  }
+  return (
+    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+      {telegramUserInitials(user)}
+    </span>
+  );
+}
+
 function TelegramPairingModal({
   projectId,
   installation,
@@ -847,7 +882,19 @@ function TelegramPairingModal({
   const removeUser = useRemoveTelegramAllowedUser();
   const [pairing, setPairing] = useState<TelegramPairing | null>(null);
 
-  const allowedUserIds = installation.allowedUserIds ?? [];
+  // Names come with the installation (captured at pairing); avatars are a
+  // second, opt-in fetch that only runs while the modal is open. Merge the two
+  // by id so a name shows instantly and its photo fills in when it arrives.
+  const withPhotos = useTelegramPairedUsers(projectId, open);
+  const photoById = new Map(
+    (withPhotos.data?.allowedUsers ?? []).map((u) => [u.id, u.photo ?? null]),
+  );
+  const basePaired: TelegramAllowedUser[] =
+    installation.allowedUsers ?? (installation.allowedUserIds ?? []).map((id) => ({ id }));
+  const pairedUsers: TelegramAllowedUser[] = basePaired.map((u) => ({
+    ...u,
+    photo: photoById.get(u.id) ?? u.photo,
+  }));
   const gateOff = installation.pairingRequired === false;
 
   const mintCode = () => {
@@ -891,20 +938,28 @@ function TelegramPairingModal({
           )}
           <div className="space-y-2">
             <Label>Paired users</Label>
-            {allowedUserIds.length === 0 ? (
+            {pairedUsers.length === 0 ? (
               <p className="text-muted-foreground text-xs">
                 Nobody is paired yet — the bot ignores every message until someone pairs.
               </p>
             ) : (
               <ul className="space-y-2">
-                {allowedUserIds.map((userId) => (
+                {pairedUsers.map((user) => (
                   <li
-                    key={userId}
-                    className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2"
+                    key={user.id}
+                    className="bg-popover flex items-center gap-3 rounded-md border px-3 py-2"
                   >
-                    <span className="min-w-0 flex-1">
-                      <code className="text-foreground font-mono text-xs">{userId}</code>
-                      <span className="text-muted-foreground ml-2 text-xs">Telegram user id</span>
+                    <TelegramUserAvatar user={user} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {telegramUserDisplayName(user)}
+                      </span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {(user.firstName || user.lastName) && user.username
+                          ? `@${user.username} · `
+                          : ''}
+                        <code className="font-mono">{user.id}</code>
+                      </span>
                     </span>
                     <Hint label="Remove from allowlist">
                       <Button
@@ -913,7 +968,7 @@ function TelegramPairingModal({
                         disabled={removeUser.isPending}
                         onClick={() =>
                           removeUser.mutate(
-                            { projectId, userId },
+                            { projectId, userId: user.id },
                             {
                               onSuccess: () => successToast('Removed from allowlist'),
                               onError: (err) =>

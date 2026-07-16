@@ -642,9 +642,18 @@ async function attemptTelegramPairing(
     .limit(1);
   if (!project) return TELEGRAM_PAIRING_FAILED_TEXT;
 
+  // Capture the sender's name/@username from the `/start` message so the
+  // dashboard shows a human, not just a numeric id (see telegram/pairing.ts).
   await db
     .update(projects)
-    .set({ metadata: addTelegramAllowedUser(project.metadata, senderId) })
+    .set({
+      metadata: addTelegramAllowedUser(project.metadata, senderId, {
+        firstName: message.from?.first_name ?? undefined,
+        lastName: message.from?.last_name ?? undefined,
+        username: message.from?.username ?? undefined,
+        pairedAt: new Date().toISOString(),
+      }),
+    })
     .where(eq(projects.projectId, projectId));
   // Clear BEFORE replying: even if the ack fails, the code must not be
   // replayable by a second sender.

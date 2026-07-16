@@ -146,6 +146,85 @@ export async function telegramGetMe(
   return { ok: true, bot: r.result };
 }
 
+// ─── User cards (dashboard pairing list) ────────────────────────────────────
+
+interface TelegramChatInfo {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo?: { small_file_id?: string };
+}
+
+/** One paired sender's display info: name/@username, plus a self-contained
+ *  avatar `data:` URI when photos were requested (bearer-auth API means the
+ *  browser can't fetch a Telegram file URL itself). */
+export interface TelegramUserCard {
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  /** Avatar data URI, or null when the user has no photo / it couldn't be
+   *  fetched. Undefined when photos weren't requested. */
+  photo?: string | null;
+}
+
+/** getChat on a user id returns the user's profile (name, @username, photo
+ *  file ids) for anyone who has started the bot — which every paired sender
+ *  has. Best-effort: returns null on any failure so a Telegram hiccup never
+ *  breaks the dashboard read. */
+async function telegramGetChatInfo(token: string, chatId: string): Promise<TelegramChatInfo | null> {
+  const r = await telegramApiCall<TelegramChatInfo>(
+    token,
+    'getChat',
+    { chat_id: chatId },
+    { retries: 0, timeoutMs: 4000 },
+  );
+  return r.ok && r.result?.id ? r.result : null;
+}
+
+/** Resolve a Telegram file_id to a downloadable path, then fetch the bytes as a
+ *  base64 `data:` URI. Small profile photos are ~5–15 KB; anything over 256 KB
+ *  is dropped (a sanity cap — profile thumbnails are tiny). */
+async function telegramFileDataUri(token: string, fileId: string): Promise<string | null> {
+  const r = await telegramApiCall<{ file_path?: string }>(
+    token,
+    'getFile',
+    { file_id: fileId },
+    { retries: 0, timeoutMs: 4000 },
+  );
+  const filePath = r.ok ? r.result?.file_path : undefined;
+  if (!filePath) return null;
+  const res = await fetch(`${telegramApiBase()}/file/bot${token}/${filePath}`, {
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.length === 0 || bytes.length > 256 * 1024) return null;
+  return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+}
+
+/** Fetch a paired user's display card (one getChat), optionally with the avatar
+ *  downloaded and inlined. All best-effort — returns null if getChat fails. */
+export async function telegramFetchUserCard(
+  token: string,
+  chatId: string,
+  opts: { withPhoto?: boolean } = {},
+): Promise<TelegramUserCard | null> {
+  const chat = await telegramGetChatInfo(token, chatId);
+  if (!chat) return null;
+  const card: TelegramUserCard = {
+    firstName: chat.first_name,
+    lastName: chat.last_name,
+    username: chat.username,
+  };
+  if (opts.withPhoto) {
+    card.photo = chat.photo?.small_file_id
+      ? await telegramFileDataUri(token, chat.photo.small_file_id)
+      : null;
+  }
+  return card;
+}
+
 /**
  * Point the bot's webhook at us. `allowed_updates` opts into exactly what the
  * channel handles (callback_query is for inline-keyboard approvals); listing

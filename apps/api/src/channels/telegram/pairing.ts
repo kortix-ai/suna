@@ -58,25 +58,97 @@ export function telegramAllowedUserIds(metadata: unknown): string[] {
   return ids.map((id) => String(id)).filter(Boolean);
 }
 
-function withAllowedUserIds(metadata: unknown, ids: string[]): Record<string, unknown> {
+/** Human-readable pairing profile, captured from the Telegram `from` at
+ *  `/start` time (or backfilled via getChat) so the dashboard can show a name
+ *  and @username instead of a bare numeric id. All fields optional — a legacy
+ *  id with no captured profile still renders (as just the id). */
+export interface TelegramUserProfile {
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  pairedAt?: string;
+}
+
+export interface TelegramAllowedUser extends TelegramUserProfile {
+  id: string;
+}
+
+/** The `id → profile` map living beside `allowedUserIds`. Kept separate so the
+ *  allowlist gate (which only needs ids) never has to parse profile data. */
+export function telegramAllowedUserProfiles(
+  metadata: unknown,
+): Record<string, TelegramUserProfile> {
+  const profiles = (
+    metadata as { telegram?: { allowedUserProfiles?: unknown } } | null | undefined
+  )?.telegram?.allowedUserProfiles;
+  if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return {};
+  return profiles as Record<string, TelegramUserProfile>;
+}
+
+/** The allowlist as display rows: every allowed id, enriched with any captured
+ *  profile, in allowlist order. */
+export function telegramAllowedUsers(metadata: unknown): TelegramAllowedUser[] {
+  const profiles = telegramAllowedUserProfiles(metadata);
+  return telegramAllowedUserIds(metadata).map((id) => {
+    const p = profiles[id];
+    return {
+      id,
+      ...(p?.firstName ? { firstName: p.firstName } : {}),
+      ...(p?.lastName ? { lastName: p.lastName } : {}),
+      ...(p?.username ? { username: p.username } : {}),
+      ...(p?.pairedAt ? { pairedAt: p.pairedAt } : {}),
+    };
+  });
+}
+
+function mergeTelegramMetadata(
+  metadata: unknown,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
   const base =
     metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
   const telegram =
     base.telegram && typeof base.telegram === 'object'
       ? (base.telegram as Record<string, unknown>)
       : {};
-  return { ...base, telegram: { ...telegram, allowedUserIds: ids } };
+  return { ...base, telegram: { ...telegram, ...patch } };
+}
+
+function pruneProfile(profile: TelegramUserProfile): TelegramUserProfile {
+  return {
+    ...(profile.firstName ? { firstName: profile.firstName } : {}),
+    ...(profile.lastName ? { lastName: profile.lastName } : {}),
+    ...(profile.username ? { username: profile.username } : {}),
+    ...(profile.pairedAt ? { pairedAt: profile.pairedAt } : {}),
+  };
 }
 
 /** Merged project metadata with the sender allowlisted — idempotent, preserves
- *  every unrelated metadata key. */
+ *  every unrelated metadata key. An optional `profile` records the sender's
+ *  name/username for display; `pairedAt` is stamped once (never overwritten on
+ *  a re-pair) and captured fields only ever fill blanks, never clobber. */
 export function addTelegramAllowedUser(
   metadata: unknown,
   senderId: string | number,
+  profile?: TelegramUserProfile,
 ): Record<string, unknown> {
   const id = String(senderId);
   const ids = telegramAllowedUserIds(metadata);
-  return withAllowedUserIds(metadata, ids.includes(id) ? ids : [...ids, id]);
+  const nextIds = ids.includes(id) ? ids : [...ids, id];
+  const profiles = telegramAllowedUserProfiles(metadata);
+  const existing = profiles[id];
+  const merged: TelegramUserProfile = {
+    firstName: profile?.firstName ?? existing?.firstName,
+    lastName: profile?.lastName ?? existing?.lastName,
+    username: profile?.username ?? existing?.username,
+    pairedAt: existing?.pairedAt ?? profile?.pairedAt,
+  };
+  const nextProfiles =
+    profile || existing ? { ...profiles, [id]: pruneProfile(merged) } : profiles;
+  return mergeTelegramMetadata(metadata, {
+    allowedUserIds: nextIds,
+    allowedUserProfiles: nextProfiles,
+  });
 }
 
 export function removeTelegramAllowedUser(
@@ -85,5 +157,13 @@ export function removeTelegramAllowedUser(
 ): { metadata: Record<string, unknown>; removed: boolean } {
   const ids = telegramAllowedUserIds(metadata);
   const next = ids.filter((id) => id !== senderId);
-  return { metadata: withAllowedUserIds(metadata, next), removed: next.length !== ids.length };
+  const profiles = telegramAllowedUserProfiles(metadata);
+  const { [senderId]: _dropped, ...nextProfiles } = profiles;
+  return {
+    metadata: mergeTelegramMetadata(metadata, {
+      allowedUserIds: next,
+      allowedUserProfiles: nextProfiles,
+    }),
+    removed: next.length !== ids.length,
+  };
 }
