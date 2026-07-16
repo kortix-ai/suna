@@ -409,9 +409,12 @@ jobs:
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: [
-              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"},
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
-              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"}
+              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_EKS", text:"https://gateway-staging-eks.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
             ]
           }')"
           curl -fsS -X PUT \
@@ -439,6 +442,26 @@ jobs:
               --data "$route_body" >/dev/null
           fi
           echo "deployed ${WORKER_NAME} and route ${WORKER_ROUTE}"
+
+          # A Worker script upload replaces its bindings. Prove the gateway
+          # bindings above survived the deploy before declaring staging ready.
+          for attempt in $(seq 1 12); do
+            response_headers="$(mktemp)"
+            response_body="$(mktemp)"
+            status="$(curl -sS --max-time 15 -D "$response_headers" -o "$response_body" -w '%{http_code}' "https://${GATEWAY_HOST}/health" || true)"
+            backend_service="$(awk 'BEGIN { IGNORECASE=1 } /^x-backend-service:/ { gsub(/\r/, "", $2); print $2 }' "$response_headers" | tail -n1)"
+            healthy="$(jq -r '.status == "healthy"' "$response_body" 2>/dev/null || echo false)"
+            rm -f "$response_headers" "$response_body"
+            if [ "$status" = "200" ] && [ "$backend_service" = "gateway" ] && [ "$healthy" = "true" ]; then
+              echo "staging gateway Worker verified"
+              break
+            fi
+            if [ "$attempt" = "12" ]; then
+              echo "::error::staging gateway Worker failed verification (status=$status service=$backend_service healthy=$healthy)"
+              exit 1
+            fi
+            sleep 5
+          done
 
   deploy-web:
     name: Deploy staging web to Vercel

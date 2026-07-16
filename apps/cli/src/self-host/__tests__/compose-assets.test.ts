@@ -445,6 +445,58 @@ describe('full self-host Docker distribution', () => {
     expect(script).toContain('DRIFT:');
   });
 
+  test('updater.sh: expected image is resolved per service, never via `config --images <svc>` (dependency-closure bug)', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    // The docker:cli image's compose prints the service's whole depends_on
+    // closure for `config --images <svc>` — head -n1 then returns a
+    // DEPENDENCY's image, making every service look drifted (caddy "expected"
+    // kortix-api, kortix-api "expected" kong, …), stamping every update
+    // DEGRADED and recreating stateful Supabase services on each run. Seen
+    // live on both self-host boxes during the v0.10.3 roll.
+    expect(script).toContain('service_image_ref()');
+    expect(script).not.toMatch(/config --images "\$svc"/);
+  });
+
+  test('updater.sh: service_image_ref parses the service\'s own image out of a rendered config (executed via sh)', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const fn = script.slice(script.indexOf('service_image_ref() {'), script.indexOf('\n}', script.indexOf('service_image_ref() {')) + 2);
+    expect(fn).toContain('awk');
+
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-updater-imgref-'));
+    try {
+      const fixture = join(dir, 'rendered.yml');
+      const harness = join(dir, 'harness.sh');
+      const fakeCompose = join(dir, 'fakecompose');
+      Bun.write(
+        fixture,
+        [
+          'name: kortix-default',
+          'services:',
+          '  caddy:',
+          '    image: caddy:2.10.2-alpine',
+          '    restart: unless-stopped',
+          '  kortix-api:',
+          '    depends_on:',
+          '      supabase-db:',
+          '        condition: service_healthy',
+          '    image: kortix/kortix-api:stable',
+          '  llm-gateway:',
+          '    image: "kortix/kortix-gateway:stable"',
+          '',
+        ].join('\n'),
+      );
+      Bun.write(fakeCompose, `#!/bin/sh\ncat "${fixture}"\n`);
+      Bun.write(harness, `#!/bin/sh\nCOMPOSE="sh ${fakeCompose}"\n${fn}\nservice_image_ref "$1"\n`);
+      const results = Bun.spawnSync(['sh', harness, 'kortix-api']);
+      expect(results.stdout.toString().trim()).toBe('kortix/kortix-api:stable');
+      expect(Bun.spawnSync(['sh', harness, 'caddy']).stdout.toString().trim()).toBe('caddy:2.10.2-alpine');
+      expect(Bun.spawnSync(['sh', harness, 'llm-gateway']).stdout.toString().trim()).toBe('kortix/kortix-gateway:stable');
+      expect(Bun.spawnSync(['sh', harness, 'no-such-service']).stdout.toString().trim()).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('updater.sh: disk-space preflight runs before any pull, and image GC runs only after a fully successful run', () => {
     const script = kortixRuntimeAssets['updater.sh'];
     const perform = script.slice(script.indexOf('\nperform_update() {'), script.indexOf('next_run_epoch()'));

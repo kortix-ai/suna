@@ -104,6 +104,24 @@ image_id_of_ref() {
   docker image inspect --format '{{.Id}}' "$1" 2>/dev/null || true
 }
 
+# The image ref the rendered config expects for ONE service. Never use
+# `$COMPOSE config --images <svc>` for this: on the compose builds shipped in
+# the docker:cli updater image it prints the service's whole dependency
+# closure (its depends_on graph), in graph order — `head -n1` then returns a
+# DEPENDENCY's image (caddy "expected" kortix-api, kortix-api "expected"
+# kong, …), which made every service look drifted, stamped every update
+# DEGRADED, and needlessly recreated stateful Supabase services on each run.
+# Parse the service's own `image:` line out of the rendered config instead
+# (same busybox-awk approach as publishes_host_port; `config` interpolates
+# ${*_IMAGE} from .env, which the raw compose file would not).
+service_image_ref() {
+  $COMPOSE config 2>/dev/null | awk -v svc="$1" '
+    $0 == "  " svc ":" { inside = 1; next }
+    inside && /^  [A-Za-z0-9_-]+:/ { exit }
+    inside && /^    image:/ { sub(/^    image:[ ]*/, ""); gsub(/"/, ""); print; exit }
+  '
+}
+
 running_container_ids() {
   $COMPOSE ps --quiet "$1" 2>/dev/null || true
 }
@@ -152,7 +170,7 @@ publishes_host_port() {
 # reports "not up to date" on the very next run, with no extra bookkeeping.
 service_up_to_date() {
   svc="$1"
-  ref=$($COMPOSE config --images "$svc" 2>/dev/null | head -n1)
+  ref=$(service_image_ref "$svc")
   [ -z "$ref" ] && return 0
   desired=$(image_id_of_ref "$ref")
   [ -z "$desired" ] && return 0
@@ -338,7 +356,7 @@ check_drift() {
   drifted=0
   for svc in $($COMPOSE config --services 2>/dev/null); do
     case "$svc" in kortix-updater | kortix-migrate) continue ;; esac
-    ref=$($COMPOSE config --images "$svc" 2>/dev/null | head -n1)
+    ref=$(service_image_ref "$svc")
     [ -z "$ref" ] && continue
     desired=$(image_id_of_ref "$ref")
     [ -z "$desired" ] && continue
@@ -359,7 +377,7 @@ drift_report_json() {
   first=1
   for svc in $($COMPOSE config --services 2>/dev/null); do
     case "$svc" in kortix-updater | kortix-migrate) continue ;; esac
-    ref=$($COMPOSE config --images "$svc" 2>/dev/null | head -n1)
+    ref=$(service_image_ref "$svc")
     [ -z "$ref" ] && continue
     desired=$(image_id_of_ref "$ref")
     ids=$(running_container_ids "$svc")
@@ -412,7 +430,7 @@ disk_preflight() {
 sanity_check_images() {
   ok=0
   for svc in $ROLL_SERVICES $MIGRATE_SERVICE; do
-    ref=$($COMPOSE config --images "$svc" 2>/dev/null | head -n1)
+    ref=$(service_image_ref "$svc")
     [ -z "$ref" ] && continue
     if [ -z "$(image_id_of_ref "$ref")" ]; then
       log "ERROR: $svc image '$ref' did not resolve locally after pull (sanity check failed)"
