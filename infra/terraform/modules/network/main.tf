@@ -28,26 +28,12 @@ locals {
   # use explicit maps at the resource boundary so static compliance analysis
   # can verify their required tags without evaluating locals or merge().
   internet_gateway_tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-igw" })
-  public_subnet_tag_assignments = merge([for i in range(var.az_count) : {
-    for key, value in var.extra_public_subnet_tags : "${i}:${key}" => {
-      subnet_index = i
-      key          = key
-      value        = value
-    }
-  }]...)
   nat_eip_tags = [for i in range(local.nat_count) : merge(
     { ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-eip-${i}" },
   )]
   nat_gateway_tags = [for i in range(local.nat_count) : merge(
     { ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-${i}" },
   )]
-  private_subnet_tag_assignments = merge([for i in range(var.az_count) : {
-    for key, value in var.extra_private_subnet_tags : "${i}:${key}" => {
-      subnet_index = i
-      key          = key
-      value        = value
-    }
-  }]...)
 }
 
 resource "aws_vpc" "this" {
@@ -82,25 +68,16 @@ resource "aws_subnet" "public" {
   # arbitrary instances to receive a public IP by default.
   map_public_ip_on_launch = false
   tags = {
-    ManagedBy   = "terraform"
-    Name        = "${var.name}-public-${local.azs[count.index]}"
-    Environment = lookup(var.tags, "Environment", "managed")
-    Project     = lookup(var.tags, "Project", "kortix")
-    Service     = lookup(var.tags, "Service", var.name)
-    Platform    = lookup(var.tags, "Platform", "network")
-    Tier        = "public"
+    ManagedBy                           = "terraform"
+    Name                                = "${var.name}-public-${local.azs[count.index]}"
+    Environment                         = lookup(var.tags, "Environment", "managed")
+    Project                             = lookup(var.tags, "Project", "kortix")
+    Service                             = lookup(var.tags, "Service", var.name)
+    Platform                            = lookup(var.tags, "Platform", "network")
+    Tier                                = "public"
+    "kubernetes.io/role/elb"            = lookup(var.extra_public_subnet_tags, "kubernetes.io/role/elb", null)
+    "kubernetes.io/cluster/${var.name}" = lookup(var.extra_public_subnet_tags, "kubernetes.io/cluster/${var.name}", null)
   }
-
-}
-
-# Kubernetes discovery tags use dynamic keys, so they are owned individually.
-# EKS callers configure the AWS provider to ignore the kubernetes.io/ prefix on
-# aggregate resource tags, preventing this resource from fighting aws_ec2_tag.
-resource "aws_ec2_tag" "public_subnet" {
-  for_each    = local.public_subnet_tag_assignments
-  resource_id = aws_subnet.public[each.value.subnet_index].id
-  key         = each.value.key
-  value       = each.value.value
 }
 
 resource "aws_route_table" "public" {
@@ -133,22 +110,16 @@ resource "aws_subnet" "private" {
   cidr_block        = local.private_subnets[count.index]
   availability_zone = local.azs[count.index]
   tags = {
-    ManagedBy   = "terraform"
-    Name        = "${var.name}-private-${local.azs[count.index]}"
-    Environment = lookup(var.tags, "Environment", "managed")
-    Project     = lookup(var.tags, "Project", "kortix")
-    Service     = lookup(var.tags, "Service", var.name)
-    Platform    = lookup(var.tags, "Platform", "network")
-    Tier        = "private"
+    ManagedBy                           = "terraform"
+    Name                                = "${var.name}-private-${local.azs[count.index]}"
+    Environment                         = lookup(var.tags, "Environment", "managed")
+    Project                             = lookup(var.tags, "Project", "kortix")
+    Service                             = lookup(var.tags, "Service", var.name)
+    Platform                            = lookup(var.tags, "Platform", "network")
+    Tier                                = "private"
+    "kubernetes.io/role/internal-elb"   = lookup(var.extra_private_subnet_tags, "kubernetes.io/role/internal-elb", null)
+    "kubernetes.io/cluster/${var.name}" = lookup(var.extra_private_subnet_tags, "kubernetes.io/cluster/${var.name}", null)
   }
-
-}
-
-resource "aws_ec2_tag" "private_subnet" {
-  for_each    = local.private_subnet_tag_assignments
-  resource_id = aws_subnet.private[each.value.subnet_index].id
-  key         = each.value.key
-  value       = each.value.value
 }
 
 resource "aws_eip" "nat" {

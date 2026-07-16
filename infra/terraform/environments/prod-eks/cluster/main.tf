@@ -35,12 +35,6 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
-
-  # Kubernetes subnet-discovery tags are managed by dedicated aws_ec2_tag
-  # resources in the network module, not the subnet's aggregate tag map.
-  ignore_tags {
-    key_prefixes = ["kubernetes.io/"]
-  }
 }
 
 provider "cloudflare" {
