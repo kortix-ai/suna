@@ -9,6 +9,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
+import { GatewayResolutionError } from '../errors';
 import type { FetchImpl } from '../http';
 import { type CircuitBreaker, backoffDelay, realSleep } from '../resilience';
 import {
@@ -124,11 +125,18 @@ async function admit(
     await hooks.assertBillingActive(principal.accountId);
     step('billing_ok', { ms: lap() });
   } catch (err) {
-    step('billing_inactive', { ms: lap(), reason: errorMessage(err) });
+    // The host's billing gate may attach the real reason (subscription_required
+    // / insufficient_credits / no_account / ...) as a `.reason` string property
+    // on the thrown error (see apps/api's BillingGateError) — this generic
+    // pipeline package can't import that host-specific class, so it duck-types
+    // the property instead of hardcoding one constant for every billing denial.
+    const reason = (err as { reason?: unknown })?.reason;
+    const errorCode = typeof reason === 'string' && reason ? reason : 'subscription_required';
+    step('billing_inactive', { ms: lap(), reason: errorMessage(err), code: errorCode });
     return {
       ok: false,
       status: 402,
-      errorCode: 'subscription_required',
+      errorCode,
       message: err instanceof Error ? err.message : 'Billing inactive',
       principal,
     };
@@ -337,6 +345,14 @@ export async function handleChatCompletions(
         }
       : metadata;
   const candidates: RoutedUpstreamCandidate[] = [];
+  // The most specific reason NO candidates came back for a route model — a
+  // host's resolveUpstream hook can throw a GatewayResolutionError (instead of
+  // returning an empty array) when it knows exactly why (no BYOK key, plan
+  // gate, expired Codex OAuth, disabled on this deployment, ...). The FIRST one
+  // wins: routeModels[0] is what the caller actually asked for, so its failure
+  // reason is the most relevant one to surface even if later fallback models
+  // fail for other/no reasons.
+  let resolutionError: GatewayResolutionError | null = null;
   for (const routeModel of routeModels) {
     try {
       const resolved = await hooks.resolveUpstream(principal, routeModel);
@@ -346,7 +362,12 @@ export async function handleChatCompletions(
       // that cannot refresh). A configured model policy treats that like an
       // unavailable candidate and continues to the next finite fallback.
       logger.warn(`[llm-gateway] model resolution failed for ${routeModel} ${requestId}:`, err);
-      step('model_resolution_failed', { routeModel, error: errorMessage(err) });
+      step('model_resolution_failed', {
+        routeModel,
+        error: errorMessage(err),
+        ...(err instanceof GatewayResolutionError ? { code: err.code } : {}),
+      });
+      if (!resolutionError && err instanceof GatewayResolutionError) resolutionError = err;
     }
   }
   step('resolved_candidates', {
@@ -363,21 +384,26 @@ export async function handleChatCompletions(
     })),
   });
   if (!candidates.length) {
-    step('model_unavailable', { model: requestedModel, routedModel });
+    const errorCode = resolutionError?.code ?? 'model_unavailable';
+    const message = resolutionError?.message ?? `No upstream configured for model "${routedModel}"`;
+    const suggestion =
+      resolutionError?.suggestion ?? 'Choose another model or connect the required provider, then retry.';
+    step('model_unavailable', { model: requestedModel, routedModel, errorCode });
     emit({
       ...id,
       requestedModel,
       resolvedModel: routedModel,
       status: 400,
       ok: false,
-      errorCode: 'model_unavailable',
+      errorCode,
+      errorMessage: message,
       request: capture(body),
       metadata: routingMetadata(null),
     });
     return gatewayErrorResponse(400, {
-      message: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable',
+      message, code: errorCode,
       provider: '', requestedModel, resolvedModel: routedModel, requestId,
-      suggestion: 'Choose another model or connect the required provider, then retry.',
+      suggestion,
     });
   }
 

@@ -173,6 +173,7 @@ import {
   getShellModePart,
   getTurnCost,
   getTurnError,
+  getTurnErrorDetails,
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
@@ -2335,6 +2336,11 @@ function SessionTurn({
     return undefined;
   }, [turn]);
 
+  // The gateway's structured fields (provider/suggestion/request_id) for
+  // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
+  // provider failed and WHAT to do about it instead of only the raw message.
+  const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
+
   // Shell mode detection
   const shellModePart = useMemo(() => getShellModePart(turn), [turn]);
 
@@ -2712,7 +2718,9 @@ function SessionTurn({
           onPermissionReply={onPermissionReply}
           defaultOpen
         />
-        {turnError && <TurnErrorDisplay errorText={turnError} className="mt-2" />}
+        {turnError && (
+          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+        )}
         <ConnectProviderDialog
           open={connectProviderOpen}
           onOpenChange={setConnectProviderOpen}
@@ -3246,7 +3254,7 @@ function SessionTurn({
       )}
 
       {/* ── Error (abort / failure banner) ── */}
-      {turnError && <TurnErrorDisplay errorText={turnError} />}
+      {turnError && <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} />}
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 

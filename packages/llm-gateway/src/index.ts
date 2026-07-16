@@ -23,13 +23,14 @@ export type {
 
 export {
   CircuitOpenError,
+  GatewayResolutionError,
   NetworkError,
   TimeoutError,
   UpstreamHttpError,
   defaultIsRetryable,
   indicatesUpstreamDown,
 } from './errors';
-export type { UpstreamErrorKind } from './errors';
+export type { NoUpstreamReasonCode, UpstreamErrorKind } from './errors';
 
 export { calculateCost } from './usage';
 export type { CostBreakdown, TokenUsage } from './usage';

@@ -432,3 +432,26 @@ export async function getResolvedProjectSecretValue(
   if (!chosen) return null;
   return decryptProjectSecret(projectId, chosen.valueEnc);
 }
+
+/**
+ * Whether ANY row exists for `name` in this project, regardless of ownership
+ * or visibility to the caller. Used only for gateway error messaging — when
+ * `getResolvedProjectSecretValue` resolves nothing for a user, this
+ * distinguishes "nobody has connected this provider" (never-connected, code
+ * `provider_not_connected`) from "a teammate connected their own private key
+ * but never shared it with the project" (code `provider_key_private`), so the
+ * "No upstream configured" message can tell the two apart instead of always
+ * saying "connect the provider" to a user whose teammate already did.
+ */
+export async function projectSecretExistsForAnyOwner(
+  projectId: string,
+  name: string,
+): Promise<boolean> {
+  const normalizedName = name.trim().toUpperCase();
+  const rows = await db
+    .select({ secretId: projectSecrets.secretId })
+    .from(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, normalizedName)))
+    .limit(1);
+  return rows.length > 0;
+}

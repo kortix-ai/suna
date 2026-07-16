@@ -1,17 +1,18 @@
 import {
   type AuthedPrincipal,
   type UpstreamDescriptor,
+  GatewayResolutionError,
 } from '@kortix/llm-gateway';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
-import { getResolvedProjectSecretValue } from '../../projects/secrets';
-import { resolveCodexCredential } from '../credentials/codex';
+import { getResolvedProjectSecretValue, projectSecretExistsForAnyOwner } from '../../projects/secrets';
+import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { resolveGatewayRoute } from '../routing';
-import { getRuntimeManagedModel } from '../models/managed-models';
+import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 const TIER_CACHE_TTL_MS = 30_000;
@@ -42,6 +43,19 @@ function byokFallbackCandidates(): UpstreamDescriptor[] {
   return managed ? managedCandidates(managed) : [];
 }
 
+const PLAN_UPGRADE_SUGGESTION =
+  'Upgrade your plan to use this model, or choose a model available on your current plan.';
+
+/**
+ * `resolveCandidates` throws a `GatewayResolutionError` (never returns an
+ * empty array) whenever it can pin down WHY there's no upstream — the
+ * generic-return-[] shape can't carry a reason, and handler.ts's dispatch
+ * loop already treats a caught resolution error identically to an empty
+ * result for control flow (see handler.ts's `resolveUpstream` try/catch), so
+ * this is a non-breaking, additive change: it only adds information for the
+ * final "no candidates at all" response to surface instead of the one-size-
+ * fits-all "No upstream configured for model X".
+ */
 export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
@@ -61,12 +75,46 @@ export async function resolveCandidates(
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
-    if (!principal.projectId) return [];
-    const credential = await resolveCodexCredential(principal.projectId, principal.userId);
-    return credential ? [codexDescriptor(credential, effectiveModel)] : [];
+    if (!principal.projectId) {
+      throw new GatewayResolutionError(
+        'provider_not_connected',
+        'Connect Codex to use this model.',
+        'Connect your ChatGPT/Codex account in project settings, then retry.',
+      );
+    }
+    let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
+    try {
+      credential = await resolveCodexCredential(principal.projectId, principal.userId);
+    } catch (err) {
+      if (err instanceof CodexRefreshError) {
+        // Distinguishes "connected once, but the ChatGPT session expired or was
+        // revoked" from "never connected" (below) — both used to collapse into
+        // the same generic "No upstream configured" / "connect the provider"
+        // message, which is actively misleading for a user who already connected.
+        throw new GatewayResolutionError(
+          'provider_reauth_required',
+          'Your Codex session has expired or was revoked.',
+          'Reconnect Codex in project settings, then retry.',
+        );
+      }
+      throw err;
+    }
+    if (!credential) {
+      throw new GatewayResolutionError(
+        'provider_not_connected',
+        'Connect Codex to use this model.',
+        'Connect your ChatGPT/Codex account in project settings, then retry.',
+      );
+    }
+    return [codexDescriptor(credential, effectiveModel)];
   }
 
   const byok = resolveCatalogUpstream(provider);
+  // Set only when a BYOK-catalog provider is recognized but no usable key was
+  // found — held until the managed-model fallthrough below has a chance to
+  // resolve the SAME model id (rare but possible), so a real fallback candidate
+  // still wins over surfacing this as the final failure.
+  let byokFailure: GatewayResolutionError | null = null;
 
   if (byok && principal.projectId) {
     // SHARED key wins when configured; falls back to the CALLING user's own
@@ -102,6 +150,22 @@ export async function resolveCandidates(
       // (billed as Kortix credits) so the turn doesn't die.
       return isFreeTier ? [byokDescriptor] : [byokDescriptor, ...byokFallbackCandidates()];
     }
+    // No key resolved for THIS caller. Distinguish "nobody has connected this
+    // provider at all" from "a teammate connected their own key but kept it
+    // private" — both used to read as the same generic "No upstream
+    // configured" message with no clue which of the two applies.
+    const anyOwnerConnected = await projectSecretExistsForAnyOwner(principal.projectId, byok.envVar);
+    byokFailure = anyOwnerConnected
+      ? new GatewayResolutionError(
+          'provider_key_private',
+          `A ${provider} API key is connected by a teammate, but it's private and not shared with this project.`,
+          `Ask them to share the ${provider} key with the project, or add your own ${provider} API key.`,
+        )
+      : new GatewayResolutionError(
+          'provider_not_connected',
+          `No ${provider} API key is connected for this project.`,
+          `Add a ${provider} API key in project settings, then retry.`,
+        );
   }
 
   // The platform's MANAGED route (Bedrock or OpenRouter on KORTIX'S OWN shared
@@ -109,18 +173,57 @@ export async function resolveCandidates(
   // getRuntimeManagedModel() only ever matches when KORTIX_MANAGED_PROVIDER_ENABLED
   // is on (RUNTIME_MANAGED_MODELS is empty otherwise — see managed-models.ts), so
   // a self-host never reaches this branch for an explicitly-named managed model;
-  // it falls through to the final `return []` below → a clear "model not
-  // available on this deployment" error, never a silent fallback to Kortix
-  // credits. A BYOK catalog model (bare `provider/model`) is handled above and
-  // requires the user's own key; it never falls through here.
+  // it falls through to the checks below → a clear "model not available on this
+  // deployment" error, never a silent fallback to Kortix credits. A BYOK catalog
+  // model (bare `provider/model`) is handled above and requires the user's own
+  // key; it never falls through here.
   const managed = getRuntimeManagedModel(effectiveModel);
   if (managed && config.LLM_GATEWAY_ENABLED && config.KORTIX_MANAGED_PROVIDER_ENABLED) {
-    if (principal.freeModelsOnly) return [];
+    if (principal.freeModelsOnly) {
+      throw new GatewayResolutionError(
+        'plan_upgrade_required',
+        `"${effectiveModel}" requires a paid plan.`,
+        PLAN_UPGRADE_SUGGESTION,
+      );
+    }
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
-      if (accountIsFreeTierForModels(tier)) return [];
+      if (accountIsFreeTierForModels(tier)) {
+        throw new GatewayResolutionError(
+          'plan_upgrade_required',
+          `"${effectiveModel}" requires a paid plan.`,
+          PLAN_UPGRADE_SUGGESTION,
+        );
+      }
     }
-    return managedCandidates(managed);
+    const candidates = managedCandidates(managed);
+    if (candidates.length) return candidates;
+    // managed=true and every gate passed, but managedCandidates() itself found
+    // no usable transport credential (an operator-side misconfiguration, e.g.
+    // KORTIX_MANAGED_PROVIDER_ENABLED on without AWS_BEDROCK_API_KEY/
+    // OPENROUTER_API_KEY set) — falls through to the deployment-disabled
+    // message below, which is the closest accurate reason a caller can act on.
   }
-  return [];
+
+  // A BYOK-recognized provider with no usable key wins over the generic
+  // "model not found" — the model IS real, we just can't reach it right now.
+  if (byokFailure) throw byokFailure;
+
+  // The model id is a genuine managed-model id (checked against the BUNDLED
+  // catalog, which — unlike RUNTIME_MANAGED_MODELS — is never gated by
+  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above: either the
+  // managed provider is off on this deployment, or it's misconfigured.
+  if (isKnownManagedModelId(effectiveModel)) {
+    throw new GatewayResolutionError(
+      'model_disabled_on_deployment',
+      `The "${effectiveModel}" model requires Kortix's managed provider, which is disabled on this deployment.`,
+      'Connect your own API key for a BYOK-compatible model, or ask your deployment operator to enable the managed provider.',
+    );
+  }
+
+  throw new GatewayResolutionError(
+    'model_not_found',
+    `"${effectiveModel}" is not a recognized model.`,
+    'Check the model id, or choose a different model.',
+  );
 }

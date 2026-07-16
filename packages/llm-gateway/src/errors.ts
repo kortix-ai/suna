@@ -39,6 +39,31 @@ export class UpstreamHttpError extends Error {
   }
 }
 
+// Reason a route model produced NO upstream candidates at all — thrown by a
+// host's `resolveUpstream` hook (instead of the generic empty-array return
+// used for merely "irrelevant to this route model") so the pipeline can carry
+// a specific, actionable code/message/suggestion all the way to the client
+// instead of collapsing every cause into one generic "No upstream configured"
+// string. See packages/llm-gateway/src/pipeline/handler.ts's dispatch loop.
+export type NoUpstreamReasonCode =
+  | 'model_not_found'
+  | 'model_disabled_on_deployment'
+  | 'plan_upgrade_required'
+  | 'provider_not_connected'
+  | 'provider_key_private'
+  | 'provider_reauth_required';
+
+export class GatewayResolutionError extends Error {
+  constructor(
+    readonly code: NoUpstreamReasonCode,
+    message: string,
+    readonly suggestion: string,
+  ) {
+    super(message);
+    this.name = 'GatewayResolutionError';
+  }
+}
+
 export function defaultIsRetryable(err: unknown): boolean {
   if (err instanceof CircuitOpenError) return false;
   if (err instanceof TimeoutError) return true;
