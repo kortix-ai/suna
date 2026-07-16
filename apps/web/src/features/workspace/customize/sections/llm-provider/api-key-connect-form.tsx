@@ -9,20 +9,26 @@ import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { setPersonalProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft, ExternalLink, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
+import { DEFAULT_SECRET_VISIBILITY, SECRET_VISIBILITY_COPY } from './constants';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
 
-// LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
-// invisible to the LLM gateway's shared-row resolution, so every model turn
-// dies with "No upstream configured" while the picker still shows the provider
-// as connected (2026-07-07 prod incident). The server rejects personal
-// overrides for provider env vars; this form never offers the choice.
+// LLM provider credentials default to SHARED (project-wide) — every session in
+// the workspace can use them. A key saved PRIVATE (only me) is invisible to
+// every OTHER member's session; the gateway falls back to it ONLY for the
+// saving member's own sessions (getResolvedProjectSecretValue), never anyone
+// else's. Before that fallback existed, a private key here just silently died
+// with "No upstream configured" while the picker still showed it as connected
+// (2026-07-07 prod incident, recurred on self-host deployments carrying
+// pre-existing private rows) — this toggle now defaults to Shared specifically
+// so nobody has to discover that distinction the hard way. Default + copy live
+// in constants.ts (unit-tested there) so the two never drift apart.
 
 export function ApiKeyConnectForm({
   projectId,
@@ -41,14 +47,23 @@ export function ApiKeyConnectForm({
     Object.fromEntries(provider.envVars.map((v) => [v, ''])),
   );
   const [error, setError] = useState<string | null>(null);
+  // Defaults to shared — see the file-level comment on why.
+  const [visibility, setVisibility] = useState(DEFAULT_SECRET_VISIBILITY);
 
   const upsert = useMutation({
     mutationFn: async () => {
       for (const envVar of provider.envVars) {
-        await upsertProjectSecret(projectId, {
-          name: envVar,
-          value: values[envVar] ?? '',
-        });
+        if (visibility === 'private') {
+          await setPersonalProjectSecret(projectId, envVar, {
+            value: values[envVar] ?? '',
+            active: true,
+          });
+        } else {
+          await upsertProjectSecret(projectId, {
+            name: envVar,
+            value: values[envVar] ?? '',
+          });
+        }
       }
     },
     onSuccess: () => {
@@ -135,9 +150,32 @@ export function ApiKeyConnectForm({
           </div>
         ))}
 
-        <p className="text-muted-foreground text-xs">
-          Project-wide — every member of this project can use this provider.
-        </p>
+        <div
+          role="radiogroup"
+          aria-label="Who can use this key"
+          className="border-border/50 grid grid-cols-2 gap-2 rounded-xl border p-1"
+        >
+          {(Object.entries(SECRET_VISIBILITY_COPY) as Array<
+            [keyof typeof SECRET_VISIBILITY_COPY, (typeof SECRET_VISIBILITY_COPY)[keyof typeof SECRET_VISIBILITY_COPY]]
+          >).map(([option, copy]) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={visibility === option}
+              onClick={() => setVisibility(option)}
+              className={cn(
+                'rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
+                visibility === option
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <span className="block font-medium">{copy.label}</span>
+              <span className="text-muted-foreground block text-[11px]">{copy.description}</span>
+            </button>
+          ))}
+        </div>
 
         {provider.helpUrl && helpHostname && (
           <a
