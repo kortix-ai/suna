@@ -351,7 +351,8 @@ describe('novice-walkthrough fixes stay fixed', () => {
 describe('setup polish stays fixed', () => {
   test('the SSO test step has live verification (not eyeball-a-tab)', () => {
     expect(wizardSource).toContain('SsoTestStatusPanel');
-    expect(wizardSource).toContain("flow === 'sso' && <SsoTestStatusPanel");
+    // Whitespace-tolerant: the formatter may wrap the JSX condition.
+    expect(flatWizardSource).toContain("flow === 'sso' && ( <SsoTestStatusPanel");
   });
 
   test('a returning admin with a prior token gets an explanation + a skip', () => {
