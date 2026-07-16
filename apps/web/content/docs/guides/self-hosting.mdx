@@ -235,6 +235,8 @@ runs the exact same `kortix self-host init`/`start` described above.
 
 ```hcl
 module "kortix_selfhost" {
+  # The double slash is Terraform's repo//subdirectory separator — required
+  # syntax, not a typo.
   source = "github.com/kortix-ai/suna//infra/terraform/modules/selfhost-ec2"
 
   domain = "kortix.example.com"
