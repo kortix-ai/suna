@@ -57,7 +57,8 @@ export interface GuideStep {
   bullets?: string[];
   /** Render the copyable SP values (Entity ID + ACS URL) in this step. */
   showSpValues?: boolean;
-  /** Amber callout for the sharp edges (the stuff that silently fails). */
+  /** Amber callout for the sharp edges (the stuff that silently fails) —
+   *  double as the "#1 failure mode" note where relevant. */
   warning?: string;
   /** Muted footnote. */
   note?: string;
@@ -66,6 +67,17 @@ export interface GuideStep {
   /** Completion-bar label, e.g. "I've created an enterprise application". */
   doneLabel?: string;
   kind?: StepKind;
+  /** Which console this step happens in — rendered as a "you are here" badge
+   *  so an admin never has to guess whether a step means the Kortix
+   *  dashboard or the IdP's own admin center. Omit for steps not tied to a
+   *  single console (e.g. pure prep/reading). */
+  where?: 'kortix' | 'idp';
+  /** Exact click path inside that console, e.g. "Enterprise applications →
+   *  Kortix → Provisioning → Users and groups" — rendered as a breadcrumb
+   *  so the admin can navigate without reading prose. */
+  menuPath?: string;
+  /** Short reassuring line: what success looks like once this step is done. */
+  success?: string;
 }
 
 /**
@@ -139,7 +151,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       groupValueHint:
         'Entra sends group Object IDs (GUIDs) by default — map those GUIDs, or emit display names via "Groups assigned to the application" (needs Entra ID P1/P2).',
       preferredMetadata: 'url',
-      metadataSource: 'Single sign-on → section 3 "SAML Certificates" → App Federation Metadata Url',
+      metadataSource:
+        'Single sign-on → section 3 "SAML Certificates" → App Federation Metadata Url',
       metadataUrlPlaceholder:
         'https://login.microsoftonline.com/<tenant-id>/federationmetadata/2007-06/federationmetadata.xml?appid=…',
     },
@@ -147,7 +160,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'create-app',
         title: 'Create an enterprise application',
-        intro: 'Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.',
+        intro:
+          'Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.',
         content: [
           {
             kind: 'text',
@@ -508,7 +522,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'create-app',
         title: 'Create a custom SAML app',
-        intro: 'In the Google Admin console (admin.google.com): Apps → Web and mobile apps → Add app → Add custom SAML app.',
+        intro:
+          'In the Google Admin console (admin.google.com): Apps → Web and mobile apps → Add app → Add custom SAML app.',
       },
       {
         id: 'metadata',
@@ -541,7 +556,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'assign-users',
         title: 'Turn the app on',
-        intro: 'Back on the app page, set User access to ON for the org units or groups that may sign in.',
+        intro:
+          'Back on the app page, set User access to ON for the org units or groups that may sign in.',
       },
       importStep('groups'),
       testStep(),
@@ -601,17 +617,28 @@ const scimTokenStep: GuideStep = {
   id: 'token',
   title: 'Mint a SCIM token',
   kind: 'scim-token',
+  where: 'kortix',
   intro:
-    'Create the bearer token your identity provider will authenticate with, and copy the Tenant URL it posts to.',
+    'Create the bearer token your identity provider will authenticate with, and copy the Tenant URL it posts to. Both values stay visible in the panel on this page for the rest of the setup — you won’t need to write them down.',
+  success: 'A token appears with a public prefix, and the Tenant URL above it is ready to paste.',
   warning:
-    'The token is shown ONCE — copy it now. To rotate later: mint a new token, update the IdP, then revoke the old one from the SCIM card.',
+    'The secret is shown once at mint time — after that only its prefix is visible. If you lose it before finishing, mint a new one and revoke the old one from the SCIM card in Settings.',
 };
 
 const scimTestStep = (extra?: string): GuideStep => ({
   id: 'test',
   title: 'Verify provisioning',
   kind: 'test',
-  intro: 'Push a test user from your identity provider and confirm the lifecycle end to end.',
+  where: 'idp',
+  intro:
+    'Back in Kortix, watch the live status below while you push or wait for the sync — no need to tab back and forth to check.',
+  content: [
+    {
+      kind: 'image',
+      src: '/docs/entra/07-verify.png',
+      alt: 'Entra Provisioning overview showing a completed cycle with Import, Scope, Match, and Provision all reporting Success',
+    },
+  ],
   bullets: [
     'A pushed user appears under Members (as a pending invite until their first sign-in).',
     'Deactivating the user in the IdP removes their membership and revokes their tokens.',
@@ -619,6 +646,8 @@ const scimTestStep = (extra?: string): GuideStep => ({
     'Group membership for a user who hasn’t signed in yet is held on their invite and applies automatically at their FIRST sign-in — an empty group before that is expected, not a failure.',
     ...(extra ? [extra] : []),
   ],
+  success:
+    'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
 });
 
 export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
@@ -635,53 +664,80 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'before',
         title: 'Before you start',
+        where: 'idp',
         intro:
-          'Directory Sync pushes users and groups from Entra proactively — deactivations apply without waiting for a sign-in.',
+          'Directory Sync pushes users and groups from Entra proactively — deactivations apply without waiting for a sign-in. It reuses the same enterprise application you already registered for SAML SSO; nothing new to create.',
+        content: [
+          {
+            kind: 'image',
+            src: '/docs/entra/01-enterprise-app.png',
+            alt: 'Entra enterprise application overview page with the Single sign-on, Provisioning, and Users and groups tabs in the left nav',
+          },
+        ],
         bullets: [
-          'Use the same enterprise application you created for SAML SSO.',
-          'Automatic provisioning requires Entra ID P1/P2 (trial works).',
-          'Connect SAML SSO first so provisioned users can actually sign in.',
+          'Open the same enterprise application you created for SAML SSO (Entra ID → Enterprise applications → your app).',
+          'Automatic provisioning requires Entra ID P1/P2 (a trial works fine).',
+          'Connect SAML SSO first — Directory Sync can create and remove accounts, but users still need SSO to sign in.',
         ],
       },
       scimTokenStep,
       {
-        id: 'connect',
-        title: 'Connect provisioning in Entra',
-        intro: 'In your enterprise application: Provisioning → Get started.',
-        bullets: [
-          'Provisioning Mode: Automatic.',
-          'Tenant URL → the Tenant URL from the previous step.',
-          'Secret Token → the token from the previous step.',
-          'Click "Test Connection", then Save.',
+        id: 'configure',
+        title: 'Configure provisioning in Entra',
+        where: 'idp',
+        menuPath: 'Enterprise applications → your app → Provisioning',
+        intro:
+          'One page, four things to check, in order: credentials, mappings, assignment, then start. The values panel on the left has everything you need to paste.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Open "Provisioning" in the left nav and click "Get started" (first time) or "Edit provisioning" (if already configured). Set "Provisioning Mode" to "Automatic".',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/03-provisioning-credentials.png',
+            alt: 'Entra Provisioning Admin Credentials section with Tenant URL, Secret Token, and Test Connection',
+          },
+          {
+            kind: 'text',
+            text: 'Under "Admin Credentials", paste the values from the panel: "Tenant URL" and "Secret Token". Click "Test Connection" — a green "Testing the connection was successful" banner is success. Click "Save".',
+          },
+          {
+            kind: 'text',
+            text: 'Expand "Mappings" → "Provision Microsoft Entra ID Users". The one row that matters: "userName" must map to source attribute "user.userprincipalname" — that is how Kortix matches the SCIM user to a Kortix account. Leave the rest at their defaults.',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/04-attribute-mappings.png',
+            alt: 'Entra provisioning attribute mappings list with the userName to user.userprincipalname row highlighted',
+          },
+          {
+            kind: 'text',
+            text: 'Assignment is the allow-list: only users/groups assigned to this application get provisioned. In the left nav click "Users and groups" → "+ Add user/group" → pick a user (recommended: assign yourself first so you can watch yourself arrive) → "Assign".',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/05-assign-users.png',
+            alt: 'Entra Users and groups panel with Add user/group open and a user selected for assignment',
+          },
+          {
+            kind: 'text',
+            text: 'Back in "Provisioning" → "Settings", set "Scope" to "Sync only assigned users and groups" — it only appears here after credentials are saved. Then click "Start provisioning" at the top of the Provisioning overview page (or "Provision on demand" to push one assigned user instantly instead of waiting for the ~40-minute cycle).',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/06-start-provisioning.png',
+            alt: 'Entra Provisioning overview page toolbar with Start provisioning and Provision on demand buttons',
+          },
         ],
+        success:
+          'Test Connection passes, the Mappings list shows userName → user.userprincipalname, at least one user/group is assigned, and the Provisioning overview shows "On".',
         warning:
-          'Paste the Tenant URL exactly as shown — it is NOT the regular API URL (no /v1 suffix). A hand-built URL is the #1 cause of a failing Test Connection.',
-      },
-      {
-        id: 'mappings',
-        title: 'Check the attribute mappings',
-        intro:
-          'The default mappings work. The one that matters: userName must map to the user’s email (userPrincipalName) — it is how Kortix matches accounts.',
-      },
-      {
-        id: 'scope',
-        title: 'Assign who gets provisioned',
-        intro:
-          'In "Users and groups", assign the users/groups to provision. Keep "Scope" on "Sync only assigned users and groups".',
-        note: 'The Scope selector only appears under Settings AFTER you save the provisioning credentials — if you don’t see it, save first. Assigning a whole group requires Entra ID P1/P2.',
-      },
-      {
-        id: 'provision',
-        title: 'Push a test user',
-        intro:
-          'Use "Provision on demand" (instant, P1/P2) to push one assigned user now — or "Start provisioning" for the regular ~40-minute cycles.',
-        bullets: [
-          'Provision on demand → pick the user → Provision.',
-          'All four stages (Import, Scope, Match, Perform action) should report Success.',
-        ],
+          '#1 failure mode: Test Connection fails. Almost always a hand-typed or truncated Tenant URL — re-copy it exactly from the panel on the left (it is not the regular Kortix API URL and has no /v1 suffix). Assigning a whole GROUP (rather than individual users) needs Entra ID P1/P2; on Free, assign users one at a time.',
+        doneLabel: 'I’ve configured, mapped, assigned, and started provisioning',
       },
       scimTestStep(
-        'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again.',
+        'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again — or run "Provision on demand" to apply it immediately.',
       ),
     ],
   },
@@ -691,8 +747,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     blurb: 'Automatic provisioning from Okta',
     config: {
       groupClaimName: 'groups',
-      groupValueHint:
-        'Groups pushed via Push Groups are created in Kortix under their Okta names.',
+      groupValueHint: 'Groups pushed via Push Groups are created in Kortix under their Okta names.',
     },
     steps: [
       {
@@ -718,9 +773,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'to-app',
         title: 'Turn on the sync actions',
         intro: 'On the Provisioning tab → To App → Edit.',
-        bullets: [
-          'Enable Create Users, Update User Attributes, and Deactivate Users → Save.',
-        ],
+        bullets: ['Enable Create Users, Update User Attributes, and Deactivate Users → Save.'],
       },
       {
         id: 'assign',

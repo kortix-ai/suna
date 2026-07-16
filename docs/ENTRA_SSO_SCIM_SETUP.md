@@ -11,6 +11,25 @@ account-scoped and gated on the `sso` entitlement.
 
 ---
 
+## Screenshots
+
+The guided wizard (and this doc) reference the same numbered set of Entra
+screenshots, stored under `apps/web/public/docs/entra/`. If a file is
+missing, the wizard shows a "Screenshot coming" placeholder instead of a
+broken image — capture these from a real tenant to fill the gaps:
+
+| # | File | Capture (in entra.microsoft.com, unless noted) |
+| - | ---- | ------------------------------------------------ |
+| 1 | `01-enterprise-app.png` | Identity → Applications → **Enterprise applications** → your app's **Overview** page, with the Single sign-on / Provisioning / Users and groups tabs visible in the left nav. |
+| 2 | `02-saml-config.png` | Same app → **Single sign-on** → SAML → **Basic SAML Configuration** panel with Identifier (Entity ID) and Reply URL (ACS) filled in. |
+| 3 | `03-provisioning-credentials.png` | Same app → **Provisioning** → Get started → **Admin Credentials** section, with the Tenant URL / Secret Token fields and the "Test Connection" button. |
+| 4 | `04-attribute-mappings.png` | Same app → **Provisioning** → **Mappings** → "Provision Microsoft Entra ID Users" expanded, with the `userName` → `user.userprincipalname` row visible. |
+| 5 | `05-assign-users.png` | Same app → **Users and groups** → "+ Add user/group" panel with a user selected, ready to Assign. |
+| 6 | `06-start-provisioning.png` | Same app → **Provisioning** overview page toolbar, showing "Start provisioning" / "Provision on demand". |
+| 7 | `07-verify.png` | Same app → **Provisioning** overview → the progress/logs panel after a cycle, showing Import / Scope / Match / Provision all reporting Success. |
+
+---
+
 ## How the model works (read this first)
 
 Two independent channels, joined by **IAM groups**:
@@ -69,7 +88,8 @@ Kortix account bearer (owner/admin JWT or PAT).
 Kortix delegates SAML assertion validation to Supabase Auth, so the IdP metadata
 is registered **with Supabase**, and Kortix stores the resulting provider id.
 
-1. **In Entra**: create an **Enterprise Application** → *Single sign-on* → **SAML**.
+1. **In Entra**: create an **Enterprise Application** ([screenshot 1](#screenshots)) →
+   *Single sign-on* → **SAML** ([screenshot 2](#screenshots)).
    - **Identifier (Entity ID)** and **Reply URL (ACS)**: copy both values from the
      **Service provider details** section of the SAML SSO card (Account →
      **Settings** → **Identity & directory** → **SAML SSO** — visible before you
@@ -187,6 +207,9 @@ sync (within the ~15 s cache window).
 
 SCIM lets Entra provision proactively rather than only at login — recommended so
 deactivations and group changes propagate without waiting for the user to sign in.
+It reuses the **same enterprise application** you created for SAML SSO
+([screenshot 1](#screenshots)) — there's nothing new to create in Entra, only a
+new tab (**Provisioning**) to configure.
 
 1. **Mint a SCIM token** (store the plaintext — shown once):
    ```
@@ -194,15 +217,42 @@ deactivations and group changes propagate without waiting for the user to sign i
    { "name": "Entra provisioning" }
    → { "token": "…", "scim_base_url": "/scim/v2/accounts/{accountId}" }
    ```
+   The dashboard wizard keeps both the Tenant URL and this token pinned in a
+   values panel on every later step — no need to copy them into a notepad.
 
-2. **In Entra** → Enterprise App → **Provisioning** → *Automatic*:
+2. **In Entra** → Enterprise App → **Provisioning** → *Get started* → set
+   **Provisioning Mode** to *Automatic*:
    - **Tenant URL**: `https://<api>/scim/v2/accounts/{accountId}` (from
-     `scim_base_url`).
-   - **Secret Token**: the SCIM token from step 1.
+     `scim_base_url`) and **Secret Token**: the token from step 1
+     ([screenshot 3](#screenshots)).
    - **Test Connection** (Entra probes `/ServiceProviderConfig` + a filtered
-     `/Users` query — both implemented).
-   - Map attributes: `userName` → user email, keep `externalId`. Assign users/groups
-     to the app and **Start provisioning**.
+     `/Users` query — both implemented), then **Save**.
+   - **#1 failure mode**: Test Connection fails. Almost always a hand-typed or
+     truncated Tenant URL — re-copy it exactly; it is not the regular Kortix
+     API URL and has no `/v1` suffix.
+
+3. **Check the attribute mappings** — Provisioning → **Mappings** → "Provision
+   Microsoft Entra ID Users" ([screenshot 4](#screenshots)). The default
+   mappings work; the one that matters is `userName` → source attribute
+   `user.userprincipalname` — that is how Kortix matches the SCIM user to a
+   Kortix account.
+
+4. **Assign who gets provisioned** — this is the allow-list: only users/groups
+   assigned to the application are ever synced. Enterprise applications → your
+   app → **Users and groups** → **+ Add user/group** → pick a user (recommend
+   assigning yourself first) → **Assign** ([screenshot 5](#screenshots)).
+   Assigning a whole *group* (rather than individual users) needs Entra ID
+   P1/P2 — on Free, assign users one at a time. Back in **Provisioning** →
+   **Settings**, the **Scope** dropdown (keep it on "Sync only assigned users
+   and groups") only appears here *after* credentials are saved in step 2 — if
+   you don't see it, save the credentials first.
+
+5. **Start provisioning** ([screenshot 6](#screenshots)) — click **Start
+   provisioning** on the Provisioning overview page for the regular ~40-minute
+   cycles, or **Provision on demand** (P1/P2) to push one assigned user
+   instantly so you can watch it complete. Success looks like all four stages
+   — Import, Scope, Match, Perform action — reporting **Success**
+   ([screenshot 7](#screenshots)).
 
 SCIM behavior worth knowing:
 - **Users**: create by email; a not-yet-signed-up user is provisioned as an invite
