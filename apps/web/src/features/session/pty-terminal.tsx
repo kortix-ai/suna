@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import type { Pty } from '@kortix/sdk/opencode-client';
+import { classifyPtyClose } from './pty-connection';
 
 // ============================================================================
 // Theme
@@ -56,6 +57,8 @@ interface PtyTerminalProps {
   /** Server URL to connect to — locks the WS to this server even after instance switch. */
   serverUrl?: string;
   onStatusChange?: (status: ConnectionStatus) => void;
+  /** Called when reconnecting this ID can never work (daemon no longer owns it). */
+  onUnavailable?: () => void;
 }
 
 // ============================================================================
@@ -117,6 +120,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   hidden,
   serverUrl,
   onStatusChange,
+  onUnavailable,
 }, ref) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -340,16 +344,21 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         console.log('[PtyTerminal] WebSocket closed:', event.code, event.reason);
         wsRef.current = null;
 
-        const reason = (event.reason || '').toLowerCase();
-        const closedByIdleTimeout = event.code === 1000 && reason.includes('idle timeout');
-        const shouldReconnect = closedByIdleTimeout || event.code !== 1000;
+        const action = classifyPtyClose({
+          code: event.code,
+          reason: event.reason || '',
+          hadError: hadErrorRef.current,
+        });
 
         if (!hadErrorRef.current) {
           term.writeln(`\r\n\x1b[33mConnection closed${event.code ? ` (${event.code})` : ''}${event.reason ? ': ' + event.reason : ''}\x1b[0m`);
         }
 
-        if (shouldReconnect) {
-          scheduleReconnect(closedByIdleTimeout ? 'idle timeout' : `code ${event.code}`);
+        if (action === 'replace') {
+          updateStatus('error');
+          onUnavailable?.();
+        } else if (action === 'reconnect') {
+          scheduleReconnect(event.reason || `code ${event.code}`);
         } else {
           reconnectAttemptsRef.current = 0;
           updateStatus('disconnected');
