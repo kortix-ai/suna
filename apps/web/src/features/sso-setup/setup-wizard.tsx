@@ -1279,7 +1279,12 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   // of accountId. Lifted here (rather than local to the token step) so the
   // values panel can keep showing both after the step unmounts.
   const scimTenantUrl = useMemo(
-    () => buildScimBaseUrl(accountId, getEnv().BACKEND_URL),
+    () =>
+      buildScimBaseUrl(
+        accountId,
+        getEnv().BACKEND_URL,
+        typeof window === 'undefined' ? null : window.location.origin,
+      ),
     [accountId],
   );
   const [scimMinted, setScimMinted] = useState<CreatedScimToken | null>(null);

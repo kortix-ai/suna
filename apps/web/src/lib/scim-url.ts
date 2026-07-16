@@ -9,17 +9,26 @@
  * `https://api.kortix.com/scim/v2/...`.
  *
  * `backendUrl` may legitimately be a root-relative proxy path (e.g. `/v1`) in
- * same-origin deployments — there we can't derive a public origin, so we return
- * the relative path and the caller keeps its "prepend your API origin" hint.
+ * same-origin deployments. There the web origin IS the public origin (the app
+ * proxies `/scim` to the API — see next.config rewrites), so callers pass the
+ * page origin and we resolve against it. A relative path is returned only when
+ * neither an absolute backend URL nor a page origin is available (SSR).
  */
-export function buildScimBaseUrl(accountId: string, backendUrl: string | null | undefined): string {
+export function buildScimBaseUrl(
+  accountId: string,
+  backendUrl: string | null | undefined,
+  pageOrigin?: string | null,
+): string {
   const path = `/scim/v2/accounts/${accountId}`;
   if (backendUrl && /^https?:\/\//i.test(backendUrl)) {
     try {
       return new URL(backendUrl).origin + path;
     } catch {
-      /* malformed URL — fall through to the relative path */
+      /* malformed URL — fall through to the page-origin fallback */
     }
+  }
+  if (pageOrigin && /^https?:\/\//i.test(pageOrigin)) {
+    return pageOrigin.replace(/\/$/, '') + path;
   }
   return path;
 }
