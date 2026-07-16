@@ -1,13 +1,22 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 
-import { acpConfigOptionPresets, findAcpModelConfigOption } from '@/features/session/acp-composer-adapters';
+import {
+  acpConfigOptionPresets,
+  findAcpModelConfigOption,
+} from '@/features/session/acp-composer-adapters';
 import { deriveComposerBlockingAction } from '@/features/session/model-availability';
-import { type AttachedFile, type TrackedMention, SessionChatInput } from '@/features/session/session-chat-input';
+import {
+  type AttachedFile,
+  type TrackedMention,
+  SessionChatInput,
+} from '@/features/session/session-chat-input';
+import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
+import { useUnifiedModelPickerEnabled } from '@/hooks/projects/use-unified-model-picker-enabled';
+import { useModelStore } from '@/hooks/runtime/use-model-store';
 import { useRuntimeConfig } from '@/hooks/runtime/use-runtime-config';
 import { type ModelKey, useRuntimeLocal } from '@/hooks/runtime/use-runtime-local';
-import { useModelStore } from '@/hooks/runtime/use-model-store';
 import {
   type Agent,
   type Command,
@@ -16,17 +25,19 @@ import {
   useRuntimeProviders,
   useRuntimeSessions,
 } from '@/hooks/runtime/use-runtime-sessions';
+import type { AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
+import type { FlatModel, ModelPickerGroup } from '@kortix/sdk/react';
 import {
   agentHarness,
   agentRequiresCatalogModel,
   connectionDisplayName,
   formatModelString,
   harnessPresentation,
+  parseModelKey,
   useComposerCapabilities,
+  useModelPicker,
   useProjectConfig,
 } from '@kortix/sdk/react';
-import type { AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
-import type { FlatModel } from '@kortix/sdk/react';
 
 export interface ComposerOptions {
   agent?: string;
@@ -70,13 +81,17 @@ export function buildComposerOptions(input: {
     options.runtimeModel = input.runtimeModel.trim();
   }
   const selectedModel = agentRequiresCatalogModel(input.agent)
-    ? input.model ? formatModelString(input.model) : null
+    ? input.model
+      ? formatModelString(input.model)
+      : null
     : input.runtimeModel?.trim() || null;
   if (input.connectionId) options.connectionId = input.connectionId;
   if (input.connectionId || selectedModel) {
     options.modelSelection = {
       kind: selectedModel
-        ? input.presets?.some((preset) => preset.id === selectedModel) ? 'preset' : 'custom'
+        ? input.presets?.some((preset) => preset.id === selectedModel)
+          ? 'preset'
+          : 'custom'
         : 'default',
       modelId: selectedModel,
       connectionId: input.connectionId ?? null,
@@ -84,6 +99,57 @@ export function buildComposerOptions(input: {
   }
   if (input.variant) options.variant = input.variant;
   return options;
+}
+
+/**
+ * A pre-session pick made through the unified `ModelPicker`, translated back
+ * to whichever persistence seam the LEGACY pickers already use for the same
+ * job — `useRuntimeLocal`'s per-session gateway `ModelKey` for a catalog
+ * (OpenCode) agent, `useModelStore`'s per-agent-name harness-native model
+ * string for a harness (Claude/Codex/Pi) agent. `useModelPicker`'s own
+ * `select()` has no persistence seam of its own (see the hook's doc comment
+ * on its local `pendingKey` state) — it only drives the picker's OWN
+ * immediate re-render (checkmark, trigger label). This function is the other
+ * half: what the composer must additionally do so the pick actually reaches
+ * `buildComposerOptions` at send-time, exactly like the legacy pickers do
+ * today. Pure and exported so the key-shape parsing (documented on
+ * `ModelPickerItem.key`) is unit-tested without mounting the composer.
+ */
+export type UnifiedModelPickSelection =
+  | { kind: 'catalog'; model: ModelKey | undefined }
+  | { kind: 'harness'; modelId: string | undefined }
+  | { kind: 'noop' };
+
+export function resolveUnifiedModelPickSelection(
+  key: string,
+  input: { catalogModelRequired: boolean; groups: ModelPickerGroup[] },
+): UnifiedModelPickSelection {
+  const item = input.groups
+    .flatMap((group) => group.items)
+    .find((candidate) => candidate.key === key);
+  if (key === 'auto' || item?.kind === 'auto') {
+    return input.catalogModelRequired
+      ? { kind: 'catalog', model: undefined }
+      : { kind: 'harness', modelId: undefined };
+  }
+  if (key.startsWith('custom:')) {
+    const raw = key.slice('custom:'.length);
+    if (!input.catalogModelRequired) return { kind: 'harness', modelId: raw };
+    const parsed = parseModelKey(raw);
+    return parsed ? { kind: 'catalog', model: parsed } : { kind: 'noop' };
+  }
+  if (!item) return { kind: 'noop' };
+  // `ModelPickerItem.key` is documented as `${providerId}:${modelId}` for a
+  // 'model' item — strip the item's own `providerId` prefix (never blind
+  // colon-split) so a provider id can never collide with a colon inside the
+  // model id itself.
+  const modelId = item.providerId ? key.slice(item.providerId.length + 1) : key;
+  if (input.catalogModelRequired) {
+    return item.providerId
+      ? { kind: 'catalog', model: { providerID: item.providerId, modelID: modelId } }
+      : { kind: 'noop' };
+  }
+  return { kind: 'harness', modelId };
 }
 
 /** Wiring for an already-started ACP session — passed instead of relying on
@@ -217,7 +283,7 @@ export function ComposerChatInput({
   const capability = useComposerCapabilities(projectId, capabilityAgentName);
   const capabilityModels = (capability.data?.model.presets ?? []).map((preset) => {
     const slash = preset.id.indexOf('/');
-    const providerID = slash > 0 ? preset.id.slice(0, slash) : activeHarness ?? 'runtime';
+    const providerID = slash > 0 ? preset.id.slice(0, slash) : (activeHarness ?? 'runtime');
     const modelID = slash > 0 ? preset.id.slice(slash + 1) : preset.id;
     return {
       providerID,
@@ -227,12 +293,16 @@ export function ComposerChatInput({
       providerSource: preset.source,
     };
   });
-  const selectedCatalogModel = catalogModelRequired && local.model.currentKey
-    && capabilityModels.some((model) =>
-      model.providerID === local.model.currentKey?.providerID
-      && model.modelID === local.model.currentKey?.modelID)
-    ? local.model.currentKey
-    : null;
+  const selectedCatalogModel =
+    catalogModelRequired &&
+    local.model.currentKey &&
+    capabilityModels.some(
+      (model) =>
+        model.providerID === local.model.currentKey?.providerID &&
+        model.modelID === local.model.currentKey?.modelID,
+    )
+      ? local.model.currentKey
+      : null;
 
   // ── Live-session model pill ──────────────────────────────────────────────
   // Always rendered via HarnessModelSelector (never the gateway-catalog
@@ -258,15 +328,86 @@ export function ComposerChatInput({
   const liveHarnessModel = live
     ? {
         harness: activeHarness ?? 'opencode',
-        selectedModel: liveModelOption?.currentValue != null ? String(liveModelOption.currentValue) : null,
+        selectedModel:
+          liveModelOption?.currentValue != null ? String(liveModelOption.currentValue) : null,
         onSelect: (model: string | null) => {
           if (!liveModelWritable || !liveModelOption || !model) return;
           live.onConfigOptionChange(liveModelOption.id, model);
         },
-        presets: liveModelOption ? acpConfigOptionPresets(liveModelOption) : (capability.data?.model.presets ?? []),
+        presets: liveModelOption
+          ? acpConfigOptionPresets(liveModelOption)
+          : (capability.data?.model.presets ?? []),
         connectionLabel,
         connectionKind,
         disabled: !liveModelWritable,
+      }
+    : undefined;
+
+  // ── Unified model picker (`unified_model_picker` flag) ──────────────────
+  // Flag OFF: every input below stays inert (`projectId`/`agentName` forced
+  // null keeps `useModelPicker`'s own queries disabled) and `unifiedModelPicker`
+  // is `undefined`, so `SessionChatInput` renders the untouched legacy fork.
+  // Flag ON: exactly one `ModelPicker` renders for every harness — the same
+  // component for claude/codex/pi and opencode alike.
+  const unifiedModelPickerEnabled = useUnifiedModelPickerEnabled(projectId ?? '');
+  const unifiedLiveSession = useMemo(
+    () =>
+      unifiedModelPickerEnabled && live
+        ? {
+            configOptions: live.configOptions,
+            setConfigOption: async (id: string, value: string) => {
+              live.onConfigOptionChange(id, value);
+            },
+          }
+        : null,
+    [unifiedModelPickerEnabled, live?.configOptions, live?.onConfigOptionChange],
+  );
+  const modelPickerVm = useModelPicker({
+    projectId: unifiedModelPickerEnabled ? (projectId ?? null) : null,
+    agentName: unifiedModelPickerEnabled ? capabilityAgentName : null,
+    liveSession: unifiedLiveSession,
+  });
+  // Pre-session persistence: `useModelPicker.select()` has no seam of its
+  // own (its `pendingKey` is local-only, see the hook's doc comment) — reuse
+  // the EXACT same two seams the legacy pickers already persist through
+  // (`local.model.set` for catalog agents, `runtimeModelStore.setRuntimeModel`
+  // for harness-native agents) so a pre-session pick made in the unified
+  // picker still reaches `buildComposerOptions` at send-time. A live,
+  // writable session skips this entirely — `modelPickerVm.select` already
+  // routed the pick through `live.setConfigOption` above.
+  const handleUnifiedModelSelect = useCallback(
+    (key: string) => {
+      modelPickerVm.select(key);
+      if (live) return;
+      const resolved = resolveUnifiedModelPickSelection(key, {
+        catalogModelRequired,
+        groups: modelPickerVm.groups,
+      });
+      if (resolved.kind === 'catalog') {
+        local.model.set(resolved.model, { recent: true });
+      } else if (resolved.kind === 'harness' && capabilityAgentName) {
+        runtimeModelStore.setRuntimeModel(capabilityAgentName, resolved.modelId);
+      }
+    },
+    [
+      modelPickerVm,
+      live,
+      catalogModelRequired,
+      capabilityAgentName,
+      local.model,
+      runtimeModelStore,
+    ],
+  );
+  // Same "where should Connect route to" gate `ModelSelector` uses — kept as
+  // its own instance here (not threaded from `SessionChatInput`, which owns
+  // a private one for its `composerConnectKind` banner) so `ModelPicker`'s
+  // "Not connected" group's Connect action opens the identical dialog.
+  const { openConnectProvider, modal: unifiedConnectionModal } = useModelConnectionGate();
+  const unifiedModelPicker = unifiedModelPickerEnabled
+    ? {
+        vm: { ...modelPickerVm, select: handleUnifiedModelSelect },
+        onConnect: (connectionId: HarnessAuthKind) =>
+          openConnectProvider('providers', { connectKind: connectionId }),
       }
     : undefined;
 
@@ -318,74 +459,89 @@ export function ComposerChatInput({
   };
 
   return (
-    <SessionChatInput
-      onSend={(text, files) => onSend(text, files, options())}
-      onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
-      clearOnSend={clearOnSend}
-      isBusy={isBusy}
-      stopDisabled={stopDisabled}
-      isSending={isSending}
-      disabled={disabled}
-      autoFocus={autoFocus}
-      placeholder={placeholder}
-      prefill={prefill}
-      inputSlot={inputSlot}
-      toolbarSlot={toolbarSlot}
-      cardClassName={cardClassName}
-      sessionId={sessionId}
-      providers={providers}
-      onFileSearch={onFileSearch}
-      agents={local.agent.list}
-      selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-      onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
-      agentSelectorLocked={!!lockedAgentName}
-      models={live ? [] : (catalogModelRequired ? capabilityModels : [])}
-      selectedModel={live ? null : (catalogModelRequired ? selectedCatalogModel : null)}
-      onModelChange={
-        live ? undefined : (catalogModelRequired ? (m) => local.model.set(m ?? undefined, { recent: true }) : undefined)
-      }
-      harnessModel={live ? liveHarnessModel : (nativeHarness
-        ? {
-            harness: nativeHarness,
-            selectedModel: runtimeModel,
-            onSelect: (model) =>
-              capabilityAgentName && runtimeModelStore.setRuntimeModel(capabilityAgentName, model ?? undefined),
-            presets: capability.data?.model.presets ?? [],
-            connectionLabel,
-            connectionKind,
-            customAllowed: capability.data?.model.custom_allowed ?? true,
-          }
-        : undefined)}
-      modelRequired={live ? false : (capability.data ? !capability.data.model.default_allowed : false)}
-      modelsLoading={capability.isLoading || providersLoading}
-      composerBlockingReason={composerBlockingReason}
-      composerBlockingActionLabel={composerBlockingActionLabel}
-      composerConnectKind={composerConnectKind}
-      composerCapabilityGoverned={composerCapabilityGoverned}
-      // Live sessions don't expose a local "thinking effort" toggle — any
-      // genuine per-turn reasoning/effort ACP config option surfaces as its
-      // own toolbar pill instead (see AcpSessionChat's config-option pills).
-      variants={live ? [] : local.model.variant.list}
-      selectedVariant={live ? null : (local.model.variant.current ?? null)}
-      onVariantChange={live ? undefined : (v) => local.model.variant.set(v ?? undefined)}
-      commands={commands}
-      messages={live?.messages}
-      acpUsage={live?.acpUsage}
-      onStop={live?.onStop}
-      onContextClick={live?.onContextClick}
-      todos={live?.todos}
-      mentionSessions={live ? mentionSessions ?? [] : []}
-      queuedMessages={live?.queuedMessages}
-      onQueueMessage={live?.onQueueMessage}
-      onRemoveQueuedMessage={live?.onRemoveQueuedMessage}
-      replyTo={live?.replyTo}
-      onClearReply={live?.onClearReply}
-      lockForQuestion={live?.lockForQuestion}
-      lockForApproval={live?.lockForApproval}
-      onCustomAnswer={live?.onCustomAnswer}
-      questionButtonLabel={live?.questionButtonLabel}
-      questionCanAct={live?.questionCanAct}
-      onQuestionAction={live?.onQuestionAction}
-    />
+    <>
+      {unifiedConnectionModal}
+      <SessionChatInput
+        onSend={(text, files) => onSend(text, files, options())}
+        onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
+        clearOnSend={clearOnSend}
+        isBusy={isBusy}
+        stopDisabled={stopDisabled}
+        isSending={isSending}
+        disabled={disabled}
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        prefill={prefill}
+        inputSlot={inputSlot}
+        toolbarSlot={toolbarSlot}
+        cardClassName={cardClassName}
+        sessionId={sessionId}
+        providers={providers}
+        onFileSearch={onFileSearch}
+        agents={local.agent.list}
+        selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+        onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+        agentSelectorLocked={!!lockedAgentName}
+        models={live ? [] : catalogModelRequired ? capabilityModels : []}
+        selectedModel={live ? null : catalogModelRequired ? selectedCatalogModel : null}
+        onModelChange={
+          live
+            ? undefined
+            : catalogModelRequired
+              ? (m) => local.model.set(m ?? undefined, { recent: true })
+              : undefined
+        }
+        harnessModel={
+          live
+            ? liveHarnessModel
+            : nativeHarness
+              ? {
+                  harness: nativeHarness,
+                  selectedModel: runtimeModel,
+                  onSelect: (model) =>
+                    capabilityAgentName &&
+                    runtimeModelStore.setRuntimeModel(capabilityAgentName, model ?? undefined),
+                  presets: capability.data?.model.presets ?? [],
+                  connectionLabel,
+                  connectionKind,
+                  customAllowed: capability.data?.model.custom_allowed ?? true,
+                }
+              : undefined
+        }
+        modelPicker={unifiedModelPicker}
+        modelRequired={
+          live ? false : capability.data ? !capability.data.model.default_allowed : false
+        }
+        modelsLoading={capability.isLoading || providersLoading}
+        composerBlockingReason={composerBlockingReason}
+        composerBlockingActionLabel={composerBlockingActionLabel}
+        composerConnectKind={composerConnectKind}
+        composerCapabilityGoverned={composerCapabilityGoverned}
+        // Live sessions don't expose a local "thinking effort" toggle — any
+        // genuine per-turn reasoning/effort ACP config option surfaces as its
+        // own toolbar pill instead (see AcpSessionChat's config-option pills).
+        variants={live ? [] : local.model.variant.list}
+        selectedVariant={live ? null : (local.model.variant.current ?? null)}
+        onVariantChange={live ? undefined : (v) => local.model.variant.set(v ?? undefined)}
+        commands={commands}
+        messages={live?.messages}
+        acpUsage={live?.acpUsage}
+        onStop={live?.onStop}
+        onContextClick={live?.onContextClick}
+        todos={live?.todos}
+        mentionSessions={live ? (mentionSessions ?? []) : []}
+        queuedMessages={live?.queuedMessages}
+        onQueueMessage={live?.onQueueMessage}
+        onRemoveQueuedMessage={live?.onRemoveQueuedMessage}
+        replyTo={live?.replyTo}
+        onClearReply={live?.onClearReply}
+        lockForQuestion={live?.lockForQuestion}
+        lockForApproval={live?.lockForApproval}
+        onCustomAnswer={live?.onCustomAnswer}
+        questionButtonLabel={live?.questionButtonLabel}
+        questionCanAct={live?.questionCanAct}
+        onQuestionAction={live?.onQuestionAction}
+      />
+    </>
   );
 }

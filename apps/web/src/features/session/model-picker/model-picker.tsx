@@ -117,6 +117,7 @@ export function ModelPicker({ vm, onConnect, disabled = false, onManageModels }:
         <button
           type="button"
           aria-disabled={locked}
+          data-testid="model-picker-trigger"
           className={cn(
             COMPOSER_PILL_TRIGGER_CLASS,
             open && !locked && COMPOSER_PILL_ACTIVE_CLASS,

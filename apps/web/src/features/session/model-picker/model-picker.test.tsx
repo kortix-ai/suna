@@ -112,13 +112,22 @@ async function flush() {
 }
 
 async function openPicker(vm: ModelPickerViewModel, onConnect?: ReturnType<typeof mock>) {
-  const utils = renderPicker(vm, onConnect as ReturnType<typeof mock<(id: HarnessAuthKind) => void>>);
+  const utils = renderPicker(
+    vm,
+    onConnect as ReturnType<typeof mock<(id: HarnessAuthKind) => void>>,
+  );
   fireEvent.click(screen.getByRole('button', { name: /Claude Sonnet 5/i }));
   await flush();
   return utils;
 }
 
 describe('ModelPicker', () => {
+  it('exposes a stable data-testid on its trigger — the one seam `SessionChatInput`s modelPicker fork and the composer e2e spec key off of, regardless of harness', () => {
+    const vm = buildVm();
+    renderPicker(vm);
+    expect(screen.getByTestId('model-picker-trigger')).toBeTruthy();
+  });
+
   it('renders one model-first list — no harness fork', async () => {
     const vm = buildVm();
     await openPicker(vm);
@@ -179,7 +188,9 @@ describe('ModelPicker', () => {
 
 describe('ModelPicker — locked state', () => {
   it('renders the disabled trigger class and skips opening when not interactive', async () => {
-    const vm = buildVm({ trigger: { label: 'Claude Sonnet 5', sublabel: null, interactive: false } });
+    const vm = buildVm({
+      trigger: { label: 'Claude Sonnet 5', sublabel: null, interactive: false },
+    });
     renderPicker(vm);
 
     const trigger = screen.getByRole('button', { name: /Claude Sonnet 5/i });
@@ -202,7 +213,9 @@ describe('ModelPicker — within', () => {
     const vm = buildVm();
     await openPicker(vm);
 
-    const notConnectedGroup = screen.getByText('Not connected').closest('[cmdk-group]') as HTMLElement;
+    const notConnectedGroup = screen
+      .getByText('Not connected')
+      .closest('[cmdk-group]') as HTMLElement;
     expect(within(notConnectedGroup).getByText('GPT-5.1')).toBeTruthy();
   });
 });

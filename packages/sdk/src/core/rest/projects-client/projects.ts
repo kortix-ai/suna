@@ -12,14 +12,19 @@ import {
   type ServerTokenOptions,
 } from "./shared";
 
-/** Stable ids for experimental features (mirrors apps/api experimental/features). */
+/** Stable ids for experimental features (mirrors apps/api experimental/features).
+ *  NOTE: this mirror was already missing `experimental_harnesses` before this
+ *  edit (apps/api commit `8658acde6`) — pre-existing drift, not introduced
+ *  here and out of this change's scope; `unified_model_picker` is added
+ *  because this task's web code depends on it. See PROGRESS.md Backlog. */
 export type ExperimentalFeatureKey =
   | "agent_tunnel"
   | "marketplace"
   | "agentmail_email"
   | "meet"
   | "llm_gateway"
-  | "review_center";
+  | "review_center"
+  | "unified_model_picker";
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

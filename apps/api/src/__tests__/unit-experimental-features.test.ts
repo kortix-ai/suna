@@ -71,6 +71,24 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
+  test('unified_model_picker is explicit opt-in (beta, no operator kill switch)', () => {
+    expect(findCatalogFeature('unified_model_picker').available).toBe(true);
+    expect(findCatalogFeature('unified_model_picker').stability).toBe('beta');
+    expect(resolveExperimentalFeature({}, 'unified_model_picker')).toBe(false);
+    expect(
+      resolveExperimentalFeature(
+        { experimental: { unified_model_picker: true } },
+        'unified_model_picker',
+      ),
+    ).toBe(true);
+    expect(
+      resolveExperimentalFeature(
+        { experimental: { unified_model_picker: false } },
+        'unified_model_picker',
+      ),
+    ).toBe(false);
+  });
+
   test('llm_gateway is platform-gated and defaults on when available', () => {
     const available = findCatalogFeature('llm_gateway').available;
     // No explicit project choice → inherits the platform: on wherever the

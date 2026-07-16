@@ -143,6 +143,20 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'unified_model_picker',
+    name: 'Unified model selector',
+    description:
+      'One model-first picker for every harness in the composer, replacing the separate gateway-catalog and harness-native selectors. UI-only — no server-side capability change.',
+    stability: 'beta',
+    // Pure client-rendering surface — no operator service dependency to gate
+    // on. Always available; a project opts in per Settings before the
+    // composer routes claude/codex/pi AND opencode through one ModelPicker
+    // instead of the legacy ModelSelector/HarnessModelSelector fork.
+    available: () => true,
+    // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(

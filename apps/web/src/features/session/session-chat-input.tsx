@@ -23,13 +23,14 @@ import type {
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import type { AcpUsageProjection } from '@kortix/sdk';
+import type { AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
   agentHarness,
   agentHarnessPresentation,
   harnessPresentation,
   type KortixHarness,
+  type ModelPickerViewModel,
 } from '@kortix/sdk/react';
 
 import {
@@ -57,7 +58,11 @@ import {
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
-import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_DISABLED_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
+import {
+  COMPOSER_PILL_ACTIVE_CLASS,
+  COMPOSER_PILL_DISABLED_CLASS,
+  COMPOSER_PILL_TRIGGER_CLASS,
+} from './composer-pill';
 import { resolveComposerResetOnSend } from './composer-reset';
 import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
 import {
@@ -65,6 +70,7 @@ import {
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
+import { ModelPicker } from './model-picker/model-picker';
 import { ModelSelector, type ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
@@ -469,7 +475,11 @@ function VariantSelector({
         <button
           type="button"
           onClick={cycle}
-          className={cn(COMPOSER_PILL_TRIGGER_CLASS, 'capitalize', selectedVariant && 'text-foreground')}
+          className={cn(
+            COMPOSER_PILL_TRIGGER_CLASS,
+            'capitalize',
+            selectedVariant && 'text-foreground',
+          )}
         >
           {displayName}
         </button>
@@ -1239,6 +1249,20 @@ export interface SessionChatInputProps {
   >;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;
+  /**
+   * `unified_model_picker`-flag picker. When set, renders exactly ONE
+   * `ModelPicker` in place of `ModelSelector`/`HarnessModelSelector` for
+   * every harness — mutually exclusive with `models`/`harnessModel` (both
+   * legacy props are ignored while this is present). `undefined` (the
+   * default) leaves the legacy fork completely untouched — flag-off is a
+   * byte-identical render.
+   */
+  modelPicker?: {
+    vm: ModelPickerViewModel;
+    onConnect: (connectionId: HarnessAuthKind) => void;
+    disabled?: boolean;
+    onManageModels?: () => void;
+  };
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
@@ -1364,6 +1388,7 @@ export function SessionChatInput({
   onModelChange,
   harnessModel,
   modelDefaultControls,
+  modelPicker,
   variants = [],
   selectedVariant = null,
   onVariantChange,
@@ -1864,7 +1889,11 @@ export function SessionChatInput({
 
   const handleSubmit = useCallback(async () => {
     if (capabilityBlocked) {
-      toast.error(composerBlockingActionLabel || composerBlockingReason || 'This agent is not ready to start.');
+      toast.error(
+        composerBlockingActionLabel ||
+          composerBlockingReason ||
+          'This agent is not ready to start.',
+      );
       return;
     }
     if (modelUnavailable) {
@@ -2488,16 +2517,27 @@ export function SessionChatInput({
                   disabled={agentSelectorLocked}
                 />
               )}
-              {(models.length > 0 || modelRequired) && onModelChange && (
-                <ModelSelector
-                  models={models}
-                  selectedModel={selectedModel}
-                  onSelect={onModelChange}
-                  providers={providers}
-                  defaultControls={modelDefaultControls}
+              {modelPicker ? (
+                <ModelPicker
+                  vm={modelPicker.vm}
+                  onConnect={modelPicker.onConnect}
+                  disabled={modelPicker.disabled}
+                  onManageModels={modelPicker.onManageModels}
                 />
+              ) : (
+                <>
+                  {(models.length > 0 || modelRequired) && onModelChange && (
+                    <ModelSelector
+                      models={models}
+                      selectedModel={selectedModel}
+                      onSelect={onModelChange}
+                      providers={providers}
+                      defaultControls={modelDefaultControls}
+                    />
+                  )}
+                  {harnessModel ? <HarnessModelSelector {...harnessModel} /> : null}
+                </>
               )}
-              {harnessModel ? <HarnessModelSelector {...harnessModel} /> : null}
               {variants.length > 0 && onVariantChange && (
                 <VariantSelector
                   variants={variants}
