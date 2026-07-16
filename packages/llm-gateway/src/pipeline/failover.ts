@@ -153,6 +153,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         fetchImpl,
         translationSidecar: config.translationSidecar,
         signal,
+        requestId,
       });
       chosen = candidate;
       debug('upstream_attempt_ok', {

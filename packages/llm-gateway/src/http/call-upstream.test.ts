@@ -33,6 +33,15 @@ function makeFetch(steps: Step[]) {
   return { impl, getCalls: () => calls };
 }
 
+function makeRecordingFetch() {
+  const seenHeaders: Record<string, string>[] = [];
+  const impl: FetchImpl = async (_input, init) => {
+    seenHeaders.push({ ...(init.headers as Record<string, string>) });
+    return new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  return { impl, seenHeaders };
+}
+
 describe('buildUpstreamRequest', () => {
   test('targets /chat/completions with a bearer key', () => {
     const req = buildUpstreamRequest({ model: 'x' }, descriptor);
@@ -120,6 +129,22 @@ describe('callUpstream', () => {
       callUpstream({}, descriptor, { retry: fastRetry, fetchImpl: fetchMock.impl, binding }),
     ).rejects.toBeInstanceOf(CircuitOpenError);
     expect(fetchMock.getCalls()).toBe(callsBefore);
+  });
+
+  test('threads requestId through to the upstream as a correlation header', async () => {
+    const recording = makeRecordingFetch();
+    await callUpstream({ model: 'x' }, descriptor, {
+      retry: fastRetry,
+      fetchImpl: recording.impl,
+      requestId: 'req_abc123',
+    });
+    expect(recording.seenHeaders[0]?.['x-kortix-request-id']).toBe('req_abc123');
+  });
+
+  test('omits the correlation header when no requestId is given', async () => {
+    const recording = makeRecordingFetch();
+    await callUpstream({ model: 'x' }, descriptor, { retry: fastRetry, fetchImpl: recording.impl });
+    expect(recording.seenHeaders[0]).not.toHaveProperty('x-kortix-request-id');
   });
 });
 
