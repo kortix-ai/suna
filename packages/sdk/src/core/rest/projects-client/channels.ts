@@ -48,6 +48,10 @@ export interface TelegramInstallation {
   allowedUserIds?: string[];
   /** Whether the server enforces the sender allowlist (TELEGRAM_REQUIRE_USER_IDENTITY). */
   pairingRequired?: boolean;
+  /** Whether Telegram delivers group @mentions to this bot. `false` = BotFather
+   *  privacy mode is ON (mentions never arrive — the bot only sees commands,
+   *  replies and service messages in groups); `null`/absent = unknown. */
+  groupMentionsEnabled?: boolean | null;
 }
 
 /** Single-use sender-pairing code — the user sends `/start <code>` to the bot. */

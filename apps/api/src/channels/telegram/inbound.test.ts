@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  TELEGRAM_GROUP_WELCOME_PRIVACY_TEXT,
+  TELEGRAM_GROUP_WELCOME_TEXT,
   type TelegramMessage,
   botJustAddedToGroup,
   describeAttachments,
@@ -10,6 +12,7 @@ import {
   renderTelegramStatus,
   shouldRespondInChat,
   stripBotMention,
+  telegramGroupWelcomeText,
 } from './inbound';
 
 const BOT = 'KortixBot';
@@ -187,12 +190,14 @@ describe('renderTelegramStatus', () => {
       model: 'anthropic/claude-sonnet-5',
       conversationPolicy: 'project_open',
       pairedUserCount: 3,
+      groupMentionsEnabled: true,
     });
     expect(html).toContain('Acme');
     expect(html).toContain('reviewer');
     expect(html).toContain('claude-sonnet-5'); // namespace stripped
     expect(html).toContain('open to everyone');
     expect(html).toContain('@KortixBot · 3 paired');
+    expect(html).toContain('<b>Mentions:</b> visible in groups');
   });
 
   test('falls back to defaults when nothing is overridden', () => {
@@ -203,10 +208,12 @@ describe('renderTelegramStatus', () => {
       model: null,
       conversationPolicy: null,
       pairedUserCount: 0,
+      groupMentionsEnabled: null,
     });
     expect(html).toContain('<b>Agent:</b> default');
     expect(html).toContain('<b>Model:</b> project default');
     expect(html).not.toContain('paired');
+    expect(html).not.toContain('Mentions'); // unknown → no line, no false warning
   });
 
   test('escapes HTML in project/agent names', () => {
@@ -217,10 +224,43 @@ describe('renderTelegramStatus', () => {
       model: null,
       conversationPolicy: null,
       pairedUserCount: 0,
+      groupMentionsEnabled: null,
     });
     expect(html).not.toContain('<b>evil</b>');
     expect(html).toContain('&lt;b&gt;evil&lt;/b&gt;');
     expect(html).toContain('a &amp; b');
+  });
+
+  test('privacy mode ON surfaces the warning with the BotFather fix', () => {
+    const html = renderTelegramStatus({
+      botUsername: 'KortixBot',
+      projectName: 'Acme',
+      agentName: null,
+      model: null,
+      conversationPolicy: null,
+      pairedUserCount: 1,
+      groupMentionsEnabled: false,
+    });
+    expect(html).toContain('<b>Mentions:</b> hidden in groups');
+    expect(html).toContain('/setprivacy');
+    expect(html).not.toContain('visible in groups');
+  });
+});
+
+describe('telegramGroupWelcomeText', () => {
+  test('privacy mode ON: no @mention promise, working paths + owner fix instead', () => {
+    const text = telegramGroupWelcomeText(false);
+    expect(text).toBe(TELEGRAM_GROUP_WELCOME_PRIVACY_TEXT);
+    expect(text).not.toContain('@mention me or reply');
+    expect(text).toContain('reply to one of my messages');
+    expect(text).toContain('/setprivacy');
+    expect(text).toContain('re-add');
+  });
+
+  test('privacy mode OFF (and unknown) promise mentions as before', () => {
+    expect(telegramGroupWelcomeText(true)).toBe(TELEGRAM_GROUP_WELCOME_TEXT);
+    expect(telegramGroupWelcomeText(null)).toBe(TELEGRAM_GROUP_WELCOME_TEXT);
+    expect(TELEGRAM_GROUP_WELCOME_TEXT).toContain('@mention me');
   });
 });
 

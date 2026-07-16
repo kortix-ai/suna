@@ -253,6 +253,10 @@ export interface TelegramStatusInfo {
   model: string | null;
   conversationPolicy: string | null;
   pairedUserCount: number;
+  /** getMe.can_read_all_group_messages — false means Telegram privacy mode
+   *  hides plain @mentions in groups from this bot; null = unknown (getMe
+   *  unavailable), which omits the line rather than warning wrongly. */
+  groupMentionsEnabled: boolean | null;
 }
 
 /** `/status` — the chat's effective routing at a glance (project, agent, model,
@@ -270,6 +274,13 @@ export function renderTelegramStatus(info: TelegramStatusInfo): string {
     `<b>Model:</b> ${escapeStatusValue(model)}`,
     `<b>Replies:</b> ${escapeStatusValue(policy)}`,
   ];
+  if (info.groupMentionsEnabled === false) {
+    lines.push(
+      '<b>Mentions:</b> hidden in groups — privacy mode is on. Fix: @BotFather → /setprivacy → Disable, then re-add me to the group.',
+    );
+  } else if (info.groupMentionsEnabled === true) {
+    lines.push('<b>Mentions:</b> visible in groups');
+  }
   if (info.botUsername) {
     lines.push(
       '',
@@ -298,6 +309,33 @@ export const TELEGRAM_GROUP_WELCOME_TEXT = [
   '',
   '/help for what I can do · /status for this chat’s agent & model.',
 ].join('\n');
+
+// Telegram's default bot privacy mode hides plain-text group messages —
+// including @mentions — from the bot entirely (only commands, replies and
+// service messages are delivered), so the standard welcome would promise a
+// flow that can never fire. This variant keeps the paths that DO work up
+// front and gives the owner the exact fix.
+export const TELEGRAM_GROUP_WELCOME_PRIVACY_TEXT = [
+  '👋 Thanks for adding me! I connect this group to a Kortix project.',
+  '',
+  'In groups I stay quiet until you need me — reply to one of my messages or',
+  'use a /command (like /new) and an agent picks the task up.',
+  '',
+  "⚠️ I can't see @mentions yet — this bot's Telegram privacy mode is on.",
+  'To enable mentions: @BotFather → /setprivacy → Disable, then remove and',
+  're-add me to this group.',
+  '',
+  '/help for what I can do · /status for this chat’s agent & model.',
+].join('\n');
+
+/** Pick the group welcome matching the bot's live privacy setting. `null`
+ *  (getMe unavailable) falls back to the standard text rather than warning
+ *  about a privacy mode we couldn't confirm. */
+export function telegramGroupWelcomeText(groupMentionsEnabled: boolean | null): string {
+  return groupMentionsEnabled === false
+    ? TELEGRAM_GROUP_WELCOME_PRIVACY_TEXT
+    : TELEGRAM_GROUP_WELCOME_TEXT;
+}
 
 export const TELEGRAM_PAIRED_TEXT = [
   "✅ Paired! You're on this project's allowlist now.",

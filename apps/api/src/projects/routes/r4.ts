@@ -977,8 +977,15 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const install = await loadTelegramInstall(projectId);
     if (!install) return c.json(null);
+    // Live capability probe: with BotFather privacy mode ON, Telegram never
+    // delivers plain group @mentions to the bot — the dashboard warns and
+    // shows the fix. Best-effort (null = unknown) so a Telegram hiccup never
+    // breaks the installation read.
+    const token = await loadTelegramTokenForProject(projectId);
+    const me = token ? await telegramGetMe(token).catch(() => null) : null;
     return c.json({
       ...install,
+      groupMentionsEnabled: me?.ok ? (me.bot.can_read_all_group_messages ?? false) : null,
       // Who may drive the agent from Telegram (see telegram/pairing.ts) and
       // whether the identity gate is enforcing — the dashboard's pairing UI.
       allowedUserIds: telegramAllowedUserIds(loaded.row.metadata),
@@ -1071,7 +1078,13 @@ projectsApp.openapi(
     // Mint the first pairing code with the install so the connect modal can
     // walk the user straight onto the sender allowlist (see telegram/pairing.ts).
     const pairing = await mintTelegramPairing(projectId);
-    return c.json({ ...summary, pairing });
+    return c.json({
+      ...summary,
+      // Free from the validating getMe above: whether Telegram will deliver
+      // group @mentions to this bot (false = BotFather privacy mode is on).
+      groupMentionsEnabled: me.bot.can_read_all_group_messages ?? false,
+      pairing,
+    });
   },
 );
 

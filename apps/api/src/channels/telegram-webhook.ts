@@ -45,6 +45,7 @@ import {
   telegramAnswerCallbackQuery,
   telegramEditMessageReplyMarkup,
   telegramEditMessageText,
+  telegramGetMe,
   telegramSendMessage,
 } from './telegram-api';
 import {
@@ -54,7 +55,6 @@ import {
   postTelegramModelPicker,
 } from './telegram/controls';
 import {
-  TELEGRAM_GROUP_WELCOME_TEXT,
   TELEGRAM_HELP_TEXT,
   TELEGRAM_LOCKED_TEXT,
   TELEGRAM_NEW_TEXT,
@@ -71,6 +71,7 @@ import {
   renderTelegramFollowUpPrompt,
   renderTelegramStatus,
   shouldRespondInChat,
+  telegramGroupWelcomeText,
 } from './telegram/inbound';
 import {
   addTelegramAllowedUser,
@@ -310,7 +311,13 @@ async function handleMyChatMember(
   if (!botJustAddedToGroup(update)) return;
   const token = await loadTelegramTokenForProject(projectId);
   if (!token) return;
-  await telegramSendMessage(token, update.chat.id, TELEGRAM_GROUP_WELCOME_TEXT);
+  // Telegram never delivers plain @mentions to a privacy-mode bot, so check
+  // the LIVE setting and welcome with instructions that actually work here —
+  // promising "@mention me" under privacy mode is a dead end the user can't
+  // diagnose (the update simply never arrives).
+  const me = await telegramGetMe(token).catch(() => null);
+  const groupMentionsEnabled = me?.ok ? (me.bot.can_read_all_group_messages ?? false) : null;
+  await telegramSendMessage(token, update.chat.id, telegramGroupWelcomeText(groupMentionsEnabled));
 }
 
 // An inline-keyboard tap answering the agent's `question` tool. We recover the
@@ -568,14 +575,19 @@ async function renderChatStatus(
   botUsername: string | null,
   chatId: string,
 ): Promise<string> {
-  const [selection, [project]] = await Promise.all([
+  const [selection, [project], token] = await Promise.all([
     currentChannelSelection({ platform: 'telegram', teamId: botId, channelId: chatId }),
     db
       .select({ name: projects.name, metadata: projects.metadata })
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1),
+    loadTelegramTokenForProject(projectId),
   ]);
+  // Live privacy check (getMe): with privacy mode ON, Telegram never delivers
+  // group @mentions to the bot — /status is where a confused owner looks first,
+  // so say it here. Best-effort: unknown (null) omits the line.
+  const me = token ? await telegramGetMe(token).catch(() => null) : null;
   return renderTelegramStatus({
     botUsername,
     projectName: project?.name ?? null,
@@ -583,6 +595,7 @@ async function renderChatStatus(
     model: selection?.opencodeModel ?? null,
     conversationPolicy: selection?.conversationPolicy ?? null,
     pairedUserCount: telegramAllowedUserIds(project?.metadata).length,
+    groupMentionsEnabled: me?.ok ? (me.bot.can_read_all_group_messages ?? false) : null,
   });
 }
 

@@ -658,9 +658,18 @@ function TelegramChannelRow({
         </TableCell>
         <TableCell className="text-muted-foreground text-sm">
           {connected ? (
-            <code className="text-foreground font-mono text-xs">
-              {installation?.botUsername ? `@${installation.botUsername}` : installation?.botId}
-            </code>
+            <div className="flex items-center gap-2">
+              <code className="text-foreground font-mono text-xs">
+                {installation?.botUsername ? `@${installation.botUsername}` : installation?.botId}
+              </code>
+              {installation?.groupMentionsEnabled === false ? (
+                <Hint label="Telegram privacy mode hides group @mentions from this bot — it only sees commands and replies in groups. Fix: message @BotFather → /setprivacy → Disable, then remove & re-add the bot to each group.">
+                  <Badge variant="warning" size="xs">
+                    Group mentions off
+                  </Badge>
+                </Hint>
+              ) : null}
+            </div>
           ) : (
             '—'
           )}

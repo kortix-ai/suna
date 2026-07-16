@@ -129,6 +129,10 @@ export interface TelegramBotInfo {
   id: number;
   username?: string;
   first_name?: string;
+  /** True when BotFather privacy mode is DISABLED — only then does Telegram
+   *  deliver plain-text group messages (incl. @mentions) to the bot. With
+   *  privacy ON, groups deliver just commands, replies and service messages. */
+  can_read_all_group_messages?: boolean;
 }
 
 /** Validate a bot token with Telegram and learn the bot's identity. */
