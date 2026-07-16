@@ -390,10 +390,32 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
             <TabsContent value="pat" className="space-y-3 pt-4">
               <p className="text-muted-foreground text-xs">
                 Quickest to set up, but a plain token rather than a scoped, revocable App. Create a
-                dedicated fine-grained token scoped to only the repos you want (GitHub → Settings →
-                Developer settings → Fine-grained tokens) — don&apos;t paste your everyday personal
-                token.
+                dedicated fine-grained token (GitHub → Settings → Developer settings → Fine-grained
+                tokens) — don&apos;t paste your everyday personal token.
               </p>
+              <div className="bg-muted/50 rounded-md border px-3 py-2.5 text-xs">
+                <p className="mb-1 font-medium">Token settings that make this work</p>
+                <ul className="text-muted-foreground list-disc space-y-0.5 pl-4">
+                  <li>
+                    <span className="text-foreground">Resource owner</span>: the user or org that
+                    should own project repos — must match the owner field below.
+                  </li>
+                  <li>
+                    <span className="text-foreground">Repository access</span>: All repositories —
+                    Kortix creates a new repo per project, so a fixed repo list can&apos;t cover
+                    future ones.
+                  </li>
+                  <li>
+                    <span className="text-foreground">Permissions</span>: Administration — Read and
+                    write (create repos, manage collaborators) · Contents — Read and write (push,
+                    pull, branches). Metadata: Read is added automatically. Nothing else.
+                  </li>
+                  <li>
+                    Org tokens may need approval under the org&apos;s Settings → Third-party Access
+                    → Personal access tokens.
+                  </li>
+                </ul>
+              </div>
               <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Personal / fine-grained access token</Label>
