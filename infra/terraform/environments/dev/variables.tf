@@ -73,9 +73,14 @@ variable "api_secrets" {
 }
 
 variable "enable_https" {
-  description = "Create the ACM cert + HTTPS listener (needs the Cloudflare token for DNS validation). false = HTTP-only ALB, e.g. for parallel validation."
+  description = "Compliance guard for the existing ACM module state address. Must remain true; ECS ALBs are HTTPS-only."
   type        = bool
   default     = true
+
+  validation {
+    condition     = var.enable_https
+    error_message = "enable_https must remain true; ECS ALBs are HTTPS-only."
+  }
 }
 
 variable "manage_dns" {

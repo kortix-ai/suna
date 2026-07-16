@@ -95,7 +95,6 @@ module "api" {
 
   image           = var.api_image
   container_port  = var.container_port
-  enable_https    = true
   certificate_arn = module.acm.certificate_arn
   environment     = var.api_environment
   secrets         = var.api_secrets
@@ -153,7 +152,6 @@ module "gateway" {
   container_name    = "gateway"
   container_port    = 8090
   health_check_path = "/health/live"
-  enable_https      = true
   certificate_arn   = module.acm_gateway.certificate_arn
   environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://api.kortix.com" })
   secrets           = var.api_secrets
