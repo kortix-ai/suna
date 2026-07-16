@@ -111,6 +111,7 @@ export {
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
+  validateTriggerAgentRefsV2,
 } from './index.v2';
 export {
   type HarnessV3,

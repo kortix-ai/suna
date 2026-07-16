@@ -35,12 +35,13 @@
 import {
   MANIFEST_FILENAME_YAML,
   type ManifestFormat,
-  isTable,
+  type ManifestIssue,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
   serializeManifestObject,
   validateAgentsV3,
+  validateTriggerAgentRefsV2,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo, readRepoFile } from './git';
 
@@ -279,17 +280,11 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   }
 
   // kortix_version 3 native support: a trigger's explicit `agent` must name a
-  // declared v3 logical agent — the SAME rule the write-time CR-merge gate
-  // already enforces via manifest-schema's `validateTriggerAgentRefsV2` (v3's
-  // `agents:` map is shaped identically to v2's: name → block, extracted here
-  // with manifest-schema's own `validateAgentsV3`, never reimplemented). The
-  // membership check itself (`findV3BadAgentRefs` below) mirrors
-  // `validateTriggerAgentRefsV2`'s rule + message text byte-for-byte —
-  // `validateTriggerAgentRefsV2` isn't part of manifest-schema's public
-  // export surface today (only imported internally by index.ts), and adding
-  // it would mean touching a file outside this task's triggers.ts scope, so
-  // the ~10-line rule is mirrored locally instead of imported. If
-  // manifest-schema exports it later, this can call through instead.
+  // declared v3 logical agent — the SAME rule + call the write-time CR-merge
+  // gate already enforces (manifest-schema's `validateManifestBodyV3` calls
+  // this exact function). v3's `agents:` map is shaped identically to v2's:
+  // name → block, extracted here with manifest-schema's own `validateAgentsV3`
+  // (never reimplemented).
   //
   // v1/v2 NEVER ran this check at read time (only the CR-merge gate did, at
   // write time) — this stays v3-only and additive so v1/v2 behavior is
@@ -303,7 +298,12 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   const badAgentRefByIndex = new Map<number, string>();
   if (manifest.schemaVersion === 3) {
     const { names: agentNames } = validateAgentsV3(manifest.raw.agents, 'agents', []);
-    findV3BadAgentRefs(rawTriggers, agentNames, badAgentRefByIndex);
+    const agentRefIssues: ManifestIssue[] = [];
+    validateTriggerAgentRefsV2(rawTriggers, 'triggers', agentNames, agentRefIssues);
+    for (const issue of agentRefIssues) {
+      const index = triggerIssueIndex(issue.path);
+      if (index !== null) badAgentRefByIndex.set(index, issue.message);
+    }
   }
 
   const specs: GitTriggerSpec[] = [];
@@ -339,33 +339,16 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
 }
 
 /**
- * v3-only cross-ref check: does each raw trigger entry's `agent` (if set)
- * name a declared v3 logical agent? Mirrors manifest-schema's
- * `validateTriggerAgentRefsV2` rule + message exactly (see the call site's
- * comment in `extractTriggers` for why it's inlined here instead of
- * imported). Populates `out` with `rawTriggers` index → error message for
- * every entry whose `agent` doesn't resolve; entries with no `agent`, or a
- * non-string/blank one, are left alone — a blank/wrong-typed `agent` is a
- * STRUCTURAL problem `parseTriggerEntry` already reports its own error for,
- * and an omitted `agent` legitimately falls back to `default_agent` at fire
- * time (not this check's concern, same as v2's write-time validator).
+ * `validateTriggerAgentRefsV2` reports findings as `ManifestIssue[]` with a
+ * `<path>[<index>].agent` path (e.g. `triggers[2].agent`) rather than an
+ * index directly — extract the array index so the caller can key its
+ * per-entry `errors`/`specs` decision the same way every other trigger
+ * parse error already does. Returns null for a path shape this function
+ * never emits (defensive; keeps the caller a straight lookup either way).
  */
-function findV3BadAgentRefs(
-  rawTriggers: unknown[],
-  agentNames: string[],
-  out: Map<number, string>,
-): void {
-  rawTriggers.forEach((entry, index) => {
-    if (!isTable(entry) || entry.agent === undefined || entry.agent === null) return;
-    if (typeof entry.agent !== 'string' || !entry.agent.trim()) return;
-    const name = entry.agent.trim();
-    if (!agentNames.includes(name)) {
-      out.set(
-        index,
-        `agent "${name}" does not match any declared agent in \`agents\`; omit it to fall back to \`default_agent\`.`,
-      );
-    }
-  });
+function triggerIssueIndex(path: string): number | null {
+  const match = /^triggers\[(\d+)\]\.agent$/.exec(path);
+  return match ? Number(match[1]) : null;
 }
 
 /**

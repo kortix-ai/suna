@@ -1,17 +1,22 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { parseManifestText } from '@kortix/manifest-schema';
 
-// compile-agent-config.ts's I/O half imports the real ../git module, which
-// shells out to git + pulls in config/db — none of that runs in a bun:test
-// process. Mock it BEFORE the dynamic import below so the pure-function tests
-// (which don't touch git at all) and the I/O tests (which control it per-test)
-// both load safely, mirroring the mock-then-dynamic-import pattern used
-// throughout apps/api/src/projects/maintenance.test.ts and friends.
+// compile-agent-config.ts's I/O half imports the real ../git module. Mock it
+// BEFORE the dynamic import below so the pure-function tests (which don't
+// touch git at all) and the I/O tests (which control it per-test) both load
+// safely, mirroring the mock-then-dynamic-import pattern used throughout
+// apps/api/src/projects/maintenance.test.ts and friends. mock.module() is a
+// process-wide registry (see disk-quota-guard.test.ts), so this MUST spread
+// the real module — an incomplete stub here leaks into every other file in
+// the same bun test run that imports './git' / '../git' and needs an export
+// this file doesn't stub.
 let manifestFile: { path: string; content: string } | null = null;
 let mdFileContent: Record<string, string> = {};
 let readRepoFileCalls: string[] = [];
 
+const realGit = await import('../git');
 mock.module('../git', () => ({
+  ...realGit,
   readManifestFromRepo: async () => manifestFile,
   readRepoFile: async (_project: unknown, path: string) => {
     readRepoFileCalls.push(path);

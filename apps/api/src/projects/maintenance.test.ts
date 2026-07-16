@@ -24,7 +24,17 @@ mock.module('../shared/db', () => ({
     }),
   },
 }));
-mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
+// mock.module() is a process-wide registry (see disk-quota-guard.test.ts),
+// so this MUST spread the real module — an incomplete stub here (as this
+// used to be: `{ deleteRemoteSessionBranch: async () => false }` alone)
+// leaks into every later file in the same bun test run that imports
+// './git' / '../git' and needs an export this file doesn't stub, breaking
+// them with "Export named 'X' not found in module '.../git.ts'".
+const realGit = await import('./git');
+mock.module('./git', () => ({
+  ...realGit,
+  deleteRemoteSessionBranch: async () => false,
+}));
 mock.module('../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
   tickRunningComputeCharges: async () => ({ settled: 0 }),
