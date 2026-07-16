@@ -421,7 +421,13 @@ export function DetailLayer({
             // what says so. It stays flush to the right edge (and rounds only
             // its left corners) so the slide-in reads as arriving from off-panel
             // rather than as a box that materializes in place.
-            className="bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow"
+            // `outline-none`: this container is programmatically focused on
+            // open (the a11y focus management above). A keyboard-initiated
+            // open — the ⌘K "Open Browser"/"Open Terminal" commands — makes
+            // that focus :focus-visible, which drew a focus ring around the
+            // whole card. The container is a focus TARGET (tabIndex -1), not
+            // a control; its frame is the border, never an outline.
+            className="bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow outline-none"
           >
             {/* The content layer: keyed on `detail.key`, so paging to a
                 sibling swaps THIS, not the card above. `popLayout` pulls the

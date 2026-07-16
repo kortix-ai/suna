@@ -19,6 +19,9 @@ describe('DetailLayer a11y (W6)', () => {
     expect(html).not.toContain('aria-modal');
     expect(html).toContain('aria-label="Quarterly report"');
     expect(html).toContain('tabindex="-1"');
+    // The focus target must never draw a focus ring — a keyboard-initiated
+    // open (⌘K commands) makes the programmatic focus :focus-visible.
+    expect(html).toContain('outline-none');
   });
 });
 
