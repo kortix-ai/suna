@@ -102,29 +102,53 @@ await client.cancel(session.sessionId); // notifies the harness
 // { stopReason: 'cancelled' } (or whatever the harness reports)
 ```
 
-## `AcpSession` (the store) does **not** work against the bare bridge today
+## `AcpSession` (the store) is a platform-endpoint tool, by design — not a bridge-direct one
 
-`AcpSession` — `@kortix/sdk/acp`'s higher-level store (`chatItems`,
-`pendingPrompts`, `turnState`, snapshot subscriptions) — is built for a
-**platform-API-fronted** ACP endpoint
-(`${backendUrl}/projects/{projectId}/sessions/{sessionId}/acp`), not the bare
-sandbox daemon shown above. Two concrete, proven gaps, both documented in the
-DISC-06 report:
+`AcpClient` (above) is the **daemon-bridge** layer: it speaks directly to a
+sandbox's bare `/acp/:serverId` surface and nothing else — no persistence, no
+durable history, just the live JSON-RPC/SSE wire. `AcpSession` is a different
+layer entirely: the ergonomic store (`chatItems`, `pendingPrompts`,
+`turnState`, snapshot subscriptions) that grounds itself in the **durable,
+database-backed transcript** the platform API owns. That grounding is the
+point — a real host reconnects, resumes across tabs/devices, and replays
+history without re-deriving state from a live process alone — and only the
+platform API's session-scoped ACP proxy
+(`${backendUrl}/projects/{projectId}/sessions/{sessionId}/acp`) can serve it,
+because only the platform API persists envelopes to a database. The bare
+sandbox daemon bridge is deliberately stateless past the in-memory process
+it's fronting; it was never meant to be `AcpSession`'s transport, and adding a
+`/transcript` shim to it would just duplicate the platform's durable-storage
+job in a second place.
+
+DISC-06 confirmed this by pointing `AcpSession` straight at the bare bridge
+and observing, not guessing, the result — two concrete findings, both
+consequences of the layering above rather than defects in either layer:
 
 1. `AcpSessionOptions` has no `agent` field — unlike `AcpClient`'s
    `baseUrl`+`serverId`+`agent` mode, `AcpSession` cannot create a brand-new
    bridge server on its own (the bridge requires `?agent=` on the very first
-   POST to an unknown `serverId`).
+   POST to an unknown `serverId`). Expected: the platform API already knows
+   the agent for a session and supplies it when it fronts the bridge, so
+   `AcpSession` never needed this parameter for its actual (platform-fronted)
+   use case.
 2. `AcpSession.connect()`'s bootstrap unconditionally calls
    `client.transcript()` (`GET {endpoint}/transcript`) as its first step,
-   before `initialize`. The bare sandbox daemon bridge has no `/transcript`
-   route — that REST leg, and the database-backed envelope history behind
-   it, is implemented only by the platform API's ACP proxy in front of the
-   bridge. Pointed directly at the bridge, `AcpSession.connect()` fails fast
-   and cleanly (`connection: 'failed'`, a terminal `kind: 'bootstrap'`
-   error) — it never hangs, but it never completes a turn either.
+   before `initialize` — it is grounding itself in the durable transcript
+   before it will trust anything live. The bare sandbox daemon bridge has no
+   `/transcript` route, and by design: that REST leg, and the
+   database-backed envelope history behind it, is implemented only by the
+   platform API's ACP proxy in front of the bridge. Pointed directly at the
+   bare bridge, `AcpSession.connect()` fails fast and cleanly
+   (`connection: 'failed'`, a terminal `kind: 'bootstrap'` error) — it never
+   hangs, but it never completes a turn either, because the durable transcript
+   it depends on genuinely does not exist at that layer.
 
 **Use `AcpClient` directly** (as above) when talking to a bare sandbox
-daemon bridge. Use `AcpSession` only against an endpoint that also serves
-`/transcript` — in practice, the platform API's session-scoped ACP proxy,
-which is what `createKortix(...).session(...)` already resolves for you.
+daemon bridge — e.g. from inside the platform API itself, or a test harness.
+**Use `AcpSession`** only against an endpoint that also serves `/transcript`
+— in practice, the platform API's session-scoped ACP proxy, which is what
+`createKortix(...).session(...)` already resolves for you. Reaching for
+`AcpSession` against a bare bridge is a layering mismatch, not a bug to work
+around; if your host needs the store's ergonomics, front the bridge with the
+platform API rather than trying to make the bridge serve `/transcript`
+itself.

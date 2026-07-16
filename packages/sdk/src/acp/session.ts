@@ -717,7 +717,8 @@ export class AcpSession {
   private applyBatch(batch: readonly AcpStoredEnvelope[]): void {
     let working = this.reducerState;
     const priorEnvelopes = working.envelopes;
-    let cursor = priorEnvelopes.length ? priorEnvelopes[priorEnvelopes.length - 1].ordinal : -Infinity;
+    const lastPriorEnvelope = priorEnvelopes[priorEnvelopes.length - 1];
+    let cursor = lastPriorEnvelope !== undefined ? lastPriorEnvelope.ordinal : -Infinity;
     let appendOnly = true;
     for (const row of batch) {
       const next = reduceEnvelope(working, row);
