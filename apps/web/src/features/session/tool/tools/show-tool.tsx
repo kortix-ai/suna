@@ -8,6 +8,7 @@ import {
   type ShowLoadStatus,
 } from '@/features/session/show-availability';
 import {
+  BasicTool,
   InlineServicePreview,
   partInput,
   ServicePreviewActions,
@@ -25,6 +26,7 @@ import {
   ShowCarouselItem,
   ShowContentRenderer,
   showDomain,
+  showTypeIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -32,7 +34,7 @@ import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { Globe } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
 // through context so its viewport and the header controls drive the same iframe.
@@ -46,7 +48,7 @@ function CarouselServicePreview({ url, label }: { url: string; label?: string })
   return <InlineServicePreview url={url} label={label} />;
 }
 
-export function ShowTool({ part, sessionId }: ToolProps) {
+export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
@@ -105,8 +107,21 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     sessionId,
   );
 
+  // Precomputed up front (pure derivations over state already resolved above)
+  // so both the loading body and the main body can feed the same safe title
+  // into the inline row below — mirrors the `showLabel`-style precedence
+  // (title > description/domain fallback > generic label), never the raw
+  // path/URL.
+  const displayTitle = isCarousel
+    ? title || `${items!.length} items`
+    : title || (type === 'error' ? 'Error' : type === 'url' ? showDomain(url) || 'Link' : 'Output');
+
+  const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
+
+  let body: ReactNode;
+
   if (running && !type && !items) {
-    return (
+    body = (
       <div
         className={cn(
           'bg-card overflow-hidden',
@@ -121,15 +136,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
         </div>
       </div>
     );
-  }
-
-  const displayTitle = isCarousel
-    ? title || `${items!.length} items`
-    : title || (type === 'error' ? 'Error' : type === 'url' ? showDomain(url) || 'Link' : 'Output');
-
-  const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
-
-  if (
+  } else if (
     isShowContentUnavailable({
       running,
       isCarousel,
@@ -139,66 +146,88 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
     })
   ) {
+    // Nothing to show on either surface — no row, no card.
     return null;
+  } else {
+    body = (
+      <div
+        className={cn(
+          'overflow-hidden',
+          fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
+        )}
+      >
+        {isWebsitePreview && (
+          <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
+              <span className="text-foreground/80 truncate text-xs font-medium">
+                {preview.displayLabel}
+              </span>
+            </div>
+            <ServicePreviewActions preview={preview} />
+          </div>
+        )}
+
+        <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
+          {isCarousel ? (
+            <ActiveServicePreviewContext.Provider value={isWebsitePreview ? preview : null}>
+              <ShowCarousel
+                items={items!}
+                LocalhostPreview={CarouselServicePreview}
+                onIndexChange={setCarouselIndex}
+                fill={fill}
+              />
+            </ActiveServicePreviewContext.Provider>
+          ) : isWebsitePreview ? (
+            <ServicePreviewViewport preview={preview} />
+          ) : (
+            <>
+              <div className={cn(fill && 'min-h-0 flex-1 overflow-hidden')}>
+                <ShowContentRenderer
+                  type={type}
+                  title={title}
+                  description={description}
+                  path={path}
+                  url={url}
+                  content={content}
+                  language={language}
+                  aspectRatio={aspectRatio}
+                  LocalhostPreview={InlineServicePreview}
+                  fill={fill}
+                  onStatusChange={setContentStatus}
+                />
+              </div>
+              {description && !title && (
+                <div className="border-border/15 shrink-0 border-t px-5 py-3">
+                  <p className="text-muted-foreground/70 text-xs">{description}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
   }
 
-  return (
-    <div
-      className={cn(
-        'overflow-hidden',
-        fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
-      )}
-    >
-      {isWebsitePreview && (
-        <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
-            <span className="text-foreground/80 truncate text-xs font-medium">
-              {preview.displayLabel}
-            </span>
-          </div>
-          <ServicePreviewActions preview={preview} />
-        </div>
-      )}
+  // Panel surface: `fillsPanel` (tool-part-renderer.tsx) special-cases show/
+  // show-user because the preview IS the payload — keep it exactly as before,
+  // filling the pane with no shell wrapper.
+  if (fill) return body;
 
-      <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
-        {isCarousel ? (
-          <ActiveServicePreviewContext.Provider value={isWebsitePreview ? preview : null}>
-            <ShowCarousel
-              items={items!}
-              LocalhostPreview={CarouselServicePreview}
-              onIndexChange={setCarouselIndex}
-              fill={fill}
-            />
-          </ActiveServicePreviewContext.Provider>
-        ) : isWebsitePreview ? (
-          <ServicePreviewViewport preview={preview} />
-        ) : (
-          <>
-            <div className={cn(fill && 'min-h-0 flex-1 overflow-hidden')}>
-              <ShowContentRenderer
-                type={type}
-                title={title}
-                description={description}
-                path={path}
-                url={url}
-                content={content}
-                language={language}
-                aspectRatio={aspectRatio}
-                LocalhostPreview={InlineServicePreview}
-                fill={fill}
-                onStatusChange={setContentStatus}
-              />
-            </div>
-            {description && !title && (
-              <div className="border-border/15 shrink-0 border-t px-5 py-3">
-                <p className="text-muted-foreground/70 text-xs">{description}</p>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+  // Inline (chat) surface: join the shared shell. The row's own title is
+  // always "Show" — the payload's resolved title is the subtitle, never a
+  // raw path/URL. Expanded by default: a collapsed row would hide the exact
+  // thing the agent wanted to show, defeating the tool's purpose.
+  return (
+    <BasicTool
+      icon={showTypeIcon(headerIcon)}
+      trigger={{ title: 'Show', subtitle: displayTitle }}
+      defaultOpen
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {body}
+    </BasicTool>
   );
 }
 ToolRegistry.register('show', ShowTool);
