@@ -3,6 +3,7 @@ import { projectAcpTranscript } from '@kortix/sdk/acp/transcript';
 import { and, asc, eq } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { narrowAcpEnvelopeRows } from './acp-envelope-rows';
 import type { ProjectSessionRow } from './serializers';
 
 export interface CompactToolCall {
@@ -53,10 +54,7 @@ export async function buildSessionTranscriptDigest(input: {
       eq(acpSessionEnvelopes.projectId, projectId),
       eq(acpSessionEnvelopes.sessionId, session.sessionId),
     )).orderBy(asc(acpSessionEnvelopes.ordinal));
-    const messages = projectAcpTranscript(rows.map((row) => ({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-    })), { limit, maxChars });
+    const messages = projectAcpTranscript(narrowAcpEnvelopeRows(rows), { limit, maxChars });
     return {
       available: true,
       reason: null,

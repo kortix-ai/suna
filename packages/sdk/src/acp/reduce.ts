@@ -15,6 +15,17 @@ import type {
   AcpUsageProjection,
 } from './transcript';
 
+/** `Array.prototype.findLastIndex` (ES2023) reimplemented as a manual reverse
+ *  scan — this package targets an ES2017-safe runtime floor, and apps/api
+ *  compiles this source through workspace paths under an older `lib`. Same
+ *  semantics: index of the last element satisfying `predicate`, or -1. */
+function findLastIndex<T>(items: readonly T[], predicate: (item: T, index: number) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index] as T, index)) return index;
+  }
+  return -1;
+}
+
 /**
  * Incremental, structurally-shared ACP transcript reducer.
  *
@@ -297,8 +308,9 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         // backwards from the tail and stopping at that boundary finds this
         // turn's existing plan item without ever touching a PRIOR turn's.
         const plan: AcpPlan = { entries: Array.isArray(update.entries) ? update.entries : [], data: update as Record<string, unknown> };
-        const lastUserIndex = chatItems.findLastIndex((item) => item.kind === 'message' && item.role === 'user');
-        const existingIndex = chatItems.findLastIndex(
+        const lastUserIndex = findLastIndex(chatItems, (item) => item.kind === 'message' && item.role === 'user');
+        const existingIndex = findLastIndex(
+          chatItems,
           (item, index) => index > lastUserIndex && item.kind === 'plan',
         );
         if (existingIndex !== -1) {

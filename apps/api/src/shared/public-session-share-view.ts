@@ -26,6 +26,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { acpSessionEnvelopes, projectSessions } from '@kortix/db';
 import { projectAcpTranscript } from '@kortix/sdk/acp/transcript';
+import { narrowAcpEnvelopeRows } from '../projects/lib/acp-envelope-rows';
 import { db } from './db';
 import type { PublicShareRow } from './session-public-shares';
 
@@ -142,10 +143,7 @@ export async function getPublicSessionMessages(
     .orderBy(asc(acpSessionEnvelopes.ordinal));
 
   if (metadata.runtime_protocol === 'acp' || rows.length > 0) {
-    const messages = projectAcpTranscript(rows.map((entry) => ({
-      ...entry,
-      createdAt: entry.createdAt.toISOString(),
-    })), { limit: MAX_MESSAGES, maxChars: MAX_MESSAGE_CHARS });
+    const messages = projectAcpTranscript(narrowAcpEnvelopeRows(rows), { limit: MAX_MESSAGES, maxChars: MAX_MESSAGE_CHARS });
     return {
       ok: true,
       transcript: {
