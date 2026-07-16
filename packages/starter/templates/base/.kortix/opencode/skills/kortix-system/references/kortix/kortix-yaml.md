@@ -9,36 +9,44 @@ The platform parser is permissive: it never throws on a bad entry.
 Instead, bad triggers go into an `errors` list returned alongside the
 good ones, so a single typo doesn't break the whole file.
 
-**This page documents `kortix_version: 2`** — the current, YAML-only
-manifest schema (`agents:` is a governance-only name→block **map**,
-`[[channels]]` is removed outright, per-agent env access is called
-`secrets`). This project's own `kortix.yaml` is on this version — see
-the `<canonical-schema>` section of this skill's `SKILL.md` and
-`docs/specs/2026-07-05-agent-first-config-unification.md`. The
-authoritative, always-current structural spec is always the public
-JSON Schema, not this page: `https://kortix.com/schema/kortix.v2.schema.json`
-(this shape), `https://kortix.com/schema/kortix.v1.schema.json` (legacy
-v1), or `https://kortix.com/schema/kortix.schema.json` (both,
+**This page documents `kortix_version: 3`** — the current, YAML-only,
+ACP-first manifest schema. A top-level `runtimes:` map declares launch
+profiles (which official ACP harness — `claude`/`codex`/`opencode`/`pi` —
+plus its native config directory); `agents:` is a governance-and-routing-only
+name→block **map** that registers logical agents, routes each one to a
+`runtimes` profile, and grants Kortix-side authority. `kortix.yaml` never
+translates prompts, models, providers, hooks, or native agent definitions —
+the selected harness's own config directory owns all of that. This
+project's own `kortix.yaml` is on this version — see the
+`<canonical-schema>` section of this skill's `SKILL.md`. The authoritative,
+always-current structural spec is always the public JSON Schema, not this
+page: `https://kortix.com/schema/kortix.v3.schema.json` (this shape),
+`https://kortix.com/schema/kortix.v2.schema.json` (previous, OpenCode-only
+governance shape), `https://kortix.com/schema/kortix.v1.schema.json`
+(legacy v1), or `https://kortix.com/schema/kortix.schema.json` (all three,
 dispatched by `kortix_version`) — also available offline via
-`kortix schema --version 2`.
+`kortix schema --version 3`.
 
-> **Legacy note — v1 used TOML.** Projects created before v2 shipped
-> may still have a `kortix.toml` at the root with `kortix_version: 1`
-> (or no `kortix_version` at all). The platform resolves the manifest
-> by trying `kortix.yaml`, then `kortix.yml`, then falling back to
-> `kortix.toml` — so a v1 TOML project keeps working as-is; nothing
-> breaks. To move a project onto v2, rename `kortix.toml` to
-> `kortix.yaml`, convert its contents to YAML, bump `kortix_version` to
-> `2`, add the now-required `default_agent`, and rework any `[[agents]]`
-> array into the `agents:` map described below (or run `kortix migrate`
-> once available). `kortix_version: 2` manifests must be YAML — TOML
-> only supports `kortix_version: 1`.
+> **Legacy note — v1 used TOML, v2 was OpenCode-only.** Projects created
+> before v2 shipped may still have a `kortix.toml` at the root with
+> `kortix_version: 1` (or no `kortix_version` at all). The platform
+> resolves the manifest by trying `kortix.yaml`, then `kortix.yml`, then
+> falling back to `kortix.toml` — so a v1 TOML project keeps working as-is;
+> nothing breaks. A v2 project (`agents:` map, single implicit OpenCode
+> runtime, no `runtimes:`) also keeps working — v3 only applies once a
+> project upgrades. Upgrading a v2 project to v3 losslessly promotes every
+> existing agent to `runtime: opencode` (keeping its name as the native
+> `agent:` id) and adds default profiles for every official harness; it
+> never touches native harness files. This runs via the dashboard/API
+> (`POST /{projectId}/runtime-profiles/enable`), not by hand-editing YAML.
+> `kortix_version: 2`/`3` manifests must be YAML — TOML only supports
+> `kortix_version: 1`.
 
 ## Full example
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
-kortix_version: 2
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+kortix_version: 3
 
 default_agent: kortix
 
@@ -63,13 +71,15 @@ sandbox:
   dockerfile: .kortix/Dockerfile   # repo-relative
   context: .                       # build context
 
-# OpenCode runtime config dir. Defaults to ".kortix/opencode" when
-# omitted. The agent daemon launches opencode with
-# OPENCODE_CONFIG_DIR pointed here. OpenCode-native runtime config
-# remains in this directory; Kortix-side launchability and grants live
-# in the `agents:` map below.
-opencode:
-  config_dir: .kortix/opencode
+# ─── Runtimes (launch profiles) ────────────────────────────────────
+# Each entry names an official ACP harness plus the repo-relative
+# directory holding that harness's own native config. These are launch
+# profiles, not translated configuration — the harness reads its config
+# dir directly. See `## runtimes:` below.
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
 
 # ─── Triggers ─────────────────────────────────────────────────────
 # Each `triggers:` entry spawns a fresh session that runs `prompt`
@@ -97,34 +107,63 @@ triggers:
       Slack event from {{ headers.user_agent }}.
       User said: {{ body.text }}
 
-# ─── Agents (governance only) ─────────────────────────────────────
+# ─── Agents (governance + routing only) ────────────────────────────
 agents:
   kortix:
+    runtime: opencode
+    agent: kortix               # this runtime's native agent/profile id
     connectors: all
     secrets: all
     kortix_cli: all
     skills: all
   release-bot:
+    runtime: opencode
+    agent: release-bot
     connectors: [github]
     kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
+## `runtimes:`
+
+A map of runtime-profile name → `{ harness, config_dir? }`. Each entry is a
+**launch profile**: which official ACP harness (`claude`, `codex`,
+`opencode`, or `pi`) to boot, and the repo-relative directory holding that
+harness's own native config (defaults to the harness's conventional
+directory — `.claude`, `.codex`, `.kortix/opencode`, `.pi` — when omitted).
+`kortix.yaml` never translates that harness's prompts, models, providers,
+hooks, or agent definitions — the config dir is read natively by the
+harness's own ACP adapter. At least one runtime profile is required, and no
+key other than `harness`/`config_dir` is legal on an entry.
+
+```yaml
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+  claude:
+    harness: claude
+    config_dir: .claude
+```
+
 ## `agents:`
 
-Per-agent **governance overlay**. OpenCode-native behavior (prompt, mode,
-model, tools, permissions, skills selection logic) stays in
-`.kortix/opencode/` and `opencode.jsonc`; the manifest's `agents:` map
-declares which agents Kortix should treat as platform-launchable and
-what server-side authority each one receives. Keyed by the agent's name
-(matches its `.kortix/opencode/agents/<name>.md`).
+Per-agent **governance + routing overlay** — never behavior. The manifest's
+`agents:` map declares which logical agents Kortix should treat as
+platform-launchable, which `runtimes` profile launches each one, and what
+server-side authority each one receives. OpenCode-native (or Claude/Codex/
+Pi-native) behavior — prompt, mode, model, tools, permissions, skills
+selection logic — stays entirely in that harness's own config directory,
+never here.
 
-`agents:` is **required** in v2 and is **deny-by-default**: an omitted
-`connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent
-resolves to `none`, not `all`. `default_agent` is also required and
-must name a declared, enabled agent.
+`agents:` is **required** and is **deny-by-default**: an omitted
+`connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to
+`none`, not `all`. `default_agent` is also required and must name a
+declared, enabled agent.
 
 | Key          | Notes                                                                                           |
 | ------------ | ----------------------------------------------------------------------------------------------- |
+| `runtime`    | **Required.** Name of a key in the top-level `runtimes:` map.                                    |
+| `agent`      | Optional harness-native agent/profile identifier (e.g. which `.claude/agents/<id>.md` to boot).  |
 | `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
 | `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).   |
 | `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
@@ -132,9 +171,15 @@ must name a declared, enabled agent.
 | `kortix_cli` | What it may do via the Kortix CLI/API (project-scoped iam actions). Same shape (default: `none`). |
 | `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
 
+No other key is legal on an `agents:` block — a behavioral field (`model`,
+`mode`, `prompt`, `temperature`, …) authored here is a hard validation error
+pointing at the harness's own config directory instead.
+
 ```yaml
 agents:
   release-bot:
+    runtime: opencode
+    agent: release-bot
     connectors: [github]
     kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
@@ -151,24 +196,28 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 `agents:`; an undeclared or disabled agent cannot be launched by the
 platform. `default_agent` must resolve to a declared, enabled agent —
 give it `connectors: all`, `secrets: all`, `kortix_cli: all`,
-`skills: all` explicitly if it should keep full access. The grant is
+`skills: all` explicitly if it should keep full access. Every `runtime`
+reference must resolve to a declared `runtimes:` key. The grant is
 always intersected with the launching user's role (agent ≤ user) and
 takes effect only once a CR is merged (read from the default branch).
 
 **Discovery direction:** declaring `agents:` is server-side, declarative
-agent discovery — it is not a rule that every native OpenCode agent file
-must be registered. Unregistered files can exist for local experiments
-or runtime internals. Kortix product UI (chat input, triggers, channels)
-fetches the server-side registered agent list rather than querying
-sandbox OpenCode directly. Model pickers similarly come from the
-server/LLM-gateway catalog rather than a sandbox-local provider list.
+agent discovery — it is not a rule that every native agent file (under
+`.kortix/opencode/agents/`, `.claude/agents/`, etc.) must be registered.
+Unregistered files can exist for local experiments or runtime internals.
+Kortix product UI (chat input, triggers, channels) fetches the server-side
+registered agent list rather than querying a sandbox harness directly.
+Model pickers similarly come from the server/LLM-gateway catalog rather
+than a sandbox-local provider list.
 
 ## Schema versioning
 
-`kortix_version` is the schema version. `2` is YAML-only and requires
-`default_agent` + `agents:`. A manifest declaring a version higher than
-the platform knows about is rejected outright — the platform won't
-silently misread future fields.
+`kortix_version` is the schema version. `3` is YAML-only and requires
+`default_agent` + `runtimes:` + `agents:`; the legacy singular `runtime:`
+field and top-level `opencode:` table are rejected outright (use the
+`runtimes:` map instead). A manifest declaring a version higher than the
+platform knows about is rejected outright — the platform won't silently
+misread future fields.
 
 When the platform writes the manifest back (after a dashboard edit),
 it ensures `kortix_version` is the first key, so the file is
@@ -180,9 +229,9 @@ self-describing at a glance.
 | ---------------------- | ------------------------------------------------------------------- |
 | Trigger sweep          | `triggers:`                                                          |
 | Sandbox builder        | `sandbox:`                                                           |
-| Sandbox runtime        | `opencode:` (where to launch opencode with its config)               |
+| Session/trigger launch | `runtimes:` (which ACP harness to boot + its native config dir)      |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
-| Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
+| Session token mint     | `agents:` (per-agent runtime + connectors/secrets/skills/kortix_cli scope) |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
@@ -274,23 +323,25 @@ Each entry needs exactly one of `image` or `dockerfile`, never both.
 `slug` may not be `"default"` (that's reserved for the top-level
 `sandbox:` config).
 
-## `opencode:`
+## The `opencode` runtime, specifically
 
-Where the OpenCode runtime config lives. **Optional**, with a default.
+For a `runtimes.<name>` entry with `harness: opencode`, the agent daemon
+launches `opencode serve` with `OPENCODE_CONFIG_DIR=<config_dir>`, so
+everything under that folder becomes the OpenCode runtime: agents, skills,
+commands, tools, plugins, `opencode.jsonc`.
 
-| Key          | Default              | Notes                                                                            |
-| ------------ | --------------------- | -------------------------------------------------------------------------------- |
-| `config_dir` | `.kortix/opencode`   | Repo-relative dir. Same silent-fallback behavior as `sandbox:` paths.            |
+`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP
+servers, providers, model/provider settings, permissions, and default
+runtime behavior. Do not duplicate those details in `kortix.yaml`; use
+`agents:` only for the Kortix-side decision of which agents are
+launchable/authorized by the platform and which runtime routes each one.
+The equivalent applies to the other harnesses: `.claude` (Claude Code),
+`.codex` (Codex), and `.pi` (Pi) each own their own native config the same
+way.
 
-The agent daemon launches `opencode serve` with
-`OPENCODE_CONFIG_DIR=<config_dir>`, so everything under that folder
-becomes the OpenCode runtime: agents, skills, commands, tools, plugins,
-`opencode.jsonc`.
-
-`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
-providers, model/provider settings, permissions, and default runtime behavior.
-Do not duplicate those details in `kortix.yaml`; use `agents:` only for the
-Kortix-side decision of which agents are launchable/authorized by the platform.
+> A legacy singular top-level `opencode:` table (the v1/v2 shape) is no
+> longer accepted once a project is on `kortix_version: 3` — declare an
+> `opencode` entry under `runtimes:` instead (see `## runtimes:` above).
 
 ## `triggers:`
 
