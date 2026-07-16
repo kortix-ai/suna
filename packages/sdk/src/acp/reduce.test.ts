@@ -161,6 +161,93 @@ describe('reduceEnvelope', () => {
     expect(state.turnState.pendingPromptIds).toEqual([5]);
   });
 
+  // WS3-P2-a, part 2: pins for the guarded numeric-id machinery
+  // (`openRequestOrdinals`/`openPromptOrdinals` + the ordinal-comparison
+  // backstop, as opposed to the Map's mere existence, which the two tests
+  // above already cover via same-order id reuse). These two prove the
+  // comparison itself — not just the map — is load-bearing: they feed a row
+  // whose ordinal is SMALLER than the currently-open entry's, the one shape
+  // an in-order id-reuse fixture can never produce. `AcpSession.applyBatch`
+  // documents this exact possibility as real (`session.ts` — "a live SSE
+  // event can in principle reach `enqueue()` before a concurrently in-flight
+  // history fetch resolves", `row.ordinal < cursor` fallback) and it is
+  // reachable directly by ANY external caller of `reduceEnvelope`/
+  // `project*`, which accept a caller-supplied `rows` array with no runtime
+  // enforcement of ordinal order. Removing the `< row.ordinal` comparison
+  // (keeping only `openRequests.has(key)`) would make both of these fail.
+  test('ordinal backstop: a response delivered OUT OF ORDER (smaller ordinal than the open entry) does not close it', () => {
+    let state = emptyReducerState();
+    // Request id 3 opens at ordinal 20 (still pending).
+    state = reduceEnvelope(state, stored(20, 'agent_to_client', {
+      jsonrpc: '2.0', id: 3, method: 'session/request_permission',
+      params: { sessionId: 's1', options: [{ optionId: 'allow', label: 'Allow' }] },
+    }));
+    expect(pendingFromState(state).permissions).toHaveLength(1);
+
+    // A response for id 3 arrives with a SMALLER ordinal (11) than the
+    // currently-open entry (20) — e.g. a stale/duplicate response row
+    // (DISC-05/Pin-2: non-streaming agent_to_client replies also carry a
+    // null `streamEventId` and are not DB-deduped) replayed after a later
+    // reopen, or rows fed out of order to a raw fold. Without the ordinal
+    // comparison this would incorrectly close the still-pending ordinal-20
+    // request.
+    state = reduceEnvelope(state, stored(11, 'client_to_agent', {
+      jsonrpc: '2.0', id: 3, result: { outcome: { outcome: 'selected', optionId: 'allow' } },
+    }));
+    expect(pendingFromState(state).permissions).toHaveLength(1);
+  });
+
+  test('ordinal backstop: a prompt response delivered OUT OF ORDER does not clear turnState.busy', () => {
+    let state = emptyReducerState();
+    // Prompt id 5 opens at ordinal 20 (still pending/busy).
+    state = reduceEnvelope(state, userPrompt(20, 'go', 5));
+    expect(state.turnState.busy).toBe(true);
+
+    // A response for id 5 arrives with a SMALLER ordinal (11) than the
+    // currently-open entry (20).
+    state = reduceEnvelope(state, stored(11, 'agent_to_client', {
+      jsonrpc: '2.0', id: 5, result: { stopReason: 'end_turn' },
+    }));
+    expect(state.turnState.busy).toBe(true);
+    expect(state.turnState.pendingPromptIds).toEqual([5]);
+  });
+
+  // WS3-P2-a, part 3: DISC-05 pin. P1-b proved the durable log can contain
+  // DUPLICATE client_to_agent rows (null streamEventId, distinct ordinals)
+  // from a retried POST — the (direction, streamEventId) dedupe key at the
+  // top of `reduceEnvelope` only fires when `streamEventId != null`, so a
+  // null-streamEventId duplicate is NEVER deduped by that check. This pins
+  // — does not change — what the reducer does with such a duplicate today.
+  test('DISC-05: a retried session/prompt (duplicate, null streamEventId, distinct ordinals) renders as TWO user messages — pinned, not fixed here', () => {
+    const text = 'retried prompt';
+    const first = stored(1, 'client_to_agent', {
+      jsonrpc: '2.0', id: 'req-dup', method: 'session/prompt',
+      params: { prompt: [{ type: 'text', text }] },
+    }, null);
+    const retried = stored(2, 'client_to_agent', {
+      jsonrpc: '2.0', id: 'req-dup', method: 'session/prompt',
+      params: { prompt: [{ type: 'text', text }] },
+    }, null);
+
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, first);
+    state = reduceEnvelope(state, retried);
+
+    const userMessages = state.chatItems.filter((item) => item.kind === 'message' && item.role === 'user');
+    // PINNED: two durable rows -> two rendered chat items. A retried POST is
+    // a user-visible duplicated message today. This is the UX-impact
+    // statement DISC-05's schema decision needs; do not "fix" it here.
+    expect(userMessages).toHaveLength(2);
+    expect(userMessages.map((item) => (item as { text: string }).text)).toEqual([text, text]);
+
+    // `projectAcpChatItems` (the fold-from-scratch selector every direct
+    // caller and `AcpSession` share) reduces over the exact same
+    // `reduceEnvelope`, so it must agree with the incremental fold above.
+    const projected = projectAcpChatItems([first, retried]);
+    expect(projected.filter((item) => item.kind === 'message' && item.role === 'user')).toHaveLength(2);
+    expect(projected).toEqual(state.chatItems);
+  });
+
   test('a duplicate streamEventId row is dropped', () => {
     let state = emptyReducerState();
     const first = stored(1, 'agent_to_client', {

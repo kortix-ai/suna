@@ -675,22 +675,6 @@ function normalizeOptions(value: unknown): AcpPendingOption[] {
   });
 }
 
-/** Use `classifyAcpMethod(method) === 'permission'`. This used to
- *  substring-match (`method.includes('permission')`), which misclassified
- *  any method merely containing the word — the exact-match table replaces
- *  that behavior entirely. */
-function isPermissionMethod(method: string): boolean {
-  return classifyAcpMethod(method) === 'permission';
-}
-
-/** Use `classifyAcpMethod(method) === 'question'`. This used to
- *  substring-match on `elicitation`/`question`/`input`/`request` (so e.g.
- *  `session/request` — which is not a question method — matched); the
- *  exact-match table replaces that behavior entirely. */
-function isQuestionMethod(method: string): boolean {
-  return classifyAcpMethod(method) === 'question';
-}
-
 function rpcIdKey(id: unknown): string {
   return JSON.stringify(id);
 }
