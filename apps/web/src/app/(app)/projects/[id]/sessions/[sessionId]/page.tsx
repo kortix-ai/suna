@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -25,12 +25,11 @@ import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
@@ -40,6 +39,22 @@ import {
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
 import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+
+// The fullscreen deck viewer (W14's Present action), mounted ONCE at the page
+// level — never inside SessionLayout: the crossfade below keeps TWO
+// SessionLayouts mounted concurrently (InstantSessionShell's and
+// ActiveSessionChat's), and two viewer instances on the one global store would
+// each attach a capturing document keydown listener (arrow keys would advance
+// two slides per press) and double-fire every fetch. Lazy + Suspense, matching
+// SharePageWrapper — the only other place that mounts it: the wrapper renders
+// `null` until the store's `isOpen` flips, so this costs the route nothing
+// until someone actually clicks Present.
+const PresentationViewerWrapper = lazy(() =>
+  import('@/stores/presentation-viewer-store').then((mod) => ({
+    default: mod.PresentationViewerWrapper,
+  })),
+);
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -381,6 +396,11 @@ export default function ProjectSessionPage() {
   return (
     <ProjectShell projectId={projectId}>
       <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+      {/* Outside `inner`'s dual crossfade layers — exactly one instance,
+          whichever layer (or error/loader state) is showing. */}
+      <Suspense fallback={null}>
+        <PresentationViewerWrapper />
+      </Suspense>
     </ProjectShell>
   );
 }

@@ -1,0 +1,686 @@
+'use client';
+
+/**
+ * `EasyPanel` — the non-technical home for a session's right panel: three
+ * promise cards (Progress / Outputs / Context) over the same tool-call data
+ * `AdvancedPanel` renders one-at-a-time. Same props shape as `AdvancedPanel`
+ * (plus the session's busy flag) so `session-layout.tsx` can swap between them
+ * freely.
+ *
+ * Easy mode is chrome-free: no tab strip, no header, no border. The panel IS
+ * the three cards. They expand in place and never navigate away from each
+ * other — the only thing that ever replaces them is a detail (a step's tool
+ * views, a Context group, a file, a running app), and the panel owns that,
+ * because a card cannot replace its own parent.
+ *
+ * Must use `collectAllToolParts`, not `collectToolParts`: the latter strips
+ * `read`/`skill` parts, which is correct for Advanced's one-at-a-time
+ * stepper but would silently empty out Easy mode's "Read N files" narration
+ * and the Context card's "Files read" bucket.
+ */
+
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
+import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useIsMobile } from '@/hooks/utils';
+import { cn } from '@/lib/utils';
+import { track } from '@/lib/track';
+import {
+  useClearFocusedToolCall,
+  useFocusedToolCallId,
+  useIsSidePanelOpen,
+  useKortixComputerStore,
+} from '@/stores/kortix-computer-store';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
+import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
+import type { MessageWithParts } from '@/ui';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
+import { FileText, Terminal as TerminalIcon } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { collectAllToolParts } from '../shared/collect-tool-parts';
+import { pendingInputCount } from '../shared/deliverable-readiness';
+import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
+import { groupSteps } from '../shared/group-steps';
+import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
+import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
+import { deriveRunOutcome } from '../shared/run-outcome';
+import { AppPreview } from './app-preview';
+import { AppsCard } from './apps-card';
+import { ContextCard } from './context-card';
+import {
+  CloseButton,
+  type Detail,
+  DetailLayer,
+  terminalLayerMotion,
+  ToolParts,
+} from './detail-view';
+import {
+  deriveIsRunning,
+  isWideDeliverable,
+  neighborOutputs,
+  outputKey,
+  quickBrowserOutput,
+  shouldAutoExpandOutputs,
+  shouldAutoOpenPayoff,
+  stepForCallId,
+} from './easy-panel-logic';
+import { FilePreview } from './file-preview';
+import { OutputsCard } from './outputs-card';
+import { ProgressCard } from './progress-card';
+import { StepIcon } from './step-icon';
+
+/** The path's last segment — used only to decide whether the path hint in
+ *  "Ask for changes" would just repeat the display name (W12). */
+function basenameOf(path: string): string {
+  return path.split('/').pop() ?? path;
+}
+
+export const EasyPanel = memo(function EasyPanel({
+  sessionId,
+  messages,
+  isSessionBusy = false,
+  projectId,
+  projectSessionId,
+}: {
+  sessionId: string;
+  messages: MessageWithParts[] | undefined;
+  /** The session's own busy/retry status — see `deriveIsRunning`. */
+  isSessionBusy?: boolean;
+  /** Route ids the Audit detail needs to resolve a session's audit trail —
+   *  see `session-audit-shared.ts`. Absent while booting/transient, in which
+   *  case the palette's "Open Audit" consume below becomes a no-op. */
+  projectId?: string;
+  projectSessionId?: string;
+}) {
+  const parts = useMemo(() => collectAllToolParts(messages), [messages]);
+  const steps = useMemo(() => groupSteps(parts), [parts]);
+  const latestIds = useMemo(() => latestRunCallIds(messages), [messages]);
+  const outputs = useMemo(() => deriveOutputs(parts, { latestRun: latestIds }), [parts, latestIds]);
+  const context = useMemo(() => deriveContext(parts), [parts]);
+
+  // The latest run's own steps, not the session's — shared by `ProgressCard`
+  // itself (the live story it narrates), `elapsedMs` (the run's wall-clock,
+  // not the session's lifetime sum: "6 of 6 done · 3h 40m" across a week of
+  // runs answers a question nobody asked, W11), AND `outcome` below (a
+  // text-only turn must never inherit a verdict from an old errored run
+  // further back in the session).
+  const latestSteps = useMemo(
+    () => groupSteps(collectAllToolParts(latestRunMessages(messages))),
+    [messages],
+  );
+  const elapsedMs = useMemo(
+    () => latestSteps.reduce((total, step) => total + (step.durationMs ?? 0), 0),
+    [latestSteps],
+  );
+
+  // A running app is not "one of" the outputs — it's the thing the user asked
+  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
+  // never wanted. It gets its own card; Outputs keeps the files.
+  const apps = useMemo(() => outputs.filter((o) => o.kind === 'app'), [outputs]);
+  // Sorted, not filtered: everything the agent produced is still here, but the
+  // report leads and the twelve files it took to build the report follow. See
+  // `sortOutputs` — chronological order buries the answer under its scaffolding.
+  //
+  // Fresh-first inside the human ranking: the latest run's deliverables lead,
+  // then everything the session has ever produced, each group in sortOutputs
+  // order. A returning user sees what's new without losing what's old.
+  const files = useMemo(() => {
+    const nonApps = outputs.filter((o) => o.kind !== 'app');
+    return [
+      ...sortOutputs(nonApps.filter((o) => o.fresh)),
+      ...sortOutputs(nonApps.filter((o) => !o.fresh)),
+    ];
+  }, [outputs]);
+
+  // Part-derived alone flickers between tool calls (assistant text streams
+  // with no part running/pending) — OR it with the session's own status so
+  // Outputs only auto-expands at the real finish, and Progress's
+  // shimmer/subtitle don't flicker at every tool boundary. See `deriveIsRunning`.
+  const isRunning = deriveIsRunning(
+    steps.some((s) => s.status === 'running'),
+    isSessionBusy,
+  );
+
+  // W9 — the agent is blocked on a pending question/permission for THIS
+  // session. Progress redirects attention to it instead of claiming to be
+  // working or done. Same filter the header's needs-input chip uses (see
+  // `use-deliverable-readiness.ts`), extracted once into `pendingInputCount`.
+  const waitingOnUser = useOpenCodePendingStore(
+    (s) => pendingInputCount(s.permissions, s.questions, sessionId) > 0,
+  );
+
+  const isMobile = useIsMobile();
+  // W6 — desktop keeps EasyPanel mounted behind a closed side panel; the
+  // payoff effect below must know that so it never opens a detail nobody
+  // can see. The closed-panel case is the ready chip's (W1) job, not this
+  // effect's.
+  const isPanelOpen = useIsSidePanelOpen();
+
+  // The panel owns the detail, because on desktop the detail REPLACES the
+  // cards — a card can't replace its own parent. Opening a file is just
+  // another detail, so Back behaves identically wherever you came from.
+  const [detail, setDetail] = useState<Detail | null>(null);
+
+  // Leaving a detail always returns to the home cards, so it must also drop the
+  // panel out of fullscreen — the store `isExpanded` a detail entered when the
+  // app/file was maximized. Without this the panel stays pinned at 100% width
+  // and the home cards (progress/outputs/context/apps) render full-bleed
+  // instead of snapping back to the resizable split; worse, "Ask for changes"
+  // targets the chat composer, which fullscreen has collapsed to zero width.
+  // Paging between siblings goes through `setDetail` directly and KEEPS
+  // fullscreen — only the exits route through here.
+  const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
+  // Split override: a presentation deliverable grows the panel to its widest
+  // split (70/30, Marko's feedback) and the terminal layer to an even 50/50,
+  // instead of the default 35/65 — see `isWideDeliverable`/`handleOpenOutput`/
+  // `openTerminal` below. `panelSplit` mirrors `isExpanded`'s shape exactly
+  // (same store, same `animate` opt, same `skipNextExpandAnimation` flag) —
+  // see the store's doc comment.
+  const setPanelSplit = useKortixComputerStore((s) => s.setPanelSplit);
+  const closeDetail = useCallback(() => {
+    setDetail(null);
+    // `animate: false` — the detail slides out on its own; snapping the panel
+    // width back in the same instant avoids a second, competing motion.
+    setIsExpanded(false, { animate: false });
+    setPanelSplit(null, { animate: false });
+  }, [setIsExpanded, setPanelSplit]);
+
+  /**
+   * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
+   * owns a long-lived PTY WebSocket that must not tear down every time the
+   * user glances away, and `DetailLayer` unmounts its body via a keyed
+   * `AnimatePresence` on every close (that's correct for a file preview, fatal
+   * for a live shell: the connection drops and scrollback replays on reopen).
+   * So it gets its own `open` flag plus a once-true `activated` latch — the
+   * exact pattern `session-layout.tsx`'s Advanced-mode terminal uses — and is
+   * rendered as a sibling of `DetailLayer` below, animated (never unmounted)
+   * between the same resting states a detail moves between: it slides in/out
+   * against the home cards and crossfades against a detail card, staying
+   * mounted throughout with `inert` + zero opacity while closed. See
+   * `terminalLayerMotion` for the choreography; `terminalSwap` below records
+   * which of the two edges (home or detail) the current toggle crossed, since
+   * at render time an open terminal with a null detail can't tell them apart.
+   *
+   * Because it isn't a `detail`, `DetailLayer`'s Escape/Tab/arrow-key hooks
+   * stay inert while it's open (`useDetailKeyboard` only listens when
+   * `detail` is non-null) — keystrokes fall straight through to xterm. That's
+   * deliberate, not an oversight: adding an Escape-to-close here would eat the
+   * Escape key every vim/nano/fzf user inside the shell needs. The X button
+   * is the only way to close it.
+   */
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalSwap, setTerminalSwap] = useState(false);
+  const [terminalActivated, setTerminalActivated] = useState(false);
+  useEffect(() => {
+    if (terminalOpen) setTerminalActivated(true);
+  }, [terminalOpen]);
+
+  // Publish "a detail is showing" (a detail OR the terminal layer) to the
+  // store — `session-layout` shows the resize grip only then; the card home
+  // is a fixed-width column with nothing to resize. Panel close and session
+  // switch reset the flag store-side, mirroring `panelSplit`.
+  const setDetailOpen = useKortixComputerStore((s) => s.setDetailOpen);
+  useEffect(() => {
+    setDetailOpen(detail !== null || terminalOpen);
+  }, [detail, terminalOpen, setDetailOpen]);
+
+  // Mutual exclusion: the terminal layer and a `detail` never show at once —
+  // opening one closes the other, and the toggle records HOW (`terminalSwap`):
+  // over a detail it's a crossfade, from home it's the arrival slide.
+  // `closeDetail()` also exits fullscreen, so opening the terminal from a
+  // maximized detail snaps the panel back first. The terminal earns an even
+  // 50/50 split (a shell at the default 35 is a squeezed ribbon of wrapped
+  // lines) — the width glides on open alongside the layer's own motion (the
+  // same pairing a presentation's 70/30 open plays) and snaps on close, the
+  // rule every detail exit already follows: the layer plays its own slide-out,
+  // and a width animation under it would be a second, competing motion.
+  const openTerminal = useCallback(() => {
+    setTerminalSwap(detail !== null);
+    closeDetail();
+    setTerminalOpen(true);
+    setPanelSplit(50);
+  }, [detail, closeDetail, setPanelSplit]);
+  const closeTerminal = useCallback(() => {
+    setTerminalSwap(false);
+    setTerminalOpen(false);
+    setPanelSplit(null, { animate: false });
+  }, [setPanelSplit]);
+
+  // Every `detail` open funnels through here (instead of raw `setDetail`) so
+  // opening a file/app/step/Audit always closes the terminal — the other half
+  // of the mutual exclusion above, with the same choreography note: replacing
+  // an open terminal is a swap (the detail appears instantly UNDER it, the
+  // terminal fades out above — see `Detail.swapIn`), arriving from home is
+  // the slide. Also the generic split default: steps, Context rows, and Audit
+  // never widen the panel, so this resets it on every open.
+  // `handleOpenOutput` is the one caller that knows better — it calls
+  // `setPanelSplit` again right after `openDetail`, so its explicit value (70
+  // for a presentation, null otherwise) wins over this default.
+  const openDetail = useCallback(
+    (next: Detail) => {
+      setTerminalSwap(terminalOpen);
+      setTerminalOpen(false);
+      setDetail({ ...next, swapIn: terminalOpen });
+      setPanelSplit(null);
+    },
+    [terminalOpen, setPanelSplit],
+  );
+
+  // Present mode (W14): the fullscreen deck viewer fetches its own slide/
+  // metadata URLs (it calls useSandboxProxy() itself — see
+  // FullScreenPresentationViewer), so `sandboxUrl` only has to be a truthy
+  // proxied base URL the viewer can build its PDF/PPTX export and Google
+  // Slides upload requests against (`${sandboxUrl}/presentation/convert-to-*`
+  // — the /presentation router the sandbox agent server mounts at its root,
+  // i.e. Kortix Master, port 8000). It is never a raw sandbox host: the old
+  // daytona-style "sandbox_url" this component was written against
+  // (apps/web/src/types/project.ts) doesn't exist in the opencode/proxy
+  // architecture Easy mode runs on — every sandbox surface here (AppPreview,
+  // browser/desktop tabs) reaches its port through this same proxy.
+  const { getServiceUrl } = useSandboxProxy();
+
+  /**
+   * Opening an output shows the THING, not the machinery around it: a running
+   * app opens as the app, a file opens as that one file — never the file
+   * manager, which is a filing cabinet in answer to "show me the page".
+   *
+   * Both bring their own toolbar, so the layer's header is suppressed for both
+   * (one bar, not two), and both fill the pane, so neither takes the layer's
+   * padding.
+   *
+   * `siblings` is the list the row came from (files or apps — never both
+   * mixed, so "next" always means what that list's own order means). It's an
+   * argument, not a closed-over card list, so the callback itself stays
+   * dependency-free and every caller supplies its own list explicitly (W10).
+   * Nav is attached only once 2+ openable siblings exist — a lone file earns
+   * no prev/next row.
+   *
+   * Declared here (not near the JSX) so the payoff/chip-consume effects below
+   * can depend on it.
+   *
+   * `source` is telemetry-only (W5): where the open was triggered from — a
+   * row click ('row', the default), the payoff effect ('auto'), the ready
+   * chip's consume effect ('chip'), a prev/next nav closure ('nav'), or the
+   * header/palette "Open Browser" quick-view ('quick'). Never read for
+   * behavior, only reported alongside `deliverable_opened`.
+   */
+  const handleOpenOutput = useCallback(
+    (
+      output: OutputItem,
+      siblings?: OutputItem[],
+      source: 'row' | 'auto' | 'chip' | 'nav' | 'quick' = 'row',
+    ) => {
+      // The human title, when the output carries one (W3) — never the raw
+      // filename in a spot the user reads as the thing's name.
+      const displayName = output.title ?? output.name;
+
+      // Wide split (Marko's feedback): a presentation deliverable grows the
+      // panel to its widest split with the glide — see `isWideDeliverable`.
+      // Set AFTER `openDetail` below, whose own generic default
+      // (`setPanelSplit(null)`, for steps/context/audit) would otherwise win.
+      const split = isWideDeliverable(output) ? 70 : null;
+
+      // "Ask for changes" (W12): hand the composer a starter line naming this
+      // deliverable and step out of the way. The path hint only earns its
+      // parenthetical when it says something the display name didn't already —
+      // most outputs have no separate title, so path and name agree.
+      const askForChanges = () => {
+        track('ask_for_changes_clicked', { kind: output.kind });
+        const pathHint =
+          output.path && basenameOf(output.path) !== displayName ? ` (\`${output.path}\`)` : '';
+        useSessionComposerPrefillStore
+          .getState()
+          .setPrefill(sessionId, `In ${displayName}${pathHint}, `);
+        closeDetail();
+      };
+
+      // Present (W14): only for outputs derive-panels.ts tagged with a real
+      // deck name (a presentation_gen create/export call — never a `show`n
+      // .pptx FILE, which has no metadata.json/slide-html behind it).
+      const present =
+        output.kind === 'presentation' && output.presentationName
+          ? () => {
+              const kortixMasterPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
+              const sandboxBaseUrl = getServiceUrl(kortixMasterPort)?.replace(/\/+$/, '');
+              if (!sandboxBaseUrl) return;
+              track('present_opened');
+              usePresentationViewerStore
+                .getState()
+                .openPresentation(output.presentationName!, sandboxBaseUrl);
+            }
+          : undefined;
+
+      const openable = (siblings ?? []).filter((s) => s.path || s.url);
+      const { prev, next, position } =
+        openable.length > 1
+          ? neighborOutputs(openable, outputKey(output))
+          : { prev: null, next: null, position: '' };
+      const nav =
+        prev || next
+          ? {
+              prev: prev ? () => handleOpenOutput(prev, siblings, 'nav') : null,
+              next: next ? () => handleOpenOutput(next, siblings, 'nav') : null,
+              position,
+            }
+          : undefined;
+
+      if (output.kind === 'app' && output.url) {
+        track('deliverable_opened', { kind: output.kind, source });
+        openDetail({
+          key: `app:${output.url}`,
+          title: displayName,
+          hideHeader: true,
+          padded: false,
+          nav,
+          body: (
+            <AppPreview
+              url={output.url}
+              name={displayName}
+              onClose={closeDetail}
+              onAskForChanges={askForChanges}
+            />
+          ),
+        });
+        setPanelSplit(split);
+        return;
+      }
+
+      if (!output.path) return;
+      track('deliverable_opened', { kind: output.kind, source });
+      openDetail({
+        key: `file:${output.path}`,
+        title: displayName,
+        icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
+        hideHeader: true,
+        padded: false,
+        nav,
+        body: (
+          <FilePreview
+            path={output.path}
+            name={displayName}
+            fileName={output.name}
+            onClose={closeDetail}
+            onAskForChanges={askForChanges}
+            onPresent={present}
+          />
+        ),
+      });
+      setPanelSplit(split);
+    },
+    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit],
+  );
+
+  const outcome = useMemo(
+    () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),
+    [messages, latestSteps],
+  );
+
+  // Auto-expand Outputs the moment a run finishes with something to show —
+  // never on every render of an already-finished (or still-running) run, and
+  // never on a failed one: a pile of half-written files is not a celebration.
+  const wasRunningRef = useRef(isRunning);
+  const [outputsDefaultOpen, setOutputsDefaultOpen] = useState(false);
+  useEffect(() => {
+    if (
+      outcome === 'succeeded' &&
+      shouldAutoExpandOutputs(wasRunningRef.current, isRunning, files.length)
+    ) {
+      setOutputsDefaultOpen(true);
+    }
+    wasRunningRef.current = isRunning;
+  }, [isRunning, files.length, outcome]);
+
+  // Payoff (W2): present the primary deliverable exactly once, at the finish,
+  // and only when the user hasn't taken the wheel themselves this run.
+  const interactedThisRunRef = useRef(false);
+  useEffect(() => {
+    if (detail !== null) interactedThisRunRef.current = true;
+  }, [detail]);
+  const prevRunningRef = useRef(isRunning);
+  useEffect(() => {
+    const wasRunning = prevRunningRef.current;
+    if (!wasRunning && isRunning) interactedThisRunRef.current = false;
+    prevRunningRef.current = isRunning;
+    // Fresh-only (unlike the chip-consume effect below): the payoff is this
+    // run's reward for THIS run's work. Without this filter,
+    // selectPrimaryDeliverable's stale fallback fires on every text-only turn
+    // in a session with history, auto-opening a deliverable from a run the
+    // user already saw.
+    const freshApps = apps.filter((a) => a.fresh);
+    const freshFiles = files.filter((f) => f.fresh);
+    const primary = selectPrimaryDeliverable(freshApps, freshFiles);
+    if (
+      shouldAutoOpenPayoff({
+        wasRunning,
+        isRunning,
+        outcome,
+        hasPrimary: primary !== null,
+        detailOpen: detail !== null,
+        interactedThisRun: interactedThisRunRef.current,
+        panelOpen: isPanelOpen,
+      }) &&
+      primary
+    ) {
+      // The primary came from whichever list `selectPrimaryDeliverable`
+      // actually picked it from — nav must page through that same list.
+      handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'auto');
+    }
+  }, [isRunning, outcome, detail, apps, files, handleOpenOutput, isPanelOpen]);
+
+  // Chip tap (W1→W2 handoff): the header asked us to open the primary
+  // deliverable. Subscribe to the pending-request VALUE, not the (stable)
+  // consume action: on desktop this panel stays mounted while the side panel
+  // is closed, so a chip click must itself re-render us or the handoff
+  // silently dead-ends. `consumePrimaryOpen` keeps it one-shot.
+  const pendingPrimaryOpenSessionId = useKortixComputerStore((s) => s.pendingPrimaryOpenSessionId);
+  useEffect(() => {
+    if (pendingPrimaryOpenSessionId !== sessionId) return;
+    if (!useKortixComputerStore.getState().consumePrimaryOpen(sessionId)) return;
+    // Unfiltered (unlike the payoff effect above): the chip was already
+    // earned by a real finish, possibly in an earlier render than this one —
+    // the stale fallback is this path's legitimate purpose, so a user who
+    // taps a chip after navigating away still lands on something.
+    const primary = selectPrimaryDeliverable(apps, files);
+    if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
+  }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
+
+  // Command-palette quick-view consume effect lives below `openAudit`'s
+  // declaration — see the comment there.
+  const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
+
+  /**
+   * A tool call clicked in the CHAT opens that tool's real view in the panel.
+   *
+   * This is the last escape hatch to the raw truth in Easy mode, and it costs
+   * the panel nothing: the affordance lives in the chat, so there is no new
+   * thing to click here and no new way to get lost. The user asked to see one
+   * specific thing; they see that thing.
+   *
+   * `panel_opened` is tracked in `session-chat.tsx`'s `handleToolActivate`,
+   * NOT here (MINOR SWEEP c): by the time this effect runs, the store's
+   * `focusToolCall` action has already flipped `isSidePanelOpen` to true, so
+   * a "was it already open?" read at this point would always answer "yes"
+   * and the event would never fire honestly. `handleToolActivate` is the
+   * only point in the flow where the pre-open state is still observable.
+   */
+  const focusedToolCallId = useFocusedToolCallId();
+  const clearFocusedToolCall = useClearFocusedToolCall();
+  useEffect(() => {
+    if (!focusedToolCallId) return;
+    const step = stepForCallId(steps, focusedToolCallId);
+    if (step) {
+      openDetail({
+        key: `step:${step.id}`,
+        title: step.label,
+        icon: <StepIcon family={step.family} status={step.status} />,
+        padded: false,
+        body: <ToolParts parts={step.parts} sessionId={sessionId} />,
+      });
+    }
+    clearFocusedToolCall();
+  }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId, openDetail]);
+
+  const openAudit = useCallback(() => {
+    openDetail({
+      key: 'audit',
+      title: 'Audit',
+      padded: false,
+      body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
+    });
+  }, [openDetail, projectId, projectSessionId]);
+
+  /**
+   * Header/palette "Open Browser": the in-panel port browser (`AppPreview`),
+   * defaulting to the first running app's url when the session has one, else
+   * `http://localhost:3000` (a hint, not a guess — `AppPreview`'s own address
+   * bar placeholder teaches ports the same way). Routes through
+   * `handleOpenOutput` with a synthetic app `OutputItem` rather than opening
+   * `AppPreview` directly: that's the one path that already carries the wide
+   * split, the terminal mutual-exclusion, and `deliverable_opened` telemetry,
+   * so this reads as "click the first Apps-card row" instead of a second,
+   * parallel way to open the same detail that could drift from it later. The
+   * synthetic `callID` never collides with a real tool call's, so it can't be
+   * mistaken for one if it ever leaked into a siblings list.
+   */
+  const openBrowser = useCallback(() => {
+    handleOpenOutput(quickBrowserOutput(apps), undefined, 'quick');
+  }, [apps, handleOpenOutput]);
+
+  // Command palette "Open Terminal"/"Open Audit"/"Open Browser" (W1→W2-shaped
+  // handoff, same pattern as the chip-consume effect above): subscribe to the
+  // pending request VALUE, not the stable `consumeQuickView` action — desktop
+  // keeps this panel mounted behind a closed side panel, so a palette
+  // selection must itself re-render us or the handoff silently dead-ends.
+  // Audit with no project context (booting/transient session) is a
+  // deliberate no-op: the panel is already open by the time this runs,
+  // there's just nothing to drill into yet — Advanced mode's Audit tab shows
+  // its own empty state instead (this command routes through Advanced's own
+  // `setView`, not here).
+  useEffect(() => {
+    if (pendingQuickView?.sessionId !== sessionId) return;
+    const view = useKortixComputerStore.getState().consumeQuickView(sessionId);
+    if (view === 'terminal') {
+      openTerminal();
+    } else if (view === 'audit' && projectId && projectSessionId) {
+      openAudit();
+    } else if (view === 'browser') {
+      openBrowser();
+    }
+  }, [
+    pendingQuickView,
+    sessionId,
+    projectId,
+    projectSessionId,
+    openTerminal,
+    openAudit,
+    openBrowser,
+  ]);
+
+  const goHome = closeDetail;
+
+  // Desktop terminal layer choreography — see `terminalLayerMotion`. Reduced
+  // motion trades the slides for the comprehension fade.
+  const reduceMotion = useReducedMotion();
+  const terminalMotion = terminalLayerMotion(terminalOpen, terminalSwap, !!reduceMotion);
+
+  return (
+    <div className="relative h-full w-full">
+      <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile} terminalOpen={terminalOpen}>
+        <div className="flex h-full flex-col gap-3 overflow-auto p-3">
+          <ProgressCard
+            steps={latestSteps}
+            isRunning={isRunning}
+            elapsedMs={elapsedMs}
+            outcome={outcome}
+            waitingOnUser={waitingOnUser}
+          />
+          <OutputsCard
+            outputs={files}
+            defaultExpanded={outputsDefaultOpen}
+            onOpenOutput={(o) => handleOpenOutput(o, files)}
+          />
+          <ContextCard
+            files={context.files}
+            web={context.web}
+            tools={context.tools}
+            sessionId={sessionId}
+            onOpenDetail={openDetail}
+          />
+          {apps.length > 0 && (
+            <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />
+          )}
+        </div>
+      </DetailLayer>
+
+      {isMobile ? (
+        // Mobile: a standard detail-style vaul Drawer, not the desktop
+        // keep-alive layer below. vaul unmounts `DrawerContent` on close, so
+        // the shell reconnects on every open — the same tradeoff
+        // `session-layout.tsx`'s Advanced-mode terminal accepts for its own
+        // mobile drawer; there is no room for a persistent absolutely
+        // positioned layer inside a bottom sheet.
+        <Drawer open={terminalOpen} onOpenChange={(next) => !next && closeTerminal()}>
+          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+            <DrawerHeader className="shrink-0 px-4 py-3 text-left">
+              <DrawerTitle className="flex items-center justify-between gap-2 text-base">
+                <span className="flex items-center gap-2.5">
+                  <TerminalIcon className="text-muted-foreground size-4 shrink-0" />
+                  Terminal
+                </span>
+                <CloseButton onClose={closeTerminal} />
+              </DrawerTitle>
+            </DrawerHeader>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <SessionTerminalPanel sessionId={sessionId} projectSessionId={projectSessionId} />
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        terminalActivated && (
+          // Desktop keep-alive layer: mirrors the detail card's exact frame
+          // (same inset/rounding/border/shadow) so swapping between them
+          // reads as one continuous surface. Rendered as a LATER sibling of
+          // `DetailLayer` in this shared `relative` wrapper — with no
+          // explicit z-index, that DOM order alone paints it above the detail
+          // card, which is what lets it carry BOTH swap crossfades: it fades
+          // in over an exiting detail and fades out over an arriving one (see
+          // `terminalLayerMotion`/`detailCardVariants`). Kept mounted (never
+          // unmounted, `inert` + opacity 0 while closed) so
+          // `SessionTerminalPanel`'s PTY WebSocket survives every close — see
+          // the `terminalOpen` state comment above for why this can't be a
+          // `detail`. `initial` is the closed resting state, so the first-ever
+          // activation plays the same arrival every later open does.
+          <motion.div
+            initial={{ x: '100%', opacity: 0 }}
+            animate={terminalMotion.target}
+            transition={terminalMotion.transition}
+            aria-hidden={!terminalOpen}
+            inert={!terminalOpen || undefined}
+            className={cn(
+              'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow',
+              !terminalOpen && 'pointer-events-none',
+            )}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+              <span className="flex min-w-0 items-center gap-2">
+                <TerminalIcon className="text-muted-foreground size-4 shrink-0" />
+                <span className="text-foreground truncate text-sm font-semibold">Terminal</span>
+              </span>
+              <CloseButton onClose={closeTerminal} />
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <SessionTerminalPanel
+                sessionId={sessionId}
+                projectSessionId={projectSessionId}
+                hidden={!terminalOpen}
+              />
+            </div>
+          </motion.div>
+        )
+      )}
+    </div>
+  );
+});

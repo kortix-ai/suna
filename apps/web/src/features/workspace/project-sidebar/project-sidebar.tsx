@@ -187,7 +187,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="icon"
                 onClick={toggleSidebar}
-                className=" text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
               >
                 <PanelLeft className="cn-rtl-flip size-4" />
               </Button>
@@ -203,11 +203,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   size="md"
-                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center !text-sm [&_svg]:!size-5"
+                  className="group/menu-button text-sidebar-foreground text-center border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] !text-sm font-medium [&_svg]:!size-4"
                 >
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
-                  )}
+                  <span>
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
+                    )}
+                  </span>
                   <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
                     <Kbd>{modSymbol}</Kbd>
                     <Kbd>J</Kbd>
@@ -222,9 +224,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 label only carries the active filter; the ⋯ button opens the
                 filter menu. */}
             <div className="flex min-h-0 flex-1 flex-col space-y-2">
-              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-xs font-medium tracking-wider uppercase">
+              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
                 <div className="flex w-full flex-row items-center gap-0.5">
-                  <div className="flex min-w-0 flex-1 flex-row items-center gap-0.5 px-2 text-[13px] font-normal">
+                  <div className="flex min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
                     <span>Sessions</span>
                     {sessionFilter !== 'all' && (
                       <span className="text-muted-foreground/90 truncate tracking-normal normal-case">

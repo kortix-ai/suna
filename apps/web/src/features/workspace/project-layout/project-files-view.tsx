@@ -10,7 +10,9 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   FileExplorerPage,
+  FileExplorerSourceProvider,
   FilesStoreProvider,
+  gitRefExplorerSource,
   ProjectFilesProvider,
   useSelectedVersion,
 } from '@/features/project-files';
@@ -44,9 +46,11 @@ export function ProjectFilesView({ projectId }: { projectId: string }) {
 
   return (
     <ProjectFilesProvider value={{ projectId, ref: activeRef, defaultBranch }}>
-      <FilesStoreProvider>
-        <FileExplorerPage />
-      </FilesStoreProvider>
+      <FileExplorerSourceProvider value={gitRefExplorerSource}>
+        <FilesStoreProvider>
+          <FileExplorerPage />
+        </FilesStoreProvider>
+      </FileExplorerSourceProvider>
     </ProjectFilesProvider>
   );
 }

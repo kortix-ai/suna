@@ -2,11 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import { SessionActionsPanel } from '@/features/session/session-actions-panel';
+import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
+import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
+import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
+import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import type { MessageWithParts } from '@/ui';
 import { useState } from 'react';
 
 /**
@@ -116,6 +119,197 @@ const LIST_OUTPUT = `/workspace/apps/web/src/app/page.tsx
 /workspace/apps/web/src/app/layout.tsx
 /workspace/apps/web/src/app/globals.css`;
 
+// ---------------------------------------------------------------------------
+// FileViewer fixture — the sandbox fetch behind FilePreview always
+// fails on this page (no live sandbox), so the toggle can't be reached
+// through Outputs. Render it directly with realistic content: one markdown
+// file (proves the Preview/Raw split + real DocMarkdown rendering) and one
+// non-markdown file (proves the source-only path — no tabs, just a language
+// label).
+// ---------------------------------------------------------------------------
+const MARKDOWN_PREVIEW_CONTENT = `# Jay Suthar
+
+## Summary
+
+Frontend engineer focused on **design systems** and *motion-first* UI. Ships
+polished, production-grade interfaces and enjoys sweating the details other
+teams skip.
+
+## Highlights
+
+- Rebuilt the Easy-mode session panel's detail layer as an inset card, not a
+  full-bleed sheet
+- Cut card body padding to match content density per section
+- Replaced the file-manager drill-in with a single-file \`FilePreview\`
+- Shipped \`FileViewer\` — rendered preview, copy, download and full screen
+
+## Example
+
+Here's a minimal handler used in the file-preview fallback path:
+
+\`\`\`ts
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return \`\${(bytes / 1024 ** i).toFixed(1)} \${units[i]}\`;
+}
+\`\`\`
+
+Read more on the [Kortix design system](https://kortix.com) or ping me on
+Slack.
+`;
+
+const TS_SOURCE_CONTENT = `import { useCallback, useState } from 'react';
+
+export interface Counter {
+  value: number;
+  increment: () => void;
+  reset: () => void;
+}
+
+/** A minimal counter hook — used here only to prove Shiki highlighting on a
+ * non-markdown file inside \`FileViewer\`'s source-only path. */
+export function useCounter(initial = 0): Counter {
+  const [value, setValue] = useState(initial);
+
+  const increment = useCallback(() => {
+    setValue((v) => v + 1);
+  }, []);
+
+  const reset = useCallback(() => {
+    setValue(initial);
+  }, [initial]);
+
+  return { value, increment, reset };
+}
+`;
+
+/** HTML is the ONE file type whose rendered form and source are both worth
+ *  seeing, so it is the only one FileViewer gives a Preview/Source toggle. */
+const HTML_PREVIEW_CONTENT = `<!doctype html>
+<meta charset="utf-8" />
+<title>Pricing comparison</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; margin: 24px; color: #111; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: #666; margin: 0 0 20px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #e5e5e5; padding: 8px 10px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+</style>
+<h1>Pricing comparison</h1>
+<p class="sub">Generated from 5 sources</p>
+<table>
+  <tr><th>Plan</th><th>Acme</th><th>Globex</th></tr>
+  <tr><td>Starter</td><td>$19/mo</td><td>$25/mo</td></tr>
+  <tr><td>Team</td><td>$49/mo</td><td>$45/mo</td></tr>
+  <tr><td>Enterprise</td><td>Custom</td><td>Custom</td></tr>
+</table>
+`;
+
+// ---------------------------------------------------------------------------
+// Task 10 fixtures — the converted Advanced-mode views from T5-T7: get-mem,
+// memory-search (full rebuilds), agent-spawn/agent-status (bypasser family),
+// an executor call (tokens + OutputBlock), session-stats + dcp-compress (one
+// representative each), triggers' non-bracket fallback path (OutputBlock,
+// not the parsed row list), and project-delete (chrome-only, no output).
+// ---------------------------------------------------------------------------
+// NOTE: parseMemoryEntryOutput's Tool/Prompt/Session/Created regexes don't
+// stop at a following "Facts:" label, so whichever of those fields sits
+// directly before Facts swallows the entire Facts block into its own value
+// (pre-existing bug in lib/utils/memory-entry-output.ts — present in its own
+// passing test fixture too, just not asserted against). A second, related
+// bug collapses multi-bullet Facts sections into one entry. Both are out of
+// scope for this fixtures pass (see task-10-report.md); going straight from
+// Narrative to Facts here (no Tool/Session/Created) sidesteps them so the
+// debug page itself reads clean.
+const GET_MEM_OUTPUT = `=== Observation #482 [insight] ===
+Title: Pricing page conversion insight
+Narrative:
+Users bounce from the pricing page when the enterprise tier shows no price. Adding "Custom — talk to sales" reduced bounce by 12%.
+Facts:
+- Enterprise tier previously showed a blank price field before the fix shipped
+Concepts: pricing, conversion, enterprise
+Files read: apps/web/src/app/pricing/page.tsx, apps/web/src/lib/pricing.ts`;
+
+const MEMORY_SEARCH_OUTPUT = JSON.stringify({
+  query: 'pricing page bounce rate',
+  source: 'ltm',
+  results: [
+    {
+      id: 'mem_482',
+      type: 'insight',
+      source: 'ltm',
+      confidence: 0.91,
+      content:
+        'Users bounce from the pricing page when the enterprise tier shows no price. Adding "Custom — talk to sales" reduced bounce by 12%.',
+      files: ['apps/web/src/app/pricing/page.tsx'],
+    },
+    {
+      id: 'obs_117',
+      type: 'note',
+      source: 'obs',
+      confidence: 0.64,
+      content: 'Earlier run flagged the same bounce pattern on the mobile breakpoint.',
+      files: [],
+    },
+  ],
+});
+
+const AGENT_SPAWN_OUTPUT = `## Worker Result
+**Agent:** writer
+**Task:** Draft the pricing comparison report
+**Status:** completed
+**Session:** ses_7a41
+**Duration:** 48s
+---
+Wrote the pricing comparison report covering Acme, Globex, and Initech. Flagged that Acme undercuts on annual billing discounts.`;
+
+const AGENT_STATUS_OUTPUT = [
+  '**task-a1b2c3d4** Draft the pricing comparison report — completed ses_7a41',
+  '**task-e5f6a7b8** Generate the cover image — in_progress',
+  '**task-c9d0e1f2** QA the report on mobile — pending',
+].join('\n');
+
+const EXECUTOR_CALL_OUTPUT = JSON.stringify({
+  ok: true,
+  status: 'ok',
+  risk: 'read',
+  data: {
+    issues: [
+      { id: 'ENG-142', title: 'Pricing page bounce on enterprise tier', status: 'In Progress' },
+      { id: 'ENG-138', title: 'Add favicon fallback for unresolved domains', status: 'Done' },
+    ],
+  },
+});
+
+const SESSION_STATS_OUTPUT = `## Session stats
+
+- Messages: 42
+- Tool calls: 118
+- Tokens: 284,102 in / 19,884 out
+- Duration: 26m 12s
+- Cost: $1.84`;
+
+const DCP_COMPRESS_OUTPUT = `Compressed 6 tool results about "pricing research" into a 3-sentence summary:
+
+Acme and Globex both gate SSO behind their top tier. Our Growth plan undercuts Acme's equivalent by $10/mo while matching seat count. Recommendation: lead with the SSO parity + price gap in the launch page hero.`;
+
+const TRIGGERS_GET_OUTPUT = JSON.stringify(
+  {
+    id: 'trg_9f21',
+    name: 'Nightly pricing sync',
+    source_type: 'cron',
+    schedule: '0 3 * * *',
+    status: 'active',
+    agent: 'agent_writer',
+    last_run: '2026-07-15T03:00:00Z',
+  },
+  null,
+  2,
+);
+
 type Row = { label: string; node: React.ReactNode };
 type Group = { title: string; rows: Row[] };
 
@@ -148,6 +342,34 @@ const GROUPS: Group[] = [
             "src/app/page.tsx(12,7): error TS2322: Type 'string' is not assignable to type 'number'.",
           ),
         ),
+      },
+      {
+        label: 'pty_spawn',
+        node: part(
+          'pty_spawn',
+          done(
+            { command: 'pnpm dev', title: 'Dev server' },
+            '<pty_spawned>\nID: pty_4f2a\nTitle: Dev server\nCommand: pnpm dev\nStatus: running\nPID: 48213\nWorkdir: /workspace/apps/web\n</pty_spawned>',
+          ),
+        ),
+      },
+      {
+        label: 'pty_read',
+        node: part(
+          'pty_read',
+          done(
+            { id: 'pty_4f2a' },
+            '<pty_output id="pty_4f2a" status="running">\n00001| $ pnpm dev\n00002| ▲ Next.js 16.0.0\n00003| - Local:  http://localhost:3000\n00004| ✓ Ready in 1.2s\n(End of buffer — 4 lines total)\n</pty_output>',
+          ),
+        ),
+      },
+      {
+        label: 'pty_write',
+        node: part('pty_write', done({ id: 'pty_4f2a', input: 'rs\n' }, 'ok')),
+      },
+      {
+        label: 'pty_kill',
+        node: part('pty_kill', done({ id: 'pty_4f2a' }, 'Process pty_4f2a terminated.')),
       },
     ],
   },
@@ -455,8 +677,413 @@ const GROUPS: Group[] = [
           ),
         ),
       },
+      {
+        label: 'show (carousel pills)',
+        node: part(
+          'show',
+          done(
+            {
+              items: [
+                { type: 'url', url: 'http://localhost:3000' },
+                { type: 'file', path: '/workspace/reports/q3-summary.pdf' },
+                { type: 'file', path: '/workspace/decks/launch-deck.pptx' },
+                { type: 'file', path: '/workspace/docs/contract.docx' },
+                { type: 'file', path: '/workspace/data/metrics.xlsx' },
+                { type: 'file', path: '/workspace/site/index.html' },
+                { type: 'file', path: '/workspace/src/components/app.tsx' },
+              ],
+            },
+            '',
+          ),
+        ),
+      },
     ],
   },
+  {
+    title: 'Advanced-mode conversions (T5-T7)',
+    rows: [
+      {
+        label: 'get_mem',
+        node: part('get_mem', done({ source: 'ltm', id: 482 }, GET_MEM_OUTPUT)),
+      },
+      {
+        label: 'memory_search',
+        node: part(
+          'memory_search',
+          done({ query: 'pricing page bounce rate', source: 'ltm' }, MEMORY_SEARCH_OUTPUT),
+        ),
+      },
+      {
+        label: 'agent_spawn',
+        node: part(
+          'agent_spawn',
+          done(
+            {
+              title: 'Draft the pricing comparison report',
+              agent_id: 'agent_writer',
+              verification_condition:
+                'The report file exists at /workspace/reports/pricing-comparison.md and covers at least 3 competitors.',
+            },
+            AGENT_SPAWN_OUTPUT,
+          ),
+        ),
+      },
+      {
+        label: 'agent_status',
+        node: part('agent_status', done({}, AGENT_STATUS_OUTPUT)),
+      },
+      {
+        label: 'kortix-executor_call',
+        node: part(
+          'kortix-executor_call',
+          done(
+            {
+              connector: 'linear',
+              action: 'list_issues',
+              args: { teamId: 'ENG', limit: 5 },
+            },
+            EXECUTOR_CALL_OUTPUT,
+          ),
+        ),
+      },
+      {
+        label: 'session_stats',
+        node: part('session_stats', done({}, SESSION_STATS_OUTPUT)),
+      },
+      {
+        label: 'compress (dcp)',
+        node: part('compress', done({ topic: 'pricing research' }, DCP_COMPRESS_OUTPUT)),
+      },
+      {
+        label: 'triggers (get, fallback dump)',
+        node: part(
+          'triggers',
+          done({ action: 'get', trigger_id: 'trg_9f21' }, TRIGGERS_GET_OUTPUT),
+        ),
+      },
+      {
+        label: 'project_delete',
+        node: part('project_delete', done({ project: 'kortix-marketing-site' }, '')),
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Easy-mode fixture — a plausible non-technical task: "look into how our
+// competitors price their plans, write it up, and make a cover image."
+// Exercises: grouping (6 consecutive reads → one step, 3 searches + 2 fetches
+// → one mixed step), a `write` (Outputs), `read`s (Context files), a web
+// search + fetch (Context web sources, incl. real, favicon-resolvable
+// domains), a running step, an errored step, and a `show` call whose only
+// input is a raw sandbox path (Easy mode must never render that path — see
+// the `show` row in Progress, which narrates it by basename instead).
+// ---------------------------------------------------------------------------
+const PRICING_REPORT_CONTENT = `# Pricing comparison
+
+## Acme Corp
+
+- Starter: $12/mo — 3 seats, basic support
+- Growth: $39/mo — 10 seats, priority support
+- Enterprise: custom pricing, SSO + SLA
+
+## Globex Cloud
+
+- Basic: $9/mo — 5 seats
+- Team: $29/mo — unlimited seats, no SSO
+- Enterprise: custom pricing, SSO + dedicated CSM
+
+## Takeaway
+
+Both competitors gate SSO behind their top tier. Our Growth plan
+undercuts Acme's equivalent tier by $10/mo while matching seat count.
+`;
+
+const EASY_PARTS = [
+  // 1. Explore — 6 consecutive reads collapse into "Read 6 files".
+  part('read', done({ filePath: '/workspace/notes/kickoff-brief.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/data/pricing-2026.csv' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/notes/competitor-list.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/docs/brand-guide.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/notes/customer-quotes.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/docs/outline.md' }, '<content/>')),
+
+  // 2. Web — 3 searches + 2 fetches, same family, collapse into one mixed
+  // step ("Searched and read 5 sources"); each stays distinct in Context's
+  // "Web sources" bucket. The third search uses real, resolvable domains
+  // (github.com/wikipedia.org/stackoverflow.com) rather than the fictional
+  // acme.example.com/globex.example.com competitor sites above — those don't
+  // exist, so Google's favicon service can only ever return the generic
+  // globe fallback for them. Without at least one real domain, the
+  // "Web sources" row favicons would be unverifiable — every row would look
+  // the same regardless of whether real-favicon rendering actually works.
+  part(
+    'web_search',
+    done(
+      { query: 'Acme Corp pricing plans 2026' },
+      JSON.stringify({
+        query: 'Acme Corp pricing plans 2026',
+        results: [
+          { title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' },
+        ],
+      }),
+    ),
+  ),
+  part(
+    'web_search',
+    done(
+      { query: 'Globex Cloud pricing tiers comparison' },
+      JSON.stringify({
+        query: 'Globex Cloud pricing tiers comparison',
+        results: [
+          { title: 'Globex Cloud — Plans & Pricing', url: 'https://globex.example.com/plans' },
+        ],
+      }),
+    ),
+  ),
+  part(
+    'web_search',
+    done(
+      { query: 'SaaS pricing page best practices' },
+      JSON.stringify({
+        query: 'SaaS pricing page best practices',
+        results: [
+          {
+            title: 'Pricing page examples · GitHub Topics',
+            url: 'https://github.com/topics/pricing-page',
+          },
+          {
+            title: 'Pricing strategies - Wikipedia',
+            url: 'https://en.wikipedia.org/wiki/Pricing_strategies',
+          },
+          {
+            title: 'What tier structure works best for a B2B SaaS product? - Stack Overflow',
+            url: 'https://stackoverflow.com/questions/71234567/saas-pricing-tier-structure',
+          },
+        ],
+      }),
+    ),
+  ),
+  part(
+    'webfetch',
+    done(
+      { url: 'https://acme.example.com/pricing', format: 'markdown' },
+      '# Pricing\n\nStarter $12/mo · Growth $39/mo · Enterprise — talk to sales.',
+    ),
+  ),
+  part(
+    'webfetch',
+    done(
+      { url: 'https://globex.example.com/plans', format: 'markdown' },
+      '# Plans\n\nBasic $9/mo · Team $29/mo · Enterprise — custom.',
+    ),
+  ),
+
+  // 3. A hiccup along the way — its own errored step, never merged into the
+  // web group above (different family) or the running step below (other
+  // families sit between them).
+  part(
+    'bash',
+    errored(
+      { command: 'pip install matplotlib-extra', description: 'Install charting helper' },
+      'ERROR: Could not find a version that satisfies the requirement matplotlib-extra\nERROR: No matching distribution found for matplotlib-extra',
+    ),
+  ),
+
+  // 3b. Memory — a recall from an earlier session, its own step (different
+  // family from the `run` step above and the `edit` step below, so it never
+  // merges into either). Exercises the Memory badge + Brain glyph in Context
+  // and the Progress stepper's memory family icon — without this, neither
+  // could be verified against a real fixture.
+  part(
+    'memory_search',
+    done(
+      { query: 'competitor pricing notes' },
+      JSON.stringify({
+        query: 'competitor pricing notes',
+        results: [
+          {
+            id: 'mem_204',
+            type: 'note',
+            source: 'ltm',
+            confidence: 0.86,
+            content:
+              'User previously flagged that Acme undercuts on annual billing discounts — check before finalizing the comparison.',
+          },
+        ],
+      }),
+    ),
+  ),
+
+  // 4. write — its own step (Outputs card picks this up as a real file).
+  part(
+    'write',
+    done(
+      { filePath: '/workspace/reports/pricing-comparison.md', content: PRICING_REPORT_CONTENT },
+      '',
+    ),
+  ),
+
+  // 4b. A write that FAILED — must never appear in Outputs (see BLOCKER 3):
+  // the file was never actually produced, so the card must not advertise it
+  // as something the user can open.
+  part(
+    'write',
+    errored(
+      { filePath: '/workspace/reports/failed-draft.md' },
+      'ENOSPC: no space left on device',
+    ),
+  ),
+
+  // 5. create — image_gen, its own step (Outputs card, kind "image"). Uses a
+  // locally-served asset as the direct URL so the tool view renders a real
+  // image without needing a live sandbox.
+  part(
+    'image_gen',
+    done(
+      { action: 'generate', prompt: 'Minimal editorial cover image for a pricing comparison report' },
+      JSON.stringify({
+        path: '/workspace/outputs/pricing-cover.png',
+        replicate_url: '/wallpapers/nebula-dark.jpg',
+      }),
+    ),
+  ),
+
+  // 6. show — previews the finished report with only a raw sandbox path in
+  // its input, no title. This is the exact shape that used to leak straight
+  // through to "Showed you /workspace/reports/pricing-comparison.html" (see
+  // BLOCKER 2 — a raw path/URL must never reach a non-technical user); the
+  // fixed narration must show a basename instead ("Showed you
+  // pricing-comparison.html").
+  part(
+    'show',
+    done(
+      { type: 'file', path: '/workspace/reports/pricing-comparison.html' },
+      '',
+    ),
+  ),
+
+  // 7. Still going — the run isn't finished, so Progress shows the shimmer.
+  part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
+];
+
+const EASY_MESSAGES: MessageWithParts[] = [
+  {
+    info: { id: 'm_easy', role: 'assistant' },
+    parts: EASY_PARTS,
+  } as any,
+];
+
+// A run that has only just started: no tool calls yet at all. Exercises the
+// Outputs/Context cards' EMPTY states (soft placeholder art + one plain
+// sentence) — the main fixture above always has content in both, so without
+// this the empty state would ship unverified.
+const EMPTY_MESSAGES: MessageWithParts[] = [
+  {
+    info: { id: 'm_empty', role: 'assistant' },
+    parts: [],
+  } as any,
+];
+
+// ---------------------------------------------------------------------------
+// Task 21 fixtures — the three states the earlier tasks' reviews explicitly
+// deferred to this live visual pass: a completed run with real deliverables
+// (W2/W3/W11), a failed run (W7), and a stopped run (W7).
+// ---------------------------------------------------------------------------
+
+const REPORT_DRAFT = `# Quarterly report (draft)
+
+Numbers pending the Q4 close.
+`;
+
+const REPORT_FINAL = `# Quarterly report
+
+## Q4
+
+Revenue: $4.2M (+18% QoQ). SSO attach rate up 6pts.
+`;
+
+// A prior run wrote the report once; the latest run rewrites the SAME path.
+// `deriveOutputs`' last-write-wins dedup must collapse this to one Outputs
+// row, marked "Updated" — not two rows, and not silently still "New".
+const COMPLETED_PRIOR_RUN_PARTS = [
+  part(
+    'write',
+    done({ filePath: '/workspace/reports/quarterly-report.md', content: REPORT_DRAFT }, ''),
+  ),
+];
+
+const COMPLETED_LATEST_RUN_PARTS = [
+  // The re-write (asserts one row + "Updated").
+  part(
+    'write',
+    done({ filePath: '/workspace/reports/quarterly-report.md', content: REPORT_FINAL }, ''),
+  ),
+  // A `show` with a title + a PDF path — the row must read "Quarterly report"
+  // (title, not filename) with a "PDF" kind label and the file glyph.
+  part(
+    'show',
+    done(
+      { type: 'file', title: 'Quarterly report', path: '/workspace/reports/quarterly-report.pdf' },
+      '',
+    ),
+  ),
+  // A `show` carrying a URL — Outputs/Apps must offer it as a running app,
+  // not a file row.
+  part(
+    'show',
+    done(
+      {
+        type: 'url',
+        title: 'Live dashboard',
+        description: 'The report, rendered as a shareable page.',
+        url: 'http://localhost:3000',
+      },
+      '',
+    ),
+  ),
+];
+
+const COMPLETED_MESSAGES: MessageWithParts[] = [
+  { info: { id: 'm_completed_1', role: 'assistant' }, parts: COMPLETED_PRIOR_RUN_PARTS } as any,
+  { info: { id: 'm_completed_2', role: 'user' }, parts: [] } as any,
+  { info: { id: 'm_completed_3', role: 'assistant' }, parts: COMPLETED_LATEST_RUN_PARTS } as any,
+];
+
+// A run that ended in a genuine failure: the last assistant message carries
+// `info.error`, plus a `write` call that itself errored (its step must narrate
+// "Couldn't write budget.csv", never claim the file exists in Outputs).
+const FAILED_PARTS = [
+  part('read', done({ filePath: '/workspace/reports/budget-template.csv' }, '<content/>')),
+  part(
+    'write',
+    errored({ filePath: '/workspace/reports/budget.csv' }, 'ENOSPC: no space left on device'),
+  ),
+];
+
+const FAILED_MESSAGES: MessageWithParts[] = [
+  {
+    info: {
+      id: 'm_failed',
+      role: 'assistant',
+      error: { name: 'ProviderError', data: { message: 'boom' } },
+    },
+    parts: FAILED_PARTS,
+  } as any,
+];
+
+// Same underlying content as the failed fixture, but the error is an abort —
+// `deriveRunOutcome`'s abort heuristic must read this as "stopped by you", not
+// "something went wrong", even though a step still ended in error.
+const STOPPED_MESSAGES: MessageWithParts[] = [
+  {
+    info: {
+      id: 'm_stopped',
+      role: 'assistant',
+      error: { name: 'MessageAbortedError' },
+    },
+    parts: FAILED_PARTS,
+  } as any,
 ];
 
 export default function DebugToolsPage() {
@@ -487,6 +1114,145 @@ export default function DebugToolsPage() {
         </button>
       </div>
 
+      {/* Easy-mode panel preview — the non-technical card home, and the
+          Advanced stepper beside it fed the exact same fixture, so both
+          panel modes are eyeball-comparable side by side without needing a
+          logged-in session or `panelMode` preference. */}
+      <div className="mx-auto w-full max-w-5xl px-6 pt-10">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          Easy mode vs. Advanced
+        </h2>
+        <div className="flex flex-wrap items-start gap-6">
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Advanced
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <AdvancedPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — empty (no tool calls yet)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — completed with deliverables (W2/W3/W11)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel
+                sessionId="debug-easy-completed"
+                messages={COMPLETED_MESSAGES}
+                isSessionBusy={false}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — failed run (W7)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel
+                sessionId="debug-easy-failed"
+                messages={FAILED_MESSAGES}
+                isSessionBusy={false}
+              />
+            </div>
+          </div>
+          {/* Same FAILED_MESSAGES data through Advanced mode — this is where
+              the errored write step's real narration ("Couldn't write
+              budget.csv") is visible; Easy mode deliberately never surfaces
+              raw step text, only the settled outcome banner (W7). */}
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Advanced — same failed run
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <AdvancedPanel sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — stopped by you (W7)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel
+                sessionId="debug-easy-stopped"
+                messages={STOPPED_MESSAGES}
+                isSessionBusy={false}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* FileViewer fixture — /debug/tools has no live sandbox, so FilePreview's
+          fetch always fails and the viewer can never be reached through Outputs.
+          Render it directly, three times, one per toolbar shape:
+            - markdown  → file icon + name, rendered document, NO toggle
+            - html      → Preview/Source toggle at the far left (the only type
+                          whose rendered form and source are both worth seeing)
+            - other     → file icon + name, source only, NO toggle
+          All three share the same right-hand actions. */}
+      <div className="mx-auto w-full max-w-6xl px-6 pt-10">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          FileViewer
+        </h2>
+        <div className="flex flex-wrap items-start gap-6">
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              markdown — no toggle
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={MARKDOWN_PREVIEW_CONTENT}
+                fileName="jay-suthar.md"
+                path="/workspace/jay-suthar.md"
+                onClose={() => {}}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              html — preview / source toggle
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={HTML_PREVIEW_CONTENT}
+                fileName="report.html"
+                path="/workspace/report.html"
+                onClose={() => {}}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              other — source only
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={TS_SOURCE_CONTENT}
+                fileName="example.ts"
+                path="/workspace/example.ts"
+                onClose={() => {}}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Side-panel Actions view preview — the focused navigator that reuses
           the same ToolPartRenderer handlers, fed the mock tool parts. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
@@ -494,7 +1260,7 @@ export default function DebugToolsPage() {
           {tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}
         </h2>
         <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-2xl border">
-          <SessionActionsPanel
+          <AdvancedPanel
             sessionId="debug"
             messages={[
               {
