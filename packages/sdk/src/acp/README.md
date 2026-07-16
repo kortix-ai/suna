@@ -325,8 +325,10 @@ of commit `a3dfe0cc2` ("chore(sdk): deprecate OpenCode-wire projection stack
 + golden parity fixtures (retirement prereqs)") — superseded by the ACP
 projection layer documented in §5/§6 above (`acpTranscriptMarkdown`/
 `acpTranscriptHtml`/`projectAcpChatItems`). The deprecation is JSDoc-only and
-additive: every tagged export keeps working (session-list previews, `?oc`
-deep-links, and `apps/mobile` still depend on it directly). That same commit
+additive: every tagged export keeps working (`apps/whitelabel-demo`'s chat
+rendering and `apps/web`'s transcript-export modal still depend on it
+directly; `apps/mobile` carries a hand-forked local copy that never imports
+the SDK's, and `?oc` deep-links are unrelated to this stack). That same commit
 added a **golden parity harness** —
 `core/turns/__fixtures__/opencode-wire-mixed.json` (a wire fixture exercising
 all 12 `Part` variants) plus three golden outputs

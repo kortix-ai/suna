@@ -58,8 +58,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `core/turns/tool-registry.ts`'s `toolInfo`; `react/chat/use-chat-turns.ts`'s
   `useChatTurns` / `TurnView`) — superseded by the ACP projection layer
   (`acpTranscriptMarkdown`/`acpTranscriptHtml`/`projectAcpChatItems`). JSDoc
-  tags only; every export keeps working (`apps/mobile`'s transcript export and
-  `?oc` session-list deep-links still depend on it directly). A golden
+  tags only; every export keeps working (`apps/whitelabel-demo`'s chat rendering
+  and `apps/web`'s transcript-export modal still depend on it directly;
+  `apps/mobile` uses a hand-forked local copy, and `?oc` deep-links are
+  unrelated to this stack — see the WS3-P3-a consumer inventory). A golden
   parity harness (`core/turns/__fixtures__/opencode-wire-mixed.json` + three
   captured golden outputs, asserted by `transcript.golden.test.ts`) now pins
   current output so a future removal has a contract to satisfy or explicitly
