@@ -457,7 +457,12 @@ const envSchema = z.object({
   MAILTRAP_FROM_EMAIL:         optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME:          optStrDefault('Kortix'),
   // Where public demo-request / "book a demo" lead notifications are sent.
-  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai'),
+  // Comma-separated list; every address gets every submission.
+  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai,hey@kortix.ai'),
+  // Sender for those notifications. kortix.ai (not the global MAILTRAP_FROM_
+  // EMAIL on kortix.com) so the send is DKIM-aligned with the kortix.ai
+  // recipient inboxes — the kortix.com sender was landing in spam.
+  DEMO_LEAD_FROM_EMAIL:        optStrDefault('hi@kortix.ai'),
 
   // ── Mailtrap contact sync (signup → automation lists) ─────────────────────
   // The email automations themselves live in Mailtrap's Automations UI; the
@@ -868,6 +873,7 @@ export const config = {
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
   DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
+  DEMO_LEAD_FROM_EMAIL: env.DEMO_LEAD_FROM_EMAIL,
 
   // ─── Mailtrap contact sync (signup → automation lists) ────────────────────
   MAILTRAP_ACCOUNT_ID: env.MAILTRAP_ACCOUNT_ID,
