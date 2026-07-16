@@ -57,6 +57,7 @@ import {
   type ProviderConfig,
   type ProviderGuide,
   SCIM_PROVIDER_GUIDES,
+  type StepBlock,
   type StepSchematic,
   getProviderGuide,
   getScimGuide,
@@ -810,6 +811,43 @@ function ImportForm({
 // (ScimValuesPanel below) then keeps both visible on every remaining Entra
 // step, instead of vanishing the moment you click Continue.
 
+function StepBlocks({
+  blocks,
+  spUrls,
+}: {
+  blocks: StepBlock[];
+  spUrls: SamlSpUrls | null;
+}) {
+  return (
+    <>
+      {blocks.map((block, i) =>
+        block.kind === 'text' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <p key={i} className="text-foreground text-sm leading-relaxed">
+            <InstructionText text={block.text} />
+          </p>
+        ) : block.kind === 'sp-values' ? (
+          <SpValueRows
+            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+            key={i}
+            urls={spUrls}
+            entityIdLabel={block.entityIdLabel}
+            acsLabel={block.acsLabel}
+            acsFirst={block.acsFirst}
+            includeSignOnUrl={block.includeSignOnUrl}
+          />
+        ) : block.kind === 'claims-table' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <ClaimsTable key={i} rows={block.rows} />
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
+        ),
+      )}
+    </>
+  );
+}
+
 function ScimTokenStep({
   accountId,
   providerName,
@@ -817,6 +855,8 @@ function ScimTokenStep({
   minted,
   onMinted,
   onDone,
+  connectContent,
+  spUrls,
 }: {
   accountId: string;
   providerName: string;
@@ -824,6 +864,10 @@ function ScimTokenStep({
   minted: CreatedScimToken | null;
   onMinted: (token: CreatedScimToken) => void;
   onDone: () => void;
+  /** The "now paste these into your IdP" instructions — rendered on THIS page
+   *  right below the freshly minted values so mint + connect are one page. */
+  connectContent?: StepBlock[];
+  spUrls: SamlSpUrls | null;
 }) {
   const [name, setName] = useState(`${providerName} provisioning`);
 
@@ -849,16 +893,36 @@ function ScimTokenStep({
         <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
           <CopyRow label="Secret token" value={minted.secret} />
           <p className="text-muted-foreground text-xs">
-            Both values stay pinned in the panel on this page through the rest of setup — you can
-            switch steps without losing them. The secret itself is only ever shown during this
-            visit; if you leave and come back later only the prefix ({minted.public_prefix}) is
-            visible, and you'd mint a new token from the SCIM card in Settings.
+            The secret is only ever shown during this visit; if you leave and come back later only
+            the prefix ({minted.public_prefix}) is visible, and you'd mint a new token from the SCIM
+            card in Settings.
           </p>
+        </div>
+      ) : null}
+
+      {minted && connectContent && connectContent.length > 0 && (
+        <div className="space-y-4">
+          <div className="border-border/60 border-t pt-4">
+            <h4 className="text-foreground text-sm font-semibold">
+              Now paste these into {providerName}
+            </h4>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Both values above stay on this page — copy each one straight into the fields below.
+            </p>
+          </div>
+          <StepBlocks blocks={connectContent} spUrls={spUrls} />
           <Button onClick={onDone}>
             Continue
             <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
           </Button>
         </div>
+      )}
+
+      {minted && (!connectContent || connectContent.length === 0) ? (
+        <Button onClick={onDone}>
+          Continue
+          <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
+        </Button>
       ) : (
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-56 space-y-1.5">
@@ -1073,29 +1137,8 @@ function StepBody({
         <InstructionText text={step.intro} />
       </p>
 
-      {step.content?.map((block, i) =>
-        block.kind === 'text' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <p key={i} className="text-foreground text-sm leading-relaxed">
-            <InstructionText text={block.text} />
-          </p>
-        ) : block.kind === 'sp-values' ? (
-          <SpValueRows
-            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-            key={i}
-            urls={spUrls}
-            entityIdLabel={block.entityIdLabel}
-            acsLabel={block.acsLabel}
-            acsFirst={block.acsFirst}
-            includeSignOnUrl={block.includeSignOnUrl}
-          />
-        ) : block.kind === 'claims-table' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <ClaimsTable key={i} rows={block.rows} />
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
-        ),
+      {step.kind !== 'scim-token' && step.content && (
+        <StepBlocks blocks={step.content} spUrls={spUrls} />
       )}
 
       {step.bullets && (
@@ -1158,6 +1201,8 @@ function StepBody({
           minted={scimMinted}
           onMinted={onScimMinted}
           onDone={onCompleteStep}
+          connectContent={step.content}
+          spUrls={spUrls}
         />
       ) : step.kind === 'test' ? (
         <div className="space-y-4">

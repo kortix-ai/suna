@@ -117,13 +117,18 @@ describe('directory sync (SCIM) guides', () => {
     expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'okta']);
   });
 
-  test('every guide mints the token inline before configuring the IdP, and ends with verify', () => {
+  test('every guide mints + connects on ONE page, and ends with verify', () => {
     for (const g of SCIM_PROVIDER_GUIDES) {
       const kinds = g.steps.map((s) => s.kind);
       expect(kinds).toContain('scim-token');
       expect(kinds[kinds.length - 1]).toBe('test');
-      // Token must come before every instructions step that references it.
-      expect(kinds.indexOf('scim-token')).toBeLessThan(kinds.lastIndexOf(undefined as never));
+      // The mint+connect step comes before verify.
+      expect(kinds.indexOf('scim-token')).toBeLessThan(kinds.length - 1);
+      // Mint and the IdP paste instructions are the SAME step: the scim-token
+      // step carries the connect `content` (rendered below the minted values),
+      // so a novice never mints on one page and pastes on another.
+      const connect = g.steps.find((step) => step.kind === 'scim-token')!;
+      expect((connect.content ?? []).length).toBeGreaterThan(0);
     }
   });
 
