@@ -19,16 +19,20 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
 
 /**
  * Whether an output deliverable should grow the Easy-mode panel to its
- * widest split (70/30) instead of the default 35/65 — a slide deck needs
- * real width to read, unlike a text file or a screenshot. True for anything
- * `derive-panels.ts` already classified as a deck (`kind === 'presentation'`:
- * a `presentation_gen` artifact, or a `show`n deck file — `showPayloadToOutput`
- * matches DECK_EXT itself) AND for a `.pptx`/`.ppt`/`.key` filename whose
- * output kept `kind: 'file'` anyway — write/edit/apply_patch outputs hardcode
- * `'file'` regardless of extension, and a deck written by hand is still a deck.
+ * widest split (70/30) instead of the default 35/65 — landscape-shaped
+ * content needs real width to read, unlike a text file or a screenshot.
+ * True for:
+ * - decks (`kind === 'presentation'` from `derive-panels.ts`, plus
+ *   `.pptx/.ppt/.key` filenames whose output kept `kind: 'file'` —
+ *   write/edit/apply_patch outputs hardcode `'file'` regardless of extension);
+ * - running apps (`kind === 'app'` — the in-panel browser is a website, and
+ *   websites assume a desktop viewport);
+ * - spreadsheets and grids (`.xlsx/.xls/.csv/.tsv` — columns clip at 35%);
+ * - web pages (`.html/.htm` — same viewport assumption as apps).
  */
 export function isWideDeliverable(output: Pick<OutputItem, 'kind' | 'name'>): boolean {
-  return output.kind === 'presentation' || /\.(pptx?|key)$/i.test(output.name);
+  if (output.kind === 'presentation' || output.kind === 'app') return true;
+  return /\.(pptx?|key|xlsx?|csv|tsv|html?)$/i.test(output.name);
 }
 
 /**

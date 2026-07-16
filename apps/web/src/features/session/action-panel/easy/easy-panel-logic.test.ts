@@ -49,7 +49,7 @@ describe('outputKey', () => {
   });
 });
 
-describe('isWideDeliverable (wide split for presentation details)', () => {
+describe('isWideDeliverable (wide split for landscape-shaped details)', () => {
   it('is wide for a real presentation_gen artifact', () => {
     expect(isWideDeliverable({ kind: 'presentation', name: 'deck' })).toBe(true);
   });
@@ -60,10 +60,23 @@ describe('isWideDeliverable (wide split for presentation details)', () => {
     expect(isWideDeliverable({ kind: 'file', name: 'Keynote.key' })).toBe(true);
   });
 
-  it('is not wide for a non-deck output', () => {
+  it('is wide for running apps — the in-panel browser assumes a desktop viewport', () => {
+    expect(isWideDeliverable({ kind: 'app', name: 'my-app' })).toBe(true);
+  });
+
+  it('is wide for spreadsheets, grids, and web pages', () => {
+    expect(isWideDeliverable({ kind: 'file', name: 'budget.xlsx' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'legacy.xls' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'data.csv' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'export.tsv' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'index.html' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'page.htm' })).toBe(true);
+  });
+
+  it('is not wide for portrait-shaped outputs', () => {
     expect(isWideDeliverable({ kind: 'file', name: 'report.md' })).toBe(false);
+    expect(isWideDeliverable({ kind: 'file', name: 'report.pdf' })).toBe(false);
     expect(isWideDeliverable({ kind: 'image', name: 'chart.png' })).toBe(false);
-    expect(isWideDeliverable({ kind: 'app', name: 'my-app' })).toBe(false);
   });
 });
 
