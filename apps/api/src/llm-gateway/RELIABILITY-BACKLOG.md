@@ -78,14 +78,76 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     secret, and the fire-and-forget `lastUsedAt` stamp. *(test:
     gateway-keys.test.ts)* — PR #4815.
 
-12. **Tier gating + BYOK free-tier `billingMode` test coverage** —
-    `resolution/resolve-candidates.ts`. `resolveCandidates` (BYOK markup/
+12. **Tier gating + BYOK free-tier test coverage, and the account-tier cache
+    unified to one** — `resolution/resolve-candidates.ts` +
+    `billing/services/entitlements.ts`. `resolveCandidates` (BYOK markup/
     free-tier billing-mode branch, managed-model tier gating, managed-fallback
-    queuing, codex routing) had zero tests. `resolveCachedAccountTier`'s 30s
-    TTL cache now takes an injectable `now` (defaults to `Date.now()`, every
-    production call site unaffected) so the TTL boundary and the "tier change
-    during the cache window" bug shape are both unit-testable without a real
-    wall-clock sleep. *(test: resolution/resolve-candidates.test.ts)* — PR #4815.
+    queuing, codex routing) had zero tests (PR #4815,
+    `resolution/resolve-candidates.test.ts`); that PR also gave the (then still
+    duplicated) 30s tier cache an injectable `now` so the TTL boundary is
+    unit-testable without a real wall-clock sleep. This pass finishes the fix:
+    `resolve-candidates.ts` kept its own byte-for-byte duplicate of
+    `entitlements.ts`'s own 30s tier cache — the BYOK fee-waiver decision and
+    the managed-model free-tier gate could disagree for up to 30s after a tier
+    change, independently, because each read a different cache with its own
+    expiry clock. Unified to the ONE cache in `entitlements.ts`
+    (`getCachedAccountTier` now carries the injectable `now` itself;
+    `resolve-candidates.ts`'s `resolveCachedAccountTier` is a thin re-export,
+    not a second implementation), plus `invalidateCachedAccountTier` for the
+    tier-change-during-window test and any future tier-change webhook.
+    *(tests: resolution/resolve-candidates.test.ts's TTL-boundary suite +
+    unit-account-tier-cache-unified.test.ts's tier-change-during-window case)*
+
+13. **Genuine-OpenAI streaming $0-billing gap + zero-usage safeguard** —
+    `transports/openai-compat/index.ts` + `pipeline/handler.ts`
+    `buildUpstreamRequest` now force-injects `stream_options:{include_usage:true}`
+    for genuine `api.openai.com` streaming requests (belt-and-suspenders on top
+    of the handler's existing generic injection). `settle()` also now logs a
+    distinct warning whenever a **billable** request settles with literally zero
+    extracted usage — not just zero-cost-with-tokens — so a future
+    upstream/provider quirk can't silently zero billing again with no signal at
+    all. Gated on `!streamError`: a stream that failed mid-flight (upstream
+    error frame, client-abort — see #4821's abort/mid-stream-error handling)
+    legitimately bills $0 and is a failed turn, not a usage-extraction bug — the
+    two must not be conflated. *(tests: openai-compat.test.ts, handler.test.ts)*
+
+14. **Prompt-cache WRITE tokens priced at a real premium** —
+    `usage/{extract,pricing}.ts`, `transports/anthropic/response.ts`,
+    `router/config/model-pricing.ts`, `resolution/descriptors.ts`
+    Anthropic's `cache_creation_input_tokens` were folded into the plain input
+    bucket and billed at the base rate. Now surfaced separately end to end and
+    priced at Anthropic's published cache-write multiplier (1.25x base input
+    for the default 5-minute TTL — this gateway never requests a 1-hour TTL),
+    sourced from models.dev's `cost.cache_write` when available. Hits both BYOK
+    Anthropic and managed Bedrock (same transport). *(tests: pricing.test.ts,
+    anthropic.test.ts)*
+
+15. **`calculateCost` and `checkBudget` unit-tested** — `usage/pricing.test.ts`,
+    `llm-gateway/budgets.ts` + `__tests__/unit-gateway-budgets.test.ts`
+    Both had zero real unit tests despite computing/gating every dollar. Now
+    covered: cache read/write discount+premium, upstreamCostHint precedence,
+    markup=0/>1, malformed usage (cachedTokens > promptTokens), block vs warn
+    budgets, project vs member scope, mixed budgets, and the new in-flight
+    reservation (below).
+
+16. **`checkBudget` now honors `action='warn'`** — `budgets.ts`
+    Previously hard-filtered to `action='block'` — a 'warn' budget (a real,
+    persisted, API-creatable option) was fetched nowhere and did nothing.
+    `checkBudget` now evaluates both actions; a 'warn' budget never blocks but
+    is logged (`[gateway] budget warn threshold reached`) via both the
+    in-process and standalone-gateway-RPC call sites.
+
+17. **Discarded-attempt usage folded into the eventual bill (partial)** —
+    `pipeline/handler.ts`
+    An empty-completion retry / failed-over candidate that still carried real
+    usage (a malformed-but-billed generation — the exact OpenRouter/z-ai
+    pattern this retry loop exists for) is now summed and folded into the
+    eventually-*successful* candidate's billed usage, instead of silently
+    discarded. **Not** covered: a request where *every* candidate ultimately
+    fails (all-candidates-empty / total failure) still doesn't bill any
+    discarded-but-real usage from along the way — deliberately left as a
+    follow-up judgment call (billing a fully-failed turn needs its own
+    product decision), see PR description. *(test: handler.test.ts)*
 
 ### Also landed this wave (sibling PRs, all with tests)
 
@@ -110,15 +172,41 @@ managed fallback with tier gating), real unit tests on the core pipeline.
 
 ## ◻️ Remaining (need design / infra, not a code tweak)
 
-2. **Atomic budget check + deduction** — `hooks.ts` / `budgets.ts`
-   Check and deduct are still separate, so concurrent requests on one subject can
-   overshoot the cap by ~one in-flight request. A correct fix needs a reservation
-   (hold) row or a DB-level atomic decrement — a schema + billing-path change
-   that should land on its own, reviewed, with its own tests. Overshoot is
-   bounded and the gateway is otherwise correct, so this is deferred deliberately.
-   Status as of this pass: still open — tracked separately from tonight's
-   `checkBudget` warn-action fix (item below), which does not change the
-   check-then-act race.
+2. **Atomic budget check + deduction (partially closed this pass)** —
+   `billing-gate.ts` / `budgets.ts` / `hooks.ts`
+   The original framing ("overshoot bounded by ~one in-flight request") was
+   itself inaccurate — the stale check spans the WHOLE request lifetime (up to
+   the 240s retry deadline), so overshoot scales with concurrency × average
+   cost over that window, not a fixed ~1.
+   - **Credit/wallet path — real fix**: `checkBillingActive` now takes an
+     ATOMIC admission hold (`deductCredits` → the row-locked
+     `atomic_use_credits` DB function — the same one the real deduction uses)
+     instead of a stale read-only balance check. `recordGatewayUsage`
+     reconciles the hold to the real cost at settle (top up the remainder or
+     refund the unused portion); every pre-dispatch failure path refunds it
+     too (`handler.ts`'s `refundBillingHold`). This closes the admission race
+     for the wallet floor itself — concurrent admits now genuinely serialize
+     against the true DB balance. Honest limitation: the hold is the existing
+     tiny $0.01 floor (not a real cost estimate, to avoid changing
+     low-balance-account behavior), so it bounds "N concurrent requests can't
+     all pass a balance that can't cover N×$0.01", not "an account can never
+     end up owing more than it had" for one expensive turn exceeding a thin
+     balance — that residual gap is now the SAME best-effort/logged (not
+     silently absorbed pre-hold) behavior, just bounded to (cost − $0.01)
+     instead of the full cost. *(tests: unit-billing-gate-atomic-hold.test.ts,
+     unit-billing-hold-reconciliation.test.ts, handler.test.ts)*
+   - **Project/member 'block' budgets — pragmatic bound, not a full fix**:
+     `checkBudget` now adds a conservative, self-expiring in-process
+     reservation ($0.50 per in-flight admission, 5-minute TTL) to the
+     DB-aggregated spend before comparing to the cap — closing the exact "20
+     concurrent sessions" scenario from the audit. This is explicitly NOT a
+     real reservation ledger (no release-on-settle, no cross-pod
+     coordination, resets on process restart) — a real fix (a persisted
+     hold/reservation row, reconciled like the credit path above) is still a
+     schema + cross-request-plumbing change that should land on its own. What
+     changed the bound from "unbounded" to "concurrency × $0.50" is real and
+     shipped; going further is deferred deliberately. *(test:
+     unit-gateway-budgets.test.ts, "in-flight admission reservation" describe)*
 
 7b. **Mutual auth API ↔ standalone pod — threat model & scoped follow-up.**
    Current state after items 7 and 10: `GATEWAY_INTERNAL_TOKEN` is a shared
@@ -183,13 +271,12 @@ managed fallback with tier gating), real unit tests on the core pipeline.
 
 - ~~Gateway-key expiration in `validateGatewayKey`~~ — closed, see item 11
   above.
-- ~~Account tier gating + 30s tier-cache TTL~~ / ~~BYOK markup / free-tier
-  `billingMode` + managed-fallback resolution~~ — closed, see item 12 above.
-- Budget enforcement (`checkBudget`) — block vs warn, period rollover. Status
-  as of this pass: **not covered by this PR** — `checkBudget` and its
-  `calculateCost`/pricing counterpart are being fixed and tested by a parallel
-  billing pass the same night (checkBudget currently only ever queries
-  `action='block'`, silently never evaluating `warn`-scoped budgets — a
-  correctness bug, not just a test gap). If that lands separately, this line
-  should be struck; if it hasn't landed, `budgets.ts`/`pricing.ts` still have
-  zero tests and this remains open.
+- ~~Account tier gating + 30s tier-cache TTL~~ — closed, see item 12 above
+  (TTL-boundary suite + the tier-change-during-window case).
+- ~~BYOK markup / free-tier `billingMode` + managed-fallback resolution~~ —
+  closed, see item 12 above (`resolution/resolve-candidates.test.ts`).
+- ~~Budget enforcement (`checkBudget`) — block vs warn~~ — closed, see item 16
+  above (`unit-gateway-budgets.test.ts`, mocked-DB harness). **Period rollover**
+  (the `date_trunc` boundary itself) still needs a real Postgres integration
+  test — spend is a mocked constant in the unit tests, not a live
+  time-bucketed query.
