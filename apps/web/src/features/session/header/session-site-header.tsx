@@ -19,7 +19,6 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
-import { SessionReadyChip } from '@/features/session/header/session-ready-chip';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -256,7 +255,6 @@ export function SessionSiteHeader({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <SessionReadyChip sessionId={sessionId} />
 
             <SessionChangesIndicator sessionId={sessionId} />
 
