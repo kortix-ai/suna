@@ -70,6 +70,12 @@ variable "subnet_id" {
   default     = ""
 }
 
+variable "availability_zone" {
+  description = "AZ the data volume (aws_ebs_volume.data) is pinned to. Leave empty to derive it from the subnet (var.subnet_id, or the resolved default subnet) — this is almost always correct since the subnet is what actually determines the instance's AZ. Set explicitly only if you have a reason to decouple the two. Deliberately never derived from aws_instance.this itself: AZ is ForceNew on the volume, so depending on the instance's AZ would force a destroy/recreate of the data volume on any instance replacement."
+  type        = string
+  default     = ""
+}
+
 variable "allowed_cidrs" {
   description = "CIDRs allowed to reach the box on 80 (ACME HTTP-01) and 443 (the app). Restrict this once you know your users' egress ranges."
   type        = list(string)
@@ -209,4 +215,42 @@ variable "acme_email" {
   description = "Optional ACME (Let's Encrypt) contact email. Leave empty to use the CLI's own default (admin@<domain>)."
   type        = string
   default     = ""
+}
+
+# ── Monitoring (CloudWatch alarms + agent) ──────────────────────────────────
+
+variable "enable_alarms" {
+  description = "Whether to install/configure the CloudWatch agent (disk + memory metrics) in bootstrap and create the CloudWatch alarms below (EC2 status-check, disk usage on both the root and data volumes, memory usage). Default on — this is a single box with no other observability; keep it boring and on by default."
+  type        = bool
+  default     = true
+}
+
+variable "alarm_sns_topic_arn" {
+  description = "SNS topic ARN to notify on alarm. Leave empty (default) to have the module create its own topic (optionally with an email subscription — see var.alarm_email); set this to route into an existing topic instead (e.g. a shared ops/PagerDuty integration)."
+  type        = string
+  default     = ""
+}
+
+variable "alarm_email" {
+  description = "Optional email address subscribed to the module-created SNS topic (only used when var.alarm_sns_topic_arn is left empty — an externally-provided topic manages its own subscriptions). Leave empty to create the topic with no subscription and wire it up yourself later."
+  type        = string
+  default     = ""
+}
+
+variable "disk_usage_alarm_threshold_percent" {
+  description = "Alarm when root (\"/\") or data-volume (var.data_mount_path) disk usage stays at or above this percentage for disk_usage_alarm_evaluation_periods consecutive periods."
+  type        = number
+  default     = 85
+}
+
+variable "memory_usage_alarm_threshold_percent" {
+  description = "Alarm when memory usage stays at or above this percentage for disk_usage_alarm_evaluation_periods consecutive periods."
+  type        = number
+  default     = 90
+}
+
+variable "alarm_evaluation_periods" {
+  description = "Number of consecutive 5-minute periods a disk/memory metric must breach its threshold before alarming (reduces noise from short spikes, e.g. a build or backup). The EC2 status-check alarm uses its own fixed evaluation (see monitoring.tf) since that metric is binary."
+  type        = number
+  default     = 3
 }

@@ -50,6 +50,7 @@ import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 
 // Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
@@ -336,11 +337,13 @@ export async function provisionSessionSandbox(opts: {
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   tl.mark('row+tokens');
 
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  const llmBaseUrl =
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+  // provider.sandboxFacingApiOrigin() (optional) lets a same-machine provider
+  // (local-docker) swap in its private Docker-network origin here — same
+  // reason KORTIX_API_URL is never just config.KORTIX_URL verbatim for that
+  // provider. Every other provider omits the method and falls back to the
+  // generic public origin, unchanged from before.
+  const kortixOrigin = (provider.sandboxFacingApiOrigin?.() ?? config.KORTIX_URL).replace(/\/+$/, '');
+  const llmBaseUrl = resolveLlmGatewayBaseUrl(kortixOrigin);
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen

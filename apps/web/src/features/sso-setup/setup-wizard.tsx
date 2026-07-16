@@ -27,7 +27,7 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +46,7 @@ import {
   getSsoProvider,
   importSsoProviderFromMetadata,
   listGroups,
+  listScimTokens,
 } from '@/lib/iam-client';
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 import { buildScimBaseUrl } from '@/lib/scim-url';
@@ -57,6 +58,7 @@ import {
   type ProviderConfig,
   type ProviderGuide,
   SCIM_PROVIDER_GUIDES,
+  type StepBlock,
   type StepSchematic,
   getProviderGuide,
   getScimGuide,
@@ -661,10 +663,16 @@ function ImportForm({
 
   if (alreadyConnected) {
     return (
-      <InfoBanner tone="info" title="Already connected">
-        This account already has an SSO provider. Manage it from the SAML SSO card in account
-        settings — remove it there first to run a fresh import.
-      </InfoBanner>
+      <div className="space-y-3">
+        <InfoBanner tone="info" title="Already connected">
+          This account already has an SSO provider. Manage it from the SAML SSO card in account
+          settings — remove it there first to run a fresh import.
+        </InfoBanner>
+        <Button onClick={onDone} className="gap-1.5">
+          Continue to testing
+          <ArrowRight className="size-3.5 shrink-0" />
+        </Button>
+      </div>
     );
   }
 
@@ -810,6 +818,43 @@ function ImportForm({
 // (ScimValuesPanel below) then keeps both visible on every remaining Entra
 // step, instead of vanishing the moment you click Continue.
 
+function StepBlocks({
+  blocks,
+  spUrls,
+}: {
+  blocks: StepBlock[];
+  spUrls: SamlSpUrls | null;
+}) {
+  return (
+    <>
+      {blocks.map((block, i) =>
+        block.kind === 'text' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <p key={i} className="text-foreground text-sm leading-relaxed">
+            <InstructionText text={block.text} />
+          </p>
+        ) : block.kind === 'sp-values' ? (
+          <SpValueRows
+            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+            key={i}
+            urls={spUrls}
+            entityIdLabel={block.entityIdLabel}
+            acsLabel={block.acsLabel}
+            acsFirst={block.acsFirst}
+            includeSignOnUrl={block.includeSignOnUrl}
+          />
+        ) : block.kind === 'claims-table' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <ClaimsTable key={i} rows={block.rows} />
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
+        ),
+      )}
+    </>
+  );
+}
+
 function ScimTokenStep({
   accountId,
   providerName,
@@ -817,6 +862,8 @@ function ScimTokenStep({
   minted,
   onMinted,
   onDone,
+  connectContent,
+  spUrls,
 }: {
   accountId: string;
   providerName: string;
@@ -824,13 +871,34 @@ function ScimTokenStep({
   minted: CreatedScimToken | null;
   onMinted: (token: CreatedScimToken) => void;
   onDone: () => void;
+  /** The "now paste these into your IdP" instructions — rendered on THIS page
+   *  right below the freshly minted values so mint + connect are one page. */
+  connectContent?: StepBlock[];
+  spUrls: SamlSpUrls | null;
 }) {
   const [name, setName] = useState(`${providerName} provisioning`);
 
+  // Resume case: a token was minted on a previous visit, so its secret is gone
+  // from this session (shown once, by design). Detect it and explain the path
+  // forward instead of presenting a silently empty mint form.
+  const priorTokensQuery = useQuery({
+    queryKey: ['scim-tokens', accountId],
+    queryFn: () => listScimTokens(accountId),
+    enabled: !minted,
+    staleTime: 30_000,
+  });
+  // Only ACTIVE tokens count — a revoked/expired one can't authenticate the
+  // IdP, so it must not invite the admin to skip minting.
+  const priorTokens = (priorTokensQuery.data ?? []).filter((t) => t.status === 'active');
+
+  const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
     onSuccess: (token) => {
       onMinted(token);
+      // Keep the settings SCIM card and this step's own resume detection in
+      // sync — both read ['scim-tokens', accountId] with a 30s staleTime.
+      queryClient.invalidateQueries({ queryKey: ['scim-tokens', accountId] });
       successToast('SCIM token minted — both values stay visible for the rest of this setup');
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to mint the token'),
@@ -849,39 +917,80 @@ function ScimTokenStep({
         <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
           <CopyRow label="Secret token" value={minted.secret} />
           <p className="text-muted-foreground text-xs">
-            Both values stay pinned in the panel on this page through the rest of setup — you can
-            switch steps without losing them. The secret itself is only ever shown during this
-            visit; if you leave and come back later only the prefix ({minted.public_prefix}) is
-            visible, and you'd mint a new token from the SCIM card in Settings.
+            The secret is only ever shown during this visit; if you leave and come back later only
+            the prefix ({minted.public_prefix}) is visible, and you'd mint a new token from the SCIM
+            card in Settings.
           </p>
-          <Button onClick={onDone}>
-            Continue to Entra
-            <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
-          </Button>
         </div>
-      ) : (
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-56 space-y-1.5">
-            <Label>Token name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={mutation.isPending}
-            />
+      ) : null}
+
+      {!minted && (
+        <div className="space-y-3">
+          {priorTokens.length > 0 && (
+            <InfoBanner tone="info" title="You minted a token on a previous visit">
+              Its secret ({priorTokens[0].public_prefix}…) was only shown at mint time. If it's
+              already pasted into your IdP and every IdP-side step below is done, you can continue
+              without minting. If anything is unfinished, mint a fresh token, update the IdP with
+              it, then revoke the old one from the SCIM card in account settings.
+            </InfoBanner>
+          )}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-56 space-y-1.5">
+              <Label>Token name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={mutation.isPending}
+              />
+            </div>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={name.trim().length === 0 || mutation.isPending}
+              className="gap-1.5"
+            >
+              {mutation.isPending ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <KeyRound className="size-3.5 shrink-0" />
+              )}
+              Mint token
+            </Button>
           </div>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={name.trim().length === 0 || mutation.isPending}
-            className="gap-1.5"
-          >
-            {mutation.isPending ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <KeyRound className="size-3.5 shrink-0" />
-            )}
-            Mint token
-          </Button>
         </div>
+      )}
+
+      {(minted || priorTokens.length > 0) && connectContent && connectContent.length > 0 && (
+        <div className="space-y-4">
+          <div className="border-border/60 border-t pt-4">
+            <h4 className="text-foreground text-sm font-semibold">
+              Now paste these into {providerName}
+            </h4>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {minted
+                ? 'Both values above stay on this page — copy each one straight into the fields below.'
+                : 'Same steps as your previous visit — check each one is actually done before continuing. The Tenant URL above is unchanged; the secret is the one you pasted last time (or mint a fresh one).'}
+            </p>
+          </div>
+          <StepBlocks blocks={connectContent} spUrls={spUrls} />
+          {minted ? (
+            <Button onClick={onDone}>
+              Continue
+              <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={onDone}>
+              Continue without minting
+              <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
+            </Button>
+          )}
+        </div>
+      )}
+
+      {minted && (!connectContent || connectContent.length === 0) && (
+        <Button onClick={onDone}>
+          Continue
+          <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
+        </Button>
       )}
     </div>
   );
@@ -930,6 +1039,88 @@ function ScimValuesPanel({
  * reported for the whole account (framed honestly below) while the
  * SCIM-group figures are exact.
  */
+/**
+ * Live verification for the SSO test step — the SAML counterpart of the SCIM
+ * flow's ProvisionedStatusPanel. Snapshots the member list when the step
+ * opens, then polls: anyone who arrives AFTER the snapshot is the test user
+ * signing in, surfaced as an explicit success ("they're in") instead of the
+ * admin eyeballing a second browser window.
+ */
+function SsoTestStatusPanel({
+  accountId,
+  baselineRef,
+}: {
+  accountId: string;
+  /** Owned by WizardCore (which outlives step navigation) so the baseline —
+   *  and therefore the "your test user arrived" confirmation — survives the
+   *  admin flipping to another step and back. A panel-local ref would be
+   *  re-seeded from the query cache that already contains the arrival. */
+  baselineRef: React.MutableRefObject<Set<string> | null>;
+}) {
+  const membersQuery = useQuery({
+    queryKey: ['sso-verify-members', accountId],
+    queryFn: () => listAccountMembers(accountId),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
+
+  // Baseline = whoever was already a member when the TEST STEP was first
+  // reached this visit. Stored once; never updated, so every later arrival
+  // stays highlighted for the rest of the visit.
+  const members = membersQuery.data ?? null;
+  if (members && baselineRef.current === null) {
+    baselineRef.current = new Set(members.map((m) => m.user_id));
+  }
+  const arrived = (members ?? []).filter(
+    (m) => baselineRef.current && !baselineRef.current.has(m.user_id),
+  );
+
+  return (
+    <div className="border-border/70 bg-popover space-y-3 rounded-md border p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+          <span className="bg-kortix-green relative flex size-1.5 shrink-0 rounded-full">
+            <span className="bg-kortix-green absolute inline-flex size-full animate-ping rounded-full opacity-75" />
+          </span>
+          Watching for the test sign-in
+        </p>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          aria-label="Refresh now"
+          onClick={() => membersQuery.refetch()}
+        >
+          <RefreshCw className={cn('size-3.5', membersQuery.isFetching && 'animate-spin')} />
+        </Button>
+      </div>
+      {membersQuery.isLoading ? (
+        <Skeleton className="h-10 w-full rounded-md" />
+      ) : arrived.length > 0 ? (
+        <div className="border-kortix-green/30 bg-kortix-green/10 flex items-start gap-2.5 rounded-md border p-3">
+          <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0 text-sm">
+            <p className="text-foreground font-medium">
+              {arrived.length === 1
+                ? 'Your test user just arrived'
+                : `${arrived.length} users arrived`}
+            </p>
+            <p className="text-muted-foreground truncate text-xs">
+              {arrived.map((m) => m.email ?? m.user_id).join(', ')} — signed in via SSO and
+              auto-provisioned. The round-trip works.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          {members?.length ?? '—'} members now. Complete the test sign-in in your private window —
+          the moment the user is provisioned, they appear here (checks every few seconds).
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
@@ -1020,6 +1211,7 @@ function StepBody({
   scimTenantUrl,
   scimMinted,
   onScimMinted,
+  ssoBaselineRef,
   onCompleteStep,
   onFinish,
 }: {
@@ -1035,6 +1227,8 @@ function StepBody({
   scimTenantUrl: string;
   scimMinted: CreatedScimToken | null;
   onScimMinted: (token: CreatedScimToken) => void;
+  /** SSO-only: arrival baseline owned by WizardCore (survives step nav). */
+  ssoBaselineRef: React.MutableRefObject<Set<string> | null>;
   onCompleteStep: () => void;
   onFinish: () => void;
 }) {
@@ -1073,29 +1267,8 @@ function StepBody({
         <InstructionText text={step.intro} />
       </p>
 
-      {step.content?.map((block, i) =>
-        block.kind === 'text' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <p key={i} className="text-foreground text-sm leading-relaxed">
-            <InstructionText text={block.text} />
-          </p>
-        ) : block.kind === 'sp-values' ? (
-          <SpValueRows
-            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-            key={i}
-            urls={spUrls}
-            entityIdLabel={block.entityIdLabel}
-            acsLabel={block.acsLabel}
-            acsFirst={block.acsFirst}
-            includeSignOnUrl={block.includeSignOnUrl}
-          />
-        ) : block.kind === 'claims-table' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <ClaimsTable key={i} rows={block.rows} />
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
-        ),
+      {step.kind !== 'scim-token' && step.content && (
+        <StepBlocks blocks={step.content} spUrls={spUrls} />
       )}
 
       {step.bullets && (
@@ -1158,18 +1331,34 @@ function StepBody({
           minted={scimMinted}
           onMinted={onScimMinted}
           onDone={onCompleteStep}
+          connectContent={step.content}
+          spUrls={spUrls}
         />
       ) : step.kind === 'test' ? (
         <div className="space-y-4">
           {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
+          {flow === 'sso' && (
+            <SsoTestStatusPanel accountId={accountId} baselineRef={ssoBaselineRef} />
+          )}
           <div className="flex flex-wrap items-center gap-3">
             {flow === 'sso' && (
-              <Button asChild variant="outline">
-                <a href="/auth" target="_blank" rel="noreferrer">
-                  Open the sign-in page
-                  <ExternalLink className="ml-1.5 size-3.5 shrink-0" />
-                </a>
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    copyValue(
+                      `${typeof window === 'undefined' ? '' : window.location.origin}/auth`,
+                      'Sign-in URL copied — open it in a private/incognito window',
+                    )
+                  }
+                >
+                  Copy sign-in URL
+                  <Copy className="ml-1.5 size-3.5 shrink-0" />
+                </Button>
+                <span className="text-muted-foreground text-xs">
+                  Test in a private/incognito window so your own session doesn’t auto-complete it.
+                </span>
+              </>
             )}
             <Button onClick={onFinish}>
               Finish
@@ -1223,10 +1412,18 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   // of accountId. Lifted here (rather than local to the token step) so the
   // values panel can keep showing both after the step unmounts.
   const scimTenantUrl = useMemo(
-    () => buildScimBaseUrl(accountId, getEnv().BACKEND_URL),
+    () =>
+      buildScimBaseUrl(
+        accountId,
+        getEnv().BACKEND_URL,
+        typeof window === 'undefined' ? null : window.location.origin,
+      ),
     [accountId],
   );
   const [scimMinted, setScimMinted] = useState<CreatedScimToken | null>(null);
+  // SSO test-step arrival baseline — lives here (not in the panel) so step
+  // navigation within one visit can't erase a confirmed test sign-in.
+  const ssoBaselineRef = useRef<Set<string> | null>(null);
 
   const [activeStep, setActiveStep] = useState(0);
   const [completed, setCompleted] = useState<string[]>([]);
@@ -1368,6 +1565,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               scimTenantUrl={scimTenantUrl}
               scimMinted={scimMinted}
               onScimMinted={setScimMinted}
+              ssoBaselineRef={ssoBaselineRef}
               onCompleteStep={() => markDone(step.id)}
               onFinish={finish}
             />

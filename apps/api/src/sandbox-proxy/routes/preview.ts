@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
+import type { ProviderName } from '../../platform/providers';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
@@ -539,6 +540,7 @@ export async function forwardToSandbox(
             serviceKey,
             previewUrl,
             providerHeaders: ingress.headers,
+            providerName: record.provider as ProviderName,
           });
         } catch (err) {
           const message = errorMessage(err, 'project env sync failed');

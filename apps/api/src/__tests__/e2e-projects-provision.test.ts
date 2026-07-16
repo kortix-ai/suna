@@ -92,6 +92,8 @@ mock.module('../projects/git-backends', () => ({
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
   managedGithubInstallId: () => INSTALL_ID,
+  managedGithubOwner: () => REPO_OWNER,
+  managedGithubOwnerType: () => undefined,
   managedGithubToken: () => managedPat,
 }));
 

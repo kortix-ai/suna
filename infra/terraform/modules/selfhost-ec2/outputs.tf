@@ -30,6 +30,11 @@ output "ssm_connect_command" {
   value       = "aws ssm start-session --target ${aws_instance.this.id}"
 }
 
+output "alarm_sns_topic_arn" {
+  description = "SNS topic the CloudWatch alarms (status-check, disk, memory) notify — either the module-created topic or var.alarm_sns_topic_arn if you supplied one. Empty string when var.enable_alarms = false."
+  value       = local.alarm_topic_arn
+}
+
 output "post_apply_next_steps" {
   description = "What to do after `terraform apply` finishes — secrets are deliberately NOT Terraform inputs."
   value       = <<-EOT
