@@ -6,11 +6,8 @@ at the repo root: a thin, one-README, bring-your-own-box template anyone can
 copy). Each subdirectory here is a real instance:
 
 - `vps-demo/` — the demo box at `ec2-vps-demo.kortix.cloud`.
-- `essentia/` — Essentia's dedicated single-tenant box (in Essentia's own AWS
-  account). *Currently mid-move here from the repo-root `deployments/`
-  directory — see note below.*
 
-Both instantiate the shared [`infra/terraform/modules/selfhost-ec2`](../terraform/modules/selfhost-ec2)
+`vps-demo` instantiates the shared [`infra/terraform/modules/selfhost-ec2`](../terraform/modules/selfhost-ec2)
 module — same as `self-host/terraform`, just with Kortix-specific
 `terraform.tfvars` already filled in and committed instead of left as
 `.example`.
@@ -31,25 +28,15 @@ it is **never** committed. That means:
 - Never run `terraform` against a root here speculatively — these are real,
   live customer/demo infrastructure.
 
-## Note: `essentia/` move in progress
+## `essentia` moved out of this monorepo entirely
 
-As of this consolidation (`self-host/` + `infra/deployments/` layout, see the
-`refactor/generic-self-host` branch), `deployments/vps-demo` moved to
-`infra/deployments/vps-demo` — done. `deployments/essentia` was **left in
-place** at the repo root because it was an actively in-flight operator deploy
-(uncommitted `.tf` edits, a live `terraform.tfstate.lock.info` at the time)
-when this move happened, and relocating a directory out from under a running
-`terraform apply` is exactly the kind of thing that corrupts local state
-paths. Once that deploy settles, move it the same way:
-
-```sh
-git mv deployments/essentia infra/deployments/essentia
-```
-
-then update its `module` block's `source` from
-`../../infra/terraform/modules/selfhost-ec2` to
-`../../terraform/modules/selfhost-ec2` (one less `../infra` hop, since this
-directory is now itself under `infra/`) — same fix already applied to
-`vps-demo/main.tf`. Don't run `terraform init`/`apply` as part of that move;
-the operator who owns that box does that separately, from wherever its state
-file actually lives.
+Essentia's single-tenant box (`essentia.kortix.cloud`) used to be provisioned
+from `deployments/essentia` at the repo root (a laptop-local, unlocked
+`terraform.tfstate`). It has been fully adopted into its own repo,
+[`Essentia-Innovation/kortix-infra`](https://github.com/Essentia-Innovation/kortix-infra),
+with state in an S3 backend inside Essentia's own AWS account
+(`327903111249`). That repo pins the same
+[`infra/terraform/modules/selfhost-ec2`](../terraform/modules/selfhost-ec2)
+module by `?ref=` tag — this monorepo has no other artifact tied to that box
+anymore. Don't recreate `deployments/essentia` here; if you need to touch
+that box, do it from `kortix-infra`.
