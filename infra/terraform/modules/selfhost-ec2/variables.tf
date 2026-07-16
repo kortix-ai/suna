@@ -92,6 +92,13 @@ variable "allowed_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "http_ingress_cidrs" {
+  description = "Optional override for port 80. Null inherits allowed_cidrs; an empty list disables HTTP while leaving HTTPS governed by allowed_cidrs. Use this when Caddy renews through TLS-ALPN-01 on port 443."
+  type        = list(string)
+  default     = null
+  nullable    = true
+}
+
 variable "ssh_ingress_cidrs" {
   description = "CIDRs allowed to reach port 22. Empty (default) opens no SSH ingress at all — use `aws ssm start-session` instead (see output ssm_connect_command). Only meaningful alongside var.key_name."
   type        = list(string)

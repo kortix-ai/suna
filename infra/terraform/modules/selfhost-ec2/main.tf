@@ -103,7 +103,7 @@ resource "aws_security_group" "this" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = var.allowed_cidrs
+    cidr_blocks = var.http_ingress_cidrs == null ? var.allowed_cidrs : var.http_ingress_cidrs
   }
 
   ingress {
