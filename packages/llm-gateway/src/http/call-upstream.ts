@@ -1,7 +1,8 @@
 import { NetworkError, UpstreamHttpError } from '../errors';
 import { withResilience, type BreakerBinding, type RetryOptions } from '../resilience';
 import { transportFor } from '../transports';
-import type { UpstreamDescriptor } from '../domain';
+import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
+import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -9,6 +10,8 @@ export interface CallUpstreamOptions {
   retry?: RetryOptions;
   binding?: BreakerBinding;
   fetchImpl?: FetchImpl;
+  /** See GatewayConfig.translationSidecar. Unset = direct upstream (current behavior). */
+  translationSidecar?: TranslationSidecarConfig;
 }
 
 export async function callUpstream(
@@ -18,7 +21,11 @@ export async function callUpstream(
 ): Promise<Response> {
   const fetchImpl: FetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const transport = transportFor(descriptor.kind);
-  const request = transport.buildRequest(body, descriptor);
+  const direct = transport.buildRequest(body, descriptor);
+  const request =
+    opts.translationSidecar && isSidecarEligible(descriptor)
+      ? buildSidecarRequest(direct, descriptor, opts.translationSidecar)
+      : direct;
   const streaming = body.stream === true;
 
   const raw = await withResilience(

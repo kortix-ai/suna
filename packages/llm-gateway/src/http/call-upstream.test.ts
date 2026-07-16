@@ -122,3 +122,94 @@ describe('callUpstream', () => {
     expect(fetchMock.getCalls()).toBe(callsBefore);
   });
 });
+
+// Captures the exact outgoing request (url/headers/body) instead of just
+// counting calls, so sidecar-mode assertions can check the rewritten shape.
+function makeCapturingFetch(status = 200, body = '{"ok":true}') {
+  const requests: { url: string; headers: Record<string, string>; body: unknown }[] = [];
+  const impl: FetchImpl = async (url, init) => {
+    requests.push({
+      url,
+      headers: init.headers as Record<string, string>,
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+    });
+    return new Response(body, { status, headers: { 'content-type': 'application/json' } });
+  };
+  return { impl, requests };
+}
+
+describe('callUpstream — translation sidecar mode', () => {
+  test('unset translationSidecar: dispatches directly to the upstream, unchanged', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream({ model: 'x', messages: [] }, descriptor, { fetchImpl: capture.impl });
+    expect(capture.requests).toHaveLength(1);
+    expect(capture.requests[0].url).toBe('https://up.test/v1/chat/completions');
+    expect(capture.requests[0].headers.authorization).toBe('Bearer sk-test');
+    expect(capture.requests[0].body).not.toHaveProperty('api_key');
+    expect(capture.requests[0].body).not.toHaveProperty('api_base');
+  });
+
+  test('translationSidecar set + eligible kind: routes to the sidecar with per-request key/base/model', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      { model: 'x', messages: [], max_tokens: 512 },
+      { ...descriptor, resolvedModel: 'grok-4.3' },
+      {
+        fetchImpl: capture.impl,
+        translationSidecar: { url: 'http://litellm.internal:4000', authToken: 'sk-sidecar-master' },
+      },
+    );
+    expect(capture.requests).toHaveLength(1);
+    const req = capture.requests[0];
+    expect(req.url).toBe('http://litellm.internal:4000/v1/chat/completions');
+    // The sidecar's OWN auth, never the resolved upstream key.
+    expect(req.headers.authorization).toBe('Bearer sk-sidecar-master');
+    expect(req.body).toMatchObject({
+      model: 'grok-4.3',
+      max_tokens: 512,
+      api_key: 'sk-test',
+      api_base: 'https://up.test/v1',
+    });
+  });
+
+  test('translationSidecar set but kind is anthropic/bedrock: stays on the direct path', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      { model: 'x' },
+      { ...descriptor, kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1' },
+      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
+    );
+    expect(capture.requests[0].url).not.toContain('litellm.internal');
+  });
+
+  test('translationSidecar set but descriptor omits auth (public upstream): stays on the direct path', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      { model: 'x' },
+      { ...descriptor, apiKey: '', omitAuthorization: true },
+      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
+    );
+    expect(capture.requests[0].url).toBe('https://up.test/v1/chat/completions');
+  });
+
+  test('genuine OpenAI + sidecar enabled: our own max_tokens hotfix (openai-compat/index.ts) still fires ahead of the sidecar rewrite, so the sidecar/LiteLLM sees max_completion_tokens already — harmless overlap, not a double-translation, and exactly what keeps old self-host boxes correct the moment they flip the flag without also upgrading LiteLLM', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      { model: 'x', messages: [], max_tokens: 4096 },
+      { ...descriptor, provider: 'openai', baseUrl: 'https://api.openai.com/v1', resolvedModel: 'gpt-5.6-sol' },
+      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
+    );
+    expect(capture.requests[0].body).toMatchObject({ max_completion_tokens: 4096 });
+    expect(capture.requests[0].body).not.toHaveProperty('max_tokens');
+  });
+
+  test('sidecar auth token is optional (no master key configured)', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      { model: 'x' },
+      descriptor,
+      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
+    );
+    expect(capture.requests[0].headers.authorization).toBeUndefined();
+  });
+});
