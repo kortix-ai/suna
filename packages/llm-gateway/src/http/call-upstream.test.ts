@@ -46,6 +46,40 @@ describe('buildUpstreamRequest', () => {
 });
 
 describe('callUpstream', () => {
+  // Pins the WIRE body for the exact shape the gateway playground endpoint
+  // sends (apps/api/src/projects/routes/gateway.ts hardcodes `max_tokens: 512`
+  // and calls this same callUpstream): for a genuine api.openai.com descriptor
+  // the openai-compat transport must rename it to `max_completion_tokens`
+  // (OpenAI's current chat models 400 on `max_tokens`), while every other
+  // openai-compat upstream keeps `max_tokens` verbatim.
+  test('sends max_completion_tokens on the wire to genuine OpenAI, max_tokens elsewhere', async () => {
+    const bodies: string[] = [];
+    const capturingFetch: FetchImpl = async (_input, init) => {
+      bodies.push(String(init.body));
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    const playgroundRequest = {
+      model: 'openai/gpt-5.5',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: false,
+      max_tokens: 512,
+    };
+    await callUpstream(
+      playgroundRequest,
+      { ...descriptor, provider: 'openai', baseUrl: 'https://api.openai.com/v1', resolvedModel: 'gpt-5.5' },
+      { retry: fastRetry, fetchImpl: capturingFetch },
+    );
+    await callUpstream(playgroundRequest, descriptor, { retry: fastRetry, fetchImpl: capturingFetch });
+
+    const toOpenAi = JSON.parse(bodies[0]!);
+    expect(toOpenAi.max_completion_tokens).toBe(512);
+    expect('max_tokens' in toOpenAi).toBe(false);
+
+    const toOpenRouter = JSON.parse(bodies[1]!);
+    expect(toOpenRouter.max_tokens).toBe(512);
+    expect('max_completion_tokens' in toOpenRouter).toBe(false);
+  });
+
   test('retries a 503 then returns the ok response', async () => {
     const fetchMock = makeFetch([{ status: 503, body: 'down' }, { status: 200, body: '{"ok":true}' }]);
     const res = await callUpstream({ model: 'x' }, descriptor, { retry: fastRetry, fetchImpl: fetchMock.impl });
