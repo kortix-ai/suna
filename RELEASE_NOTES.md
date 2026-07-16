@@ -1,3 +1,3 @@
-Restore production EKS gateway origin TLS
+Restore EKS gateway release parity
 
-Dedicated gateway-eks.kortix.com ACM certificate and ingress host, plus ExternalDNS domain correction. ECS remained healthy throughout; this restores the warm EKS gateway origin under Cloudflare Full (strict) TLS.
+Stamp KORTIX_VERSION in the EKS gateway Helm chart and in staging/production GitOps bumps so the standby gateway reports the exact promoted release version. This completes the gateway origin TLS recovery and restores six-endpoint version parity across ECS, EKS, and the public router.
