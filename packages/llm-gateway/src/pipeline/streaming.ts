@@ -1,7 +1,7 @@
 import {
   type ExtractedUsage,
+  IncrementalSseScanner,
   type SseErrorFrame,
-  extractUsageFromSseBuffer,
   sseErrorFrame,
   sseHasContent,
 } from '../usage';
@@ -28,6 +28,30 @@ export interface StreamRelayOptions {
   };
   /** Keep-alive interval in ms (overridable for tests). */
   heartbeatMs?: number;
+  /**
+   * Inbound (client-facing) request's abort signal. When it fires — the
+   * caller's tab closed, they hit stop, the TCP connection dropped — the
+   * upstream reader is cancelled immediately instead of being drained to
+   * completion for no one, so a disconnected client also stops the upstream
+   * from generating (and us from being billed for) tokens nobody will see.
+   */
+  signal?: AbortSignal;
+  /**
+   * Total time upstream may go completely silent (no bytes at all, not even
+   * a heartbeat-worthy gap) before the stream is treated as stalled and
+   * aborted. Generous by default so a slow-thinking reasoning model is never
+   * mistaken for a dead connection — this only fires when NOTHING has been
+   * read for the whole window, not merely a gap between tokens (that's what
+   * the heartbeat is for). Overridable for tests.
+   */
+  inactivityTimeoutMs?: number;
+  /**
+   * Cap (bytes, pre-JSON-escaping) on the response preview retained for the
+   * trace when `captureBodies` is on. Independent of the stream's actual
+   * duration/size — the preview stops growing once it hits this cap instead
+   * of retaining the full stream text for the whole completion.
+   */
+  maxCapturedBodyBytes?: number;
 }
 
 // How long upstream may go silent before we emit a keep-alive. A reasoning model
@@ -38,6 +62,21 @@ const HEARTBEAT_MS = 10_000;
 // SSE comment line — ignored by every SSE/OpenAI client, so it's invisible
 // payload that just resets each hop's idle timer.
 const HEARTBEAT_FRAME = new TextEncoder().encode(': keep-alive\n\n');
+// Total silence budget before a stalled-but-never-closed upstream connection
+// (accepted the request, sent a 200, then never sent another byte and never
+// closed) is treated as dead rather than propped up by heartbeats forever.
+// Generous — well beyond any legitimate single-turn reasoning pause.
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+// Default cap on the retained response preview when `captureBodies` is on —
+// matches the gateway's default `maxCapturedBodyBytes`.
+const DEFAULT_PREVIEW_CAP_BYTES = 256 * 1024;
+
+class StreamInactivityTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`upstream stream inactivity timeout exceeded (${timeoutMs}ms with no bytes)`);
+    this.name = 'StreamInactivityTimeoutError';
+  }
+}
 
 // A candidate that opens a stream, sends nothing usable, and closes cleanly (the
 // empty-completion bug) fails fast — real models produce their first token well
@@ -118,10 +157,26 @@ function boundedErrorMessage(err: unknown): string {
 export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array> {
   const { captureBodies, requestId, logger, settle } = opts;
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
+  const inactivityTimeoutMs = opts.inactivityTimeoutMs ?? INACTIVITY_TIMEOUT_MS;
+  const previewCapBytes = opts.maxCapturedBodyBytes ?? DEFAULT_PREVIEW_CAP_BYTES;
   const transform = new TransformStream<Uint8Array, Uint8Array>();
   const writer = transform.writable.getWriter();
   const decoder = new TextDecoder();
-  let sseBuffer = '';
+  // Bounded scanner replaces full-stream buffering: usage/error extraction is
+  // done incrementally per-chunk (memory ~O(1) per stream, not O(total tokens)
+  // streamed) instead of re-scanning one ever-growing string at the end.
+  const scanner = new IncrementalSseScanner();
+  // Separate, small, capped preview retained ONLY for the trace (when
+  // `captureBodies` is on) — independent of the scanner above, and stops
+  // growing once it hits the cap rather than retaining the full stream text.
+  let preview = '';
+  let previewBytes = 0;
+  // Smallest possible state to reproduce the old "are we at an SSE event
+  // boundary" check (`sseBuffer === '' || sseBuffer.endsWith('\n\n')`) without
+  // keeping the whole buffer around — only the last couple of characters ever
+  // written matter for that test.
+  let tailChars = '';
+  let anyBytesWritten = false;
 
   const startMs = Date.now();
   const debug = (event: string, fields?: Record<string, unknown>): void =>
@@ -132,18 +187,32 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
     if (!reader) throw new Error('relayStream requires either `primed` or `upstreamBody`');
     let downstreamAlive = true;
     let firstByteAt = 0;
+    let lastActivityAt = startMs;
     let bytes = 0;
     let chunks = 0;
     let heartbeats = 0;
+    let clientAborted = false;
 
     const writeChunk = async (value: Uint8Array): Promise<void> => {
       if (!firstByteAt) {
         firstByteAt = Date.now();
         debug('stream_first_byte', { ttfbMs: firstByteAt - startMs });
       }
+      lastActivityAt = Date.now();
       chunks += 1;
       bytes += value.byteLength;
-      sseBuffer += decoder.decode(value, { stream: true });
+      const decoded = decoder.decode(value, { stream: true });
+      scanner.push(decoded);
+      if (decoded) {
+        anyBytesWritten = true;
+        tailChars = (tailChars + decoded).slice(-2);
+      }
+      if (captureBodies && previewBytes < previewCapBytes) {
+        const remaining = previewCapBytes - previewBytes;
+        const slice = decoded.length <= remaining ? decoded : decoded.slice(0, remaining);
+        preview += slice;
+        previewBytes += slice.length;
+      }
       if (downstreamAlive) {
         try {
           await writer.write(value);
@@ -164,53 +233,114 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         for (const value of opts.primed.chunks) await writeChunk(value);
       }
 
-      // Keep exactly one read in flight; race it against a heartbeat timer so a
-      // long token gap emits a keep-alive without ever issuing a second read.
-      let pending = reader.read();
-      while (true) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const beat = new Promise<'beat'>((resolve) => {
-          timer = setTimeout(() => resolve('beat'), heartbeatMs);
-        });
-        const next = await Promise.race([pending.then((r) => ({ read: r })), beat]);
-        if (timer) clearTimeout(timer);
-
-        if (next === 'beat') {
-          // Upstream silent for HEARTBEAT_MS. Inject the comment only at an SSE
-          // event boundary (buffer empty, or ends with the \n\n terminator) so we
-          // never split a partial event mid-flight. `pending` stays in flight.
-          if (downstreamAlive && (sseBuffer === '' || sseBuffer.endsWith('\n\n'))) {
-            try {
-              await writer.write(HEARTBEAT_FRAME);
-              heartbeats += 1;
-              debug('stream_heartbeat', { sinceStartMs: Date.now() - startMs, heartbeats });
-            } catch {
-              downstreamAlive = false;
+      // The inbound (client-facing) request's own abort signal — fires when the
+      // caller disconnects (tab closed, stop hit, TCP reset). Racing it below
+      // means a disconnected client stops the upstream read loop immediately
+      // instead of draining an upstream that keeps generating (and billing)
+      // tokens for no one.
+      const clientAbort = opts.signal
+        ? new Promise<'aborted'>((resolve) => {
+            if (opts.signal!.aborted) {
+              resolve('aborted');
+              return;
             }
-          }
-          continue;
-        }
+            opts.signal!.addEventListener('abort', () => resolve('aborted'), { once: true });
+          })
+        : null;
 
-        const { done, value } = next.read;
-        if (done) break;
-        pending = reader.read();
-        if (!value) continue;
-        await writeChunk(value);
+      if (opts.signal?.aborted) {
+        // Already gone before the relay even started (e.g. disconnected during
+        // the probe phase) — never issue a read, just cancel and settle below.
+        clientAborted = true;
+        downstreamAlive = false;
+      } else {
+        // Keep exactly one read in flight; race it against a heartbeat timer so a
+        // long token gap emits a keep-alive without ever issuing a second read,
+        // and against the client-abort signal so a disconnect is noticed even
+        // while a read is still pending.
+        let pending = reader.read();
+        while (true) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const beat = new Promise<'beat'>((resolve) => {
+            timer = setTimeout(() => resolve('beat'), heartbeatMs);
+          });
+          const race = clientAbort
+            ? [pending.then((r) => ({ read: r })), beat, clientAbort]
+            : [pending.then((r) => ({ read: r })), beat];
+          const next = await Promise.race(race);
+          if (timer) clearTimeout(timer);
+
+          if (next === 'aborted') {
+            clientAborted = true;
+            downstreamAlive = false;
+            break;
+          }
+
+          if (next === 'beat') {
+            // Upstream has been completely silent (no bytes at all, not even a
+            // heartbeat-worthy gap that later resumed) for the full inactivity
+            // budget — a stalled-but-never-closed connection, not a slow
+            // reasoning pause (which still eventually produces bytes and resets
+            // `lastActivityAt`). Treat it as a dead stream instead of heartbeat-
+            // propping it up forever.
+            if (Date.now() - lastActivityAt >= inactivityTimeoutMs) {
+              try {
+                await reader.cancel();
+              } catch {
+                // already errored/closed — nothing to clean up.
+              }
+              throw new StreamInactivityTimeoutError(inactivityTimeoutMs);
+            }
+            // Inject the comment only at an SSE event boundary (buffer empty, or
+            // ends with the \n\n terminator) so we never split a partial event
+            // mid-flight. `pending` stays in flight.
+            if (downstreamAlive && (!anyBytesWritten || tailChars === '\n\n')) {
+              try {
+                await writer.write(HEARTBEAT_FRAME);
+                heartbeats += 1;
+                debug('stream_heartbeat', { sinceStartMs: Date.now() - startMs, heartbeats });
+              } catch {
+                downstreamAlive = false;
+              }
+            }
+            continue;
+          }
+
+          const { done, value } = next.read;
+          if (done) break;
+          pending = reader.read();
+          if (!value) continue;
+          await writeChunk(value);
+        }
+      }
+
+      if (clientAborted) {
+        // The client is gone — cancelling the reader tells the upstream (fetch
+        // implementation permitting) to stop sending/generating further tokens
+        // rather than have the gateway keep draining and paying for a response
+        // no one will ever see.
+        try {
+          await reader.cancel();
+        } catch {
+          // already errored/closed — nothing to clean up.
+        }
       }
     } catch (err) {
       const message = boundedErrorMessage(err);
+      const inactivityTimeout = err instanceof StreamInactivityTimeoutError;
       logger.warn(`[llm-gateway] stream read error ${requestId}:`, err);
       debug('stream_error', {
         error: message,
         bytes,
         chunks,
+        inactivityTimeout,
       });
       // Once headers are committed, SSE is the only remaining error channel.
       // Emit the standard shape opencode understands instead of silently closing.
       if (downstreamAlive) {
         const frame = `data: ${JSON.stringify(gatewayErrorBody({
           message,
-          code: 'upstream_stream_error',
+          code: inactivityTimeout ? 'stream_inactivity_timeout' : 'upstream_stream_error',
           provider: opts.errorContext?.provider ?? '',
           requestedModel: opts.errorContext?.requestedModel ?? '',
           resolvedModel: opts.errorContext?.resolvedModel ?? '',
@@ -225,11 +355,12 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
       } catch {
         // writer already closed / downstream gone — nothing to do here.
       }
+      scanner.finish();
       // An upstream that dies mid-generation (a stalled model host behind
       // OpenRouter, e.g. "Upstream idle timeout exceeded") reports it as an
       // in-stream error frame on an otherwise clean 200 stream. Surface it so
       // the trace records a failed turn instead of a silent success.
-      const streamError = sseErrorFrame(sseBuffer);
+      const streamError = scanner.error;
       if (streamError) {
         logger.warn(
           `[llm-gateway] upstream error frame in stream ${requestId}: "${streamError.message}"${streamError.code !== undefined ? ` (code ${streamError.code})` : ''}`,
@@ -242,17 +373,14 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         chunks,
         heartbeats,
         downstreamAlive,
+        clientAborted,
         ...(streamError ? { streamError: streamError.message } : {}),
       });
       // Settlement (usage extraction + recordUsage + trace) must never throw out
       // of this detached async task — a failure here would otherwise be an
       // unhandled rejection and silently lose billing/trace for the stream.
       try {
-        await settle(
-          extractUsageFromSseBuffer(sseBuffer),
-          captureBodies ? sseBuffer : null,
-          streamError,
-        );
+        await settle(scanner.usage, captureBodies ? preview : null, streamError);
       } catch (err) {
         logger.warn(`[llm-gateway] stream settle failed ${requestId}:`, err);
       }

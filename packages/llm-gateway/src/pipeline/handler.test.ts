@@ -1202,6 +1202,85 @@ describe("gateway.chatCompletions — request size guard", () => {
   });
 });
 
+// End-to-end regression coverage for the client-disconnect finding: the
+// inbound request's own AbortSignal must reach both the upstream fetch (before
+// any response is chosen) and the streaming relay (after headers are already
+// committed), through the full createGateway → handleChatCompletions →
+// runFailover/relayStream pipeline — not just the lower-level units in
+// isolation.
+describe("gateway.chatCompletions — client abort propagation", () => {
+  test("an already-aborted signal short-circuits before dispatching to the upstream fetch", async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    let fetchCalls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "x" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const ac = new AbortController();
+    ac.abort();
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+      signal: ac.signal,
+    });
+
+    expect(res.status).toBe(499);
+    expect((await res.json()).code).toBe("client_disconnected");
+    expect(fetchCalls).toBe(0); // never spent an upstream call on a caller already gone
+  });
+
+  test("an abort mid-stream cancels the upstream reader instead of draining a stream that never closes", async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    let upstreamCancelled = false;
+    let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
+    const fetchImpl: FetchImpl = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            upstreamController = c;
+          },
+          cancel() {
+            upstreamCancelled = true;
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+
+    const ac = new AbortController();
+    const resPromise = createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+      signal: ac.signal,
+    });
+    // The probe phase needs at least one content chunk before chatCompletions
+    // resolves with a Response — push it as soon as the mock fetch has handed
+    // back its controller (a handful of hook/auth microtasks upstream of this).
+    for (let i = 0; i < 100 && !upstreamController; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    upstreamController.enqueue(
+      new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'),
+    );
+    const res = await resPromise;
+    expect(res.status).toBe(200);
+
+    // Drain the one chunk, then disconnect — the mock upstream never calls
+    // close(), so if the abort weren't honored this would hang forever.
+    const reader = res.body!.getReader();
+    await reader.read();
+    ac.abort();
+    for (;;) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+    expect(upstreamCancelled).toBe(true);
+  });
+});
+
 describe("gateway error envelope contract", () => {
   test("all pre-dispatch rejection classes use the complete error envelope", async () => {
     const cases: Array<{ code: string; run: () => Promise<Response> }> = [

@@ -1,10 +1,22 @@
-export type UpstreamErrorKind = 'http' | 'network' | 'timeout' | 'circuit_open';
+export type UpstreamErrorKind = 'http' | 'network' | 'timeout' | 'circuit_open' | 'client_abort';
 
 export class TimeoutError extends Error {
   readonly kind: UpstreamErrorKind = 'timeout';
   constructor(message = 'upstream timed out') {
     super(message);
     this.name = 'TimeoutError';
+  }
+}
+
+// The INBOUND client disconnected (tab closed, stop hit, TCP reset) — distinct
+// from an upstream-side NetworkError/TimeoutError. Never retried (there's no
+// one left to serve) and never counted against the shared provider circuit
+// breaker (the upstream did nothing wrong).
+export class ClientAbortError extends Error {
+  readonly kind: UpstreamErrorKind = 'client_abort';
+  constructor(message = 'client disconnected') {
+    super(message);
+    this.name = 'ClientAbortError';
   }
 }
 
@@ -66,6 +78,7 @@ export class GatewayResolutionError extends Error {
 
 export function defaultIsRetryable(err: unknown): boolean {
   if (err instanceof CircuitOpenError) return false;
+  if (err instanceof ClientAbortError) return false;
   if (err instanceof TimeoutError) return true;
   if (err instanceof NetworkError) return true;
   if (err instanceof UpstreamHttpError) {
@@ -83,6 +96,7 @@ export function defaultIsRetryable(err: unknown): boolean {
 // other tenants whose own keys are fine. A 429 is therefore still retried and
 // failed-over, but it never trips the breaker.
 export function indicatesUpstreamDown(err: unknown): boolean {
+  if (err instanceof ClientAbortError) return false;
   if (err instanceof TimeoutError) return true;
   if (err instanceof NetworkError) return true;
   if (err instanceof UpstreamHttpError) return err.status >= 500 && err.status <= 599;

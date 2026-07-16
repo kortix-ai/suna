@@ -27,6 +27,15 @@ import { createTraceEmitter } from './trace';
 export interface ChatCompletionRequest {
   authorization: string | undefined;
   rawBody: string;
+  /**
+   * Inbound (client-facing) request's abort signal, when the host surface
+   * exposes one (e.g. Hono's `c.req.raw.signal`). Threaded through to the
+   * upstream fetch and, for streaming, to `relayStream` — so a client that
+   * disconnects mid-request actually stops the upstream from generating (and
+   * the gateway from paying for) tokens nobody will ever see, instead of the
+   * dispatch/stream loops running to completion regardless.
+   */
+  signal?: AbortSignal;
 }
 
 export interface GatewayDeps {
@@ -42,6 +51,10 @@ export interface HandlerRuntime {
   captureBodies: boolean;
   capture: (value: unknown) => unknown;
   breakerFor: (provider: string) => CircuitBreaker;
+  /** Mirrors `config.maxCapturedBodyBytes` — also used to bound the live,
+   *  in-flight streaming response preview (see `relayStream`), not just the
+   *  post-hoc trace truncation. */
+  maxCapturedBodyBytes?: number;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -167,7 +180,8 @@ export async function handleChatCompletions(
   runtime: HandlerRuntime,
   req: ChatCompletionRequest,
 ): Promise<Response> {
-  const { hooks, config, logger, fetchImpl, captureBodies, capture, breakerFor } = runtime;
+  const { hooks, config, logger, fetchImpl, captureBodies, capture, breakerFor, maxCapturedBodyBytes } =
+    runtime;
 
   const requestId = newRequestId();
   const startedAt = new Date().toISOString();
@@ -542,6 +556,7 @@ export async function handleChatCompletions(
       },
       capturedRequest: capture(payload),
       fallbackOn,
+      signal: req.signal,
     });
 
     if (result.kind === 'response') {
@@ -765,6 +780,8 @@ export async function handleChatCompletions(
       resolvedModel: finalDescriptor.resolvedModel ?? requestedModel,
       requestId,
     },
+    signal: req.signal,
+    maxCapturedBodyBytes,
   });
 
   return new Response(readable, {
