@@ -1,11 +1,39 @@
 # Database Migrations
 
 The boring, safe, one-way-to-do-it guide. If you read nothing else, read
-**[Mental model](#mental-model)** and **[A migration failed in prod](#a-migration-failed-in-prod)**.
+**[Mental model](#mental-model)**, **[Zero-downtime rules](#zero-downtime-rules-checklist)**,
+and **[A migration failed in prod](#a-migration-failed-in-prod)**.
 
 **Engine: [node-pg-migrate](https://github.com/salsita/node-pg-migrate)** (battle-tested, Postgres-native). One tracking table. One source of truth. No ORM applying schema at runtime, no manual `psql` against prod.
 
 > We invoke node-pg-migrate through a ~60-line bun adapter (`scripts/migrate.ts`) that calls its programmatic `runner()`. Reason: our deploy runtime is bun-only (`oven/bun:slim`, no `node`), and node-pg-migrate's CLI bin does optional `tryImport()`s that bun's resolver rejects. The adapter is invocation glue only — **all** migration logic (advisory lock, the `pgmigrations` tracking table, per-migration transactions, dry-run, fake) is node-pg-migrate's.
+
+---
+
+## Authoring path: drizzle-kit generate + node-pg-migrate (both, one job each)
+
+**There is exactly one blessed way to change the schema.** Two tools, not
+competing:
+
+- **drizzle-kit** *generates SQL* by diffing `src/schema/kortix.ts` against its
+  own snapshot (`drizzle/meta/`). It never touches a database and never
+  applies anything.
+- **node-pg-migrate** *applies SQL*. It doesn't know or care that drizzle-kit
+  exists — it just runs whatever `.sql` (or `.concurrent.ts`, see below) files
+  land in `migrations/`, in order, tracked in `kortix_migrations.pgmigrations`.
+
+If you've heard "drizzle-kit generate is broken here, hand-write everything"
+— that was true from **2026-07-08 to 2026-07-16** and is fixed now (see
+[Why this needed fixing](#why-drizzle-kit-generate-needed-fixing-2026-07-16) for the
+evidence). `kortix.ts` + `drizzle-orm` were never broken — that's the app's
+live query layer (200+ files import `@kortix/db`), completely independent of
+whether the *migration-generation* tool worked. Only the generator was down.
+
+**Hand-writing SQL directly (`migrate:create`) is still first-class**, for
+anything drizzle-kit can't express: RLS policies, functions/triggers, grants,
+data backfills, and the CONCURRENTLY escape hatch below. It is not a
+workaround — it's the documented second path for the ~20% of changes that
+aren't a schema-shape diff.
 
 ---
 
@@ -21,13 +49,13 @@ The boring, safe, one-way-to-do-it guide. If you read nothing else, read
   Postgres  +  kortix_migrations.pgmigrations   <- one row per applied migration
 ```
 
-- **Schema shape** is defined in `kortix.ts`. You edit the schema and *generate* the SQL — you don't hand-write schema DDL. (Data migrations, RLS, and custom functions are the exception — hand-written; see below.)
-- **Migration files** in `packages/db/migrations/` are **immutable, timestamp-named** `YYYYMMDDHHMMSSmmm_slug.sql` (17-digit UTC — node-pg-migrate's native format; collision-safe across parallel branches).
-- **Applied state** lives in `kortix_migrations.pgmigrations` (node-pg-migrate's table; one row per migration, by name).
+- **Schema shape** is defined in `kortix.ts`. You edit the schema and *generate* the SQL — you don't hand-write schema DDL. (Data migrations, RLS, custom functions, and CONCURRENTLY operations are the exception — hand-written; see below.)
+- **Migration files** in `packages/db/migrations/` are **immutable, timestamp-named** `YYYYMMDDHHMMSSmmm_slug.sql` (17-digit UTC — node-pg-migrate's native format; collision-safe across parallel branches). The one exception is the `.concurrent.ts` escape hatch, same timestamp prefix, different suffix — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
+- **Applied state** lives in `kortix_migrations.pgmigrations` (node-pg-migrate's table; one row per migration, by name — **not** the `public` schema, and not the same table CI/local dev might assume by default).
 
 ### Tracking is by NAME, not checksum (known tradeoff)
 
-node-pg-migrate records the migration *name*, not a content checksum — so it will **not** detect "someone edited an already-applied migration." The defense is the immutability rule (never edit an applied migration — write a new one) plus PR review. This is how the vast majority of node-pg-migrate / Rails / Django shops operate. If you ever need checksum enforcement, Flyway (Docker/JVM) is the tool that has it natively.
+node-pg-migrate records the migration *name*, not a content checksum — so it will **not** detect "someone edited an already-applied migration." The defense is the immutability rule (never edit an applied migration — write a new one), PR review, and the `immutability` CI job (`git diff` against every already-merged migration file, at PR time). This is how the vast majority of node-pg-migrate / Rails / Django shops operate. If you ever need checksum enforcement, Flyway (Docker/JVM) is the tool that has it natively.
 
 ### The baseline
 
@@ -57,10 +85,14 @@ From repo root (`DATABASE_URL` from env, or `--target=<env>` reads `<ENV>_DB_URL
 |---|---|
 | `pnpm migrate` | Apply pending migrations (advisory-locked, transactional). |
 | `pnpm migrate:status` | List pending migrations (dry-run, writes nothing). Exit 1 if any pending. |
-| `pnpm migrate:create <slug>` | Create an empty hand-written SQL migration (RLS, functions, data). |
+| `pnpm migrate:create <slug>` | Scaffold a hand-written SQL migration with the house-rules template (lock_timeout/statement_timeout header, expand/contract checklist, annotation slots). |
+| `pnpm migrate:create <slug> --concurrent` | Scaffold the `.concurrent.ts` CONCURRENTLY escape hatch (`pgm.noTransaction()` pre-filled). |
 | `pnpm migrate:generate <slug>` | Generate SQL from a `kortix.ts` change (drizzle-kit) into a timestamped file. |
 | `pnpm migrate:fake` | Mark pending migrations as applied **without running them** (baseline existing envs). |
 | `pnpm migrate:down` | Roll back (only if the migration defines a `-- Down Migration` section; ours don't — see below). |
+| `pnpm --filter @kortix/db lint` | Run every deterministic local check: filename/structure lint + the mixed-version/enum-value guard + squawk. Run this before every push that touches `packages/db/migrations`. |
+| `pnpm --filter @kortix/db migrate:lint` | Just the filename/structure/mixed-version/enum-value checks (no squawk, no network). |
+| `pnpm --filter @kortix/db lint:squawk` | Just squawk, scoped to new (non-grandfathered) migrations. Auto-downloads a checksum-pinned binary on first run. |
 
 Target a specific DB (secrets never go through the shell): the adapter reads `DATABASE_URL`, or `--target=dev`/`--target=prod` resolves `DEV_DB_URL`/`PROD_DB_URL` from `apps/api/.env`. The prod deploy passes `DATABASE_URL` directly.
 
@@ -68,25 +100,161 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 
 ## Creating a migration
 
-**Schema change (table/column/index):**
+**Schema change (table/column/index shape):**
 
 1. Edit `packages/db/src/schema/kortix.ts`.
 2. `pnpm migrate:generate add_widget_table`
 3. **Read the generated SQL.** This is the human review gate before anything touches a DB.
-4. Commit BOTH the new `.sql` file AND the updated `packages/db/drizzle/` snapshot.
-5. PR → on merge, CI applies it.
+4. Run `pnpm --filter @kortix/db lint` (structure + mixed-version/enum-value guard + squawk).
+5. Commit BOTH the new `.sql` file AND the updated `packages/db/drizzle/` snapshot.
+6. PR → on merge, CI applies it.
 
 **Hand-written (RLS, function, data backfill):**
 
-1. `pnpm migrate:create backfill_widget_owner` → creates `migrations/<ts>_backfill_widget_owner.sql`.
-2. Write the SQL. The whole file is the "up". For an irreversible op that can't run in a transaction (e.g. `CREATE INDEX CONCURRENTLY`), see node-pg-migrate's SQL options — it needs its own file.
-3. Review, commit, PR.
+1. `pnpm migrate:create backfill_widget_owner` → creates `migrations/<ts>_backfill_widget_owner.sql` with the house-rules template already filled in (lock_timeout/statement_timeout, expand/contract checklist, annotation slots).
+2. Write the SQL.
+3. Run `pnpm --filter @kortix/db lint`, review, commit, PR.
+
+**CONCURRENTLY (index create/drop, reindex, partition detach):**
+
+1. `pnpm migrate:create widget_name_index --concurrent` → creates `migrations/<ts>_widget_name_index.concurrent.ts`. See [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
+2. Fill in the TODOs — **one statement per `pgm.sql()` call** (see the file's own comments for why).
+3. Run `pnpm --filter @kortix/db lint`, review, commit, PR.
 
 **Rules (not suggestions):**
 
-- Never edit a migration that has been applied anywhere. Not even a typo. Write a new one. (Tracking is by name — there's no checksum to catch you. Discipline matters.)
+- Never edit a migration that has been applied anywhere. Not even a typo. Write a new one. (Tracking is by name — there's no checksum to catch you. Discipline matters. The `immutability` CI job enforces this at PR time.)
 - One logical change per migration.
-- Generated SQL is reviewed by a human before it touches a database.
+- Generated/hand-written SQL is reviewed by a human before it touches a database.
+- Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — the template pre-fills this.
+- Any migration that **drops or alters** a constraint, unique index, column, or enum value needs a `-- mixed-version-safe: <justification>` (or `-- enum-value-checked: <justification>` for `ADD VALUE`) comment, or CI fails it — see [Zero-downtime rules](#zero-downtime-rules-checklist). Same rule for `.concurrent.ts` (e.g. a `DROP INDEX CONCURRENTLY`) — use a `//` comment there instead of `--`.
+
+---
+
+## Zero-downtime rules (checklist)
+
+New code must run against the old schema and old code against the new schema during a rollout. **Expand, then contract** — two deploys.
+
+- [ ] Add a **nullable** column — safe.
+- [ ] Add a column **with a default** — safe (modern Postgres, no rewrite).
+- [ ] Add **NOT NULL without a default** — UNSAFE. Add nullable → backfill → set NOT NULL later. *(squawk: `adding-not-nullable-field`)*
+- [ ] **Rename** a column or table — never in one step. Add new → backfill → update code → drop old (later deploy). *(squawk: `renaming-column`/`renaming-table`; our guard requires `mixed-version-safe` on any rename)*
+- [ ] **Change a column type** — treat as a rename; `ACCESS EXCLUSIVE` lock + full table rewrite. *(squawk: `changing-column-type`)*
+- [ ] **Add an index** on an existing table — use `pnpm migrate:create <slug> --concurrent`, never a plain `CREATE INDEX` in a normal migration. *(squawk: `require-concurrent-index-creation`, `ban-concurrent-index-creation-in-transaction`)*
+- [ ] **Drop an index** — same: `--concurrent`. *(squawk: `require-concurrent-index-deletion`)*
+- [ ] **Add a constraint** (`CHECK`, FK, unique) on an existing table — `NOT VALID` in this migration, `VALIDATE CONSTRAINT` in a follow-up (full table scan either way, but `VALIDATE` alone doesn't block writes). *(squawk: `constraint-missing-not-valid`, `adding-foreign-key-constraint`)*
+- [ ] **Add a foreign key** — safe only if existing data is consistent; verify first.
+- [ ] **Add an enum value** (`ALTER TYPE ... ADD VALUE`) — needs `-- enum-value-checked: <...>`. A faked/rebaselined environment can silently skip it (see [worked example #2](#worked-example-2-the-sandbox_provider-platinum-enum-drift) below).
+- [ ] **Drop a table/column/constraint/unique-index / remove NOT NULL / rename anything** — DESTRUCTIVE; needs `-- mixed-version-safe: <...>`; see below.
+
+### Destructive operation policy (expand → contract)
+
+A `DROP TABLE`, `DROP COLUMN`, `DROP CONSTRAINT`, `DROP INDEX`, `DROP NOT NULL`, or a rename breaks any still-running app version that references the old shape.
+
+1. **Deploy 1:** remove all code references. Ship it. (Object still in the DB.)
+2. **Deploy 2:** the migration that drops/renames it, annotated `-- mixed-version-safe: <why old code can't still be running, or why it tolerates this>`. Ship it.
+
+Never the drop and the code change in one deploy. `scripts/lint-migrations.ts` enforces the annotation is present on every NEW migration (pre-existing migrations are grandfathered — see [Enforcement scope](#enforcement-scope-new-vs-grandfathered-migrations)); it cannot verify deploy ordering, so the annotation's justification is the actual safety mechanism — write a real one, not `-- mixed-version-safe: yes`.
+
+### Worked example #1: the 20260713220001000 mixed-version 500s
+
+`20260713220001000_project_branch_environments.sql` intentionally dropped the
+unique index `idx_projects_account_repo` (branch-isolated projects made it
+obsolete). During the mixed-version deploy window, **old** (pre-0.10) task
+code was still issuing `INSERT ... ON CONFLICT (account_id, repo_url)` —
+which requires that exact unique index/constraint to exist — and 500'd until
+the roll finished. This is precisely the class of incident the mixed-version
+guard exists to force a conscious decision about: had this migration required
+a `-- mixed-version-safe: <...>` annotation, the author would have had to
+either write "old task code still issues this ON CONFLICT — confirmed via
+grep, and pre-0.10 pods are terminated before this migration runs" (probably
+false, hence the incident) or split it into an expand/contract pair.
+
+### Worked example #2: the sandbox_provider "platinum" enum drift
+
+A **faked baseline** (`migrate:fake`, used to onboard an existing environment
+without re-running DDL) was generated from a schema snapshot that predated an
+`ALTER TYPE kortix.sandbox_provider ADD VALUE 'platinum'` migration. The fake
+marked that migration "applied" without ever running it, so that one
+environment's enum silently lacked the `platinum` value. The first insert
+using it failed with `22P02 invalid input value for enum`. The enum-value
+guard requires the author to state **how** they verified every environment —
+including any that were ever faked/rebaselined — actually has the value,
+rather than assuming a baseline is authoritative everywhere.
+
+---
+
+## Enforcement scope: new vs. grandfathered migrations
+
+Migrations are immutable, so the policies above (mixed-version guard,
+enum-value annotation, squawk) **cannot** be retrofitted onto files that
+already exist and are already applied everywhere. `packages/db/grandfathered-migrations.json`
+is a fixed, checked-in list of every migration filename that existed before
+this guard landed (2026-07-16). Both `scripts/lint-migrations.ts` and
+`scripts/squawk-lint.ts` treat any filename in that list as exempt from the
+NEW checks only (they still get every structural check — filename shape,
+merge-conflict markers, duplicate timestamps — which they already pass).
+**Any filename not in that list — i.e. every migration written from now
+on — gets full enforcement.** The list only ever stays fixed; nothing is
+ever added to it.
+
+See `packages/db/SQUAWK_BASELINE.md` for the one-time squawk retro-lint
+report over the pre-existing corpus (178 findings, none fixed, none blocking
+— informational only).
+
+---
+
+## Roll-forward safety: transactions per file, and the CONCURRENTLY escape hatch
+
+`scripts/migrate.ts` runs node-pg-migrate with `singleTransaction: true`:
+**every pending `.sql` migration in one `pnpm migrate` invocation is wrapped
+in a single outer `BEGIN`/`COMMIT`** — if any one of them throws, node-pg-migrate
+rolls back the entire batch atomically (see
+[A migration failed in prod](#a-migration-failed-in-prod)). This is
+deliberate: a partially-applied migration set is worse than a deploy that
+never got past the migrate step.
+
+**The catch:** `CREATE INDEX CONCURRENTLY` (and `DROP INDEX CONCURRENTLY`,
+`REINDEX CONCURRENTLY`, `ALTER TABLE ... DETACH PARTITION CONCURRENTLY`)
+*cannot run inside any transaction block* — Postgres rejects it outright.
+Every `.sql` migration in this repo runs inside that outer transaction, and
+raw `.sql` files have no way to opt out (node-pg-migrate's opt-out,
+`pgm.noTransaction()`, is a JS-migration-builder API with no equivalent
+directive for plain SQL text). Until 2026-07-16 this meant **the zero-downtime
+checklist told you to use CONCURRENTLY, but nothing in this repo could
+actually run it** — a real, previously-unverified gap (confirmed: no
+migration in the corpus ever used it).
+
+**The fix — the `.concurrent.ts` escape hatch:** node-pg-migrate loads any
+non-`.sql` file in `migrations/` via dynamic `import()` instead of treating it
+as raw SQL (this already worked; it was just never used here). A
+`<ts>_<slug>.concurrent.ts` file is a real node-pg-migrate migration that
+calls `pgm.noTransaction()`. When the runner hits it mid-batch, it:
+
+1. `COMMIT`s the outer transaction,
+2. runs this migration's SQL standalone (no transaction — CONCURRENTLY works),
+3. `BEGIN`s again for whatever runs after it in the same batch.
+
+This is node-pg-migrate's own documented mechanism (verified against its
+source, `dist/legacy/migration.js`), not a hack. `pnpm migrate:create <slug>
+--concurrent` scaffolds it; `scripts/lint-migrations.ts` requires the file to
+actually call `pgm.noTransaction()` and contain a CONCURRENTLY operation, or
+CI fails.
+
+**A footgun we found while writing the template, and now lint against:**
+`pgm.sql()` with a *single* multi-statement string (e.g.
+`` pgm.sql(`set lock_timeout='2s'; create index concurrently ...;`) ``) sends
+one query string to Postgres — and Postgres's simple query protocol wraps a
+multi-statement string in an **implicit transaction** regardless of anything
+node-pg-migrate does. `noTransaction()` genuinely runs, but CONCURRENTLY
+still fails with the same "cannot run inside a transaction block" error,
+which is deeply confusing to debug. **Every `pgm.sql()` call must be exactly
+one statement.** This was verified end-to-end against a real Postgres
+container: the combined-string form fails, the split form succeeds (index
+built with `pg_index.indisvalid = true`), and a normal `.sql` migration
+immediately after it in the same `pnpm migrate` invocation applies correctly
+in the reopened transaction. `scripts/lint-migrations.ts` flags any
+`.concurrent.ts` file with a multi-statement `pgm.sql()` call.
 
 ---
 
@@ -122,27 +290,33 @@ There is no separate preview database. Consequences:
 
 ---
 
-## Zero-downtime rules (checklist)
+## CI gates (`.github/workflows/db-migrations.yml`)
 
-New code must run against the old schema and old code against the new schema during a rollout. **Expand, then contract** — two deploys.
+Runs on every PR touching `packages/db/**`. Six jobs, each closing a failure
+mode we've actually hit:
 
-- [ ] Add a **nullable** column — safe.
-- [ ] Add a column **with a default** — safe (modern Postgres, no rewrite).
-- [ ] Add **NOT NULL without a default** — UNSAFE. Add nullable → backfill → set NOT NULL later.
-- [ ] **Rename** a column — never in one step. Add new → backfill → update code → drop old (later deploy).
-- [ ] **Change a column type** — treat as a rename.
-- [ ] **Add an index** — `CREATE INDEX CONCURRENTLY` in its own migration (can't run in a transaction).
-- [ ] **Add a foreign key** — safe only if existing data is consistent; verify first.
-- [ ] **Drop a table/column / remove NOT NULL** — DESTRUCTIVE; see below.
+| Job | Enforces | Failure mode it prevents |
+|---|---|---|
+| `lint` | Filename shape, no merge markers, no empty files/placeholders, no duplicate timestamps, **mixed-version guard, enum-value annotation** (new migrations only) | Malformed migrations; the `20260713220001000` class; the `sandbox_provider` enum-drift class |
+| `squawk` | Deterministic Postgres locking/downtime rules (new migrations only) — see `.squawk.toml` | Non-concurrent index ops, unvalidated constraints, missing timeout headers, ACCESS EXCLUSIVE type changes, ... |
+| `immutability` | Already-merged migration files are never modified | Silent schema drift between environments that ran the file at different times |
+| `sequence` | New migrations sort after every already-merged migration | The historical `_journal`/`pgmigrations` ordering-dedupe incident |
+| `shadow-db` | Every migration applies cleanly to a genuinely fresh Postgres | "The files don't reproduce reality" (a prior baseline built 71/93 tables) |
+| `schema-sync` | `kortix.ts` and the committed migrations agree (drizzle-kit generate must produce zero diff) | `kortix.ts` silently drifting from the real schema — see the note below, this job used to be a silent no-op |
 
-### Destructive operation policy (expand → contract)
+**A subtlety worth knowing:** before 2026-07-16, `schema-sync` always reported
+success — but drizzle-kit's own snapshot lineage had forked (two snapshots
+sharing a parent — see the section below) and `drizzle-kit generate` was
+silently swallowing that error and exiting 0 with nothing generated. The
+"gate" was checking that an empty diff matched an empty diff. It's a real
+check again now that the lineage is fixed.
 
-A `DROP TABLE`, `DROP COLUMN`, or `DROP NOT NULL` breaks any still-running app version that references it.
-
-1. **Deploy 1:** remove all code references. Ship it. (Column still in the DB.)
-2. **Deploy 2:** the migration that drops the column. Ship it.
-
-Never the drop and the code change in one deploy.
+Local: `pnpm --filter @kortix/db lint` runs the same `lint` + `squawk`
+checks (not `immutability`/`sequence`, which need PR-diff context;
+not `shadow-db`/`schema-sync`, which need a database). There is no repo-wide
+git hook wired up (`.claude/skills/migration/SKILL.md` and this file are the
+enforcement point for local discipline) — run it before every push that
+touches `packages/db/migrations`.
 
 ---
 
@@ -152,7 +326,7 @@ The migration step runs **before** the new version serves traffic, so a failure 
 
 1. **Read the error** in the deploy logs (the failing `migrate up` step).
 2. `pnpm migrate:status --target=prod` — anything pending?
-3. node-pg-migrate runs the pending set in a single transaction (`singleTransaction`), so a failure **rolls back atomically** — nothing was applied. Fix the migration (a NEW migration if the bad one is already applied elsewhere) and redeploy.
+3. node-pg-migrate runs the pending set in a single transaction (`singleTransaction`), so a failure **rolls back atomically** — nothing was applied. *(Exception: if a `.concurrent.ts` migration in the batch already ran and committed before the failure — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch) — that one migration IS applied even though the batch reports failure. Check `kortix_migrations.pgmigrations` if a `.concurrent.ts` migration was in the pending set.)* Fix the migration (a NEW migration if the bad one is already applied elsewhere) and redeploy.
 4. **Do not** hand-edit prod schema and walk away. If you must intervene manually, make the DB match a migration file, then record it (next section).
 5. Roll back app code the normal way (previous image). Schema rollback is a **new forward migration**, not a down — most schema changes aren't losslessly reversible. (Our migrations don't define `-- Down Migration` sections by policy.)
 
@@ -174,7 +348,49 @@ To put an existing DB (whose schema already matches the baseline) onto this syst
 2. `pnpm migrate:fake --target=<env>` — creates `kortix_migrations.pgmigrations` and marks the baseline applied without running it.
 3. `pnpm migrate:status --target=<env>` → "Up to date".
 
-This touches only the tracking table — never schema or data.
+This touches only the tracking table — never schema or data. **Careful:** a
+faked environment can silently miss enum values added between the snapshot it
+was faked from and now — see [Worked example #2](#worked-example-2-the-sandbox_provider-platinum-enum-drift).
+
+---
+
+## Why drizzle-kit generate needed fixing (2026-07-16)
+
+`packages/db/drizzle/meta/_journal.json`'s snapshot lineage had **forked**:
+`20260623175603_snapshot.json` and `20260624113021_snapshot.json` both
+declared the same `prevId` (both children of `20260622153054`'s snapshot) —
+two divergent branches from one parent, never reconciled. Reproduced directly:
+
+```
+$ bunx drizzle-kit generate --config drizzle.config.ts --name probe
+Error: [drizzle/meta/20260622083457_snapshot.json, drizzle/meta/20260622153054_snapshot.json]
+  are pointing to a parent snapshot: .../snapshot.json which is a collision.
+[drizzle/meta/20260623175603_snapshot.json, drizzle/meta/20260624113021_snapshot.json]
+  are pointing to a parent snapshot: .../snapshot.json which is a collision.
+```
+
+Worse: `drizzle-kit` printed that error to stderr and **still exited 0** with
+"No schema changes detected — nothing generated" — so `scripts/generate.ts`
+(which only checks the exit code) never noticed, and the `schema-sync` CI job
+had been rubber-stamping success for weeks without ever computing a real
+diff. `kortix.ts` was in fact being kept in sync by hand in the same commits
+as the SQL (verified: 10 of the last 15 migrations touched `kortix.ts` in
+their landing commit) — the humans were doing the job the tool was
+supposedly doing.
+
+**The fix:** `packages/db/drizzle/` is generator bookkeeping only — it holds
+no runtime dependency except `0000_bootstrap.sql` (read by
+`scripts/migrate.ts` for the self-host bootstrap path, and baked into
+`apps/api/Dockerfile`; that file was kept as-is). Every other historical
+snapshot/SQL file in that directory was regenerable, disposable tooling
+state, so it was replaced with **one fresh baseline snapshot** of the current
+`kortix.ts` (`drizzle/20260716021754_rebaseline_kortix_schema_20260716.sql` +
+a matching, non-forked `meta/_journal.json`). This does not touch any applied
+migration, any runtime code path, or the ORM query layer — it only resets
+drizzle-kit's own diffing state so `pnpm migrate:generate` produces correct
+output again. Verified end-to-end: a probe schema change (`+column`) produced
+the correct minimal `ALTER TABLE ... ADD COLUMN` after the rebaseline, where
+it previously silently produced nothing.
 
 ---
 
@@ -183,6 +399,7 @@ This touches only the tracking table — never schema or data.
 - **`kortix.ts` adoption:** ~22 tables exist in the DB (e.g. `provider_events`, `executions`, `gateway_*`) captured by the baseline but not yet modelled in `kortix.ts`. Until adopted, they're baseline-managed (hand-written migrations), not drizzle-generated.
 - **Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload — drop the dead ones in a contract migration.
 - **Legacy trackers:** `supabase_migrations.schema_migrations`, `drizzle.__drizzle_migrations`, `kortix.api_schema_migrations` are dead. Drop after prod is also cut over.
+- **No repo-wide git pre-push hook** wires `pnpm --filter @kortix/db lint` automatically yet — it's a documented, not enforced, local step (CI is the real gate).
 
 ---
 
