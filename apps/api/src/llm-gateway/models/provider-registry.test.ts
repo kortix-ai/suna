@@ -1,6 +1,15 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 
-import { resolveCatalogUpstream } from './provider-registry';
+// provider-registry reads config.AWS_BEDROCK_REGION for the BYOK-Bedrock
+// regional endpoint. Mock config so the region is deterministic (undefined →
+// the us-east-1 default) and this stays a pure catalog-resolution unit test,
+// independent of the deployment's decrypted env. runtime-catalog (the only
+// other import) needs no config, so this mock is fully contained. The module
+// under test is imported DYNAMICALLY below so the mock is registered before its
+// (otherwise-hoisted) config import evaluates.
+mock.module('../../config', () => ({ config: {} }));
+
+const { resolveCatalogUpstream } = await import('./provider-registry');
 
 describe('runtime catalog provider resolution', () => {
   test('resolves a known OpenAI-compatible provider', () => {
@@ -28,6 +37,20 @@ describe('runtime catalog provider resolution', () => {
       kind: 'anthropic',
       envVar: 'ANTHROPIC_API_KEY',
       baseUrl: 'https://api.anthropic.com/v1',
+    });
+  });
+
+  // Bedrock is a STANDALONE BYOK provider (not the cloud-only managed/credits
+  // path): the bearer-token API key secret + the regional runtime endpoint,
+  // resolved here so the normal BYOK flow can build a kind:'bedrock' descriptor
+  // from a project's own key. models.dev gives amazon-bedrock no `api` base and
+  // an env[0] of AWS_ACCESS_KEY_ID — both wrong for this transport — so this
+  // must be resolved explicitly, not via the generic single-key fallback.
+  test('resolves Amazon Bedrock as a standalone BYOK provider (bearer token + regional endpoint)', () => {
+    expect(resolveCatalogUpstream('amazon-bedrock')).toMatchObject({
+      kind: 'bedrock',
+      envVar: 'AWS_BEARER_TOKEN_BEDROCK',
+      baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
     });
   });
 

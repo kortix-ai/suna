@@ -20,7 +20,10 @@ const getCachedAccountTier = mock(async (accountId: string, now: number = Date.n
   accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
   return tier;
 });
-mock.module('../../billing/services/entitlements', () => ({ getAccountTier, getCachedAccountTier }));
+mock.module('../../billing/services/entitlements', () => ({
+  getAccountTier,
+  getCachedAccountTier,
+}));
 
 mock.module('../../billing/services/tiers', () => ({
   accountIsFreeTierForModels: (tier: string) => tier === 'free',
@@ -161,6 +164,54 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
     const candidates = await resolveCandidates(p, 'openai/gpt-5.5');
     expect(candidates[0]).toMatchObject({ reasoning: true, temperature: false });
+  });
+
+  // Bedrock is a STANDALONE BYOK provider (its own bearer-token key + regional
+  // endpoint), NOT the cloud-only managed/credits path. A project that connects
+  // its own AWS_BEARER_TOKEN_BEDROCK resolves to a `kind:'bedrock'` descriptor
+  // carrying that key and the bare Bedrock model id — routed through the bedrock
+  // transport exactly like the managed Bedrock path, just with the user's own
+  // credentials. KORTIX_MANAGED_PROVIDER_ENABLED is irrelevant here.
+  test('BYOK Bedrock: standalone provider, builds a kind:bedrock descriptor from the project key', async () => {
+    catalogUpstream = {
+      baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
+      envVar: 'AWS_BEARER_TOKEN_BEDROCK',
+      kind: 'bedrock',
+    };
+    resolvedSecret = 'bedrock-bearer-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
+    expect(candidates[0]).toMatchObject({
+      provider: 'amazon-bedrock',
+      kind: 'bedrock',
+      baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
+      apiKey: 'bedrock-bearer-key',
+      resolvedModel: 'us.anthropic.claude-opus-4-8',
+    });
+    // The bearer token is looked up under the AWS-standard secret name.
+    expect(getResolvedProjectSecretValue).toHaveBeenCalledWith(
+      'p1',
+      'AWS_BEARER_TOKEN_BEDROCK',
+      'u1',
+    );
+  });
+
+  test('Bedrock with no project key connected: provider_not_connected (never a silent managed fallback)', async () => {
+    catalogUpstream = {
+      baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
+      envVar: 'AWS_BEARER_TOKEN_BEDROCK',
+      kind: 'bedrock',
+    };
+    resolvedSecret = null;
+    secretExistsForAnyOwner = false;
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    await expect(
+      resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8'),
+    ).rejects.toMatchObject({ code: 'provider_not_connected' });
   });
 
   test('free tier: BYOK key is billing-free (markup 0, billingMode none) with no managed fallback', async () => {
