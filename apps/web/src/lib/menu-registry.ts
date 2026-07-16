@@ -63,8 +63,10 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Store,
+  Terminal,
   TerminalSquare,
   UserPlus,
   Volume2,
@@ -257,6 +259,34 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'action',
     actionId: 'viewChanges',
+    requiresSession: true,
+  },
+  // NOTE: distinct id/actionId from the legacy 'open-terminal' entry below
+  // (which spawns a standalone workspace PTY tab and is hidden from the
+  // palette via LEGACY_PALETTE_HIDDEN in command-palette.tsx) — this one
+  // opens THIS session's own terminal/audit surface (Easy detail layer /
+  // Advanced tab), so it needs its own identity even though the label the
+  // product wants ("Open Terminal") collides in English.
+  {
+    id: 'open-session-terminal',
+    label: 'Open Terminal',
+    icon: Terminal,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionTerminal',
+    keywords: 'terminal shell console pty session',
+    requiresSession: true,
+  },
+  {
+    id: 'open-session-audit',
+    label: 'Open Audit',
+    icon: ShieldCheck,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionAudit',
+    keywords: 'audit governed actions approvals trail session',
     requiresSession: true,
   },
 

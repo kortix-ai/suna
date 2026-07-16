@@ -30,7 +30,9 @@ import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { getActivePanelSessionId, useSessionBrowserStore } from '@/stores/session-browser-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { systemReload } from '@kortix/sdk/opencode-client';
@@ -1007,6 +1009,53 @@ export function CommandPalette() {
     useUserPreferencesStore.getState().togglePanelMode();
   }, [close, panelMode]);
 
+  /**
+   * "Open Terminal" / "Open Audit" (Easy: the Easy panel's detail layer,
+   * Advanced: the panel's Terminal/Audit tab). Both open the side panel if
+   * closed; Audit with no project context still opens the panel (Easy's
+   * consume becomes a no-op, Advanced's tab shows its own empty state).
+   *
+   * Easy mode routes through `requestQuickView`, which resolves the active
+   * session from the store's OWN `_activeSessionId` — the palette has no
+   * reliable id for it itself (`currentSessionId` above is parsed from the
+   * URL, which is a DIFFERENT id space from the OpenCode `chatSessionId`
+   * panel state is keyed by; see `session-browser-store.ts`'s
+   * `getActivePanelSessionId` doc comment).
+   *
+   * Advanced mode has no local "pending view" state to consume (the tab strip
+   * reads `session-browser-store` directly), so it can't reuse the Easy path
+   * — it writes `setView` straight onto the active panel session, resolved
+   * via that same `getActivePanelSessionId()` helper (the established
+   * mechanism for exactly this "external trigger names the active panel
+   * session" problem — see `openFileInSessionPanel`).
+   */
+  const handleOpenQuickView = useCallback(
+    (view: 'terminal' | 'audit') => {
+      close();
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+      if (panelMode === 'advanced') {
+        const activePanelSessionId = getActivePanelSessionId();
+        if (activePanelSessionId) {
+          useSessionBrowserStore.getState().setView(activePanelSessionId, view);
+        }
+        useKortixComputerStore.getState().openSidePanel();
+      } else {
+        useKortixComputerStore.getState().requestQuickView(view);
+      }
+      if (!wasOpen) track('panel_opened', { source: 'palette' });
+    },
+    [close, panelMode],
+  );
+
+  const handleOpenSessionTerminal = useCallback(
+    () => handleOpenQuickView('terminal'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionAudit = useCallback(
+    () => handleOpenQuickView('audit'),
+    [handleOpenQuickView],
+  );
+
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
       close();
@@ -1120,6 +1169,8 @@ export function CommandPalette() {
       inviteMembers: handleInviteMembers,
       toggleSidebar: handleToggleSidebar,
       togglePanelMode: handleTogglePanelMode,
+      openSessionTerminal: handleOpenSessionTerminal,
+      openSessionAudit: handleOpenSessionAudit,
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
@@ -1135,6 +1186,8 @@ export function CommandPalette() {
       handleInviteMembers,
       handleToggleSidebar,
       handleTogglePanelMode,
+      handleOpenSessionTerminal,
+      handleOpenSessionAudit,
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,

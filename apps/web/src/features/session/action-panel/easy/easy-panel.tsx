@@ -423,6 +423,10 @@ export const EasyPanel = memo(function EasyPanel({
     if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
   }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
 
+  // Command-palette quick-view consume effect lives below `openAudit`'s
+  // declaration — see the comment there.
+  const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
+
   /**
    * A tool call clicked in the CHAT opens that tool's real view in the panel.
    *
@@ -476,6 +480,25 @@ export const EasyPanel = memo(function EasyPanel({
       body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
     });
   }, [openDetail, projectId, projectSessionId]);
+
+  // Command palette "Open Terminal"/"Open Audit" (W1→W2-shaped handoff, same
+  // pattern as the chip-consume effect above): subscribe to the pending
+  // request VALUE, not the stable `consumeQuickView` action — desktop keeps
+  // this panel mounted behind a closed side panel, so a palette selection
+  // must itself re-render us or the handoff silently dead-ends. Audit with no
+  // project context (booting/transient session) is a deliberate no-op: the
+  // panel is already open by the time this runs, there's just nothing to
+  // drill into yet — Advanced mode's Audit tab shows its own empty state
+  // instead (this command routes through Advanced's own `setView`, not here).
+  useEffect(() => {
+    if (pendingQuickView?.sessionId !== sessionId) return;
+    const view = useKortixComputerStore.getState().consumeQuickView(sessionId);
+    if (view === 'terminal') {
+      openTerminal();
+    } else if (view === 'audit' && projectId && projectSessionId) {
+      openAudit();
+    }
+  }, [pendingQuickView, sessionId, projectId, projectSessionId, openTerminal, openAudit]);
 
   const goHome = closeDetail;
 

@@ -48,6 +48,13 @@ interface KortixComputerState {
   // Chip tap → open the panel WITH the primary deliverable already open.
   pendingPrimaryOpenSessionId: string | null;
 
+  // Command-palette "Open Terminal"/"Open Audit" → open the panel WITH that
+  // detail already showing. Session-scoped and one-shot, same contract as
+  // `pendingPrimaryOpenSessionId`/`consumePrimaryOpen` above — EasyPanel stays
+  // mounted behind a closed panel on desktop, so this must be a changing STORE
+  // VALUE the consume effect subscribes to, not a stable action reference.
+  pendingQuickView: { sessionId: string; view: 'terminal' | 'audit' } | null;
+
   // === ACTIONS ===
 
   setActiveView: (view: ViewType) => void;
@@ -89,6 +96,17 @@ interface KortixComputerState {
   requestPrimaryOpen: (sessionId: string) => void;
   consumePrimaryOpen: (sessionId: string) => boolean;
 
+  /** Command palette → open the ACTIVE session's panel to `view` (terminal or
+   *  audit). Resolves the session from `_activeSessionId` (not a param) —
+   *  the palette has no reliable way to name the active session itself, see
+   *  `command-palette.tsx`'s handler comment. Also opens the panel the same
+   *  way `focusToolCall` does: `isSidePanelOpen` true, the per-session map
+   *  updated, and this session's own ready chip cleared. */
+  requestQuickView: (view: 'terminal' | 'audit') => void;
+  /** One-shot, session-scoped consume — mirrors `consumePrimaryOpen`. Returns
+   *  the requested view when it belonged to `sessionId`, else null. */
+  consumeQuickView: (sessionId: string) => 'terminal' | 'audit' | null;
+
   // Reset all state (full reset)
   reset: () => void;
 }
@@ -105,6 +123,7 @@ const initialState = {
   focusedToolCallId: null as string | null,
   readyChip: null as ReadyChipState | null,
   pendingPrimaryOpenSessionId: null as string | null,
+  pendingQuickView: null as { sessionId: string; view: 'terminal' | 'audit' } | null,
 };
 
 export const useKortixComputerStore = create<KortixComputerState>()(
@@ -252,6 +271,26 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         if (get().pendingPrimaryOpenSessionId !== sessionId) return false;
         set({ pendingPrimaryOpenSessionId: null });
         return true;
+      },
+
+      requestQuickView: (view: 'terminal' | 'audit') => {
+        const sessionId = get()._activeSessionId;
+        const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
+        // Only clear THIS session's own announcement — same rule every other
+        // panel-opening action follows (see `focusToolCall`/`openSidePanel`).
+        if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        if (sessionId) {
+          update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: true };
+          update.pendingQuickView = { sessionId, view };
+        }
+        set(update);
+      },
+
+      consumeQuickView: (sessionId: string) => {
+        const pending = get().pendingQuickView;
+        if (!pending || pending.sessionId !== sessionId) return null;
+        set({ pendingQuickView: null });
+        return pending.view;
       },
 
       reset: () => {
