@@ -204,8 +204,16 @@ export function buildAnthropicCorePayload(body: Record<string, any>): Record<str
     messages,
   };
   if (system) payload.system = system;
-  if (body.temperature != null) payload.temperature = body.temperature;
-  if (body.top_p != null) payload.top_p = body.top_p;
+  // Anthropic rejects temperature/top_p entirely once extended thinking is
+  // enabled ("`temperature` may only be set to 1 when thinking is enabled" —
+  // top_p is rejected outright too) — a client that sets both a sampling
+  // param and reasoning_effort/thinking would otherwise 400 upstream. Thinking
+  // already picks its own randomness, so drop both rather than forwarding a
+  // combination Anthropic never accepts.
+  if (!thinking) {
+    if (body.temperature != null) payload.temperature = body.temperature;
+    if (body.top_p != null) payload.top_p = body.top_p;
+  }
   if (body.stop != null) payload.stop_sequences = Array.isArray(body.stop) ? body.stop : [body.stop];
 
   const tools = translateTools(body.tools);
