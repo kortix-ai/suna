@@ -97,4 +97,36 @@ describe('self-host init: fresh render (fast, no Docker)', () => {
     expect(second.SUPABASE_JWT_SECRET).toBe(first.SUPABASE_JWT_SECRET);
     expect(second.POSTGRES_PASSWORD).toBe(first.POSTGRES_PASSWORD);
   });
+
+  // Non-interactive fresh init (`--yes`, no TTY) skips promptAdminEmail
+  // entirely, so a missing admin email used to fail silently — the operator
+  // only found out later, at the "Only a platform admin can configure GitHub"
+  // dead-end in the dashboard. `init` now prints the same loud warning the
+  // interactive blank-answer path gives, and still exits 0 (this is a warning,
+  // never a hard block — same contract as required-secrets.test.ts).
+  test('non-interactive fresh init WITHOUT --admin-email warns that no platform admin is set', async () => {
+    const { code, stdout } = await sandbox.run(['init', '--yes']);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain('No admin email set');
+    expect(stdout).toContain('--admin-email you@example.com');
+    expect(stdout).toContain('kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=');
+    expect(sandbox.readEnv().KORTIX_PLATFORM_ADMIN_EMAILS ?? '').toBe('');
+  });
+
+  test('non-interactive fresh init WITH --admin-email does not warn, and sets the admin email', async () => {
+    const { code, stdout } = await sandbox.run(['init', '--yes', '--admin-email', 'owner@example.com']);
+
+    expect(code).toBe(0);
+    expect(stdout).not.toContain('No admin email set');
+    expect(sandbox.readEnv().KORTIX_PLATFORM_ADMIN_EMAILS).toBe('owner@example.com');
+  });
+
+  test('a re-run of init on an already-configured instance never re-warns, even with no admin email set', async () => {
+    await sandbox.run(['init', '--yes']);
+
+    const { code, stdout } = await sandbox.run(['init', '--yes']);
+    expect(code).toBe(0);
+    expect(stdout).not.toContain('No admin email set');
+  });
 });
