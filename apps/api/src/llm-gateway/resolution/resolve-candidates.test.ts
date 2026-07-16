@@ -19,12 +19,6 @@ let codexCredential: { access: string; accountId?: string } | null = null;
 const resolveCodexCredential = mock(async () => codexCredential);
 mock.module('../credentials/codex', () => ({ resolveCodexCredential }));
 
-const fallbackCandidate = {
-  provider: 'kortix-fallback',
-  kind: 'openai-compat',
-  baseUrl: 'https://fb.test',
-  apiKey: 'fb',
-};
 mock.module('./descriptors', () => ({
   codexDescriptor: (credential: { access: string }, model: string) => ({
     provider: 'openai-codex',
