@@ -89,7 +89,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ## 3. Access gating / signup (public)
 
 `ACC-1` `GET /access/signup-status` → 200 `{open|waitlist}`.
-`ACC-2` `POST /access/check-email {email}` → 200 allowed/blocked.
+`ACC-2` `POST /access/check-email {email}` → 200 `{allowed, mode: signin|signup|closed|sso}` (`signin` = account exists, `signup` = may register, `closed` = signups off + not allowlisted, `sso` = domain's org enforces SSO-only sign-in; per-IP rate-limited → 429).
 `ACC-3` `POST /access/request-access {email,…}` → 200 waitlisted.
 `ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` + `GET /setup/sandbox-providers` → public; `POST /setup/bootstrap-owner` → first owner; `GET /setup/status|health|setup-status`; `GET/POST /setup/setup-wizard-step`, `POST /setup/setup-complete`. Cloud → routes 404.
 

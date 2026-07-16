@@ -22,7 +22,11 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
-import { registerSupabaseSamlProvider, syncSupabaseSamlAttributeMapping } from './sso-provisioning';
+import {
+  deleteSupabaseSamlProvider,
+  registerSupabaseSamlProvider,
+  syncSupabaseSamlAttributeMapping,
+} from './sso-provisioning';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -33,6 +37,7 @@ function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProv
     group_claim_name: p.groupClaimName,
     auto_create_members: p.autoCreateMembers,
     auto_provision_groups: p.autoProvisionGroups,
+    enforce_sso: p.enforceSso,
     created_at: p.createdAt.toISOString(),
     updated_at: p.updatedAt.toISOString(),
   };
@@ -68,7 +73,7 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Create or update the SSO provider',
     ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional(), auto_provision_groups: z.boolean().optional(), autoProvisionGroups: z.boolean().optional() }) } } } },
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional(), auto_provision_groups: z.boolean().optional(), autoProvisionGroups: z.boolean().optional(), enforce_sso: z.boolean().optional(), enforceSso: z.boolean().optional() }) } } } },
     responses: {
       200: json(z.object({ provider: SsoProviderSchema }), 'The upserted SSO provider'),
       ...errors(400, 401, 402, 403),
@@ -88,6 +93,7 @@ iamRouter.openapi(
   const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
   const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
   const autoProvisionGroups = (body.auto_provision_groups ?? body.autoProvisionGroups) as unknown;
+  const enforceSso = (body.enforce_sso ?? body.enforceSso) as unknown;
 
   if (typeof supabaseSsoProviderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(supabaseSsoProviderId)) {
     return c.json({ error: 'supabase_sso_provider_id must be a UUID' }, 400);
@@ -115,6 +121,7 @@ iamRouter.openapi(
     groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
     autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
     autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
+    enforceSso: typeof enforceSso === 'boolean' ? enforceSso : undefined,
     createdBy: userId,
   });
 
@@ -147,6 +154,7 @@ iamRouter.openapi(
           group_claim_name: before.groupClaimName,
           auto_create_members: before.autoCreateMembers,
           auto_provision_groups: before.autoProvisionGroups,
+          enforce_sso: before.enforceSso,
         }
       : null,
     after: {
@@ -156,6 +164,7 @@ iamRouter.openapi(
       group_claim_name: provider.groupClaimName,
       auto_create_members: provider.autoCreateMembers,
       auto_provision_groups: provider.autoProvisionGroups,
+      enforce_sso: provider.enforceSso,
     },
   });
 
@@ -187,6 +196,7 @@ iamRouter.openapi(
               group_claim_name: z.string().optional(),
               auto_create_members: z.boolean().optional(),
               auto_provision_groups: z.boolean().optional(),
+              enforce_sso: z.boolean().optional(),
               domains: z.array(z.string()).optional(),
             }),
           },
@@ -213,6 +223,7 @@ iamRouter.openapi(
     const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
     const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
     const autoProvisionGroups = (body.auto_provision_groups ?? body.autoProvisionGroups) as unknown;
+    const enforceSso = (body.enforce_sso ?? body.enforceSso) as unknown;
 
     if (typeof name !== 'string' || name.trim().length === 0) {
       return c.json({ error: 'name is required' }, 400);
@@ -262,6 +273,7 @@ iamRouter.openapi(
       groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
       autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
       autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
+      enforceSso: typeof enforceSso === 'boolean' ? enforceSso : undefined,
       createdBy: userId,
     });
 
@@ -278,6 +290,7 @@ iamRouter.openapi(
         group_claim_name: provider.groupClaimName,
         auto_create_members: provider.autoCreateMembers,
         auto_provision_groups: provider.autoProvisionGroups,
+        enforce_sso: provider.enforceSso,
         source: 'metadata_import',
       },
     });
@@ -309,6 +322,19 @@ iamRouter.openapi(
   const before = await getSsoProvider(accountId);
   const ok = await deleteSsoProvider(accountId);
   if (!ok) return c.json({ error: 'no SSO provider configured' }, 404);
+
+  // Unregister the provider in Supabase too — that's what frees the email
+  // domain so the admin can re-import it later. Best-effort: the Kortix row is
+  // already gone and disconnect must never fail, so a Supabase hiccup is logged
+  // (leaving a reclaimable orphan) rather than surfaced. A 404 counts as ok.
+  if (before?.supabaseSsoProviderId) {
+    const unregistered = await deleteSupabaseSamlProvider(before.supabaseSsoProviderId);
+    if (!unregistered.ok) {
+      console.warn(
+        `[sso] Supabase provider deletion failed for account ${accountId}: ${unregistered.error}`,
+      );
+    }
+  }
 
   await auditIam(c, {
     accountId,

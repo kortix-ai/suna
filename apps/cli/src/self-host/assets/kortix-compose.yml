@@ -14,9 +14,9 @@ services:
       KORTIX_PUBLIC_BACKEND_URL: ${API_PUBLIC_URL}/v1
       KORTIX_PUBLIC_BILLING_ENABLED: ${KORTIX_PUBLIC_BILLING_ENABLED}
       KORTIX_PUBLIC_CONNECTORS_ENABLED: ${KORTIX_PUBLIC_CONNECTORS_ENABLED}
+      KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: ${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}
       KORTIX_PUBLIC_APP_URL: ${PUBLIC_URL}
       KORTIX_PUBLIC_AUTH_METHODS: ${KORTIX_PUBLIC_AUTH_METHODS}
-      KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE: ${KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE}
       KORTIX_PUBLIC_DISABLE_LANDING_PAGE: ${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}
       SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       SUPABASE_SERVER_URL: http://supabase-kong:8000
@@ -72,15 +72,16 @@ services:
       # the cloudflared tunnel's public URL in tunnel mode (captured from the
       # `cloudflared` service's logs after `docker compose up` — see
       # reconcileTunnelReachability() in commands/self-host.ts), or a loopback
-      # URL in local-only mode (agent sandboxes will not work in that mode).
+      # URL when reachability is unconfigured (agent sessions won't work —
+      # the cloud sandbox can't call back to this API in that state).
       KORTIX_URL: ${KORTIX_URL}
       FRONTEND_URL: ${PUBLIC_URL}
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL},${API_PUBLIC_URL}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE}
       SANDBOX_NETWORK: __KORTIX_COMPOSE_PROJECT___default
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
-      # KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_SINGLE_ACCOUNT_MODE, and
-      # ENTERPRISE_LICENSE_AVAILABLE are NOT listed here on purpose — this
+      # KORTIX_BILLING_INTERNAL_ENABLED and ENTERPRISE_LICENSE_AVAILABLE are
+      # NOT listed here on purpose — this
       # service already has `env_file: .env` above, which loads every key in
       # .env (including these) as container env. An explicit `environment:`
       # entry would take precedence over env_file and silently pin the value
@@ -146,21 +147,48 @@ services:
   # still runs an on-demand pass via the same script regardless). Always
   # present; tzdata is installed on start so KORTIX_UPDATE_TZ (a DST-aware IANA
   # zone, e.g. America/New_York) resolves correctly on the Alpine base image.
+  #
+  # This container runs `docker compose` AGAINST THE HOST DAEMON over the
+  # mounted socket (Docker-outside-of-Docker, not true DinD) — so any relative
+  # bind mount in this very compose file (kong's ./volumes/api/kong.yml,
+  # supabase-db's ./volumes/db/*, Caddy's ./Caddyfile, ...) gets resolved TWICE:
+  # once by the `docker compose` CLI running in here (against ITS OWN cwd) to
+  # produce an absolute path, and again by the host daemon that actually has to
+  # satisfy that absolute path on ITS filesystem. The two must therefore agree
+  # bit-for-bit. Bind-mounting the whole instance directory at the SAME
+  # absolute path inside this container as it has on the host (source ==
+  # target == KORTIX_INSTANCE_DIR, computed once at render time — see
+  # normalizeFullSupabaseEnv() in commands/self-host.ts) and setting
+  # `working_dir` to that same path makes every relative path this container
+  # resolves also valid on the host, instead of resolving under an
+  # in-container-only `/workspace` that the host daemon can't see
+  # ("mounts denied: ... is not shared from the host"). Docker Desktop (macOS)
+  # shares $HOME with the Linux VM by default, so a path under the operator's
+  # home directory is mountable both ways; on native Linux Docker the path
+  # trivially exists on "the host" because the daemon IS the host.
   kortix-updater:
     image: docker:cli
-    working_dir: /workspace
+    working_dir: ${KORTIX_INSTANCE_DIR}
     # The trailing "sh" is a placeholder $0 for the `-c` script below; anything
     # `docker compose run kortix-updater <args>` appends lands in "$@" and is
     # forwarded to updater.sh — e.g. `run --rm --no-deps kortix-updater once`
     # runs a single on-demand pass instead of starting the daily scheduler
     # (see `kortix self-host update`, which shells out to exactly this).
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache tzdata >/dev/null 2>&1 || true; exec /bin/sh /updater/updater.sh \"$@\"", "sh"]
+    # `./updater.sh` is relative to `working_dir` above (the instance root,
+    # where writeKortixRuntimeAssets() always writes it) rather than an
+    # absolute in-container path — one less place that has to agree with the
+    # render-time KORTIX_INSTANCE_DIR value.
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache tzdata >/dev/null 2>&1 || true; exec /bin/sh ./updater.sh \"$@\"", "sh"]
     environment:
       KORTIX_AUTO_UPDATE: ${KORTIX_AUTO_UPDATE}
       KORTIX_UPDATE_TIME: ${KORTIX_UPDATE_TIME:-02:00}
       KORTIX_UPDATE_TZ: ${KORTIX_UPDATE_TZ:-America/New_York}
       KORTIX_ALLOW_DOWNTIME: ${KORTIX_ALLOW_DOWNTIME:-0}
       KORTIX_COMPOSE_PROJECT: __KORTIX_COMPOSE_PROJECT__
+      # Same absolute path as the bind mount + working_dir below — the single
+      # source of truth updater.sh reads back instead of hardcoding /workspace
+      # (see the comment above this service).
+      KORTIX_INSTANCE_DIR: ${KORTIX_INSTANCE_DIR}
       # Target replica count for the api/gateway/frontend start-first roll —
       # decided once at render time by applyReplicaTopology() in
       # compose-assets.ts (2 in domain/prod mode, 1 in laptop mode) so the
@@ -168,9 +196,16 @@ services:
       KORTIX_APP_REPLICAS: ${KORTIX_APP_REPLICAS:-1}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
-      - ./.env:/workspace/.env:ro
-      - ./updater.sh:/updater/updater.sh:ro
+      # Read-write: `docker compose run --rm ... kortix-updater` itself needs
+      # no write access here (write_breadcrumb only ever writes under the
+      # separate /state volume below) — but `docker compose`'s OWN bind-mount
+      # resolution for OTHER services (kong.yml, the Postgres data dir, ...)
+      # is a read of this same tree from the host daemon's side, not through
+      # this mount, so :ro here would be cosmetic either way. Left read-write
+      # simply because there is no meaningful confidentiality/integrity
+      # boundary between this container (which already holds the Docker
+      # socket, i.e. root-equivalent on the host) and the instance directory.
+      - ${KORTIX_INSTANCE_DIR}:${KORTIX_INSTANCE_DIR}
       - kortix-updater-state:/state
     restart: unless-stopped
 

@@ -562,6 +562,9 @@ export interface SsoProvider {
   group_claim_name: string;
   auto_create_members: boolean;
   auto_provision_groups: boolean;
+  /** When true, the unified auth flow refuses the password/email-code paths
+   *  for this provider's primary domain — the IdP becomes the only door. */
+  enforce_sso: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -591,6 +594,7 @@ export async function upsertSsoProvider(
     group_claim_name?: string;
     auto_create_members?: boolean;
     auto_provision_groups?: boolean;
+    enforce_sso?: boolean;
   },
 ) {
   return unwrap(
@@ -618,6 +622,7 @@ export async function importSsoProviderFromMetadata(
     group_claim_name?: string;
     auto_create_members?: boolean;
     auto_provision_groups?: boolean;
+    enforce_sso?: boolean;
     domains?: string[];
   },
 ) {

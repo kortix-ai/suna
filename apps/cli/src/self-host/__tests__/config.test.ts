@@ -50,35 +50,6 @@ describe('self-host instance config', () => {
     expect(statSync(instanceConfigPath(config.instance)).mode & 0o777).toBe(0o600);
   });
 
-  test('writes and round-trips allow_missing_secrets (persisted --allow-missing-secrets choice)', () => {
-    const config: SelfHostInstanceConfig = {
-      schema_version: 1,
-      instance: 'allow-missing-instance',
-      allow_missing_secrets: true,
-    };
-
-    writeInstanceConfig(config);
-
-    expect(loadInstanceConfig(config.instance)).toEqual(config);
-    expect(JSON.parse(readFileSync(instanceConfigPath(config.instance), 'utf8'))).toEqual(config);
-  });
-
-  test('omits allow_missing_secrets entirely when false/unset — never written as a literal `false`', () => {
-    writeInstanceConfig({ schema_version: 1, instance: 'allow-missing-unset' });
-    const onDisk = JSON.parse(readFileSync(instanceConfigPath('allow-missing-unset'), 'utf8'));
-    expect(onDisk).not.toHaveProperty('allow_missing_secrets');
-    expect(loadInstanceConfig('allow-missing-unset')?.allow_missing_secrets).toBeUndefined();
-  });
-
-  test('rejects a non-boolean allow_missing_secrets', () => {
-    mkdirSync(instanceDir('bad-allow-missing'), { recursive: true });
-    writeFileSync(
-      instanceConfigPath('bad-allow-missing'),
-      JSON.stringify({ schema_version: 1, instance: 'bad-allow-missing', allow_missing_secrets: 'yes' }),
-    );
-    expect(() => loadInstanceConfig('bad-allow-missing')).toThrow('allow_missing_secrets must be a boolean');
-  });
-
   test('rejects invalid or unsupported instance configs', () => {
     mkdirSync(instanceDir('broken'), { recursive: true });
     writeFileSync(

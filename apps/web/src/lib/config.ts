@@ -95,17 +95,6 @@ export const isManagedProviderEnabled = (): boolean => {
 };
 
 /**
- * Whether this deployment is scoped to a single account (self-host,
- * KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE). Hides "New account" affordances and
- * team-management surfaces (members/groups/identity) that only make sense
- * with more than one account/user. Mirrors the backend's
- * KORTIX_SINGLE_ACCOUNT_MODE, which 403s POST /v1/accounts.
- */
-export const isSingleAccountMode = (): boolean => {
-  return getEnv().SINGLE_ACCOUNT_MODE;
-};
-
-/**
  * Whether Pipedream-backed connector UI (the "Connect your tools" onboarding
  * step, the "Easy connect" app catalogue) is enabled. Cloud always has
  * Pipedream configured (defaults true); self-host without PIPEDREAM_client
@@ -116,6 +105,23 @@ export const isSingleAccountMode = (): boolean => {
  */
 export const isConnectorsEnabled = (): boolean => {
   return getEnv().CONNECTORS_ENABLED;
+};
+
+/**
+ * Whether creating an ADDITIONAL/org account is restricted to platform
+ * admins on this deployment. Mirrors the backend's
+ * KORTIX_RESTRICT_ACCOUNT_CREATION (which 403s POST /v1/accounts for
+ * non-admins) — this is a UI convenience so ordinary users don't even see a
+ * "New account" affordance they can't use; the backend gate is authoritative
+ * regardless of what the UI hides. Signups, existing teams, and SSO/JIT
+ * membership are entirely unaffected by this flag — only spinning up a
+ * brand-new organization is gated. Off by default (cloud); self-host
+ * defaults it on. Callers should still check platform-admin status (e.g.
+ * `useAdminRole()`) before hiding "New account" UI, since admins are exempt
+ * from the restriction.
+ */
+export const isAccountCreationRestricted = (): boolean => {
+  return getEnv().RESTRICT_ACCOUNT_CREATION;
 };
 
 import { getEnv } from '@/lib/env-config';

@@ -44,8 +44,8 @@ mechanism to keep in sync with the updater, on purpose.
 ## What it deliberately does NOT do
 
 - **No secrets.** `DAYTONA_API_KEY`, managed-git tokens, SMTP, etc. are not
-  Terraform inputs — cloud-init runs `kortix self-host init
-  --allow-missing-secrets` so the box comes up without them, and the
+  Terraform inputs — cloud-init runs `kortix self-host init` so the box comes
+  up without them (it warns rather than refusing), and the
   `post_apply_next_steps` output tells you how to set them afterward (SSM in,
   `kortix self-host configure`, or the dashboard).
 - **No ongoing reconciliation.** The in-compose `kortix-updater` (already part
@@ -88,8 +88,7 @@ output "next_steps" {
 - `zone_id` (optional Route53 zone), `api_domain`, `dns_ttl`.
 - `instance_name` (the `kortix self-host --instance` name), `kortix_channel`
   (`stable`/`latest`), `kortix_version` (pin an exact tag instead),
-  `auto_update` (`on`/`off`), `single_account_mode`, `admin_email`,
-  `acme_email`.
+  `auto_update` (`on`/`off`), `admin_email`, `acme_email`.
 - `kortix_cli_install_url` (the CLI installer URL) and `kortix_cli_channel`
   (`prod`/`dev` — which CLI build the installer fetches; use `dev` if the
   published `prod` CLI hasn't caught up yet to flags this module passes to

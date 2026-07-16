@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AuditTab } from '@/components/iam/audit-tab';
@@ -91,12 +91,16 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
-import { isBillingEnabled, isSingleAccountMode } from '@/lib/config';
+import { isBillingEnabled } from '@/lib/config';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
+  type AccountDetail,
+  type AccountInvitation,
+  type AccountMember,
+  type AccountRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
   getAccount,
@@ -109,22 +113,18 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
-  type AccountDetail,
-  type AccountInvitation,
-  type AccountMember,
-  type AccountRole,
 } from '@kortix/sdk/projects-client';
 import {
   CogOne,
-  Icon as IconMynauiType,
+  type Icon as IconMynauiType,
   Search,
   Shield,
   TrashSolid,
   UserPlus,
   Users,
 } from '@mynaui/icons-react';
-import { LucideIcon } from 'lucide-react';
-import { IconType } from 'react-icons/lib';
+import type { LucideIcon } from 'lucide-react';
+import type { IconType } from 'react-icons/lib';
 
 // Stable (module-level) probe list for the account-capabilities batch. Order
 // must match the destructure at the call site. Declared outside the component
@@ -343,21 +343,19 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
   const requestedTab: AccountSection =
     tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
-  // Self-host single-account mode: no teams, so member/group management has
-  // nothing to manage. Self-host billing-disabled: no Stripe/credit ledger
-  // to show — see isBillingEnabled() (mirrors the backend's
-  // KORTIX_BILLING_INTERNAL_ENABLED) instead of only checking permission.
-  const singleAccountMode = isSingleAccountMode();
+  // Self-host billing-disabled: no Stripe/credit ledger to show — see
+  // isBillingEnabled() (mirrors the backend's KORTIX_BILLING_INTERNAL_ENABLED)
+  // instead of only checking permission.
   const billingActive = isBillingEnabled();
 
   // Which rail items this caller can see. Mirrors the per-section gates the
   // content rendering applies below, so a deep link to a section the caller
   // can't use falls back to Members instead of an empty pane.
   const sectionVisible: Record<AccountSection, boolean> = {
-    members: !singleAccountMode,
-    groups: !singleAccountMode,
+    members: true,
+    groups: true,
     roles: canManageRoles === true,
-    identity: canWriteAccount === true && !singleAccountMode,
+    identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
     transactions: canWriteAccount === true && billingActive,
     git: canWriteAccount === true,
@@ -365,11 +363,7 @@ export default function AccountSettingsPage() {
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
   };
-  const activeSection: AccountSection = sectionVisible[requestedTab]
-    ? requestedTab
-    : sectionVisible.members
-      ? 'members'
-      : 'settings';
+  const activeSection: AccountSection = sectionVisible[requestedTab] ? requestedTab : 'members';
   const paneMeta = PANE_META[activeSection];
   const navigate = (section: AccountSection) =>
     router.replace(`/accounts/${accountId}?tab=${section}`, { scroll: false });
@@ -611,22 +605,31 @@ export default function AccountSettingsPage() {
               </div>
             ) : null}
 
-            {/* Identity — SAML SSO + SCIM under the Enterprise nav group. The
-                enterprise-demo toggle is ALWAYS shown to account admins so
-                they can unlock the surface self-serve. SAML SSO + SCIM only
-                render once the entitlement is on (the demo flag OR a real
-                enterprise tier); their API routes enforce the same gate
-                server-side (402 for non-entitled accounts). Keeping the
-                toggle OUTSIDE the entitlement gate avoids a chicken-and-egg
-                where the enabler is hidden behind the very thing it
-                enables. */}
+            {/* Identity — SAML SSO + SCIM. Ordering + copy make the
+                relationship explicit (SAML first, SCIM second — provisioned
+                accounts still need SSO to sign in) without merging the two
+                working cards into a new surface. The self-serve
+                enterprise-demo toggle now lives in Settings (see below) —
+                it's an account-level unlock, not part of the identity
+                journey itself. */}
             {activeSection === 'identity' && canWriteAccount ? (
               <div className="space-y-3">
-                <EnterpriseDemoCard accountId={account.account_id} canManage={canWriteAccount} />
                 {entitlementsLoading ? (
                   <Skeleton className="h-40 w-full rounded-md" />
                 ) : enterpriseIdentityEnabled ? (
                   <>
+                    <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-md border px-4 py-3">
+                      <p className="text-foreground text-xs font-medium">Why connect both?</p>
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        <span className="text-foreground font-medium">SAML SSO</span> is how people
+                        sign in — with your identity provider's own credentials and MFA, never a
+                        Kortix password.{' '}
+                        <span className="text-foreground font-medium">SCIM directory sync</span> is
+                        who exists — it keeps your Kortix roster matched to your IdP and
+                        automatically removes access the moment someone leaves. Most enterprises
+                        want both; set up SSO first, then Directory Sync.
+                      </p>
+                    </div>
                     <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
                     <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                   </>
@@ -675,6 +678,24 @@ export default function AccountSettingsPage() {
                     </DisclosureContent>
                   </Disclosure>
                 </SettingsGroup>
+
+                {/* Tucked away, not headline: this is a self-serve unlock for
+                    evaluating the Enterprise surface (SSO/SCIM/RBAC/audit),
+                    not a feature admins configure day-to-day. Hidden entirely
+                    when a self-host operator's Enterprise license already
+                    forces every entitlement on — there's nothing left to
+                    demo-toggle or upsell in that case. */}
+                {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
+                  <SettingsGroup
+                    title="Enterprise features"
+                    description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
+                  >
+                    <EnterpriseDemoCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsGroup>
+                ) : null}
 
                 {canDeleteAccount ? (
                   <SettingsGroup title="Danger zone">
@@ -1469,6 +1490,17 @@ function MembersCard({
                           {member.has_verified_mfa ? (
                             <Badge variant="success" size="sm" title="MFA enrolled">
                               2FA
+                            </Badge>
+                          ) : account.mfa_required && !member.is_super_admin ? (
+                            // Account requires MFA and this member has no verified
+                            // factor — they're blocked from gated actions until they
+                            // enrol. Super-admins are exempt, so they're not flagged.
+                            <Badge
+                              variant="destructive"
+                              size="sm"
+                              title="MFA required but not enrolled — this member is blocked from gated actions"
+                            >
+                              No 2FA
                             </Badge>
                           ) : null}
                         </div>

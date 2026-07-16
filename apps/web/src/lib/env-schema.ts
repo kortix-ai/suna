@@ -80,16 +80,20 @@ const RuntimeEnvSchema = z.object({
    *  self-host without PIPEDREAM_* set should flip it off. Set via
    *  KORTIX_PUBLIC_CONNECTORS_ENABLED / NEXT_PUBLIC_CONNECTORS_ENABLED. */
   CONNECTORS_ENABLED: z.boolean().default(true),
-  /** Self-host single-account mode: this deployment is meant for exactly one
-   *  account (no teams). Hides "New account" UI + team-management
-   *  surfaces. Mirrors the backend's KORTIX_SINGLE_ACCOUNT_MODE, which
-   *  blocks POST /v1/accounts with 403. Set via
-   *  KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE / NEXT_PUBLIC_SINGLE_ACCOUNT_MODE. */
-  SINGLE_ACCOUNT_MODE: z.boolean().default(false),
   /** Self-host: redirect unauthenticated visitors hitting "/" straight to
    *  /auth instead of the marketing landing page. Set via
    *  KORTIX_PUBLIC_DISABLE_LANDING_PAGE / NEXT_PUBLIC_DISABLE_LANDING_PAGE. */
   DISABLE_LANDING_PAGE: z.boolean().default(false),
+  /** Self-host account-creation restriction: hides "New account" affordances
+   *  (accounts page header button + empty-state CTA, account-switcher
+   *  dropdown item) for non-platform-admins. Mirrors the backend's
+   *  KORTIX_RESTRICT_ACCOUNT_CREATION, which 403s POST /v1/accounts for
+   *  everyone except a platform admin — this is UI-only convenience, the
+   *  backend gate is authoritative either way. Signups/teams/SSO are
+   *  unaffected; only creating an ADDITIONAL/org account is gated. Off by
+   *  default (cloud); the self-host CLI defaults this to 'true'. Set via
+   *  KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION / NEXT_PUBLIC_RESTRICT_ACCOUNT_CREATION. */
+  RESTRICT_ACCOUNT_CREATION: z.boolean().default(false),
   APP_URL: z.string().url('APP_URL must be a valid URL').default('http://localhost:3000'),
   /** Self-host/local override for the sandbox id; empty in cloud (the active
    *  session runtime sandbox is the source of truth). No legacy 'kortix-sandbox'

@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes, createHmac } from 'node:crypto';
+import { randomBytes, createHmac, generateKeyPairSync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { getHost, upsertHost, type Host } from '../api/config.ts';
+import { getHost, removeHost, upsertHost, type Host } from '../api/config.ts';
 import { confirm, prompt, selectFrom } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import {
@@ -57,15 +57,15 @@ const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
 const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
 // Shown whenever an instance is (or is being configured) NOT reachable via a
-// public domain — self-host is VPS-first, and tunnel/local-only are
-// evaluation/development conveniences, not the recommended production setup.
+// public domain — self-host is VPS-first, and the Cloudflare tunnel is an
+// evaluation convenience, not the recommended production setup.
 const VPS_FIRST_NOTICE =
   'Self-host is designed VPS-first — for reliable production use, deploy on a VPS with a domain.';
 
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
-Run Kortix on your own VPS — a domain is the production path; laptop modes
-(tunnel/local) are for evaluation only. Docs: kortix.com/docs/self-hosting
+Run Kortix on your own VPS — a domain is the production path; a Cloudflare
+tunnel is for evaluation with no public domain. Docs: kortix.com/docs/guides/self-hosting
 
 Subcommands:
   init                    Create/refresh this instance's Compose + env config.
@@ -78,25 +78,24 @@ Subcommands:
   logs [service]          Tail logs.
   open                    Open the dashboard in a browser.
   configure               Re-run the guided setup.
-  env ls | set K=V        Show / update persistent environment values.
-  secrets ls              Show every secret, grouped by category (masked).
-  secrets set K=V ...     Set secrets, restarting only affected services.
-  secrets rotate KEY      Regenerate a rotatable secret (or --all-generated).
+  uninstall               Stop the stack, delete this instance's data + config.
+  env ls [--show]         Show every value (secrets masked; --show reveals).
+  env set K=V ...         Set any value; restarts only the services it affects.
+  env rotate KEY|--all-generated  Regenerate a rotatable generated secret.
 
 Options:
   --instance <name>       Instance name (default: ${DEFAULT_INSTANCE}).
   --domain <domain>       Public domain reachability (recommended, production).
-  --tunnel cloudflare     Cloudflare-tunnel reachability (laptop, evaluation).
+  --tunnel cloudflare     Cloudflare-tunnel reachability (no public domain; evaluation).
   --version <ref>         Pin a release/channel/dev build. Alias: --tag/--release.
   --channel <name>        stable|latest to track (default: stable).
   --auto-update <on|off>  Override the default (ON everywhere except --local-images).
   --update-time <HH:MM> / --update-tz <tz>   Auto-updater schedule.
-  --allow-downtime        Accept a brief downtime window for a breaking migration.
   --local-images          Run locally-built images (dev mode); forces auto-update off.
-  --single-account        Hide multi-account/team UI.
   --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
-  --allow-missing-secrets Proceed without the sandbox-provider key (evaluation only).
   --admin-email <email>   Grant platform-admin to this account.
+  --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
+  --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
   --json                  Machine-readable output where supported.
   --yes                   Accept defaults non-interactively.
   -h, --help              Show this help.
@@ -107,7 +106,11 @@ Examples:
   kortix self-host init --domain kortix.example.com
   kortix self-host init --tunnel cloudflare
   kortix self-host update --channel latest
-  kortix self-host secrets set DAYTONA_API_KEY=dtn_...
+  kortix self-host init --version 0.10.1
+  kortix self-host init --version dev-a1b2c3d --local-images
+  kortix self-host env set DAYTONA_API_KEY=dtn_...
+  kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@company.com   # grant platform admin later
+  kortix self-host uninstall
   kortix hosts ls
 `;
 
@@ -121,9 +124,29 @@ interface SelfHostEnv {
   KORTIX_UPDATE_TZ: string;
   KORTIX_ALLOW_DOWNTIME: string;
   // The app-tier replica count updater.sh rolls to — 2 in domain/prod mode,
-  // 1 in laptop mode. Recomputed from KORTIX_DOMAIN on every write (see
+  // 1 with no domain configured. Recomputed from KORTIX_DOMAIN on every write (see
   // normalizeFullSupabaseEnv), not operator-set.
   KORTIX_APP_REPLICAS: string;
+  // This instance's config directory (docker-compose.yml, .env, updater.sh,
+  // Supabase volumes/...), as an ABSOLUTE HOST PATH. Recomputed from
+  // instanceDir() on every write (see normalizeFullSupabaseEnv) — not
+  // operator-set (see UPDATER_MANAGED_RUNTIME_KEYS in secrets-registry.ts).
+  // The in-compose `kortix-updater` service runs `docker compose` INSIDE its
+  // own container against the HOST Docker daemon (over the mounted socket),
+  // so any relative bind mount elsewhere in this stack's compose file (kong's
+  // ./volumes/api/kong.yml, supabase-db's ./volumes/db/*, ...) has to resolve
+  // to a path that ALSO exists on the real host. Bind-mounting the instance
+  // dir at this same absolute path inside that container (source == target)
+  // and setting its working_dir to match is what makes that true — see the
+  // kortix-updater service in assets/kortix-compose.yml and the DinD comment
+  // at the top of assets/updater.sh. Before this field existed, the updater
+  // mounted the instance dir at a fixed in-container-only `/workspace`
+  // instead, so every relative bind resolved to a host-side `/workspace/...`
+  // path the host daemon could never satisfy ("mounts denied: ... is not
+  // shared from the host") — the api/gateway/frontend services have no binds
+  // so they rolled fine, masking the bug until the first bind-mounted service
+  // (e.g. supabase-kong) needed an updater-driven recreate.
+  KORTIX_INSTANCE_DIR: string;
   KORTIX_DOMAIN: string;
   KORTIX_API_DOMAIN: string;
   KORTIX_ACME_EMAIL: string;
@@ -155,8 +178,7 @@ interface SelfHostEnv {
   GATEWAY_IMAGE: string;
   SANDBOX_IMAGE: string;
   // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
-  // DAYTONA_TARGET, KORTIX_SINGLE_ACCOUNT_MODE, KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE,
-  // KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
+  // DAYTONA_TARGET, KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
   // KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_PUBLIC_BILLING_ENABLED, and
   // KORTIX_PUBLIC_CONNECTORS_ENABLED are covered by the [key: string] index
   // signature below — their defaults come from the SHARED_SELF_HOST_DEFAULTS
@@ -171,6 +193,14 @@ interface SelfHostEnv {
   INTERNAL_SERVICE_KEY: string;
   API_KEY_SECRET: string;
   TUNNEL_SIGNING_SECRET: string;
+  // GoTrue SAML SSO — enabled by default so an operator flipping
+  // --enterprise-license (ENTERPRISE_LICENSE_AVAILABLE) is the only step left
+  // to light up the enterprise SSO/SCIM surface; SAML_PRIVATE_KEY is generated
+  // once at `init` (samlPrivateKeyDer()) and persisted, never regenerated on a
+  // later `init`/`update` (see defaultEnv()/writeEnv()). Do not rotate it once
+  // an IdP is registered — see the compose asset comment for why.
+  SAML_ENABLED: string;
+  SAML_PRIVATE_KEY: string;
   DAYTONA_API_KEY: string;
   KORTIX_GITHUB_APP_ID: string;
   KORTIX_GITHUB_APP_PRIVATE_KEY: string;
@@ -253,10 +283,10 @@ export async function runSelfHost(argv: string[]): Promise<number> {
       return selfHostConfigure(flags);
     case 'connect-github':
       return selfHostConnectGithub(args, flags);
+    case 'uninstall':
+      return selfHostUninstall(args, flags);
     case 'env':
       return selfHostEnv(args, flags);
-    case 'secrets':
-      return selfHostSecrets(args, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -273,14 +303,13 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const autoUpdateRaw = takeFlagValue(args, ['--auto-update']);
   const updateTime = takeFlagValue(args, ['--update-time']);
   const updateTz = takeFlagValue(args, ['--update-tz']);
-  const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
-  const singleAccount = takeFlagBool(args, ['--single-account']);
   const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
-  const allowMissingSecrets = takeFlagBool(args, ['--allow-missing-secrets']);
   const localImages = takeFlagBool(args, ['--local-images', '--no-pull']);
   const domain = takeFlagValue(args, ['--domain']);
   const tunnelRaw = takeFlagValue(args, ['--tunnel']);
   const adminEmail = takeFlagValue(args, ['--admin-email']);
+  const restrictAccountCreationOn = takeFlagBool(args, ['--restrict-account-creation']);
+  const restrictAccountCreationOff = takeFlagBool(args, ['--no-restrict-account-creation']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -296,6 +325,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   if (tunnelRaw !== undefined && tunnelRaw !== 'cloudflare') {
     throw new Error(`--tunnel only supports "cloudflare", got "${tunnelRaw}"`);
   }
+  if (restrictAccountCreationOn && restrictAccountCreationOff) {
+    throw new Error('--restrict-account-creation and --no-restrict-account-creation are mutually exclusive');
+  }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
   }
@@ -307,14 +339,16 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     autoUpdate: autoUpdateRaw === undefined ? undefined : autoUpdateRaw === 'on',
     updateTime,
     updateTz,
-    allowDowntime: allowDowntime || undefined,
-    singleAccount: singleAccount || undefined,
     enterpriseLicense: enterpriseLicense || undefined,
-    allowMissingSecrets: allowMissingSecrets || undefined,
     localImages: localImages || undefined,
     domain,
     tunnel: tunnelRaw as 'cloudflare' | undefined,
     adminEmail,
+    restrictAccountCreation: restrictAccountCreationOn
+      ? true
+      : restrictAccountCreationOff
+        ? false
+        : undefined,
     yes,
     json,
   };
@@ -336,12 +370,13 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
   applyAdminEmail(env, flags);
+  warnIfReachabilityUnconfigured(env, flags);
 
   // The complete guided `init` flow, in this exact order and no other
   // questions (everything else is dashboard/env-only — see
   // configureIntegrations()'s own doc comment): 1) reachability — the first
-  // real decision, since it decides whether agent sandboxes can work at all;
-  // 2) admin email; 3) deployment shape (single-account, enterprise
+  // real decision, since it decides whether agent sessions can call back to
+  // this API at all; 2) admin email; 3) deployment shape (Enterprise
   // license); 4) sandbox provider + its key; 5) Pipedream (optional); 6) a
   // compact update-policy block. Only walk through it on a genuinely
   // first-time init (no prior .env) — a refresh of an already-configured
@@ -364,25 +399,19 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   // Required secrets — just the agent sandbox runtime (Daytona) now; see
   // missingRequiredSecrets(). Managed git and the LLM key are configured in
   // the dashboard after `start`, not gated here. Interactively this drives the
-  // guided flow until satisfied; non-interactively (or --yes) it fails loudly
-  // instead of silently producing a box that can't run agents. Persist
-  // whatever was collected either way so a follow-up `secrets set` /
-  // `configure` has something to build on.
-  const secretsExit = await ensureRequiredSecrets(env, flags);
+  // guided flow until satisfied; either way (interactive decline or
+  // non-interactive) a still-missing secret is a loud warning, never a
+  // hard failure — see ensureRequiredSecrets().
+  await ensureRequiredSecrets(env, flags);
 
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
-  // Reloaded AFTER ensureRequiredSecrets (which may itself have just persisted
-  // allow_missing_secrets via recordAllowMissingSecrets) so this write below
-  // preserves it instead of clobbering it back to unset.
   const existingConfig = loadInstanceConfig(flags.instance);
   writeInstanceConfig({
     schema_version: 1,
     instance: flags.instance,
     ...(flags.release || existingConfig?.release ? { release: flags.release ?? existingConfig?.release } : {}),
-    ...(existingConfig?.allow_missing_secrets ? { allow_missing_secrets: true } : {}),
   });
-  if (secretsExit !== 0) return secretsExit;
   renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
 }
@@ -421,13 +450,8 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
 
   // `init` and `start` can run on separate invocations (init non-interactively,
-  // start later) — guard here too instead of trusting init already enforced it.
-  const secretsExit = await ensureRequiredSecrets(env, flags);
-  if (secretsExit !== 0) {
-    writeEnv(flags.instance, env);
-    writeCompose(flags.instance, env);
-    return secretsExit;
-  }
+  // start later) — guard here too instead of trusting init already ran it.
+  await ensureRequiredSecrets(env, flags);
 
   const portChanges = await reconcilePorts(flags.instance, env);
   writeEnv(flags.instance, env);
@@ -460,10 +484,13 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
 
   if (reachabilityMode(env) === 'local') {
     process.stdout.write(
-      `${C.yellow}  warning${C.reset}  ${C.dim}local-only reachability — agent sandboxes and other external callers${C.reset}\n`,
+      `${C.yellow}  warning${C.reset}  ${C.dim}no reachability configured — agent sessions won't work: the cloud${C.reset}\n`,
     );
     process.stdout.write(
-      `${C.dim}           (webhooks, Slack/Teams OAuth, git-proxy clone) cannot reach this instance.${C.reset}\n`,
+      `${C.dim}           sandbox (and other external callers — webhooks, Slack/Teams OAuth,${C.reset}\n`,
+    );
+    process.stdout.write(
+      `${C.dim}           git-proxy clone) can't call back to this API.${C.reset}\n`,
     );
     process.stdout.write(
       `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to set up a domain or Cloudflare tunnel.${C.reset}\n\n`,
@@ -574,6 +601,28 @@ function selfHostDoctor(flags: GlobalFlags): number {
       detail: result.error?.message ?? (result.stderr.trim() || 'valid'),
     });
   }
+  if (existsSync(envPath(flags.instance))) {
+    // KORTIX_INSTANCE_DIR is recomputed on every writeEnv() (see
+    // normalizeFullSupabaseEnv), so this can only be stale between writes —
+    // e.g. the instance directory was moved/restored on disk (or
+    // KORTIX_SELF_HOST_CONFIG_DIR changed) since the last `init`/`start`/
+    // `update`/`configure`/`env set`. A stale value here means the in-compose
+    // `kortix-updater` service is still bind-mounted (and has its working_dir
+    // set) at the OLD path — the exact DinD mounts-denied failure mode this
+    // field exists to prevent — until something re-renders. Any of those
+    // commands self-heals it; this check just surfaces the drift instead of
+    // letting it fail silently at the next `update`.
+    const env = loadEnv(flags.instance);
+    const actual = instanceDir(flags.instance);
+    const recorded = env?.KORTIX_INSTANCE_DIR ?? '';
+    checks.push({
+      name: 'instance-dir',
+      ok: recorded === actual,
+      detail: recorded === actual
+        ? actual
+        : `stale KORTIX_INSTANCE_DIR="${recorded}" (actual: ${actual}) — run \`kortix self-host configure\` (or any of init/start/update/env set) to reconcile`,
+    });
+  }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
     process.stdout.write(`${JSON.stringify({ instance: flags.instance, ok, checks }, null, 2)}\n`);
@@ -613,7 +662,7 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
 
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, env));
-  // Runtime feature flags (single-account/enterprise-license) and
+  // Runtime feature flags (enterprise-license) and
   // reachability (domain/tunnel/local) are ordinary env — an update only ever
   // moves image tags, so an explicit flag is honored (non-interactively;
   // `update` never prompts) but nothing here resets a value the operator
@@ -642,7 +691,7 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // changed KORTIX_URL would bypass updater.sh's start-first health-checked
   // swap and apply the new image tag as an ungated forced recreate instead.
   // Once the rollout is done, kortix-api is already on the new version, so
-  // this is just a fast in-place recreate (like `secrets set` triggers) to
+  // this is just a fast in-place recreate (like `env set` triggers) to
   // pick up KORTIX_URL — no separate rollout semantics needed for that.
   return reconcileTunnelReachability(flags.instance, env);
 }
@@ -683,7 +732,11 @@ function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void
   env.KORTIX_UPDATE_TIME ||= DEFAULT_UPDATE_TIME;
   if (flags.updateTz) env.KORTIX_UPDATE_TZ = flags.updateTz;
   env.KORTIX_UPDATE_TZ ||= DEFAULT_UPDATE_TZ;
-  if (flags.allowDowntime !== undefined) env.KORTIX_ALLOW_DOWNTIME = flags.allowDowntime ? '1' : '0';
+  // KORTIX_ALLOW_DOWNTIME is env-only now (no --allow-downtime flag) — set it
+  // directly with `env set KORTIX_ALLOW_DOWNTIME=1` when a specific release
+  // calls for accepting a brief downtime window; a release that needs it
+  // says so. Defaults to off, and a bare init/update never resets a value
+  // the operator already set.
   env.KORTIX_ALLOW_DOWNTIME ||= '0';
 
   // Dev mode: locally-built images aren't on any registry — the updater
@@ -721,33 +774,60 @@ function applyReachabilityFlags(env: SelfHostEnv, flags: GlobalFlags): void {
 }
 
 /**
+ * Non-interactive companion to promptReachability: `--yes`/CI/no-TTY runs
+ * never show the interactive picker, so this is the only chance to flag an
+ * instance that's about to be configured with no way for a cloud sandbox to
+ * call back to it. Deliberately still lets the run PROCEED (tests/CI rely on
+ * a bare `init --yes` succeeding) — just a loud, single warning instead of a
+ * silent, broken-by-default deployment. Fires whenever the mode resolves to
+ * the unconfigured "local" fallback (see reachabilityMode/
+ * applyReachabilityFlags), which also covers re-running `init --yes` on an
+ * instance that was never given a domain/tunnel — not just a brand new one.
+ */
+function warnIfReachabilityUnconfigured(env: SelfHostEnv, flags: GlobalFlags): void {
+  if (shouldPrompt(flags)) return;
+  if (reachabilityMode(env) !== 'local') return;
+  process.stdout.write(
+    `\n${status.warn('No reachability configured — agent sessions can\'t run (the cloud sandbox must reach your API).')}\n` +
+      `  ${C.dim}Pass ${C.reset}${C.cyan}--domain <d>${C.reset}${C.dim} or ${C.reset}${C.cyan}--tunnel cloudflare${C.reset}${C.dim}.${C.reset}\n\n`,
+  );
+}
+
+/**
  * Interactive follow-up to applyReachabilityFlags: ask how this instance is
  * reachable from the internet — the setting that decides whether agent
- * sandboxes (which always run on a remote cloud Daytona VM) can call back to
- * it at all. Self-host is VPS-first: the domain path is the recommended,
- * production-ready default. On a genuinely fresh init (`isFreshInit`) the
- * picker itself defaults to "domain"; otherwise (e.g. `configure` on an
- * already-set-up instance) it defaults to whatever is already configured, so
- * re-running `configure` doesn't reset a prior answer. No-ops under --yes /
- * non-TTY.
+ * sessions (which always run on a remote cloud sandbox VM) can call back to
+ * this API at all. Only two modes are ever offered: `domain` (a public
+ * domain pointed at this machine — the production path) and `tunnel` (no
+ * public domain — expose this machine through a Cloudflare tunnel; for local
+ * machines / evaluation). There is no "local-only" choice here — running
+ * with neither is an unconfigured fallback (see applyReachabilityFlags), not
+ * a mode anyone should deliberately pick: if you're on a local machine with
+ * no public domain, use the tunnel. On a genuinely fresh init (`isFreshInit`)
+ * the picker itself defaults to "domain"; otherwise (e.g. `configure` on an
+ * already-set-up instance) it defaults to whatever is already configured —
+ * falling back to "domain" if that happens to be the unconfigured "local"
+ * state, since it's not a selectable option here — so re-running `configure`
+ * doesn't reset a prior answer. No-ops under --yes / non-TTY.
  */
 async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshInit = false): Promise<void> {
   if (!shouldPrompt(flags)) return;
 
   process.stdout.write(`\n  ${C.bold}Reachability${C.reset}\n`);
   process.stdout.write(
-    `  ${C.dim}Kortix self-host is VPS-first: agent sandboxes run on a remote cloud${C.reset}\n` +
-      `  ${C.dim}(Daytona) VM and must call back to this API over the public internet —${C.reset}\n` +
-      `  ${C.dim}a loopback/internal URL can never work.${C.reset}\n\n` +
-      `  ${C.cyan}domain${C.reset}  ${C.dim}Enter your domain (recommended — VPS + DNS, the production path)${C.reset}\n` +
-      `  ${C.cyan}tunnel${C.reset}  ${C.dim}Cloudflare tunnel — evaluation on a laptop (ephemeral URL, not for production)${C.reset}\n` +
-      `  ${C.cyan}local ${C.reset}  ${C.dim}Local-only — development only, agent sandboxes will NOT work${C.reset}\n`,
+    `  ${C.dim}Agent sessions run on a remote cloud sandbox VM and must call back to${C.reset}\n` +
+      `  ${C.dim}this API over the public internet — a loopback/internal URL can never${C.reset}\n` +
+      `  ${C.dim}work for that callback.${C.reset}\n\n` +
+      `  ${C.cyan}domain${C.reset}  ${C.dim}You have a public domain pointed at this machine — the production path${C.reset}\n` +
+      `  ${C.cyan}tunnel${C.reset}  ${C.dim}No public domain — expose this machine through a Cloudflare tunnel${C.reset}\n` +
+      `  ${C.dim}         (for local machines / evaluation; not for production)${C.reset}\n`,
   );
 
+  const currentMode = reachabilityMode(env);
   const mode = await selectFrom(
     'How is this instance reachable from the internet?',
-    ['domain', 'tunnel', 'local'] as const,
-    isFreshInit ? 'domain' : reachabilityMode(env),
+    ['domain', 'tunnel'] as const,
+    isFreshInit || currentMode === 'local' ? 'domain' : currentMode,
   );
 
   if (mode === 'domain') {
@@ -757,7 +837,7 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshI
     // here, with the derived value pre-filled, so enter-to-accept just works.
     env.KORTIX_API_DOMAIN = await prompt('API subdomain (its own A/AAAA record must also point here)', env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`);
     env.KORTIX_ACME_EMAIL = await prompt('ACME email (renewal/expiry notices for the automatic TLS certificate)', env.KORTIX_ACME_EMAIL || `admin@${env.KORTIX_DOMAIN}`);
-  } else if (mode === 'tunnel') {
+  } else {
     env.KORTIX_DOMAIN = '';
     env.KORTIX_REACHABILITY_MODE = 'tunnel';
     const useNamed = await confirm(
@@ -772,15 +852,6 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshI
       env.CLOUDFLARE_TUNNEL_HOSTNAME = '';
     }
     process.stdout.write(`\n  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n\n`);
-  } else {
-    env.KORTIX_DOMAIN = '';
-    env.KORTIX_REACHABILITY_MODE = 'local';
-    process.stdout.write(
-      `\n  ${C.yellow}warning${C.reset}  ${C.dim}Local-only: agent sandboxes and other external callers (webhooks,${C.reset}\n` +
-        `           ${C.dim}Slack/Teams OAuth, git-proxy clone URLs) will NOT be reachable — only${C.reset}\n` +
-        `           ${C.dim}browser-local flows (e.g. creating a GitHub App) still work.${C.reset}\n\n`,
-    );
-    process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n\n`);
   }
 }
 
@@ -815,13 +886,12 @@ async function promptAdminEmail(env: SelfHostEnv, flags: GlobalFlags): Promise<v
 }
 
 /**
- * Apply --single-account / --enterprise-license onto env, non-interactively.
- * Each only overwrites when the flag was actually passed (undefined = "not
- * passed", never a literal false — see parseGlobalFlags), so a bare
- * `init`/`update` with no flags never resets a value the operator set via
- * `configure` or `env set`. Applied on every init/configure/update so an
- * explicit flag always wins, same convention as applyChannelAndUpdatePolicy
- * above.
+ * Apply --enterprise-license onto env, non-interactively. Only overwrites
+ * when the flag was actually passed (undefined = "not passed", never a
+ * literal false — see parseGlobalFlags), so a bare `init`/`update` with no
+ * flags never resets a value the operator set via `configure` or `env set`.
+ * Applied on every init/configure/update so an explicit flag always wins,
+ * same convention as applyChannelAndUpdatePolicy above.
  *
  * The marketing landing page is NOT a guided-flow question (there's no
  * `--landing`/`--no-landing` flag either) — it's just an env var
@@ -832,18 +902,19 @@ async function promptAdminEmail(env: SelfHostEnv, flags: GlobalFlags): Promise<v
  * marketing site, full stop.
  */
 function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
-  if (flags.singleAccount !== undefined) {
-    env.KORTIX_SINGLE_ACCOUNT_MODE = flags.singleAccount ? 'true' : 'false';
-    env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE = env.KORTIX_SINGLE_ACCOUNT_MODE;
-  }
   if (flags.enterpriseLicense !== undefined) {
     env.ENTERPRISE_LICENSE_AVAILABLE = flags.enterpriseLicense ? 'true' : 'false';
+  }
+  if (flags.restrictAccountCreation !== undefined) {
+    const value = flags.restrictAccountCreation ? 'true' : 'false';
+    env.KORTIX_RESTRICT_ACCOUNT_CREATION = value;
+    env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = value;
   }
 }
 
 /**
- * Interactive follow-up to applyFeatureFlags: the two real deployment-shape
- * y/n questions — single-account mode, Enterprise license — asked in order,
+ * Interactive follow-up to applyFeatureFlags: the two deployment-shape y/n
+ * questions — Enterprise license, then account-creation restriction — each
  * defaulting to whatever is currently in .env (so re-running `configure`
  * doesn't reset a prior answer). No-ops under --yes / non-TTY (see
  * shouldPrompt).
@@ -853,20 +924,21 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
 
   process.stdout.write(`\n  ${C.bold}Deployment shape${C.reset}\n`);
 
-  const singleAccount = await selectFrom(
-    'Single-account mode? (no teams — hides "New account" and team management)',
-    ['no', 'yes'] as const,
-    env.KORTIX_SINGLE_ACCOUNT_MODE === 'true' ? 'yes' : 'no',
-  );
-  env.KORTIX_SINGLE_ACCOUNT_MODE = singleAccount === 'yes' ? 'true' : 'false';
-  env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE = env.KORTIX_SINGLE_ACCOUNT_MODE;
-
   const enterpriseLicense = await selectFrom(
     'Do you have an Enterprise license? (SSO / RBAC / Directory Sync / Groups — kortix.com/enterprise)',
     ['no', 'yes'] as const,
     env.ENTERPRISE_LICENSE_AVAILABLE === 'true' ? 'yes' : 'no',
   );
   env.ENTERPRISE_LICENSE_AVAILABLE = enterpriseLicense === 'yes' ? 'true' : 'false';
+
+  // Default Yes: signups/teams/SSO all keep working either way — this only
+  // gates who can spin up a brand-new organization (POST /v1/accounts).
+  const restrictAccountCreation = await confirm(
+    'Restrict account creation to the admin? (new organizations can only be created by platform admins; users join by invite or SSO)',
+    env.KORTIX_RESTRICT_ACCOUNT_CREATION !== 'false',
+  );
+  env.KORTIX_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
+  env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
 }
 
 /** Point every Kortix app image (and the tracked version) at the given tag. */
@@ -976,68 +1048,47 @@ function selfHostOpen(flags: GlobalFlags): number {
   return 0;
 }
 
-function selfHostEnv(args: string[], flags: GlobalFlags): number {
-  const action = args.shift() ?? 'ls';
-  const env = loadEnvWithDefaults(flags);
-  if (!env) {
-    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
-    return 1;
-  }
-  if (action === 'ls' || action === 'list') {
-    for (const [key, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
-      const hidden = key.includes('KEY') || key.includes('SECRET') || key.includes('TOKEN') || key.includes('PASSWORD');
-      process.stdout.write(`${key}=${hidden && value ? `${value.slice(0, 8)}...` : value}\n`);
-    }
-    return 0;
-  }
-  if (action === 'set') {
-    if (args.length === 0) {
-      process.stderr.write(`${status.err('Pass KEY=VALUE pairs.')}\n`);
-      return 2;
-    }
-    for (const pair of args) {
-      const idx = pair.indexOf('=');
-      if (idx <= 0) {
-        process.stderr.write(`${status.err(`Invalid env assignment: ${pair}`)}\n`);
-        return 2;
-      }
-      env[pair.slice(0, idx)] = pair.slice(idx + 1);
-    }
-    writeEnv(flags.instance, env);
-    writeCompose(flags.instance, env);
-    process.stdout.write(`${status.ok('Updated self-host environment')}\n`);
-    return 0;
-  }
-  process.stderr.write(`${status.err(`unknown env subcommand "${action}"`)}\n`);
-  return 2;
-}
-
-// ── kortix self-host secrets ────────────────────────────────────────────────
+// ── kortix self-host env ────────────────────────────────────────────────────
 //
-// `env ls`/`env set` above are the generic escape hatch for the whole .env;
-// `secrets` is the secret-aware surface on top of secrets-registry.ts's
-// SECRET_DEFS: grouped-by-category listing with masking, refusing to
-// hand-set updater-managed keys, and restarting only the Compose services a
-// changed/rotated key actually affects (servicesForKeys) instead of the
-// whole stack.
+// The ONE surface for every persistent value this instance's Compose stack
+// reads: it all lives in a single `.env` file
+// (~/.config/kortix/self-host/<instance>/.env), consumed by that instance's
+// Docker services via `env_file:` — nothing leaves this machine. `env ls`
+// shows it grouped by service category, masking anything in the secret
+// registry (secrets-registry.ts's SECRET_DEFS) by default (`--show` reveals);
+// `env set` writes ANY key — secret or plain config (ports, URLs, flags) —
+// and always restarts exactly the Compose services that key affects
+// (servicesForKeys) instead of the whole stack; `env rotate` regenerates a
+// rotatable CLI-generated crypto value (JWT secret, internal tokens, ...) in
+// place. There used to be a separate `secrets` command duplicating this with
+// masking bolted on top — it's gone; this is the only surface now.
 
-function selfHostSecrets(args: string[], flags: GlobalFlags): Promise<number> | number {
+/** Pure duplicate env keys normalizeFullSupabaseEnv() writes alongside their
+ *  canonical SUPABASE_* counterpart, only so the official Supabase images
+ *  (which read the unprefixed upstream names) see the same value — see the
+ *  JWT_SECRET/ANON_KEY/SERVICE_ROLE_KEY assignments there. `env ls` excludes
+ *  them from the "Other configuration" catch-all entirely rather than
+ *  showing them in plaintext: they are the exact same secret already masked
+ *  one row up under its canonical name. */
+const ALIAS_ENV_KEYS: ReadonlySet<string> = new Set(['JWT_SECRET', 'ANON_KEY', 'SERVICE_ROLE_KEY']);
+
+function selfHostEnv(args: string[], flags: GlobalFlags): Promise<number> | number {
   const action = args.shift() ?? 'ls';
   switch (action) {
     case 'ls':
     case 'list':
-      return selfHostSecretsLs(args, flags);
+      return selfHostEnvLs(args, flags);
     case 'set':
-      return selfHostSecretsSet(args, flags);
+      return selfHostEnvSet(args, flags);
     case 'rotate':
-      return selfHostSecretsRotate(args, flags);
+      return selfHostEnvRotate(args, flags);
     default:
-      process.stderr.write(`${status.err(`unknown secrets subcommand "${action}"`)}\n`);
+      process.stderr.write(`${status.err(`unknown env subcommand "${action}"`)}\n`);
       return 2;
   }
 }
 
-function selfHostSecretsLs(args: string[], flags: GlobalFlags): number {
+function selfHostEnvLs(args: string[], flags: GlobalFlags): number {
   const show = takeFlagBool(args, ['--show']);
   const env = loadEnvWithDefaults(flags);
   if (!env) {
@@ -1046,12 +1097,28 @@ function selfHostSecretsLs(args: string[], flags: GlobalFlags): number {
   }
   const groups = groupSecretsByCategory(env);
   const missing = missingRequiredSecrets(env);
+  // Everything NOT in the secret registry — ports, URLs, feature flags, the
+  // update-policy/reachability fields, image tags, ... — shown plainly (there
+  // is nothing sensitive in it to mask); grouped separately so the registry
+  // stays the one source of truth for "this is a secret" instead of a second,
+  // driftable heuristic. ALIAS_ENV_KEYS is excluded outright rather than
+  // shown plainly here: JWT_SECRET/ANON_KEY/SERVICE_ROLE_KEY are pure mirrors
+  // normalizeFullSupabaseEnv() writes alongside SUPABASE_JWT_SECRET/
+  // SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY (kept only so the official
+  // Supabase images, which expect the unprefixed names, see the same value) —
+  // listing them again in plaintext would leak the exact same secret already
+  // masked one row up under its canonical name.
+  const knownKeys = new Set(SECRET_DEFS.map((def) => def.key));
+  const otherKeys = Object.keys(env)
+    .filter((key) => !knownKeys.has(key) && !ALIAS_ENV_KEYS.has(key))
+    .sort((a, b) => a.localeCompare(b));
 
   if (flags.json) {
     process.stdout.write(
       `${JSON.stringify(
         {
           instance: flags.instance,
+          env_path: envPath(flags.instance),
           categories: groups.map((group) => ({
             category: group.category,
             label: group.label,
@@ -1060,6 +1127,7 @@ function selfHostSecretsLs(args: string[], flags: GlobalFlags): number {
               value: show ? env[row.key] ?? '' : undefined,
             })),
           })),
+          other: otherKeys.map((key) => ({ key, value: env[key] ?? '', updater_managed: isUpdaterManagedKey(key) })),
           missing_required: missing,
         },
         null,
@@ -1069,7 +1137,8 @@ function selfHostSecretsLs(args: string[], flags: GlobalFlags): number {
     return 0;
   }
 
-  process.stdout.write(`\n  ${C.bold}kortix self-host secrets${C.reset}${show ? C.dim + '  (values revealed — do not paste this output anywhere public)' + C.reset : ''}\n`);
+  process.stdout.write(`\n  ${C.bold}kortix self-host env${C.reset}${show ? C.dim + '  (values revealed — do not paste this output anywhere public)' + C.reset : ''}\n`);
+  process.stdout.write(`  ${C.dim}All values live in ${C.reset}${envPath(flags.instance)}${C.dim}, read only by this instance's Docker services.${C.reset}\n`);
   for (const group of groups) {
     if (group.rows.length === 0) continue;
     process.stdout.write(`\n  ${C.white}${C.bold}${group.label}${C.reset}\n`);
@@ -1086,11 +1155,20 @@ function selfHostSecretsLs(args: string[], flags: GlobalFlags): number {
     }
   }
 
+  if (otherKeys.length > 0) {
+    process.stdout.write(`\n  ${C.white}${C.bold}Other configuration${C.reset}${C.dim} — ports, URLs, flags (not secrets)${C.reset}\n`);
+    for (const key of otherKeys) {
+      const value = env[key] ?? '';
+      const managedNote = isUpdaterManagedKey(key) ? ` ${C.yellow}(updater-managed — use --tag/--channel/--release)${C.reset}` : '';
+      process.stdout.write(`    ${pad(key, 34)} ${C.dim}${value || '(unset)'}${C.reset}${managedNote}\n`);
+    }
+  }
+
   process.stdout.write('\n');
   if (missing.length > 0) {
     process.stdout.write(`  ${C.yellow}Missing required:${C.reset}\n`);
     for (const item of missing) process.stdout.write(`    ${C.dim}- ${C.reset}${item.label}\n`);
-    process.stdout.write(`\n  ${C.dim}Fix: ${C.reset}${C.cyan}kortix self-host secrets set KEY=VALUE${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host configure${C.reset}\n\n`);
+    process.stdout.write(`\n  ${C.dim}Fix: ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host configure${C.reset}\n\n`);
   } else {
     process.stdout.write(`  ${status.ok('All required secrets are set.')}\n\n`);
   }
@@ -1107,7 +1185,7 @@ function refuseUpdaterManagedKeyMessage(key: string): string {
  *  instance's Compose file (`caddy` without a domain, `cloudflared` outside
  *  tunnel mode) — `docker compose up --no-deps <service>` errors on a service
  *  name absent from the Compose file, which would otherwise turn e.g.
- *  `secrets set CLOUDFLARE_TUNNEL_TOKEN=...` (settable ahead of actually
+ *  `env set CLOUDFLARE_TUNNEL_TOKEN=...` (settable ahead of actually
  *  switching to tunnel mode) into a hard failure instead of a silent no-op. */
 function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readonly string[]): number {
   const domainConfigured = Boolean(env.KORTIX_DOMAIN?.trim());
@@ -1131,7 +1209,7 @@ function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readon
   return 0;
 }
 
-async function selfHostSecretsSet(args: string[], flags: GlobalFlags): Promise<number> {
+async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
@@ -1144,7 +1222,7 @@ async function selfHostSecretsSet(args: string[], flags: GlobalFlags): Promise<n
 
   const changedKeys: string[] = [];
 
-  // `secrets set KEY` (no '=') — prompt interactively for exactly one key.
+  // `env set KEY` (no '=') — prompt interactively for exactly one key.
   if (args.length === 1 && !args[0]!.includes('=')) {
     const key = args[0]!;
     if (isUpdaterManagedKey(key)) {
@@ -1154,9 +1232,6 @@ async function selfHostSecretsSet(args: string[], flags: GlobalFlags): Promise<n
     if (!shouldPrompt(flags)) {
       process.stderr.write(`${status.err(`"${key}" needs a value.`)} Pass ${C.cyan}${key}=VALUE${C.reset}, or run this interactively.\n`);
       return 2;
-    }
-    if (!secretDefFor(key)) {
-      process.stdout.write(`  ${C.yellow}note${C.reset}  "${key}" isn't a known secret — setting it anyway.\n`);
     }
     env[key] = await promptSecret(key, env[key] ?? '');
     changedKeys.push(key);
@@ -1172,9 +1247,6 @@ async function selfHostSecretsSet(args: string[], flags: GlobalFlags): Promise<n
       if (isUpdaterManagedKey(key)) {
         process.stderr.write(refuseUpdaterManagedKeyMessage(key));
         return 2;
-      }
-      if (!secretDefFor(key)) {
-        process.stdout.write(`  ${C.yellow}note${C.reset}  "${key}" isn't a known secret — setting it anyway.\n`);
       }
       env[key] = value;
       changedKeys.push(key);
@@ -1231,7 +1303,7 @@ function freshTokenFor(key: string): string {
 
 /** Reasons a `generated` secret is deliberately excluded from rotation —
  *  mirrors the comment on SECRET_DEFS in secrets-registry.ts. Anything
- *  `operator`-kind gets a generic "use secrets set" refusal instead. */
+ *  `operator`-kind gets a generic "use env set" refusal instead. */
 const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   SECRET_KEY_BASE: 'internal Supabase-infra encryption key — rotating it would invalidate already-issued sessions.',
   REALTIME_DB_ENC_KEY: 'internal Supabase Realtime encryption key — rotating it would leave existing encrypted state undecryptable.',
@@ -1239,21 +1311,22 @@ const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   PG_META_CRYPTO_KEY: 'internal pg-meta crypto key — rotating it would leave already-encrypted data undecryptable.',
   LOGFLARE_PUBLIC_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
   LOGFLARE_PRIVATE_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
-  SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `secrets rotate SUPABASE_JWT_SECRET` instead.',
-  SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `secrets rotate SUPABASE_JWT_SECRET` instead.',
-  DASHBOARD_USERNAME: 'not a rotation target — use `secrets set DASHBOARD_USERNAME=<value>` to change it.',
+  SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  DASHBOARD_USERNAME: 'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
+  SAML_PRIVATE_KEY: 'the SAML SP signing key — rotating it changes your SP identity and breaks every already-registered IdP until you re-register with them. Set a new one deliberately with `env set SAML_PRIVATE_KEY=<base64-der>` if you understand that tradeoff.',
 };
 
 function refuseRotateMessage(key: string, def: SecretDef | undefined): string {
   const reason =
     NON_ROTATABLE_GENERATED_REASONS[key] ??
     (def
-      ? `${key} is an operator-supplied secret — use \`secrets set ${key}=<value>\` instead.`
+      ? `${key} is an operator-supplied secret — use \`env set ${key}=<value>\` instead.`
       : `"${key}" is not a known secret.`);
   return `${status.err(`Refusing to rotate ${key}`)}: ${C.dim}${reason}${C.reset}\n`;
 }
 
-async function selfHostSecretsRotate(args: string[], flags: GlobalFlags): Promise<number> {
+async function selfHostEnvRotate(args: string[], flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
@@ -1266,7 +1339,7 @@ async function selfHostSecretsRotate(args: string[], flags: GlobalFlags): Promis
     return 2;
   }
   if (!allGenerated && args.length !== 1) {
-    process.stderr.write(`${status.err('Usage: kortix self-host secrets rotate <KEY> | --all-generated')}\n`);
+    process.stderr.write(`${status.err('Usage: kortix self-host env rotate <KEY> | --all-generated')}\n`);
     return 2;
   }
   const keys = allGenerated ? [...ROTATABLE_GENERATED_KEYS] : [args[0]!];
@@ -1301,6 +1374,81 @@ async function selfHostSecretsRotate(args: string[], flags: GlobalFlags): Promis
   return restartServicesForKeys(flags.instance, env, [...rotated]);
 }
 
+// ── kortix self-host uninstall ──────────────────────────────────────────────
+
+/** Pure: the exact `docker compose down` args `uninstall` runs — removing
+ *  containers/networks AND named Compose volumes (Caddy's ACME cache, the
+ *  updater's lock file) so a reinstall starts genuinely clean. Bind-mounted
+ *  data (Postgres, Supabase Storage) isn't a Compose volume at all — it's
+ *  removed separately via the instance directory `rmSync` in
+ *  selfHostUninstall. Exported so the fast (no-Docker) test suite can assert
+ *  on the constructed args without ever invoking Docker. */
+export function uninstallComposeArgs(): string[] {
+  return ['down', '--volumes', '--remove-orphans'];
+}
+
+/** Pure: does the operator's typed confirmation match the instance being
+ *  destroyed? Exact match only (trimmed) — no partial/case-insensitive
+ *  matching, so a fat-fingered instance name never sneaks through. */
+export function confirmsUninstall(typed: string, instance: string): boolean {
+  return typed.trim() === instance;
+}
+
+async function selfHostUninstall(_args: string[], flags: GlobalFlags): Promise<number> {
+  const dir = instanceDir(flags.instance);
+  const hasConfig = existsSync(composePath(flags.instance)) || existsSync(envPath(flags.instance));
+
+  if (!hasConfig) {
+    process.stdout.write(`${C.dim}  Instance "${flags.instance}" has no config at ${dir} — nothing to uninstall.${C.reset}\n`);
+    return 0;
+  }
+
+  if (shouldPrompt(flags)) {
+    process.stdout.write(
+      `\n  ${C.red}${C.bold}This permanently deletes ALL data for instance "${flags.instance}"${C.reset}\n` +
+        `  ${C.dim}Containers, Docker volumes (Postgres data, Supabase Storage), and${C.reset}\n` +
+        `  ${C.dim}${dir} are all removed. This cannot be undone.${C.reset}\n\n`,
+    );
+    const typed = await prompt(`Type the instance name (${flags.instance}) to confirm`, '');
+    if (!confirmsUninstall(typed, flags.instance)) {
+      process.stderr.write(`\n${status.err('Instance name did not match — aborted, nothing was removed.')}\n`);
+      return 1;
+    }
+  } else if (!flags.yes) {
+    process.stderr.write(
+      `${status.err(`Refusing to uninstall "${flags.instance}" non-interactively without --yes.`)}\n` +
+        `  ${C.dim}This permanently deletes all data for this instance. Pass ${C.reset}${C.cyan}--yes${C.reset}${C.dim} to confirm.${C.reset}\n`,
+    );
+    return 2;
+  }
+
+  // Capture whether the CLI's `selfhost` host entry points at THIS instance
+  // before the .env it was derived from is deleted out from under it.
+  const env = loadEnv(flags.instance);
+  const host = getHost(DEFAULT_HOST_NAME);
+  const hostMatchesThisInstance = Boolean(env && host && host.url && host.url === env.API_PUBLIC_URL);
+
+  if (existsSync(composePath(flags.instance))) {
+    const code = compose(flags.instance, uninstallComposeArgs());
+    if (code !== 0) {
+      process.stderr.write(
+        `${status.err('`docker compose down` failed — see above. Instance config was NOT deleted; resolve and re-run.')}\n`,
+      );
+      return code;
+    }
+  }
+
+  rmSync(dir, { recursive: true, force: true });
+  if (hostMatchesThisInstance) removeHost(DEFAULT_HOST_NAME);
+
+  process.stdout.write(`\n${status.ok(`Uninstalled self-host instance "${flags.instance}"`)}\n`);
+  process.stdout.write(`  ${C.dim}Removed:   ${C.reset}containers, volumes, ${dir}\n`);
+  process.stdout.write(
+    `  ${C.dim}Reinstall: ${C.reset}${C.cyan}kortix self-host init${flags.instance === DEFAULT_INSTANCE ? '' : ` --instance ${flags.instance}`}${C.reset}${C.dim} && ${C.reset}${C.cyan}kortix self-host start${C.reset}\n\n`,
+  );
+  return 0;
+}
+
 async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
@@ -1308,11 +1456,19 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
     return 1;
   }
   // Same ordering as `init`: reachability first (the decision that determines
-  // whether agent sandboxes can work at all), then feature flags, then
-  // integrations (Daytona) — see selfHostInit() for the full rationale.
+  // whether agent sandboxes can work at all), then admin email, then feature
+  // flags, then integrations (Daytona) — see selfHostInit() for the full
+  // rationale. Admin email is asked here on EVERY `configure` (not only on a
+  // fresh init the way selfHostInit gates it): an operator who skipped it at
+  // init and later runs `configure` to fix that would otherwise find that
+  // `configure` "did nothing" about it — the current value is pre-filled, so
+  // enter keeps it and this costs an already-configured instance one
+  // keystroke.
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
+  applyAdminEmail(env, flags);
   await promptReachability(env, flags);
+  await promptAdminEmail(env, flags);
   await promptFeatureFlags(env, flags);
   await configureIntegrations(env, flags);
   await configureUpdatePolicy(env, flags);
@@ -1330,12 +1486,12 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 
 /**
  * `kortix self-host connect-github` — DEPRECATED. The GitHub App manifest
- * flow it used to run never worked reliably from a laptop (GitHub rejects the
+ * flow it used to run never worked reliably from a local machine (GitHub rejects the
  * flow's hook/callback URLs when they aren't reachable over the public
  * internet: "Hook url is not supported because it isn't reachable over the
  * public Internet"), while the frontend's in-app GitHub connection flow
  * (Settings → Git) works everywhere the dashboard itself loads — including
- * from a laptop, since it's the browser (not this CLI) driving the OAuth
+ * from a local machine, since it's the browser (not this CLI) driving the OAuth
  * dance. Kept as a no-op alias, not removed outright, so an existing script
  * that calls it doesn't hard-fail; it prints where to go instead and exits 0.
  */
@@ -1417,27 +1573,33 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
   const currentProvider = sandboxProviders(env)[0];
-  const provider = shouldPrompt(flags)
-    ? await selectFrom(
-        'Sandbox provider',
-        SANDBOX_PROVIDER_CHOICES,
-        (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
-          ? (currentProvider as SandboxProviderChoice)
-          : 'daytona',
-      )
-    : ((currentProvider as SandboxProviderChoice) ?? 'daytona');
+  const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
+    ? (currentProvider as SandboxProviderChoice)
+    : 'daytona';
+  let provider: SandboxProviderChoice = defaultProvider;
+  if (shouldPrompt(flags)) {
+    // Every choice, printed up front — a bare `selectFrom` prompt with no
+    // visible options left `daytona`/`e2b`/`platinum` undiscoverable unless
+    // the operator already knew the exact names to type (a real reported
+    // bug: the prompt rendered as a bare `Sandbox provider [daytona]:`).
+    // Same one-provider-only shape as before (selectFrom, not selectMany) —
+    // an instance runs on exactly one sandbox provider.
+    process.stdout.write(
+      `  ${C.cyan}daytona${C.reset}   ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
+        `  ${C.cyan}e2b${C.reset}       ${C.dim}https://e2b.dev${C.reset}\n` +
+        `  ${C.cyan}platinum${C.reset}  ${C.dim}Kortix's own microVM sandbox provider${C.reset}\n`,
+    );
+    provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
+  }
   env.ALLOWED_SANDBOX_PROVIDERS = provider;
 
   if (provider === 'daytona') {
-    process.stdout.write(`  ${C.dim}Daytona (https://app.daytona.io)${C.reset}\n`);
     env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
     env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
     env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   } else if (provider === 'e2b') {
-    process.stdout.write(`  ${C.dim}E2B (https://e2b.dev)${C.reset}\n`);
     env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
   } else {
-    process.stdout.write(`  ${C.dim}Platinum (Kortix's own microVM sandbox provider)${C.reset}\n`);
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
@@ -1476,7 +1638,7 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
 // wizard was removed along with it; `connect-github` (the standalone
 // subcommand) is now a deprecated alias — see selfHostConnectGithub() below —
 // that also points at the dashboard instead of running the manifest flow,
-// which never worked reliably on a laptop anyway (GitHub rejects hook/
+// which never worked reliably on a local machine anyway (GitHub rejects hook/
 // callback URLs that aren't reachable over the public internet).
 
 async function promptSecret(label: string, current: string): Promise<string> {
@@ -1553,16 +1715,16 @@ const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
  *  `KEY (Category label)`. */
 const REQUIRED_SECRET_LABELS: Record<string, string> = {
   OPENROUTER_API_KEY: 'OpenRouter API key (LLM)',
-  POSTGRES_PASSWORD: 'Postgres password (auto-generated — regenerate via `secrets rotate`)',
-  SUPABASE_JWT_SECRET: 'Supabase JWT secret (auto-generated — regenerate via `secrets rotate`)',
+  POSTGRES_PASSWORD: 'Postgres password (auto-generated — regenerate via `env rotate`)',
+  SUPABASE_JWT_SECRET: 'Supabase JWT secret (auto-generated — regenerate via `env rotate`)',
   SUPABASE_ANON_KEY: 'Supabase anon key (auto-generated, derived from the JWT secret)',
   SUPABASE_SERVICE_ROLE_KEY: 'Supabase service role key (auto-generated, derived from the JWT secret)',
   DASHBOARD_USERNAME: 'Supabase Studio dashboard username (auto-generated)',
-  DASHBOARD_PASSWORD: 'Supabase Studio dashboard password (auto-generated — regenerate via `secrets rotate`)',
-  GATEWAY_INTERNAL_TOKEN: 'Gateway internal token (auto-generated — regenerate via `secrets rotate`)',
-  INTERNAL_SERVICE_KEY: 'Internal service key (auto-generated — regenerate via `secrets rotate`)',
-  API_KEY_SECRET: 'API key secret (auto-generated — regenerate via `secrets rotate`)',
-  TUNNEL_SIGNING_SECRET: 'Tunnel signing secret (auto-generated — regenerate via `secrets rotate`)',
+  DASHBOARD_PASSWORD: 'Supabase Studio dashboard password (auto-generated — regenerate via `env rotate`)',
+  GATEWAY_INTERNAL_TOKEN: 'Gateway internal token (auto-generated — regenerate via `env rotate`)',
+  INTERNAL_SERVICE_KEY: 'Internal service key (auto-generated — regenerate via `env rotate`)',
+  API_KEY_SECRET: 'API key secret (auto-generated — regenerate via `env rotate`)',
+  TUNNEL_SIGNING_SECRET: 'Tunnel signing secret (auto-generated — regenerate via `env rotate`)',
 };
 
 export interface MissingSecretItem {
@@ -1599,7 +1761,7 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
     const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
     missing.push({
       label: `Agent sandbox runtime (${provider} API key)`,
-      hint: `kortix self-host secrets set ${key}=<key>`,
+      hint: `kortix self-host env set ${key}=<key>`,
     });
   }
 
@@ -1609,7 +1771,7 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
     if (value.trim() !== '') continue;
     missing.push({
       label: REQUIRED_SECRET_LABELS[def.key] ?? `${def.key} (${CATEGORY_LABELS[def.category]})`,
-      hint: `kortix self-host secrets set ${def.key}=<value>`,
+      hint: `kortix self-host env set ${def.key}=<value>`,
     });
   }
 
@@ -1617,50 +1779,18 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
 }
 
 /**
- * Whether this instance has ever had `--allow-missing-secrets` used against
- * it — persisted in instance.json (see SelfHostInstanceConfig) so the choice
- * survives across separate CLI invocations. See recordAllowMissingSecrets()
- * for why this exists.
- */
-function persistedAllowMissingSecrets(instance: string): boolean {
-  return loadInstanceConfig(instance)?.allow_missing_secrets === true;
-}
-
-/**
- * Persist that this instance has been explicitly allowed to run with
- * required secrets missing, so a LATER invocation that omits the flag isn't
- * re-blocked for a decision the operator already made. Confirmed friction
- * live: `init --allow-missing-secrets` succeeds, but the very next `start`
- * (with no flags) re-validates independently (ensureRequiredSecrets runs on
- * every init/start) and hard-fails again unless the flag is repeated. Merges
- * into whatever instance.json already has (release, etc.) rather than
- * clobbering it. No-op (doesn't write) if already persisted.
- */
-function recordAllowMissingSecrets(instance: string): void {
-  if (persistedAllowMissingSecrets(instance)) return;
-  const existing = loadInstanceConfig(instance);
-  writeInstanceConfig({
-    schema_version: 1,
-    instance,
-    ...(existing?.release ? { release: existing.release } : {}),
-    allow_missing_secrets: true,
-  });
-}
-
-/**
- * Enforce that required secrets are actually set before this instance can be
- * considered usable — the CLI's primary guarantee: a box never comes up
- * silently unable to run agents. Interactive TTY: drive the guided
- * integrations flow until satisfied or the operator opts out. Non-interactive
- * (`--yes` / no TTY / CI): fail loudly with an itemized list and exact fix
- * commands instead of proceeding into a broken deployment.
- * `--allow-missing-secrets` downgrades the non-interactive failure to a loud
- * warning — local experimentation only — and that choice is remembered (see
- * recordAllowMissingSecrets) so a later bare `start`/`update` doesn't
- * re-demand the same flag for the same still-missing secret.
+ * Make sure required secrets get a chance to be set — never a hard gate.
+ * Interactive TTY: drive the guided integrations flow until satisfied or the
+ * operator declines to continue. Non-interactive (`--yes` / no TTY / CI) or
+ * an interactive operator who declined: print a loud warning with an
+ * itemized list and the exact `env set` fix command for each, then PROCEED
+ * anyway — `init`/`start` always exit 0 here; a self-host box that can't run
+ * agents yet (e.g. scripted provisioning that sets the sandbox key in a
+ * later step) is a normal, expected state, not a failure to refuse on.
  *
- * Returns 0 to proceed, non-zero to stop (caller still persists whatever was
- * collected along the way).
+ * Always returns 0 — kept as a function (not inlined) because it still does
+ * real work (the interactive collection loop) and the caller sites read more
+ * clearly awaiting a named step.
  */
 async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Promise<number> {
   let missing = missingRequiredSecrets(env);
@@ -1686,21 +1816,11 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
   if (missing.length === 0) return 0;
 
   const lines = missing.map((item) => `    ${C.dim}- ${C.reset}${item.label}\n        ${C.cyan}${item.hint}${C.reset}`).join('\n');
-
-  if (flags.allowMissingSecrets || persistedAllowMissingSecrets(flags.instance)) {
-    recordAllowMissingSecrets(flags.instance);
-    process.stdout.write(
-      `\n${status.warn('Proceeding with required secrets missing (--allow-missing-secrets):')}\n${lines}\n\n` +
-        `  ${C.dim}This deployment will not be able to run agents until they are set.${C.reset}\n\n`,
-    );
-    return 0;
-  }
-
-  process.stderr.write(
-    `\n${status.err('Required secrets are missing — refusing to proceed:')}\n${lines}\n\n` +
-      `  ${C.dim}Set them and re-run, or pass ${C.reset}${C.cyan}--allow-missing-secrets${C.reset}${C.dim} for local experimentation only.${C.reset}\n\n`,
+  process.stdout.write(
+    `\n${status.warn('Proceeding with required secrets missing:')}\n${lines}\n\n` +
+      `  ${C.dim}This deployment will not be able to run agents until they are set.${C.reset}\n\n`,
   );
-  return 1;
+  return 0;
 }
 
 function integrationReviewNeeded(env: SelfHostEnv): boolean {
@@ -1874,10 +1994,15 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     KORTIX_IMAGE_PULL: flags.localImages ? 'never' : '',
     KORTIX_UPDATE_TIME: flags.updateTime ?? DEFAULT_UPDATE_TIME,
     KORTIX_UPDATE_TZ: flags.updateTz ?? DEFAULT_UPDATE_TZ,
-    KORTIX_ALLOW_DOWNTIME: flags.allowDowntime ? '1' : '0',
+    // Env-only (no --allow-downtime flag) — see applyChannelAndUpdatePolicy.
+    KORTIX_ALLOW_DOWNTIME: '0',
     // Recomputed from KORTIX_DOMAIN on every write in normalizeFullSupabaseEnv;
     // this initial value only matters before that first normalize pass.
     KORTIX_APP_REPLICAS: String(LAPTOP_APP_REPLICAS),
+    // Recomputed from instanceDir() on every write in normalizeFullSupabaseEnv
+    // (see the field's own doc comment on SelfHostEnv above); this initial
+    // value only matters before that first normalize pass.
+    KORTIX_INSTANCE_DIR: instanceDir(flags.instance),
     KORTIX_DOMAIN: '',
     KORTIX_API_DOMAIN: '',
     KORTIX_ACME_EMAIL: '',
@@ -1939,6 +2064,14 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     MAILER_URLPATHS_CONFIRMATION: '/auth/v1/verify',
     MAILER_URLPATHS_RECOVERY: '/auth/v1/verify',
     MAILER_URLPATHS_EMAIL_CHANGE: '/auth/v1/verify',
+    // GoTrue SAML SSO — always on so the enterprise entitlement
+    // (--enterprise-license) is the only remaining step to unlock the SAML SSO
+    // + SCIM surface (Account → Settings → Identity). The private key is a
+    // per-instance RSA-2048 keypair generated once here and persisted like
+    // SUPABASE_JWT_SECRET/POSTGRES_PASSWORD — see samlPrivateKeyDer() and the
+    // `existing` override in loadEnvWithDefaults()/selfHostInit().
+    SAML_ENABLED: 'true',
+    SAML_PRIVATE_KEY: samlPrivateKeyDer(),
     DASHBOARD_USERNAME: 'kortix',
     DASHBOARD_PASSWORD: token(24),
     SECRET_KEY_BASE: token(48),
@@ -2061,7 +2194,7 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // apps/api/src/executor/pipedream.ts's own pipedreamConfigured() requires.
   // Recomputed on every write (not just when the now-removed guided-init
   // Pipedream question used to run) so setting/clearing PIPEDREAM_CLIENT_ID
-  // et al. via `env set`/`secrets set` directly keeps this in sync too.
+  // et al. via `env set` directly keeps this in sync too.
   env.KORTIX_PUBLIC_CONNECTORS_ENABLED = pipedreamConfigured(env) ? 'true' : 'false';
 
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
@@ -2114,6 +2247,18 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
+
+  // Always recomputed (never `||=`) — see the KORTIX_INSTANCE_DIR field's doc
+  // comment on SelfHostEnv. Unconditional on purpose: if the instance
+  // directory itself moved (operator relocated it, or restored it under a
+  // different KORTIX_SELF_HOST_CONFIG_DIR), the next `init`/`start`/`update`/
+  // `configure`/`env set` — anything that calls writeEnv() — self-heals a
+  // stale value instead of quietly leaving the in-compose updater mounted at
+  // an address that no longer matches. `doctor` also flags a mismatch
+  // directly (see selfHostDoctor) for the read-only "is this still stale?"
+  // check.
+  env.KORTIX_INSTANCE_DIR = instanceDir(instance);
+
   env.POOLER_TENANT_ID ||= composeProject(instance);
   env.STORAGE_TENANT_ID ||= composeProject(instance);
   env.STUDIO_DEFAULT_PROJECT ||= instance;
@@ -2195,7 +2340,7 @@ function describeReachability(env: SelfHostEnv): string {
     const known = env.KORTIX_URL && !isLocalhostUrlOnPort(env.KORTIX_URL, Number(env.API_PORT)) ? env.KORTIX_URL : '(captured on next start)';
     return `${C.green}tunnel${C.reset}${C.dim} — ${via} — ${known}${C.reset}`;
   }
-  return `${C.yellow}local-only${C.reset}${C.dim} — agent sandboxes and external callbacks will not work${C.reset}`;
+  return `${C.yellow}not configured${C.reset}${C.dim} — agent sessions won't work: the cloud sandbox can't call back to this API${C.reset}`;
 }
 
 /**
@@ -2204,12 +2349,12 @@ function describeReachability(env: SelfHostEnv): string {
  * out of the box.
  *
  * Also stamps `dashboard_url` with this instance's own frontend origin
- * (`PUBLIC_URL` — loopback port on a laptop, `https://<domain>` once
+ * (`PUBLIC_URL` — loopback port on a local machine, `https://<domain>` once
  * `KORTIX_DOMAIN` is set). Without it, `kortix login`'s browser flow has to
  * *guess* the frontend from the API URL's shape (see web-url.ts), which
  * assumes cloud conventions (`api.<domain>` → `<domain>`, `:8008` → `:3000`)
  * — a guess that is simply wrong for a self-host stack on non-default ports
- * (the laptop default is API `:13738` / dashboard `:13737`, not `:3000`).
+ * (the local-machine default is API `:13738` / dashboard `:13737`, not `:3000`).
  * Storing the real value here means login never has to guess for a host
  * this CLI itself stood up.
  */
@@ -2246,6 +2391,28 @@ function composeProject(instance: string): string {
 
 function token(bytes: number): string {
   return randomBytes(bytes).toString('hex');
+}
+
+/**
+ * A fresh RSA-2048 private key, PKCS#1/DER, base64-encoded — the exact shape
+ * GoTrue's GOTRUE_SAML_PRIVATE_KEY requires. Verified against a real GoTrue
+ * boot: PKCS8/DER is REJECTED ("SAML private key not in PKCS#1 format",
+ * fatal, crash-loops the container) even though it's the more common modern
+ * encoding and what openssl's `genpkey` (PKCS8 by default) produces — GoTrue
+ * specifically wants the legacy `openssl genrsa`/PKCS#1 container. See
+ * https://supabase.com/docs/guides/self-hosting/self-hosted-saml-sso.
+ * GoTrue uses this key to sign every outgoing SAML AuthnRequest/metadata
+ * document, so it doubles as the self-host instance's SAML SP identity —
+ * generated once at `init` and persisted (like SUPABASE_JWT_SECRET), not
+ * regenerated on every run.
+ */
+function samlPrivateKeyDer(): string {
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'der' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'der' },
+  });
+  return Buffer.from(privateKey).toString('base64');
 }
 
 function supabaseJwt(role: string, secret: string): string {

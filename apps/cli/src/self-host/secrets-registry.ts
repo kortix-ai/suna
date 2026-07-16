@@ -1,8 +1,8 @@
 // Single source of truth for every runtime secret the self-host `.env` holds:
-// which service category it belongs to (for `kortix self-host secrets ls`),
+// which service category it belongs to (for `kortix self-host env ls`),
 // whether the CLI generates it or an operator supplies it, whether it can be
-// rotated, and which Compose services actually consume it (so `secrets set`/
-// `secrets rotate` can restart only what changed instead of the whole stack).
+// rotated, and which Compose services actually consume it (so `env set`/
+// `env rotate` can restart only what changed instead of the whole stack).
 //
 // Pure data + pure helpers only — no filesystem/process access — so this is
 // trivially unit-testable and safely importable from both the `self-host`
@@ -47,7 +47,7 @@ export interface SecretDef {
   kind: 'generated' | 'operator';
   /** Core functionality breaks/degrades without this set. */
   required: boolean;
-  /** Eligible for `kortix self-host secrets rotate <KEY>` / `--all-generated`. */
+  /** Eligible for `kortix self-host env rotate <KEY>` / `--all-generated`. */
   rotatable?: boolean;
 }
 
@@ -61,6 +61,13 @@ export interface SecretDef {
  * rotating VAULT_ENC_KEY (Postgres pgsodium) or PG_META_CRYPTO_KEY would leave
  * already-encrypted data undecryptable, not just require a restart. They stay
  * out of `--all-generated` on purpose; nothing in this feature rotates them.
+ * They ARE listed below (not just mentioned in this comment) specifically so
+ * `env ls` masks them — before `env` absorbed `secrets`, a bug in this exact
+ * registry left them out of SECRET_DEFS entirely, which was harmless when the
+ * only consumer (`secrets ls`) only ever rendered registry keys; now that
+ * `env ls` also lists every OTHER (non-registry) key for full-file visibility,
+ * an unregistered secret would leak in plaintext instead of just being
+ * invisible — being IN the registry is what keeps it masked.
  */
 export const SECRET_DEFS: SecretDef[] = [
   // Database & Supabase
@@ -72,6 +79,14 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'DASHBOARD_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: true },
   { key: 'S3_PROTOCOL_ACCESS_KEY_ID', category: 'database', kind: 'generated', required: false, rotatable: true },
   { key: 'S3_PROTOCOL_ACCESS_KEY_SECRET', category: 'database', kind: 'generated', required: false, rotatable: true },
+  // Internal Supabase-infra encryption keys — see the array-level comment
+  // above for why these are generated-but-not-rotatable.
+  { key: 'SECRET_KEY_BASE', category: 'database', kind: 'generated', required: true, rotatable: false },
+  { key: 'REALTIME_DB_ENC_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
+  { key: 'VAULT_ENC_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
+  { key: 'PG_META_CRYPTO_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
+  { key: 'LOGFLARE_PUBLIC_ACCESS_TOKEN', category: 'database', kind: 'generated', required: true, rotatable: false },
+  { key: 'LOGFLARE_PRIVATE_ACCESS_TOKEN', category: 'database', kind: 'generated', required: true, rotatable: false },
 
   // Auth / Email / SMTP
   { key: 'SMTP_HOST', category: 'auth_email', kind: 'operator', required: false },
@@ -80,6 +95,16 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'SMTP_PASS', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_ADMIN_EMAIL', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_SENDER_NAME', category: 'auth_email', kind: 'operator', required: false },
+  // GoTrue SAML SSO signing key — generated once at `init` (samlPrivateKeyDer()
+  // in commands/self-host.ts) so GOTRUE_SAML_ENABLED=true (the self-host
+  // default) always has a key to boot with. `required: false` here on purpose:
+  // defaultEnv() always populates it before the .env is ever written, so it is
+  // never actually missing in a real instance — this just keeps it out of the
+  // CLI's init-time blocking gate (missingRequiredSecrets), which is reserved
+  // for secrets with no other way to get set. NOT rotatable: regenerating it
+  // changes the SAML SP's signing identity and breaks every already-registered
+  // IdP until re-registered.
+  { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
   // Agent sandbox — three interchangeable providers (SandboxProviderName in
   // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
@@ -149,7 +174,7 @@ export function secretDefFor(key: string): SecretDef | undefined {
   return SECRET_DEF_BY_KEY.get(key);
 }
 
-/** Keys eligible for `secrets rotate --all-generated`, in a stable order. */
+/** Keys eligible for `env rotate --all-generated`, in a stable order. */
 export const ROTATABLE_GENERATED_KEYS: string[] = SECRET_DEFS.filter(
   (def) => def.kind === 'generated' && def.rotatable,
 ).map((def) => def.key);
@@ -159,7 +184,7 @@ export const ROTATABLE_GENERATED_KEYS: string[] = SECRET_DEFS.filter(
  * the tracked version, the replica count derived from KORTIX_DOMAIN). They
  * are not independent settings — hand-setting one is silently clobbered by
  * the next `init`/`update`/`configure`, which is confusing rather than
- * useful — so both `env set` and `secrets set` refuse to touch them.
+ * useful — so `env set` refuses to touch them.
  * Use `--tag`/`--channel`/`--release` (which drive these) instead.
  */
 export const UPDATER_MANAGED_RUNTIME_KEYS: ReadonlySet<string> = new Set([
@@ -169,6 +194,13 @@ export const UPDATER_MANAGED_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'GATEWAY_IMAGE',
   'SANDBOX_IMAGE',
   'KORTIX_APP_REPLICAS',
+  // The instance directory's absolute HOST path — recomputed from
+  // instanceDir() on every render (see normalizeFullSupabaseEnv() in
+  // commands/self-host.ts). Hand-setting it to anything other than where the
+  // instance's docker-compose.yml/.env actually live would break the
+  // in-compose auto-updater's bind mount (see the KORTIX_INSTANCE_DIR field's
+  // doc comment on SelfHostEnv), and the very next render clobbers it anyway.
+  'KORTIX_INSTANCE_DIR',
 ]);
 
 export function isUpdaterManagedKey(key: string): boolean {
@@ -177,8 +209,8 @@ export function isUpdaterManagedKey(key: string): boolean {
 
 /**
  * Key → Compose service names it configures, the single source of truth used
- * by both `secrets set` (restart only what a changed key affects) and
- * `secrets ls` (nothing reads this directly, but keeping one map means the
+ * by both `env set` (restart only what a changed key affects) and
+ * `env ls` (nothing reads this directly, but keeping one map means the
  * restart behavior can never drift from the docs). Unlisted keys default to
  * ['kortix-api'] in `servicesForKeys` below — kortix-api loads every `.env`
  * key via `env_file:` (see kortix-compose.yml), so it is always a safe,
@@ -202,6 +234,12 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   DASHBOARD_PASSWORD: ['supabase-kong'],
   S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage'],
   S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage'],
+  SECRET_KEY_BASE: ['supabase-realtime', 'supabase-supavisor'],
+  REALTIME_DB_ENC_KEY: ['supabase-realtime'],
+  VAULT_ENC_KEY: ['supabase-supavisor'],
+  PG_META_CRYPTO_KEY: ['supabase-studio'],
+  LOGFLARE_PUBLIC_ACCESS_TOKEN: ['supabase-analytics', 'supabase-vector'],
+  LOGFLARE_PRIVATE_ACCESS_TOKEN: ['supabase-studio', 'supabase-analytics'],
 
   // Auth / Email / SMTP — all consumed by GoTrue only.
   SMTP_HOST: ['supabase-auth'],
@@ -210,6 +248,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SMTP_PASS: ['supabase-auth'],
   SMTP_ADMIN_EMAIL: ['supabase-auth'],
   SMTP_SENDER_NAME: ['supabase-auth'],
+  SAML_PRIVATE_KEY: ['supabase-auth'],
 
   // Agent sandbox — all three interchangeable providers
   DAYTONA_API_KEY: ['kortix-api'],
@@ -298,7 +337,7 @@ export interface SecretCategoryGroup {
 }
 
 /** Group every declared secret by category against a live env snapshot, for
- *  `kortix self-host secrets ls`. Preserves CATEGORY_ORDER / SECRET_DEFS order. */
+ *  `kortix self-host env ls`. Preserves CATEGORY_ORDER / SECRET_DEFS order. */
 export function groupSecretsByCategory(env: Record<string, string>): SecretCategoryGroup[] {
   const byCategory = new Map<SecretCategory, SecretRow[]>();
   for (const category of CATEGORY_ORDER) byCategory.set(category, []);

@@ -131,7 +131,7 @@ PY
 ok "instance $INSTANCE (api port $API_PORT)"
 
 section "CLI Self-host Setup"
-$CLI self-host init --instance "$INSTANCE" --allow-missing-secrets --local-images >/dev/null
+$CLI self-host init --instance "$INSTANCE" --local-images >/dev/null
 $CLI self-host env set --instance "$INSTANCE" \
   "API_PUBLIC_URL=http://localhost:$API_PORT" \
   "SUPABASE_PUBLIC_URL=http://localhost:$SUPABASE_PORT" \

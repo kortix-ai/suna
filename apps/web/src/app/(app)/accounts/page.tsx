@@ -9,7 +9,8 @@ import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { isSingleAccountMode } from '@/lib/config';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +24,13 @@ export default function AccountsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [createOpen, setCreateOpen] = useState(false);
-  const singleAccountMode = isSingleAccountMode();
+  const { data: adminRole } = useAdminRole();
+  // Self-host: hide "New account" affordances for non-admins when account
+  // creation is restricted — admins are exempt from the gate (see
+  // isAccountCreationRestricted()/KORTIX_RESTRICT_ACCOUNT_CREATION). The
+  // backend 403 (account_creation_restricted) is the authoritative gate;
+  // this only avoids showing an affordance a non-admin can't use.
+  const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -53,7 +60,7 @@ export default function AccountsPage() {
             <h2 className="text-foreground text-xl font-medium">Accounts</h2>
             <p className="text-muted-foreground text-sm text-balance">Teams you belong to.</p>
           </div>
-          {!singleAccountMode && (
+          {canCreateAccount && (
             <div className="mt-2 shrink-0 sm:mt-0">
               <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setCreateOpen(true)}>
                 <Plus className="size-4" />
@@ -87,12 +94,12 @@ export default function AccountsPage() {
             title="No accounts yet"
             description="Create an account to start working with a team."
             action={
-              singleAccountMode ? undefined : (
+              canCreateAccount ? (
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
                   <Plus className="size-3.5" />
                   New account
                 </Button>
-              )
+              ) : undefined
             }
           />
         ) : (

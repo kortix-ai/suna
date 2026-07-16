@@ -8,29 +8,25 @@ const REQUIRED = {
   BACKEND_URL: 'http://localhost:8008/v1',
 };
 
-// Self-host configuration flags: KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE and
-// KORTIX_PUBLIC_DISABLE_LANDING_PAGE. Both default to false (a fresh
-// self-host or cloud deployment is multi-account with the landing page on)
-// and are booleans by the time they reach this schema — env-config.ts /
+// Self-host configuration flag: KORTIX_PUBLIC_DISABLE_LANDING_PAGE. Defaults
+// to false (a fresh self-host or cloud deployment has the landing page on)
+// and is a boolean by the time it reaches this schema — env-config.ts /
 // public-env-server.ts already did the `=== 'true'` coercion.
 describe('RuntimeEnvSchema — self-host configuration flags', () => {
-  test('SINGLE_ACCOUNT_MODE and DISABLE_LANDING_PAGE default to false', () => {
+  test('DISABLE_LANDING_PAGE defaults to false', () => {
     const env = parseRuntimeEnv(REQUIRED);
-    expect(env.SINGLE_ACCOUNT_MODE).toBe(false);
     expect(env.DISABLE_LANDING_PAGE).toBe(false);
   });
 
-  test('both flip on when explicitly true', () => {
+  test('flips on when explicitly true', () => {
     const env = parseRuntimeEnv({
       ...REQUIRED,
-      SINGLE_ACCOUNT_MODE: true,
       DISABLE_LANDING_PAGE: true,
     });
-    expect(env.SINGLE_ACCOUNT_MODE).toBe(true);
     expect(env.DISABLE_LANDING_PAGE).toBe(true);
   });
 
-  test('BILLING_ENABLED still defaults false, unaffected by the new flags', () => {
+  test('BILLING_ENABLED still defaults false, unaffected by the new flag', () => {
     const env = parseRuntimeEnv(REQUIRED);
     expect(env.BILLING_ENABLED).toBe(false);
   });
@@ -48,5 +44,20 @@ describe('RuntimeEnvSchema — MANAGED_PROVIDER_ENABLED', () => {
   test('flips on when Kortix Cloud sets it true', () => {
     const env = parseRuntimeEnv({ ...REQUIRED, MANAGED_PROVIDER_ENABLED: true });
     expect(env.MANAGED_PROVIDER_ENABLED).toBe(true);
+  });
+});
+
+// Self-host account-creation restriction: KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION.
+// Defaults false (cloud is unaffected); the self-host CLI sets it explicitly
+// via SHARED_FEATURE_FLAG_DEFAULTS.
+describe('RuntimeEnvSchema — RESTRICT_ACCOUNT_CREATION', () => {
+  test('defaults to false', () => {
+    const env = parseRuntimeEnv(REQUIRED);
+    expect(env.RESTRICT_ACCOUNT_CREATION).toBe(false);
+  });
+
+  test('flips on when explicitly true', () => {
+    const env = parseRuntimeEnv({ ...REQUIRED, RESTRICT_ACCOUNT_CREATION: true });
+    expect(env.RESTRICT_ACCOUNT_CREATION).toBe(true);
   });
 });

@@ -15,4 +15,3 @@ admin_email = "admin@example.com"
 # backup_retention_count  = 7
 # kortix_channel          = "stable"
 # auto_update             = "on"
-# single_account_mode     = false

@@ -12,7 +12,6 @@
 #                                   everything else a clean 404 + billing_disabled)
 #   - managed-git absent         -> POST /v1/projects/provision returns a
 #                                   graceful 503, not a crash
-#   - single-account mode        -> POST /v1/accounts returns 403
 #
 # NEVER runs by default: gated on RUN_SELFHOST_LIVE=1, and always allocates a
 # brand-new, uniquely-named instance + a fresh block of loopback ports so it
@@ -119,8 +118,8 @@ PY
 )"
 ok "instance $INSTANCE (api port $API_PORT)"
 
-section "CLI Self-host Setup (single-account, billing off, managed-git unconfigured)"
-$CLI self-host init --instance "$INSTANCE" --allow-missing-secrets --single-account >/dev/null
+section "CLI Self-host Setup (billing off, managed-git unconfigured)"
+$CLI self-host init --instance "$INSTANCE" >/dev/null
 $CLI self-host env set --instance "$INSTANCE" \
   "API_PUBLIC_URL=http://localhost:$API_PORT" \
   "SUPABASE_PUBLIC_URL=http://localhost:$SUPABASE_PORT" \
@@ -135,7 +134,7 @@ $CLI self-host env set --instance "$INSTANCE" \
   "API_IMAGE=$API_IMAGE" >/dev/null
 # Deliberately leave every MANAGED_GIT_* / KORTIX_GITHUB_APP_* key unset —
 # that's the exact condition case 6 tests against.
-ok "config initialized: single-account on, billing off (default), managed-git unset"
+ok "config initialized: billing off (default), managed-git unset"
 
 section "Bring Up Data Plane (db, auth, rest, kong, migrate, api)"
 compose up -d --no-deps supabase-db
@@ -200,13 +199,5 @@ printf '%s' "$GATED_BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin);
   || die "expected billing_disabled:true in gated response: $GATED_BODY"
 ok "GET /v1/billing/credit-breakdown -> 404 {billing_disabled: true} (not a 500)"
 
-section "Single-account mode: POST /v1/accounts -> 403"
-CREATE_ACCOUNT_CODE=$(curl -s -o /tmp_account_body.$$ -w '%{http_code}' -X POST "$API/v1/accounts" \
-  -H "$AUTH_HEADER" -H 'content-type: application/json' -d '{"name":"a second account"}')
-CREATE_ACCOUNT_BODY=$(cat /tmp_account_body.$$ 2>/dev/null || true)
-rm -f /tmp_account_body.$$
-[ "$CREATE_ACCOUNT_CODE" = "403" ] || die "expected 403 from POST /v1/accounts in single-account mode, got $CREATE_ACCOUNT_CODE: $CREATE_ACCOUNT_BODY"
-ok "POST /v1/accounts -> 403 (single-account mode)"
-
 section "Result"
-ok "All three flag-off/unconfigured paths degrade gracefully — no 500s"
+ok "Both flag-off/unconfigured paths degrade gracefully — no 500s"
