@@ -117,13 +117,18 @@ describe('directory sync (SCIM) guides', () => {
     expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'okta']);
   });
 
-  test('every guide mints the token inline before configuring the IdP, and ends with verify', () => {
+  test('every guide mints + connects on ONE page, and ends with verify', () => {
     for (const g of SCIM_PROVIDER_GUIDES) {
       const kinds = g.steps.map((s) => s.kind);
       expect(kinds).toContain('scim-token');
       expect(kinds[kinds.length - 1]).toBe('test');
-      // Token must come before every instructions step that references it.
-      expect(kinds.indexOf('scim-token')).toBeLessThan(kinds.lastIndexOf(undefined as never));
+      // The mint+connect step comes before verify.
+      expect(kinds.indexOf('scim-token')).toBeLessThan(kinds.length - 1);
+      // Mint and the IdP paste instructions are the SAME step: the scim-token
+      // step carries the connect `content` (rendered below the minted values),
+      // so a novice never mints on one page and pastes on another.
+      const connect = g.steps.find((step) => step.kind === 'scim-token')!;
+      expect((connect.content ?? []).length).toBeGreaterThan(0);
     }
   });
 
@@ -274,5 +279,70 @@ describe('domain field explains its consequence in the guided wizard (live incid
   test("warns when the entered domain matches the current admin's own email domain", () => {
     expect(wizardSource).toContain('adminEmailDomain');
     expect(flatWizardSource).toContain('this will route YOUR next sign-in to the IdP');
+  });
+});
+
+// Every screenshot a guide references must exist in public/ — the GuideImage
+// component self-hides on a missing file, which silently degrades a step to
+// text-only (exactly the "no screenshots that guide you" regression). This
+// walks every image src in guides.ts and fails on the first dead slot, so a
+// guide edit can never reference an asset that was never shipped.
+describe('guide screenshots ship with the guides', () => {
+  test('every referenced guide image exists on disk (any path)', () => {
+    // ANY absolute image path — the Entra Directory Sync guide once referenced
+    // /docs/entra/*.png (a path outside /sso-setup/) whose files were never
+    // shipped, so a prefix-scoped guard missed a fully text-only guide.
+    const refs = [...guidesSource.matchAll(/src: '(\/[a-z0-9/._-]+\.(?:png|jpg|webp))'/g)].map(
+      (m) => m[1],
+    );
+    expect(refs.length).toBeGreaterThan(0);
+    const missing = refs.filter((ref) => {
+      try {
+        readFileSync(join(dir, '../../../public', ref));
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(missing).toEqual([]);
+  });
+});
+
+// Novice-walkthrough regressions — each pins a real gap the audit found.
+describe('novice-walkthrough fixes stay fixed', () => {
+  test('the SAML test step reconciles with the auto-provision default (no flat "must hand-map")', () => {
+    const entra = getProviderGuide('entra')!;
+    const test = entra.steps.find((s) => s.id === 'test')!;
+    const groupBullet = (test.bullets ?? []).join(' ');
+    // Must acknowledge auto-provision being ON (the connect-step default),
+    // not just tell the admin to hand-map.
+    expect(groupBullet).toContain('Auto-provision groups');
+  });
+
+  test('the SAML test step has a failure/troubleshooting path', () => {
+    const test = getProviderGuide('entra')!.steps.find((s) => s.id === 'test')!;
+    expect(test.warning).toBeTruthy();
+    expect(test.warning!.toLowerCase()).toContain('fail');
+  });
+
+  test('the SCIM continue button is provider-agnostic (not hardcoded to Entra)', () => {
+    expect(wizardSource).not.toContain('Continue to Entra');
+  });
+
+  test('Google shows its own field labels (ACS URL), not Entra defaults', () => {
+    const google = getProviderGuide('google')!;
+    const basic = google.steps.find((s) => s.id === 'basic-saml')!;
+    const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
+      | { acsLabel?: string; acsFirst?: boolean }
+      | undefined;
+    expect(sp?.acsLabel).toBe('ACS URL');
+    expect(sp?.acsFirst).toBe(true);
+  });
+
+  test('every SAML guide captures metadata interactively (custom included)', () => {
+    for (const g of PROVIDER_GUIDES) {
+      const meta = g.steps.find((s) => s.id === 'metadata');
+      if (meta) expect(meta.kind).toBe('metadata-input');
+    }
   });
 });
