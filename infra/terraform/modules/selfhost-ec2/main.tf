@@ -37,7 +37,7 @@ locals {
   # Namespace CloudWatch agent metrics + alarms both key off (see monitoring.tf).
   cloudwatch_namespace = "KortixSelfHost"
 
-  tags = merge({ ManagedBy = "terraform" }, var.tags, {
+  tags = merge(var.tags, {
     Name      = local.name
     ManagedBy = "terraform"
     Module    = "selfhost-ec2"
@@ -134,7 +134,7 @@ resource "aws_security_group" "this" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = merge({ ManagedBy = "terraform" }, local.tags)
+  tags = local.tags
 }
 
 # ── IAM: SSM Session Manager only — no SSH key required to administer ─────
@@ -151,7 +151,7 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "this" {
   name               = "${local.name}-role"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = merge({ ManagedBy = "terraform" }, local.tags)
+  tags               = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "ssm" {
@@ -162,7 +162,7 @@ resource "aws_iam_role_policy_attachment" "ssm" {
 resource "aws_iam_instance_profile" "this" {
   name = "${local.name}-profile"
   role = aws_iam_role.this.name
-  tags = merge({ ManagedBy = "terraform" }, local.tags)
+  tags = local.tags
 }
 
 # ── Instance ────────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ resource "aws_instance" "this" {
   })
   user_data_replace_on_change = false
 
-  tags = merge({ ManagedBy = "terraform" }, local.tags)
+  tags = local.tags
 
   # The data volume is attached out-of-band (aws_volume_attachment below) and
   # deliberately NOT recreated when the instance is (delete_on_termination =

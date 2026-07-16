@@ -23,6 +23,34 @@ locals {
   private_subnets = [for i in range(var.az_count) : cidrsubnet(var.cidr, 4, i + 8)]
   # One NAT in dev (cost), one-per-AZ in prod (HA) — controlled by single_nat_gateway.
   nat_count = var.single_nat_gateway ? 1 : var.az_count
+
+  # Keep composed tag maps behind named locals. This preserves every caller and
+  # resource-specific tag while allowing static IaC scanners to recognize that
+  # each resource has a tag assignment instead of treating merge(...) as {}.
+  vpc_tags              = merge({ ManagedBy = "terraform" }, var.tags, var.extra_vpc_tags, { Name = "${var.name}-vpc" })
+  internet_gateway_tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-igw" })
+  public_subnet_tags = [for i in range(var.az_count) : merge(
+    { ManagedBy = "terraform" },
+    var.tags,
+    var.extra_public_subnet_tags,
+    { Name = "${var.name}-public-${local.azs[i]}", Tier = "public" },
+  )]
+  public_route_table_tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-public-rt" })
+  private_subnet_tags = [for i in range(var.az_count) : merge(
+    { ManagedBy = "terraform" },
+    var.tags,
+    var.extra_private_subnet_tags,
+    { Name = "${var.name}-private-${local.azs[i]}", Tier = "private" },
+  )]
+  nat_eip_tags = [for i in range(local.nat_count) : merge(
+    { ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-eip-${i}" },
+  )]
+  nat_gateway_tags = [for i in range(local.nat_count) : merge(
+    { ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-${i}" },
+  )]
+  private_route_table_tags = [for i in range(var.az_count) : merge(
+    { ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-private-rt-${i}" },
+  )]
 }
 
 resource "aws_vpc" "this" {
@@ -31,12 +59,12 @@ resource "aws_vpc" "this" {
   cidr_block           = var.cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags                 = merge({ ManagedBy = "terraform" }, var.tags, var.extra_vpc_tags, { Name = "${var.name}-vpc" })
+  tags                 = local.vpc_tags
 }
 
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
-  tags   = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-igw" })
+  tags   = local.internet_gateway_tags
 }
 
 # ── Public subnets ────────────────────────────────────────────────────────────
@@ -48,7 +76,7 @@ resource "aws_subnet" "public" {
   # Public subnets host managed load balancers and NAT gateways; neither needs
   # arbitrary instances to receive a public IP by default.
   map_public_ip_on_launch = false
-  tags                    = merge({ ManagedBy = "terraform" }, var.tags, var.extra_public_subnet_tags, { Name = "${var.name}-public-${local.azs[count.index]}", Tier = "public" })
+  tags                    = local.public_subnet_tags[count.index]
 }
 
 resource "aws_route_table" "public" {
@@ -57,7 +85,7 @@ resource "aws_route_table" "public" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.this.id
   }
-  tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-public-rt" })
+  tags = local.public_route_table_tags
 }
 
 resource "aws_route_table_association" "public" {
@@ -72,20 +100,20 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.this.id
   cidr_block        = local.private_subnets[count.index]
   availability_zone = local.azs[count.index]
-  tags              = merge({ ManagedBy = "terraform" }, var.tags, var.extra_private_subnet_tags, { Name = "${var.name}-private-${local.azs[count.index]}", Tier = "private" })
+  tags              = local.private_subnet_tags[count.index]
 }
 
 resource "aws_eip" "nat" {
   count  = local.nat_count
   domain = "vpc"
-  tags   = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-eip-${count.index}" })
+  tags   = local.nat_eip_tags[count.index]
 }
 
 resource "aws_nat_gateway" "this" {
   count         = local.nat_count
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
-  tags          = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-nat-${count.index}" })
+  tags          = local.nat_gateway_tags[count.index]
   depends_on    = [aws_internet_gateway.this]
 }
 
@@ -96,7 +124,7 @@ resource "aws_route_table" "private" {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.this[var.single_nat_gateway ? 0 : count.index].id
   }
-  tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-private-rt-${count.index}" })
+  tags = local.private_route_table_tags[count.index]
 }
 
 resource "aws_route_table_association" "private" {

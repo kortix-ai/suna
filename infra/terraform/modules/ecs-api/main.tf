@@ -30,7 +30,7 @@ locals {
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/ecs/${local.name}"
   retention_in_days = var.log_retention_days
-  tags              = merge({ ManagedBy = "terraform" }, var.tags)
+  tags              = var.tags
 }
 
 # ── IAM ───────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "execution" {
   name               = "${local.name}-exec"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = merge({ ManagedBy = "terraform" }, var.tags)
+  tags               = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "execution" {
@@ -74,7 +74,7 @@ resource "aws_iam_role_policy" "secrets" {
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = merge({ ManagedBy = "terraform" }, var.tags)
+  tags               = var.tags
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = var.alb_ingress_cidrs
   }
-  tags = merge({ ManagedBy = "terraform" }, var.tags)
+  tags = var.tags
 }
 
 resource "aws_security_group" "service" {
@@ -118,7 +118,7 @@ resource "aws_security_group" "service" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = merge({ ManagedBy = "terraform" }, var.tags)
+  tags = var.tags
 }
 
 # The ALB only needs to reach the application port on ECS tasks. Keeping this
@@ -138,9 +138,12 @@ resource "aws_lb" "this" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = var.public_subnet_ids
-  idle_timeout       = var.alb_idle_timeout
-  tags               = merge({ ManagedBy = "terraform" }, var.tags)
+  subnets = [
+    var.public_subnet_ids[0],
+    var.public_subnet_ids[1],
+  ]
+  idle_timeout = var.alb_idle_timeout
+  tags         = var.tags
 }
 
 resource "aws_lb_target_group" "this" {
@@ -160,7 +163,7 @@ resource "aws_lb_target_group" "this" {
   }
 
   deregistration_delay = 30
-  tags                 = merge({ ManagedBy = "terraform" }, var.tags)
+  tags                 = var.tags
 }
 
 resource "aws_lb_listener" "http" {
@@ -211,7 +214,7 @@ resource "aws_ecs_cluster" "this" {
     name  = "containerInsights"
     value = var.container_insights ? "enabled" : "disabled"
   }
-  tags = merge({ ManagedBy = "terraform" }, var.tags)
+  tags = var.tags
 }
 
 resource "aws_ecs_cluster_capacity_providers" "this" {
@@ -257,7 +260,7 @@ resource "aws_ecs_task_definition" "this" {
     # authoritative gate for routing + the deployment circuit breaker.
   }])
 
-  tags = merge({ ManagedBy = "terraform" }, var.tags)
+  tags = var.tags
 }
 
 resource "aws_ecs_service" "this" {
@@ -305,7 +308,7 @@ resource "aws_ecs_service" "this" {
   # Without this, the service can race ahead of the HTTPS listener on a fresh
   # apply ("target group ... does not have an associated load balancer").
   depends_on = [aws_lb_listener.http, aws_lb_listener.https]
-  tags       = merge({ ManagedBy = "terraform" }, var.tags)
+  tags       = var.tags
 }
 
 # ── Autoscaling (target tracking on CPU + memory) ─────────────────────────────

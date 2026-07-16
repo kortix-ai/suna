@@ -61,7 +61,7 @@ resource "aws_eks_cluster" "this" {
     }
   }
 
-  tags = merge({ ManagedBy = "terraform" }, var.tags)
+  tags = var.tags
 
   depends_on = [aws_iam_role_policy_attachment.cluster]
 }
@@ -97,7 +97,7 @@ resource "aws_eks_node_group" "this" {
   }
 
   labels = merge({ "workload" = "kortix-api" }, var.node_labels)
-  tags   = merge({ ManagedBy = "terraform" }, var.tags)
+  tags   = var.tags
 
   # Replacing the launch config (instance types, disk) recreates nodes; let the
   # new group come up before the old is torn down.
