@@ -32,7 +32,9 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { getAccountModelDefaults, upsertAccountModelPreference } = await import('./model-preferences');
+const { getAccountModelDefaults, upsertAccountModelPreference, getSessionAgentContext } = await import(
+  './model-preferences'
+);
 
 beforeEach(() => {
   selectRows = [];
@@ -80,5 +82,45 @@ describe('upsertAccountModelPreference', () => {
       onlyIfAbsent: true,
     });
     expect(conflictMode).toBe('nothing');
+  });
+});
+
+// Persisted-session fixtures: getSessionAgentContext must dual-read the
+// session's model override so pre-rename rows (opencode_model-only) keep
+// resolving exactly as today.
+describe('getSessionAgentContext', () => {
+  test('a pre-rename row with ONLY opencode_model metadata resolves the model', async () => {
+    selectRows = [
+      { agentName: 'default', metadata: { opencode_model: 'anthropic/claude-opus-4-8' } },
+    ];
+    expect(await getSessionAgentContext('sess-1')).toEqual({
+      agentName: 'default',
+      model: 'anthropic/claude-opus-4-8',
+    });
+  });
+
+  test('a new-style row with ONLY model metadata resolves the model', async () => {
+    selectRows = [{ agentName: 'default', metadata: { model: 'kortix/glm-5.2' } }];
+    expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: 'kortix/glm-5.2' });
+  });
+
+  test('both keys present: model (neutral) wins — pins current precedence', async () => {
+    selectRows = [
+      {
+        agentName: 'default',
+        metadata: { model: 'kortix/glm-5.2', opencode_model: 'anthropic/claude-opus-4-8' },
+      },
+    ];
+    expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: 'kortix/glm-5.2' });
+  });
+
+  test('no row → null', async () => {
+    selectRows = [];
+    expect(await getSessionAgentContext('sess-missing')).toBeNull();
+  });
+
+  test('row with neither key → model is null', async () => {
+    selectRows = [{ agentName: 'default', metadata: { existing: true } }];
+    expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: null });
   });
 });

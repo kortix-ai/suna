@@ -2551,6 +2551,32 @@ describe('project session API contract', () => {
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
   });
 
+  // Persisted-session fixture (WS2-P2-a): a session row written before the
+  // opencode_model → model metadata rename carries the override under the
+  // legacy key ONLY. Restarting it must still carry the model forward — a
+  // regression here silently drops every pre-rename session's model pin.
+  test('restart of a pre-rename session (opencode_model-only metadata) carries the model forward', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_existing',
+      metadata: { opencode_model: 'anthropic/claude-opus-4-8' },
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(202);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    // TEST_RUNTIME_MANIFEST is a v3 (ACP) manifest, so the compiled path's
+    // model key is KORTIX_RUNTIME_MODEL — this is the same dual-read that
+    // feeds the legacy env path's KORTIX_OPENCODE_MODEL/KORTIX_RUNTIME_MODEL
+    // pair (see session-runtime-env.test.ts for that side, pinned in isolation).
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_RUNTIME_MODEL).toBe('anthropic/claude-opus-4-8');
+  });
+
   test('accepts a client-created session branch without recreating it server-side', async () => {
     const app = createApp();
     const clientSessionId = '11111111-1111-4111-a111-111111111111';

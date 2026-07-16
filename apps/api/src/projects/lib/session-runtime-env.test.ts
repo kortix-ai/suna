@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { buildSessionRuntimeEnv, runtimeModelForHarness } from './session-runtime-env';
+
+const FIXTURES_DIR = join(import.meta.dir, '__fixtures__');
+function readExpectedEnv(name: string): Record<string, string> {
+  return JSON.parse(readFileSync(join(FIXTURES_DIR, name), 'utf8')) as Record<string, string>;
+}
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -140,5 +147,42 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined();
     expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
     expect(env.KORTIX_RUNTIME_MODEL).toBe('must/not-leak');
+  });
+});
+
+/**
+ * Golden env-map fixtures — harness-neutral session metadata + env
+ * (WS2-P2-a). Freezes TODAY's buildSessionRuntimeEnv output so a later
+ * change can prove:
+ *   - the legacy (!compiled) path dual-emits the neutral twins
+ *     (KORTIX_BOOTSTRAP_RUNTIME_SESSION, KORTIX_RUNTIME_MODEL) alongside the
+ *     legacy names (KORTIX_BOOTSTRAP_OPENCODE_SESSION, KORTIX_OPENCODE_MODEL)
+ *     with equal values, and neither legacy name is ever removed — old
+ *     sandbox images bake their bootstrap off the legacy names.
+ *   - the compiled (ACP) path's env map is BYTE-IDENTICAL to before this
+ *     change — it already emitted KORTIX_RUNTIME_MODEL, so no twin is added
+ *     there.
+ * A diff here is either an intentional env contract change (update the
+ * fixture) or a legacy/neutral emission regression (fix the code).
+ */
+describe('golden env-map fixtures (legacy dual-emit + compiled byte-identical)', () => {
+  test('legacy (!compiled) path matches the frozen golden env map', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      initialPrompt: 'answer this Slack thread',
+      runtimeModel: 'anthropic/claude-sonnet-4-6',
+    });
+    expect(env).toEqual(readExpectedEnv('session-runtime-env-legacy.expected.json'));
+  });
+
+  test('compiled (ACP v3) path matches the frozen golden env map, byte-identical', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      agentName: 'claude',
+      compiledRuntimeConfig: CLAUDE_PLAN,
+      runtimeModel: 'kortix/claude-opus-4.8',
+      initialPrompt: 'fix the bug',
+    });
+    expect(env).toEqual(readExpectedEnv('session-runtime-env-compiled.expected.json'));
   });
 });

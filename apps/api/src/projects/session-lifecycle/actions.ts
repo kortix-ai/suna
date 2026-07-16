@@ -5,6 +5,7 @@ import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionMetadataModel } from '../lib/session-metadata';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -156,12 +157,8 @@ export async function restartSession(input: {
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
         : null;
-    const runtimeModel =
-      typeof session.metadata?.model === 'string'
-        ? (session.metadata.model as string)
-        : typeof session.metadata?.opencode_model === 'string'
-          ? (session.metadata.opencode_model as string)
-          : null;
+    // Dual-read: pre-rename rows only carry opencode_model — see session-metadata.ts.
+    const runtimeModel = resolveSessionMetadataModel(session.metadata);
     const runtimeAuthKind =
       typeof session.metadata?.auth_connection === 'string'
         ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind

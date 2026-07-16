@@ -70,9 +70,23 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // V1/v2 compatibility keeps the old root bootstrap. V3 is ACP-native and
     // must never create a parallel OpenCode HTTP session.
-    ...(!compiled ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1' } : {}),
+    //
+    // KORTIX_BOOTSTRAP_RUNTIME_SESSION / KORTIX_RUNTIME_MODEL are the
+    // harness-neutral twins of the two OpenCode-named vars below, emitted
+    // alongside them with the SAME value. Old sandbox images baked before
+    // this rename still consume the legacy names from their bootstrap
+    // scripts, so neither may ever be removed — this is dual-emit, not a
+    // migration. KORTIX_RUNTIME_MODEL already exists as the compiled (ACP)
+    // path's model key (below); reusing that exact name here means a future
+    // consumer never has to special-case the legacy vs. compiled launch path
+    // to find the model, and never has to know the word "opencode".
+    ...(!compiled
+      ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1', KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1' }
+      : {}),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(input.runtimeModel && !compiled ? { KORTIX_OPENCODE_MODEL: input.runtimeModel } : {}),
+    ...(input.runtimeModel && !compiled
+      ? { KORTIX_OPENCODE_MODEL: input.runtimeModel, KORTIX_RUNTIME_MODEL: input.runtimeModel }
+      : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call

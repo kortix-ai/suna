@@ -9,6 +9,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
+import { resolveSessionMetadataModel } from '../lib/session-metadata';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
@@ -316,7 +317,8 @@ export async function allocateRuntimeOnOpen(
     .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
-  const runtimeModel = typeof session.metadata?.model === 'string' ? session.metadata.model : null;
+  // Dual-read: pre-rename rows only carry opencode_model — see session-metadata.ts.
+  const runtimeModel = resolveSessionMetadataModel(session.metadata);
   const runtimeAuthKind = typeof session.metadata?.auth_connection === 'string'
     ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind
     : null;

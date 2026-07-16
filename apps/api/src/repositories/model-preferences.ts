@@ -1,5 +1,6 @@
 import { accountModelPreferences, projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { resolveSessionMetadataModel } from '../projects/lib/session-metadata';
 import { db } from '../shared/db';
 
 // Persistent store for account-scoped default model preferences. Drives the
@@ -128,12 +129,7 @@ export async function getSessionAgentContext(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row) return null;
-  const metadata = row.metadata as Record<string, unknown> | null;
-  const model =
-    metadata && typeof metadata.model === 'string'
-      ? metadata.model
-      : metadata && typeof metadata.opencode_model === 'string'
-        ? metadata.opencode_model
-        : null;
+  // Dual-read: pre-rename rows only carry opencode_model — see session-metadata.ts.
+  const model = resolveSessionMetadataModel(row.metadata as Record<string, unknown> | null);
   return { agentName: row.agentName, model };
 }

@@ -32,4 +32,25 @@ describe('buildSessionRuntimeEnv', () => {
     expect(env.KORTIX_INITIAL_PROMPT).toBe('answer this Slack thread');
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
+
+  test('legacy path dual-emits the harness-neutral env twins alongside the legacy names, same value', () => {
+    const env = buildSessionRuntimeEnv({
+      ...base,
+      initialPrompt: 'answer this Slack thread',
+      runtimeModel: 'anthropic/claude-sonnet-4-6',
+    });
+
+    // Legacy names — never removed, old sandbox images still bootstrap off these.
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+    // Neutral twins — same values, dual-emitted, not a replacement.
+    expect(env.KORTIX_BOOTSTRAP_RUNTIME_SESSION).toBe('1');
+    expect(env.KORTIX_RUNTIME_MODEL).toBe('anthropic/claude-sonnet-4-6');
+  });
+
+  test('legacy path with no runtimeModel omits both the legacy and neutral model keys', () => {
+    const env = buildSessionRuntimeEnv(base);
+    expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(env.KORTIX_RUNTIME_MODEL).toBeUndefined();
+  });
 });

@@ -71,7 +71,7 @@ Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (w
 | `KORTIX_RUNTIME_HARNESS` | Selected ACP harness (`claude`, `codex`, `opencode`, or `pi`). |
 | `KORTIX_RUNTIME_CONFIG_DIR` | Repo-relative harness-native config directory compiled from `kortix.yaml`. |
 | `KORTIX_COMPILED_RUNTIME_PLAN` | `1` when the session booted from the v3 ACP runtime compiler plan. |
-| `KORTIX_OPENCODE_MODEL` | Legacy OpenCode-harness model override, when set. |
+| `KORTIX_OPENCODE_MODEL` | Legacy OpenCode-harness model override, when set. `KORTIX_RUNTIME_MODEL` is injected alongside it with the same value — the harness-neutral name, and the same key the compiled (ACP) launch path already uses. Both are set on legacy (pre-ACP) sessions; neither is dropped this cycle. |
 | `KORTIX_INITIAL_PROMPT` | The first prompt, when the session was spawned by a trigger or created with one. |
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
@@ -79,7 +79,7 @@ Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (w
 | `KORTIX_SANDBOX_TOKEN` | The sandbox **service key** — the daemon's own identity. It signs and validates its own control-surface requests with it (HMAC key for `X-Kortix-User-Context`) and is the bearer for the sandbox-identity routes (clone-credential / turn-stream, including execution leases / turn-question). It is *not* a project API token, and the `kortix` CLI does not read it — the project-scoped API routes reject it. `KORTIX_TOKEN` is injected with the same value as a back-compat alias for daemons baked before the rename to `KORTIX_SANDBOX_TOKEN`; a planned Phase 2 will drop the `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` aliases and repurpose `KORTIX_TOKEN` to mean the session token instead, so don't depend on `KORTIX_TOKEN` continuing to carry the sandbox identity long-term. |
 | `KORTIX_CLI_TOKEN` | The project-scoped PAT the in-sandbox `kortix` CLI authenticates with (same value as `KORTIX_EXECUTOR_TOKEN`). |
 | `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT — acts as the launching user, scoped to the project. Also backs the `kortix-executor` MCP gateway. |
-| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | Legacy OpenCode-harness compatibility flag. ACP-first sessions use the compiled runtime plan instead of creating an OpenCode root as the platform protocol. |
+| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | Legacy OpenCode-harness compatibility flag. ACP-first sessions use the compiled runtime plan instead of creating an OpenCode root as the platform protocol. `KORTIX_BOOTSTRAP_RUNTIME_SESSION` is injected alongside it with the same value (`1`) — the harness-neutral name. Both are set on legacy (pre-ACP) sessions; neither is dropped this cycle. |
 | `KORTIX_LLM_API_KEY` · `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key + base URL, injected only on plans that use Kortix's bundled model access (operator availability + per-project opt-in + account entitlement all gate it). |
 
 Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). When a project brings its own model keys they travel as ordinary project secrets the selected harness can read at boot; the `KORTIX_LLM_*` pair above appears only on plans that use Kortix's managed model access.
