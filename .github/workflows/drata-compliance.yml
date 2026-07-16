@@ -41,4 +41,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          minimumSeverity: "CRITICAL"
+          # A green compliance workflow must mean zero known IaC findings.
+          # Gating only CRITICAL allowed High/Moderate findings to keep the
+          # corresponding Drata monitors failed while CI still reported green.
+          minimumSeverity: "LOW"
+          verboseLogging: true
