@@ -32,6 +32,14 @@ import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 
+function getRevenueCatEventId(event: any): string {
+  return String(event.id ?? event.event_id);
+}
+
+function isDeletedBillingAccount(account: { paymentStatus?: string | null } | null | undefined): boolean {
+  return account?.paymentStatus === 'deleted';
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
 
@@ -653,45 +661,58 @@ export async function processRevenueCatWebhook(body: any) {
 
   console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 
-  switch (eventType) {
-    case 'INITIAL_PURCHASE':
-      await handleRevenueCatPurchase(accountId, event);
-      break;
+  try {
+    switch (eventType) {
+      case 'INITIAL_PURCHASE':
+        await handleRevenueCatPurchase(accountId, event);
+        break;
 
-    case 'RENEWAL':
-      await handleRevenueCatRenewal(accountId, event);
-      break;
+      case 'RENEWAL':
+        await handleRevenueCatRenewal(accountId, event);
+        break;
 
-    case 'CANCELLATION':
-    case 'EXPIRATION':
-      await handleRevenueCatCancellation(accountId, event);
-      break;
+      case 'CANCELLATION':
+      case 'EXPIRATION':
+        await handleRevenueCatCancellation(accountId, event);
+        break;
 
-    case 'UNCANCELLATION':
-      await handleRevenueCatUncancellation(accountId, event);
-      break;
+      case 'UNCANCELLATION':
+        await handleRevenueCatUncancellation(accountId, event);
+        break;
 
-    case 'PRODUCT_CHANGE':
-      await handleRevenueCatProductChange(accountId, event);
-      break;
+      case 'PRODUCT_CHANGE':
+        await handleRevenueCatProductChange(accountId, event);
+        break;
 
-    case 'NON_RENEWING_PURCHASE':
-      await handleRevenueCatTopup(accountId, event);
-      break;
+      case 'NON_RENEWING_PURCHASE':
+        await handleRevenueCatTopup(accountId, event);
+        break;
 
-    case 'SUBSCRIPTION_PAUSED':
-    case 'BILLING_ISSUE':
-      await handleRevenueCatBillingIssue(accountId, event);
-      break;
+      case 'SUBSCRIPTION_PAUSED':
+      case 'BILLING_ISSUE':
+        await handleRevenueCatBillingIssue(accountId, event);
+        break;
 
-    default:
-      console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
+      default:
+        console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
+    }
+  } catch (err) {
+    await forgetWebhookEvent(dedupeKey).catch((cleanupErr) => {
+      console.error(`[RevenueCat] Failed to clear failed event marker ${dedupeKey}:`, cleanupErr);
+    });
+    throw err;
   }
 
   return { received: true, event_type: eventType, account_id: accountId };
 }
 
 async function handleRevenueCatPurchase(accountId: string, event: any) {
+  const existingAccount = await getCreditAccount(accountId);
+  if (isDeletedBillingAccount(existingAccount)) {
+    console.log(`[RevenueCat] Skipping INITIAL_PURCHASE for deleted account ${accountId}`);
+    return;
+  }
+
   const productId = event.product_id;
   const tierKey = mapRevenueCatProductToTier(productId);
   if (!tierKey) {
@@ -701,8 +722,8 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
 
   const tier = getTier(tierKey);
   const periodType = getRevenueCatPeriodType(productId);
+  const eventId = getRevenueCatEventId(event);
 
-  const existingAccount = await getCreditAccount(accountId);
   const oldStripeSubscriptionId = existingAccount?.stripeSubscriptionId ?? null;
 
   await upsertCreditAccount(accountId, {
@@ -727,6 +748,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
       'tier_grant',
       `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
       true,
+      eventId,
     );
   }
 
@@ -756,13 +778,17 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
 
 async function handleRevenueCatRenewal(accountId: string, event: any) {
   const account = await getCreditAccount(accountId);
-  if (!account) return;
+  if (!account || isDeletedBillingAccount(account)) {
+    console.log(`[RevenueCat] Skipping RENEWAL for deleted or missing account ${accountId}`);
+    return;
+  }
 
   const tierName = account.tier ?? 'free';
   const credits = getMonthlyCredits(tierName);
+  const eventId = getRevenueCatEventId(event);
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, `Mobile renewal: ${credits} credits`);
+    await resetExpiringCredits(accountId, credits, `Mobile renewal: ${credits} credits`, eventId);
   }
 
   await updateCreditAccount(accountId, {
@@ -836,6 +862,12 @@ async function handleRevenueCatProductChange(accountId: string, event: any) {
 }
 
 async function handleRevenueCatTopup(accountId: string, event: any) {
+  const account = await getCreditAccount(accountId);
+  if (isDeletedBillingAccount(account)) {
+    console.log(`[RevenueCat] Skipping NON_RENEWING_PURCHASE for deleted account ${accountId}`);
+    return;
+  }
+
   const price = event.price ? Number(event.price) : 0;
   if (price <= 0) return;
 
@@ -845,6 +877,7 @@ async function handleRevenueCatTopup(accountId: string, event: any) {
     'purchase',
     `Mobile credit purchase: $${price.toFixed(2)}`,
     false,
+    getRevenueCatEventId(event),
   );
 
   console.log(`[RevenueCat] Top-up: $${price} for ${accountId}`);

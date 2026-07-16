@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
+  createMockStripeCheckoutSession,
   createMockStripeClient,
   mockRegistry,
   registerGlobalMocks,
@@ -25,6 +26,7 @@ let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let resetExpiringCreditsCalls: any[] = [];
+let grantCreditsCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
@@ -32,6 +34,7 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   resetExpiringCreditsCalls = [];
+  grantCreditsCalls = [];
   stripeCancelSubCalls = [];
   resetMockRegistry();
 
@@ -75,7 +78,9 @@ beforeEach(() => {
   };
 
   // Credit service defaults
-  mockRegistry.grantCredits = async () => {};
+  mockRegistry.grantCredits = async (...args: any[]) => {
+    grantCreditsCalls.push(args);
+  };
   mockRegistry.resetExpiringCredits = async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
   };
@@ -93,6 +98,7 @@ const {
   scheduleDowngrade,
   cancelScheduledChange,
   cancelFreeSubscriptionForUpgrade,
+  confirmCheckoutSession,
 } = await import('../../billing/services/subscriptions');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -529,5 +535,24 @@ describe('cancelFreeSubscriptionForUpgrade', () => {
     await expect(
       cancelFreeSubscriptionForUpgrade('sub_old_free', 'acc_test_123')
     ).rejects.toThrow('Stripe internal error');
+  });
+});
+
+describe('confirmCheckoutSession', () => {
+  test('uses subscription_activation idempotency key matching the Stripe webhook', async () => {
+    mockRegistry.stripeClient.checkout.sessions.retrieve = async () =>
+      createMockStripeCheckoutSession({
+        status: 'complete',
+        payment_status: 'paid',
+        subscription: 'sub_confirm_123',
+      });
+
+    await confirmCheckoutSession({
+      accountId: 'acc_test_123',
+      sessionId: 'cs_test_123',
+    });
+
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_confirm_123');
   });
 });

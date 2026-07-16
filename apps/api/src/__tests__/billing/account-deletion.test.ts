@@ -226,6 +226,24 @@ describe('deleteAccountImmediately', () => {
     expect(completedRequestIds.length).toBe(1);
     expect(completedRequestIds[0]).toBe('del_immediate');
   });
+
+  test('marks RevenueCat subscription cancelled when account uses mobile billing', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({
+      provider: 'revenuecat',
+      revenuecatCustomerId: 'rc_customer_123',
+      revenuecatSubscriptionId: 'rc_sub_123',
+      revenuecatProductId: 'kortix_plus_monthly',
+    });
+
+    await deleteAccountImmediately('acc_test_123');
+
+    const update = updateCreditAccountCalls[0];
+    expect(update.data.paymentStatus).toBe('deleted');
+    expect(update.data.revenuecatCancelledAt).toBeDefined();
+    expect(update.data.revenuecatCancelAtPeriodEnd).toBeDefined();
+    expect(update.data.revenuecatProductId).toBeNull();
+    expect(update.data.revenuecatSubscriptionId).toBeNull();
+  });
 });
 
 describe('processScheduledDeletions', () => {

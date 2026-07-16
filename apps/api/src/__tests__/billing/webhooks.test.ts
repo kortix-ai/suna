@@ -26,6 +26,7 @@ let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
+let forgetWebhookEventCalls: string[] = [];
 
 beforeEach(() => {
   grantCreditsCalls = [];
@@ -35,6 +36,7 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   stripeCancelSubCalls = [];
+  forgetWebhookEventCalls = [];
   resetMockRegistry();
 
   // Stripe client
@@ -81,6 +83,10 @@ beforeEach(() => {
   };
   mockRegistry.resetExpiringCredits = async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
+  };
+
+  mockRegistry.forgetWebhookEvent = async (eventId: string) => {
+    forgetWebhookEventCalls.push(eventId);
   };
 
   // Track stripe.subscriptions.cancel calls (used by cancelFreeSubscriptionForUpgrade)
@@ -482,8 +488,9 @@ describe('RevenueCat', () => {
     expect(upsertCreditAccountCalls[0].data.tier).toBe('tier_2_20');
     // tier_grant ($20) + machine_bonus ($5)
     expect(grantCreditsCalls.length).toBe(2);
-    expect(grantCreditsCalls[0][1]).toBe(20); // tier_2_20 = $20 monthly credits
-    expect(grantCreditsCalls[1][1]).toBe(5);  // $5 machine bonus
+    expect(grantCreditsCalls[0][1]).toBe(20);
+    expect(grantCreditsCalls[0][5]).toBe('evt_rc_initial_purchase');
+    expect(grantCreditsCalls[1][1]).toBe(5);
     expect(result.event_type).toBe('INITIAL_PURCHASE');
   });
 
@@ -512,13 +519,23 @@ describe('RevenueCat', () => {
   });
 
   test('RENEWAL: resets expiring credits', async () => {
-    // Default mock has tier from getCreditAccount, which has tier_6_50
     const body = createMockRevenueCatEvent('RENEWAL');
 
     await processRevenueCatWebhook(body);
 
     expect(resetExpiringCreditsCalls.length).toBe(1);
-    expect(resetExpiringCreditsCalls[0][1]).toBe(50); // tier_6_50 = $50 monthly credits
+    expect(resetExpiringCreditsCalls[0][1]).toBe(50);
+    expect(resetExpiringCreditsCalls[0][3]).toBe('evt_rc_renewal');
+  });
+
+  test('RENEWAL: skips deleted accounts', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({ paymentStatus: 'deleted' });
+
+    const body = createMockRevenueCatEvent('RENEWAL');
+    await processRevenueCatWebhook(body);
+
+    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(updateCreditAccountCalls.length).toBe(0);
   });
 
   test('CANCELLATION: sets cancelled timestamp', async () => {
@@ -591,6 +608,53 @@ describe('RevenueCat', () => {
     expect(grantCreditsCalls.length).toBe(1);
     expect(grantCreditsCalls[0][1]).toBe(25);
     expect(grantCreditsCalls[0][4]).toBe(false);
+    expect(grantCreditsCalls[0][5]).toBe('evt_rc_non_renewing_purchase');
+  });
+
+  test('INITIAL_PURCHASE: skips deleted accounts', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({ paymentStatus: 'deleted' });
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      product_id: 'kortix_plus_monthly',
+    });
+
+    await processRevenueCatWebhook(body);
+
+    expect(upsertCreditAccountCalls.length).toBe(0);
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('NON_RENEWING_PURCHASE: skips deleted accounts', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({ paymentStatus: 'deleted' });
+
+    const body = createMockRevenueCatEvent('NON_RENEWING_PURCHASE', {
+      price: 25,
+    });
+
+    await processRevenueCatWebhook(body);
+
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('clears dedupe marker when RevenueCat handler throws', async () => {
+    mockRegistry.upsertCreditAccount = async () => {
+      throw new Error('grant failed');
+    };
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      id: 'rc_evt_fail_1',
+      event_id: 'rc_evt_fail_1',
+      product_id: 'kortix_plus_monthly',
+    });
+
+    try {
+      await processRevenueCatWebhook(body);
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.message).toContain('grant failed');
+    }
+
+    expect(forgetWebhookEventCalls).toEqual(['revenuecat:rc_evt_fail_1']);
   });
 
   test('BILLING_ISSUE: sets past_due', async () => {
