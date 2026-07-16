@@ -16,7 +16,12 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
+// 'local-docker' is EXPERIMENTAL — see platform/providers/local-docker.ts.
+// It runs sandboxes as plain Docker containers on THIS machine (the one
+// running kortix-api) via the local Docker socket — no cloud provider
+// account, no multi-node scheduling. Same contract as every other provider;
+// no caller may special-case its name (see provider-boundary.test.ts).
+export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b' | 'local-docker';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -399,6 +404,24 @@ const envSchema = z.object({
   E2B_API_KEY:                 optStr,
   E2B_TEMPLATE:                optStr,
 
+  // ── Local Docker — EXPERIMENTAL sandbox provider (same-machine only) ────
+  // Runs sandboxes as Docker containers on the SAME host as kortix-api, via
+  // the local Docker socket. No API key required — "configured" means the
+  // Docker daemon is reachable, checked lazily at first provider use (create/
+  // start/stop/status), never at boot (self-host must still start with no
+  // Docker access so the operator can reach the dashboard).
+  //   LOCAL_DOCKER_NETWORK     — Docker network every kortix-sb-* container
+  //     joins, so kortix-api can reach it by container DNS name
+  //     (http://kortix-sb-<id>:<port>). The self-host CLI points this at the
+  //     Compose project's own default network when local-docker is selected
+  //     (see kortix-compose.yml). Auto-created (idempotent) if missing, so a
+  //     bare `pnpm dev` / standalone use still works.
+  //   LOCAL_DOCKER_SOCKET_PATH — override for the Docker Engine unix socket.
+  //     Empty = dockerode's own default (respects DOCKER_HOST, else
+  //     /var/run/docker.sock).
+  LOCAL_DOCKER_NETWORK:        optStrDefault('kortix-local-docker'),
+  LOCAL_DOCKER_SOCKET_PATH:    optStr,
+
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
@@ -517,7 +540,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum', 'e2b'] as const;
+export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
 
 /** Parse comma-separated provider list (e.g. "daytona,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
@@ -814,6 +837,8 @@ export const config = {
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_TEMPLATE: env.E2B_TEMPLATE,
+  LOCAL_DOCKER_NETWORK: env.LOCAL_DOCKER_NETWORK,
+  LOCAL_DOCKER_SOCKET_PATH: env.LOCAL_DOCKER_SOCKET_PATH,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
@@ -927,6 +952,11 @@ export const config = {
       case 'daytona': return !!this.DAYTONA_API_KEY;
       case 'platinum': return !!this.PLATINUM_API_KEY;
       case 'e2b': return !!this.E2B_API_KEY;
+      // No API key: "enabled" means selected. Docker socket reachability is
+      // checked lazily at first real use (create/start/stop/status) — see
+      // platform/providers/local-docker.ts — never here, so an operator can
+      // still start the API/dashboard before Docker is wired up.
+      case 'local-docker': return true;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -950,6 +980,10 @@ export const config = {
 
   isPlatinumEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
+  },
+
+  isLocalDockerEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local-docker');
   },
 
   isE2BEnabled(): boolean {

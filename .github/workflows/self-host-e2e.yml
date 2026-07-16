@@ -103,11 +103,18 @@ jobs:
       - name: Build all self-host images
         run: bash scripts/build-local-images.sh --tag selfhost-local
       - name: Full self-host e2e (schema + session + update)
+        # Provider is EXPERIMENTAL local-docker (apps/api/src/platform/providers/
+        # local-docker.ts), hardcoded inside run.sh — no cloud sandbox creds
+        # needed, so this stays fully hermetic in CI. TAG selects the images
+        # built just above (kortix/kortix-{frontend,api,gateway}:selfhost-local);
+        # `kortix/kortix-sandbox` is NOT built/used here — local-docker's
+        # per-project snapshot builder produces its own image locally from
+        # `FROM ubuntu:24.04` + the Kortix runtime layer, identically to every
+        # other provider (see local-docker.ts's snapshot-adapter doc comment).
         run: bash tests/e2e/self-hosted-e2e.sh
         env:
-          FRONTEND_IMAGE: kortix/kortix-frontend:selfhost-local
-          API_IMAGE: kortix/kortix-api:selfhost-local
-          GATEWAY_IMAGE: kortix/kortix-gateway:selfhost-local
+          TAG: selfhost-local
+          KORTIX_LOCAL_IMAGES: 'true'
 
   # Tier 3 — opt-in live checks: tests/self-host-e2e/live/**. Each script
   # no-ops unless RUN_SELFHOST_LIVE=1 (belt-and-suspenders with the `if:`
