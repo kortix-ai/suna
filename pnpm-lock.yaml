@@ -1442,6 +1442,9 @@ importers:
 
   packages/manifest-schema:
     dependencies:
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../shared
       smol-toml:
         specifier: ^1.4.2
         version: 1.7.0

@@ -8,6 +8,8 @@
  * compatibility with existing consumers of `@kortix/manifest-schema`.
  */
 
+import { HARNESS_IDS } from '@kortix/shared';
+
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
@@ -18,8 +20,12 @@ export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
-/** ACP harnesses supported by the Kortix v3 runtime orchestrator. */
-export const V3_HARNESS_VALUES = ['claude', 'codex', 'opencode', 'pi'] as const;
+/**
+ * ACP harnesses supported by the Kortix v3 runtime orchestrator. Derived from
+ * the canonical `@kortix/shared` descriptor (`packages/shared/src/harnesses.ts`)
+ * so this package never redeclares the harness tuple.
+ */
+export const V3_HARNESS_VALUES = [...HARNESS_IDS] as const;
 // Providers a kortix.yaml may declare. `channel` is included because the
 // platform itself writes a `connectors:` entry with `provider: channel` into the
 // manifest when a Slack/email channel is connected (see executor/channel-manifest.ts), so

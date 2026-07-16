@@ -14,6 +14,7 @@
     "generate:schema": "bun run scripts/generate-schema.ts"
   },
   "dependencies": {
+    "@kortix/shared": "workspace:*",
     "smol-toml": "^1.4.2",
     "yaml": "^2.8.2"
   },

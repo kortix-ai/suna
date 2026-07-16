@@ -7,11 +7,14 @@
  * one harness's behavior format into another.
  */
 
+import type { HarnessId } from '@kortix/shared';
 import { SLUG_RE, V3_HARNESS_VALUES, WORKSPACE_MODES_V2 } from './constants';
 import { isTable, type ManifestIssue, validateGrantList } from './index';
 import type { GrantSetV2, WorkspaceModeV2 } from './index.v2';
 
-export type HarnessV3 = (typeof V3_HARNESS_VALUES)[number];
+/** Alias of the canonical `@kortix/shared` harness id — kept as a distinct
+ * name here since v3 manifest types reference `HarnessV3` throughout. */
+export type HarnessV3 = HarnessId;
 
 export interface RuntimeBlockV3 {
   harness: HarnessV3;
