@@ -7,6 +7,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `clearOpenPrompts` (`@kortix/sdk/acp`) — supersedes every open ACP prompt in
+  reducer state the same way a `session/cancel` would, without touching
+  `envelopes`/`chatItems`/`dedupeKeys`. Backs `AcpSession`'s persisted-busy
+  reload-recovery wedge guard; additive export.
+- `packages/sdk/src/acp/README.md` — the ACP protocol/transport reference:
+  the 3-identity model, the session-scoped transport and daemon bridge
+  contract, the shared `sse-core.ts` SSE parser and its three consumers, the
+  durable envelope-log laws (including the honest DISC-05 open exception),
+  the `AcpSession` store, and the OpenCode-wire deprecation pointer.
 - Project branch responses now expose the current caller's effective session
   base ref (project or group default), and group-grant mutations can set or
   clear an optional `default_base_ref`. Existing fields and call signatures
@@ -42,6 +51,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `/session`, the stores, …). They still work. Import from the root.
 - The daemon-project `KortixProject` alias — renamed to `KortixMasterProject`.
   The platform's `KortixProject` (from the root) is unchanged and keeps its name.
+- The OpenCode-wire projection stack (`transcript.ts`'s `formatTranscript` /
+  `TranscriptOptions` / `SessionInfo` / `MessageWithParts` /
+  `DEFAULT_TRANSCRIPT_OPTIONS`; `core/turns/classify.ts`'s `classifyPart` /
+  `classifyTurn`; `core/turns/view-model.ts`'s `toolViewModel`;
+  `core/turns/tool-registry.ts`'s `toolInfo`; `react/chat/use-chat-turns.ts`'s
+  `useChatTurns` / `TurnView`) — superseded by the ACP projection layer
+  (`acpTranscriptMarkdown`/`acpTranscriptHtml`/`projectAcpChatItems`). JSDoc
+  tags only; every export keeps working (`apps/mobile`'s transcript export and
+  `?oc` session-list deep-links still depend on it directly). A golden
+  parity harness (`core/turns/__fixtures__/opencode-wire-mixed.json` + three
+  captured golden outputs, asserted by `transcript.golden.test.ts`) now pins
+  current output so a future removal has a contract to satisfy or explicitly
+  break against. Removal itself is deferred to a future cycle.
 
 ### Fixed
 
@@ -51,6 +73,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `502`/`503`/`504` responses on idempotent reads (`GET`/`HEAD`) up to two times
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
+- The cloud API's ACP SSE proxy (`apps/api/src/projects/lib/acp-sse-proxy.ts`)
+  and the headless ACP engine
+  (`apps/api/src/projects/session-lifecycle/headless-acp.ts`) now both consume
+  the SDK's shared `sse-core.ts` block parser instead of their own hand-rolled
+  parsing, fixing two latent defects the consolidation surfaced: the proxy
+  could silently drop or misparse a block whose `\r\n\r\n` terminator split
+  across a chunk boundary (no CRLF holdback), and the headless engine could
+  kill an entire prompt/response cycle on a single malformed SSE payload (no
+  poison-event tolerance).
 
 ### Removed
 
@@ -61,6 +92,30 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Internal
 
+- `acp/sse-core.ts` extracted from `AcpClient`'s previously module-private
+  `consumeSse` (`createSseBlockParser`, `isDeliverableSseBlock`,
+  `isAcpResponseEnvelope`) — behavior-preserving, parity-pinned before and
+  after extraction. Now the one SSE block parser shared by the SDK client,
+  the cloud API's SSE proxy, and the headless ACP engine (previously each
+  maintained its own copy). Additive runtime/type exports.
+- `AcpSession` (`acp/session.ts`) recovers from a reload mid-turn:
+  bootstrap-from-history already surfaced a persisted, unanswered
+  `session/prompt` as `turnState.busy`; a new signal-based wedge guard
+  (`clearStalePersistedBusy`, triggered by a terminal bootstrap failure or
+  the live stream reaching connection state `'failed'` — never a wall-clock
+  timeout) now clears that stale busy state when the turn is provably dead,
+  instead of leaving it wedged indefinitely. A harness that dies without
+  either signal ever surfacing is a stated residual case, not silently
+  covered — `send()`/`cancel()` already supersede persisted-only busy
+  regardless.
+- Bounded history/dedupe growth: `AcpSession`'s internal `historyOrdinals`
+  (an unbounded per-row `Set<number>`) is now a single
+  `historyHighWaterMark` scalar, sound because transcript ordinals are a
+  strictly-increasing identity column and history is always replayed from
+  the full transcript. The reducer's `dedupeKeys` (a public-function-facing
+  structure) instead uses a bounded 256-entry recency window, since an
+  external caller can feed it out-of-order rows a bare high-water mark could
+  misclassify.
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.
 - A bare-global tripwire (`process`/`window`/`document`/`localStorage`/
