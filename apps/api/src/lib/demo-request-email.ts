@@ -4,6 +4,7 @@
 // from `config` (fed by AWS Secrets Manager in prod) — mirrors the account
 // invite transport in ../accounts/email.ts. If MAILTRAP_API_TOKEN is not set the
 // send is skipped gracefully so lead capture never fails on account of email.
+import { emailDomain, isWorkEmail } from '../accounts/personal-email';
 import { config } from '../config';
 
 const MAILTRAP_SEND_URL = 'https://send.api.mailtrap.io/api/send';
@@ -46,6 +47,10 @@ function row(label: string, value: string | undefined | null): string {
 
 function renderHtml(lead: DemoRequestLead): string {
   const qualified = lead.qualified ? 'Yes — routed to Cal booking' : 'No — request received';
+  const domain = emailDomain(lead.email);
+  const domainKind = domain
+    ? `${domain} (${isWorkEmail(lead.email) ? 'business' : 'personal'})`
+    : null;
   return `<!DOCTYPE html>
 <html>
   <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
@@ -63,6 +68,7 @@ function renderHtml(lead: DemoRequestLead): string {
             <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;">
               ${row('Name', lead.name)}
               ${row('Email', lead.email)}
+              ${row('Domain', domainKind)}
               ${row('Company', lead.company_name)}
               ${row('Company size', lead.company_size)}
               ${row('Goal', lead.goal)}
@@ -82,8 +88,9 @@ function renderHtml(lead: DemoRequestLead): string {
 
 /**
  * Send the internal "new demo request" notification. Never throws — returns a
- * result the caller can log. Recipient defaults to config.DEMO_LEAD_NOTIFY_EMAIL
- * (marko@kortix.ai).
+ * result the caller can log. Recipients come from config.DEMO_LEAD_NOTIFY_EMAIL,
+ * a comma-separated list (default marko@kortix.ai,hey@kortix.ai) — every
+ * address gets every submission.
  */
 export async function sendDemoRequestNotification(
   lead: DemoRequestLead,
@@ -92,7 +99,10 @@ export async function sendDemoRequestNotification(
     return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };
   }
 
-  const to = config.DEMO_LEAD_NOTIFY_EMAIL || 'marko@kortix.ai';
+  const recipients = (config.DEMO_LEAD_NOTIFY_EMAIL || 'marko@kortix.ai,hey@kortix.ai')
+    .split(',')
+    .map((address) => address.trim())
+    .filter(Boolean);
   const who = lead.company_name?.trim() || lead.name?.trim() || lead.email;
 
   try {
@@ -103,8 +113,11 @@ export async function sendDemoRequestNotification(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: { email: config.MAILTRAP_FROM_EMAIL, name: config.MAILTRAP_FROM_NAME },
-        to: [{ email: to }],
+        from: {
+          email: config.DEMO_LEAD_FROM_EMAIL || config.MAILTRAP_FROM_EMAIL,
+          name: config.MAILTRAP_FROM_NAME,
+        },
+        to: recipients.map((address) => ({ email: address })),
         subject: `New demo request — ${who}`,
         html: renderHtml(lead),
         category: 'demo-request',

@@ -18,7 +18,6 @@ import {
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
-import { bootstrapPersonalAccount } from './bootstrap-personal-account';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
