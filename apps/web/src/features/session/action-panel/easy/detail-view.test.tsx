@@ -65,7 +65,7 @@ describe('DetailSidebarToggle (F3v2)', () => {
     }
   });
 
-  test('with a provider, fullscreen + docked sidebar collapses instead of opening', () => {
+  test('with a provider, fullscreen + docked sidebar renders NOTHING — the sidebar carries its own collapse control', () => {
     useKortixComputerStore.setState({ isExpanded: true });
     try {
       const html = renderToStaticMarkup(
@@ -73,7 +73,10 @@ describe('DetailSidebarToggle (F3v2)', () => {
           <DetailSidebarToggle />
         </SidebarProvider>,
       );
-      expect(html).toContain('aria-label="Collapse sidebar"');
+      // The provider renders its own wrapper div — the toggle contributes no
+      // button and no label to it.
+      expect(html).not.toContain('<button');
+      expect(html).not.toContain('aria-label');
     } finally {
       useKortixComputerStore.setState({ isExpanded: false });
     }

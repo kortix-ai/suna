@@ -87,8 +87,13 @@ export function DetailSidebarToggle({ className }: { className?: string }) {
   if (!panelFullscreen || isMobile || !sidebar) return null;
 
   const { state, toggleSidebar, peek, peekEnter, peekLeave } = sidebar;
-  const open = state === 'expanded';
-  const label = peek ? 'Pin sidebar' : open ? 'Collapse sidebar' : 'Open sidebar';
+  // Owner direction (supersedes the show-in-every-state round): the docked
+  // sidebar carries its own collapse control in its header, so a second one
+  // inside the detail would be a duplicate — the in-detail toggle exists only
+  // to REOPEN a collapsed sidebar the fullscreen detail is painting over.
+  if (state === 'expanded') return null;
+
+  const label = peek ? 'Pin sidebar' : 'Open sidebar';
 
   return (
     <Hint label={label} side="bottom">
@@ -96,11 +101,8 @@ export function DetailSidebarToggle({ className }: { className?: string }) {
         type="button"
         aria-label={label}
         onClick={toggleSidebar}
-        // Hover-peek only means anything while collapsed — docked open has
-        // nothing to peek, so these are gated instead of firing (and arming
-        // a pointless timer) on every hover.
-        onPointerEnter={open ? undefined : peekEnter}
-        onPointerLeave={open ? undefined : peekLeave}
+        onPointerEnter={peekEnter}
+        onPointerLeave={peekLeave}
         variant="ghost"
         size="icon"
         className={cn(
