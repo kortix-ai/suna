@@ -1,5 +1,14 @@
 # Kortix Enterprise Appliance — single-EC2, 100% Docker
 
+> **Superseded by the generic self-host refactor.** The signed TUF `stable`
+> channel, AWS Terraform (`--target aws-vpc`), and the on-box systemd updater
+> binary described below were all removed. `kortix self-host` is now ONE
+> generic Docker Compose system — no target flag, no Terraform, no TUF/signing,
+> no SSM — identical on a laptop, any VPS, or a cloud VM. Read
+> `docs/runbooks/self-hosting.md` for current operations and
+> `apps/web/content/docs/reference/self-hosting-architecture.mdx` for the
+> current architecture. Kept as design history.
+
 Date: 2026-07-14. Status: EXECUTING. Supersedes the ECS runtime half of
 `docs/specs/2026-07-14-enterprise-ecs-simplification.md` (merged PR #4689,
 dff20292d). Everything release-side from that spec stands unchanged: TUF

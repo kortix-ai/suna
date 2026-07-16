@@ -502,3 +502,28 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// GET /v1/projects/managed-git/status — lets the create-project UI pre-check
+// whether the managed-git ("Create project") path is usable before hitting
+// the 503, so it can disable/annotate that option gracefully instead of
+// surfacing a raw server error (self-host with no MANAGED_GIT_* configured is
+// the primary case this exists for).
+describe('GET /v1/projects/managed-git/status', () => {
+  beforeEach(() => {
+    setTestAuth();
+    backendConfigured = true;
+  });
+
+  test('reports configured: true when the managed backend is configured', async () => {
+    const res = await createApp().request('/v1/projects/managed-git/status');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: true, provider: 'github' });
+  });
+
+  test('reports configured: false when the managed backend is not configured', async () => {
+    backendConfigured = false;
+    const res = await createApp().request('/v1/projects/managed-git/status');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, provider: 'github' });
+  });
+});

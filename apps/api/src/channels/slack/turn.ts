@@ -4,6 +4,7 @@ import { db } from '../../shared/db';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
+import { markdownToMrkdwn, mrkdwnToRichTextElements } from './mrkdwn';
 import { loadSlackTokenForProject } from '../install-store';
 import {
   addReaction,
@@ -406,16 +407,19 @@ function buildPlanTasks(steps: StreamTaskChunk[]): Array<Record<string, unknown>
       title: s.title,
       status: s.status,
     };
+    // details/output are mrkdwn strings (the skill instructs `<url|label>`), but
+    // chat.update rich_text renders plain text elements literally — tokenize
+    // into real link/bold/code elements so repaints don't show raw syntax.
     if (s.details) {
       task.details = {
         type: 'rich_text',
-        elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: s.details }] }],
+        elements: [{ type: 'rich_text_section', elements: mrkdwnToRichTextElements(s.details) }],
       };
     }
     if (s.output) {
       task.output = {
         type: 'rich_text',
-        elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: s.output }] }],
+        elements: [{ type: 'rich_text_section', elements: mrkdwnToRichTextElements(s.output) }],
       };
     }
     if (s.sources && s.sources.length > 0) task.sources = s.sources;
@@ -493,7 +497,7 @@ export async function relayTurnStep(
       title: title.slice(0, 200),
       status: 'in_progress',
     };
-    if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
+    if (opts.detail) firstStep.details = markdownToMrkdwn(opts.detail).slice(0, 500);
     const opened = await openPlanMessage(handle, firstStep);
     if (!opened) return false;
     handle.expiry = Date.now() + STREAM_TTL_MS;
@@ -506,7 +510,7 @@ export async function relayTurnStep(
   const last = handle.steps[handle.steps.length - 1];
   if (last && last.status === 'in_progress') {
     last.status = 'complete';
-    if (opts.outputForPrev) last.output = opts.outputForPrev.slice(0, 500);
+    if (opts.outputForPrev) last.output = markdownToMrkdwn(opts.outputForPrev).slice(0, 500);
     if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
       last.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
         type: 'url',
@@ -521,7 +525,7 @@ export async function relayTurnStep(
     title: title.slice(0, 200),
     status: 'in_progress',
   };
-  if (opts.detail) next.details = opts.detail.slice(0, 500);
+  if (opts.detail) next.details = markdownToMrkdwn(opts.detail).slice(0, 500);
   handle.steps.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
   await repaintLivePlan(handle);
@@ -539,7 +543,7 @@ export async function relayTurnAnswer(
   // Win the finalize race against a late session.idle/error relay (or a duplicate
   // send) so the turn is closed exactly once.
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(handle, { answer: text, blocks });
+  await finalizeTurn(handle, { answer: markdownToMrkdwn(text), blocks });
   await deleteTurn(sessionId);
   return true;
 }

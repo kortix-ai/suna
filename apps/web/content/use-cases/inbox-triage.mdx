@@ -7,6 +7,7 @@ tags:
   - Support
   - Case Study
   - SMB
+template: inbox-triage
 ---
 
 A shared inbox is where a small team's requests pile up: support questions,
@@ -46,11 +47,6 @@ inbound email spawns its own isolated session — a cloud sandbox — with scope
 access to what triage needs: the message, our help doc, and Linear. It reads the
 email, applies a label, and then either drafts a reply in Gmail or files a task
 in Linear. Anything customer-facing waits for a person before it sends.
-
-<Figure
-  caption="The inbox agent labelling a thread and drafting a reply"
-  aspect="16/9"
-/>
 
 ## How it works
 
@@ -124,11 +120,6 @@ convenience one. The relevant controls on Kortix:
 - **Everything is code.** The agent's persona, skills, and permissions are files
   in the repo — versioned and changed through a reviewed **change request**, not a
   dashboard setting.
-
-<Figure
-  caption="A drafted reply held at a human approval gate before it sends"
-  aspect="16/9"
-/>
 
 ## The outcome
 

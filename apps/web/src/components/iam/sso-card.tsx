@@ -411,7 +411,9 @@ function EditProviderDialog({
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
-  const [autoProvision, setAutoProvision] = useState(existing?.auto_provision_groups ?? false);
+  // New connections default auto-provision ON (groups appear without
+  // hand-mapping); an existing provider keeps whatever the admin chose.
+  const [autoProvision, setAutoProvision] = useState(existing ? existing.auto_provision_groups : true);
   // New providers register by importing the IdP metadata (XML or URL) — the
   // backend handles the identity-provider registration; no internals surface in
   // the UI. Edits reuse the stored provider id under the hood.
@@ -426,7 +428,7 @@ function EditProviderDialog({
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
-      setAutoProvision(existing?.auto_provision_groups ?? false);
+      setAutoProvision(existing ? existing.auto_provision_groups : true);
       setMetaKind('xml');
       setMetaXml('');
       setMetaUrl('');

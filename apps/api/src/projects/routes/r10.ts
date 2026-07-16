@@ -15,6 +15,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { getCatalogEntry } from '../../marketplace/catalog';
+import { buildTemplateInstallPrompt } from './marketplace-install-prompts';
 import { auth, errors, json } from '../../openapi';
 import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
@@ -146,11 +147,15 @@ async function handleMarketplaceInstallSession(c: any) {
   let prompt: string;
   try {
     // Whole projects get merged (judgment-heavy, guards the target's kortix.yaml);
-    // everything else is a straight install + setup.
-    prompt =
-      entry.item.type === 'registry:project'
-        ? buildRegistryProjectInstallPrompt(entry, await manifestRawOrNull(project))
-        : buildItemInstallPrompt(entry, id);
+    // a use-case template renders inputs + wires its scheduled trigger; everything
+    // else is a straight install + setup.
+    if (entry.item.type === 'registry:project') {
+      prompt = buildRegistryProjectInstallPrompt(entry, await manifestRawOrNull(project));
+    } else if (entry.item.type === 'registry:template') {
+      prompt = buildTemplateInstallPrompt(entry, id);
+    } else {
+      prompt = buildItemInstallPrompt(entry, id);
+    }
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }

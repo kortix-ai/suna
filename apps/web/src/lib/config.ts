@@ -79,4 +79,32 @@ export const isBillingEnabled = (): boolean => {
   return getEnv().BILLING_ENABLED;
 };
 
+/**
+ * Whether Kortix's own managed model lineup ("Managed · Included with your
+ * plan" — Claude/GLM/Qwen/DeepSeek/… routed through Kortix's shared Bedrock/
+ * OpenRouter credentials) can appear anywhere in the UI. CLOUD-ONLY: mirrors
+ * the backend's KORTIX_MANAGED_PROVIDER_ENABLED, which already keeps managed
+ * models out of the served model catalog when off. Use this for a surface
+ * that reasons about "is `kortix` connected" independently of the live
+ * catalog (so it hides the managed entry outright instead of rendering it
+ * with zero models) — most surfaces need no extra check since the catalog
+ * itself is already empty of managed models on a self-host.
+ */
+export const isManagedProviderEnabled = (): boolean => {
+  return getEnv().MANAGED_PROVIDER_ENABLED;
+};
+
+/**
+ * Whether Pipedream-backed connector UI (the "Connect your tools" onboarding
+ * step, the "Easy connect" app catalogue) is enabled. Cloud always has
+ * Pipedream configured (defaults true); self-host without PIPEDREAM_client
+ * credentials set should flip NEXT_PUBLIC_CONNECTORS_ENABLED to 'false' so
+ * those surfaces don't dead-end in a 501. Custom connectors (OpenAPI/
+ * GraphQL/MCP/HTTP) and Slack/email channels are unaffected — they don't
+ * depend on Pipedream.
+ */
+export const isConnectorsEnabled = (): boolean => {
+  return getEnv().CONNECTORS_ENABLED;
+};
+
 import { getEnv } from '@/lib/env-config';

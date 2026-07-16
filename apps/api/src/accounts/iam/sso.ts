@@ -22,7 +22,11 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
-import { registerSupabaseSamlProvider, syncSupabaseSamlAttributeMapping } from './sso-provisioning';
+import {
+  deleteSupabaseSamlProvider,
+  registerSupabaseSamlProvider,
+  syncSupabaseSamlAttributeMapping,
+} from './sso-provisioning';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -309,6 +313,19 @@ iamRouter.openapi(
   const before = await getSsoProvider(accountId);
   const ok = await deleteSsoProvider(accountId);
   if (!ok) return c.json({ error: 'no SSO provider configured' }, 404);
+
+  // Unregister the provider in Supabase too — that's what frees the email
+  // domain so the admin can re-import it later. Best-effort: the Kortix row is
+  // already gone and disconnect must never fail, so a Supabase hiccup is logged
+  // (leaving a reclaimable orphan) rather than surfaced. A 404 counts as ok.
+  if (before?.supabaseSsoProviderId) {
+    const unregistered = await deleteSupabaseSamlProvider(before.supabaseSsoProviderId);
+    if (!unregistered.ok) {
+      console.warn(
+        `[sso] Supabase provider deletion failed for account ${accountId}: ${unregistered.error}`,
+      );
+    }
+  }
 
   await auditIam(c, {
     accountId,

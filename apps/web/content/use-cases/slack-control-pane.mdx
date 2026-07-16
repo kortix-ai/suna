@@ -7,6 +7,7 @@ tags:
   - Operations
   - Case Study
   - Enterprise
+template: slack-control-pane
 ---
 
 Operations work usually spans several platforms: the database, Stripe, the
@@ -47,11 +48,6 @@ Our Slack is wired to an agent with scoped access to every connected system. You
 isolated session, a cloud sandbox, with scoped access to the platforms we've
 connected, works out the steps, runs them, and replies in the thread as it goes.
 Adding a capability means connecting one more platform.
-
-<Figure
-  caption="Asking the agent to invite an engineer to Linear"
-  src="/usecases/slack/operation_1.JPEG"
-/>
 
 ## How it works
 
@@ -130,10 +126,6 @@ a security question. The controls that make it workable:
 - **Everything is code.** The agent's persona, skills, and per-platform
   permissions are files in the repo, versioned and changed through a reviewed
   **change request** rather than a dashboard setting.
-
-<Figure
-  src="/usecases/slack/operation_2.JPEG"
-/>
 
 ## The outcome
 

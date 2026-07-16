@@ -30,7 +30,7 @@ import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
-import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { createClient as createBrowserSupabaseClient, fetchSamlEnabled } from '@/lib/supabase/client';
 import {
   signIn as signInWithMagicLink,
   signInWithPassword,
@@ -159,6 +159,21 @@ function AuthCardForm({
   }, []);
   const googleEnabled = enabledProviders.includes('google');
 
+  // Only probe SSO when the Supabase instance actually has SAML enabled. A fresh
+  // self-hosted deployment has it off, so probing every work-email Continue would
+  // just surface a scary `saml_provider_disabled` 404. Gate on the live setting so
+  // SSO stays an opt-in path that lights up once an operator configures a provider.
+  const [samlEnabled, setSamlEnabled] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void fetchSamlEnabled().then((enabled) => {
+      if (active) setSamlEnabled(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const clearNotices = () => {
     setErrorMessage(null);
     setInfo(null);
@@ -278,7 +293,7 @@ function AuthCardForm({
     // routing with the email flow as the always-present fallback.
     try {
       const domain = emailDomain(trimmed);
-      if (domain && isWorkEmail(trimmed)) {
+      if (samlEnabled && domain && isWorkEmail(trimmed)) {
         try {
           const supabase = createBrowserSupabaseClient();
           const callbackParams = new URLSearchParams();

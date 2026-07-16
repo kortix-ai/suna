@@ -3,6 +3,12 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 let billingEnabled = true;
 let accountTier = 'free';
 let accountTierCalls = 0;
+// Defaults true here (cloud-shaped fixture): the real gate is covered by the
+// managed-provider-disabled test suite (llm-gateway/models/managed-provider-disabled.test.ts),
+// which imports the REAL (unmocked) descriptors.ts against the flag OFF. This
+// file mocks descriptors.ts entirely (below), so this toggle only exercises
+// resolveCandidates' OWN inline gate.
+let managedProviderEnabled = true;
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -14,6 +20,7 @@ mock.module('../config', () => ({
       get: (target: Record<PropertyKey, unknown>, key) => {
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
+        if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return managedProviderEnabled;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
@@ -111,6 +118,7 @@ describe('resolveCandidates free-tier premium gate', () => {
     billingEnabled = true;
     accountTier = 'free';
     accountTierCalls = 0;
+    managedProviderEnabled = true;
   });
 
   test('blocks managed premium candidates for free accounts', async () => {
@@ -177,11 +185,33 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(0);
   });
 
-  test('keeps managed candidates available when internal billing is disabled', async () => {
+  test('keeps managed candidates available when internal billing is disabled AND the managed provider is explicitly on', async () => {
     billingEnabled = false;
     accountTier = 'free';
+    managedProviderEnabled = true;
     const candidates = await resolveCandidates(principal('self-host-managed'), 'claude-sonnet-4.6');
     expect(candidates).toHaveLength(1);
     expect(accountTierCalls).toBe(0);
+  });
+
+  test('CLOUD-ONLY gate: blocks an explicitly-named managed model when KORTIX_MANAGED_PROVIDER_ENABLED is off, even for a paid tier', async () => {
+    managedProviderEnabled = false;
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(
+      principal('self-host-flag-off'),
+      'claude-sonnet-4.6',
+    );
+    expect(candidates).toEqual([]);
+  });
+
+  test('CLOUD-ONLY gate: a self-host BYOK request gets no managed fallback candidate appended when the flag is off', async () => {
+    managedProviderEnabled = false;
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(
+      principal('self-host-byok-flag-off'),
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.billingMode).toBe('platform-fee');
   });
 });

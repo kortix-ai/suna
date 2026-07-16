@@ -18,6 +18,9 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     // build externally-reachable webhook URLs instead of the localhost BACKEND_URL.
     WEBHOOK_BASE_URL: read('WEBHOOK_BASE_URL') || process.env.KORTIX_URL,
     BILLING_ENABLED: read('BILLING_ENABLED') === 'true',
+    MANAGED_PROVIDER_ENABLED: read('MANAGED_PROVIDER_ENABLED') === 'true',
+    CONNECTORS_ENABLED: read('CONNECTORS_ENABLED') !== 'false',
+    DISABLE_LANDING_PAGE: read('DISABLE_LANDING_PAGE') === 'true',
     APP_URL: read('APP_URL') || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
     SANDBOX_ID: read('SANDBOX_ID') || undefined,
     AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,

@@ -91,6 +91,8 @@ PY
 ok "instance $INSTANCE (api port $API_PORT)"
 
 section "CLI Self-host Setup"
+# `init` never blocks on a missing required secret (it warns and proceeds);
+# this schema-only gate supplies dummy creds via `env set` immediately below.
 $CLI self-host init --instance "$INSTANCE" >/dev/null
 # Schema-only gate: this never provisions a sandbox. `self-host init` defaults
 # the provider to daytona, which makes env-validation require Daytona creds, so

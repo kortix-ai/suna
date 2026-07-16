@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
+import kortixCaddyfile from './assets/Caddyfile.txt' with { type: 'text' };
+import kortixUpdaterScript from './assets/updater.sh' with { type: 'text' };
 import upstreamSupabaseCompose from './assets/supabase/docker-compose.yml' with { type: 'text' };
 import upstreamSupabaseLogsCompose from './assets/supabase/docker-compose.logs.yml' with { type: 'text' };
 import supabaseImageLockText from './assets/supabase/image-lock.json' with { type: 'text' };
@@ -75,12 +77,72 @@ export const officialSupabaseDockerAssets: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The Caddyfile + updater script mounted into their respective services.
+ * These are plain runtime assets (no secrets) written next to the compose
+ * file and .env, same as the Supabase vendor assets.
+ */
+export const kortixRuntimeAssets: Readonly<Record<string, string>> = {
+  Caddyfile: kortixCaddyfile,
+  'updater.sh': kortixUpdaterScript,
+};
+
+export function writeKortixRuntimeAssets(root: string): void {
+  writeAssets(root, kortixRuntimeAssets);
+}
+
+export interface RenderComposeOptions {
+  /**
+   * Whether KORTIX_DOMAIN (and KORTIX_API_DOMAIN) are configured. When true,
+   * the `caddy` reverse-proxy/TLS service is included. When false (the
+   * laptop/loopback-port default), it is omitted entirely — not merely
+   * disabled — so a domain-less instance never binds 80/443.
+   */
+  domainConfigured?: boolean;
+  /**
+   * Whether "tunnel" reachability mode is selected (see reachabilityMode() in
+   * self-host/tunnel.ts). When true, the `cloudflared` service is included so
+   * cloud (Daytona) sandboxes can call back to this instance with no public
+   * domain/DNS at all. When false, it is omitted entirely — not merely
+   * disabled — so an instance not using it never runs the container.
+   */
+  tunnelConfigured?: boolean;
+  /**
+   * Whether a STABLE named Cloudflare tunnel is configured (both
+   * CLOUDFLARE_TUNNEL_TOKEN and CLOUDFLARE_TUNNEL_HOSTNAME set — see
+   * namedTunnelConfigured() in self-host/tunnel.ts). Only meaningful when
+   * tunnelConfigured is also true. Selects the cloudflared service's
+   * command/environment at COMPOSE-RENDER time (`tunnel run` + TUNNEL_TOKEN
+   * env var vs. the zero-config `tunnel --url` default already baked into
+   * kortix-compose.yml) — this can't be a runtime shell branch inside the
+   * container because the official cloudflared image ships no shell at all.
+   */
+  namedTunnelConfigured?: boolean;
+}
+
+/**
+ * The stateless app-tier services the auto-updater rolls start-first. Kept in
+ * one place so the replica/port topology below and updater.sh agree on the
+ * exact same service set.
+ */
+export const ROLLING_APP_SERVICES = ['kortix-api', 'llm-gateway', 'frontend'] as const;
+
+/**
+ * Replica count for each rolling service per topology. Exported so the CLI's
+ * env writer (commands/self-host.ts) can set the exact same number into
+ * KORTIX_APP_REPLICAS — the single source of truth the auto-updater reads to
+ * know its start-first rollout target, instead of re-deriving prod-vs-laptop
+ * topology itself.
+ */
+export const PROD_APP_REPLICAS = 2;
+export const LAPTOP_APP_REPLICAS = 1;
+
+/**
  * Compose the pinned official Supabase Docker distribution with the Kortix
  * application services. The upstream service definitions and image pins stay
  * intact; we only remove globally-conflicting container names, add legacy
  * Kortix service names, and restrict every published port to loopback.
  */
-export function renderFullDockerCompose(composeProject: string): string {
+export function renderFullDockerCompose(composeProject: string, options: RenderComposeOptions = {}): string {
   const base = parse(
     officialSupabaseDockerAssets['docker-compose.yml']!.replaceAll('${POSTGRES_PORT}', '${SUPABASE_POSTGRES_INTERNAL_PORT}'),
   ) as YamlRecord;
@@ -138,11 +200,64 @@ export function renderFullDockerCompose(composeProject: string): string {
       '127.0.0.1:${POSTGRES_PORT}:5432',
       '127.0.0.1:${POOLER_PORT}:6543',
     ];
+    // supavisor's entrypoint (limits.sh) unconditionally runs `ulimit -n 100000`
+    // before starting. Containers with no explicit `ulimits:` inherit the
+    // HOST's default open-files limit (systemd DefaultLimitNOFILE, or
+    // /etc/security/limits.conf) rather than something generously high — on
+    // plenty of real VPS/EC2 images that default is well under 100000 (e.g.
+    // 65535), `ulimit -n 100000` then fails with EPERM, and (the script running
+    // under `set -e`) the container exits 1 and restart-loops forever, so
+    // Postgres access via the pooler never comes up. Pin it explicitly so this
+    // doesn't depend on host ulimit defaults. Matches the old enterprise
+    // appliance's docker-compose.enterprise.yml override for this service.
+    supavisor.ulimits = {
+      nofile: {
+        soft: 100000,
+        hard: 100000,
+      },
+    };
   }
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {
     services[name] = rawService as YamlRecord;
   }
+
+  // The Caddy reverse-proxy/TLS service is opt-in: it only makes sense (and
+  // only binds 80/443) when a public domain is configured. Omit it entirely —
+  // rather than just leaving it stopped — so a domain-less laptop/VPS
+  // instance never even has the option of a port clash on 80/443.
+  if (!options.domainConfigured) {
+    delete services.caddy;
+  }
+
+  // The Cloudflare tunnel service is likewise opt-in: only present when
+  // tunnel reachability mode is selected. Omitted entirely (not just
+  // stopped) otherwise, so an instance not using it never even pulls the
+  // cloudflared image.
+  if (!options.tunnelConfigured) {
+    delete services.cloudflared;
+  } else if (options.namedTunnelConfigured) {
+    // Stable named tunnel: authenticate with TUNNEL_TOKEN (cloudflared reads
+    // it natively — no CLI flag/shell needed) and run the tunnel bound to
+    // that token instead of minting a new zero-config quick tunnel.
+    const cloudflared = services.cloudflared;
+    if (cloudflared) {
+      cloudflared.command = ['tunnel', '--no-autoupdate', 'run'];
+      cloudflared.environment = { TUNNEL_TOKEN: '${CLOUDFLARE_TUNNEL_TOKEN}' };
+    }
+  }
+
+  // Prod (domain-configured) vs laptop replica/port topology. In prod mode
+  // Caddy is the single edge and reaches every app-tier service by Docker DNS
+  // (see assets/Caddyfile.txt's `dynamic a` upstreams), so the app services run
+  // 2 replicas each with NO host-port publishing — publishing a static host
+  // port would collide the moment a second replica starts. In laptop mode
+  // there is no edge/LB and no need for zero-downtime rollouts, so each
+  // service stays a single replica on its existing loopback host port. The
+  // in-compose auto-updater (updater.sh) reads this same signal back out of
+  // .env via KORTIX_APP_REPLICAS so its start-first rollout targets the right
+  // replica count without re-deriving it from the compose file at runtime.
+  applyReplicaTopology(services, Boolean(options.domainConfigured));
 
   const document: YamlRecord = {
     services,
@@ -182,6 +297,23 @@ function writeSupabaseDataDirectories(root: string): void {
   mkdirSync(join(root, 'volumes', 'db', 'data'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'storage'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'snippets'), { recursive: true, mode: 0o700 });
+}
+
+/**
+ * Apply the prod-vs-laptop replica/port topology to the stateless app-tier
+ * services (see ROLLING_APP_SERVICES). Prod mode: `deploy.replicas: 2`, no
+ * `ports` (Caddy is the only thing that ever needs to reach them, over the
+ * Compose network by service name). Laptop mode: single replica, existing
+ * loopback `ports` mapping left untouched.
+ */
+function applyReplicaTopology(services: Record<string, YamlRecord>, domainConfigured: boolean): void {
+  const replicas = domainConfigured ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS;
+  for (const name of ROLLING_APP_SERVICES) {
+    const service = services[name];
+    if (!service) continue;
+    if (domainConfigured) delete service.ports;
+    service.deploy = { replicas };
+  }
 }
 
 function renameDependencies(value: unknown): unknown {

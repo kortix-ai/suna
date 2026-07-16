@@ -64,23 +64,23 @@ test('session(...).audit hits the audit endpoint with the given limit', async ()
 
 test('project(id).access.invite forwards a time-bound expiry to the backend', async () => {
   const expiry = '2027-01-01T00:00:00.000Z';
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', expiry);
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member', expiry);
   expect(last().url).toContain('/projects/PID123/access/invite');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({
-    email: 'teammate@essentia.com',
+    email: 'teammate@acme.com',
     role: 'member',
     expires_at: expiry,
   });
 });
 
 test('project(id).access.invite omits expires_at for a permanent grant', async () => {
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member');
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member');
   expect(last().body).not.toHaveProperty('expires_at');
 });
 
 test('project(id).access.invite sends expires_at:null to clear a bound', async () => {
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', null);
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member', null);
   expect(last().body).toMatchObject({ expires_at: null });
 });
 

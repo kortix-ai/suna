@@ -1,20 +1,49 @@
-name: Self-host E2E (full, nightly)
+name: Self-host E2E (fast always, full + live opt-in)
 
-# Heavyweight, comprehensive self-host regression test — builds ALL self-host
-# images and drives the full Docker Compose stack end to end: schema bootstrap,
-# auth, a real agent session + sandbox health, and the in-place
-# update mechanism.
+# Three tiers of self-host regression coverage, from cheapest to heaviest:
 #
-# This is the nightly counterpart to the always-on `self-host-schema` job in
-# ci.yml (which runs the fast schema-bootstrap gate on every PR that touches
-# api/db/cli). Building the frontend + gateway + sandbox images is too slow for
-# every-PR CI, so the full session + update coverage runs here on a schedule.
-# Trigger manually any time via the Actions tab.
+#   1. `fast`      — pure `kortix self-host` CLI-artifact tests
+#                     (tests/self-host-e2e/fast/**): render .env + compose,
+#                     assert them as text. No Docker, no network. Runs on
+#                     every PR/push that touches the CLI or this suite, plus
+#                     nightly/dispatch.
+#   2. `full-e2e`  — heavyweight, unchanged from before: builds ALL self-host
+#                     images and drives the full Compose stack end to end
+#                     (schema bootstrap, auth, a real agent session + sandbox
+#                     health, the update mechanism). Nightly + manual only —
+#                     this is the nightly counterpart to the always-on
+#                     `self-host-schema` job in ci.yml.
+#   3. `live-opt-in` — tests/self-host-e2e/live/**: throwaway, uniquely-named
+#                     Docker stacks asserting HTTP-layer graceful degradation
+#                     (billing off / managed-git absent) and
+#                     the update mechanism's runtime behavior (schema
+#                     re-bootstrap, health recovery, data persistence).
+#                     Nightly + manual only (opt in via the `run_live` dispatch
+#                     input) — same cost profile as full-e2e, kept separate so
+#                     either can be re-run/iterated independently.
 
 on:
+  pull_request:
+    paths:
+      - 'apps/cli/src/commands/self-host.ts'
+      - 'apps/cli/src/self-host/**'
+      - 'tests/self-host-e2e/**'
+      - '.github/workflows/self-host-e2e.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/cli/src/commands/self-host.ts'
+      - 'apps/cli/src/self-host/**'
+      - 'tests/self-host-e2e/**'
+      - '.github/workflows/self-host-e2e.yml'
   schedule:
     - cron: '0 4 * * *' # nightly 04:00 UTC
   workflow_dispatch:
+    inputs:
+      run_live:
+        description: 'Also run the opt-in live Docker suite (tests/self-host-e2e/live/**)'
+        type: boolean
+        default: false
 
 concurrency:
   group: self-host-e2e-${{ github.ref }}
@@ -24,8 +53,36 @@ permissions:
   contents: read
 
 jobs:
+  # Tier 1 — always on. No Docker daemon, no network: spawns the real CLI
+  # entrypoint against a throwaway config dir per test and asserts the
+  # rendered .env/docker-compose.yml. See tests/self-host-e2e/README.md for
+  # the full case-by-case coverage map.
+  fast:
+    name: self-host CLI artifact tests (fast, no Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      # The CLI imports workspace packages (@kortix/registry, @kortix/manifest-schema,
+      # …) at startup, so the node_modules symlinks must exist — a bare `bun test`
+      # without install crashes the spawned CLI on import ("Cannot find module
+      # @kortix/registry"). Still no Docker/network at test time; this is a
+      # build-graph install, not a runtime dependency.
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Fast self-host CLI tests (no Docker)
+        run: bun test tests/self-host-e2e/fast/
+
+  # Tier 2 — unchanged heavyweight full-stack e2e. Nightly + manual only.
   full-e2e:
     name: full self-host e2e (schema + session + update)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
@@ -53,3 +110,37 @@ jobs:
           API_IMAGE: kortix/kortix-api:selfhost-local
           GATEWAY_IMAGE: kortix/kortix-gateway:selfhost-local
           SANDBOX_IMAGE: kortix/kortix-sandbox:selfhost-local
+
+  # Tier 3 — opt-in live checks: tests/self-host-e2e/live/**. Each script
+  # no-ops unless RUN_SELFHOST_LIVE=1 (belt-and-suspenders with the `if:`
+  # below), and only needs the API image (not the full frontend/gateway/
+  # sandbox build full-e2e above does), so it's much cheaper than tier 2.
+  live-opt-in:
+    name: self-host-e2e opt-in live checks (graceful degradation + rolling update)
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_live)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          df -h /
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build API image
+        run: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
+      - name: Graceful degradation (billing off / managed-git absent)
+        run: bash tests/self-host-e2e/live/graceful-degradation.live.sh
+        env:
+          RUN_SELFHOST_LIVE: '1'
+          API_IMAGE: kortix/kortix-api:selfhost-local
+      - name: Rolling update mechanism (runtime behavior)
+        run: bash tests/self-host-e2e/live/rolling-update.live.sh
+        env:
+          RUN_SELFHOST_LIVE: '1'
+          API_IMAGE: kortix/kortix-api:selfhost-local

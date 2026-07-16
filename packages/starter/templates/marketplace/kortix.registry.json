@@ -20,14 +20,370 @@
       "meta": {
         "source": "kortix",
         "defaultProjectInstall": true,
-        "defaultProjectInstallOrder": 90
+        "defaultProjectInstallOrder": 90,
+        "capabilities": {
+          "tools": [
+            "agent-browser"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ar-chaser-agent",
+      "type": "registry:agent",
+      "title": "AR chaser agent",
+      "description": "Accounts-receivable agent persona: reviews Stripe invoices, sends escalating reminders, holds risky balances for a human.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/ar-chaser.md",
+          "type": "registry:file",
+          "target": "@agents/ar-chaser.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "invoice-math",
+      "type": "registry:skill",
+      "title": "Invoice math",
+      "description": "Aging buckets, reminder tiers, and dunning cadence for chasing overdue invoices.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/invoice-math",
+          "type": "registry:file",
+          "target": "@skills/invoice-math"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "ar-chaser",
+      "type": "registry:template",
+      "title": "Overdue-invoice chaser",
+      "description": "Chases overdue Stripe invoices with escalating email reminders, reconciles payments, and posts a daily summary — holding large or disputed balances for a human.",
+      "categories": [
+        "finance",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "ar-chaser-agent",
+        "invoice-math"
+      ],
+      "envVars": {
+        "STRIPE_KEY": "Stripe restricted key with read access to invoices"
+      },
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check",
+          "type": "cron",
+          "default": "0 0 9 * * 1-5",
+          "help": "Defaults to every weekday at 9:00 AM.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for the daily summary",
+          "type": "channel",
+          "help": "Where the daily list and approvals are posted.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "ar-chaser",
+        "capabilities": {
+          "connectors": [
+            "stripe"
+          ]
+        },
+        "template": {
+          "agents": {
+            "ar-chaser": {
+              "connectors": [
+                "stripe"
+              ],
+              "secrets": [
+                "STRIPE_KEY"
+              ],
+              "skills": [
+                "invoice-math"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "stripe",
+              "provider": "pipedream",
+              "app": "stripe"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-check",
+              "name": "Daily invoice check",
+              "type": "cron",
+              "agent": "ar-chaser",
+              "cron": "{{cadence}}",
+              "prompt": "Review overdue and soon-due Stripe invoices, send the appropriate reminder for each per the invoice-math skill, reconcile anything paid since the last run, and post the summary to {{alert_channel}}. Hold balances over the approval threshold, and anything disputed or heading to legal, for a human."
+            }
+          ],
+          "env_optional": [
+            "STRIPE_KEY"
+          ]
+        }
+      }
+    },
+    {
+      "name": "dep-upgrader-agent",
+      "type": "registry:agent",
+      "title": "Dependency upgrade agent",
+      "description": "Reusable-session agent that keeps a repo's dependencies current: applies upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a PR — never merging.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/dep-upgrader.md",
+          "type": "registry:file",
+          "target": "@agents/dep-upgrader.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "dependency-upgrade-skill",
+      "type": "registry:skill",
+      "title": "Dependency upgrade",
+      "description": "The weekly dependency-upgrade runbook: upgrade tiers, the verification gate, breaking-change handling, the ledger, and guardrails.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/dependency-upgrade",
+          "type": "registry:file",
+          "target": "@skills/dependency-upgrade"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "dependency-upgrades",
+      "type": "registry:template",
+      "title": "Dependency upgrades on autopilot",
+      "description": "A weekly agent that keeps a repo's dependencies current: it applies patch, minor, and safe major upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a reviewable PR only when everything passes — never merging on its own.",
+      "categories": [
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "dep-upgrader-agent",
+        "dependency-upgrade-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)"
+      },
+      "inputs": [
+        {
+          "key": "target_repo",
+          "label": "Repository to keep updated",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo the agent upgrades and opens PRs against.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "When to run the weekly sweep",
+          "type": "cron",
+          "default": "0 0 5 * * 2",
+          "help": "Defaults to every Tuesday at 05:00 UTC.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "dependency-upgrades",
+        "template": {
+          "agents": {
+            "dep-upgrader": {
+              "secrets": [
+                "GH_TOKEN"
+              ],
+              "skills": [
+                "dependency-upgrade"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "triggers": [
+            {
+              "slug": "weekly-upgrades",
+              "name": "Weekly dependency upgrades",
+              "type": "cron",
+              "agent": "dep-upgrader",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `dependency-upgrade` skill and run one complete upgrade sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/dependency-upgrade-log.md`, open upgrade PRs, and in-flight branches. Discover outdated deps; apply patch/minor together and majors one at a time on an isolated branch; prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration, audit); and open a PR only when everything passes. A failing upgrade is never pushed — log it and split or defer with a tracked issue. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "leaderboard-agent",
+      "type": "registry:agent",
+      "title": "Weekly leaderboard agent",
+      "description": "Posts a weekly ENG/PRODUCT shipping brief to Slack: a ranked merged-PR leaderboard, shipping streaks, what shipped, and the async standup thread.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/leaderboard.md",
+          "type": "registry:file",
+          "target": "@agents/leaderboard.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "weekly-leaderboard-skill",
+      "type": "registry:skill",
+      "title": "Weekly leaderboard",
+      "description": "The weekly shipping-brief runbook: window, PR-count sources, the leaderboard + streak format, the standup thread, the ledger, and Slack posting mechanics.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/weekly-leaderboard",
+          "type": "registry:file",
+          "target": "@skills/weekly-leaderboard"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "standup-summary",
+      "type": "registry:template",
+      "title": "Weekly shipping leaderboard + standup",
+      "description": "A weekly cron that posts an ENG/PRODUCT shipping brief to Slack — a ranked merged-PR leaderboard with week-on-week deltas and shipping streaks, what shipped, and an async standup thread — and keeps a running ledger. Reads GitHub, posts to Slack.",
+      "categories": [
+        "operations",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "leaderboard-agent",
+        "weekly-leaderboard-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with read access to the repos you count PRs from (used by the gh CLI)"
+      },
+      "inputs": [
+        {
+          "key": "target_repos",
+          "label": "Repos to count merged PRs from",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "Space-separated, e.g. \"acme/app acme/company\".",
+          "required": true
+        },
+        {
+          "key": "slack_channel",
+          "label": "Slack channel to post the brief to",
+          "type": "channel",
+          "default": "#eng",
+          "help": "Where the weekly brief + standup thread land.",
+          "required": true
+        },
+        {
+          "key": "team_mentions",
+          "label": "Who to @-mention on the standup thread",
+          "type": "text",
+          "default": "@here",
+          "help": "e.g. \"@alice @bob @carol\".",
+          "required": false
+        },
+        {
+          "key": "cadence",
+          "label": "When to post the weekly brief",
+          "type": "cron",
+          "default": "0 0 9 * * 1",
+          "help": "Defaults to every Monday at 09:00 UTC.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "standup-summary",
+        "template": {
+          "agents": {
+            "leaderboard": {
+              "secrets": [
+                "GH_TOKEN"
+              ],
+              "skills": [
+                "weekly-leaderboard",
+                "kortix-slack"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "weekly-leaderboard",
+              "name": "Weekly leaderboard",
+              "type": "cron",
+              "agent": "leaderboard",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `weekly-leaderboard` skill and post this week's ENG/PRODUCT shipping brief to {{slack_channel}}. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/weekly-digests.md` (last week's leaderboard + streaks) and last week's standup thread. Count merged PRs per person across {{target_repos}} with gh (excluding bots), compute deltas and streaks against the ledger, gather Slack context, and post exactly one Block Kit brief (header, snapshot, what shipped, ranked PR leaderboard, streaks, Slack signal). Then reply in-thread with the async standup prompt (mention {{team_mentions}}), update the ledger, and land a scoped `memory: leaderboard` change request."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN"
+          ]
+        }
       }
     },
     {
       "name": "support-agent",
       "type": "registry:agent",
       "title": "Customer support agent",
-      "description": "Triages Plain support threads, investigates with the codebase and Stripe, and resolves or drafts a reply \u2014 holding sensitive actions for approval.",
+      "description": "Triages Plain support threads, investigates with the codebase and Stripe, and resolves or drafts a reply — holding sensitive actions for approval.",
       "categories": [
         "support"
       ],
@@ -46,7 +402,7 @@
       "name": "customer-support",
       "type": "registry:template",
       "title": "Customer support on autopilot",
-      "description": "An agent that works the Plain support queue: it checks for new threads, investigates with the codebase and Stripe, and resolves or drafts a reply \u2014 holding refunds and account changes for human approval.",
+      "description": "An agent that works the Plain support queue: it checks for new threads, investigates with the codebase and Stripe, and resolves or drafts a reply — holding refunds and account changes for human approval.",
       "categories": [
         "support",
         "use-case"
@@ -93,6 +449,3373 @@
           "env_optional": [
             "PLAIN_API_KEY",
             "STRIPE_SECRET_KEY"
+          ]
+        }
+      }
+    },
+    {
+      "name": "competitor-watch-agent",
+      "type": "registry:agent",
+      "title": "Competitor watch agent",
+      "description": "Fetches tracked competitor pages daily, diffs against the last run's snapshot, and posts a short summary of what changed to Slack.",
+      "categories": [
+        "marketing"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/competitor-watch.md",
+          "type": "registry:file",
+          "target": "@agents/competitor-watch.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "competitor-diff-skill",
+      "type": "registry:skill",
+      "title": "Competitor diff",
+      "description": "Fetch, normalize, diff against the last snapshot, filter cosmetic noise, and post a short summary — the daily competitor-watch runbook.",
+      "categories": [
+        "marketing"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/competitor-diff",
+          "type": "registry:file",
+          "target": "@skills/competitor-diff"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "competitor-watch",
+      "type": "registry:template",
+      "title": "Watch competitors daily",
+      "description": "Installs a daily agent that fetches your tracked competitor sites, changelogs, and pricing pages, diffs them against the last run, and posts a short summary of real changes to Slack. It only reads public pages and only writes to the one Slack channel you approve — nothing else is in scope.",
+      "categories": [
+        "marketing",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "competitor-watch-agent",
+        "competitor-diff-skill"
+      ],
+      "inputs": [
+        {
+          "key": "watch_list",
+          "label": "Competitors and pages to track",
+          "type": "text",
+          "default": "Acme — pricing: https://acme.com/pricing\nAcme — changelog: https://acme.com/changelog",
+          "help": "One tracked page per line, as \"Competitor — page: URL\".",
+          "required": true
+        },
+        {
+          "key": "slack_channel",
+          "label": "Slack channel for the daily summary",
+          "type": "channel",
+          "help": "Where the daily competitor summary is posted.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "When to run the daily check",
+          "type": "cron",
+          "default": "0 0 6 * * *",
+          "help": "Defaults to 6:00 AM daily.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "competitor-watch",
+        "template": {
+          "agents": {
+            "competitor-watch": {
+              "skills": [
+                "competitor-diff"
+              ]
+            }
+          },
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-competitor-watch",
+              "name": "Daily competitor watch",
+              "type": "cron",
+              "agent": "competitor-watch",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `competitor-diff` skill and run today's competitor-watch sweep. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/competitor-watch-log.md` for the last snapshot of each page in {{watch_list}}. Fetch every tracked page, normalize and diff it against the stored snapshot, filter out cosmetic edits, and post a short summary of real changes (pricing moves, shipped features, messaging changes) to {{slack_channel}} — or a brief 'nothing changed' line if the market was quiet. Read only public pages and write only to {{slack_channel}}; nothing else is in scope. Update the ledger with today's snapshots before finishing."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "compliance-monitoring-agent",
+      "type": "registry:agent",
+      "title": "Compliance monitoring agent",
+      "description": "Checks AWS resource state and audit logs against policy every day, files what it finds, and proposes remediation as a reviewed change — never applying a fix itself.",
+      "categories": [
+        "security"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/compliance-monitoring.md",
+          "type": "registry:file",
+          "target": "@agents/compliance-monitoring.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "compliance-sweep-skill",
+      "type": "registry:skill",
+      "title": "Compliance sweep",
+      "description": "The daily compliance-drift runbook: reading the policy, checking bucket/tag/role state, cross-referencing the audit logs, and drafting proposed remediation.",
+      "categories": [
+        "security"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/compliance-sweep",
+          "type": "registry:file",
+          "target": "@skills/compliance-sweep"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "compliance-monitoring",
+      "type": "registry:template",
+      "title": "Daily infrastructure compliance sweep",
+      "description": "A daily agent that checks AWS resource state and audit logs against policy — public buckets, untagged resources, over-broad roles — files every finding to Slack, and proposes remediation as a reviewed change request that a human must approve before anything is applied.",
+      "categories": [
+        "security",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "compliance-monitoring-agent",
+        "compliance-sweep-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the daily sweep",
+          "type": "cron",
+          "default": "0 0 6 * * *",
+          "help": "Defaults to every day at 06:00 UTC.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for findings",
+          "type": "channel",
+          "help": "Where daily findings and proposed fixes are posted.",
+          "required": true
+        },
+        {
+          "key": "aws_regions",
+          "label": "AWS regions to scan",
+          "type": "text",
+          "default": "us-east-1",
+          "help": "Comma-separated AWS regions to check for drift, e.g. us-east-1,eu-west-1.",
+          "required": false
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "compliance-monitoring",
+        "capabilities": {
+          "connectors": [
+            "aws"
+          ]
+        },
+        "template": {
+          "agents": {
+            "compliance-monitoring": {
+              "connectors": [
+                "aws"
+              ],
+              "skills": [
+                "compliance-sweep"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "aws",
+              "provider": "pipedream",
+              "app": "aws"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-compliance-sweep",
+              "name": "Daily compliance sweep",
+              "type": "cron",
+              "agent": "compliance-monitoring",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `compliance-sweep` skill and run one complete sweep. This is a fresh session every run — nothing carries over from yesterday. Read the compliance policy from memory, then check AWS resource state across {{aws_regions}} for public buckets, missing required tags, and over-broad IAM roles; cross-reference the audit logs for when each drifted and who changed it. File every finding and draft the fix as a proposed change request — never apply a fix directly. Post the findings, their audit trail context, and the proposed CR links to {{alert_channel}}."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "crm-hygiene-agent",
+      "type": "registry:agent",
+      "title": "CRM hygiene agent",
+      "description": "Nightly HubSpot cleanup persona: merges duplicate contacts, fills missing fields from enrichment data, flags stale deals, and holds bulk updates for approval.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/crm-hygiene.md",
+          "type": "registry:file",
+          "target": "@agents/crm-hygiene.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "hubspot-hygiene-skill",
+      "type": "registry:skill",
+      "title": "HubSpot hygiene",
+      "description": "The nightly dedupe, enrichment-fill, and stale-deal runbook, including the bulk-update approval gate.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/hubspot-hygiene",
+          "type": "registry:file",
+          "target": "@skills/hubspot-hygiene"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "crm-hygiene",
+      "type": "registry:template",
+      "title": "CRM hygiene on autopilot",
+      "description": "A nightly agent that dedupes HubSpot contacts, fills missing fields from enrichment data, and flags stale deals — posting a data-quality summary to Slack while holding large bulk field updates for human approval.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "crm-hygiene-agent",
+        "hubspot-hygiene-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the nightly cleanup",
+          "type": "cron",
+          "default": "0 0 2 * * *",
+          "help": "Defaults to every night at 2:00 AM.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for the nightly summary",
+          "type": "channel",
+          "default": "#revops",
+          "help": "Where the data-quality summary and approval requests are posted.",
+          "required": true
+        },
+        {
+          "key": "bulk_update_threshold",
+          "label": "Bulk update approval threshold",
+          "type": "text",
+          "default": "50",
+          "help": "Number of records a single field update must affect before it requires human approval.",
+          "required": false
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "crm-hygiene",
+        "capabilities": {
+          "connectors": [
+            "hubspot",
+            "clearbit"
+          ]
+        },
+        "template": {
+          "agents": {
+            "crm-hygiene": {
+              "connectors": [
+                "hubspot",
+                "clearbit"
+              ],
+              "skills": [
+                "hubspot-hygiene"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            },
+            {
+              "slug": "clearbit",
+              "provider": "pipedream",
+              "app": "clearbit"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "nightly-crm-hygiene",
+              "name": "Nightly CRM hygiene",
+              "type": "cron",
+              "agent": "crm-hygiene",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `hubspot-hygiene` skill and run one complete CRM hygiene pass. Find and merge duplicate contacts in HubSpot, fill missing fields (job title, industry, company size) from enrichment data, and flag deals that have gone stale. Hold any bulk field update affecting more than {{bulk_update_threshold}} records for human approval before writing. Post the summary — duplicates merged, fields filled, deals flagged, and anything pending approval — to {{alert_channel}}."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "docs-maintainer-agent",
+      "type": "registry:agent",
+      "title": "Docs maintenance agent",
+      "description": "Reads each day's merged commits, rewrites the docs pages they made stale, and opens a single PR for human review.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/docs-maintainer.md",
+          "type": "registry:file",
+          "target": "@agents/docs-maintainer.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "docs-sync-skill",
+      "type": "registry:skill",
+      "title": "Docs sync",
+      "description": "Maps landed code changes to affected docs pages and rewrites them to match, tracked via a commit-checkpoint ledger.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/docs-sync",
+          "type": "registry:file",
+          "target": "@skills/docs-sync"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "docs-maintainer",
+      "type": "registry:template",
+      "title": "Keep docs in sync with the code",
+      "description": "A daily agent that reads the code merged since its last run, rewrites the documentation and READMEs that change made inaccurate, and opens one reviewable PR — never merging, never editing code.",
+      "categories": [
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "docs-maintainer-agent",
+        "docs-sync-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)"
+      },
+      "inputs": [
+        {
+          "key": "target_repo",
+          "label": "Repository to keep documented",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo the agent reads for code changes and opens docs PRs against.",
+          "required": true
+        },
+        {
+          "key": "docs_path",
+          "label": "Docs directory",
+          "type": "text",
+          "default": "docs/",
+          "help": "The path (relative to the repo root) the agent is allowed to rewrite. READMEs are always in scope.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for landed changes",
+          "type": "cron",
+          "default": "0 0 6 * * *",
+          "help": "Defaults to daily at 06:00 UTC.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "docs-maintainer",
+        "capabilities": {
+          "connectors": [
+            "github"
+          ]
+        },
+        "template": {
+          "agents": {
+            "docs-maintainer": {
+              "connectors": [
+                "github"
+              ],
+              "secrets": [
+                "GH_TOKEN"
+              ],
+              "skills": [
+                "docs-sync"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "github",
+              "provider": "pipedream",
+              "app": "github"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "daily-docs-sync",
+              "name": "Daily docs sync",
+              "type": "cron",
+              "agent": "docs-maintainer",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `docs-sync` skill and run one docs sync pass on {{target_repo}}. This is ONE persistent session re-prompted daily, so resume first: read `.kortix/memory/docs-sync-log.md` for the last commit checkpoint and any open docs PR. Pull the commits that landed since that checkpoint, read the actual code they touched (not just the diff), and find every page under {{docs_path}} and every README that drifted out of accuracy. Rewrite only those pages to match the current code — docs and READMEs are your only write surface, the code itself is read-only. Group the day's updates into ONE PR with the reasoning and the commits that prompted each change. If nothing doc-visible changed, advance the ledger checkpoint and stop without opening a PR. Never merge — a human owns the merge."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "inbox-triage-agent",
+      "type": "registry:agent",
+      "title": "Inbox triage agent",
+      "description": "Reads each new inbound email, labels it, drafts a reply from the help doc or files a Linear ticket — holding every customer-facing reply for human approval.",
+      "categories": [
+        "support"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/inbox-triage.md",
+          "type": "registry:file",
+          "target": "@agents/inbox-triage.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "email-triage-skill",
+      "type": "registry:skill",
+      "title": "Email triage",
+      "description": "The shared-inbox runbook: categorize, look up the help doc, draft or file a ticket, and when to leave a thread label-only.",
+      "categories": [
+        "support"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/email-triage",
+          "type": "registry:file",
+          "target": "@skills/email-triage"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "inbox-triage",
+      "type": "registry:template",
+      "title": "Triage the shared inbox on autopilot",
+      "description": "Installs an agent that checks the shared Gmail inbox on a schedule, labels every new message, drafts a reply from your help doc or files a Linear ticket for bugs and follow-ups. Every customer-facing reply is held as a Gmail draft for a human to review and send.",
+      "categories": [
+        "support",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "inbox-triage-agent",
+        "email-triage-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check the inbox",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        },
+        {
+          "key": "help_doc",
+          "label": "Help doc for standard answers",
+          "type": "text",
+          "default": "Notion — Help Center",
+          "help": "The Notion page or database the agent looks up before drafting a reply.",
+          "required": true
+        },
+        {
+          "key": "linear_team",
+          "label": "Linear team for filed tickets",
+          "type": "text",
+          "default": "Support",
+          "help": "The Linear team bug reports and follow-ups are filed under.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "inbox-triage",
+        "capabilities": {
+          "connectors": [
+            "gmail",
+            "linear",
+            "notion"
+          ]
+        },
+        "template": {
+          "agents": {
+            "inbox-triage": {
+              "connectors": [
+                "gmail",
+                "linear",
+                "notion"
+              ],
+              "skills": [
+                "email-triage"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "gmail",
+              "provider": "pipedream",
+              "app": "gmail"
+            },
+            {
+              "slug": "linear",
+              "provider": "pipedream",
+              "app": "linear"
+            },
+            {
+              "slug": "notion",
+              "provider": "pipedream",
+              "app": "notion"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "inbox-triage-check",
+              "name": "Inbox triage check",
+              "type": "cron",
+              "agent": "inbox-triage",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `email-triage` skill and run one complete triage pass over the shared Gmail inbox. This is a fresh session every run, so recompute from the current inbox state — nothing carries over from the prior check. For each new inbound message: label it by category, look up {{help_doc}} for support questions and draft a reply in Gmail only when the doc backs the answer, and file bug reports or follow-ups as tickets in the {{linear_team}} Linear team with the thread's context attached. Leave a thread label-only when the help doc doesn't clearly answer it. Never send a reply yourself — every customer-facing draft waits in Gmail for a human to review and send."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "incident-postmortem-agent",
+      "type": "registry:agent",
+      "title": "Incident postmortem agent",
+      "description": "Watches the incident channel for resolved incidents and drafts a correlated postmortem PR, never publishing a final conclusion on its own.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/incident-postmortem.md",
+          "type": "registry:file",
+          "target": "@agents/incident-postmortem.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "postmortem-draft-skill",
+      "type": "registry:skill",
+      "title": "Postmortem draft",
+      "description": "Correlates the incident channel timeline against GitHub deploys and Datadog log spikes and drafts a structured postmortem PR.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/postmortem-draft",
+          "type": "registry:file",
+          "target": "@skills/postmortem-draft"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "incident-postmortem",
+      "type": "registry:template",
+      "title": "Draft the postmortem when an incident resolves",
+      "description": "A periodic sweep that finds incidents marked resolved in your incident channel, correlates the channel timeline against GitHub deploys and Datadog log spikes, and opens a structured postmortem as a PR — root cause and action items are proposed, and a human always reviews and merges.",
+      "categories": [
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "incident-postmortem-agent",
+        "postmortem-draft-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)"
+      },
+      "inputs": [
+        {
+          "key": "incident_channel",
+          "label": "Incident channel",
+          "type": "channel",
+          "help": "Where incidents are discussed and marked resolved.",
+          "required": true
+        },
+        {
+          "key": "target_repo",
+          "label": "Repository for postmortem docs",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo where postmortem drafts are opened as PRs.",
+          "required": true
+        },
+        {
+          "key": "postmortem_path",
+          "label": "Postmortem docs directory",
+          "type": "text",
+          "default": "postmortems/",
+          "help": "The path (relative to the repo root) where postmortem drafts are written.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for resolved incidents",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "incident-postmortem",
+        "capabilities": {
+          "connectors": [
+            "github",
+            "datadog"
+          ]
+        },
+        "template": {
+          "agents": {
+            "incident-postmortem": {
+              "connectors": [
+                "github",
+                "datadog"
+              ],
+              "secrets": [
+                "GH_TOKEN"
+              ],
+              "skills": [
+                "postmortem-draft"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "github",
+              "provider": "pipedream",
+              "app": "github"
+            },
+            {
+              "slug": "datadog",
+              "provider": "pipedream",
+              "app": "datadog"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "resolved-incident-sweep",
+              "name": "Resolved incident sweep",
+              "type": "cron",
+              "agent": "incident-postmortem",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `postmortem-draft` skill and check {{incident_channel}} for incidents marked resolved since the last sweep. For each one, first check {{target_repo}} for an existing postmortem PR or branch for that incident and skip it if one exists. Otherwise, pull the full incident thread from {{incident_channel}} as the timeline, correlate it against GitHub merges/deploys and Datadog error-rate/latency spikes over the incident window, and draft a structured postmortem (summary, timeline, proposed root cause, impact, candidate action items) as a PR under {{postmortem_path}} in {{target_repo}}. Root cause and action items are proposed, never finalized — never assign owners or close the incident yourself, and never merge the PR; a human reviews and merges."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "investor-update-agent",
+      "type": "registry:agent",
+      "title": "Investor update agent",
+      "description": "Monthly read-only agent that gathers metrics from Postgres and Stripe, compares them to last month and to plan, and drafts the investor update for a founder to finalize.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/investor-update.md",
+          "type": "registry:file",
+          "target": "@agents/investor-update.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "investor-update-draft-skill",
+      "type": "registry:skill",
+      "title": "Investor update draft",
+      "description": "The monthly metric-gathering, comparison, and formatting runbook, including plan targets and last month's update as the format reference.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/investor-update-draft",
+          "type": "registry:file",
+          "target": "@skills/investor-update-draft"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "investor-update",
+      "type": "registry:template",
+      "title": "Draft the monthly investor update",
+      "description": "Installs a monthly agent that pulls MRR and revenue from Stripe, active accounts, growth, burn, and runway from Postgres, compares them to last month's update and to plan, and drafts this month's update as a new document for a founder to finalize. Read-only across every connected system — the agent never writes back to a source and never sends the update itself.",
+      "categories": [
+        "finance",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "investor-update-agent",
+        "investor-update-draft-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to draft the update",
+          "type": "cron",
+          "default": "0 0 6 1 * *",
+          "help": "Defaults to the 1st of each month at 06:00 UTC.",
+          "required": true
+        },
+        {
+          "key": "updates_folder",
+          "label": "Doc location for investor updates",
+          "type": "text",
+          "default": "Investor Updates",
+          "help": "Where past updates live and this month's draft is created.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "investor-update",
+        "capabilities": {
+          "connectors": [
+            "postgresql",
+            "stripe",
+            "google_docs"
+          ]
+        },
+        "template": {
+          "agents": {
+            "investor-update": {
+              "connectors": [
+                "postgresql",
+                "stripe",
+                "google_docs"
+              ],
+              "skills": [
+                "investor-update-draft"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "postgresql",
+              "provider": "pipedream",
+              "app": "postgresql"
+            },
+            {
+              "slug": "stripe",
+              "provider": "pipedream",
+              "app": "stripe"
+            },
+            {
+              "slug": "google_docs",
+              "provider": "pipedream",
+              "app": "google_docs"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "monthly-investor-update",
+              "name": "Monthly investor update draft",
+              "type": "cron",
+              "agent": "investor-update",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `investor-update-draft` skill and draft this month's investor update. This is a fresh session — nothing carries over except what's read from the source systems. Read last month's update from {{updates_folder}} for the prior figures and the format to match, pull MRR and revenue from Stripe, and active accounts, growth, burn, and runway from Postgres. Compare every metric to last month and to plan, then draft this month's update as a new document under {{updates_folder}}, following the same section order and tone as last month's. The agent is read-only across Postgres, Stripe, and every existing update document — it never writes back to any of them, its only output is the new draft, and it never sends the update anywhere. A founder reviews, edits the commentary, and sends it."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "office-snacks-agent",
+      "type": "registry:agent",
+      "title": "Office snacks agent",
+      "description": "Batches weekly Slack snack requests into one cart and holds checkout for the office manager's explicit approval.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/office-snacks.md",
+          "type": "registry:file",
+          "target": "@agents/office-snacks.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "snack-batching-skill",
+      "type": "registry:skill",
+      "title": "Snack batching",
+      "description": "Collects shortcut requests since the last order, consolidates duplicates and standing staples, builds the cart, and gates checkout on an explicit Slack approval.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/snack-batching",
+          "type": "registry:file",
+          "target": "@skills/snack-batching"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "office-snacks",
+      "type": "registry:template",
+      "title": "Batch office snack requests weekly",
+      "description": "Installs a weekly agent that collects snack requests submitted through a Slack shortcut, consolidates them with standing staples into one cart, and posts the draft order for the office manager to approve — nothing is purchased until they sign off.",
+      "categories": [
+        "operations",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "office-snacks-agent",
+        "snack-batching-skill"
+      ],
+      "envVars": {
+        "ORDERING_ACCOUNT_API_KEY": "API key/token for the office ordering account, scoped to search and cart-build only (no standing checkout permission beyond what the agent explicitly submits post-approval)"
+      },
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the weekly batch",
+          "type": "cron",
+          "default": "0 0 8 * * 1",
+          "help": "Defaults to every Monday at 08:00 UTC.",
+          "required": true
+        },
+        {
+          "key": "office_channel",
+          "label": "Slack channel for requests and approval",
+          "type": "channel",
+          "help": "Where the snack-request shortcut posts submissions and where the draft order is posted for the office manager to approve.",
+          "required": true
+        },
+        {
+          "key": "preferred_vendor",
+          "label": "Ordering vendor",
+          "type": "text",
+          "default": "Amazon",
+          "help": "Where the agent builds the weekly cart, e.g. Amazon, Instacart, or a local vendor.",
+          "required": false
+        },
+        {
+          "key": "weekly_budget",
+          "label": "Weekly budget",
+          "type": "text",
+          "default": "$150",
+          "help": "Soft cap the agent stays within when assembling the weekly order.",
+          "required": false
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "office-snacks",
+        "template": {
+          "agents": {
+            "office-snacks": {
+              "secrets": [
+                "ORDERING_ACCOUNT_API_KEY"
+              ],
+              "skills": [
+                "snack-batching"
+              ]
+            }
+          },
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "weekly-snack-batch",
+              "name": "Weekly snack batch",
+              "type": "cron",
+              "agent": "office-snacks",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `snack-batching` skill and run this week's snack-batching pass. This is a fresh session, so scope from {{office_channel}}: find the last posted draft order to use as the cutoff (or the last 7 days if there isn't one), and collect every shortcut request submitted since then. Consolidate duplicates, fold in the standing staples from the skill, and build a cart against {{preferred_vendor}} within {{weekly_budget}} — never check out. Post the full draft order with its total to {{office_channel}} and state plainly that nothing has been purchased yet. Only place the order in a later turn if an explicit, in-thread written approval from the office manager appears on that draft; never treat silence, an emoji, or a vague reply as approval."
+            }
+          ],
+          "env_optional": [
+            "ORDERING_ACCOUNT_API_KEY"
+          ]
+        }
+      }
+    },
+    {
+      "name": "outbound-outreach-agent",
+      "type": "registry:agent",
+      "title": "Outbound outreach agent",
+      "description": "Researches each new lead, drafts a personalized outbound sequence to the playbook, logs it to HubSpot, and holds every batch for human approval under a daily cap.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/outbound-outreach.md",
+          "type": "registry:file",
+          "target": "@agents/outbound-outreach.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "personalized-outreach-skill",
+      "type": "registry:skill",
+      "title": "Personalized outreach",
+      "description": "The outbound runbook: account research, the angle/proof-point playbook, sequence drafting, HubSpot logging, the daily cap, and the approval gate.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/personalized-outreach",
+          "type": "registry:file",
+          "target": "@skills/personalized-outreach"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "outbound-outreach",
+      "type": "registry:template",
+      "title": "Personalized outbound on autopilot",
+      "description": "A periodic agent that scans HubSpot for new leads, enriches each account, drafts a personalized first-touch and follow-up sequence, and logs every draft to the CRM — holding each batch in an email channel for a person to approve and send, capped at a set number of contacts per run.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "outbound-outreach-agent",
+        "personalized-outreach-skill"
+      ],
+      "inputs": [
+        {
+          "key": "hubspot_list",
+          "label": "Lead list to source from",
+          "type": "text",
+          "default": "New Prospects",
+          "help": "The HubSpot active list or segment the agent scans for new contacts to research and draft outreach for.",
+          "required": true
+        },
+        {
+          "key": "daily_cap",
+          "label": "Max contacts drafted per run",
+          "type": "text",
+          "default": "25",
+          "help": "Ceiling on how many new contacts are researched and drafted in one run, so a batch always stays reviewable.",
+          "required": true
+        },
+        {
+          "key": "approval_channel",
+          "label": "Where drafted batches wait for approval",
+          "type": "channel",
+          "help": "The email channel connected in Settings→Channels that receives each batch of drafts for a person to review and send.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new leads",
+          "type": "cron",
+          "default": "0 0 8 * * 1-5",
+          "help": "Defaults to every weekday at 08:00 UTC.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "outbound-outreach",
+        "capabilities": {
+          "connectors": [
+            "hubspot",
+            "clearbit"
+          ]
+        },
+        "template": {
+          "agents": {
+            "outbound-outreach": {
+              "connectors": [
+                "hubspot",
+                "clearbit"
+              ],
+              "skills": [
+                "personalized-outreach"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            },
+            {
+              "slug": "clearbit",
+              "provider": "pipedream",
+              "app": "clearbit"
+            }
+          ],
+          "channels": [
+            "email"
+          ],
+          "triggers": [
+            {
+              "slug": "outreach-sweep",
+              "name": "Outbound outreach sweep",
+              "type": "cron",
+              "agent": "outbound-outreach",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `personalized-outreach` skill and run one outreach sweep. Query HubSpot for contacts in {{hubspot_list}} that don't yet carry the `kortix_outreach_drafted` marker, taking at most {{daily_cap}} contacts this run. Enrich each contact, draft a personalized first-touch and follow-up sequence grounded in the account's real context using the angles and proof points in memory, and log every draft back to HubSpot. Never send anything yourself — hold the full batch in {{approval_channel}} as drafts only for a person to review, edit, approve, and send, and mark `kortix_outreach_drafted` on each contact you drafted so the next sweep doesn't duplicate it."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "release-notes-agent",
+      "type": "registry:agent",
+      "title": "Release notes agent",
+      "description": "Reads merged PRs since the last release, groups them by area, writes the changelog entry, and opens a PR for review — never merging or announcing.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/release-notes.md",
+          "type": "registry:file",
+          "target": "@agents/release-notes.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "changelog-sync-skill",
+      "type": "registry:skill",
+      "title": "Changelog sync",
+      "description": "The release-notes runbook: finding the release range, filtering noise, grouping by area, writing the entry, and opening the PR.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/changelog-sync",
+          "type": "registry:file",
+          "target": "@skills/changelog-sync"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "release-notes",
+      "type": "registry:template",
+      "title": "Draft release notes from merged PRs",
+      "description": "On each new release, an agent reads every PR merged since the last one, groups the changes by area, writes plain-language notes, and opens a PR against the changelog — it never publishes, tags, or announces; a human reviews the wording and merges.",
+      "categories": [
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "release-notes-agent",
+        "changelog-sync-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)"
+      },
+      "inputs": [
+        {
+          "key": "target_repo",
+          "label": "Repository to draft release notes for",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo the agent reads for merged PRs and opens changelog PRs against.",
+          "required": true
+        },
+        {
+          "key": "changelog_path",
+          "label": "Changelog file",
+          "type": "text",
+          "default": "CHANGELOG.md",
+          "help": "The path (relative to the repo root) the agent is allowed to write. Everything else in the repo is read-only.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for a new release",
+          "type": "cron",
+          "default": "0 0 * * * *",
+          "help": "Defaults to hourly, so notes are drafted the same day a release goes out.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "release-notes",
+        "capabilities": {
+          "connectors": [
+            "github"
+          ]
+        },
+        "template": {
+          "agents": {
+            "release-notes": {
+              "connectors": [
+                "github"
+              ],
+              "secrets": [
+                "GH_TOKEN"
+              ],
+              "skills": [
+                "changelog-sync"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "github",
+              "provider": "pipedream",
+              "app": "github"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "release-notes-check",
+              "name": "Release notes check",
+              "type": "cron",
+              "agent": "release-notes",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `changelog-sync` skill and check {{target_repo}} for any release published since the last checkpoint. This is ONE persistent session re-prompted on a schedule, so resume first: read `.kortix/memory/changelog-sync-log.md` for the last release tag covered and any open changelog PR. For each new release, find the previous release tag, read every PR merged in that range in full (not just titles), drop internal-only and dependency-bump noise, group the rest by area, and write plain-language notes matching {{changelog_path}}'s existing format. Open one PR per release against {{changelog_path}} and stop — never merge, tag, publish, or announce the release yourself; a human reviews the wording and merges. Update the ledger with the checkpoint before finishing."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "resume-triage-agent",
+      "type": "registry:agent",
+      "title": "Resume triage agent",
+      "description": "Scores each inbound application against the role's rubric with evidence and proposes interview slots for strong matches, holding every advance-or-reject decision for the hiring manager.",
+      "categories": [
+        "hr"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/resume-triage.md",
+          "type": "registry:file",
+          "target": "@agents/resume-triage.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "resume-scoring-skill",
+      "type": "registry:skill",
+      "title": "Resume scoring",
+      "description": "Rubric-based scoring with quoted evidence, the structured screen format, and the strong-match interview-slot proposal.",
+      "categories": [
+        "hr"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/resume-scoring",
+          "type": "registry:file",
+          "target": "@skills/resume-scoring"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "resume-triage",
+      "type": "registry:template",
+      "title": "Resume screening on autopilot",
+      "description": "Sweeps the applications inbox or ATS for new inbound applications, scores each one against the role's written rubric with supporting quotes as evidence, and proposes interview slots on the hiring manager's calendar for strong matches. The agent never rejects or advances anyone — a person makes every decision.",
+      "categories": [
+        "hr",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "resume-triage-agent",
+        "resume-scoring-skill"
+      ],
+      "inputs": [
+        {
+          "key": "applications_source",
+          "label": "Applications inbox or ATS pipeline",
+          "type": "text",
+          "default": "Greenhouse — pipeline",
+          "help": "Where new applications arrive, e.g. the Greenhouse pipeline for the open role.",
+          "required": true
+        },
+        {
+          "key": "role_rubric",
+          "label": "Role rubric",
+          "type": "text",
+          "default": "Role rubric",
+          "help": "The written rubric (required + preferred criteria and scoring guidance) the agent screens against.",
+          "required": true
+        },
+        {
+          "key": "hiring_manager_calendar",
+          "label": "Hiring manager's Google Calendar",
+          "type": "text",
+          "default": "primary",
+          "help": "The calendar the agent proposes tentative interview slots on for strong matches.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new applications",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "resume-triage",
+        "capabilities": {
+          "connectors": [
+            "greenhouse",
+            "google_calendar"
+          ]
+        },
+        "template": {
+          "agents": {
+            "resume-triage": {
+              "connectors": [
+                "greenhouse",
+                "google_calendar"
+              ],
+              "skills": [
+                "resume-scoring"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "greenhouse",
+              "provider": "pipedream",
+              "app": "greenhouse"
+            },
+            {
+              "slug": "google_calendar",
+              "provider": "pipedream",
+              "app": "google_calendar"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "application-screen-sweep",
+              "name": "Application screen sweep",
+              "type": "cron",
+              "agent": "resume-triage",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `resume-scoring` skill and check {{applications_source}} for any application that hasn't already been screened. For each new one, read it against {{role_rubric}}, write a structured screen — strengths, gaps, an overall score, and the quotes behind each — back to {{applications_source}}, and for strong matches propose 2-3 tentative interview slots on {{hiring_manager_calendar}} for the hiring manager to confirm. Never auto-reject or auto-advance a candidate: the agent produces the screen and the proposed slots, and a person makes every advance-or-reject decision."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "slack-control-pane-agent",
+      "type": "registry:agent",
+      "title": "Slack control-pane agent",
+      "description": "Cross-platform operations agent reachable by @-mention in Slack, with scoped, brokered access to the database, Stripe, Linear, and GitHub.",
+      "categories": [
+        "operations",
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/slack-control-pane.md",
+          "type": "registry:file",
+          "target": "@agents/slack-control-pane.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "control-pane-ops-skill",
+      "type": "registry:skill",
+      "title": "Control-pane ops",
+      "description": "Per-platform scope, read/write boundaries, and the human-approval gate for the Slack control-pane agent.",
+      "categories": [
+        "operations",
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/control-pane-ops",
+          "type": "registry:file",
+          "target": "@skills/control-pane-ops"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "slack-control-pane",
+      "type": "registry:template",
+      "title": "Run cross-platform ops from Slack",
+      "description": "Installs a Slack-triggered agent with scoped, brokered access to your database, Stripe, Linear, and GitHub; it works whatever cross-platform task it's @-mentioned with in the thread it was asked in, holding anything that spends money, changes production data, or changes account/access state for human approval.",
+      "categories": [
+        "operations",
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "slack-control-pane-agent",
+        "control-pane-ops-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)",
+        "DATABASE_URL": "Read-scoped Postgres connection string for querying account and plan data; schema-changing statements require approval"
+      },
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "Heartbeat check frequency",
+          "type": "cron",
+          "default": "0 0 * * * *",
+          "help": "How often the agent verifies connected-platform health. Defaults to hourly — the real work happens live whenever it's @-mentioned in Slack.",
+          "required": true
+        },
+        {
+          "key": "target_repo",
+          "label": "GitHub repo for PR/issue work",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The repository the agent reviews and opens PRs against on GitHub-related requests.",
+          "required": true
+        },
+        {
+          "key": "ops_channel",
+          "label": "Slack channel for health-check alerts",
+          "type": "channel",
+          "help": "Where heartbeat health-check alerts post. Task replies happen directly in the thread that mentioned the agent.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "slack-control-pane",
+        "capabilities": {
+          "connectors": [
+            "linear",
+            "stripe"
+          ]
+        },
+        "template": {
+          "agents": {
+            "slack-control-pane": {
+              "connectors": [
+                "linear",
+                "stripe"
+              ],
+              "secrets": [
+                "GH_TOKEN",
+                "DATABASE_URL"
+              ],
+              "skills": [
+                "control-pane-ops"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "linear",
+              "provider": "pipedream",
+              "app": "linear"
+            },
+            {
+              "slug": "stripe",
+              "provider": "pipedream",
+              "app": "stripe"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "control-pane-heartbeat",
+              "name": "Control-pane health heartbeat",
+              "type": "cron",
+              "agent": "slack-control-pane",
+              "cron": "{{cadence}}",
+              "prompt": "Load the control-pane-ops skill. This is a low-frequency health-check heartbeat, not the main workload — the agent's real work happens live whenever a human @-mentions it in a Slack thread with a cross-platform task spanning the database, Stripe, Linear, and GitHub at {{target_repo}}, and it replies right there in that thread, holding anything that spends money, changes production data, or changes account or access state for human approval. On this heartbeat: run one lightweight read against each connected platform (database, Stripe, Linear, GitHub) to confirm the scoped credential still authenticates, and post a health-check alert to {{ops_channel}} for anything that fails so a human can reconnect it before the next task arrives."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN",
+            "DATABASE_URL"
+          ]
+        }
+      }
+    },
+    {
+      "name": "user-feedback-agent",
+      "type": "registry:agent",
+      "title": "Feedback agent",
+      "description": "Gathers feedback from Plain, public reviews, and Slack, clusters it into themes, and keeps one Linear issue per theme current — never prioritizing, assigning, or closing.",
+      "categories": [
+        "support"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/user-feedback.md",
+          "type": "registry:file",
+          "target": "@agents/user-feedback.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "feedback-clustering-skill",
+      "type": "registry:skill",
+      "title": "Feedback clustering",
+      "description": "Clustering rules, quote and title selection, and reconciliation against existing Linear issues for the feedback sweep.",
+      "categories": [
+        "support"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/feedback-clustering",
+          "type": "registry:file",
+          "target": "@skills/feedback-clustering"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "user-feedback",
+      "type": "registry:template",
+      "title": "Turn scattered feedback into a roadmap",
+      "description": "On a schedule, gathers feedback from Plain support threads, public reviews, and a Slack channel, clusters it into themes with representative quotes and counts, and creates or updates one Linear issue per theme — read-only on every source, writing only to Linear.",
+      "categories": [
+        "support",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "user-feedback-agent",
+        "feedback-clustering-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the feedback sweep",
+          "type": "cron",
+          "default": "0 0 6 * * 1",
+          "help": "Defaults to every Monday at 06:00 UTC.",
+          "required": true
+        },
+        {
+          "key": "feedback_channel",
+          "label": "Slack channel to read feedback from",
+          "type": "channel",
+          "help": "The internal channel where the team drops feedback they hear from users.",
+          "required": true
+        },
+        {
+          "key": "linear_team",
+          "label": "Linear team for theme issues",
+          "type": "text",
+          "default": "Feedback",
+          "help": "The Linear team (or project) where one issue per theme is created and updated.",
+          "required": true
+        },
+        {
+          "key": "review_sources",
+          "label": "Public review sources to check",
+          "type": "text",
+          "default": "G2 profile: https://www.g2.com/products/your-product/reviews",
+          "help": "One review source per line, e.g. your G2 profile and app-store listing URLs.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "user-feedback",
+        "capabilities": {
+          "connectors": [
+            "plain",
+            "linear"
+          ]
+        },
+        "template": {
+          "agents": {
+            "user-feedback": {
+              "connectors": [
+                "plain",
+                "linear"
+              ],
+              "skills": [
+                "feedback-clustering"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "plain",
+              "provider": "pipedream",
+              "app": "plain"
+            },
+            {
+              "slug": "linear",
+              "provider": "pipedream",
+              "app": "linear"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "feedback-sweep",
+              "name": "Feedback theme sweep",
+              "type": "cron",
+              "agent": "user-feedback",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `feedback-clustering` skill and run one complete feedback sweep. This is a fresh session each run, so read the existing issues in {{linear_team}} first to reconcile against. Read recent support threads from Plain, the public reviews at {{review_sources}}, and messages from {{feedback_channel}}, all read-only. Cluster the feedback into themes, pick a representative quote and title for each, and for each theme either update the matching Linear issue's quotes and mention count or create a new one in {{linear_team}}. Never set priority, assign an owner, or close an issue — that stays with people."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "weekly-report-agent",
+      "type": "registry:agent",
+      "title": "Weekly report agent",
+      "description": "Fresh-session agent that queries metrics from Postgres read-only, computes week-over-week deltas, writes plain-language commentary, and posts the report to Slack.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/weekly-report.md",
+          "type": "registry:file",
+          "target": "@agents/weekly-report.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "weekly-metrics-report-skill",
+      "type": "registry:skill",
+      "title": "Weekly metrics report",
+      "description": "The weekly reporting runbook: metric definitions, the queries, the comparison window, notable-move criteria, and the report layout.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/weekly-metrics-report",
+          "type": "registry:file",
+          "target": "@skills/weekly-metrics-report"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "weekly-report",
+      "type": "registry:template",
+      "title": "Auto-generate the weekly metrics report",
+      "description": "Installs a weekly cron that queries your Postgres metrics tables read-only, compares them against recent weeks, writes commentary on what moved and why, and posts the report to Slack — the database role can only select, never write.",
+      "categories": [
+        "operations",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "weekly-report-agent",
+        "weekly-metrics-report-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to post the weekly report",
+          "type": "cron",
+          "default": "0 0 6 * * 1",
+          "help": "Defaults to every Monday at 06:00 UTC, before the team logs on.",
+          "required": true
+        },
+        {
+          "key": "report_channel",
+          "label": "Slack channel for the weekly report",
+          "type": "channel",
+          "help": "Where the metrics report and commentary are posted each week.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "weekly-report",
+        "capabilities": {
+          "connectors": [
+            "postgresql"
+          ]
+        },
+        "template": {
+          "agents": {
+            "weekly-report": {
+              "connectors": [
+                "postgresql"
+              ],
+              "skills": [
+                "weekly-metrics-report"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "postgresql",
+              "provider": "pipedream",
+              "app": "postgresql"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "weekly-metrics-report",
+              "name": "Weekly metrics report",
+              "type": "cron",
+              "agent": "weekly-report",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `weekly-metrics-report` skill and run this week's report. This is a fresh session every run, so recompute from the current state — nothing carries over from last week. Query this week's metrics from Postgres through the read-only role, pull the prior weeks for comparison, compute the deltas, and write plain-language commentary on what moved and whether it matters. Post exactly one report to {{report_channel}}. Never write to Postgres — the database role can only select, and the Slack post is the only output. Hold any follow-up action on what the report surfaces for a human."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "access-requests-agent",
+      "type": "registry:agent",
+      "title": "Access request agent",
+      "description": "Checks Slack for access requests, checks each against policy, looks up the requester in Okta, and prepares a least-privilege GitHub or AWS IAM grant — applying it only after an authorized approver signs off.",
+      "categories": [
+        "security"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/access-requests.md",
+          "type": "registry:file",
+          "target": "@agents/access-requests.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "access-policy-skill",
+      "type": "registry:skill",
+      "title": "Access policy",
+      "description": "The role-to-grant policy, extra-scrutiny cases, the approval handshake, and how an applied grant gets logged.",
+      "categories": [
+        "security"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/access-policy",
+          "type": "registry:file",
+          "target": "@skills/access-policy"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "access-requests",
+      "type": "registry:template",
+      "title": "Access requests on autopilot",
+      "description": "Installs an agent that watches your access-request Slack channel on a schedule, checks each request against policy, looks up the requester's role and team in Okta, and prepares a least-privilege GitHub or AWS IAM grant. No grant is applied until an authorized approver — never the requester — signs off, and every applied grant is logged.",
+      "categories": [
+        "security",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "access-requests-agent",
+        "access-policy-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check for new requests",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        },
+        {
+          "key": "request_channel",
+          "label": "Slack channel for access requests",
+          "type": "channel",
+          "help": "Where requests arrive and prepared grants are posted for approval.",
+          "required": true
+        },
+        {
+          "key": "authorized_approvers",
+          "label": "Who can approve a request",
+          "type": "text",
+          "help": "Comma-separated Slack handles (e.g. @jane,@security-team) allowed to approve a grant. A reply from anyone not on this list — including the requester — is never treated as an approval.",
+          "required": true
+        },
+        {
+          "key": "audit_channel",
+          "label": "Slack channel for the audit log (optional)",
+          "type": "channel",
+          "help": "If set, every applied grant is also logged here in addition to the request thread.",
+          "required": false
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "access-requests",
+        "capabilities": {
+          "connectors": [
+            "okta",
+            "github",
+            "aws"
+          ]
+        },
+        "template": {
+          "agents": {
+            "access-requests": {
+              "connectors": [
+                "okta",
+                "github",
+                "aws"
+              ],
+              "skills": [
+                "access-policy"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "okta",
+              "provider": "pipedream",
+              "app": "okta"
+            },
+            {
+              "slug": "github",
+              "provider": "pipedream",
+              "app": "github"
+            },
+            {
+              "slug": "aws",
+              "provider": "pipedream",
+              "app": "aws"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "access-request-sweep",
+              "name": "Access request sweep",
+              "type": "cron",
+              "agent": "access-requests",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `access-policy` skill and check {{request_channel}} for access requests. For each new request, look up the requester's role, team, and group memberships in Okta, check the request against policy, and prepare the narrowest GitHub or AWS IAM grant that unblocks it, posting the prepared grant with its policy check as a thread reply. For any earlier request whose thread now carries an explicit approval reply from someone on {{authorized_approvers}} — and never the requester — apply exactly that grant and log it, in the thread and to {{audit_channel}} if configured. Never apply a grant on an approval from anyone not on {{authorized_approvers}}."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "churn-risk-agent",
+      "type": "registry:agent",
+      "title": "Churn-risk agent",
+      "description": "Daily read-only agent that scores accounts on churn signals across usage, support, and billing, and posts a ranked at-risk list to Slack.",
+      "categories": [
+        "support"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/churn-risk.md",
+          "type": "registry:file",
+          "target": "@agents/churn-risk.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "churn-signals-skill",
+      "type": "registry:skill",
+      "title": "Churn signals",
+      "description": "Scoring rules for usage decline, support friction, billing/payment risk, and renewal proximity, plus how to write the ranked at-risk list.",
+      "categories": [
+        "support"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/churn-signals",
+          "type": "registry:file",
+          "target": "@skills/churn-signals"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "churn-risk",
+      "type": "registry:template",
+      "title": "Flag at-risk accounts daily",
+      "description": "Installs a daily cron that scores every account on usage decline, rising support friction, and billing/renewal risk across Postgres, Plain, and Stripe, then posts a ranked at-risk list with a reason and a suggested next step per account to Slack. Strictly read-only — it never writes to any customer system.",
+      "categories": [
+        "support",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "churn-risk-agent",
+        "churn-signals-skill"
+      ],
+      "envVars": {
+        "PLAIN_API_KEY": "Plain API key (read access to support threads)"
+      },
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the daily scan",
+          "type": "cron",
+          "default": "0 0 6 * * *",
+          "help": "Defaults to every day at 06:00 UTC.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for the at-risk list",
+          "type": "channel",
+          "help": "Where the daily ranked list posts, e.g. #customer-success.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "churn-risk",
+        "capabilities": {
+          "connectors": [
+            "postgresql",
+            "stripe"
+          ]
+        },
+        "template": {
+          "agents": {
+            "churn-risk": {
+              "connectors": [
+                "postgresql",
+                "stripe"
+              ],
+              "secrets": [
+                "PLAIN_API_KEY"
+              ],
+              "skills": [
+                "churn-signals"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "postgresql",
+              "provider": "pipedream",
+              "app": "postgresql"
+            },
+            {
+              "slug": "stripe",
+              "provider": "pipedream",
+              "app": "stripe"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-churn-scan",
+              "name": "Daily churn-risk scan",
+              "type": "cron",
+              "agent": "churn-risk",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `churn-signals` skill and run one complete churn-risk scan. This is a fresh session each run, so recompute from the current state — nothing carries over from the prior day. Read usage trends from Postgres, support thread volume and tone from Plain, and payment status plus renewal date from Stripe, all read-only. Score every account on declining usage, rising support friction, missed or failed payments, and upcoming renewal, then post a ranked at-risk list to {{alert_channel}} with the reason and a suggested next step for each account. Never write to Postgres, Plain, or Stripe — the Slack post is the only output. Hold all customer outreach and account decisions for a human."
+            }
+          ],
+          "env_optional": [
+            "PLAIN_API_KEY"
+          ]
+        }
+      }
+    },
+    {
+      "name": "contract-review-agent",
+      "type": "registry:agent",
+      "title": "Contract review agent",
+      "description": "Reviews a new contract against our playbook, flags non-standard clauses, drafts redlines, and posts the summary to Slack — holding every redline for a lawyer to sign off.",
+      "categories": [
+        "legal"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/contract-review.md",
+          "type": "registry:file",
+          "target": "@agents/contract-review.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "contract-playbook-skill",
+      "type": "registry:skill",
+      "title": "Contract playbook",
+      "description": "Our standard positions on liability, indemnification, termination, and the rest, plus how to summarize, flag, and draft a redline.",
+      "categories": [
+        "legal"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/contract-playbook",
+          "type": "registry:file",
+          "target": "@skills/contract-playbook"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "contract-review",
+      "type": "registry:template",
+      "title": "First-pass contract review",
+      "description": "A new contract in a Drive folder triggers an agent to summarize it and flag clauses that deviate from our playbook, posting the readout to Slack and drafting redlines that a lawyer must sign off on before anything reaches the counterparty.",
+      "categories": [
+        "legal",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "contract-review-agent",
+        "contract-playbook-skill"
+      ],
+      "inputs": [
+        {
+          "key": "contracts_folder",
+          "label": "Drive folder to watch for new contracts",
+          "type": "text",
+          "default": "Legal/Contracts",
+          "help": "The Google Drive folder the agent checks for new contracts.",
+          "required": true
+        },
+        {
+          "key": "legal_channel",
+          "label": "Slack channel for the summary",
+          "type": "channel",
+          "default": "#legal",
+          "help": "Where the contract summary, flags, and redline link are posted.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new contracts",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "contract-review",
+        "capabilities": {
+          "connectors": [
+            "google_drive",
+            "google_docs"
+          ]
+        },
+        "template": {
+          "agents": {
+            "contract-review": {
+              "connectors": [
+                "google_drive",
+                "google_docs"
+              ],
+              "skills": [
+                "contract-playbook"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "google_drive",
+              "provider": "pipedream",
+              "app": "google_drive"
+            },
+            {
+              "slug": "google_docs",
+              "provider": "pipedream",
+              "app": "google_docs"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "contract-review-check",
+              "name": "Contract review check",
+              "type": "cron",
+              "agent": "contract-review",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `contract-playbook` skill and check {{contracts_folder}} for any contract that hasn't already been summarized to {{legal_channel}}. For each new contract, read it in full, summarize it, flag every clause that deviates from our playbook, draft redlines on the flagged clauses as Docs suggested edits in the contract doc, and post the summary with links to {{legal_channel}}. Never send a redline to the counterparty — hold every one for a lawyer to sign off first."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "employee-offboarding-agent",
+      "type": "registry:agent",
+      "title": "Employee offboarding agent",
+      "description": "Runs the offboarding checklist across Okta, Google Workspace, Google Drive, and GitHub for each departing employee, holding the ownership transfer for human approval and never deleting an account.",
+      "categories": [
+        "security",
+        "hr"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/employee-offboarding.md",
+          "type": "registry:file",
+          "target": "@agents/employee-offboarding.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "offboarding-checklist-skill",
+      "type": "registry:skill",
+      "title": "Offboarding checklist",
+      "description": "The runbook for working an employee departure across every connected system in the right order, with reversible vs. irreversible steps marked.",
+      "categories": [
+        "security",
+        "hr"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/offboarding-checklist",
+          "type": "registry:file",
+          "target": "@skills/offboarding-checklist"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "employee-offboarding",
+      "type": "registry:template",
+      "title": "Employee offboarding on autopilot",
+      "description": "Checks Okta on a schedule for newly marked departures and runs the full offboarding checklist across Okta, Google Workspace, Google Drive, and GitHub — revoking SSO and app access, transferring document and drive ownership, removing org and team access, and reclaiming licenses — holding the ownership transfer for human approval and never deleting an account.",
+      "categories": [
+        "security",
+        "hr",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "employee-offboarding-agent",
+        "offboarding-checklist-skill"
+      ],
+      "inputs": [
+        {
+          "key": "hris_group",
+          "label": "Okta group marking departing employees",
+          "type": "text",
+          "default": "Offboarding",
+          "help": "The Okta group (or attribute) HR adds someone to when they mark a departure.",
+          "required": true
+        },
+        {
+          "key": "notify_channel",
+          "label": "Slack channel for the completed checklist",
+          "type": "channel",
+          "help": "Where the completed offboarding checklist and any pending approvals are posted.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new departures",
+          "type": "cron",
+          "default": "0 0 * * * *",
+          "help": "Defaults to hourly, so access comes down the same day HR marks a departure.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "employee-offboarding",
+        "capabilities": {
+          "connectors": [
+            "okta",
+            "google_workspace",
+            "google_drive",
+            "github"
+          ]
+        },
+        "template": {
+          "agents": {
+            "employee-offboarding": {
+              "connectors": [
+                "okta",
+                "google_workspace",
+                "google_drive",
+                "github"
+              ],
+              "skills": [
+                "offboarding-checklist"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "okta",
+              "provider": "pipedream",
+              "app": "okta"
+            },
+            {
+              "slug": "google_workspace",
+              "provider": "pipedream",
+              "app": "google_workspace"
+            },
+            {
+              "slug": "google_drive",
+              "provider": "pipedream",
+              "app": "google_drive"
+            },
+            {
+              "slug": "github",
+              "provider": "pipedream",
+              "app": "github"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "offboarding-check",
+              "name": "Offboarding checklist run",
+              "type": "cron",
+              "agent": "employee-offboarding",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `offboarding-checklist` skill and check the {{hris_group}} group in Okta for anyone newly marked as departing since the last run. Work each new departure found as its own independent case, never letting a failure or pending approval on one block the others: revoke SSO and app access in Okta, transfer document and shared-drive ownership via Google Drive, suspend the account in Google Workspace, remove the person from the GitHub org and its teams, and reclaim licenses. Hold the ownership transfer away from a person at a human approval gate before it executes; never delete an account — that is out of scope for this agent entirely. Post the completed checklist, including anything still pending approval or failed, to {{notify_channel}}."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "employee-onboarding-agent",
+      "type": "registry:agent",
+      "title": "Employee onboarding agent",
+      "description": "Prepares a new hire's Workspace account, Slack channels, and first-week Linear checklist well before their first day, holding account creation and group membership for a human.",
+      "categories": [
+        "hr",
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/employee-onboarding.md",
+          "type": "registry:file",
+          "target": "@agents/employee-onboarding.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "onboarding-checklist-skill",
+      "type": "registry:skill",
+      "title": "Onboarding checklist",
+      "description": "New-hire onboarding runbook across Google Workspace, Slack, and Linear, with an approval gate for account creation and group membership.",
+      "categories": [
+        "hr",
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/onboarding-checklist",
+          "type": "registry:file",
+          "target": "@skills/onboarding-checklist"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "employee-onboarding",
+      "type": "registry:template",
+      "title": "Employee onboarding on autopilot",
+      "description": "Checks Google Workspace for new-hire records ready to onboard and prepares the Workspace account and group memberships, adds the hire to the right Slack channels, and files a first-week checklist in Linear — holding account creation and group membership for human approval.",
+      "categories": [
+        "hr",
+        "operations",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "employee-onboarding-agent",
+        "onboarding-checklist-skill"
+      ],
+      "inputs": [
+        {
+          "key": "new_hire_group",
+          "label": "Google Workspace group marking new hires ready to onboard",
+          "type": "text",
+          "default": "Pending Onboarding",
+          "help": "The Workspace group HR adds someone to when a new-hire record is ready. The agent checks this group each run for names not yet processed.",
+          "required": true
+        },
+        {
+          "key": "onboarding_project",
+          "label": "Linear project for the first-week checklist",
+          "type": "text",
+          "default": "Onboarding",
+          "help": "The Linear project (or team) where each new hire's first-week checklist is filed.",
+          "required": true
+        },
+        {
+          "key": "notify_channel",
+          "label": "Slack channel for the prepared setup and approvals",
+          "type": "channel",
+          "help": "Where the prepared setup and any pending approvals are posted.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new hires",
+          "type": "cron",
+          "default": "0 0 * * * *",
+          "help": "Defaults to hourly, so setup is ready well before a new hire's first day.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "employee-onboarding",
+        "capabilities": {
+          "connectors": [
+            "google_workspace",
+            "linear"
+          ]
+        },
+        "template": {
+          "agents": {
+            "employee-onboarding": {
+              "connectors": [
+                "google_workspace",
+                "linear"
+              ],
+              "skills": [
+                "onboarding-checklist"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "google_workspace",
+              "provider": "pipedream",
+              "app": "google_workspace"
+            },
+            {
+              "slug": "linear",
+              "provider": "pipedream",
+              "app": "linear"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "onboarding-check",
+              "name": "New-hire onboarding check",
+              "type": "cron",
+              "agent": "employee-onboarding",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `onboarding-checklist` skill and check the {{new_hire_group}} group in Google Workspace for anyone newly marked as ready to onboard since the last run. For each new hire, work the checklist as its own independent case — a failure or pending approval on one never blocks the others found in the same run: read the onboarding standard for their role, prepare the Google Workspace account (mailbox, aliases, group memberships), add them to the Slack channels their team works in, and file a first-week checklist in the {{onboarding_project}} Linear project. Hold account creation and group membership at a human approval gate before anything is provisioned — Slack channel invites and the Linear checklist proceed directly. Post the prepared setup, including anything pending approval or failed, to {{notify_channel}}."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "expense-reconciliation-agent",
+      "type": "registry:agent",
+      "title": "Expense reconciliation agent",
+      "description": "Monthly finance agent that matches Stripe and bank feed activity against invoices, ties out clean matches, and escalates unmatched transactions to a human.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/expense-reconciliation.md",
+          "type": "registry:file",
+          "target": "@agents/expense-reconciliation.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "reconciliation-match-skill",
+      "type": "registry:skill",
+      "title": "Reconciliation matching rules",
+      "description": "Matching rules, tolerances, and escalation logic for reconciling Stripe activity and the bank feed against the tracked invoices each month.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/reconciliation-match",
+          "type": "registry:file",
+          "target": "@skills/reconciliation-match"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "expense-reconciliation",
+      "type": "registry:template",
+      "title": "Expense reconciliation on autopilot",
+      "description": "A monthly agent that matches Stripe charges, payouts, and fees against the bank feed and the invoices tracked in a Google Sheet, posts a reconciled summary back to the sheet, and escalates anything it can't match within tolerance to a human instead of force-fitting it.",
+      "categories": [
+        "finance",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "expense-reconciliation-agent",
+        "reconciliation-match-skill"
+      ],
+      "envVars": {
+        "PLAID_ACCESS_TOKEN": "Plaid Item access_token for the specific bank account to reconcile. The `plaid` connector only carries app-level API credentials (client_id/client_secret/environment) — it does not grant access to any account's transactions on its own. Before the first run, a human must complete Plaid's Link flow once, out-of-band, for this bank account (link the account, authenticate, exchange the resulting public token for an Item access_token) and set that token here."
+      },
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the monthly reconciliation",
+          "type": "cron",
+          "default": "0 0 6 2 * *",
+          "help": "Defaults to the 2nd of each month at 06:00, after the prior period closes.",
+          "required": true
+        },
+        {
+          "key": "reconciliation_sheet",
+          "label": "Google Sheet to reconcile against",
+          "type": "text",
+          "default": "",
+          "help": "The URL or ID of the Google Sheet that tracks invoices and receives the reconciliation summary.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "expense-reconciliation",
+        "capabilities": {
+          "connectors": [
+            "stripe",
+            "plaid",
+            "google_sheets"
+          ]
+        },
+        "template": {
+          "agents": {
+            "expense-reconciliation": {
+              "connectors": [
+                "stripe",
+                "plaid",
+                "google_sheets"
+              ],
+              "secrets": [
+                "PLAID_ACCESS_TOKEN"
+              ],
+              "skills": [
+                "reconciliation-match"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "stripe",
+              "provider": "pipedream",
+              "app": "stripe"
+            },
+            {
+              "slug": "plaid",
+              "provider": "pipedream",
+              "app": "plaid"
+            },
+            {
+              "slug": "google_sheets",
+              "provider": "pipedream",
+              "app": "google_sheets"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "monthly-reconciliation",
+              "name": "Monthly expense reconciliation",
+              "type": "cron",
+              "agent": "expense-reconciliation",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `reconciliation-match` skill and reconcile the period since the last dated entry in {{reconciliation_sheet}}. This is a fresh session with no memory of last month, so read the sheet's history and explained-mismatch notes first. Pull Stripe charges, payouts, and fees, and the matching bank feed activity, for the period; match each line against an invoice within the skill's tolerances; and write the reconciled summary back to {{reconciliation_sheet}}. Tie out clean and tolerance matches silently. Escalate anything unmatched or outside tolerance to a person with both records attached — never force-fit a match or write off a difference, and never take any action against Stripe or the bank beyond reading."
+            }
+          ],
+          "env_optional": [
+            "PLAID_ACCESS_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "lead-follow-up-agent",
+      "type": "registry:agent",
+      "title": "Lead Follow-Up Agent",
+      "description": "Researches new HubSpot leads, drafts a personalized follow-up and proposed call slot, and holds every draft for a rep to send.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/lead-follow-up.md",
+          "type": "registry:file",
+          "target": "@agents/lead-follow-up.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "lead-followup-skill",
+      "type": "registry:skill",
+      "title": "Lead Follow-Up Playbook",
+      "description": "Runbook for researching a new lead, drafting a follow-up to the sales playbook, proposing a call slot, and gating every send behind human approval.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/lead-followup",
+          "type": "registry:file",
+          "target": "@skills/lead-followup"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "lead-follow-up",
+      "type": "registry:template",
+      "title": "Follow up every inbound lead",
+      "description": "Installs an agent that checks HubSpot for new leads, researches the company, drafts a personalized follow-up to your sales playbook, and proposes a call slot from real Google Calendar availability — holding every message as a draft for a rep to review and send.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "lead-follow-up-agent",
+        "lead-followup-skill"
+      ],
+      "inputs": [
+        {
+          "key": "hubspot_lifecycle_stage",
+          "label": "Lifecycle stage to watch",
+          "type": "text",
+          "default": "lead",
+          "help": "The HubSpot contact lifecycle stage (or list) that marks a contact as a new inbound lead.",
+          "required": true
+        },
+        {
+          "key": "meeting_length_minutes",
+          "label": "Proposed call length (minutes)",
+          "type": "text",
+          "default": "30",
+          "help": "Length of the call slot the agent checks and proposes on Google Calendar.",
+          "required": false
+        },
+        {
+          "key": "approval_channel",
+          "label": "Where the drafted follow-up waits for approval",
+          "type": "channel",
+          "help": "The email channel connected in Settings→Channels that receives the draft for a rep to review and send.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new leads",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes so a follow-up is ready while the lead is still warm.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "lead-follow-up",
+        "capabilities": {
+          "connectors": [
+            "hubspot",
+            "google_calendar"
+          ]
+        },
+        "template": {
+          "agents": {
+            "lead-follow-up": {
+              "connectors": [
+                "hubspot",
+                "google_calendar"
+              ],
+              "skills": [
+                "lead-followup"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            },
+            {
+              "slug": "google_calendar",
+              "provider": "pipedream",
+              "app": "google_calendar"
+            }
+          ],
+          "channels": [
+            "email"
+          ],
+          "triggers": [
+            {
+              "slug": "new-lead-followup-sweep",
+              "name": "New lead follow-up sweep",
+              "type": "cron",
+              "agent": "lead-follow-up",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `lead-followup` skill and run one new-lead sweep. This is a fresh session each run — resume by reading HubSpot itself, not a local ledger: query contacts on {{hubspot_lifecycle_stage}} that don't yet carry the `kortix_followup_drafted` marker. For each new lead, research the company's public site, draft a personalized follow-up to the sales playbook with one tailored qualifying question, check Google Calendar for a specific {{meeting_length_minutes}}-minute opening and propose that one slot, and write the research notes back onto the HubSpot record. Hold every drafted follow-up in {{approval_channel}} for a human to review, edit, and send — never send it yourself, and never create the calendar event yourself. Mark the lead's `kortix_followup_drafted` property once the draft is ready so the next sweep doesn't duplicate it. Treat each lead found in the sweep as an independent unit of work — a research or drafting failure on one lead is logged and skipped, never blocking the rest of the sweep."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "meeting-notes-agent",
+      "type": "registry:agent",
+      "title": "Meeting notes agent",
+      "description": "Turns a finished meeting's transcript into structured notes and Linear tickets assigned to their owners, one fresh session per call.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/meeting-notes.md",
+          "type": "registry:file",
+          "target": "@agents/meeting-notes.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "meeting-recap-skill",
+      "type": "registry:skill",
+      "title": "Meeting recap",
+      "description": "The per-meeting runbook for the notes format, action-item phrasing, ownership routing from memory, and when to flag instead of guess.",
+      "categories": [
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/meeting-recap",
+          "type": "registry:file",
+          "target": "@skills/meeting-recap"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "meeting-notes",
+      "type": "registry:template",
+      "title": "Turn meetings into notes and tickets",
+      "description": "Spins up a fresh session for each finished Google Calendar meeting, writes structured notes from the transcript, and files every action item as a Linear ticket assigned to its owner — flagging anything it can't confidently assign for a human instead of guessing.",
+      "categories": [
+        "operations",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "meeting-notes-agent",
+        "meeting-recap-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check for finished meetings",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes, checking for meetings that ended since the last run.",
+          "required": true
+        },
+        {
+          "key": "linear_team",
+          "label": "Linear team or project for action-item tickets",
+          "type": "text",
+          "default": "Team",
+          "help": "Where new action-item tickets are filed and assigned.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "meeting-notes",
+        "capabilities": {
+          "connectors": [
+            "google_calendar",
+            "google_drive",
+            "linear"
+          ]
+        },
+        "template": {
+          "agents": {
+            "meeting-notes": {
+              "connectors": [
+                "google_calendar",
+                "google_drive",
+                "linear"
+              ],
+              "skills": [
+                "meeting-recap"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "google_calendar",
+              "provider": "pipedream",
+              "app": "google_calendar"
+            },
+            {
+              "slug": "google_drive",
+              "provider": "pipedream",
+              "app": "google_drive"
+            },
+            {
+              "slug": "linear",
+              "provider": "pipedream",
+              "app": "linear"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "meeting-ended-check",
+              "name": "Meeting-ended check",
+              "type": "cron",
+              "agent": "meeting-notes",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `meeting-recap` skill and check Google Calendar for any meeting that has ended since the last check and has a transcript attached. For each one, treat it as its own scoped case: read the event and the full transcript, write structured notes (decisions, discussion, next steps) attached to the meeting record, and file every action item as a ticket in {{linear_team}} assigned to the person who owns it. Never touch a ticket that already existed before this meeting. For any action item you can't confidently assign, file it unassigned in {{linear_team}} with the ambiguity noted instead of guessing an owner."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "oncall-triage-agent",
+      "type": "registry:agent",
+      "title": "On-call triage agent",
+      "description": "Read-only triage agent that diagnoses every alert with the stack trace, correlated logs, and suspect deploy, paging a human only when it can't resolve the alert or severity is high.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/oncall-triage.md",
+          "type": "registry:file",
+          "target": "@agents/oncall-triage.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "incident-triage-skill",
+      "type": "registry:skill",
+      "title": "Incident triage",
+      "description": "The alert-triage runbook: pull the trace, correlate logs, find the suspect deploy, classify severity against known-noisy patterns, and decide when to page.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/incident-triage",
+          "type": "registry:file",
+          "target": "@skills/incident-triage"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "oncall-triage",
+      "type": "registry:template",
+      "title": "Triage on-call alerts before paging",
+      "description": "Installs an agent that triages every Sentry alert on a tight cron sweep: it pulls the stack trace, correlates the Datadog logs, checks recent GitHub deploys, and posts a first-pass diagnosis to Slack — paging a human only when it can't resolve the alert or the severity is high.",
+      "categories": [
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "oncall-triage-agent",
+        "incident-triage-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with read access to commits and merged PRs on the target repo (used by the gh CLI to check recent deploys)"
+      },
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to sweep for alerts",
+          "type": "cron",
+          "default": "0 */5 * * * *",
+          "help": "Defaults to every 5 minutes so new alerts are triaged quickly.",
+          "required": true
+        },
+        {
+          "key": "sentry_project",
+          "label": "Sentry project to monitor",
+          "type": "text",
+          "default": "",
+          "help": "The Sentry org/project slug to check for new or unresolved alerts, e.g. acme/backend.",
+          "required": true
+        },
+        {
+          "key": "target_repo",
+          "label": "Repository to check for recent deploys",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo the agent checks for commits and PRs that shipped just before an alert.",
+          "required": true
+        },
+        {
+          "key": "incident_channel",
+          "label": "Slack channel for diagnoses and paging",
+          "type": "channel",
+          "help": "Where the first-pass diagnosis is posted and where the on-call rotation is paged.",
+          "required": true
+        },
+        {
+          "key": "page_severity_threshold",
+          "label": "Always-page severity floor",
+          "type": "text",
+          "default": "error",
+          "help": "Sentry severity level (warning/error/fatal) at or above which a human is always paged, regardless of diagnosis confidence.",
+          "required": false
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "oncall-triage",
+        "capabilities": {
+          "connectors": [
+            "sentry",
+            "datadog",
+            "github"
+          ]
+        },
+        "template": {
+          "agents": {
+            "oncall-triage": {
+              "connectors": [
+                "sentry",
+                "datadog",
+                "github"
+              ],
+              "secrets": [
+                "GH_TOKEN"
+              ],
+              "skills": [
+                "incident-triage"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "sentry",
+              "provider": "pipedream",
+              "app": "sentry"
+            },
+            {
+              "slug": "datadog",
+              "provider": "pipedream",
+              "app": "datadog"
+            },
+            {
+              "slug": "github",
+              "provider": "pipedream",
+              "app": "github"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "alert-triage-sweep",
+              "name": "Alert triage sweep",
+              "type": "cron",
+              "agent": "oncall-triage",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `incident-triage` skill and check {{sentry_project}} in Sentry for any alert that is new or still unresolved since the last sweep. This is a fresh session every sweep — nothing carries over from the last run. Handle each alert found as an independent unit: for each one, pull the stack trace and first-seen timestamp from Sentry, correlate the Datadog log lines around the spike, and check {{target_repo}} on GitHub for the commits and PRs that shipped just before the error appeared, then post a first-pass diagnosis — the trace, the suspected deploy, and the evidence — to {{incident_channel}}. A failure or inconclusive diagnosis on one alert never blocks triage of the others found in this sweep. Page a human in {{incident_channel}} immediately for anything at or above {{page_severity_threshold}} severity or that you can't resolve; otherwise close it with the reasoning attached. You are read-only across Sentry, the logs, and GitHub — never deploy, roll back, or change anything."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "qa-agent-agent",
+      "type": "registry:agent",
+      "title": "QA agent",
+      "description": "Checks out each PR, runs the suite, deploys and exercises the change in the test environment, and posts a pass/fail result — never touching production or merging.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/qa-agent.md",
+          "type": "registry:file",
+          "target": "@agents/qa-agent.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "pr-qa-skill",
+      "type": "registry:skill",
+      "title": "PR QA",
+      "description": "The per-PR runbook: run the suite, deploy to the test environment, exercise the change through the edge, and post the result.",
+      "categories": [
+        "engineering"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/pr-qa",
+          "type": "registry:file",
+          "target": "@skills/pr-qa"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "qa-agent",
+      "type": "registry:template",
+      "title": "QA every pull request automatically",
+      "description": "Installs an agent that sweeps the target repo on a schedule for PRs opened or updated, then checks out each one in its own isolated clone, runs the full test suite, deploys the change to the test environment, and exercises it through the edge, posting a pass/fail result as a GitHub check and comment. It never touches production or merges — QA stays on the test environment, and a human owns the merge.",
+      "categories": [
+        "engineering",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "qa-agent-agent",
+        "pr-qa-skill"
+      ],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI to check out branches and post results)",
+        "TEST_ENV_DEPLOY_TOKEN": "Credential to stand up and tear down the ephemeral test-environment deploy for each PR"
+      },
+      "inputs": [
+        {
+          "key": "target_repo",
+          "label": "Repository to QA",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo whose PRs get checked out, tested, deployed, and reported on.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to sweep for new or updated PRs",
+          "type": "cron",
+          "default": "0 */5 * * * *",
+          "help": "Defaults to every 5 minutes, so a PR gets QA'd shortly after it opens or is pushed to.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "qa-agent",
+        "template": {
+          "agents": {
+            "qa-agent": {
+              "connectors": [],
+              "secrets": [
+                "GH_TOKEN",
+                "TEST_ENV_DEPLOY_TOKEN"
+              ],
+              "skills": [
+                "pr-qa"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "triggers": [
+            {
+              "slug": "pr-qa-sweep",
+              "name": "PR QA sweep",
+              "type": "cron",
+              "agent": "qa-agent",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `pr-qa` skill. This is ONE persistent session re-prompted on a schedule, so resume first: read `.kortix/memory/qa-known-issues.md` for edge cases worth re-checking. Then discover every PR opened or pushed to {{target_repo}} since the last sweep whose current head SHA hasn't already been QA'd (a `gh pr list` scan filtered against each PR's status checks). Work through that batch one PR at a time, each in its own isolated checkout inside this session: check out the branch clean, run the full verification suite, deploy the change to the test environment, exercise the new behavior end-to-end, and re-check it through the edge. Handle each PR as an independent unit — a failure on one never blocks QA of the others. Post exactly one pass/fail result per PR as a GitHub check and comment — green with what was exercised, or red with the failing command, logs, and repro steps. Stay on the test environment only: no production access, no prod deploy, and never merge — a human owns the merge. If a run surfaces a genuinely new edge case, append it to the known-issues ledger and land it with a scoped, self-merged change request so the next sweep actually sees it."
+            }
+          ],
+          "env_optional": [
+            "GH_TOKEN",
+            "TEST_ENV_DEPLOY_TOKEN"
+          ]
+        }
+      }
+    },
+    {
+      "name": "sales-call-followup-agent",
+      "type": "registry:agent",
+      "title": "Sales call follow-up agent",
+      "description": "Turns a finished sales call's transcript into an updated HubSpot deal, filed Linear tasks, and a drafted recap email held for the rep — flagging the call instead of guessing when no deal confidently matches.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/sales-call-followup.md",
+          "type": "registry:file",
+          "target": "@agents/sales-call-followup.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "call-recap-skill",
+      "type": "registry:skill",
+      "title": "Call recap",
+      "description": "Runbook for turning a finished call's transcript into a HubSpot deal update (or a flagged handoff when no deal matches), filed Linear tasks, and a drafted recap email.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/call-recap",
+          "type": "registry:file",
+          "target": "@skills/call-recap"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "sales-call-followup",
+      "type": "registry:template",
+      "title": "Follow up every sales call automatically",
+      "description": "Installs an agent that spins up a fresh session for each new call transcript found in a connected Google Drive folder, updates the matching HubSpot deal and files the follow-up tasks in Linear — flagging the call for a human when no deal confidently matches — then drafts the recap email and holds it for the rep to review and send.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "sales-call-followup-agent",
+        "call-recap-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check for finished calls",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes, checking for calls that finished since the last run.",
+          "required": true
+        },
+        {
+          "key": "transcript_folder",
+          "label": "Google Drive folder the call recorder saves transcripts to",
+          "type": "text",
+          "default": "Call Transcripts",
+          "help": "The agent checks this Drive folder for new transcript files since the last run.",
+          "required": true
+        },
+        {
+          "key": "linear_team",
+          "label": "Linear team or project for follow-up tasks",
+          "type": "text",
+          "default": "Team",
+          "help": "Where new follow-up tasks are filed and assigned.",
+          "required": true
+        },
+        {
+          "key": "approval_channel",
+          "label": "Where the recap email waits for approval",
+          "type": "channel",
+          "help": "The email channel connected in Settings→Channels that receives the recap draft for the rep to review and send.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "sales-call-followup",
+        "capabilities": {
+          "connectors": [
+            "google_drive",
+            "hubspot",
+            "linear"
+          ]
+        },
+        "template": {
+          "agents": {
+            "sales-call-followup": {
+              "connectors": [
+                "google_drive",
+                "hubspot",
+                "linear"
+              ],
+              "skills": [
+                "call-recap"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "google_drive",
+              "provider": "pipedream",
+              "app": "google_drive"
+            },
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            },
+            {
+              "slug": "linear",
+              "provider": "pipedream",
+              "app": "linear"
+            }
+          ],
+          "channels": [
+            "email"
+          ],
+          "triggers": [
+            {
+              "slug": "call-ended-check",
+              "name": "Call-ended check",
+              "type": "cron",
+              "agent": "sales-call-followup",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `call-recap` skill and check the {{transcript_folder}} folder in Google Drive for any new call transcript since the last run. For each one, treat it as its own scoped case: read the full transcript and match it to a HubSpot deal from the attendees. If exactly one deal matches confidently, update its stage, notes, and contacts from what the call actually covered; if no deal matches or more than one plausibly matches, skip the deal update and flag the call in {{approval_channel}} instead of guessing. Either way, file every commitment as a task in {{linear_team}}, draft the recap email — summary, answers to the open questions, and next steps — and hold it in {{approval_channel}} for the rep to review and send. Never send the email yourself."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "security-questionnaire-agent",
+      "type": "registry:agent",
+      "title": "Security questionnaire agent",
+      "description": "Drafts security questionnaire responses from our vetted knowledge base and flags anything it can't answer confidently, holding every draft for security to review before it goes back to the prospect.",
+      "categories": [
+        "security"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/security-questionnaire.md",
+          "type": "registry:file",
+          "target": "@agents/security-questionnaire.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "questionnaire-response-skill",
+      "type": "registry:skill",
+      "title": "Questionnaire response",
+      "description": "Parses an inbound security questionnaire, matches each question to our vetted answers, drafts the response in the vendor's format, and flags anything without a confident match.",
+      "categories": [
+        "security"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/questionnaire-response",
+          "type": "registry:file",
+          "target": "@skills/questionnaire-response"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "security-questionnaire",
+      "type": "registry:template",
+      "title": "Draft security questionnaire responses",
+      "description": "On each inbound security questionnaire, drafts every answer from our vetted knowledge base of approved answers and policies in the vendor's own format (SIG, CAIQ, or a custom spreadsheet) and flags anything it can't answer confidently — holding the completed draft for security to review and send.",
+      "categories": [
+        "security",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "security-questionnaire-agent",
+        "questionnaire-response-skill"
+      ],
+      "inputs": [
+        {
+          "key": "questionnaire_label",
+          "label": "Gmail label/folder to watch for inbound questionnaires",
+          "type": "text",
+          "default": "Security Questionnaires",
+          "help": "The Gmail label the agent checks for new inbound security questionnaires.",
+          "required": true
+        },
+        {
+          "key": "security_channel",
+          "label": "Slack channel for the completed draft",
+          "type": "channel",
+          "default": "#security",
+          "help": "Where the draft link and flagged-question summary are posted for review.",
+          "required": true
+        },
+        {
+          "key": "cadence",
+          "label": "How often to check for new questionnaires",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "security-questionnaire",
+        "capabilities": {
+          "connectors": [
+            "gmail",
+            "google_drive",
+            "google_sheets"
+          ]
+        },
+        "template": {
+          "agents": {
+            "security-questionnaire": {
+              "connectors": [
+                "gmail",
+                "google_drive",
+                "google_sheets"
+              ],
+              "skills": [
+                "questionnaire-response"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "gmail",
+              "provider": "pipedream",
+              "app": "gmail"
+            },
+            {
+              "slug": "google_drive",
+              "provider": "pipedream",
+              "app": "google_drive"
+            },
+            {
+              "slug": "google_sheets",
+              "provider": "pipedream",
+              "app": "google_sheets"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "questionnaire-check",
+              "name": "Security questionnaire check",
+              "type": "cron",
+              "agent": "security-questionnaire",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `questionnaire-response` skill and check {{questionnaire_label}} in Gmail for inbound security questionnaires that haven't been drafted yet. For each new one, parse every question, match it to our vetted knowledge base of approved answers and policies, draft the response in the vendor's own format (SIG, CAIQ, or a custom spreadsheet), and flag anything without a confident match for a person. Save the filled questionnaire as a Gmail draft on the original thread — never send it — and post the draft link with the flagged-question summary to {{security_channel}}. Hold the completed draft for security to review and send; never send it yourself."
+            }
           ]
         }
       }

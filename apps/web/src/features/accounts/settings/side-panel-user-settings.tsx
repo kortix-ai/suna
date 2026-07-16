@@ -23,13 +23,14 @@ import {
 import { listSandboxes, type SandboxInfo } from '@kortix/sdk/platform-client';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, ShieldCheck } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { AppearanceTab } from './appearance-tab';
 import { CliTokensTab } from './cli-tokens-tab';
 import { GeneralTab } from './general-tab';
+import { SecurityTab } from './security-tab';
 import { KeyboardShortcutsTab } from './keyboard-shortcuts-tab';
 import { NotificationsTab } from './notifications-tab';
 import { SoundsTab } from './sounds-tab';
@@ -89,7 +90,11 @@ function SidePanelUserSettings({
     [hasInstance],
   );
   const accountTabs: Tab[] = React.useMemo(
-    () => withDescription([{ id: 'tokens', label: 'API keys', icon: KeyRound }]),
+    () =>
+      withDescription([
+        { id: 'security', label: 'Security', icon: ShieldCheck },
+        { id: 'tokens', label: 'API keys', icon: KeyRound },
+      ]),
     [],
   );
 
@@ -157,6 +162,7 @@ function SidePanelUserSettings({
   const renderActiveTabContent = () => (
     <>
       {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+      {activeContentTab === 'security' && <SecurityTab />}
       {activeContentTab === 'appearance' && <AppearanceTab />}
       {activeContentTab === 'sounds' && <SoundsTab />}
       {activeContentTab === 'notifications' && <NotificationsTab />}

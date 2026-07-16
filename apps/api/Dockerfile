@@ -41,14 +41,6 @@ COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/starter ./packages/starter
-# The enterprise self-host adapter embeds these reviewed Terraform sources in
-# the compiled CLI. Copy only the source graph it imports; provider caches,
-# state, and unrelated deployment environments never enter this build stage.
-COPY infra/terraform/environments/enterprise-vpc-template ./infra/terraform/environments/enterprise-vpc-template
-COPY infra/terraform/modules/enterprise-state ./infra/terraform/modules/enterprise-state
-COPY infra/terraform/modules/enterprise-vpc ./infra/terraform/modules/enterprise-vpc
-COPY infra/terraform/modules/network ./infra/terraform/modules/network
-COPY infra/terraform/scripts/guard-enterprise-plan.ts ./infra/terraform/scripts/guard-enterprise-plan.ts
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && bun install --no-save \
     && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash apps/cli/scripts/build.sh

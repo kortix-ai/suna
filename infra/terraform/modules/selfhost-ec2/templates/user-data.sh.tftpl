@@ -1,0 +1,133 @@
+#!/bin/bash
+# Kortix self-host — EC2 bootstrap (runs once, as root, via cloud-init).
+#
+# This does exactly what any self-host user does by hand (see
+# scripts/kortix-selfhost-up.sh and docs/runbooks/self-hosting.md): install
+# Docker, install the kortix CLI, `kortix self-host init`, `kortix self-host
+# start`. Terraform's only value-add here is doing it once on a fresh box with
+# a durable data volume wired up first. It does NOT run again on its own —
+# ongoing updates are the in-compose kortix-updater's job, not Terraform's.
+set -euo pipefail
+exec > >(tee -a /var/log/kortix-bootstrap.log) 2>&1
+echo "=== kortix self-host bootstrap: $(date -u --iso-8601=seconds) ==="
+
+# cloud-init runs this as root but with NO $HOME set — and both the kortix CLI
+# installer (kortix.com/install) and the CLI itself dereference $HOME under
+# `set -u`, so an unset HOME kills the bootstrap ("HOME: unbound variable").
+export HOME="$${HOME:-/root}"
+
+# ── 1. Find + mount the data volume ─────────────────────────────────────────
+# Requested attach point is ${data_volume_device_name}, but Nitro-based
+# instance types (t3, m5, ...) expose EBS volumes as NVMe block devices
+# instead, so probe for whichever one actually shows up.
+echo "Waiting for the data volume to attach..."
+DATA_DEVICE=""
+for _ in $(seq 1 60); do
+  for cand in ${data_volume_device_name} /dev/xvdf /dev/nvme1n1; do
+    if [ -b "$cand" ]; then DATA_DEVICE="$cand"; break 2; fi
+  done
+  sleep 2
+done
+if [ -z "$DATA_DEVICE" ]; then
+  echo "FATAL: data volume never appeared (tried ${data_volume_device_name}, /dev/xvdf, /dev/nvme1n1)" >&2
+  exit 1
+fi
+echo "Data volume: $DATA_DEVICE"
+
+if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+  echo "Formatting $DATA_DEVICE (ext4) — first boot only"
+  mkfs.ext4 -F "$DATA_DEVICE"
+else
+  echo "$DATA_DEVICE already has a filesystem — leaving its contents alone (this is the durable Postgres/Docker state across instance replacement)"
+fi
+
+mkdir -p "${data_mount_path}"
+if ! mountpoint -q "${data_mount_path}"; then
+  mount "$DATA_DEVICE" "${data_mount_path}"
+fi
+DATA_UUID="$(blkid -s UUID -o value "$DATA_DEVICE")"
+grep -q "$DATA_UUID" /etc/fstab || echo "UUID=$DATA_UUID ${data_mount_path} ext4 defaults,nofail 0 2" >> /etc/fstab
+
+DOCKER_DATA_ROOT="${data_mount_path}/docker"
+KORTIX_CONFIG_DIR="${data_mount_path}/kortix-self-host"
+mkdir -p "$DOCKER_DATA_ROOT" "$KORTIX_CONFIG_DIR"
+
+# ── 2. Docker: point data-root at the data volume BEFORE first start ───────
+# Every Docker-managed volume (images, containers, the updater/Caddy named
+# volumes) then lives on the data volume too.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Installing Docker Engine + Compose plugin"
+  mkdir -p /etc/docker
+  cat > /etc/docker/daemon.json <<JSON
+{
+  "data-root": "$DOCKER_DATA_ROOT"
+}
+JSON
+  curl --fail --silent --show-error --location https://get.docker.com | sh
+  systemctl enable --now docker
+fi
+docker compose version >/dev/null 2>&1 || { echo "FATAL: docker compose plugin unavailable after install" >&2; exit 1; }
+
+# ── 3. Pin KORTIX_SELF_HOST_CONFIG_DIR — every kortix invocation (this
+#    script, and any later `kortix self-host ...` an operator runs over SSM)
+#    must agree on where the instance lives, or the CLI creates a second
+#    instance on the (small, ephemeral) root volume instead of reusing the
+#    one on the data volume. Persist it for future root shells too.
+export KORTIX_SELF_HOST_CONFIG_DIR="$KORTIX_CONFIG_DIR"
+grep -q '^KORTIX_SELF_HOST_CONFIG_DIR=' /etc/environment 2>/dev/null \
+  || echo "KORTIX_SELF_HOST_CONFIG_DIR=$KORTIX_CONFIG_DIR" >> /etc/environment
+cat > /etc/profile.d/kortix-selfhost.sh <<PROFILE
+export KORTIX_SELF_HOST_CONFIG_DIR="$KORTIX_CONFIG_DIR"
+PROFILE
+
+# ── 4. Install the kortix CLI (the published one-click installer) ──────────
+# kortix_cli_channel selects which build the installer fetches: "prod" (the
+# default — latest tagged vX.Y.Z release) or "dev" (the continuously-rebuilt
+# dev-latest prerelease, tracking main) — use "dev" when the prod CLI hasn't
+# caught up yet to flags this module relies on (see the variable's doc comment).
+if ! command -v kortix >/dev/null 2>&1; then
+  echo "Installing the kortix CLI from ${kortix_cli_install_url} (channel: ${kortix_cli_channel})"
+  curl -fsSL "${kortix_cli_install_url}" | KORTIX_CHANNEL="${kortix_cli_channel}" bash
+fi
+KORTIX_BIN="$(command -v kortix || true)"
+if [ -z "$KORTIX_BIN" ] && [ -x /root/.kortix/kortix ]; then
+  KORTIX_BIN=/root/.kortix/kortix
+fi
+[ -n "$KORTIX_BIN" ] || { echo "FATAL: kortix CLI install did not produce a runnable binary" >&2; exit 1; }
+
+# ── 5. Generate the self-host config ────────────────────────────────────────
+INIT_ARGS=(
+  --instance "${instance_name}"
+  --domain "${domain}"
+  --channel "${kortix_channel}"
+  --auto-update "${auto_update}"
+  --yes
+)
+%{ if kortix_version != "" ~}
+INIT_ARGS+=(--tag "${kortix_version}")
+%{ endif ~}
+%{ if admin_email != "" ~}
+INIT_ARGS+=(--admin-email "${admin_email}")
+%{ endif ~}
+
+echo "Running: kortix self-host init $${INIT_ARGS[*]}"
+"$KORTIX_BIN" self-host init "$${INIT_ARGS[@]}"
+
+# api_domain / acme_email have no `init` flags (see docs/runbooks/self-hosting.md)
+# — set via `env set`, exactly like scripts/kortix-selfhost-up.sh does.
+"$KORTIX_BIN" self-host env set --instance "${instance_name}" "KORTIX_API_DOMAIN=${api_domain}"
+%{ if acme_email != "" ~}
+"$KORTIX_BIN" self-host env set --instance "${instance_name}" "KORTIX_ACME_EMAIL=${acme_email}"
+%{ endif ~}
+
+# ── 6. Start ─────────────────────────────────────────────────────────────────
+# `start` re-checks required secrets (the sandbox key etc.) and warns rather
+# than refusing — this module's whole design is that secrets are NOT
+# Terraform inputs and get set post-boot (kortix self-host env set /
+# configure / the dashboard).
+echo "Starting the stack (pulling images — this can take a few minutes on first boot)"
+"$KORTIX_BIN" self-host start --instance "${instance_name}" --yes
+
+echo "=== kortix self-host bootstrap done: $(date -u --iso-8601=seconds) ==="
+echo "Secrets (sandbox provider key, managed git, ...) were NOT set — configure them with:"
+echo "  kortix self-host configure --instance ${instance_name}"

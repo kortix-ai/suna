@@ -163,3 +163,55 @@ export async function syncSupabaseSamlAttributeMapping(
   }
   return { ok: true, providerId: supabaseProviderId };
 }
+
+/**
+ * Delete a registered SAML provider from Supabase Auth. Called when an account
+ * disconnects SSO so the IdP is unregistered AND — crucially — the email
+ * domain it claimed is freed, letting the admin re-import the same domain later
+ * without hitting Supabase's "domain already registered" 422. Without this the
+ * Kortix row is removed but the Supabase provider is orphaned, stranding the
+ * domain with no self-serve way to reclaim it.
+ *
+ * A 404 is treated as SUCCESS: the provider is already gone (deleted out-of-band
+ * or a double-disconnect), which is the state the caller wanted. Never throws —
+ * disconnecting SSO must never fail on a Supabase hiccup, so the caller logs a
+ * non-ok result and still removes the local row.
+ */
+export async function deleteSupabaseSamlProvider(
+  supabaseProviderId: string,
+): Promise<ProvisionResult> {
+  if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      ok: false,
+      error: 'SSO provisioning is not configured on this deployment',
+      status: 501,
+    };
+  }
+  const base = config.SUPABASE_URL.replace(/\/+$/, '');
+  let resp: Response;
+  try {
+    resp = await fetch(`${base}/auth/v1/admin/sso/providers/${supabaseProviderId}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: config.SUPABASE_SERVICE_ROLE_KEY,
+        authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Could not reach Supabase auth: ${(e as Error).message}`,
+      status: 502,
+    };
+  }
+  // 404 = already unregistered; that's the desired end state, so treat as ok.
+  if (!resp.ok && resp.status !== 404) {
+    const detail = (await resp.text().catch(() => '')).slice(0, 400);
+    return {
+      ok: false,
+      error: detail ? `Supabase rejected the provider deletion: ${detail}` : `Supabase rejected the provider deletion (${resp.status})`,
+      status: 400,
+    };
+  }
+  return { ok: true, providerId: supabaseProviderId };
+}

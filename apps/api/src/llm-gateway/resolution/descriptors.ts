@@ -61,6 +61,12 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
+  // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
+  // on a deployment with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts),
+  // so this only ever reaches a real ManagedModel when the flag is on — but
+  // guard here too so neither AWS_BEDROCK_API_KEY nor OPENROUTER_API_KEY is
+  // ever read for managed routing if some future caller reaches this directly.
+  if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   const d =
     managed.transport === 'openrouter'
       ? openRouterManagedDescriptor(managed)

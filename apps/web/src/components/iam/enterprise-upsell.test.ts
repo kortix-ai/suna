@@ -10,10 +10,7 @@ import { join } from 'node:path';
 
 const dir = import.meta.dir;
 const upsellSource = readFileSync(join(dir, 'enterprise-upsell.tsx'), 'utf8');
-const pageSource = readFileSync(
-  join(dir, '../../app/(app)/accounts/[id]/page.tsx'),
-  'utf8',
-);
+const pageSource = readFileSync(join(dir, '../../app/(app)/accounts/[id]/page.tsx'), 'utf8');
 
 describe('EnterpriseUpsell component', () => {
   test('CTA opens the in-app demo-request modal', () => {
@@ -53,5 +50,42 @@ describe('account page gates each IAM surface behind the entitlement', () => {
 
   test('no upsell flash while entitlements load', () => {
     expect(pageSource).toContain('entitlementsLoading');
+  });
+});
+
+describe('account page rail groups the enterprise surfaces', () => {
+  test('the rail has a labeled Enterprise group with all four IAM sections', () => {
+    const enterpriseGroup = pageSource.match(/label: 'Enterprise',\s*items: \[([\s\S]*?)\]/);
+    const groupBody = enterpriseGroup?.[1] ?? '';
+    expect(groupBody).not.toBe('');
+    for (const id of ["'groups'", "'roles'", "'identity'", "'audit'"]) {
+      expect(groupBody).toContain(`id: ${id}`);
+    }
+  });
+
+  test('identity is its own section, not buried in Settings', () => {
+    expect(pageSource).toMatch(/activeSection === 'identity' && canWriteAccount/);
+    const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
+    expect(settingsStart).toBeGreaterThan(-1);
+    const settingsEnd = pageSource.indexOf('</motion.div>', settingsStart);
+    const settingsBody = pageSource.slice(settingsStart, settingsEnd);
+    for (const moved of ['SsoCard', 'ScimCard', 'EnterpriseDemoCard', 'PatPolicyCard']) {
+      expect(settingsBody).not.toContain(moved);
+    }
+  });
+
+  test('demo toggle stays outside the entitlement gate on the identity section', () => {
+    expect(pageSource).toMatch(/<EnterpriseDemoCard[\s\S]*?\/>\s*\{entitlementsLoading/);
+  });
+
+  test('tokens section carries the PAT policy and service accounts cards', () => {
+    expect(pageSource).toMatch(/activeSection === 'tokens' && canWriteAccount/);
+    expect(pageSource).toMatch(
+      /activeSection === 'tokens'[\s\S]*?<PatPolicyCard[\s\S]*?<ServiceAccountsCard/,
+    );
+  });
+
+  test('audit webhooks live on the audit tab, gated on entitlement + write', () => {
+    expect(pageSource).toMatch(/auditEnabled && canWriteAccount \? \(\s*<AuditWebhooksCard/);
   });
 });

@@ -364,7 +364,7 @@ function blogRecords(): PublicContentRecord[] {
 }
 
 export function areUseCasesPublic(): boolean {
-  return process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'true';
+  return process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
 }
 
 export function getPublicContentRecords(

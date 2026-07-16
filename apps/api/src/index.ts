@@ -36,6 +36,7 @@ import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -808,6 +809,27 @@ app.onError((err, c) => {
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
   }
 
+  // A bare-clone / fetch of a project's git mirror that exceeds its timeout
+  // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
+  // retryable — the mirror already retries once internally before surfacing.
+  // Previously these surfaced as the opaque Better Stack pattern `8d0cffbb…`
+  // ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
+  // progress line captured on stderr before the kill, masking the real cause).
+  // `runGit` now throws a typed `GitOperationError` (kind 'timeout') whose
+  // message names the timeout; classify the transient kind into a retryable
+  // 503 + Retry-After WITHOUT paging Sentry (mirroring Platinum /
+  // request-deadline), while a real `failed` kind (auth / missing repo) still
+  // falls through to Sentry with a meaningful `fatal:` message. See
+  // projects/git/mirror.ts.
+  if (isGitOperationError(err) && err.kind === 'timeout') {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:timeout] ${err.message}`, {
+      method, path, errorType: 'GitOperationError', gitKind: 'timeout',
+      gitArgs: err.gitArgs, signal: err.signal,
+    });
+    c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'git mirror is temporarily unavailable', status: 503 }, 503);
+  }
+
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
       statusCode: err.statusCode, message: err.message, path, method,
@@ -944,6 +966,12 @@ async function startReplicaServices() {
   // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
   await import('./platform/services/runtime-settings')
     .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
+  // Warm the managed-GitHub-App config cache too — so a self-host instance
+  // whose operator just ran the in-app GitHub App setup flow (rather than
+  // `.env`) gets its DB-stored creds from request #1, not after a 30s TTL.
+  await import('./platform/services/managed-github-app')
+    .then((m) => m.refreshManagedGithubAppConfig())
     .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
