@@ -40,7 +40,7 @@ import {
   Presentation,
 } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
-import { CloseButton } from './detail-view';
+import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
@@ -104,6 +104,7 @@ function PreviewShell({
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
+          <DetailSidebarToggle className="size-7" />
           <span className="flex size-5 shrink-0 items-center justify-center">
             {getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
           </span>

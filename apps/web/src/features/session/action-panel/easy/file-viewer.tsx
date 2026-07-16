@@ -46,7 +46,7 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { useState } from 'react';
-import { CloseButton } from './detail-view';
+import { CloseButton, DetailSidebarToggle } from './detail-view';
 
 type View = 'preview' | 'source';
 
@@ -211,6 +211,7 @@ export function FileViewer({
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
+          <DetailSidebarToggle className="size-7" />
           {html ? (
             // Only HTML earns the toggle — and it sits at the far left, before
             // the name, because it changes what the name is showing you.

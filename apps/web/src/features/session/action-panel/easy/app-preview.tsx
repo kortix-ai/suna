@@ -49,7 +49,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { GrRefresh } from 'react-icons/gr';
 import { TbExternalLink } from 'react-icons/tb';
-import { CloseButton } from './detail-view';
+import { CloseButton, DetailSidebarToggle } from './detail-view';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -221,6 +221,7 @@ export function AppPreview({
   return (
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col">
       <div className="border-border flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
+        <DetailSidebarToggle />
         <Hint label="Back" side="bottom">
           <Button variant="ghost" size="icon" onClick={goBack} disabled={!hasPreview || !canGoBack}>
             <ArrowLeft className="size-4" />
