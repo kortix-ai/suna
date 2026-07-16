@@ -159,7 +159,7 @@ export function QuestionTool({
   return (
     <BasicTool trigger={trigger} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={locked}>
       {total > 0 ? (
-        <div data-scrollable className="space-y-3 overflow-auto">
+        <div data-scrollable className="max-h-96 space-y-3 overflow-auto">
           {questions.map((q, i) => (
             <div key={i} className={cn(i > 0 && 'border-border border-t pt-3')}>
               <QuestionAnswerBlock question={q} index={i} answers={answers[i] ?? []} />

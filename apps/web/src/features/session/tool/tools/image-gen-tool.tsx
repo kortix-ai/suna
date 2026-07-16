@@ -255,10 +255,12 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               className="max-h-64 object-contain"
             />
           ) : isImageLoading ? (
-            <div className="text-muted-foreground px-2 py-1.5 text-xs">
-              {tHardcodedUi.raw(
-                'componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview',
-              )}
+            <div className="px-2 py-1.5 text-xs">
+              <TextShimmer duration={1} spread={2}>
+                {tHardcodedUi.raw(
+                  'componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview',
+                )}
+              </TextShimmer>
             </div>
           ) : (
             <div className="text-muted-foreground px-2 py-1.5 font-mono text-xs break-all">

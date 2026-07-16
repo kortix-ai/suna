@@ -338,8 +338,10 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
           })}
         </div>
       ) : isStreaming ? (
-        <div className="text-muted-foreground/60 px-3 py-2 text-xs italic">
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line3044JsxTextApplyingPatch')}
+        <div className="px-3 py-2 text-xs">
+          <TextShimmer duration={1} spread={2} className="italic">
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line3044JsxTextApplyingPatch')}
+          </TextShimmer>
         </div>
       ) : null}
     </BasicTool>

@@ -3,60 +3,34 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Grammar contract (docs/superpowers/specs/2026-07-16-advanced-tool-views-design.md
-// §"The grammar" + §S4): forbidden chrome that must never reappear in a
-// converted tool view — gradients, shadows, the old rounded-2xl cards, and
-// raw palette accent colors (sky/emerald/purple/amber).
-const FORBIDDEN = /rounded-2xl|shadow-(sm|md|lg|xl)|bg-gradient|text-(sky|emerald|purple)-\d|text-amber-\d/;
+// §"The grammar" + §S4): forbidden chrome that must never reappear in ANY
+// tool view — gradients, shadows, the old rounded-2xl cards, raw palette
+// accent colors (sky/emerald/purple/amber), and a literal "Loading..." text
+// node rendered outside `TextShimmer` (the grammar's one sanctioned pending
+// treatment). The last clause is a JSX-text-position match — `>Loading...<`
+// not immediately preceded by a `<TextShimmer>` open tag — so it doesn't
+// false-positive on "Loading..." used as a plain string value (e.g. a
+// trigger `subtitle`, which the shell auto-shimmers while running).
+const FORBIDDEN =
+  /rounded-2xl|shadow-(sm|md|lg|xl)|bg-gradient|text-(sky|emerald|purple)-\d|text-amber-\d|(?<!TextShimmer)>\s*Loading\.\.\.\s*</;
 
-// Tasks 5-7 extend this list as each file is rebuilt on the grammar; Task 8
-// goes exhaustive (every file in tool/tools/). Keeping the assertion scoped
-// to this array — rather than skipping failing files — means the test stays
-// honest (RED until a file is actually converted, GREEN once it lands) at
-// every commit in between.
-export const CONVERTED: string[] = [
-  'get-mem-tool.tsx',
-  'memory-search-tool.tsx',
-  'executor-tools.tsx',
-  'dcp-compress-tool.tsx',
-  'dcp-distill-tool.tsx',
-  'dcp-prune-tool.tsx',
-  'context-info-tool.tsx',
-  // Task 7 — sessions, projects, connectors, triggers, media (S4)
-  'session-read-tool.tsx',
-  'session-message-tool.tsx',
-  'session-lineage-tool.tsx',
-  'session-list-background-tool.tsx',
-  'session-stats-tool.tsx',
-  'session-get-tool.tsx',
-  'session-search-tool.tsx',
-  'session-spawn-tool.tsx',
-  'project-get-tool.tsx',
-  'project-create-tool.tsx',
-  'project-delete-tool.tsx',
-  'project-list-tool.tsx',
-  'project-select-tool.tsx',
-  'connector-get-tool.tsx',
-  'connector-list-tool.tsx',
-  'connector-setup-tool.tsx',
-  'triggers-tool.tsx',
-  'image-gen-tool.tsx',
-  'video-gen-tool.tsx',
-  'image-search-tool.tsx',
-  'removed-integration-tool.tsx',
-];
-
-describe('tool/tools/ conformance — no bespoke design system in converted files', () => {
+// Task 8 goes exhaustive: every .tsx view file in tool/tools/ must conform —
+// not just the files converted so far. Test files (*.test.tsx) are excluded
+// because they legitimately assert on these strings as literals (e.g.
+// `expect(html).not.toContain('rounded-2xl')`), which would otherwise read
+// as false positives.
+describe('tool/tools/ conformance — no bespoke design system anywhere in tool/tools/', () => {
   const dir = join(__dirname);
-  const allFiles = readdirSync(dir).filter((f) => f.endsWith('.tsx') || f.endsWith('.ts'));
+  const viewFiles = readdirSync(dir)
+    .filter((f) => f.endsWith('.tsx') && !f.endsWith('.test.tsx'))
+    .sort();
 
-  test('CONVERTED files still exist in tool/tools/', () => {
-    for (const file of CONVERTED) {
-      expect(allFiles).toContain(file);
-    }
+  test('found tool view files to check (sanity: the sweep is not silently empty)', () => {
+    expect(viewFiles.length).toBeGreaterThan(50);
   });
 
-  for (const file of CONVERTED) {
-    test(`${file} has no forbidden gradient/shadow/rounded-2xl/raw-palette classes`, () => {
+  for (const file of viewFiles) {
+    test(`${file} has no forbidden gradient/shadow/rounded-2xl/raw-palette/literal-Loading classes`, () => {
       const source = readFileSync(join(dir, file), 'utf8');
       const match = source.match(FORBIDDEN);
       expect(match).toBeNull();

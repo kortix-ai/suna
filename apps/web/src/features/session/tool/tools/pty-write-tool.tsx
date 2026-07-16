@@ -208,7 +208,7 @@ export function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       locked={locked}
     >
       {ptyInput && (
-        <div className="px-3 py-2">
+        <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
           <pre className="text-foreground/80 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
             <span className="text-muted-foreground/50 select-none">
               {tHardcodedUi.raw('componentsSessionToolRenderers.line2685JsxTextText')}

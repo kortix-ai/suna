@@ -391,7 +391,7 @@ function InlineSessionMessagesList({ messages }: { messages: ParsedSessionMessag
         <div
           key={msg.index}
           className={cn(
-            'overflow-hidden rounded-2xl border',
+            'overflow-hidden rounded-md border',
             msg.role === 'user' ? 'border-border/60' : 'border-border/40',
           )}
         >
