@@ -162,6 +162,7 @@
     "smoke:install": "node scripts/smoke-install.mjs"
   },
   "devDependencies": {
+    "@kortix/shared": "workspace:*",
     "@tanstack/react-query": "^5.75.2",
     "@types/react": "^19.1.17",
     "@types/react-test-renderer": "^19.1.0",

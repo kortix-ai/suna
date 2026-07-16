@@ -1480,6 +1480,9 @@ importers:
         specifier: ^5.0.3
         version: 5.0.14(@types/react@19.1.17)(react@19.1.0)(use-sync-external-store@1.6.0)
     devDependencies:
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@tanstack/react-query':
         specifier: ^5.75.2
         version: 5.101.2(react@19.1.0)
