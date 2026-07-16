@@ -80,6 +80,10 @@ describe('secrets-registry pure helpers', () => {
   test('isUpdaterManagedKey only flags the updater/image-tag keys, not ordinary secrets', () => {
     expect(isUpdaterManagedKey('KORTIX_VERSION')).toBe(true);
     expect(isUpdaterManagedKey('API_IMAGE')).toBe(true);
+    // The instance dir's absolute host path — recomputed on every render (see
+    // normalizeFullSupabaseEnv in commands/self-host.ts) exactly like
+    // KORTIX_APP_REPLICAS, so hand-setting it is refused for the same reason.
+    expect(isUpdaterManagedKey('KORTIX_INSTANCE_DIR')).toBe(true);
     expect(isUpdaterManagedKey('OPENROUTER_API_KEY')).toBe(false);
     expect(isUpdaterManagedKey('DAYTONA_API_KEY')).toBe(false);
   });
@@ -319,6 +323,20 @@ describe('kortix self-host env (CLI)', () => {
     expect(code).toBe(2);
     expect(stderr).toContain('updater');
     expect(readEnv().KORTIX_VERSION).toBe(before);
+  });
+
+  test('KORTIX_INSTANCE_DIR is the absolute instance directory and env set refuses to hand-set it', async () => {
+    await run(['init', '--yes']);
+    // Must be the real, absolute on-disk path this instance's compose/env
+    // live in — see the KORTIX_INSTANCE_DIR field doc comment on SelfHostEnv
+    // (commands/self-host.ts) for why the in-compose updater's DinD bind
+    // mount depends on this being exactly right.
+    expect(readEnv().KORTIX_INSTANCE_DIR).toBe(join(configRoot, instance));
+
+    const { code, stderr } = await run(['env', 'set', 'KORTIX_INSTANCE_DIR=/tmp/somewhere-else']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('updater');
+    expect(readEnv().KORTIX_INSTANCE_DIR).toBe(join(configRoot, instance));
   });
 
   test('env rotate DASHBOARD_PASSWORD regenerates only that value', async () => {

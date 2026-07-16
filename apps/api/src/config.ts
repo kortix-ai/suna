@@ -51,6 +51,15 @@ const optBoolFalse = z
   .optional()
   .default('false')
   .transform((v) => ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()));
+/** Tri-state boolean: stays `undefined` when unset so a deployment-aware
+ * default can be derived after parsing (see KORTIX_MANAGED_PROVIDER_ENABLED,
+ * which follows the billing flag when not explicitly set). */
+const optBoolUnset = z
+  .string()
+  .optional()
+  .transform((v) =>
+    v === undefined ? undefined : ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()),
+  );
 
 /** Declarative, operator-defined model fallback policies. */
 const optFallbackPolicies = z
@@ -116,6 +125,22 @@ const envSchema = z.object({
   // for a self-host license check, unlike the `demoEnterprise` per-account
   // preview toggle this mirrors.
   ENTERPRISE_LICENSE_AVAILABLE:     optBoolFalse,
+  // Self-host account-creation restriction: when true, POST /v1/accounts
+  // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
+  // except a platform admin (KORTIX_PLATFORM_ADMIN_EMAILS — see
+  // shared/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
+  // the removed KORTIX_SINGLE_ACCOUNT_MODE: signups still work, teams/orgs
+  // still fully function, SSO/JIT still lands users in their org — only the
+  // CREATION of new accounts by ordinary users is gated. The personal-account
+  // bootstrap path (bootstrapPersonalAccount, called directly from GET
+  // /v1/accounts on first login) does NOT route through this gate — every
+  // user still gets their own landing account. Off by default (cloud is
+  // unaffected); the self-host CLI defaults this to 'true'
+  // (SHARED_FEATURE_FLAG_DEFAULTS) since a VPS operator usually wants to be
+  // the only one who can spin up new organizations. The frontend mirrors this
+  // with KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION to hide "New account" UI for
+  // non-admins.
+  KORTIX_RESTRICT_ACCOUNT_CREATION: optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -266,12 +291,14 @@ const envSchema = z.object({
   // the picker) exists at all on this deployment. Independent of
   // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
   // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
-  // must never see or route to Kortix's shared credentials. Off by default;
-  // Kortix Cloud sets this true in its own env. See RUNTIME_MANAGED_MODELS
-  // (managed-models.ts) and managedCandidates() (descriptors.ts) — both are
-  // gated on this and read NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY
-  // for managed routing when it's off.
-  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolFalse,
+  // must never see or route to Kortix's shared credentials. When unset it
+  // follows KORTIX_BILLING_INTERNAL_ENABLED (derived below): billing on =
+  // managed cloud where the managed lineup is the product; billing off =
+  // self-host where it must stay dark. An explicit true/false always wins.
+  // See RUNTIME_MANAGED_MODELS (managed-models.ts) and managedCandidates()
+  // (descriptors.ts) — both are gated on this and read NEITHER
+  // AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY for managed routing when off.
+  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
   // Fleet default for projects with no explicit per-project override. Defaults
   // ON: wherever the gateway is available (master switch above), the managed
   // gateway is the default routing mechanism and every project inherits it
@@ -527,19 +554,27 @@ function validateEnv(): z.infer<typeof envSchema> {
   // Use raw values for conditional checks (schema may have failed)
   const raw = result.success ? result.data : (process.env as Record<string, string | undefined>);
 
-  // ── Conditional: Daytona provider enabled → need Daytona keys ──────────
+  // ── Conditional: sandbox provider credentials ───────────────────────────
+  // On the managed cloud (billing on) a missing provider key is a hard error —
+  // sessions are the product. On self-host it is a WARNING: the operator sets
+  // the key after first boot (dashboard-first onboarding); the server must
+  // start so they can reach that dashboard at all. Sandbox creation fails with
+  // a clear error until the key lands.
   const providers = parseAllowedProviders((raw as any).ALLOWED_SANDBOX_PROVIDERS || '');
+  const billingOn = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true;
+  const providerKeyLevel: 'error' | 'warn' = billingOn ? 'error' : 'warn';
+  const providerKeySuffix = billingOn ? '' : ' — agent sessions will fail until it is set (kortix self-host env set ...)';
   if (providers.includes('daytona')) {
-    if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
-    if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
-    if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
+    if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`, level: providerKeyLevel });
+    if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`, level: providerKeyLevel });
+    if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`, level: providerKeyLevel });
   }
   if (providers.includes('platinum')) {
-    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
-    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"${providerKeySuffix}`, level: providerKeyLevel });
+    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"${providerKeySuffix}`, level: providerKeyLevel });
   }
   if (providers.includes('e2b') && !raw.E2B_API_KEY) {
-    issues.push({ var: 'E2B_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"', level: 'error' });
+    issues.push({ var: 'E2B_API_KEY', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"${providerKeySuffix}`, level: providerKeyLevel });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -645,6 +680,7 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
+  KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
@@ -729,7 +765,10 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
-  KORTIX_MANAGED_PROVIDER_ENABLED: env.KORTIX_MANAGED_PROVIDER_ENABLED,
+  // Unset → follow billing (cloud keeps its revenue lineup even if the env
+  // blob misses the var; self-host stays off). Explicit value always wins.
+  KORTIX_MANAGED_PROVIDER_ENABLED:
+    env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,

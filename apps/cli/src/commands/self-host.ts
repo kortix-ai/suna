@@ -65,7 +65,7 @@ const VPS_FIRST_NOTICE =
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
 Run Kortix on your own VPS — a domain is the production path; a Cloudflare
-tunnel is for evaluation with no public domain. Docs: kortix.com/docs/self-hosting
+tunnel is for evaluation with no public domain. Docs: kortix.com/docs/guides/self-hosting
 
 Subcommands:
   init                    Create/refresh this instance's Compose + env config.
@@ -94,6 +94,8 @@ Options:
   --local-images          Run locally-built images (dev mode); forces auto-update off.
   --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
   --admin-email <email>   Grant platform-admin to this account.
+  --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
+  --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
   --json                  Machine-readable output where supported.
   --yes                   Accept defaults non-interactively.
   -h, --help              Show this help.
@@ -107,6 +109,7 @@ Examples:
   kortix self-host init --version 0.10.1
   kortix self-host init --version dev-a1b2c3d --local-images
   kortix self-host env set DAYTONA_API_KEY=dtn_...
+  kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@company.com   # grant platform admin later
   kortix self-host uninstall
   kortix hosts ls
 `;
@@ -124,6 +127,26 @@ interface SelfHostEnv {
   // 1 with no domain configured. Recomputed from KORTIX_DOMAIN on every write (see
   // normalizeFullSupabaseEnv), not operator-set.
   KORTIX_APP_REPLICAS: string;
+  // This instance's config directory (docker-compose.yml, .env, updater.sh,
+  // Supabase volumes/...), as an ABSOLUTE HOST PATH. Recomputed from
+  // instanceDir() on every write (see normalizeFullSupabaseEnv) — not
+  // operator-set (see UPDATER_MANAGED_RUNTIME_KEYS in secrets-registry.ts).
+  // The in-compose `kortix-updater` service runs `docker compose` INSIDE its
+  // own container against the HOST Docker daemon (over the mounted socket),
+  // so any relative bind mount elsewhere in this stack's compose file (kong's
+  // ./volumes/api/kong.yml, supabase-db's ./volumes/db/*, ...) has to resolve
+  // to a path that ALSO exists on the real host. Bind-mounting the instance
+  // dir at this same absolute path inside that container (source == target)
+  // and setting its working_dir to match is what makes that true — see the
+  // kortix-updater service in assets/kortix-compose.yml and the DinD comment
+  // at the top of assets/updater.sh. Before this field existed, the updater
+  // mounted the instance dir at a fixed in-container-only `/workspace`
+  // instead, so every relative bind resolved to a host-side `/workspace/...`
+  // path the host daemon could never satisfy ("mounts denied: ... is not
+  // shared from the host") — the api/gateway/frontend services have no binds
+  // so they rolled fine, masking the bug until the first bind-mounted service
+  // (e.g. supabase-kong) needed an updater-driven recreate.
+  KORTIX_INSTANCE_DIR: string;
   KORTIX_DOMAIN: string;
   KORTIX_API_DOMAIN: string;
   KORTIX_ACME_EMAIL: string;
@@ -285,6 +308,8 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const domain = takeFlagValue(args, ['--domain']);
   const tunnelRaw = takeFlagValue(args, ['--tunnel']);
   const adminEmail = takeFlagValue(args, ['--admin-email']);
+  const restrictAccountCreationOn = takeFlagBool(args, ['--restrict-account-creation']);
+  const restrictAccountCreationOff = takeFlagBool(args, ['--no-restrict-account-creation']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -299,6 +324,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   }
   if (tunnelRaw !== undefined && tunnelRaw !== 'cloudflare') {
     throw new Error(`--tunnel only supports "cloudflare", got "${tunnelRaw}"`);
+  }
+  if (restrictAccountCreationOn && restrictAccountCreationOff) {
+    throw new Error('--restrict-account-creation and --no-restrict-account-creation are mutually exclusive');
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
@@ -316,6 +344,11 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     domain,
     tunnel: tunnelRaw as 'cloudflare' | undefined,
     adminEmail,
+    restrictAccountCreation: restrictAccountCreationOn
+      ? true
+      : restrictAccountCreationOff
+        ? false
+        : undefined,
     yes,
     json,
   };
@@ -566,6 +599,28 @@ function selfHostDoctor(flags: GlobalFlags): number {
       name: 'compose-config',
       ok: !result.error && result.status === 0,
       detail: result.error?.message ?? (result.stderr.trim() || 'valid'),
+    });
+  }
+  if (existsSync(envPath(flags.instance))) {
+    // KORTIX_INSTANCE_DIR is recomputed on every writeEnv() (see
+    // normalizeFullSupabaseEnv), so this can only be stale between writes —
+    // e.g. the instance directory was moved/restored on disk (or
+    // KORTIX_SELF_HOST_CONFIG_DIR changed) since the last `init`/`start`/
+    // `update`/`configure`/`env set`. A stale value here means the in-compose
+    // `kortix-updater` service is still bind-mounted (and has its working_dir
+    // set) at the OLD path — the exact DinD mounts-denied failure mode this
+    // field exists to prevent — until something re-renders. Any of those
+    // commands self-heals it; this check just surfaces the drift instead of
+    // letting it fail silently at the next `update`.
+    const env = loadEnv(flags.instance);
+    const actual = instanceDir(flags.instance);
+    const recorded = env?.KORTIX_INSTANCE_DIR ?? '';
+    checks.push({
+      name: 'instance-dir',
+      ok: recorded === actual,
+      detail: recorded === actual
+        ? actual
+        : `stale KORTIX_INSTANCE_DIR="${recorded}" (actual: ${actual}) — run \`kortix self-host configure\` (or any of init/start/update/env set) to reconcile`,
     });
   }
   const ok = checks.every((check) => check.ok);
@@ -850,13 +905,19 @@ function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
   if (flags.enterpriseLicense !== undefined) {
     env.ENTERPRISE_LICENSE_AVAILABLE = flags.enterpriseLicense ? 'true' : 'false';
   }
+  if (flags.restrictAccountCreation !== undefined) {
+    const value = flags.restrictAccountCreation ? 'true' : 'false';
+    env.KORTIX_RESTRICT_ACCOUNT_CREATION = value;
+    env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = value;
+  }
 }
 
 /**
- * Interactive follow-up to applyFeatureFlags: the one real deployment-shape
- * y/n question — Enterprise license — defaulting to whatever is currently in
- * .env (so re-running `configure` doesn't reset a prior answer). No-ops
- * under --yes / non-TTY (see shouldPrompt).
+ * Interactive follow-up to applyFeatureFlags: the two deployment-shape y/n
+ * questions — Enterprise license, then account-creation restriction — each
+ * defaulting to whatever is currently in .env (so re-running `configure`
+ * doesn't reset a prior answer). No-ops under --yes / non-TTY (see
+ * shouldPrompt).
  */
 async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   if (!shouldPrompt(flags)) return;
@@ -869,6 +930,15 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
     env.ENTERPRISE_LICENSE_AVAILABLE === 'true' ? 'yes' : 'no',
   );
   env.ENTERPRISE_LICENSE_AVAILABLE = enterpriseLicense === 'yes' ? 'true' : 'false';
+
+  // Default Yes: signups/teams/SSO all keep working either way — this only
+  // gates who can spin up a brand-new organization (POST /v1/accounts).
+  const restrictAccountCreation = await confirm(
+    'Restrict account creation to the admin? (new organizations can only be created by platform admins; users join by invite or SSO)',
+    env.KORTIX_RESTRICT_ACCOUNT_CREATION !== 'false',
+  );
+  env.KORTIX_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
+  env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
 }
 
 /** Point every Kortix app image (and the tracked version) at the given tag. */
@@ -1386,11 +1456,19 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
     return 1;
   }
   // Same ordering as `init`: reachability first (the decision that determines
-  // whether agent sandboxes can work at all), then feature flags, then
-  // integrations (Daytona) — see selfHostInit() for the full rationale.
+  // whether agent sandboxes can work at all), then admin email, then feature
+  // flags, then integrations (Daytona) — see selfHostInit() for the full
+  // rationale. Admin email is asked here on EVERY `configure` (not only on a
+  // fresh init the way selfHostInit gates it): an operator who skipped it at
+  // init and later runs `configure` to fix that would otherwise find that
+  // `configure` "did nothing" about it — the current value is pre-filled, so
+  // enter keeps it and this costs an already-configured instance one
+  // keystroke.
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
+  applyAdminEmail(env, flags);
   await promptReachability(env, flags);
+  await promptAdminEmail(env, flags);
   await promptFeatureFlags(env, flags);
   await configureIntegrations(env, flags);
   await configureUpdatePolicy(env, flags);
@@ -1495,27 +1573,33 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
   const currentProvider = sandboxProviders(env)[0];
-  const provider = shouldPrompt(flags)
-    ? await selectFrom(
-        'Sandbox provider',
-        SANDBOX_PROVIDER_CHOICES,
-        (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
-          ? (currentProvider as SandboxProviderChoice)
-          : 'daytona',
-      )
-    : ((currentProvider as SandboxProviderChoice) ?? 'daytona');
+  const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
+    ? (currentProvider as SandboxProviderChoice)
+    : 'daytona';
+  let provider: SandboxProviderChoice = defaultProvider;
+  if (shouldPrompt(flags)) {
+    // Every choice, printed up front — a bare `selectFrom` prompt with no
+    // visible options left `daytona`/`e2b`/`platinum` undiscoverable unless
+    // the operator already knew the exact names to type (a real reported
+    // bug: the prompt rendered as a bare `Sandbox provider [daytona]:`).
+    // Same one-provider-only shape as before (selectFrom, not selectMany) —
+    // an instance runs on exactly one sandbox provider.
+    process.stdout.write(
+      `  ${C.cyan}daytona${C.reset}   ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
+        `  ${C.cyan}e2b${C.reset}       ${C.dim}https://e2b.dev${C.reset}\n` +
+        `  ${C.cyan}platinum${C.reset}  ${C.dim}Kortix's own microVM sandbox provider${C.reset}\n`,
+    );
+    provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
+  }
   env.ALLOWED_SANDBOX_PROVIDERS = provider;
 
   if (provider === 'daytona') {
-    process.stdout.write(`  ${C.dim}Daytona (https://app.daytona.io)${C.reset}\n`);
     env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
     env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
     env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   } else if (provider === 'e2b') {
-    process.stdout.write(`  ${C.dim}E2B (https://e2b.dev)${C.reset}\n`);
     env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
   } else {
-    process.stdout.write(`  ${C.dim}Platinum (Kortix's own microVM sandbox provider)${C.reset}\n`);
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
@@ -1915,6 +1999,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // Recomputed from KORTIX_DOMAIN on every write in normalizeFullSupabaseEnv;
     // this initial value only matters before that first normalize pass.
     KORTIX_APP_REPLICAS: String(LAPTOP_APP_REPLICAS),
+    // Recomputed from instanceDir() on every write in normalizeFullSupabaseEnv
+    // (see the field's own doc comment on SelfHostEnv above); this initial
+    // value only matters before that first normalize pass.
+    KORTIX_INSTANCE_DIR: instanceDir(flags.instance),
     KORTIX_DOMAIN: '',
     KORTIX_API_DOMAIN: '',
     KORTIX_ACME_EMAIL: '',
@@ -2159,6 +2247,18 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
+
+  // Always recomputed (never `||=`) — see the KORTIX_INSTANCE_DIR field's doc
+  // comment on SelfHostEnv. Unconditional on purpose: if the instance
+  // directory itself moved (operator relocated it, or restored it under a
+  // different KORTIX_SELF_HOST_CONFIG_DIR), the next `init`/`start`/`update`/
+  // `configure`/`env set` — anything that calls writeEnv() — self-heals a
+  // stale value instead of quietly leaving the in-compose updater mounted at
+  // an address that no longer matches. `doctor` also flags a mismatch
+  // directly (see selfHostDoctor) for the read-only "is this still stale?"
+  // check.
+  env.KORTIX_INSTANCE_DIR = instanceDir(instance);
+
   env.POOLER_TENANT_ID ||= composeProject(instance);
   env.STORAGE_TENANT_ID ||= composeProject(instance);
   env.STUDIO_DEFAULT_PROJECT ||= instance;

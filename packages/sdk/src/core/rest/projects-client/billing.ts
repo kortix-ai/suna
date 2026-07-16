@@ -109,6 +109,11 @@ export interface AccountState {
       auditAccess: boolean;
     };
   };
+  /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
+   *  forces every enterprise entitlement on platform-wide — the frontend
+   *  hides the self-serve "Enterprise features — Demo" toggle and any
+   *  "Request enterprise access" upsell when this is true. */
+  enterprise_license_available?: boolean;
   auto_topup?: {
     enabled: boolean;
     threshold: number;

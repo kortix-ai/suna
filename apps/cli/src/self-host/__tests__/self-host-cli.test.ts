@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -214,6 +214,27 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(readEnv().KORTIX_APP_REPLICAS).toBe('1');
   });
 
+  test('KORTIX_INSTANCE_DIR is the absolute instance directory and is wired into the rendered kortix-updater service (DinD self-referential mount)', async () => {
+    // Regression coverage for the "mounts denied" self-host update bug: the
+    // in-compose kortix-updater runs `docker compose` against the HOST daemon
+    // over the mounted socket, so any relative bind mount elsewhere in this
+    // compose file only resolves correctly if the updater container sees the
+    // instance directory at the SAME absolute path the host does. That path
+    // is KORTIX_INSTANCE_DIR — recomputed from the real on-disk instance dir
+    // on every render (see normalizeFullSupabaseEnv in commands/self-host.ts).
+    await run(['init', '--yes']);
+    const instanceDir = join(configRoot, 'default');
+    expect(readEnv().KORTIX_INSTANCE_DIR).toBe(instanceDir);
+
+    const compose = readCompose() as { services: Record<string, {
+      volumes?: string[];
+      working_dir?: string;
+    }> };
+    const updater = compose.services['kortix-updater'];
+    expect(updater?.working_dir).toBe('${KORTIX_INSTANCE_DIR}');
+    expect(updater?.volumes).toContain('${KORTIX_INSTANCE_DIR}:${KORTIX_INSTANCE_DIR}');
+  });
+
   test('the rendered compose has no Caddy service until KORTIX_DOMAIN is set', async () => {
     await run(['init', '--yes']);
     const before = readCompose();
@@ -251,6 +272,47 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
       expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
       expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
+    });
+
+    // Account-creation restriction is the one feature flag that defaults ON
+    // for self-host (every other flag in this describe block defaults off) —
+    // a VPS operator usually wants to be the only one who can spin up new
+    // organizations on their own instance.
+    test('account-creation restriction defaults ON (both the api and frontend-mirroring vars)', async () => {
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('true');
+      expect(env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('true');
+    });
+
+    test('--no-restrict-account-creation opts out of the default (both vars)', async () => {
+      const { code } = await run(['init', '--yes', '--no-restrict-account-creation']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('false');
+      expect(env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('false');
+    });
+
+    test('--restrict-account-creation and --no-restrict-account-creation together is a usage error', async () => {
+      const { code, stderr } = await run([
+        'init',
+        '--yes',
+        '--restrict-account-creation',
+        '--no-restrict-account-creation',
+      ]);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain('mutually exclusive');
+    });
+
+    test('a re-run of init without the flag does not reset a previously opted-out account-creation restriction', async () => {
+      await run(['init', '--yes', '--no-restrict-account-creation']);
+      expect(readEnv().KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('false');
+
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_RESTRICT_ACCOUNT_CREATION).toBe('false');
+      expect(readEnv().KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('false');
     });
 
     // There is deliberately no `--landing`/`--no-landing` flag: the landing
@@ -315,6 +377,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const frontendEnv = (compose.services.frontend as any).environment;
       expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
       expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}');
+      expect(frontendEnv.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}');
 
       // kortix-api gets these via `env_file: .env` (loads every .env key) —
       // no explicit `environment:` entry, since one would win over env_file
@@ -322,6 +385,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const apiEnv = (compose.services['kortix-api'] as any).environment;
       expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
       expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
+      expect(apiEnv.KORTIX_RESTRICT_ACCOUNT_CREATION).toBeUndefined();
       expect((compose.services['kortix-api'] as any).env_file).toContain('.env');
     });
   });
@@ -424,6 +488,44 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const { code } = await run(['env', 'set', 'CLOUDFLARE_TUNNEL_TOKEN=faketoken']);
       expect(code).toBe(0);
     });
+  });
+
+  test('help shows the grant-platform-admin-later env set example', async () => {
+    // The guided flows (init once, configure always) ask for the admin email,
+    // but an operator who declined both needs a discoverable non-interactive
+    // path — the help example is that path.
+    const { code, stdout } = await run(['--help']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('env set KORTIX_PLATFORM_ADMIN_EMAILS=');
+  });
+
+  test('doctor flags a stale KORTIX_INSTANCE_DIR (instance directory moved since the last render) and passes it fresh otherwise', async () => {
+    await run(['init', '--yes']);
+
+    const fresh = await run(['doctor', '--json']);
+    const freshCheck = (JSON.parse(fresh.stdout).checks as Array<{ name: string; ok: boolean }>)
+      .find((c) => c.name === 'instance-dir');
+    expect(freshCheck?.ok).toBe(true);
+
+    // Simulate the instance directory having moved on disk (or
+    // KORTIX_SELF_HOST_CONFIG_DIR having changed) since the last
+    // init/start/update/configure/env-set render — hand-edit .env the way
+    // `env set` itself refuses to (see secrets.test.ts's updater-managed
+    // refusal coverage for KORTIX_INSTANCE_DIR).
+    const envFile = join(configRoot, 'default', '.env');
+    writeFileSync(
+      envFile,
+      readFileSync(envFile, 'utf8').replace(
+        /^KORTIX_INSTANCE_DIR=.*$/m,
+        'KORTIX_INSTANCE_DIR=/tmp/stale-path-from-before-a-move',
+      ),
+    );
+
+    const stale = await run(['doctor', '--json']);
+    const staleCheck = (JSON.parse(stale.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
+      .find((c) => c.name === 'instance-dir');
+    expect(staleCheck?.ok).toBe(false);
+    expect(staleCheck?.detail).toContain('stale');
   });
 
   // `connect-github` is deprecated: managed git is now configured in the web

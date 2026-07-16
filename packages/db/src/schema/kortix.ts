@@ -3050,6 +3050,12 @@ export const accountSsoProviders = kortixSchema.table(
      *  so admins skip manual mapping and just attach project roles. Off by
      *  default — providers keep the explicit-mapping behavior. */
     autoProvisionGroups: boolean('auto_provision_groups').default(false).notNull(),
+    /** When true, the unified auth flow refuses password/email-code logins for
+     *  this provider's primaryDomain — /access/check-email answers mode='sso'
+     *  and the web auth actions turn the request away, so the IdP is the only
+     *  door. Off by default: pre-SSO password accounts keep working until the
+     *  org explicitly flips enforcement. */
+    enforceSso: boolean('enforce_sso').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

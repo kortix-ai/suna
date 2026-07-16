@@ -91,6 +91,14 @@ export async function confirm(label: string, defaultValue: boolean): Promise<boo
  * Pick one value from a fixed list. Returns the chosen value
  * (lowercased + trimmed). Empty input falls back to `defaultValue`.
  * Re-prompts on unknown values.
+ *
+ * Always renders every choice as a numbered menu before asking — a bare
+ * `label [default]:` line with no visible options leaves anything beyond
+ * the default undiscoverable (a real self-host bug: `Sandbox provider
+ * [daytona]:` gave no hint that e2b/platinum existed at all). Accepts
+ * either the option's number or its literal name, so scripted input
+ * (tests, `--yes` non-interactive paths) that already types the option
+ * name keeps working unchanged.
  */
 export async function selectFrom<T extends string>(
   label: string,
@@ -100,13 +108,22 @@ export async function selectFrom<T extends string>(
   ensureTTY();
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
+    process.stdout.write(`  ${label}\n`);
+    options.forEach((option, i) => {
+      const marker = option === defaultValue ? ' (default)' : '';
+      process.stdout.write(`    ${i + 1}) ${option}${marker}\n`);
+    });
     while (true) {
       const raw = await new Promise<string>((resolve) =>
-        rl.question(`${label} [${defaultValue}]: `, (answer) => resolve(answer)),
+        rl.question(`  Enter a number or name [${defaultValue}]: `, (answer) => resolve(answer)),
       );
       const norm = raw.trim().toLowerCase();
       if (norm === '') return defaultValue;
       if ((options as readonly string[]).includes(norm)) return norm as T;
+      const asIndex = Number.parseInt(norm, 10);
+      if (Number.isFinite(asIndex) && asIndex >= 1 && asIndex <= options.length) {
+        return options[asIndex - 1]!;
+      }
       process.stdout.write(`  Pick one of: ${options.join(', ')}\n`);
     }
   } finally {

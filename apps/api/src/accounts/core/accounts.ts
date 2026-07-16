@@ -2,9 +2,11 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
 import { accountMembers, accounts, projects } from "@kortix/db";
-import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
+import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
+import { isPlatformAdmin } from "../../shared/platform-roles";
+import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
   AccountIdParam,
@@ -116,11 +118,29 @@ export function registerAccountRoutes(): void {
       },
       responses: {
         201: json(AccountSummarySchema, "The newly created account"),
-        ...errors(400, 401),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
       const userId = c.get("userId") as string;
+
+      // Self-host account-creation restriction: gate the creation of
+      // ADDITIONAL/org accounts to platform admins only. This is NOT the
+      // removed single-account mode — signups, teams, and SSO/JIT all keep
+      // working unchanged; only this "spin up a brand-new organization" path
+      // is narrowed. The personal-account bootstrap (GET /v1/accounts →
+      // bootstrapPersonalAccount) never calls this route, so every user still
+      // lands in their own account regardless of this flag.
+      if (config.KORTIX_RESTRICT_ACCOUNT_CREATION && !(await isPlatformAdmin(userId))) {
+        return c.json(
+          {
+            error: 'Creating new accounts is restricted to the server admin on this deployment',
+            code: 'account_creation_restricted',
+          },
+          403,
+        );
+      }
+
       const body = await readBody(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);

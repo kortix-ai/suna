@@ -214,8 +214,17 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   // instead of silently hiding the only content in the pane. Any other error
   // gets a visible, retryable state.
   if (statusQuery.isError || !statusQuery.data) {
-    const status = (statusQuery.error as { status?: number } | null)?.status;
-    const forbidden = status === 403;
+    // Robust auth-failure detection: the SDK's ApiError carries `.status`, but
+    // depending on the failure path the code can sit on `.response.status` or
+    // only in the message — a non-admin must NEVER see the scary generic error.
+    const err = statusQuery.error as
+      | { status?: number; response?: { status?: number }; message?: string }
+      | null;
+    const status = err?.status ?? err?.response?.status;
+    const forbidden =
+      status === 403 ||
+      status === 401 ||
+      /\b(403|401|forbidden|unauthorized|admin access)\b/i.test(err?.message ?? '');
     return (
       <div className="space-y-2">
         <p className="text-foreground text-sm font-medium">Managed GitHub</p>

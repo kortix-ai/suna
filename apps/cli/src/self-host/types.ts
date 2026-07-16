@@ -14,6 +14,14 @@ export interface SelfHostCommandFlags {
    *  entitlements platform-wide regardless of billing tier
    *  (ENTERPRISE_LICENSE_AVAILABLE, --enterprise-license). */
   enterpriseLicense?: boolean;
+  /** Restrict new-account/organization creation to platform admins only
+   *  (KORTIX_RESTRICT_ACCOUNT_CREATION + the frontend-mirroring
+   *  KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION). Signups, existing teams, and
+   *  SSO/JIT membership are unaffected — only spinning up a brand-new
+   *  organization is gated. Defaults ON for self-host (see
+   *  SHARED_FEATURE_FLAG_DEFAULTS); `--no-restrict-account-creation` opts
+   *  out. */
+  restrictAccountCreation?: boolean;
   /** Public domain reachability mode: this instance is reachable at
    *  `https://<domain>` (and `https://api.<domain>`) — sets KORTIX_DOMAIN,
    *  turning on the bundled Caddy reverse proxy/ACME TLS, same as

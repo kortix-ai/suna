@@ -1,7 +1,8 @@
 # ── GitHub Actions OIDC deploy role + EKS access ──────────────────────────────
-# Mirrors the existing `kortix-gha-ecs-deploy` role (out-of-band today) but for
-# EKS, and managed here in code per the brief. CI assumes this via OIDC (no
-# static keys) to run `helm upgrade` against the cluster. Two halves:
+# Mirrors the `kortix-gha-ecs-deploy` role (codified in
+# ../../security-baseline/iam-gha-ecs-deploy.tf) but for EKS, and managed here
+# in code per the brief. CI assumes this via OIDC (no static keys) to run
+# `helm upgrade` against the cluster. Two halves:
 #   1. IAM: trust GitHub OIDC for the repo + permission to DescribeCluster
 #      (all `update-kubeconfig` needs).
 #   2. EKS access entry: the Kubernetes RBAC — cluster-wide READ + write ONLY in

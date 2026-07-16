@@ -4,32 +4,21 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  PROVIDER_GUIDES,
-  SCIM_PROVIDER_GUIDES,
-  getProviderGuide,
-  getScimGuide,
-} from './guides';
+import { PROVIDER_GUIDES, SCIM_PROVIDER_GUIDES, getProviderGuide, getScimGuide } from './guides';
 
 const dir = import.meta.dir;
 const wizardSource = readFileSync(join(dir, 'setup-wizard.tsx'), 'utf8');
-const cardSource = readFileSync(
-  join(dir, '../../components/iam/sso-card.tsx'),
-  'utf8',
-);
-const scimCardSource = readFileSync(
-  join(dir, '../../components/iam/scim-card.tsx'),
-  'utf8',
-);
+const cardSource = readFileSync(join(dir, '../../components/iam/sso-card.tsx'), 'utf8');
+const scimCardSource = readFileSync(join(dir, '../../components/iam/scim-card.tsx'), 'utf8');
+const guidesSource = readFileSync(join(dir, 'guides.ts'), 'utf8');
+// Prose the formatter is free to rewrap across lines — collapse whitespace
+// so a multi-word assertion doesn't break on an incidental line break.
+const flatWizardSource = wizardSource.replace(/\s+/g, ' ');
+const flatGuidesSource = guidesSource.replace(/\s+/g, ' ');
 
 describe('provider guides', () => {
   test('cover Entra, Okta, Google, and Custom SAML', () => {
-    expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
-      'custom',
-      'entra',
-      'google',
-      'okta',
-    ]);
+    expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'google', 'okta']);
   });
 
   test('every guide ends with the inline import step followed by a test step', () => {
@@ -192,8 +181,98 @@ describe('auto-provision groups default', () => {
   });
 
   test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    expect(cardSource).toContain(
-      'useState(existing ? existing.auto_provision_groups : true)',
+    expect(cardSource).toContain('useState(existing ? existing.auto_provision_groups : true)');
+  });
+});
+
+describe('schematic figures (WorkOS-informed content, our own rendering)', () => {
+  test('StepFigure falls back to a schematic panel before it falls back to a bare placeholder', () => {
+    expect(wizardSource).toContain('function SchematicPanel');
+    expect(wizardSource).toMatch(/missing\s*\?\s*\(\s*schematic\s*\?\s*\(\s*<SchematicPanel/);
+  });
+
+  test('schematics are declarative data on the guide step, not JSX baked into guides.ts', () => {
+    expect(guidesSource).toContain('export interface StepSchematic');
+    expect(guidesSource).not.toMatch(/<[A-Z]\w*[\s/>]/); // no JSX tags in the data file
+  });
+
+  test('every provider with a console (Entra, Okta, Google) has at least one schematic', () => {
+    for (const id of ['entra', 'okta', 'google']) {
+      const guide = getProviderGuide(id)!;
+      const text = JSON.stringify(guide.steps);
+      expect(text).toContain('"schematic"');
+    }
+    for (const id of ['entra', 'okta']) {
+      const guide = getScimGuide(id)!;
+      const text = JSON.stringify(guide.steps);
+      expect(text).toContain('"schematic"');
+    }
+  });
+
+  test('the flagship Entra schematic names the exact screen the user asked to see', () => {
+    const entraScim = getScimGuide('entra')!;
+    const text = JSON.stringify(entraScim.steps);
+    expect(text).toContain('Entra → Provisioning → Admin Credentials');
+    expect(text).toContain('Tenant URL');
+    expect(text).toContain('Secret Token');
+    expect(text).toContain('Test Connection');
+  });
+});
+
+describe('WorkOS-informed guide content, adopted per provider (not copied assets)', () => {
+  test('Entra SCIM: the default objectId → externalId mapping is called out (not just userName)', () => {
+    const text = JSON.stringify(getScimGuide('entra')!.steps);
+    expect(text).toContain('objectId');
+    expect(text).toContain('externalId');
+  });
+
+  test('Okta SAML: the wizard-only "internal app" feedback step is documented', () => {
+    const text = JSON.stringify(getProviderGuide('okta')!.steps);
+    expect(text).toContain('This is an internal app that we have created');
+  });
+
+  test('Okta SCIM: Push Groups uses the exact click path (Find groups by name, Push Immediately)', () => {
+    const text = JSON.stringify(getScimGuide('okta')!.steps);
+    expect(text).toContain('Find groups by name');
+    expect(text).toContain('Push Immediately');
+  });
+
+  test('Google Workspace: attribute mapping and the 24-hour propagation gotcha are documented', () => {
+    const google = getProviderGuide('google')!;
+    const stepIds = google.steps.map((s) => s.id);
+    expect(stepIds).toContain('attribute-mapping');
+    const text = JSON.stringify(google.steps);
+    expect(text).toContain('24 hours');
+  });
+
+  test('Google Workspace has no SCIM guide — there is no first-party directory to sync', () => {
+    expect(getScimGuide('google')).toBeNull();
+  });
+});
+
+describe('SCIM scope trade-off copy (live confusion: "why only assigned?")', () => {
+  test('the Entra configure step explains "sync only assigned" vs "sync all" in plain terms', () => {
+    const text = JSON.stringify(getScimGuide('entra')!.steps);
+    expect(text).toContain('your allowlist');
+    expect(text).toContain('roll out team-by-team');
+    expect(text).toContain('rarely what a company tenant wants on day one');
+  });
+
+  test('states the accurate location: Scope lives on the Provisioning page under Settings', () => {
+    expect(guidesSource).toContain('"Provisioning" → "Settings"');
+    expect(guidesSource).toContain('it only appears here after credentials are saved');
+  });
+});
+
+describe('domain field explains its consequence in the guided wizard (live incident)', () => {
+  test('states that every sign-in from the domain routes to the IdP instead of password login', () => {
+    expect(flatWizardSource).toContain(
+      'Every sign-in from this domain is routed to this identity provider instead of password login',
     );
+  });
+
+  test("warns when the entered domain matches the current admin's own email domain", () => {
+    expect(wizardSource).toContain('adminEmailDomain');
+    expect(flatWizardSource).toContain('this will route YOUR next sign-in to the IdP');
   });
 });
