@@ -6,3 +6,5 @@ export type { CostBreakdown, TokenUsage } from './pricing';
 
 export { jsonHasContent, sseErrorFrame, sseHasContent } from './completion-guard';
 export type { SseErrorFrame } from './completion-guard';
+
+export { IncrementalSseScanner } from './sse-scanner';

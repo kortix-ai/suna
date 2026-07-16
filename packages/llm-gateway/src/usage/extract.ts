@@ -5,7 +5,7 @@ export interface ExtractedUsage extends TokenUsage {
   model?: string;
 }
 
-interface UpstreamUsageShape {
+export interface UpstreamUsageShape {
   prompt_tokens?: number;
   completion_tokens?: number;
   cached_tokens?: number;
@@ -13,12 +13,12 @@ interface UpstreamUsageShape {
   cost?: number;
 }
 
-interface UpstreamChunkShape {
+export interface UpstreamChunkShape {
   model?: string;
   usage?: UpstreamUsageShape;
 }
 
-function normalize(raw: UpstreamChunkShape | undefined): ExtractedUsage {
+export function normalizeUsageChunk(raw: UpstreamChunkShape | undefined): ExtractedUsage {
   const usage = raw?.usage;
   const cached = usage?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? 0;
   return {
@@ -31,7 +31,7 @@ function normalize(raw: UpstreamChunkShape | undefined): ExtractedUsage {
 }
 
 export function extractUsageFromJson(json: unknown): ExtractedUsage {
-  return normalize(json as UpstreamChunkShape);
+  return normalizeUsageChunk(json as UpstreamChunkShape);
 }
 
 export function extractUsageFromSseBuffer(buffer: string): ExtractedUsage | null {
@@ -45,7 +45,7 @@ export function extractUsageFromSseBuffer(buffer: string): ExtractedUsage | null
     try {
       const chunk = JSON.parse(payload) as UpstreamChunkShape;
       if (chunk?.model) lastModel = chunk.model;
-      if (chunk?.usage) lastUsage = normalize(chunk);
+      if (chunk?.usage) lastUsage = normalizeUsageChunk(chunk);
     } catch {
       continue;
     }
