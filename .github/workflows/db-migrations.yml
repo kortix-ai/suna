@@ -1,14 +1,25 @@
 name: DB Migrations
 
 # PR gate for database migrations. Runs only when packages/db changes.
-# Four checks, each preventing a failure mode we have actually hit:
+# Six checks, each preventing a failure mode we have actually hit:
 #   1. lint          — migration files are well-formed (no bad filenames, empty
-#                      files, merge-conflict markers, or leftover placeholders)
-#   2. immutability  — already-merged migrations may not be edited (the
+#                      files, merge-conflict markers, leftover placeholders) AND
+#                      the zero-downtime policy checks on any NEW migration
+#                      (mixed-version guard, enum-value annotation — see
+#                      packages/db/scripts/lint-migrations.ts). Pre-existing
+#                      migrations are grandfathered — see
+#                      packages/db/grandfathered-migrations.json.
+#   2. squawk        — deterministic Postgres migration linter (locking/
+#                      downtime rules: concurrent index creation, NOT VALID
+#                      constraints, timeout headers, ...) on any NEW migration.
+#                      See packages/db/.squawk.toml and SQUAWK_BASELINE.md for
+#                      the retro-lint report over the pre-existing corpus.
+#   3. immutability  — already-merged migrations may not be edited (the
 #                      checksum guarantee, enforced at PR time)
-#   3. shadow-db     — every migration applies cleanly to a FRESH database
+#   4. sequence      — new migrations must sort after every merged migration
+#   5. shadow-db     — every migration applies cleanly to a FRESH database
 #                      (prevents "the files don't reproduce reality")
-#   4. schema-sync   — kortix.ts and the committed migrations agree
+#   6. schema-sync   — kortix.ts and the committed migrations agree
 # See packages/db/MIGRATIONS.md.
 
 on:
@@ -38,6 +49,22 @@ jobs:
       - name: Lint migration files
         run: cd packages/db && bun scripts/lint-migrations.ts
 
+  squawk:
+    name: Squawk (zero-downtime lint) on new migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # scripts/squawk-lint.ts downloads + sha256-verifies a pinned squawk
+      # binary itself (no npm/cargo dependency, no network trust beyond the
+      # one pinned GitHub release download) and scopes linting to migrations
+      # NOT in grandfathered-migrations.json — i.e. every migration added
+      # since this policy landed. Runs identically here and on a laptop.
+      - name: Squawk-lint new migrations
+        run: cd packages/db && bun scripts/squawk-lint.ts
+
   immutability:
     name: Migrations are immutable
     runs-on: ubuntu-latest
@@ -49,8 +76,10 @@ jobs:
         run: |
           set -euo pipefail
           BASE='${{ github.event.pull_request.base.sha }}'
-          # Modified files directly under migrations/ (depth-1 glob excludes _archive/).
-          CHANGED=$(git diff --diff-filter=M --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' || true)
+          # Modified files directly under migrations/ (depth-1 glob excludes
+          # _archive/). Two pathspecs: plain .sql migrations, and the
+          # .concurrent.ts CONCURRENTLY escape hatch (see MIGRATIONS.md).
+          CHANGED=$(git diff --diff-filter=M --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' 'packages/db/migrations/*.concurrent.ts' || true)
           if [ -n "$CHANGED" ]; then
             echo "::error::Migrations are immutable — these already-merged files were modified. Create a NEW migration instead of editing an existing one:"
             echo "$CHANGED"
@@ -69,11 +98,12 @@ jobs:
         run: |
           set -euo pipefail
           BASE='${{ github.event.pull_request.base.sha }}'
-          # Highest 17-digit timestamp already merged (depth-1; _archive is 14-digit, excluded).
+          # Highest 17-digit timestamp already merged (depth-1; _archive is
+          # 14-digit, excluded). Matches both .sql and .concurrent.ts.
           BASE_MAX=$(git ls-tree -r --name-only "$BASE" -- packages/db/migrations \
-            | sed -n 's#.*/\([0-9]\{17\}\)_.*\.sql$#\1#p' | sort -n | tail -1 || true)
-          # Migrations ADDED by this PR.
-          ADDED=$(git diff --diff-filter=A --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' || true)
+            | sed -n 's#.*/\([0-9]\{17\}\)_.*\.\(sql\|concurrent\.ts\)$#\1#p' | sort -n | tail -1 || true)
+          # Migrations ADDED by this PR (both file shapes — see MIGRATIONS.md).
+          ADDED=$(git diff --diff-filter=A --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' 'packages/db/migrations/*.concurrent.ts' || true)
           bad=0
           for f in $ADDED; do
             ts=$(basename "$f" | sed -n 's#^\([0-9]\{17\}\)_.*#\1#p')
