@@ -11,6 +11,11 @@ process.env.LOCAL_DOCKER_NETWORK = 'kortix-local-docker-test';
 process.env.PORT = '8008';
 delete process.env.LOCAL_DOCKER_API_HOST;
 delete process.env.LOCAL_DOCKER_API_PORT;
+// Deterministic LLM-gateway base-url formula regardless of ambient .env —
+// see the KORTIX_LLM_BASE_URL tests below.
+delete process.env.LLM_GATEWAY_BASE_URL;
+delete process.env.LLM_GATEWAY_PROXY_PORT;
+delete process.env.LLM_GATEWAY_PROXY_TARGET;
 
 mock.module('../service-key', () => ({
   serviceKeyForExternalId: async () => 'service-key-test',
@@ -236,6 +241,52 @@ describe('local-docker provider — create()', () => {
     }));
     expect(asMap.KORTIX_API_URL).toBe('http://kortix-api:8008/v1');
     expect(asMap.KORTIX_FRONTEND_URL).toBe('https://app.example.com');
+  });
+
+  // Regression (live, self-host "ldocker" instance): the same generic-vs-
+  // Docker-network gap as the KORTIX_API_URL bug above, but for OpenCode's own
+  // LLM-gateway base URL. session-sandbox.ts computes KORTIX_LLM_BASE_URL from
+  // the generic public origin (config.KORTIX_URL /
+  // provider.sandboxFacingApiOrigin() when available) BEFORE calling
+  // provider.create() — so opts.envVars.KORTIX_LLM_BASE_URL can still arrive
+  // here already-correct. This asserts local-docker's create() rebuilds it
+  // onto the Docker-network origin regardless, matching KORTIX_API_URL's
+  // belt-and-suspenders override above. Caught live: OpenCode inside the
+  // sandbox looped "Cannot connect to API" because KORTIX_LLM_BASE_URL fell
+  // back to `http://localhost:8777/v1/llm` — unreachable from inside the
+  // container (that's the CONTAINER's own loopback, not the host's).
+  test('KORTIX_LLM_BASE_URL is rewritten onto the Docker-network origin when present', async () => {
+    const provider = new LocalDockerProvider();
+    await provider.create(baseCreateOpts({
+      envVars: {
+        KORTIX_SANDBOX_TOKEN: 'tok',
+        KORTIX_LLM_API_KEY: 'gw-key',
+        KORTIX_LLM_BASE_URL: 'https://api.example.com/v1/llm', // the generic (public) value a real caller injects
+      },
+    }));
+    const env = fakeDocker.createContainerCalls[0]!.Env as string[];
+    const asMap = Object.fromEntries(env.map((line) => {
+      const idx = line.indexOf('=');
+      return [line.slice(0, idx), line.slice(idx + 1)];
+    }));
+    expect(asMap.KORTIX_LLM_BASE_URL).toBe('http://kortix-api:8008/v1/llm');
+    expect(asMap.KORTIX_LLM_API_KEY).toBe('gw-key'); // untouched — no URL inside it
+  });
+
+  test('leaves KORTIX_LLM_BASE_URL absent when the LLM gateway was not enabled for this session', async () => {
+    const provider = new LocalDockerProvider();
+    await provider.create(baseCreateOpts({ envVars: { KORTIX_SANDBOX_TOKEN: 'tok' } }));
+    const env = fakeDocker.createContainerCalls[0]!.Env as string[];
+    const asMap = Object.fromEntries(env.map((line) => {
+      const idx = line.indexOf('=');
+      return [line.slice(0, idx), line.slice(idx + 1)];
+    }));
+    expect(asMap.KORTIX_LLM_BASE_URL).toBeUndefined();
+  });
+
+  test('sandboxFacingApiOrigin() reports the Docker-network origin (used by session-sandbox.ts and sandbox-env-sync.ts)', () => {
+    const provider = new LocalDockerProvider();
+    expect(provider.sandboxFacingApiOrigin?.()).toBe('http://kortix-api:8008');
   });
 
   test('auto-creates the configured Docker network if missing', async () => {

@@ -129,6 +129,23 @@ export interface SandboxProvider {
    */
   readonly requiresPublicCallback: boolean;
 
+  /**
+   * The origin (scheme + host[:port], no trailing slash) sandboxes booted by
+   * this provider should use for any in-sandbox URL that is rooted at
+   * "kortix-api's own HTTP surface" — e.g. the LLM-gateway base URL the
+   * session-env layer hands OpenCode (KORTIX_LLM_BASE_URL), or any future
+   * such URL. OPTIONAL: every remote cloud provider (Daytona/Platinum/E2B)
+   * is happy with the generic public `config.KORTIX_URL`, so callers fall
+   * back to that when a provider doesn't implement this. local-docker is the
+   * one exception — its sandboxes share a private Docker network with
+   * kortix-api instead of reaching it over the public internet — so it's the
+   * only provider that overrides this (see local-docker.ts's
+   * sandboxInternalApiBase()). Keeping the capability on the provider (like
+   * requiresPublicCallback above) means a shared layer that needs "the API's
+   * origin, as this sandbox would see it" never branches on provider name.
+   */
+  sandboxFacingApiOrigin?(): string;
+
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   start(externalId: string): Promise<void>;
   stop(externalId: string): Promise<void>;
