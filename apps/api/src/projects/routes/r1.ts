@@ -5,7 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { getBackend, hasBackend, type GitScope } from '../git-backends';
+import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
@@ -760,7 +760,12 @@ projectsApp.openapi(
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
 
@@ -788,7 +793,12 @@ projectsApp.openapi(
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
 

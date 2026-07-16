@@ -6,6 +6,7 @@ import { classifySnapshotError, describeSnapshotError } from '../../snapshots/er
 import { withTimeout } from '../../shared/with-timeout';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
+import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -13,7 +14,7 @@ import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertP
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
-import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
+import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { config } from '../../config';
@@ -63,18 +64,31 @@ projectsApp.openapi(
 
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
-  // PAT path: link an existing repo with a caller-supplied token — no GitHub
-  // App install needed. This is the seamless `kortix ship` flow for a repo you
-  // already own (and the App-free fallback in environments where the App can't
-  // be installed). Everything downstream (`resolveProjectGitAuth` →
-  // `project_credential`) already consumes the stored PAT.
+  const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
+
+  // PAT path: link an existing repo with a token, no GitHub App install
+  // needed — either a caller-supplied token (the seamless `kortix ship` flow
+  // for a repo you already own, and the App-free fallback in environments
+  // where the App can't be installed), or the account-level managed-git PAT
+  // ("Use a token" self-host setup) when the Import-repo UI picked its
+  // synthetic installation (see serializeGitHubInstallations /
+  // GET github/installations). Everything downstream (`resolveProjectGitAuth`
+  // → `project_credential`) already consumes the stored PAT either way.
   const githubToken = normalizeString(body.github_token ?? body.githubToken);
-  if (githubToken) {
+  const managedPatToken =
+    !githubToken && installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID
+      ? managedGithubToken()
+      : null;
+  if (!githubToken && installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID && !managedPatToken) {
+    return c.json({ error: 'The managed GitHub token is no longer configured on this server' }, 409);
+  }
+  const patToken = githubToken ?? managedPatToken;
+  if (patToken) {
     let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
     try {
       patImport = await resolveGitHubImportWithPat({
         repoUrl,
-        token: githubToken,
+        token: patToken,
         defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
       });
     } catch (error) {
@@ -84,13 +98,13 @@ projectsApp.openapi(
       accountId: scope.accountId,
       userId: scope.userId,
       repo: patImport.repo,
-      token: githubToken,
+      token: patToken,
       name: normalizeString(body.name),
       defaultBranch: patImport.defaultBranch,
       manifestPath,
     });
     kickProjectTemplatePrebuilds(
-      { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: githubToken },
+      { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: patToken },
       { accountId: scope.accountId, source: 'project-create' },
     );
     return c.json({
@@ -104,7 +118,7 @@ projectsApp.openapi(
     imported = await resolveGitHubImport({
       accountId: scope.accountId,
       repoUrl,
-      installationId: normalizeString(body.installation_id ?? body.installationId),
+      installationId: installationIdInput,
       defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
     });
   } catch (error) {

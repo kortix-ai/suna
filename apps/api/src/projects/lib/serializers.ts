@@ -362,11 +362,46 @@ export function serializeGitHubInstallation(
 }
 
 
+/**
+ * Sentinel `installation_id` for the managed-git PAT backend ("Use a token"
+ * self-host setup, platform/routes/github-app.ts POST /pat) when an account
+ * has no real GitHub App installation. Real installation ids are GitHub's own
+ * numeric ids, so this string can never collide with one. Lets the
+ * Import-repo UI — which only understands the "installations" shape — pick
+ * the PAT the same way it picks a real App install, instead of needing a
+ * parallel UI/API surface just for the token backend. GET /github/repositories
+ * and POST /link-repository both recognize this id and route to the PAT.
+ */
+export const PAT_MANAGED_GIT_INSTALLATION_ID = 'pat';
+
 export function serializeGitHubInstallations(
   rows: Array<typeof accountGithubInstallations.$inferSelect>,
   accountId: string,
   installUrl: string | null,
+  /** Owner of the account-level managed-git PAT, when this account has no
+   *  real App installation but the server has a working token configured —
+   *  see the route handlers in routes/r1.ts. */
+  patFallbackOwner?: string | null,
 ) {
+  if (rows.length === 0 && patFallbackOwner) {
+    const patInstallation = {
+      account_id: accountId,
+      installation_row_id: null,
+      installed: true,
+      configured: true,
+      requires_installation: false,
+      install_url: null,
+      installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
+      owner_login: patFallbackOwner,
+      owner_type: null,
+      repository_selection: 'all',
+      permissions: {},
+      installation_url: null,
+      updated_at: null,
+    };
+    return { ...patInstallation, installations: [patInstallation] };
+  }
+
   const primary = rows[0] ?? null;
   const base = serializeGitHubInstallation(primary, accountId, installUrl);
   return {
