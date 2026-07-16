@@ -484,7 +484,22 @@ const envSchema = z.object({
   MAILTRAP_FROM_EMAIL:         optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME:          optStrDefault('Kortix'),
   // Where public demo-request / "book a demo" lead notifications are sent.
-  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai'),
+  // Comma-separated list; every address gets every submission.
+  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai,hey@kortix.ai'),
+  // Sender for those notifications. kortix.ai (not the global MAILTRAP_FROM_
+  // EMAIL on kortix.com) so the send is DKIM-aligned with the kortix.ai
+  // recipient inboxes — the kortix.com sender was landing in spam.
+  DEMO_LEAD_FROM_EMAIL:        optStrDefault('hi@kortix.ai'),
+
+  // ── Mailtrap contact sync (signup → automation lists) ─────────────────────
+  // The email automations themselves live in Mailtrap's Automations UI; the
+  // API only registers each new signup as a contact. Sync is active iff
+  // MAILTRAP_API_TOKEN + MAILTRAP_ACCOUNT_ID are both set.
+  MAILTRAP_ACCOUNT_ID:               optStr,
+  // Contact list every signup joins (automation trigger: "added to list").
+  MAILTRAP_SIGNUPS_LIST_ID:          optStr,
+  // Additional list for work-email signups (founder "book a call" flow).
+  MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: optStr,
 
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN:   optStr,  // Logtail source token for structured logs
@@ -897,6 +912,12 @@ export const config = {
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
   DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
+  DEMO_LEAD_FROM_EMAIL: env.DEMO_LEAD_FROM_EMAIL,
+
+  // ─── Mailtrap contact sync (signup → automation lists) ────────────────────
+  MAILTRAP_ACCOUNT_ID: env.MAILTRAP_ACCOUNT_ID,
+  MAILTRAP_SIGNUPS_LIST_ID: env.MAILTRAP_SIGNUPS_LIST_ID,
+  MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,

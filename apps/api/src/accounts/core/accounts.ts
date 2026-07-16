@@ -6,6 +6,7 @@ import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { isPlatformAdmin } from "../../shared/platform-roles";
+import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
   AccountIdParam,
@@ -19,7 +20,6 @@ import {
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
-import { bootstrapPersonalAccount } from './bootstrap-personal-account';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
