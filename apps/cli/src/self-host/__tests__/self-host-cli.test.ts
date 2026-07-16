@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -214,6 +214,27 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(readEnv().KORTIX_APP_REPLICAS).toBe('1');
   });
 
+  test('KORTIX_INSTANCE_DIR is the absolute instance directory and is wired into the rendered kortix-updater service (DinD self-referential mount)', async () => {
+    // Regression coverage for the "mounts denied" self-host update bug: the
+    // in-compose kortix-updater runs `docker compose` against the HOST daemon
+    // over the mounted socket, so any relative bind mount elsewhere in this
+    // compose file only resolves correctly if the updater container sees the
+    // instance directory at the SAME absolute path the host does. That path
+    // is KORTIX_INSTANCE_DIR — recomputed from the real on-disk instance dir
+    // on every render (see normalizeFullSupabaseEnv in commands/self-host.ts).
+    await run(['init', '--yes']);
+    const instanceDir = join(configRoot, 'default');
+    expect(readEnv().KORTIX_INSTANCE_DIR).toBe(instanceDir);
+
+    const compose = readCompose() as { services: Record<string, {
+      volumes?: string[];
+      working_dir?: string;
+    }> };
+    const updater = compose.services['kortix-updater'];
+    expect(updater?.working_dir).toBe('${KORTIX_INSTANCE_DIR}');
+    expect(updater?.volumes).toContain('${KORTIX_INSTANCE_DIR}:${KORTIX_INSTANCE_DIR}');
+  });
+
   test('the rendered compose has no Caddy service until KORTIX_DOMAIN is set', async () => {
     await run(['init', '--yes']);
     const before = readCompose();
@@ -424,6 +445,44 @@ describe('kortix self-host (generic Docker CLI)', () => {
       const { code } = await run(['env', 'set', 'CLOUDFLARE_TUNNEL_TOKEN=faketoken']);
       expect(code).toBe(0);
     });
+  });
+
+  test('help shows the grant-platform-admin-later env set example', async () => {
+    // The guided flows (init once, configure always) ask for the admin email,
+    // but an operator who declined both needs a discoverable non-interactive
+    // path — the help example is that path.
+    const { code, stdout } = await run(['--help']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('env set KORTIX_PLATFORM_ADMIN_EMAILS=');
+  });
+
+  test('doctor flags a stale KORTIX_INSTANCE_DIR (instance directory moved since the last render) and passes it fresh otherwise', async () => {
+    await run(['init', '--yes']);
+
+    const fresh = await run(['doctor', '--json']);
+    const freshCheck = (JSON.parse(fresh.stdout).checks as Array<{ name: string; ok: boolean }>)
+      .find((c) => c.name === 'instance-dir');
+    expect(freshCheck?.ok).toBe(true);
+
+    // Simulate the instance directory having moved on disk (or
+    // KORTIX_SELF_HOST_CONFIG_DIR having changed) since the last
+    // init/start/update/configure/env-set render — hand-edit .env the way
+    // `env set` itself refuses to (see secrets.test.ts's updater-managed
+    // refusal coverage for KORTIX_INSTANCE_DIR).
+    const envFile = join(configRoot, 'default', '.env');
+    writeFileSync(
+      envFile,
+      readFileSync(envFile, 'utf8').replace(
+        /^KORTIX_INSTANCE_DIR=.*$/m,
+        'KORTIX_INSTANCE_DIR=/tmp/stale-path-from-before-a-move',
+      ),
+    );
+
+    const stale = await run(['doctor', '--json']);
+    const staleCheck = (JSON.parse(stale.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
+      .find((c) => c.name === 'instance-dir');
+    expect(staleCheck?.ok).toBe(false);
+    expect(staleCheck?.detail).toContain('stale');
   });
 
   // `connect-github` is deprecated: managed git is now configured in the web

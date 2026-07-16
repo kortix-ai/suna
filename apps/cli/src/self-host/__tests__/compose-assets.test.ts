@@ -226,6 +226,41 @@ describe('full self-host Docker distribution', () => {
     expect(updater?.environment).toHaveProperty('KORTIX_APP_REPLICAS');
   });
 
+  test('the kortix-updater service mounts the instance dir at its own host path (DinD self-referential mount), not a fixed /workspace', () => {
+    // The regression this guards: `docker compose` runs INSIDE the
+    // kortix-updater container, against the HOST daemon over the mounted
+    // socket. Any relative bind mount elsewhere in this compose file (kong's
+    // ./volumes/api/kong.yml, supabase-db's ./volumes/db/*, ...) is resolved
+    // by that in-container `docker compose` CLI relative to its own
+    // working_dir — and the resulting absolute path has to be one the HOST
+    // daemon can actually satisfy. A fixed in-container-only `/workspace`
+    // (the old shape) produces a host-side `/workspace/...` path that never
+    // exists on the real host ("mounts denied: ... is not shared from the
+    // host"). Mounting the instance directory at the SAME absolute path
+    // inside the container as it has on the host — source == target,
+    // `${KORTIX_INSTANCE_DIR}` — and pointing working_dir at that same path
+    // is the fix: see the KORTIX_INSTANCE_DIR field doc comment on
+    // SelfHostEnv in commands/self-host.ts.
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, {
+        volumes?: string[];
+        working_dir?: string;
+        entrypoint?: string[];
+        environment?: Record<string, string>;
+      }>;
+    };
+    const updater = document.services['kortix-updater'];
+    expect(updater).toBeDefined();
+    expect(updater?.volumes).toContain('${KORTIX_INSTANCE_DIR}:${KORTIX_INSTANCE_DIR}');
+    expect(updater?.working_dir).toBe('${KORTIX_INSTANCE_DIR}');
+    expect(updater?.environment).toMatchObject({ KORTIX_INSTANCE_DIR: '${KORTIX_INSTANCE_DIR}' });
+    // No leftover fixed-path mount/workdir from the pre-fix shape.
+    for (const volume of updater?.volumes ?? []) {
+      expect(volume, volume).not.toContain('/workspace');
+    }
+    expect(updater?.entrypoint?.join(' ') ?? '').not.toContain('/workspace');
+  });
+
   test('app service healthchecks probe the correct path with a runtime present in the image', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { healthcheck?: { test?: string[] } }>;
@@ -322,6 +357,28 @@ describe('full self-host Docker distribution', () => {
     const script = kortixRuntimeAssets['updater.sh'];
     expect(script).toContain('publishes_host_port');
     expect(script).toContain('recreate_service');
+  });
+
+  test('updater.sh reads the compose file/.env from KORTIX_INSTANCE_DIR, not a hardcoded /workspace path', () => {
+    // Regression test for the DinD "mounts denied" bug: updater.sh used to
+    // hardcode /workspace/docker-compose.yml and /workspace/.env, which only
+    // ever worked for bind-mount-free services (api/gateway/frontend) — any
+    // updater-driven recreate of a bind-mounted service (kong, supabase-db,
+    // ...) failed because /workspace/... doesn't exist on the real host. The
+    // script must derive both paths from $WORKDIR (seeded from the
+    // KORTIX_INSTANCE_DIR env var the compose service now sets — see
+    // kortix-compose.yml), with /workspace only a defensive fallback default,
+    // never a literal path baked into a command.
+    const script = kortixRuntimeAssets['updater.sh'];
+    expect(script).toContain('WORKDIR="${KORTIX_INSTANCE_DIR:-/workspace}"');
+    expect(script).toContain('COMPOSE_FILE="$WORKDIR/docker-compose.yml"');
+    expect(script).toContain('--env-file $WORKDIR/.env');
+    expect(script).not.toContain('/workspace/.env');
+    expect(script).not.toContain('/workspace/docker-compose.yml');
+    // The two other reads of the env file (image_pull_mode, write_breadcrumb)
+    // must also go through $WORKDIR, not a re-hardcoded /workspace.
+    expect(script).toContain('grep \'^KORTIX_IMAGE_PULL=\' "$WORKDIR/.env"');
+    expect(script).toContain('grep \'^KORTIX_VERSION=\' "$WORKDIR/.env"');
   });
 
   test('writes the Caddyfile and updater script to the instance directory', () => {
