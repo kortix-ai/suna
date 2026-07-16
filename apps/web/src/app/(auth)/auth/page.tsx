@@ -136,7 +136,7 @@ function AuthCardForm({
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
   const [pendingAction, setPendingAction] = useState<
-    'continue' | 'code' | 'resend' | 'password' | null
+    'continue' | 'code' | 'resend' | 'password' | 'sso' | null
   >(null);
   const pending = pendingAction !== null;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -283,6 +283,93 @@ function AuthCardForm({
     }
   };
 
+
+  /**
+   * Probe the address's domain for a registered SAML provider and hand the
+   * browser to the IdP (or the SSO interstitial) when one exists. Shared by
+   * the silent home-realm discovery in handleEntryContinue and the explicit
+   * "Use single sign-on" action — one redirect/callback construction, two
+   * entry points. Returns 'handled' when navigation/step change happened,
+   * 'none' when the domain has no provider (callers decide whether that is a
+   * silent fall-through or a user-facing error).
+   */
+  const attemptSsoRedirect = async (address: string): Promise<'handled' | 'none'> => {
+    const domain = emailDomain(address);
+    if (!domain) return 'none';
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const callbackParams = new URLSearchParams();
+      if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+      if (mobileCallbackState) {
+        callbackParams.set('mobile_callback', '1');
+        callbackParams.set('state', mobileCallbackState);
+      }
+      const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
+        callbackParams.size ? `?${callbackParams.toString()}` : ''
+      }`;
+      const { data, error } = await supabase.auth.signInWithSSO({
+        domain,
+        // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
+        // bounce stays authoritative; without skipBrowserRedirect, auth-js also
+        // calls window.location.assign(data.url) — a redundant double-navigation.
+        options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
+      });
+      if (!error && data?.url) {
+        // The domain is bound to a SAML provider. Ask the flow how strict
+        // the org is: enforced SSO redirects straight to the IdP (no
+        // password door), everything else lands on an interstitial that
+        // defaults to SSO but keeps the password/code escapes visible —
+        // a pre-SSO password account must never dead-end here.
+        const { mode: resolved } = await resolveAuthMode(address);
+        if (resolved === 'sso') {
+          // Full navigation to the IdP; the callback route exchanges the
+          // code on return (same PKCE path as Google OAuth).
+          window.location.href = data.url;
+          return 'handled';
+        }
+        setSsoFallbackMode(resolved);
+        setSsoUrl(data.url);
+        setStep('sso');
+        return 'handled';
+      }
+      // Work domain with no SAML provider.
+    } catch {
+      // SAML not enabled on this Supabase, or a transient error.
+    }
+    return 'none';
+  };
+
+  /**
+   * Explicit "Use single sign-on" — the discoverable counterpart of the
+   * silent home-realm discovery above. Two deliberate differences: it skips
+   * the isWorkEmail consumer-domain gate (typing the button IS the intent),
+   * and a domain with no provider surfaces a real error instead of silently
+   * falling through to magic link — an invisible fall-through here reads as
+   * "SSO is broken".
+   */
+  const handleSsoContinue = async () => {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      clearNotices();
+      setInfo('Enter your work email above, then choose single sign-on.');
+      emailRef.current?.focus();
+      return;
+    }
+    clearNotices();
+    setPendingAction('sso');
+    try {
+      const outcome = await attemptSsoRedirect(trimmed);
+      if (outcome === 'none') {
+        const domain = emailDomain(trimmed) ?? trimmed;
+        failWith(
+          `Single sign-on isn't set up for "${domain}". Ask your admin to configure it, or continue with email.`,
+        );
+      }
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const handleEntryContinue = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmed = email.trim();
@@ -304,46 +391,8 @@ function AuthCardForm({
     try {
       const domain = emailDomain(trimmed);
       if (samlEnabled && domain && isWorkEmail(trimmed)) {
-        try {
-          const supabase = createBrowserSupabaseClient();
-          const callbackParams = new URLSearchParams();
-          if (returnUrl) callbackParams.set('returnUrl', returnUrl);
-          if (mobileCallbackState) {
-            callbackParams.set('mobile_callback', '1');
-            callbackParams.set('state', mobileCallbackState);
-          }
-          const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
-            callbackParams.size ? `?${callbackParams.toString()}` : ''
-          }`;
-          const { data, error } = await supabase.auth.signInWithSSO({
-            domain,
-            // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
-            // bounce stays authoritative; without skipBrowserRedirect, auth-js also
-            // calls window.location.assign(data.url) — a redundant double-navigation.
-            options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
-          });
-          if (!error && data?.url) {
-            // The domain is bound to a SAML provider. Ask the flow how strict
-            // the org is: enforced SSO redirects straight to the IdP (no
-            // password door), everything else lands on an interstitial that
-            // defaults to SSO but keeps the password/code escapes visible —
-            // a pre-SSO password account must never dead-end here.
-            const { mode: resolved } = await resolveAuthMode(trimmed);
-            if (resolved === 'sso') {
-              // Full navigation to the IdP; the callback route exchanges the
-              // code on return (same PKCE path as Google OAuth).
-              window.location.href = data.url;
-              return;
-            }
-            setSsoFallbackMode(resolved);
-            setSsoUrl(data.url);
-            setStep('sso');
-            return;
-          }
-          // Work domain with no SAML provider → fall through to magic/password.
-        } catch {
-          // SAML not enabled on this Supabase, or a transient error — fall through.
-        }
+        if ((await attemptSsoRedirect(trimmed)) === 'handled') return;
+        // Work domain with no SAML provider → fall through to magic/password.
       }
 
       // Magic link is the default path: Continue emails a code and lands the
@@ -810,6 +859,23 @@ function AuthCardForm({
             Continue
           </Button>
         </form>
+
+        {/* Explicit SSO entry — the discoverable counterpart of the silent
+            home-realm discovery Continue already performs. Same dialect as the
+            code-step footer links; only rendered when this deployment has SAML
+            enabled, so self-hosted installs without SSO never show a dead door. */}
+        {samlEnabled && (
+          <p className="text-muted-foreground mt-4 text-sm">
+            <button
+              type="button"
+              onClick={() => void handleSsoContinue()}
+              disabled={pending}
+              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+            >
+              {pendingAction === 'sso' ? 'Looking up your identity provider…' : 'Use single sign-on (SSO)'}
+            </button>
+          </p>
+        )}
 
         {/* One system: no sign-in/sign-up toggle. Continue routes new emails
             into registration and existing ones into sign-in automatically. */}
