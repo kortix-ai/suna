@@ -104,7 +104,23 @@ describe('downloadTeamsFile', () => {
 });
 
 describe('initiateTeamsUpload', () => {
-  const base = { serviceUrl: 'https://smba/', conversationId: 'conv-1', filename: 'r.pdf' };
+  const base = {
+    serviceUrl: 'https://smba.trafficmanager.net/teams/',
+    conversationId: 'conv-1',
+    filename: 'r.pdf',
+  };
+
+  test('rejects a non-Microsoft serviceUrl before touching the DB (F-7)', async () => {
+    const r = await initiateTeamsUpload('proj-1', {
+      ...base,
+      serviceUrl: 'https://attacker.example.com/v3/conversations/x/activities',
+      contentBase64: Buffer.from('hello').toString('base64'),
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(400);
+    expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(false);
+    expect(apiCalls.map((c) => c.fn)).toEqual([]);
+  });
 
   test('rejects an oversize file before touching the DB', async () => {
     const big = 'A'.repeat(6 * 1024 * 1024);
@@ -142,14 +158,14 @@ describe('handleFileConsentInvoke', () => {
           uploadId: 'u1',
           filename: 'r.pdf',
           contentBase64: Buffer.from('hi').toString('base64'),
-          serviceUrl: 'https://smba/',
+          serviceUrl: 'https://smba.trafficmanager.net/teams/',
           conversationId: 'conv-1',
         },
       ],
     ];
     await handleFileConsentInvoke({
       type: 'invoke',
-      serviceUrl: 'https://smba/',
+      serviceUrl: 'https://smba.trafficmanager.net/teams/',
       conversation: { id: 'conv-1' },
       value: {
         action: 'accept',
