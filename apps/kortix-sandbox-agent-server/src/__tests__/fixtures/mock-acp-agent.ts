@@ -9,6 +9,19 @@ function send(envelope: Record<string, unknown>): void {
 const input = createInterface({ input: process.stdin })
 input.on('line', (line) => {
   const envelope = JSON.parse(line) as Record<string, unknown>
+
+  // Mid-prompt cancel: a real `session/cancel` notification (no `id`,
+  // per ACP) arriving while a prompt is outstanding resolves that prompt
+  // with `stopReason: 'cancelled'` instead of ever reaching the permission
+  // round-trip below — the SDK-integration proof (sdk-bridge.e2e.test.ts)
+  // uses this to observe the daemon's real `busy` flag (`GET /acp`) clear.
+  if (envelope.method === 'session/cancel' && pendingPromptId !== null) {
+    const cancelledId = pendingPromptId
+    pendingPromptId = null
+    send({ id: cancelledId, result: { stopReason: 'cancelled' } })
+    return
+  }
+
   if (envelope.method === 'session/prompt') {
     pendingPromptId = envelope.id
     send({
@@ -20,6 +33,20 @@ input.on('line', (line) => {
   }
 
   if (envelope.id === 'permission-1' && pendingPromptId !== null) {
+    // Acknowledgment notification proving the agent actually received the
+    // client's permission response (sdk-bridge.e2e.test.ts's permission
+    // round-trip proof) — not a real ACP method, a test-only signal.
+    const outcome = (envelope.result as Record<string, unknown> | undefined)?.outcome as
+      | Record<string, unknown>
+      | undefined
+    send({
+      method: 'kortix/test_permission_ack',
+      params: {
+        sessionId: 'mock-session',
+        receivedOutcome: outcome?.outcome ?? null,
+        receivedOptionId: outcome?.optionId ?? null,
+      },
+    })
     send({
       method: 'session/update',
       params: {

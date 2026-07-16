@@ -267,9 +267,15 @@ export function createFilesRouter(cfg: Config): Hono {
     }
 
     // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
-    // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
-    // for the SPA shell and reject it.
-    return new Response(opened.data, {
+    // BodyInit at runtime (Bun's real `Response` accepts it), sent verbatim.
+    // Never text/html, so clients don't mistake it for the SPA shell and
+    // reject it. The `as unknown as BodyInit` cast (same idiom
+    // `packages/sdk/src/acp/client.test.ts` uses for the mirror-image
+    // `fetch` mismatch) works around a static-only conflict: adding the
+    // "DOM" lib to this project's tsconfig (needed to typecheck
+    // `@kortix/sdk`) left `BodyInit` resolving to a narrower shape here than
+    // Bun's actual runtime `Response` accepts.
+    return new Response(opened.data as unknown as BodyInit, {
       status: 200,
       headers: {
         'Content-Type': mimeTypeFor(opened.canonical, true),
