@@ -29,7 +29,7 @@ resource "aws_iam_role" "ebs_csi" {
   name                 = "${aws_eks_cluster.this.name}-ebs-csi-driver"
   assume_role_policy   = data.aws_iam_policy_document.ebs_csi_assume.json
   permissions_boundary = var.permissions_boundary_arn
-  tags                 = var.tags
+  tags                 = merge({ ManagedBy = "terraform" }, var.tags)
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {
@@ -43,7 +43,7 @@ resource "aws_eks_addon" "ebs_csi" {
   service_account_role_arn    = aws_iam_role.ebs_csi.arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "PRESERVE"
-  tags                        = var.tags
+  tags                        = merge({ ManagedBy = "terraform" }, var.tags)
 
   depends_on = [aws_eks_node_group.this]
 }

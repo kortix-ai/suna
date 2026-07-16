@@ -17,7 +17,7 @@ resource "aws_sns_topic" "alarms" {
   #checkov:skip=CKV_AWS_26:no sensitive payloads pass through this topic (alarm text only) — SNS-managed encryption is the default and adds an unnecessary CMK dependency for a demo/self-host box
   count = var.enable_alarms && var.alarm_sns_topic_arn == "" ? 1 : 0
   name  = "${local.name}-alarms"
-  tags  = local.tags
+  tags  = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 resource "aws_sns_topic_subscription" "alarm_email" {
@@ -53,7 +53,7 @@ resource "aws_cloudwatch_metric_alarm" "status_check" {
 
   alarm_actions = [local.alarm_topic_arn]
   ok_actions    = [local.alarm_topic_arn]
-  tags          = local.tags
+  tags          = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 # ── Disk usage (CloudWatch agent, "disk" plugin, drop_device — see
@@ -79,7 +79,7 @@ resource "aws_cloudwatch_metric_alarm" "disk_usage_root" {
 
   alarm_actions = [local.alarm_topic_arn]
   ok_actions    = [local.alarm_topic_arn]
-  tags          = local.tags
+  tags          = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 resource "aws_cloudwatch_metric_alarm" "disk_usage_data" {
@@ -103,7 +103,7 @@ resource "aws_cloudwatch_metric_alarm" "disk_usage_data" {
 
   alarm_actions = [local.alarm_topic_arn]
   ok_actions    = [local.alarm_topic_arn]
-  tags          = local.tags
+  tags          = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 # ── Memory usage (CloudWatch agent, "mem" plugin — no per-mount dimension) ─
@@ -126,5 +126,5 @@ resource "aws_cloudwatch_metric_alarm" "memory_usage" {
 
   alarm_actions = [local.alarm_topic_arn]
   ok_actions    = [local.alarm_topic_arn]
-  tags          = local.tags
+  tags          = merge({ ManagedBy = "terraform" }, local.tags)
 }

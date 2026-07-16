@@ -35,7 +35,7 @@ resource "aws_kms_key" "cloudtrail" {
       Condition = { StringEquals = { "kms:CallerAccount" = local.account_id }, StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } }
     ]
   })
-  tags = local.tags
+  tags = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 resource "aws_kms_alias" "cloudtrail" {
@@ -62,7 +62,7 @@ resource "aws_cloudtrail" "management_events" {
       values = ["arn:aws:s3"]
     }
   }
-  tags = local.tags
+  tags = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -73,14 +73,14 @@ resource "aws_cloudtrail" "management_events" {
 resource "aws_guardduty_detector" "usw2" {
   enable                       = true
   finding_publishing_frequency = "SIX_HOURS"
-  tags                         = local.tags
+  tags                         = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 resource "aws_guardduty_detector" "use1" {
   provider                     = aws.use1
   enable                       = true
   finding_publishing_frequency = "SIX_HOURS"
-  tags                         = local.tags
+  tags                         = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -102,7 +102,7 @@ resource "aws_iam_role" "backup" {
   name               = "AWSBackupDefaultServiceRole"
   description        = "AWS Backup service role (SOC2 DCF-99)"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "backup.amazonaws.com" }, Action = "sts:AssumeRole" }] })
-  tags               = local.tags
+  tags               = merge({ ManagedBy = "terraform" }, local.tags)
 }
 resource "aws_iam_role_policy_attachment" "backup_backup" {
   role       = aws_iam_role.backup.name
@@ -114,7 +114,7 @@ resource "aws_iam_role_policy_attachment" "backup_restore" {
 }
 resource "aws_backup_vault" "this" {
   name = "kortix-backup-vault"
-  tags = local.tags
+  tags = merge({ ManagedBy = "terraform" }, local.tags)
 }
 resource "aws_backup_plan" "daily" {
   name = "kortix-daily"
@@ -126,7 +126,7 @@ resource "aws_backup_plan" "daily" {
     completion_window = 180
     lifecycle { delete_after = 35 }
   }
-  tags = local.tags
+  tags = merge({ ManagedBy = "terraform" }, local.tags)
 }
 resource "aws_backup_selection" "daily" {
   name         = "kortix-daily-sel"
@@ -148,7 +148,7 @@ resource "aws_iam_role" "flow_logs" {
   name               = "vpc-flow-logs-role"
   description        = "VPC Flow Logs delivery (SOC2 DCF-406)"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "vpc-flow-logs.amazonaws.com" }, Action = "sts:AssumeRole" }] })
-  tags               = local.tags
+  tags               = merge({ ManagedBy = "terraform" }, local.tags)
 }
 resource "aws_iam_role_policy" "flow_logs" {
   name   = "flow-logs-delivery"
@@ -158,5 +158,5 @@ resource "aws_iam_role_policy" "flow_logs" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/vpc/flowlogs"
   retention_in_days = 90
-  tags              = local.tags
+  tags              = merge({ ManagedBy = "terraform" }, local.tags)
 }

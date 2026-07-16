@@ -86,8 +86,11 @@ module "api" {
   name       = local.name
   aws_region = var.aws_region
 
-  vpc_id             = module.network.vpc_id
-  public_subnet_ids  = module.network.public_subnet_ids
+  vpc_id = module.network.vpc_id
+  public_subnet_ids = [
+    module.network.public_subnet_ids[0],
+    module.network.public_subnet_ids[1],
+  ]
   private_subnet_ids = module.network.private_subnet_ids
 
   image           = var.api_image

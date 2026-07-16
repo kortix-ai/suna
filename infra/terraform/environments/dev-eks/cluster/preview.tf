@@ -19,7 +19,7 @@ module "acm_preview" {
   source      = "../../../modules/acm-cloudflare"
   domain_name = local.preview_wildcard_domain
   zone_id     = var.cloudflare_zone_id
-  tags        = local.tags
+  tags        = merge({ ManagedBy = "terraform" }, local.tags)
   providers = {
     aws        = aws
     cloudflare = cloudflare
@@ -63,7 +63,7 @@ data "aws_iam_policy_document" "preview_secrets_read" {
 resource "aws_iam_role" "preview_app" {
   name               = "${local.name}-preview-app"
   assume_role_policy = data.aws_iam_policy_document.preview_assume.json
-  tags               = local.tags
+  tags               = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 resource "aws_iam_role_policy" "preview_secrets_read" {

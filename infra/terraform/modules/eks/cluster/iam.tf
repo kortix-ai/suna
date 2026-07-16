@@ -18,7 +18,7 @@ data "aws_iam_policy_document" "cluster_assume" {
 resource "aws_iam_role" "cluster" {
   name               = "${var.name}-cluster"
   assume_role_policy = data.aws_iam_policy_document.cluster_assume.json
-  tags               = var.tags
+  tags               = merge({ ManagedBy = "terraform" }, var.tags)
 }
 
 resource "aws_iam_role_policy_attachment" "cluster" {
@@ -40,7 +40,7 @@ data "aws_iam_policy_document" "node_assume" {
 resource "aws_iam_role" "node" {
   name               = "${var.name}-node"
   assume_role_policy = data.aws_iam_policy_document.node_assume.json
-  tags               = var.tags
+  tags               = merge({ ManagedBy = "terraform" }, var.tags)
 }
 
 resource "aws_iam_role_policy_attachment" "node" {
@@ -66,5 +66,5 @@ resource "aws_iam_openid_connect_provider" "this" {
   url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [data.tls_certificate.oidc.certificates[0].sha1_fingerprint]
-  tags            = var.tags
+  tags            = merge({ ManagedBy = "terraform" }, var.tags)
 }

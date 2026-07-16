@@ -84,7 +84,7 @@ data "aws_iam_policy_document" "dlm_assume" {
 resource "aws_iam_role" "dlm" {
   name               = "${local.name}-dlm"
   assume_role_policy = data.aws_iam_policy_document.dlm_assume.json
-  tags               = local.tags
+  tags               = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 resource "aws_iam_role_policy_attachment" "dlm" {
@@ -131,5 +131,5 @@ resource "aws_dlm_lifecycle_policy" "data" {
     }
   }
 
-  tags = local.tags
+  tags = merge({ ManagedBy = "terraform" }, local.tags)
 }

@@ -68,7 +68,7 @@ module "network" {
   cidr               = var.vpc_cidr
   az_count           = 3
   single_nat_gateway = true # dev: one NAT (cost over per-AZ egress HA)
-  tags               = local.tags
+  tags               = merge({ ManagedBy = "terraform" }, local.tags)
 
   extra_vpc_tags = { "kubernetes.io/cluster/${local.name}" = "shared" }
   extra_public_subnet_tags = {
@@ -98,7 +98,7 @@ module "eks" {
   node_min_size       = var.node_min_size
   node_max_size       = var.node_max_size
 
-  tags = local.tags
+  tags = merge({ ManagedBy = "terraform" }, local.tags)
 }
 
 # ── TLS cert for dev-api-eks.kortix.com (ACM, validated via Cloudflare DNS) ────
@@ -106,7 +106,7 @@ module "acm" {
   source      = "../../../modules/acm-cloudflare"
   domain_name = local.domain
   zone_id     = var.cloudflare_zone_id
-  tags        = local.tags
+  tags        = merge({ ManagedBy = "terraform" }, local.tags)
   providers = {
     aws        = aws
     cloudflare = cloudflare
@@ -122,7 +122,7 @@ module "acm_argocd" {
   source      = "../../../modules/acm-cloudflare"
   domain_name = var.argocd_domain
   zone_id     = var.cloudflare_zone_id
-  tags        = local.tags
+  tags        = merge({ ManagedBy = "terraform" }, local.tags)
   providers = {
     aws        = aws
     cloudflare = cloudflare
@@ -152,5 +152,5 @@ module "app_irsa" {
   namespace         = var.app_namespace
   service_accounts  = [var.app_service_account]
   policy_json       = data.aws_iam_policy_document.app_secrets_read.json
-  tags              = local.tags
+  tags              = merge({ ManagedBy = "terraform" }, local.tags)
 }
