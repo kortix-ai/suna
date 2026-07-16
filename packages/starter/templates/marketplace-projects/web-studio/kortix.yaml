@@ -1,5 +1,5 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
-kortix_version: 2
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+kortix_version: 3
 
 default_agent: studio
 
@@ -18,14 +18,32 @@ env:
     - STUDIO_PRICE_CEILING # highest monthly price (e.g. 200)
     - STUDIO_DOMAIN_BUDGET # max USD the studio may spend on a domain w/o asking
 
-opencode:
-  config_dir: .kortix/opencode
+# ─── ACP runtime profiles ────────────────────────────────────────────────
+# Same four default profiles the base starter declares (see its kortix.yaml
+# for the full explanation) — this project only actually uses `opencode`
+# today (behavior lives in .kortix/opencode/agents/studio.md), but the other
+# three stay selectable like any other v3 project.
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+  claude:
+    harness: claude
+    config_dir: .claude
+  codex:
+    harness: codex
+    config_dir: .codex
+  pi:
+    harness: pi
+    config_dir: .pi
 
-# GOVERNANCE ONLY (behaviour lives in .kortix/opencode/agents/studio.md).
+# GOVERNANCE + ROUTING ONLY (behaviour lives in .kortix/opencode/agents/studio.md).
 # The studio is granted broad access so a fresh clone works end-to-end; narrow
 # it once you know exactly which connectors/secrets you use.
 agents:
   studio:
+    runtime: opencode
+    agent: studio
     connectors: all # email/channel, Stripe, Vercel/deploy, a registrar
     secrets: all
     kortix_cli: all
