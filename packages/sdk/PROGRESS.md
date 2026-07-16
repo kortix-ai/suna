@@ -862,3 +862,9 @@ Claimed: ACP hardening WA per docs/superpowers/plans/2026-07-14-acp-sdk-hardenin
 (AcpSession store, transport hardening, reducer fixes, transcript exports, tool-part
 normalization, useAcpSession→useSyncExternalStore). Jay-directed, subagent-driven,
 no commits by Jay's standing rule; W0 pre-merge fixes already in this working tree.
+
+### 2026-07-16 — cortex-cycle SDK changes (controller: sdd-main; cycle ledger: docs/superpowers/plans/2026-07-15-cortex-cycle-progress.md)
+
+- **WS1-P0-c** (`f34086c3b`): internal `acp/harness-mirror.ts` (`SDK_HARNESS_IDS`) + colocated drift-guard test vs `@kortix/shared` `HARNESS_IDS` (devDependency-only; not exported from any barrel; snapshots unchanged).
+- **DISC-02** (`d072187fe`): `acp/reduce.ts` `findLastIndex` → ES2017-safe reverse-loop shim (private fn; no surface change) — cleared apps/api's older-lib typecheck error.
+- **WS3-P0-a** (`f4607618e`): extracted `acp/sse-core.ts` (`createSseBlockParser`, `isDeliverableSseBlock`, `isAcpResponseEnvelope`) from `AcpClient.consumeSse` — behavior-preserving, parity-pinned (pins green before AND after; deliberate-RED detector proof; reviewer independently reproduced). Snapshots +3 runtime / +4 type names, additions only. Suite 1102→1129/0. Poison-handling + Last-Event-ID dedupe deliberately stay in `client.ts` (caller-contract-specific). `pollTranscript` never shared SSE parsing (consumes parsed rows via `transcript()`) — considered, correctly untouched. Next: api proxy + headless engine consume this core (cycle WS3-P0-b/c); their known divergences (headless poison intolerance, `data:`-stripping variance, proxy CR-holdback gap) are catalogued in the cycle ledger.
