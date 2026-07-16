@@ -20,6 +20,35 @@ export interface BillingGateBlocked {
   message: string;
 }
 
+/**
+ * Thrown by `assertBillingActive` on a blocked account. A plain `HTTPException`
+ * only exposes the real reason (`subscription_required` vs `insufficient_credits`
+ * vs `no_account`) inside its JSON `res` body — which a caller can't read
+ * without consuming the Response stream, so both the in-process pipeline
+ * (`packages/llm-gateway`'s handler.ts `admit()`) and the out-of-process RPC
+ * path (`authorizeRequest()` below) used to just hardcode `subscription_required`
+ * for every 402 here. Carrying `.reason` directly on the thrown error lets both
+ * read the real cause synchronously, no body parsing required.
+ */
+export class BillingGateError extends HTTPException {
+  constructor(readonly reason: BillingGateReason, readonly balance: number, message: string, accountId: string) {
+    super(402, {
+      message,
+      res: new Response(
+        JSON.stringify({
+          error: message,
+          code: reason,
+          balance,
+          // The blocked account — so the upgrade dialog scopes to it instead of
+          // the caller's primary account (see web error-handler → openUpgradeDialog).
+          account_id: accountId,
+        }),
+        { status: 402, headers: { "content-type": "application/json" } },
+      ),
+    });
+  }
+}
+
 export async function checkBillingActive(
   accountId: string,
 ): Promise<BillingGateOk | BillingGateBlocked> {
@@ -72,18 +101,5 @@ export async function checkBillingActive(
 export async function assertBillingActive(accountId: string): Promise<void> {
   const result = await checkBillingActive(accountId);
   if (result.ok) return;
-  throw new HTTPException(402, {
-    message: result.message,
-    res: new Response(
-      JSON.stringify({
-        error: result.message,
-        code: result.reason,
-        balance: result.balance,
-        // The blocked account — so the upgrade dialog scopes to it instead of
-        // the caller's primary account (see web error-handler → openUpgradeDialog).
-        account_id: accountId,
-      }),
-      { status: 402, headers: { "content-type": "application/json" } },
-    ),
-  });
+  throw new BillingGateError(result.reason, result.balance, result.message, accountId);
 }

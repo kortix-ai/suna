@@ -5,7 +5,7 @@ import type {
   GatewayTrace,
   UsageEvent,
 } from '@kortix/llm-gateway';
-import { assertBillingActive } from '../billing/services/billing-gate';
+import { assertBillingActive, BillingGateError } from '../billing/services/billing-gate';
 import { deductForLlmUsage } from '../billing/services/credits';
 import { getCachedAccountTier } from '../billing/services/entitlements';
 import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/tiers';
@@ -115,7 +115,13 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
     return {
       ok: false,
       status: 402,
-      errorCode: 'subscription_required',
+      // The real reason (subscription_required / insufficient_credits /
+      // no_account) — not a hardcoded constant. See BillingGateError's doc
+      // comment: without this, every billing denial reported the same code
+      // regardless of cause, masking the true failure-mode breakdown in
+      // gateway_request_logs and in any programmatic caller that trusts `code`
+      // over regexing `message`.
+      errorCode: err instanceof BillingGateError ? err.reason : 'subscription_required',
       message: err instanceof Error ? err.message : 'Billing inactive',
       principal,
     };
