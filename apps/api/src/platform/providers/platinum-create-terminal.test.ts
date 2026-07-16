@@ -83,3 +83,18 @@ test("create() does NOT tear down a still-'provisioning' box (FE poll picks it u
   const deleted = calls.some((c) => c.method === 'DELETE');
   expect(deleted).toBe(false);
 });
+
+test('routeIngress() sends Kortix-native PTY websockets through the authenticated agent bridge', async () => {
+  const p = await makeProvider();
+  expect(p.routeIngress({
+    port: 8000,
+    transport: 'websocket',
+    path: '/kortix/pty/kpty_test/connect',
+  })).toEqual({
+    effectivePort: 8000,
+    websocket: {
+      userContextQueryParam: '__kortix_user_context',
+      queryDefaults: { cursor: '0' },
+    },
+  });
+});

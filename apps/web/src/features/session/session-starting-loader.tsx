@@ -363,15 +363,12 @@ export function SessionBootChecklistInline({
   const startRef = useRef(now);
   const elapsed = formatDuration(now - startRef.current);
   return (
-    <div className={cn('flex flex-col items-start gap-2', className)}>
-      <div
-        // className="bg-popover w-full rounded-md border px-4 py-3"
-        aria-label="Starting your Kortix Computer"
-      >
+    <div className={cn('flex items-center gap-2', className)}>
+      <div aria-label="Starting your Kortix Computer">
         <BootStepList active={active} />
       </div>
       {elapsed ? (
-        <span className="text-muted-foreground pl-1 text-[13px] tabular-nums">· {elapsed}</span>
+        <span className="text-muted-foreground text-[13px] tabular-nums">· {elapsed}</span>
       ) : null}
     </div>
   );

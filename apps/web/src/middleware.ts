@@ -1,12 +1,36 @@
 import { locales, type Locale } from '@/i18n/config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
+import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = ['/', '/legal', '/support', '/templates'];
+const MARKETING_ROUTES = ['/', '/legal', '/support'];
+
+// Pure marketing/promo routes that a self-host with the landing page disabled
+// (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
+// app. Functional public routes (/auth, /docs, /help, /legal, /support,
+// /marketplace, /share, /download, /maintenance, …) stay reachable; only the
+// marketing site itself is deactivated.
+const SELF_HOST_MARKETING_ONLY = [
+  '/about',
+  '/careers',
+  '/blog',
+  '/changelog',
+  '/credits-explained',
+  '/contact',
+  '/developers',
+  '/enterprise',
+  '/pricing',
+  '/use-cases',
+  '/solutions',
+  '/compare',
+  '/integrations',
+  '/security',
+];
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
@@ -19,7 +43,6 @@ const PUBLIC_ROUTES = [
   '/legal',
   '/api/auth',
   '/share', // Shared content should be public
-  '/templates', // Template pages should be public
   '/marketplace', // Public read-only marketplace directory; installs still require auth
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
@@ -91,7 +114,6 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/tunnel',
   '/github',
   '/cli',
-  '/templates',
   '/marketplace',
   '/maintenance',
   '/countryerror',
@@ -127,10 +149,18 @@ export async function middleware(request: NextRequest) {
     try {
       const config = await getMaintenanceConfig();
       if (config.level === 'blocking') {
-        return NextResponse.redirect(new URL('/maintenance', request.url));
+        // Platform admins can mint a signed bypass token from the maintenance
+        // page (POST /api/maintenance/bypass) to keep working during a full
+        // lockdown. Honor a valid, unexpired token instead of redirecting.
+        const adminBypass = await verifyBypassToken(
+          request.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value,
+        );
+        if (!adminBypass) {
+          return NextResponse.redirect(new URL('/maintenance', request.url));
+        }
       }
     } catch {
-      // If Edge Config is unreachable, don't block traffic
+      // If the maintenance config is unreachable, don't block traffic
     }
   }
 
@@ -216,6 +246,14 @@ export async function middleware(request: NextRequest) {
     request,
   });
 
+  // Every redirect issued after the Supabase client below runs must go
+  // through this (see redirect-preserving-session.ts for why): otherwise the
+  // browser gets bounced while still carrying the very cookie that caused the
+  // bounce — the single-use refresh token never actually gets cleared/rotated
+  // on the client, so the next request just repeats the same failure.
+  const redirectPreservingSession = (url: URL) =>
+    redirectPreservingCookies(url, supabaseResponse.cookies);
+
   // IMPORTANT: NEXT_PUBLIC_ vars are inlined at build time by Next.js, so in
   // Docker containers they contain placeholder values. We MUST use runtime
   // env vars (SUPABASE_URL, SUPABASE_ANON_KEY) with fallback to NEXT_PUBLIC_.
@@ -282,14 +320,58 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Self-heal a stale/rotated session. A refresh token that's invalid or
+  // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
+  // erroring on every request and dead-ends the user on /auth. Drop the Supabase
+  // auth cookies (they can be chunked: name, name.0, name.1, …) so the next load
+  // starts clean instead of looping on the bad token.
+  if (authError) {
+    const message = authError.message || '';
+    const code = (authError as { code?: string }).code;
+    if (
+      code === 'refresh_token_already_used' ||
+      code === 'refresh_token_not_found' ||
+      /refresh token/i.test(message) ||
+      /invalid.*(jwt|token)/i.test(message)
+    ) {
+      for (const { name } of request.cookies.getAll()) {
+        if (name === KORTIX_SUPABASE_AUTH_COOKIE || name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)) {
+          supabaseResponse.cookies.delete(name);
+        }
+      }
+      user = null;
+    }
+  }
+
   // FAST PATH: authenticated users hitting the homepage go straight to /projects.
   if (pathname === '/' && user) {
-    return NextResponse.redirect(new URL('/projects', request.url));
+    return redirectPreservingSession(new URL('/projects', request.url));
   }
 
   // Desktop shell never shows the marketing homepage — bounce to /projects.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return NextResponse.redirect(new URL('/projects', request.url));
+    return redirectPreservingSession(new URL('/projects', request.url));
+  }
+
+  // Self-host: when the landing/marketing site is disabled
+  // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
+  // marketing surface is deactivated: the homepage and every marketing route
+  // bounce straight to the app — authenticated users to /projects, everyone
+  // else to /auth. Functional public routes (/docs, /help, /legal, /support,
+  // /marketplace, /share, …) are unaffected. Read via process.env directly —
+  // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
+  // carry the image's placeholder value; the runtime container env
+  // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,
+  // same convention as the Supabase vars below.
+  const disableLandingPage =
+    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE || process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+  if (disableLandingPage) {
+    const isMarketingContent =
+      pathname === '/' ||
+      SELF_HOST_MARKETING_ONLY.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+    if (isMarketingContent) {
+      return redirectPreservingSession(new URL(user ? '/projects' : '/auth', request.url));
+    }
   }
 
   // Allow all public routes — but return supabaseResponse (not NextResponse.next())
@@ -308,7 +390,11 @@ export async function middleware(request: NextRequest) {
       url.pathname = '/auth';
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;
       url.searchParams.set('redirect', redirectTarget);
-      return NextResponse.redirect(url);
+      // Must preserve the self-heal cookie-clear above — without it, the
+      // browser bounces to /auth still carrying the poisoned cookie, and the
+      // auth page's own client-side session check has to rediscover the same
+      // invalidity from scratch before it can show a usable form.
+      return redirectPreservingSession(url);
     }
 
     // ── Billing-related routes (activate-trial, etc.) ────────────────────

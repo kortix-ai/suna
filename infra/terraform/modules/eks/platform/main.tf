@@ -62,7 +62,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.alb_controller_irsa.role_arn
+    value = local.alb_controller_role_arn
   }
   # Run 2 replicas so the controller itself is HA.
   set {
@@ -118,26 +118,19 @@ resource "helm_release" "external_dns" {
   atomic     = true
   timeout    = 600
 
-  values = [yamlencode({
+  values = [yamlencode(merge({
     provider = {
-      name = "cloudflare"
+      name = var.external_dns_provider
     }
-    env = [{
-      name = "CF_API_TOKEN"
-      valueFrom = {
-        secretKeyRef = {
-          name = kubernetes_secret.cloudflare_api_token.metadata[0].name
-          key  = "apiToken"
-        }
-      }
-    }]
     domainFilters = concat([var.api_domain], var.extra_domain_filters)
     # Pin the kortix.com zone by ID via extraArgs (the chart silently drops a
     # top-level `zoneIdFilters` value, so it never reached the container). REQUIRED:
     # the domainFilters are subdomains, so without --zone-id-filter external-dns
     # matches the zone NAME (kortix.com) against them, finds no match, discards the
     # zone, and manages nothing.
-    extraArgs  = var.cloudflare_zone_id != "" ? ["--zone-id-filter=${var.cloudflare_zone_id}"] : []
+    extraArgs = var.external_dns_provider == "aws" ? [
+      "--zone-id-filter=${var.route53_zone_id}",
+    ] : var.cloudflare_zone_id != "" ? ["--zone-id-filter=${var.cloudflare_zone_id}"] : []
     policy     = "sync"
     registry   = "txt"
     txtOwnerId = var.cluster_name
@@ -147,8 +140,30 @@ resource "helm_release" "external_dns" {
     serviceAccount = {
       create = true
       name   = "external-dns"
+      annotations = var.external_dns_provider == "aws" ? {
+        "eks.amazonaws.com/role-arn" = var.external_dns_role_arn
+      } : {}
     }
-  })]
+    }, var.external_dns_provider == "cloudflare" ? {
+    env = [{
+      name = "CF_API_TOKEN"
+      valueFrom = {
+        secretKeyRef = {
+          name = kubernetes_secret.cloudflare_api_token[0].metadata[0].name
+          key  = "apiToken"
+        }
+      }
+    }]
+  } : {}))]
+
+  lifecycle {
+    precondition {
+      condition = var.external_dns_provider != "aws" || (
+        var.route53_zone_id != "" && var.external_dns_role_arn != ""
+      )
+      error_message = "Route 53 external-dns requires route53_zone_id and external_dns_role_arn."
+    }
+  }
 }
 
 # ── metrics-server (HPA metrics source) ───────────────────────────────────────
@@ -204,7 +219,7 @@ resource "helm_release" "cluster_autoscaler" {
   }
   set {
     name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.cluster_autoscaler_irsa.role_arn
+    value = local.cluster_autoscaler_role_arn
   }
   # Prefer the cheapest node shape that fits pending pods, and keep AZs balanced.
   set {
@@ -314,6 +329,7 @@ locals {
 # UI at ops.kortix.com (Cloudflare-Access gated) when argocd_ui_enabled; GitHub-
 # org SSO + admin retirement when argocd_github_sso_enabled.
 resource "helm_release" "argo_cd" {
+  count            = var.argo_cd_enabled ? 1 : 0
   name             = "argo-cd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
@@ -347,6 +363,6 @@ resource "helm_release" "argo_rollouts" {
   # IRSA so the controller can query CloudWatch for canary analysis.
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.argo_rollouts_irsa.role_arn
+    value = local.argo_rollouts_role_arn
   }
 }

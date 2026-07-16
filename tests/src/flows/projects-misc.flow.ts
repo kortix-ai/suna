@@ -2,7 +2,7 @@
  * Projects — miscellaneous project-scoped surfaces that don't fit the core CRUD
  * flow: BYO-repo create, the CLI-token (project PAT)
  * lifecycle, onboarding state, version-diff preview, ChatGPT headless provider
- * auth, the lazy legacy-migration pipeline, and the Slack-relay turn endpoints.
+ * auth and the Slack-relay turn endpoints.
  *
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
@@ -220,61 +220,6 @@ flow(
     await ctx.step("ANON list → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/oauth", { params: { projectId: p.id } });
       r.status(401);
-    });
-  },
-);
-
-// PROJ-14 — legacy migration: read-only eligibility + status. Eligibility is a
-// pure account-scoped read (200, may be empty); status requires `sandbox_id`
-// (400 without) and 404s an unknown one.
-flow(
-  "PROJ-14",
-  {
-    domain: "projects",
-    routes: [
-      "GET /v1/projects/legacy-migration/eligibility",
-      "GET /v1/projects/legacy-migration/status",
-    ],
-  },
-  async (ctx) => {
-    await ctx.step("eligibility → 200", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/legacy-migration/eligibility");
-      r.status(200).body().exists("$.eligible");
-    });
-    await ctx.step("status without sandbox_id → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/legacy-migration/status");
-      r.status(400);
-    });
-    await ctx.step("status for unknown sandbox → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/legacy-migration/status", { query: { sandbox_id: "00000000-0000-4000-a000-000000000000" } });
-      r.status(404);
-    });
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/legacy-migration/eligibility");
-      r.status(401);
-    });
-  },
-);
-
-// PROJ-15 — legacy migration: start. Requires `sandbox_id` (400 without); an
-// unknown / unowned sandbox 404s. We never start a real migration (no
-// migratable JustAVPS machine in the harness) — boundary only. Mutating →
-// serial.
-flow(
-  "PROJ-15",
-  { domain: "projects", routes: ["POST /v1/projects/legacy-migration/start"] },
-  async (ctx) => {
-    await ctx.step("start without sandbox_id → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/legacy-migration/start", {});
-      r.status(400);
-    });
-    await ctx.step("start for unknown sandbox → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/legacy-migration/start", { sandbox_id: "00000000-0000-4000-a000-000000000000" });
-      r.status(404);
     });
   },
 );

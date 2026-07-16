@@ -1,156 +1,39 @@
-import { getProvider as getDeploymentProvider } from '../../deployments/providers';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { deployAppSpec, getLatestDeployment } from '../app-sweep';
-import { loadProjectApps, manifestHashForApp } from '../apps';
-import { archiveRepoSubtree, getBranchDiff, getCommit, getCommitDiff, getFileHistory, grepRepoFiles, listBranches, listCommits, listRepoFiles, loadProjectConfig, readRepoFile, searchRepoFileNames } from '../git';
+import {
+  archiveRepoSubtree,
+  getBranchDiff,
+  getCommit,
+  getCommitDiff,
+  getFileHistory,
+  grepRepoFiles,
+  listBranches,
+  listCommits,
+  listRepoFiles,
+  loadProjectConfig,
+  readRepoFile,
+  searchRepoFileNames,
+} from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
-import { deployments, projects } from '@kortix/db';
+import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { loadProjectForUser, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
-import { filterConfigResourcesForUser, denierFromConfig, resourceDenierForRequest } from '../lib/project-resources';
+import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
+import {
+  normalizeString,
+  readBody,
+  serializeProject,
+  serializeProjectGitConnection,
+} from '../lib/serializers';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
   return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
 }
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/apps/{slug}/deploy',
-    tags: ['apps'],
-    summary: 'POST /:projectId/apps/:slug/deploy',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY);
-
-  const { specs } = await loadProjectApps(await withProjectGitAuth(loaded.row));
-  const spec = specs.find((s) => s.slug === slug);
-  if (!spec) return c.json({ error: 'Not found' }, 404);
-
-  const latest = await getLatestDeployment(projectId, slug);
-  const status = await deployAppSpec({
-    project: loaded.row,
-    spec,
-    previousVersion: latest?.version ?? 0,
-    manifestHash: manifestHashForApp(spec),
-    source: 'manual',
-  });
-
-  const fresh = await getLatestDeployment(projectId, slug);
-  return c.json(
-    {
-      status,
-      app_slug: slug,
-      deployment: fresh ? serializeDeploymentRow(fresh) : null,
-    },
-    status === 'active' ? 201 : 502,
-  );
-},
-);
-
-// POST /v1/projects/:projectId/apps/:slug/stop — tear down the latest
-// deployment on the provider. Marks the row 'stopped' locally even if
-// the provider call fails (best-effort).
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/apps/{slug}/stop',
-    tags: ['apps'],
-    summary: 'POST /:projectId/apps/:slug/stop',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY);
-
-  const latest = await getLatestDeployment(projectId, slug);
-  if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
-
-  const provider = getDeploymentProvider(latest.provider ?? undefined);
-  if (latest.freestyleId) {
-    try {
-      await provider.stop(latest.freestyleId);
-    } catch {
-      // Best-effort — mark as stopped locally regardless.
-    }
-  }
-
-  const [updated] = await db
-    .update(deployments)
-    .set({ status: 'stopped', updatedAt: new Date() })
-    .where(eq(deployments.deploymentId, latest.deploymentId))
-    .returning();
-
-  return c.json({ ok: true, deployment: updated ? serializeDeploymentRow(updated) : null });
-},
-);
-
-// GET /v1/projects/:projectId/apps/:slug/logs — provider logs for the
-// latest deployment.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/apps/{slug}/logs',
-    tags: ['apps'],
-    summary: 'GET /:projectId/apps/:slug/logs',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 502),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const latest = await getLatestDeployment(projectId, slug);
-  if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
-
-  const provider = getDeploymentProvider(latest.provider ?? undefined);
-  try {
-    const data = await provider.logs(latest.freestyleId ?? '');
-    return c.json({ ok: true, data });
-  } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : 'logs unavailable' }, 502);
-  }
-},
-);
 
 // GET /v1/projects/:projectId
 
@@ -803,55 +686,6 @@ projectsApp.openapi(
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
-},
-);
-
-// PATCH /v1/projects/:projectId/apps-config
-// Per-project toggle for the experimental `apps:` deployment surface
-// (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
-// never in kortix.yaml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
-// `enabled: null` clears the override and falls back to the operator default.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/apps-config',
-    tags: ['apps'],
-    summary: 'PATCH /:projectId/apps-config',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-
-  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const nextMeta: Record<string, unknown> = { ...meta };
-  if (body.enabled === null) {
-    delete nextMeta.apps_enabled;
-  } else if (typeof body.enabled === 'boolean') {
-    nextMeta.apps_enabled = body.enabled;
-  } else {
-    return c.json({ error: 'enabled must be a boolean or null' }, 400);
-  }
-
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: nextMeta, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
-  if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 },
 );
 

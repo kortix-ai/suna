@@ -21,6 +21,7 @@ import {
   MANAGED_FLAGSHIP_MODEL_ID,
 } from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { createModelLookup } from './model-lookup';
 
 // ============================================================================
 // Types
@@ -320,6 +321,7 @@ export function useModelStore(
 
   // Compute latest set
   const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
+  const modelByKey = useMemo(() => createModelLookup(allModels), [allModels]);
 
   // Visibility map from user preferences
   const visibilityMap = useMemo(() => {
@@ -358,9 +360,7 @@ export function useModelStore(
         if (!connected) return false;
         if (state === 'show') return true;
         if (latestSet.has(key)) return true;
-        const m = allModels.find(
-          (x) => x.providerID === model.providerID && x.modelID === model.modelID,
-        );
+        const m = modelByKey.get(key);
         if (!m?.releaseDate) return isDefaultVisible(model);
         try {
           const d = new Date(m.releaseDate);
@@ -372,9 +372,7 @@ export function useModelStore(
       }
       if (state === 'show') return true;
       if (latestSet.has(key)) return true;
-      const m = allModels.find(
-        (x) => x.providerID === model.providerID && x.modelID === model.modelID,
-      );
+      const m = modelByKey.get(key);
       // No (or invalid) release metadata — the managed Kortix gateway case.
       // Default to showing only the flagship; every other model is opt-in via
       // "Manage models". Providers that DO carry release dates keep the
@@ -388,7 +386,7 @@ export function useModelStore(
       }
       return false;
     },
-    [visibilityMap, latestSet, allModels, connectedProviderIds, freeTier],
+    [visibilityMap, latestSet, modelByKey, connectedProviderIds, freeTier],
   );
 
   // Check if a model is in the latest set

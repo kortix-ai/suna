@@ -23,6 +23,20 @@ export interface GitHubRepositoriesResponse {
   repositories: GitHubRepository[];
 }
 
+export interface GitHubRepositoryBranch {
+  name: string;
+  protected: boolean;
+}
+
+export interface GitHubRepositoryBranchesResponse {
+  account_id: string;
+  installation_id: string;
+  owner_login: string;
+  repo_full_name: string;
+  default_branch: string;
+  branches: GitHubRepositoryBranch[];
+}
+
 export interface LinkRepositoryInput {
   account_id?: string;
   repo_url?: string;
@@ -97,6 +111,24 @@ export async function listGitHubRepositories(
   return unwrap(
     await backendApi.get<GitHubRepositoriesResponse>(
       `/projects/github/repositories?${params.toString()}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubRepositoryBranches(
+  accountId: string,
+  installationId: string,
+  repoFullName: string,
+) {
+  const params = new URLSearchParams({
+    account_id: accountId,
+    installation_id: installationId,
+    repo_full_name: repoFullName,
+  });
+  return unwrap(
+    await backendApi.get<GitHubRepositoryBranchesResponse>(
+      `/projects/github/repository-branches?${params.toString()}`,
       { showErrors: false },
     ),
   );

@@ -164,10 +164,8 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 // request asks for it, the gateway resolves it to a concrete managed model and
 // bills it as the resolved model.
 //
-// AUTO resolves to GLM 5.2 (text) except a request that carries images, which is
-// routed to a vision-capable model so attachments aren't silently ignored (GLM is
-// text-only). The `autoRouter` hook and this single indirection point are where a
-// future, more sophisticated per-task handler plugs in.
+// AUTO resolves to Codex GPT-5.6 Sol. The gateway's finite model-fallback policy
+// then falls back to managed GLM 5.2 if Codex cannot serve the turn.
 //
 // AUTO is currently HIDDEN from the picker (see AUTO_MODEL_ENABLED): every session
 // explicitly opts into a concrete model. The resolution path below stays fully
@@ -183,12 +181,11 @@ export const AUTO_MODEL_ID = "auto";
 // regardless, so this only gates the UI.
 export const AUTO_MODEL_ENABLED = false;
 
-// The single "what to choose for auto" knob: the model AUTO routes text requests
-// to, AND the concrete model a fresh session defaults to while AUTO is hidden.
-// Change this one constant to re-point both.
-export const AUTO_DEFAULT_MODEL_ID = "glm-5.2";
+// The single "what to choose for auto" knob: a gateway wire model. It may be a
+// managed bare id (`glm-5.2`) or a provider-qualified id (`codex/gpt-5.6-sol`).
+export const AUTO_DEFAULT_MODEL_ID = "codex/gpt-5.6-sol";
 
-const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID; // text-only default
+const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID;
 const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
 
 function requestHasImage(body: Record<string, unknown>): boolean {

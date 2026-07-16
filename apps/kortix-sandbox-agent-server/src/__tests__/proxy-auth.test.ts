@@ -140,9 +140,9 @@ describe('daemon proxy auth gate', () => {
     const encoded = Buffer.from('x-access-token:secret-token').toString('base64')
 
     expect(buildGitAuthArgs(undefined, undefined)).toEqual([])
-    expect(buildGitAuthArgs('https://git.freestyle.sh/repo-id', 'secret-token')).toEqual([
+    expect(buildGitAuthArgs('https://git.example.test/repo-id', 'secret-token')).toEqual([
       '-c',
-      `http.https://git.freestyle.sh/.extraheader=AUTHORIZATION: basic ${encoded}`,
+      `http.https://git.example.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
     ])
     expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([
       '-c',

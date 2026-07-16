@@ -271,6 +271,51 @@ describe('openEventStream coalescing', () => {
   });
 });
 
+describe('openEventStream vendor-retry containment (connection-leak regression)', () => {
+  // `@opencode-ai/sdk`'s `createSseClient` wraps every connection in its OWN
+  // internal retry-with-backoff loop that swallows failures and reschedules
+  // its next fetch via a plain (non-abortable) `setTimeout` sleep. Left to
+  // its default, that inner loop runs concurrently with this module's outer
+  // connect/backoff loop: aborting a stalled attempt and immediately opening
+  // the next one can race the old vendor-level generator waking from its own
+  // sleep and firing one more fetch before it notices the abort — stacking a
+  // second live connection on top of the new attempt. On a flaky sandbox
+  // (frequent brief-unreachable → reconnect cycles) this piles up fast enough
+  // to saturate the browser's per-origin HTTP/1.1 connection pool and queue
+  // out every other request. `sseMaxRetryAttempts: 1` disables the vendor's
+  // internal retry entirely so a failed fetch cleanly completes the
+  // generator instead of scheduling its own reconnect — this module's outer
+  // loop becomes the ONLY thing that ever opens a new connection.
+  test('every connect call caps the vendor client to a single internal attempt', async () => {
+    const clock = createFakeClock();
+    const seenOpts: Array<{ sseMaxRetryAttempts?: number }> = [];
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          seenOpts.push(opts);
+          return { stream: createParkingChannel([]) };
+        },
+      },
+    };
+
+    const handle = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    // Force a second connect attempt (heartbeat-triggered reconnect) so we
+    // confirm the cap is applied on every attempt, not just the first.
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    await clock.advance(1000);
+    await tick();
+
+    expect(seenOpts.length).toBeGreaterThanOrEqual(2);
+    for (const opts of seenOpts) {
+      expect(opts.sseMaxRetryAttempts).toBe(1);
+    }
+
+    handle.close();
+  });
+});
+
 describe('openEventStream reconnect backoff', () => {
   test('backs off exponentially from 1s, capped at 30s, across unhealthy disconnects', async () => {
     const clock = createFakeClock();

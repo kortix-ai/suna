@@ -15,5 +15,5 @@ export function buildTunnelConnectCommand({
 }: BuildTunnelConnectCommandArgs): string {
   const backend = backendUrl.replace(/\/+$/, '');
   const absolute = /^https?:\/\//i.test(backend) ? backend : `${origin}${backend}`;
-  return `npx @kortix/agent-tunnel connect --api-url ${absolute}/tunnel`;
+  return `npx --yes @kortix/agent-tunnel@latest connect --api-url ${absolute}/tunnel`;
 }

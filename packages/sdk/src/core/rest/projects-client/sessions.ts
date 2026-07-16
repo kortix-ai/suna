@@ -25,7 +25,7 @@ export interface ProjectSession {
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: string | null;
+  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
@@ -74,7 +74,7 @@ export interface CreateProjectSessionInput {
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'managed' | 'local_docker' | 'justavps' | 'platinum';
+  provider?: 'daytona' | 'platinum' | 'e2b';
   branch_already_created?: boolean;
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */

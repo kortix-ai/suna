@@ -28,7 +28,7 @@
  *       app: gmail
  *       account: work                # 1-click connected in the dashboard
  *
- * Parser mirrors `projects/apps.ts` + `projects/triggers.ts`: never throws on
+ * Parser mirrors `projects/agents.ts` + `projects/triggers.ts`: never throws on
  * a bad entry, collects them in `errors` so the UI can render them next to the
  * good ones. CRUD round-trips this same file (connectorSpecToTomlEntry).
  */
@@ -70,7 +70,7 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'email' | 'meet';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'meet';
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'oauth1', 'none'];

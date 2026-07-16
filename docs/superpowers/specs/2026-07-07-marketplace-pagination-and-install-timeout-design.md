@@ -42,7 +42,7 @@ groups**.
   (`packages/registry/src/fetch.ts:175`) but is unexported/unused here.
 - 25s deadline: `apps/api/src/middleware/request-deadline.ts`. `isExempt` matches
   `EXEMPT_PREFIXES`, `EXEMPT_FRAGMENTS` (substring), `EXEMPT_METHOD_PATHS`.
-  `/commit-push`, `/provision`, `/deployments` are exempt; install/update are not.
+  `/commit-push` and `/provision` are exempt; install/update are not.
 
 ## Design
 

@@ -1,9 +1,9 @@
 'use client';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { SectionCard } from '@/components/ui/section-card';
+import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast } from '@/components/ui/toast';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
@@ -25,7 +25,6 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { formatCredits } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
@@ -127,19 +126,14 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-32 w-full rounded-2xl" />
-        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-32 w-full rounded-md" />
+        <Skeleton className="h-32 w-full rounded-md" />
       </div>
     );
   }
 
   if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    );
+    return <InfoBanner tone="destructive">{error}</InfoBanner>;
   }
 
   const subscription = accountState?.subscription;
@@ -150,47 +144,51 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
   const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {showTeamCheckout ? (
-        <SectionCard
-          title={tI18nHardcoded.raw(
-            'autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b',
-          )}
-          description={tI18nHardcoded.raw(
-            'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571',
-          )}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button
-              onClick={() =>
-                openUpgradeDialog({
-                  reason: 'subscription_required',
-                  accountId: billingAccountId,
-                })
-              }
-              className="shrink-0"
-            >
+        <section className="space-y-4">
+          <div className="space-y-1">
+            <Label>Kortix Team</Label>
+            <p className="text-muted-foreground text-xs">
               {tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73',
+                'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571',
               )}
-            </Button>
-            <Button
-              variant="link"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={handleManageSubscription}
-              disabled={createPortalSessionMutation.isPending}
-            >
-              {createPortalSessionMutation.isPending ? 'Loading…' : 'Manage billing'}
-            </Button>
+            </p>
           </div>
-        </SectionCard>
+          <div className="bg-popover rounded-md border px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Button
+                size="sm"
+                onClick={() =>
+                  openUpgradeDialog({
+                    reason: 'subscription_required',
+                    accountId: billingAccountId,
+                  })
+                }
+                className="shrink-0"
+              >
+                Subscribe to Team
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+                onClick={handleManageSubscription}
+                disabled={createPortalSessionMutation.isPending}
+              >
+                {createPortalSessionMutation.isPending ? (
+                  <Loading className="size-4 shrink-0" />
+                ) : null}
+                Manage billing
+              </Button>
+            </div>
+          </div>
+        </section>
       ) : (
         <>
           {highlight === 'credits' && totalCredits <= 0 && (
             <InfoBanner
               tone="warning"
-              icon={AlertTriangle}
               title={tI18nHardcoded.raw(
                 'autoFeaturesAccountsSettingsBillingTabJsxAttrTitleYouRanefc3b00e',
               )}
@@ -208,28 +206,32 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
           {subscribedToTeam && <SeatManagementCard accountState={accountState} />}
 
           {canPurchaseCredits && (
-            <SectionCard
-              title={tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxTextAutoTopUp9c42761a',
-              )}
-              description={tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d',
-              )}
-            >
-              <AutoTopupCard fetchSettings showSaveButton />
-            </SectionCard>
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <Label>Auto top-up</Label>
+                <p className="text-muted-foreground text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d',
+                  )}
+                </p>
+              </div>
+              <div className="bg-popover rounded-md border px-4 py-5">
+                <AutoTopupCard fetchSettings showSaveButton />
+              </div>
+            </section>
           )}
 
           {canPurchaseCredits && (
-            <SectionCard
-              title={tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxTextBuyCreditsd35e7077',
-              )}
-              description={tI18nHardcoded.raw(
-                'autoFeaturesAccountsSettingsBillingTabJsxTextOneTimeTop22a81cd3',
-              )}
-            >
-              <div className="space-y-3">
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <Label>Buy credits</Label>
+                <p className="text-muted-foreground text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesAccountsSettingsBillingTabJsxTextOneTimeTop22a81cd3',
+                  )}
+                </p>
+              </div>
+              <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
                 <div className="grid grid-cols-3 gap-2">
                   {CREDIT_PACKAGES.map((pkg) => {
                     const isSelected = selectedPackage?.price === pkg.price;
@@ -241,7 +243,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                         disabled={isPurchasing}
                         variant="outline"
                         className={cn(
-                          'h-auto flex-col rounded-2xl p-3 text-center',
+                          'h-auto flex-col rounded-md p-3 text-center',
                           isSelected && 'border-primary bg-primary/[0.06]',
                         )}
                       >
@@ -253,41 +255,50 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                     );
                   })}
                 </div>
-                {purchaseError && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>{purchaseError}</AlertDescription>
-                  </Alert>
-                )}
+                {purchaseError && <InfoBanner tone="destructive">{purchaseError}</InfoBanner>}
                 <Button
                   onClick={handlePurchaseCredits}
                   disabled={isPurchasing || !selectedPackage}
-                  className="w-full"
+                  className="w-full gap-1.5"
                 >
+                  {isPurchasing ? <Loading className="size-4 shrink-0" /> : null}
                   {isPurchasing
-                    ? 'Processing...'
+                    ? 'Processing'
                     : selectedPackage
                       ? `Buy $${selectedPackage.price} in credits`
                       : 'Select a package'}
                 </Button>
               </div>
-            </SectionCard>
+            </section>
           )}
 
-          <SectionCard
-            title="Billing portal"
-            description="Manage your subscription, payment methods, and invoices."
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleManageSubscription}
-                disabled={createPortalSessionMutation.isPending}
-              >
-                {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage billing'}
-              </Button>
-            }
-          />
+          {/* The Stripe billing portal doesn't exist without billing enabled
+              (self-host with KORTIX_BILLING_INTERNAL_ENABLED=false) — hide the
+              button rather than let it 404/error on click. */}
+          {isBillingEnabled() ? (
+            <section className="space-y-4">
+              <Label>Billing portal</Label>
+              <div className="bg-popover rounded-md border px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-muted-foreground min-w-0 text-xs">
+                    Manage your subscription, payment methods, and invoices.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 gap-1.5"
+                    onClick={handleManageSubscription}
+                    disabled={createPortalSessionMutation.isPending}
+                  >
+                    {createPortalSessionMutation.isPending ? (
+                      <Loading className="size-4 shrink-0" />
+                    ) : null}
+                    Manage billing
+                  </Button>
+                </div>
+              </div>
+            </section>
+          ) : null}
         </>
       )}
     </div>

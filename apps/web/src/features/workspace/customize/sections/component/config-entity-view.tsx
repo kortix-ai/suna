@@ -19,7 +19,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { splitFrontmatter } from '@/features/workspace/customize/shared/utils';
+import { splitFrontmatter, toArray } from '@/features/workspace/customize/shared/utils';
 import {
   editConfigPrompt,
   newConfigPrompt,
@@ -137,7 +137,13 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   });
 
   const config = detailQuery.data?.config ?? null;
-  const entities = useMemo(() => (config ? select(config) : []), [config, select]);
+  // `select(config)` returns one of `config.agents` / `config.skills` /
+  // `config.commands`. The type marks these required arrays, but the API can
+  // return them as `undefined` (or a non-array) for repo-less / capability-gated
+  // / config-build-failure states — calling `.filter` on that throws into prod
+  // Sentry (the `(intermediate value)…filter is not a function` cluster). `toArray`
+  // guards both the undefined and the non-array cases.
+  const entities = useMemo(() => (config ? toArray(select(config)) : []), [config, select]);
   const isForbidden =
     detailQuery.isError && /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
 

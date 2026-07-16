@@ -5,7 +5,7 @@ description: The project manifest — every table, field, default, and validatio
 
 The one file the platform treats as authoritative for a project. For the plain-language version, see [Projects](/docs/concepts/projects).
 
-The manifest lives at the repo root — `kortix.yaml` (v2, the current default for new projects), its `kortix.yml` short-extension sibling, or `kortix.toml` (v1, legacy, still fully supported for existing projects). Any repo with a valid manifest at the root is a Kortix project. When more than one candidate file is present, the platform resolves them in priority order — `.yaml` first, then `.yml`, then `.toml` — and reads the first one it finds. The parser is permissive — it never throws on a bad entry: bad triggers and apps go into an `errors` list alongside the good ones, and unknown top-level keys are ignored (park your own metadata freely).
+The manifest lives at the repo root — `kortix.yaml` (v2, the current default for new projects), its `kortix.yml` short-extension sibling, or `kortix.toml` (v1, legacy, still fully supported for existing projects). Any repo with a valid manifest at the root is a Kortix project. When more than one candidate file is present, the platform resolves them in priority order — `.yaml` first, then `.yml`, then `.toml` — and reads the first one it finds. The parser is permissive — it never throws on a bad entry: bad triggers go into an `errors` list alongside the good ones, and unknown top-level keys are ignored (park your own metadata freely). The retired `apps:` section, if present, is rejected with an explicit "Delete this section." error.
 
 <Callout type="info" title="The canonical schema">
   Either version, the always-current, machine-checkable spec is the public JSON Schema — generated straight from `@kortix/manifest-schema`, the same package behind `kortix validate` and the CR-merge gate, so it can't drift from what the platform actually enforces:
@@ -163,7 +163,6 @@ runtime: opencode
 | Session bootstrap | `env:` (advisory — surfaced to dashboard, not enforced)      | `[env]`                                                  |
 | Connector sync    | `connectors:`                                                | `[[connectors]]`                                        |
 | Agent governance  | `agents:` (governance-only name→block map — server-side launch roster + connector/`kortix_cli`/`secrets`/`skills` grants) | `[[agents]]` (array of tables, same grant fields plus dead `model`/`file`) |
-| Apps deploy sweep | `apps:` (gated per-project — see [below](#apps--apps-experimental)) | `[[apps]]` (same gate)                                   |
 | Dashboard UI      | All of the above + the raw manifest                          | Same                                                     |
 | *(removed)*       | `channels:` does not exist in the v2 schema — see [below](#channels-removed-in-v2) | `[[channels]]` parses and round-trips but no runtime path reads it |
 
@@ -200,7 +199,7 @@ The `KORTIX_*` prefix is reserved at the Secrets Manager surface, not at parse t
 
 A list of named, bootable sandbox images; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top of it automatically. Optional — with no entries, every session boots the always-available platform default image. Declare as many templates as you like; a session picks one by `slug`. This is also where you size the sandbox hardware.
 
-The schema mirrors the runtime provider (Daytona): an image comes either from a **Dockerfile in your repo** or a **public Docker image reference**, and the resource spec maps onto the provider's `cpu` / `memory` / `disk`.
+The schema is provider-neutral: an image comes either from a **Dockerfile in your repo** or a **public Docker image reference**, and Kortix maps the `cpu` / `memory` / `disk` resource spec onto Daytona, Platinum, or E2B.
 
 ```yaml
 sandbox:
@@ -307,7 +306,7 @@ server / LLM-gateway catalog rather than a sandbox-local OpenCode provider list.
 
 ## `triggers:` / `[[triggers]]`
 
-Each entry fires a session that runs `prompt` as its initial message — a fresh session by default, or the trigger's prior session when `session_mode: reuse` (see below). Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
+Each entry fires a session that runs `prompt` as its initial message — a fresh session by default, the trigger's prior session when `session_mode: reuse`, or a specific session first when `session_mode: pinned` + `session_id` is set (see below). Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
 
 ```yaml
 triggers:
@@ -328,7 +327,8 @@ triggers:
 | `agent`        | no       | string | `"default"` | Agent name. Legacy projects resolve this through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
 | `enabled`      | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
 | `model`        | no       | string | —           | Wire form `provider/model` (e.g. `anthropic/claude-sonnet-5`). Pins the fired session to that model, taking precedence over the agent/account/platform default chain. Unlike the dead v1 `[[agents]].model`, this one is live. |
-| `session_mode` | no       | string | `"fresh"`   | `"fresh"` or `"reuse"` (camelCase `sessionMode` also accepted). `"reuse"` continues the trigger's existing session on each fire instead of spawning a new one. |
+| `session_mode` | no       | string | `"fresh"`   | `"fresh"`, `"reuse"`, or `"pinned"` (camelCase `sessionMode` also accepted). `"reuse"` continues the trigger's existing session on each fire; `"pinned"` first tries the exact `session_id`. |
+| `session_id`   | for `pinned` | string | —         | Exact project session to re-prompt when `session_mode` is `"pinned"` (camelCase `sessionId` also accepted). |
 
 Cron-only: `cron` (6-field croner `second minute hour day month weekday`) or a one-off `run_at` (camelCase `runAt`, an ISO-8601 datetime, e.g. `2026-06-01T09:00:00Z`) — exactly one of the two is required; `run_at` fires the trigger once at that instant instead of on a recurring schedule. `timezone` (IANA name, default `"UTC"`) applies to `cron`. Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
 
@@ -336,11 +336,11 @@ The parser accepts only canonical trigger field names. Slug uniqueness is per-se
 
 ## Channels — removed in v2 [#channels-removed-in-v2]
 
-**v2 removes `channels:` from the schema outright.** Channel↔agent routing (Slack today; Teams/Discord/etc. later) is live operational state — the dashboard's Channels page or Slack's own slash commands — not declarative config, the same boundary rule that keeps credentials out of git. The channel *integration* itself still shows up as a `connectors` entry with `provider: channel` once you connect one; only the routing table moved out of the manifest.
+**v2 removes `channels:` from the schema outright.** Channel↔agent routing (Slack and Microsoft Teams today; Discord/etc. later) is live operational state — the dashboard's Channels page or chat slash commands — not declarative config, the same boundary rule that keeps credentials out of git. The channel *integration* itself still shows up as a `connectors` entry with `provider: channel` once you connect one; only the routing table moved out of the manifest.
 
 ### `[[channels]]` (v1, legacy)
 
-Array of tables. Each entry documents a chat platform (Slack today) connected to the project. **Validated but not wired to any runtime behavior** — declaring one, or editing `enabled`/`agent`/`events`/`prompt_prefix`, changes nothing about how the platform actually routes messages. The live channel→agent binding is the `chat_channel_bindings` database row, set from inside Slack (its slash commands) or the dashboard's Channels page, not from this file.
+Array of tables. Each entry documents a chat platform (Slack or Microsoft Teams today) connected to the project. **Validated but not wired to any runtime behavior** — declaring one, or editing `enabled`/`agent`/`events`/`prompt_prefix`, changes nothing about how the platform actually routes messages. The live channel→agent binding is the `chat_channel_bindings` database row, set from the chat app's commands or the dashboard's Channels page, not from this file.
 
 ```toml
 [[channels]]
@@ -363,7 +363,7 @@ You're working on {{ project.name }}.
 | `prompt_prefix` | no       | string     | —       | Parsed. Not consumed.                                                   |
 
 <Callout type="warn" title="Declared but inert">
-Connecting Slack from the dashboard writes the install (bot token, signing secret) into the project's secrets and creates the live `chat_channel_bindings` row — that row, not this manifest block, decides which agent answers in which channel. A hand-written `[[channels]]` entry documents intent for readers of the repo but has no effect on running behavior. Manage channel routing from Slack or the dashboard's Channels page.
+Connecting Slack or Microsoft Teams from the dashboard writes the install into the project's live channel state and creates the `chat_channel_bindings` row — that row, not this manifest block, decides which agent answers in which channel. A hand-written `[[channels]]` entry documents intent for readers of the repo but has no effect on running behavior. Manage channel routing from the chat app's commands or the dashboard's Channels page.
 </Callout>
 
 ## `connectors:` / `[[connectors]]`
@@ -398,7 +398,7 @@ Provider-specific fields:
 - **openapi** — `spec` (required: URL or repo-relative path).
 - **graphql** — `endpoint` (required), `spec` (optional SDL).
 - **http** — `base_url` (required), `spec` (optional).
-- **channel** — `platform` (required) = `slack` \| `email` \| `meet`. Chat
+- **channel** — `platform` (required) = `slack` \| `teams` \| `email` \| `meet`. Chat
   platforms. You rarely declare these by hand — connecting one
   ([Channels](/docs/concepts/channels)) **auto-materializes** the connector
   (credential = the install token, resolved server-side), so the agent can call
@@ -409,7 +409,7 @@ Provider-specific fields:
   connector that fronts all your machines (it has no credential — the live tunnel
   is the credential; per-machine access is granted in Computers).
 
-Reserved slugs: `kortix_slack`, `kortix_email`, `kortix_meet` (each locked to
+Reserved slugs: `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_meet` (each locked to
 `provider: channel`) and `computer` (locked to `provider: computer`) are
 platform-owned — declaring one of these slugs with any other provider is a
 validation error, the same rule that keeps `computer` synth-only above.
@@ -458,7 +458,7 @@ agents:
 | `enabled`    | no       | bool                            | `true`           | `false` treats the name as undeclared — default-deny.                  |
 | `connectors` | no       | `string[] \| "all" \| "none"`   | **`none`**       | Which connector slugs this agent may call. `"all"` = every connector profile not scoped away from it. |
 | `secrets`    | no       | `string[] \| "all" \| "none"`   | **`none`**       | Project secret names this agent receives as sandbox env vars and may read via the secrets API. Renamed from v1's `env`. |
-| `kortix_cli` | no       | `string[] \| "all" \| "none"`   | **`none`**       | Which Kortix CLI/API actions (open/merge CRs, deploy, manage triggers, spawn sessions, …) this agent may perform. `"all"` = everything the *launching user* can do. Effective grant is always `userRole ∩ agentGrant` — an agent can never exceed its launcher. Run `kortix validate --scopes` for the full grantable-action list. |
+| `kortix_cli` | no       | `string[] \| "all" \| "none"`   | **`none`**       | Which Kortix CLI/API actions (open/merge CRs, manage triggers, spawn sessions, manage connectors, …) this agent may perform. `"all"` = everything the *launching user* can do. Effective grant is always `userRole ∩ agentGrant` — an agent can never exceed its launcher. Run `kortix validate --scopes` for the full grantable-action list. |
 | `skills`     | no       | `string[] \| "all" \| "none"`   | **`none`**       | Which skills this agent may load. Folds onto the compiled OpenCode `permission.skill`. |
 | `workspace`  | no       | —                               | —                | Reserved for the git-boundary work (workspace/git powers) — not yet enforced. |
 
@@ -500,66 +500,6 @@ In v1, a trigger, channel, or session that names no agent (or names the literal 
 <Callout type="warn" title="Two v1 fields don't do anything">
 `model` and `file` round-trip through a v1 manifest (dashboard edits preserve them) but neither is consulted by the runtime. Don't rely on them to change what a session actually does. Both are removed outright in v2 (that behavior lives in the agent's own `.md` file).
 </Callout>
-
-## `apps:` / `[[apps]]` (experimental) [#apps--apps-experimental]
-
-Gated **per project**, not by a single global switch. Apps is one entry in the platform's experimental-feature registry: each project has an explicit choice — on or off — toggled from Customize → Settings, stored in `projects.metadata` (never in the manifest). `KORTIX_APPS_EXPERIMENTAL` is only the *operator-wide default* applied when a project hasn't made an explicit choice; a project can enable Apps even when that env var is `false`, and can opt out even when it's `true`. With the effective gate off for a project, its `/apps` routes return 404 (JSON error pointing at Customize → Settings) and the deploy sweep skips it — entries are parsed but never acted on; the sweep evaluates every active project individually rather than skipping the whole fleet when the operator default is off. Each entry declares a deployable surface alongside the agent, fly.toml-style. The platform dispatches through a provider adapter (Freestyle today; pluggable) and records each deploy in the `deployments` table.
-
-```yaml
-apps:
-  - slug: marketing-site
-    name: Marketing site
-    enabled: true
-    framework: next
-    # domains: [marketing.example.com]   # optional — omit for a free *.style.dev URL
-    source:
-      type: git            # or "tar"
-      repo: https://github.com/me/site
-      branch: main
-      root_path: apps/site
-    build:
-      command: pnpm build
-      out_dir: dist
-    env:
-      NEXT_PUBLIC_API_URL: https://api.example.com
-```
-
-Entries sort alphabetically by slug; slug uniqueness is per-section.
-
-| Field       | Required | Type       | Notes                                                  |
-| ----------- | -------- | ---------- | ------------------------------------------------------ |
-| `slug`      | yes      | string     | URL-safe, unique among apps.                           |
-| `name`      | no       | string     | Display name. Defaults to slug.                        |
-| `enabled`   | no       | bool       | Defaults to `true`. Disabled apps are skipped.         |
-| `domains`   | no       | `string[]` | Optional. Omit it and the platform auto-issues a free `*.style.dev` URL at deploy time. When present, every entry must be a non-empty string. |
-| `framework` | no       | string     | Hint for the provider adapter (e.g. `"next"`).         |
-
-### `[apps.source]`
-
-| Field       | Required for `git` | Required for `tar` | Notes                                                            |
-| ----------- | ------------------ | ------------------ | --------------------------------------------------------------- |
-| `type`      | yes                | yes                | `"git"` or `"tar"`.                                             |
-| `repo`      | no                 | —                  | Git clone URL. Falls back to the project's own repo URL if omitted. |
-| `branch`    | no                 | —                  | Defaults to the project's default branch.                       |
-| `root_path` | no                 | —                  | Path inside the source to deploy from. Defaults to `"."`.       |
-| `url`       | —                  | yes                | HTTPS URL of the tarball.                                       |
-
-### `[apps.build]`
-
-| Field     | Required | Notes                                          |
-| --------- | -------- | ---------------------------------------------- |
-| `command` | no       | Build command. Empty → no build step.          |
-| `out_dir` | no       | Output directory served by the provider.       |
-
-If both are empty, the parsed entry collapses to `null` — the provider treats it as "no build phase."
-
-### `[apps.env]`
-
-Key/value map. Keys must match `^[A-Za-z_][A-Za-z0-9_]*$` (mixed case allowed, unlike `[env]` secrets which are uppercase-only). Values must be strings — numbers and booleans are rejected.
-
-### Hash-based redeploy
-
-Apps redeploy when the manifest-derived hash of their config changes. The hash excludes `slug` and `name`, so renaming an app doesn't trigger a redeploy. Edits to `source`, `build`, `env`, `domains`, `framework`, or `enabled` do.
 
 ## Round-trip rules
 

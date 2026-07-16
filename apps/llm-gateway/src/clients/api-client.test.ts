@@ -45,6 +45,39 @@ describe('ApiClient', () => {
     expect(result).toHaveLength(2);
   });
 
+  test('resolveRoute obtains the model plan from the API control plane', async () => {
+    let seenPath = '';
+    let seenBody: Record<string, unknown> = {};
+    const c = client(async (url, init) => {
+      seenPath = new URL(url).pathname;
+      seenBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return jsonResponse({
+        route: {
+          policyId: 'platform-default',
+          primaryModel: 'codex/gpt-5.6-sol',
+          fallbackModels: ['glm-5.2'],
+          fallbackOn: 'any-error',
+        },
+      });
+    });
+
+    const route = await c.resolveRoute(principal, {
+      requestedModel: 'auto',
+      requires: { imageInput: false },
+    });
+
+    expect(seenPath).toBe('/internal/gateway/resolve-route');
+    expect(seenBody).toEqual({
+      principal,
+      input: { requestedModel: 'auto', requires: { imageInput: false } },
+    });
+    expect(route).toMatchObject({
+      policyId: 'platform-default',
+      primaryModel: 'codex/gpt-5.6-sol',
+      fallbackModels: ['glm-5.2'],
+    });
+  });
+
   test('assertBillingActive throws when inactive', async () => {
     const c = client(async () => jsonResponse({ active: false, message: 'no subscription' }));
     await expect(c.assertBillingActive('a1')).rejects.toThrow('no subscription');

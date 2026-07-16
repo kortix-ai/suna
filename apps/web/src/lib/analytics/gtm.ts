@@ -3,6 +3,19 @@
  * Handles dataLayer pushes for GA4 tracking
  */
 
+// sessionStorage access goes through the never-throwing accessors from
+// managed-storage: in storage-disabled in-app WebViews (e.g. the Dola Android
+// `wv` browser) `window.sessionStorage` is `null`, so a bare
+// `sessionStorage.getItem(...)` throws `TypeError: Cannot read properties of
+// null (reading 'getItem')`. This module runs on every route (the root-layout
+// RouteChangeTracker), so an unguarded access would crash analytics on the
+// marketing site for those browsers.
+import {
+  safeSessionGetItem,
+  safeSessionSetItem,
+  safeSessionRemoveItem,
+} from '@/lib/storage/managed-storage';
+
 // Extend the Window interface to include dataLayer
 interface GTMWindow extends Window {
   dataLayer?: object[];
@@ -155,7 +168,7 @@ function getPageReferrer(): string {
   if (typeof window === 'undefined') return '';
 
   // Check if we have a stored previous page in sessionStorage
-  const previousPage = sessionStorage.getItem('gtm_previous_page');
+  const previousPage = safeSessionGetItem('gtm_previous_page');
 
   // If no previous page, use document.referrer (initial load)
   return previousPage || document.referrer || '';
@@ -166,7 +179,7 @@ function getPageReferrer(): string {
  */
 function storePreviousPage() {
   if (typeof window === 'undefined') return;
-  sessionStorage.setItem('gtm_previous_page', window.location.href);
+  safeSessionSetItem('gtm_previous_page', window.location.href);
 }
 
 /**
@@ -176,7 +189,7 @@ function isInitialLoad(): boolean {
   if (typeof window === 'undefined') return false;
 
   // Check if we've tracked a page before
-  const hasTrackedBefore = sessionStorage.getItem('gtm_has_tracked');
+  const hasTrackedBefore = safeSessionGetItem('gtm_has_tracked');
   return !hasTrackedBefore;
 }
 
@@ -185,7 +198,7 @@ function isInitialLoad(): boolean {
  */
 function markAsTracked() {
   if (typeof window === 'undefined') return;
-  sessionStorage.setItem('gtm_has_tracked', 'true');
+  safeSessionSetItem('gtm_has_tracked', 'true');
 }
 
 export interface RouteChangeData {
@@ -275,8 +288,8 @@ export function trackRouteChange(pathname: string, searchParams?: string) {
  */
 export function clearGTMSession() {
   if (typeof window === 'undefined') return;
-  sessionStorage.removeItem('gtm_previous_page');
-  sessionStorage.removeItem('gtm_has_tracked');
+  safeSessionRemoveItem('gtm_previous_page');
+  safeSessionRemoveItem('gtm_has_tracked');
 }
 
 /**
@@ -548,7 +561,7 @@ export function storeCheckoutData(data: {
   previous_tier?: string; // User's tier before checkout (e.g., "free", "tier_2_20")
 }) {
   if (typeof window === 'undefined') return;
-  sessionStorage.setItem('gtm_checkout_data', JSON.stringify({
+  safeSessionSetItem('gtm_checkout_data', JSON.stringify({
     ...data,
     timestamp: Date.now(),
   }));
@@ -571,14 +584,14 @@ export function getStoredCheckoutData(): {
 } | null {
   if (typeof window === 'undefined') return null;
 
-  const stored = sessionStorage.getItem('gtm_checkout_data');
+  const stored = safeSessionGetItem('gtm_checkout_data');
   if (!stored) return null;
 
   try {
     const data = JSON.parse(stored);
     // Only use if less than 1 hour old
     if (Date.now() - data.timestamp > 60 * 60 * 1000) {
-      sessionStorage.removeItem('gtm_checkout_data');
+      safeSessionRemoveItem('gtm_checkout_data');
       return null;
     }
     return data;
@@ -592,7 +605,7 @@ export function getStoredCheckoutData(): {
  */
 export function clearCheckoutData() {
   if (typeof window === 'undefined') return;
-  sessionStorage.removeItem('gtm_checkout_data');
+  safeSessionRemoveItem('gtm_checkout_data');
 }
 
 // =============================================================================

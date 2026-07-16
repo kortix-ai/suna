@@ -12,14 +12,14 @@
  *   - ship --help → exit 0 (pure local).
  *
  * Backend-gated (self-skip locally via `requires`, verify on dev-api which has a
- * managed-git / Freestyle backend; CR-9 additionally needs a real session, so it
+ * managed-GitHub backend; CR-9 additionally needs a real session, so it
  * is gated on `funded`):
  *   - SHIP-1  first ship, no origin → managed: POST /projects/provision, set
  *             origin, commit, token-header push, write .kortix/link.json.
  *   - SHIP-2  first ship, existing origin → BYO: POST /projects {repo_url,name};
  *             origin never modified.
  *   - SHIP-3  first ship --origin <git-url> → BYO explicit; rewrites origin.
- *   - SHIP-4  first ship --origin freestyle → force managed even if origin exists.
+ *   - SHIP-4  first ship --origin managed → force managed even if origin exists.
  *   - SHIP-5  multi-account + --account <id|slug> mismatch → error listing slugs.
  *             (This sub-assertion IS partly runnable: --account with a bogus slug
  *             errors after GET /accounts/me — but it needs ≥1 account, so it runs
@@ -127,7 +127,7 @@ flow(
   "SHIP-1",
   {
     domain: "cli",
-    requires: ["freestyle"],
+    requires: ["managedGit"],
     routes: ["GET /v1/accounts/me", "POST /v1/projects/provision"],
   },
   async (ctx) => {
@@ -228,13 +228,13 @@ flow(
   },
 );
 
-// ─────────────── SHIP-4 — first ship --origin freestyle → managed (gated) ────
+// ─────────────── SHIP-4 — first ship --origin managed → managed (gated) ──────
 
 flow(
   "SHIP-4",
   {
     domain: "cli",
-    requires: ["freestyle"],
+    requires: ["managedGit"],
     routes: ["GET /v1/accounts/me", "POST /v1/projects/provision"],
   },
   async (ctx) => {
@@ -243,7 +243,7 @@ flow(
     ctx.track("cli-sandbox", sb.cwd);
     try {
       await initProject(sb);
-      // Existing origin present — but --origin freestyle/managed must override it.
+      // Existing origin present — but --origin managed must override it.
       Bun.spawnSync(["git", "-C", sb.cwd, "remote", "add", "origin", "https://git.example.test/ke2e/ignored.git"]);
       const login = await sb.login(pat);
       check("login exit 0", login.exitCode === 0, 0, login.exitCode);
@@ -301,7 +301,7 @@ flow(
   "SHIP-6",
   {
     domain: "cli",
-    requires: ["freestyle"],
+    requires: ["managedGit"],
     routes: [
       "GET /v1/accounts/me",
       "POST /v1/projects/provision",
@@ -346,7 +346,7 @@ flow(
   "SHIP-9",
   {
     domain: "cli",
-    requires: ["freestyle"],
+    requires: ["managedGit"],
     routes: [
       "GET /v1/accounts/me",
       "POST /v1/projects/provision",

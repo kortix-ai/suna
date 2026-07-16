@@ -87,14 +87,12 @@ const MANAGER_ONLY: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
 ];
 
-/** Actions an editor gets on top of member. Editing the project,
- *  deploying, and triggers are "customization" — that's what separates an
+/** Actions an editor gets on top of member. Editing the project and triggers
+ *  are "customization" — that's what separates an
  *  editor from a member. Running sessions is NOT here: it's part of the
  *  member baseline (see below). */
 const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_WRITE,
-  PROJECT_ACTIONS.PROJECT_DEPLOY,
-
   PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,

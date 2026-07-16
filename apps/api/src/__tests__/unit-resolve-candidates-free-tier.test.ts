@@ -3,20 +3,12 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 let billingEnabled = true;
 let accountTier = 'free';
 let accountTierCalls = 0;
-
-mock.module('@kortix/llm-gateway', () => ({
-  resolveCatalogUpstream: (provider: string) =>
-    provider === 'openai' || provider === 'anthropic'
-      ? {
-          envVar: provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
-          kind: provider === 'openai' ? 'openai-chat' : 'anthropic',
-          baseUrl:
-            provider === 'openai'
-              ? 'https://api.openai.com/v1'
-              : 'https://api.anthropic.com/v1',
-        }
-      : null,
-}));
+// Defaults true here (cloud-shaped fixture): the real gate is covered by the
+// managed-provider-disabled test suite (llm-gateway/models/managed-provider-disabled.test.ts),
+// which imports the REAL (unmocked) descriptors.ts against the flag OFF. This
+// file mocks descriptors.ts entirely (below), so this toggle only exercises
+// resolveCandidates' OWN inline gate.
+let managedProviderEnabled = true;
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -28,11 +20,21 @@ mock.module('../config', () => ({
       get: (target: Record<PropertyKey, unknown>, key) => {
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
+        if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return managedProviderEnabled;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
-        if (key === 'KORTIX_APPS_EXPERIMENTAL') return false;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
+        if (key === 'LLM_GATEWAY_VISION_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') {
+          return [{
+            id: 'test-platform-default',
+            models: ['codex/gpt-5.6-sol'],
+            fallbackModels: ['glm-5.2'],
+            fallbackOn: 'any-error',
+          }];
+        }
         return target[key];
       },
     },
@@ -47,10 +49,23 @@ mock.module('../billing/services/entitlements', () => ({
   },
 }));
 
+// `getResolvedProjectSecretValue` stands in for the shared-vs-private BYOK
+// fallback (see projects/secrets.ts `pickResolvedSecretRow`, unit-tested in
+// unit-secrets-v2.test.ts). Defaults to the old unconditional 'user-key' so
+// every pre-existing test below is unaffected; the BYOK-fallback describe
+// block further down overrides it per-test and records call args to assert
+// resolveCandidates actually threads the session's principal.userId through.
+let resolvedSecretValue: string | null = 'user-key';
+let lastResolvedSecretCall: { projectId: string; name: string; userId: string | null } | null = null;
+
 mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',
+  getResolvedProjectSecretValue: async (projectId: string, name: string, userId: string | null) => {
+    lastResolvedSecretCall = { projectId, name, userId };
+    return resolvedSecretValue;
+  },
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({
@@ -116,6 +131,9 @@ describe('resolveCandidates free-tier premium gate', () => {
     billingEnabled = true;
     accountTier = 'free';
     accountTierCalls = 0;
+    managedProviderEnabled = true;
+    resolvedSecretValue = 'user-key';
+    lastResolvedSecretCall = null;
   });
 
   test('blocks managed premium candidates for free accounts', async () => {
@@ -133,22 +151,24 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(1);
   });
 
-  test('resolves raw auto to a concrete managed upstream for stale gateway callers', async () => {
+  test('resolves raw auto to the Codex GPT-5.6 Sol platform default for stale gateway callers', async () => {
     accountTier = 'per_seat';
     const candidates = await resolveCandidates(principal('team-auto'), 'auto');
     expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.provider).toBe('openrouter');
-    expect(candidates[0]?.resolvedModel).toBe('z-ai/glm-5.2');
-    expect(accountTierCalls).toBe(1);
+    expect(candidates[0]?.provider).toBe('openai-codex');
+    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
+    expect(accountTierCalls).toBe(0);
   });
 
-  test('resolves raw auto to no managed candidate for free accounts', async () => {
+  test('does not tier-gate the Codex platform default for free accounts with ChatGPT auth', async () => {
     accountTier = 'free';
     const candidates = await resolveCandidates(
       { ...principal('free-auto'), freeModelsOnly: true },
       'auto',
     );
-    expect(candidates).toEqual([]);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.provider).toBe('openai-codex');
+    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
     expect(accountTierCalls).toBe(0);
   });
 
@@ -180,11 +200,94 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(0);
   });
 
-  test('keeps managed candidates available when internal billing is disabled', async () => {
+  test('keeps managed candidates available when internal billing is disabled AND the managed provider is explicitly on', async () => {
     billingEnabled = false;
     accountTier = 'free';
+    managedProviderEnabled = true;
     const candidates = await resolveCandidates(principal('self-host-managed'), 'claude-sonnet-4.6');
     expect(candidates).toHaveLength(1);
     expect(accountTierCalls).toBe(0);
+  });
+
+  test('CLOUD-ONLY gate: blocks an explicitly-named managed model when KORTIX_MANAGED_PROVIDER_ENABLED is off, even for a paid tier', async () => {
+    managedProviderEnabled = false;
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(
+      principal('self-host-flag-off'),
+      'claude-sonnet-4.6',
+    );
+    expect(candidates).toEqual([]);
+  });
+
+  test('CLOUD-ONLY gate: a self-host BYOK request gets no managed fallback candidate appended when the flag is off', async () => {
+    managedProviderEnabled = false;
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(
+      principal('self-host-byok-flag-off'),
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.billingMode).toBe('platform-fee');
+  });
+});
+
+describe('resolveCandidates BYOK gateway fallback wiring (private-key blindness fix)', () => {
+  afterAll(() => {
+    mock.restore();
+  });
+
+  beforeEach(() => {
+    billingEnabled = true;
+    accountTier = 'per_seat';
+    accountTierCalls = 0;
+    managedProviderEnabled = true;
+    resolvedSecretValue = 'user-key';
+    lastResolvedSecretCall = null;
+  });
+
+  test('threads the SESSION-CREATOR principal.userId through to secret resolution (the actual bug: this used to be dropped)', async () => {
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(2);
+    expect(lastResolvedSecretCall).toEqual({
+      projectId: 'project-1',
+      name: 'OPENAI_API_KEY',
+      userId: 'user-alice',
+    });
+  });
+
+  test("own-session-with-private-key routes: resolver finding only the caller's own private key still produces a candidate", async () => {
+    resolvedSecretValue = 'alice-private-key';
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]?.apiKey).toBe('alice-private-key');
+  });
+
+  test("other member's session does NOT see it: when resolution finds nothing for THIS user (no shared key, no key of their own), no candidates are produced", async () => {
+    resolvedSecretValue = null;
+    const candidates = await resolveCandidates(
+      { userId: 'user-bob', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toEqual([]);
+    expect(lastResolvedSecretCall).toEqual({
+      projectId: 'project-1',
+      name: 'OPENAI_API_KEY',
+      userId: 'user-bob',
+    });
+  });
+
+  test('shared key still wins when both exist: resolveCandidates uses whatever value resolution returns (shared-vs-private precedence is pickResolvedSecretRow\'s job, unit-tested separately) and never asks twice', async () => {
+    resolvedSecretValue = 'the-shared-key';
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates[0]?.apiKey).toBe('the-shared-key');
   });
 });

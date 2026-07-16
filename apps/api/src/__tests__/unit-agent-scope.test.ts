@@ -25,12 +25,12 @@ describe('grantFromLoadedAgents — resolution rule', () => {
 [[agents]]
 name = "release-bot"
 connectors = ["github"]
-kortix_cli = ["project.deploy", "project.cr.open"]
+kortix_cli = ["project.trigger.create", "project.cr.open"]
 `);
     expect(grantFromLoadedAgents('release-bot', loaded)).toEqual({
       agent: 'release-bot',
       connectors: ['github'],
-      kortixCli: ['project.deploy', 'project.cr.open'],
+      kortixCli: ['project.trigger.create', 'project.cr.open'],
       env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
     });
   });
@@ -39,7 +39,7 @@ kortix_cli = ["project.deploy", "project.cr.open"]
     const loaded = loadAgents(`
 [[agents]]
 name = "release-bot"
-kortix_cli = ["project.deploy"]
+kortix_cli = ["project.trigger.create"]
 `);
     expect(grantFromLoadedAgents('some-other-agent', loaded)).toEqual({
       agent: 'some-other-agent',
@@ -54,7 +54,7 @@ kortix_cli = ["project.deploy"]
 [[agents]]
 name = "release-bot"
 enabled = false
-kortix_cli = ["project.deploy"]
+kortix_cli = ["project.trigger.create"]
 `);
     expect(grantFromLoadedAgents('release-bot', loaded)).toEqual({
       agent: 'release-bot',
@@ -217,7 +217,7 @@ describe('agentMayPerform — kortix_cli gate', () => {
     expect(agentMayPerform(grant, 'project.cr.merge')).toBe(false);
   });
   test('empty grant → everything denied', () => {
-    expect(agentMayPerform({ agent: 'a', kortixCli: [], connectors: [] }, 'project.deploy')).toBe(false);
+    expect(agentMayPerform({ agent: 'a', kortixCli: [], connectors: [] }, 'project.trigger.create')).toBe(false);
   });
   test('cr.open ≡ gitops.push alias: holding either satisfies the other (no double-gate)', () => {
     const crOnly = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };

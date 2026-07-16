@@ -7,7 +7,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { postReviewCard } from '../../channels/slack-webhook';
+import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -176,7 +176,7 @@ projectsApp.openapi(
     // a no-op for web sessions (postReviewCard returns early when there's no live
     // Slack turn). Fire-and-forget so a slow Slack API never delays the 201.
     if (row.originSessionId) {
-      void postReviewCard(row.originSessionId, {
+      void relayReviewCard(row.originSessionId, {
         review_item_id: row.reviewItemId,
         kind: row.kind,
         risk: row.risk,

@@ -13,6 +13,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FolderOpen } from 'lucide-react';
@@ -24,9 +26,12 @@ import { useProjectContext } from '../context';
 import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
 import { useChangeRequests } from '../hooks/use-change-requests';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
-import { useFileCopy, useFileDelete, useFileMkdir, useFileRename } from '../hooks/use-file-mutations';
-import { useFilesStore } from '@/features/file-browser/store/files-store';
-import type { FileNode } from '@/features/file-browser/types';
+import {
+  useFileCopy,
+  useFileDelete,
+  useFileMkdir,
+  useFileRename,
+} from '../hooks/use-file-mutations';
 import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
 import { ChangeRequestsPanel } from './change-requests-panel';
 import { CheckpointsPanel } from './checkpoints-panel';
@@ -366,6 +371,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean; sha
           downloadDir(dirPath, dirName);
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+        onRefresh={() => refetchFiles()}
       />
 
       <div className="relative min-h-0 flex-1">

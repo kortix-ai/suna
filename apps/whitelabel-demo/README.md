@@ -57,8 +57,8 @@ SDK-only rule, the same way raw `fetch` is correct *inside* `@kortix/sdk` itself
 This reference exercises **the core `@kortix/sdk` facade a chat-first product
 needs** — every method listed below has a real UI surface (a deliberate goal
 so nothing in this list is left undemonstrated). Newer platform-admin surfaces
-— Review Center, Approvals, Gateway observability, Slack/email/Meet channels,
-project apps/deployments — aren't part of this lightweight reference; they live
+— Review Center, Approvals, Gateway observability, and Slack/email/Meet channels
+— aren't part of this lightweight reference; they live
 in `apps/web`:
 
 - **accounts** (`/account`): `list/get/create/updateName/leave/members/invite/removeMember/updateMemberRole/invites`

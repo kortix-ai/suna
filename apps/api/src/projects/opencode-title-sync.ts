@@ -134,7 +134,18 @@ function sameSessions(a: unknown, b: OpenCodeSessionSnapshot[]): boolean {
   }
 }
 
-async function syncRowFromSandbox(input: {
+/**
+ * OpenCode's default title for a brand-new session ("New session - <date>").
+ * It is NOT a real title: persisting it as the session name freezes junk into
+ * the sidebar whenever the sandbox sleeps before the summarizer's real title
+ * gets mirrored (the "New session - 2026-…" rows that never heal). Treat it
+ * as "untitled" everywhere. Exported for the serializer + unit tests.
+ */
+export function isPlaceholderOpencodeTitle(title: string | null | undefined): boolean {
+  return typeof title === 'string' && /^new session\b/i.test(title.trim());
+}
+
+export async function syncRowFromSandbox(input: {
   row: ProjectSessionRow;
   externalId: string;
   userId?: string;
@@ -160,8 +171,13 @@ async function syncRowFromSandbox(input: {
 
   const metadata = (input.row.metadata ?? {}) as Record<string, unknown>;
   const currentName = typeof metadata.name === 'string' ? metadata.name : null;
-  const rootTitle = snapshots.find((entry) => entry.id === resolvedRootId)?.title ?? null;
-  const nextName = rootTitle ?? currentName;
+  const rawRootTitle = snapshots.find((entry) => entry.id === resolvedRootId)?.title ?? null;
+  // Only a REAL summarizer title may become (or replace) the name — the
+  // placeholder default must never be persisted, and a real title arriving
+  // later must replace a previously frozen placeholder.
+  const rootTitle = isPlaceholderOpencodeTitle(rawRootTitle) ? null : rawRootTitle;
+  const nextName =
+    rootTitle ?? (isPlaceholderOpencodeTitle(currentName) ? null : currentName);
   const pinChanged = input.row.opencodeSessionId !== resolvedRootId;
   const nameChanged = Boolean(nextName) && nextName !== currentName;
   const sessionsChanged = !sameSessions(metadata.opencode_sessions, scopedSessions);

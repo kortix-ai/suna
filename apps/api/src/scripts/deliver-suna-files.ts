@@ -2,7 +2,7 @@
  * Upload a customer's extracted /workspace archive to the private backup bucket
  * and mint a time-limited signed download URL to hand back to them.
  *
- *   FREESTYLE_API_URL=... dotenvx run -f .env.prod --quiet -- \
+ *   dotenvx run -f .env.prod --quiet -- \
  *   bun run src/scripts/deliver-suna-files.ts --account-id <uuid> --file <path> [--days 7]
  */
 import { readFileSync, statSync } from 'node:fs';

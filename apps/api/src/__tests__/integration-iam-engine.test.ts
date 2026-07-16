@@ -1,7 +1,7 @@
 /**
  * Integration test (real local DB) for the authorization ENGINE (authorizeV2).
  *
- * Proves the model an enterprise (essentia-inc) relies on, end to end against a
+ * Proves the model an enterprise (acme-inc) relies on, end to end against a
  * fully ISOLATED account + project seeded here and torn down after:
  *   - deny-by-default (a plain member with no grant is denied)
  *   - built-in project roles (member ⊂ editor ⊂ manager)
@@ -88,7 +88,7 @@ describe('authorizeV2 — deny-by-default + built-in project roles', () => {
     const u = await seedMember('member');
     await grantProject(u, 'editor');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
   });
 
@@ -146,21 +146,21 @@ describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', (
 describe('authorizeV2 — DB custom role → policy binding (allow-only union)', () => {
   test('a project-scoped custom role grants an extra action on ONE project only', async () => {
     const u = await seedMember('member');
-    await grantProject(u, 'member'); // baseline: no deploy
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(false);
+    await grantProject(u, 'member'); // baseline: cannot create triggers
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(false);
 
-    // Custom role that grants project.deploy, bound to this member for THIS project.
+    // Custom role that grants trigger creation, bound to this member for THIS project.
     const roleId = uid();
-    await db.insert(iamRoles).values({ roleId, accountId: ACCOUNT, key: `deployer-${uid().slice(0, 6)}`, name: 'Deployer', scopeType: 'project' });
-    await db.insert(iamRoleActions).values({ roleId, action: PROJECT_ACTIONS.PROJECT_DEPLOY });
+    await db.insert(iamRoles).values({ roleId, accountId: ACCOUNT, key: `scheduler-${uid().slice(0, 6)}`, name: 'Scheduler', scopeType: 'project' });
+    await db.insert(iamRoleActions).values({ roleId, action: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE });
     await db.insert(iamPolicies).values({
       accountId: ACCOUNT, principalType: 'member', principalId: u, roleId, scopeType: 'project', scopeId: PROJECT,
     });
     invalidateIamCacheForUser(u);
 
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(true);
     // Scoped to PROJECT — the policy does not apply to OTHER_PROJECT.
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(OTHER_PROJECT))).toBe(false);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(OTHER_PROJECT))).toBe(false);
   });
 });
 

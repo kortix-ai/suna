@@ -291,7 +291,7 @@ a manifest annotation away.
 
 | Area | Status |
 | --- | --- |
-| Projects, auth/hosts/accounts, sessions core, CR, triggers, secrets/env, connectors/executor, Slack channel, sandbox templates, marketplace core, LLM providers, per-agent model, project access, grants, IAM roles/policies, deployable apps, self-host, files (read) | **Parity** |
+| Projects, auth/hosts/accounts, sessions core, CR, triggers, secrets/env, connectors/executor, Slack channel, sandbox templates, marketplace core, LLM providers, per-agent model, project access, grants, IAM roles/policies, self-host, files (read) | **Parity** |
 | Marketplace custom sources, access-requests, sandbox provider/live list, GitHub installation mgmt, custom LLM provider | Partial |
 | Session sharing / commit-push / session audit | Full gap |
 | **Session permission/approval + question replies** | Full gap |

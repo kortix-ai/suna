@@ -6,8 +6,12 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
+import {
+  connectedGatewayProviderIdsFromSecretNames,
+  usableSecretNamesForViewer,
+} from '@/hooks/opencode/provider-selection';
 import { hasUsableModel } from '@/hooks/opencode/use-model-store';
+import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -74,7 +78,14 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     if (!llmGatewayEnabled) return new Set<string>();
     const data = secretsQuery.data;
     const items = Array.isArray(data) ? data : (data?.items ?? []);
-    const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
+    // Usable by ME (shared row, or my own active private override) — NOT
+    // "any row exists for this name". A provider whose only key is another
+    // member's private override must NOT show as connected here: my session
+    // can't route with it any more than the empty state it'd otherwise
+    // suppress (see getResolvedProjectSecretValue / the BYOK gateway-
+    // blindness fix). My OWN private-only key, by contrast, correctly counts
+    // — the gateway now falls back to it for my own sessions.
+    const secretNames = usableSecretNamesForViewer(items);
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretsQuery.data]);
   const { data: accountState, isPending: accountStatePending } = useAccountState();
@@ -136,5 +147,19 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     />
   ) : null;
 
-  return { openConnectProvider, openUpgrade, modal, hasSelectableModels, entitlementsPending };
+  // Billing off (self-host default): there's no Kortix plan to upgrade to and
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
+  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
+  // "Upgrade" button would be a dead click. Callers should hide it and only
+  // offer "bring your own key" when this is false.
+  const showUpgradeOption = isBillingEnabled();
+
+  return {
+    openConnectProvider,
+    openUpgrade,
+    modal,
+    hasSelectableModels,
+    entitlementsPending,
+    showUpgradeOption,
+  };
 }

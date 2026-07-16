@@ -20,7 +20,7 @@ mock.module('../sandbox-frontend-url', () => ({
 }));
 
 let fetchStatus = 404;
-let fetchBody = { error: 'not found', code: 'not_found' };
+let fetchBody: Record<string, unknown> = { error: 'not found', code: 'not_found' };
 
 beforeEach(() => {
   fetchStatus = 404;
@@ -47,4 +47,45 @@ test('getStatus() preserves transitional Platinum failures as unknown', async ()
   const provider = new PlatinumProvider();
 
   await expect(provider.getStatus('sbx_starting')).resolves.toBe('unknown');
+});
+
+test('recoverInPlace() restores a terminal sandbox backup without changing identity', async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({ url: String(input), method: String(init?.method ?? 'GET') });
+    if (String(input).endsWith('/restore-from-backup')) {
+      return new Response(JSON.stringify({ id: 'sbx_data', state: 'restoring' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(
+      JSON.stringify({ id: 'sbx_data', state: 'failed-start', backup_state: 'completed' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  await expect(provider.recoverInPlace('sbx_data')).resolves.toBe('recovering');
+  expect(calls).toContainEqual({
+    url: 'https://platinum.example.test/v1/sandboxes/sbx_data/restore-from-backup',
+    method: 'POST',
+  });
+  expect(calls.some((call) => call.url.includes('/v1/sandboxes?'))).toBe(false);
+});
+
+test('recoverInPlace() refuses to create a replacement for an unbacked terminal sandbox', async () => {
+  fetchStatus = 200;
+  fetchBody = {
+    id: 'sbx_unbacked',
+    state: 'failed-start',
+    backupState: 'none',
+  };
+
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  await expect(provider.recoverInPlace('sbx_unbacked')).resolves.toBe('unavailable');
 });

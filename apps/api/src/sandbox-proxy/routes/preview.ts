@@ -2,7 +2,10 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
+import type { ProviderName } from '../../platform/providers';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
+import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
@@ -11,12 +14,11 @@ import {
   loadSandbox,
   markSandboxErrored,
   markSandboxUsed,
-  resolvePreviewLink,
+  resolveSandboxIngress,
+  routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
 import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
-
-const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -115,7 +117,9 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
 // Minimal, dependency-free HTML shown when a sandbox port can't be reached —
 // instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
 // (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
-// out the boot window before falling back to a manual Retry button.
+// out the boot window before falling back to a manual Retry button. Colors and
+// the button mirror the web app's tokens (globals.css --secondary/--foreground;
+// Button variant="secondary" size="sm").
 function portUnreachableHtml(port: number): string {
   return `<!doctype html>
 <html lang="en">
@@ -124,44 +128,53 @@ function portUnreachableHtml(port: number): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Port ${port} isn't responding</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.1448 0 0);
+    --secondary: oklch(0.9502 0 0);
+    --muted-foreground: oklch(0.5555 0 0);
+    --kortix-yellow: oklch(0.732 0.15 90.688);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: oklch(0.1448 0 0);
+      --foreground: oklch(0.9851 0 0);
+      --secondary: oklch(0.2686 0 0);
+      --muted-foreground: oklch(0.709 0 0);
+    }
+  }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex; align-items: center; justify-content: center;
     font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: #fafafa; color: #18181b; padding: 24px;
+    background: var(--background); color: var(--foreground); padding: 24px;
+    -webkit-font-smoothing: antialiased;
   }
-  @media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #e4e4e7; } }
-  .card { max-width: 420px; width: 100%; text-align: center; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  h1 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 0; }
   .dot {
-    width: 10px; height: 10px; border-radius: 999px; background: #f59e0b;
-    display: inline-block; margin-right: 8px; vertical-align: middle;
+    width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
     animation: pulse 1.4s ease-in-out infinite;
   }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
-  p { margin: 0 0 6px; color: #71717a; }
-  @media (prefers-color-scheme: dark) { p { color: #a1a1aa; } }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  .actions { margin-top: 20px; }
   button {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
     font: inherit; font-weight: 500; cursor: pointer;
-    padding: 8px 16px; border-radius: 8px; border: 1px solid #e4e4e7;
-    background: #18181b; color: #fafafa; transition: opacity .15s;
+    background: var(--secondary); color: var(--foreground);
+    transition: background-color .15s;
   }
-  button:hover { opacity: .85; }
-  @media (prefers-color-scheme: dark) { button { background: #fafafa; color: #18181b; border-color: #27272a; } }
-  .status { margin-top: 14px; font-size: 12px; color: #a1a1aa; min-height: 16px; }
+  button:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
+  .status { font-size: 12px; color: var(--muted-foreground); min-height: 18px; margin: 0; }
 </style>
 </head>
 <body>
   <div class="card">
-    <h1><span class="dot"></span>Port ${port} isn't responding yet</h1>
-    <p>Nothing is answering on <code>localhost:${port}</code>.</p>
-    <p>The service may still be starting, or it isn't running.</p>
-    <div class="actions"><button id="retry" type="button">Retry now</button></div>
-    <div class="status" id="status"></div>
+    <h1><span class="dot"></span>Port ${port} isn't responding</h1>
+    <button id="retry" type="button">Retry</button>
+    <p class="status" id="status"></p>
   </div>
   <script>
     (function () {
@@ -175,16 +188,14 @@ function portUnreachableHtml(port: number): string {
       });
       if (n < MAX) {
         var left = Math.round(DELAY / 1000);
-        statusEl.textContent = 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')';
+        statusEl.textContent = 'Retrying in ' + left + 's\\u2026';
         var t = setInterval(function () {
           left -= 1;
-          statusEl.textContent = left > 0
-            ? 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')'
-            : 'Retrying…';
+          statusEl.textContent = left > 0 ? 'Retrying in ' + left + 's\\u2026' : 'Retrying\\u2026';
         }, 1000);
         setTimeout(function () { clearInterval(t); reload(); }, DELAY);
       } else {
-        statusEl.textContent = 'Still not responding after several tries. Use Retry once the service is up.';
+        statusEl.textContent = 'Still not responding.';
       }
     })();
   </script>
@@ -350,14 +361,23 @@ function principalUserId(access: PreviewProxyAccess): string {
 // block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
 // subject to the SAME protection as a direct :8000 request — the reroute changes
 // reachability, never the auth/control surface.
-const OPENCODE_INTERNAL_PORT = 4096;
 const SANDBOX_AGENT_PORT = 8000;
-function effectiveUpstreamPort(provider: string | null | undefined, addressedPort: number): number {
-  return provider === 'platinum' && addressedPort === OPENCODE_INTERNAL_PORT
-    ? SANDBOX_AGENT_PORT
-    : addressedPort;
-}
 
+/**
+ * Should the data-path proxy WAKE a stopped box instead of 503ing it? Only when a
+ * real user (principal) is actively hitting the OpenCode daemon (port 8000) — never
+ * on passive asset/preview traffic or non-user (service) access. That gate is what
+ * lets the runtime path auto-resume like `/start` WITHOUT fighting the reaper's
+ * idle-quiesce "don't resurrect on passive traffic" policy. Pure + exported so the
+ * gate is unit-tested without provisioning a sandbox.
+ */
+export function shouldAutoResumeStoppedSandbox(
+  status: string,
+  upstreamPort: number,
+  accessKind: string,
+): boolean {
+  return status === 'stopped' && upstreamPort === SANDBOX_AGENT_PORT && accessKind === 'principal';
+}
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -382,7 +402,7 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
-  const record = await loadSandbox(sandboxId);
+  let record = await loadSandbox(sandboxId);
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
@@ -403,7 +423,8 @@ export async function forwardToSandbox(
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
-  const upstreamPort = effectiveUpstreamPort(record.provider, port);
+  const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
+  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -429,13 +450,35 @@ export async function forwardToSandbox(
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
-    return portUnreachableResponse({
-      port,
-      status: 503,
-      origin,
-      incomingHeaders,
-      reason: `sandbox not ready (status: ${record.status})`,
-    });
+    // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
+    // (port 8000, principal) should wake in place — the same resume `/start` does —
+    // rather than dead-end with a manual-Restart card. This closes the stale-ready
+    // gap: /start settles 'ready', the reaper idle-stops the box, and the client's
+    // next runtime call used to 503 forever. resumeStoppedSandboxByExternalId is
+    // idempotent, clears the reaper's idle-quiesce marker, and its DB conditional
+    // lock de-dupes the concurrent session.list retries (one provider start). Gated
+    // so passive asset/preview traffic still 503s — we don't fight idle-quiesce.
+    if (shouldAutoResumeStoppedSandbox(record.status, upstreamPort, access.kind)) {
+      const resumeExternalId = record.externalId;
+      await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
+        console.warn(`[sandbox-proxy] auto-resume failed for ${resumeExternalId}:`, err);
+        return false;
+      });
+      // Re-read: the resume flips the row → 'active' (this call or a concurrent
+      // one). The box boots in the background; the wake/retry loop below tolerates
+      // the gap and forwards once it's up (and subsequent client retries recover).
+      const resumed = await loadSandbox(sandboxId);
+      if (resumed) record = resumed;
+    }
+    if (record.status !== 'active') {
+      return portUnreachableResponse({
+        port,
+        status: 503,
+        origin,
+        incomingHeaders,
+        reason: `sandbox not ready (status: ${record.status})`,
+      });
+    }
   }
   const serviceKey = record.serviceKey;
 
@@ -465,7 +508,8 @@ export async function forwardToSandbox(
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
+      const ingress = await resolveSandboxIngress(record, ingressRequest);
+      const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
@@ -488,13 +532,24 @@ export async function forwardToSandbox(
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           body = bodyWithoutPromptAgent(body, incomingHeaders);
         }
+        // A prompt is the one moment this sandbox is guaranteed awake, and
+        // OpenCode's summarizer titles the session seconds after the first
+        // reply — capture it on a deferred timer instead of hoping a session
+        // list gets requested while the box is still up (the frozen
+        // "New session - <date>" rows). Fire-and-forget; never blocks the prompt.
+        scheduleTitleCaptureAfterPrompt({
+          sessionId: record.sessionId,
+          projectId: record.projectId,
+          externalId: record.externalId,
+        });
         try {
           await syncSandboxEnvForPrompt({
             projectId: record.projectId,
             sessionId: record.sessionId,
             serviceKey,
             previewUrl,
-            previewToken,
+            providerHeaders: ingress.headers,
+            providerName: record.provider as ProviderName,
           });
         } catch (err) {
           const message = errorMessage(err, 'project env sync failed');
@@ -528,7 +583,7 @@ export async function forwardToSandbox(
         sandboxId,
         userId,
         serviceKey,
-        previewToken,
+        providerHeaders: ingress.headers,
       });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
@@ -776,13 +831,12 @@ export async function resolvePreviewWsUpstream(opts: {
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
-  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
-  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
-  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
-  const upstreamPort =
-    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
-      ? 8000
-      : opts.upstreamPort;
+  const ingressRequest = {
+    port: opts.upstreamPort,
+    path: remainingPath,
+    transport: 'websocket' as const,
+  };
+  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
@@ -804,7 +858,8 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
+  const ingress = await resolveSandboxIngress(record, ingressRequest);
+  const previewUrl = ingress.url;
   const wsBase = previewUrl
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
@@ -813,22 +868,18 @@ export async function resolvePreviewWsUpstream(opts: {
     sandboxId,
     userId,
     serviceKey: record.serviceKey,
-    previewToken,
+    providerHeaders: ingress.headers,
   });
 
   const upstreamUrl = new URL(wsBase + remainingPath + queryString);
-  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
+  if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
-    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
-    // opencode's PTY WS replays its scrollback — including the live shell prompt —
-    // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
-    // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
-    // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
-    // This is Platinum-only: Daytona connects to opencode :4096 directly and never
-    // hits the agent's ticket+cursor default. Default to replay-from-start when the
-    // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
-    // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
-    if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '0');
+    if (signedContext) {
+      upstreamUrl.searchParams.set(ingress.websocket.userContextQueryParam, signedContext);
+    }
+  }
+  for (const [key, value] of Object.entries(ingress.websocket?.queryDefaults ?? {})) {
+    if (!upstreamUrl.searchParams.has(key)) upstreamUrl.searchParams.set(key, value);
   }
 
   return { ok: true, url: upstreamUrl.toString(), headers };

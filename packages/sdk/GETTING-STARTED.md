@@ -17,9 +17,10 @@ token, and talk to a real cloud sandbox from a script, a server, or a plain
 | **Docker** | local Supabase runs in containers | `docker info` |
 | **dotenvx keys** | `apps/api/.env` / `apps/web/.env` are committed **encrypted**; you need the private keys (Dotenv Armor) to decrypt locally | `dotenvx get SUPABASE_SERVICE_ROLE_KEY -f apps/api/.env` prints a value |
 
-Sandboxes are **real Daytona cloud sandboxes** — the `DAYTONA_API_KEY` already
-lives in the encrypted `apps/api/.env`. Nothing to set up, but know that every
-session you start provisions a real machine.
+Sandboxes are real cloud sandboxes. The local environment enables one or more
+of Daytona, Platinum, and E2B through `ALLOWED_SANDBOX_PROVIDERS`; their keys
+live in the encrypted `apps/api/.env` or the gitignored `.env.local`. Every
+session you start provisions real provider compute.
 
 Then, once per checkout:
 

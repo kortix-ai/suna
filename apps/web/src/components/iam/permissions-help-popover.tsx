@@ -20,7 +20,7 @@ interface Props {
 
 export function PermissionsHelpPopover({
   triggerLabel = 'How permissions work',
-  align = 'end',
+  align = 'start',
 }: Props = {}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
@@ -31,7 +31,7 @@ export function PermissionsHelpPopover({
           {triggerLabel}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align={align} className="w-96 space-y-4 text-sm">
+      <PopoverContent align={align} side="right" className="w-96 space-y-4 text-sm">
         <section className="space-y-1">
           <h3 className="text-foreground font-semibold">
             {tI18nHardcoded.raw(

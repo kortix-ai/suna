@@ -6,11 +6,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
+import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { toast } from '@/lib/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AUTO_TOPUP_DEFAULT_AMOUNT,
@@ -112,7 +112,7 @@ export function AutoTopupCard({
     if (enabled && setupStatus && !setupStatus.has_default_payment_method) {
       const message = 'No default payment method found. Please set up a default card in Billing before enabling auto-topup.';
       setSaveResult({ type: 'error', message });
-      toast.error(message);
+      errorToast(message);
       return;
     }
 
@@ -125,11 +125,11 @@ export function AutoTopupCard({
       queryClient.invalidateQueries({ queryKey: ['auto-topup-setup-status'] });
       setDirty(false);
       setSaveResult({ type: 'success', message: 'Auto top-up settings saved.' });
-      toast.success('Auto top-up settings saved');
+      successToast('Auto top-up settings saved');
     } catch (err: any) {
       const message = err?.message || err?.error || 'Failed to update auto-topup';
       setSaveResult({ type: 'error', message });
-      toast.error(message);
+      errorToast(message);
     } finally {
       setSaving(false);
     }
@@ -140,7 +140,7 @@ export function AutoTopupCard({
   if (fetchSettings && isLoading) {
     return (
       <div className="flex items-center justify-center py-6">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loading className="text-muted-foreground size-5 shrink-0" />
       </div>
     );
   }
@@ -149,20 +149,16 @@ export function AutoTopupCard({
     <div className="space-y-4">
       {/* Settings fetch failed → render with defaults but surface a retry */}
       {settingsError && (
-        <Alert variant="warning">
-          <AlertCircle className="size-4" />
-          <AlertDescription className="flex items-center justify-between gap-2">
-            <span>{tHardcodedUi.raw('componentsBillingAutoTopupCard.line149JsxTextCouldnTLoadYourCurrentSettingsShowingDefaults')}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 text-xs px-2 shrink-0"
-              onClick={() => refetchSettings()}
-            >
+        <InfoBanner
+          tone="warning"
+          action={
+            <Button size="sm" variant="outline" onClick={() => refetchSettings()}>
               Retry
             </Button>
-          </AlertDescription>
-        </Alert>
+          }
+        >
+          {tHardcodedUi.raw('componentsBillingAutoTopupCard.line149JsxTextCouldnTLoadYourCurrentSettingsShowingDefaults')}
+        </InfoBanner>
       )}
 
       {/* Toggle row */}
@@ -182,10 +178,9 @@ export function AutoTopupCard({
       </div>
 
       {showMissingCardWarning && (
-        <Alert variant="warning">
-          <AlertCircle className="size-4" />
-          <AlertDescription>{tHardcodedUi.raw('componentsBillingAutoTopupCard.line182JsxTextNoDefaultPaymentMethodFoundAddADefault')}</AlertDescription>
-        </Alert>
+        <InfoBanner tone="warning">
+          {tHardcodedUi.raw('componentsBillingAutoTopupCard.line182JsxTextNoDefaultPaymentMethodFoundAddADefault')}
+        </InfoBanner>
       )}
 
       {enabled && (
@@ -220,11 +215,9 @@ export function AutoTopupCard({
             </div>
           </div>
 
-          {/* Green confirmation */}
-          <div className="flex items-start gap-2 pt-1">
-            <ShieldCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line223JsxTextYourCardIsOnlyChargedWhenYourBalance')}</p>
-          </div>
+          <p className="text-muted-foreground pt-1 text-xs">
+            {tHardcodedUi.raw('componentsBillingAutoTopupCard.line223JsxTextYourCardIsOnlyChargedWhenYourBalance')}
+          </p>
         </div>
       )}
 
@@ -233,15 +226,9 @@ export function AutoTopupCard({
       )}
 
       {saveResult && (
-        <Alert
-          variant={saveResult.type === 'error' ? 'destructive' : 'default'}
-          className={saveResult.type === 'success' ? 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400 [&>svg]:text-emerald-600 dark:[&>svg]:text-emerald-400' : undefined}
-        >
-          {saveResult.type === 'success' ? <CheckCircle2 className="size-4" /> : <AlertCircle className="size-4" />}
-          <AlertDescription className={saveResult.type === 'success' ? 'text-emerald-700/90 dark:text-emerald-400/90' : undefined}>
-            {saveResult.message}
-          </AlertDescription>
-        </Alert>
+        <InfoBanner tone={saveResult.type === 'error' ? 'destructive' : 'success'}>
+          {saveResult.message}
+        </InfoBanner>
       )}
 
       {showSaveButton && (
@@ -250,7 +237,13 @@ export function AutoTopupCard({
           disabled={saving || !dirty}
           onClick={handleSave}
         >
-          {saving ? <><Loader2 className="size-4 animate-spin mr-2" /> Saving...</> : 'Save'}
+          {saving ? (
+            <>
+              <Loading className="size-4 shrink-0" /> Saving
+            </>
+          ) : (
+            'Save'
+          )}
         </Button>
       )}
     </div>

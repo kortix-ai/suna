@@ -49,6 +49,19 @@ export {
   relayTurnAnswer,
   relayTurnEnd,
 } from "./slack-webhook";
+export { teamsWebhookApp } from "./teams-webhook";
+export { teamsIdentityApp } from "./teams/identity-routes";
+export { teamsOauthApp } from "./teams-oauth";
+export {
+  saveTeamsInstall,
+  deleteTeamsInstall,
+  loadTeamsInstall,
+  loadTeamsTenantForProject,
+  loadTeamsServiceUrlForProject,
+  MS_TEAMS_TENANT_ID,
+  type TeamsInstallSummary,
+  type TeamsInstallInput,
+} from "./install-store";
 export { emailWebhookApp } from "./email-webhook";
 export { telegramWebhookApp } from "./telegram-webhook";
 export { slackOauthApp, buildSlackInstallUrl } from "./slack-oauth";

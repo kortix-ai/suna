@@ -2,7 +2,7 @@
 
 import { backendApi } from '../../http/api-client';
 import type { ApiError } from '../../http/api/errors';
-import { serverTokenGet, unwrap, type AccountRole, type ServerTokenOptions } from './shared';
+import { type AccountRole, type ServerTokenOptions, serverTokenGet, unwrap } from './shared';
 
 export interface KortixAccount {
   account_id: string;
@@ -22,6 +22,8 @@ export interface AccountDetail {
   member_count: number;
   project_count: number;
   role: AccountRole;
+  /** Account-wide MFA enforcement is on — drives the members-list MFA badges. */
+  mfa_required?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -111,9 +113,7 @@ export interface AccountInviteDescribeRedacted {
   expires_at?: null;
 }
 
-export type AccountInviteDescribe =
-  | AccountInviteDescribeFull
-  | AccountInviteDescribeRedacted;
+export type AccountInviteDescribe = AccountInviteDescribeFull | AccountInviteDescribeRedacted;
 
 export async function listAccounts() {
   return unwrap(await backendApi.get<KortixAccount[]>('/accounts'));
@@ -128,15 +128,11 @@ export async function getAccount(accountId: string) {
 }
 
 export async function updateAccountName(accountId: string, name: string) {
-  return unwrap(
-    await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }),
-  );
+  return unwrap(await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }));
 }
 
 export async function listAccountMembers(accountId: string) {
-  return unwrap(
-    await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`),
-  );
+  return unwrap(await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`));
 }
 
 export async function inviteAccountMember(
@@ -144,28 +140,20 @@ export async function inviteAccountMember(
   input: { email: string; role?: AccountRole },
 ) {
   return unwrap(
-    await backendApi.post<InviteMemberResult>(
-      `/accounts/${accountId}/members`,
-      input,
-      {
-        // 409 (already member) is an expected business error; page surfaces it inline.
-        showErrors: false,
-      },
-    ),
+    await backendApi.post<InviteMemberResult>(`/accounts/${accountId}/members`, input, {
+      // 409 (already member) is an expected business error; page surfaces it inline.
+      showErrors: false,
+    }),
   );
 }
 
 export async function listAccountInvites(accountId: string) {
-  return unwrap(
-    await backendApi.get<AccountInvitation[]>(`/accounts/${accountId}/invites`),
-  );
+  return unwrap(await backendApi.get<AccountInvitation[]>(`/accounts/${accountId}/invites`));
 }
 
 export async function cancelAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/accounts/${accountId}/invites/${inviteId}`,
-    ),
+    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/invites/${inviteId}`),
   );
 }
 
@@ -180,13 +168,10 @@ export async function resendAccountInvite(accountId: string, inviteId: string) {
 
 export async function describeAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.get<AccountInviteDescribe>(
-      `/account-invites/${inviteId}`,
-      {
-        // The redirect/landing page handles "not for you" / expired states inline.
-        showErrors: false,
-      },
-    ),
+    await backendApi.get<AccountInviteDescribe>(`/account-invites/${inviteId}`, {
+      // The redirect/landing page handles "not for you" / expired states inline.
+      showErrors: false,
+    }),
   );
 }
 
@@ -200,19 +185,12 @@ export async function acceptAccountInvite(inviteId: string) {
 }
 
 export async function declineAccountInvite(inviteId: string) {
-  return unwrap(
-    await backendApi.post<{ ok: boolean }>(
-      `/account-invites/${inviteId}/decline`,
-      {},
-    ),
-  );
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/account-invites/${inviteId}/decline`, {}));
 }
 
 export async function removeAccountMember(accountId: string, userId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/accounts/${accountId}/members/${userId}`,
-    ),
+    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/members/${userId}`),
   );
 }
 
@@ -222,17 +200,12 @@ export async function updateAccountMemberRole(
   role: AccountRole,
 ) {
   return unwrap(
-    await backendApi.patch<AccountMember>(
-      `/accounts/${accountId}/members/${userId}`,
-      { role },
-    ),
+    await backendApi.patch<AccountMember>(`/accounts/${accountId}/members/${userId}`, { role }),
   );
 }
 
 export async function leaveAccount(accountId: string) {
-  return unwrap(
-    await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}),
-  );
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}));
 }
 
 /**

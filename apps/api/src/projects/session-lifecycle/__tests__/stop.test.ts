@@ -13,6 +13,7 @@ mock.module('../../../config', () => ({
 }));
 
 mock.module('../../../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -41,6 +42,7 @@ mock.module('../../../platform/providers', () => ({
 }));
 
 mock.module('../../../billing/services/compute-metering', () => ({
+  reopenComputeForSandbox: async () => undefined,
   pauseComputeSession: async (sandboxId: string) => {
     pausedCompute.push(sandboxId);
   },

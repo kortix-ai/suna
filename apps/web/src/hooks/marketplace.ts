@@ -6,19 +6,14 @@ import {
   getMarketplaceItemFile,
   getPublicMarketplaceItem,
   getPublicMarketplaceItemFile,
-  installMarketplaceItem,
+  installMarketplaceItemAsSession,
   listFeaturedMarketplaces,
-  listInstalledItems,
   listMarketplaceItems,
   listMarketplaces,
   listMarketplaceSources,
   listPublicMarketplaceItems,
   listPublicMarketplaces,
-  listRegistryUpdates,
   removeMarketplaceSource,
-  uninstallMarketplaceItem,
-  updateAllMarketplaceItems,
-  updateMarketplaceItem,
   type AddSourceInput,
   type ItemsPage,
 } from '@/lib/marketplace-client';
@@ -126,11 +121,12 @@ export function useMarketplaces(opts?: { publicOnly?: boolean }) {
   });
 }
 
-export function useFeaturedMarketplaces() {
+export function useFeaturedMarketplaces(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['marketplaces-featured'],
     queryFn: listFeaturedMarketplaces,
     staleTime: 60_000,
+    enabled: opts?.enabled ?? true,
   });
 }
 
@@ -161,73 +157,14 @@ export function useMarketplaceItemFile(
   });
 }
 
-export function useInstalledItems(projectId: string | null) {
-  return useQuery({
-    queryKey: ['marketplace-installed', projectId],
-    queryFn: () => listInstalledItems(projectId!),
-    enabled: !!projectId,
-    staleTime: 30_000,
-  });
-}
-
-export function useRegistryUpdates(projectId: string | null) {
-  return useQuery({
-    queryKey: ['marketplace-updates', projectId],
-    queryFn: () => listRegistryUpdates(projectId!),
-    enabled: !!projectId,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  });
-}
-
-export function useUpdateMarketplaceItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
-      updateMarketplaceItem(projectId, name),
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
-      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
-    },
-  });
-}
-
-export function useUpdateAllMarketplaceItems() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId }: { projectId: string }) => updateAllMarketplaceItems(projectId),
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
-      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
-    },
-  });
-}
-
-export function useInstallMarketplaceItem() {
-  const qc = useQueryClient();
+/** Merge a `registry:project` item into an existing project via an agent
+ *  session — no lock/installed-item cache to invalidate here, the agent's
+ *  own commits (skills, kortix.yaml edit, CR) drive those separately once
+ *  the session actually runs. */
+export function useInstallMarketplaceItemAsSession() {
   return useMutation({
     mutationFn: ({ projectId, id }: { projectId: string; id: string }) =>
-      installMarketplaceItem(projectId, id),
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
-      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
-    },
-  });
-}
-
-export function useUninstallMarketplaceItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
-      uninstallMarketplaceItem(projectId, name),
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
-      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
-    },
+      installMarketplaceItemAsSession(projectId, id),
   });
 }
 

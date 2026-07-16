@@ -519,7 +519,7 @@ interface LinkRepoResponse {
  * app entirely (the App-free fallback — handy where the app can't be installed,
  * e.g. local dev whose callback points at prod).
  */
-async function linkGitHubBackedProject(
+export async function linkGitHubBackedProject(
   client: ApiClient,
   opts: { repoUrl: string; name: string; accountId: string; githubToken?: string; yes: boolean },
 ): Promise<ProjectSummary> {
@@ -532,14 +532,17 @@ async function linkGitHubBackedProject(
 
   // PAT path: one shot, no app needed.
   if (opts.githubToken) {
-    const res = await client.post<LinkRepoResponse>('/link-repository', body(opts.githubToken));
+    const res = await client.post<LinkRepoResponse>(
+      '/projects/link-repository',
+      body(opts.githubToken),
+    );
     return res.project;
   }
 
   // App path: retry around the one-click install.
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      const res = await client.post<LinkRepoResponse>('/link-repository', body());
+      const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
       return res.project;
     } catch (err) {
       const installUrl =

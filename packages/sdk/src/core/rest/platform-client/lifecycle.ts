@@ -17,6 +17,7 @@ import type {
   ServerTypeOption,
   ProvidersInfo,
 } from './types';
+import { backendApi } from '../../http/api-client';
 import {
   findProjectSessionSandbox,
   listProjectSessionSandboxes,
@@ -32,7 +33,9 @@ import {
  * Get available sandbox providers from the platform service.
  */
 export async function getProviders(): Promise<ProvidersInfo> {
-  return { providers: ['daytona'], default: 'daytona' };
+  const response = await backendApi.get<ProvidersInfo>('/setup/sandbox-providers');
+  if (response.error) throw response.error;
+  return response.data!;
 }
 
 /**
@@ -55,7 +58,7 @@ export async function ensureSandbox(opts?: {
   }
 
   const session = await createProjectSession(project.project_id, {
-    ...(opts?.provider ? { agent_name: opts.provider } : {}),
+    ...(opts?.provider ? { provider: opts.provider } : {}),
   });
   const runtime = (await startProjectSession(project.project_id, session.session_id))?.sandbox ?? null;
   return { sandbox: projectSessionToSandboxInfo(project, session, runtime), created: true };
@@ -71,8 +74,7 @@ export async function getSandbox(): Promise<SandboxInfo | null> {
 }
 
 /**
- * Create a brand new remote sandbox. For local Docker this adopts an already
- * running manual sandbox; it never starts, pulls, or creates a container.
+ * Create a brand new remote sandbox.
  *
  * Use this when the user explicitly clicks a provider in the Instance Manager.
  * For idempotent "make sure I have a sandbox" logic, use ensureSandbox() instead.
@@ -154,7 +156,7 @@ export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
 }
 
 /**
- * Restart a sandbox workload. For JustAVPS this repairs the managed workload
+ * Restart a sandbox workload. For a remote instance this repairs the workload
  * container/service and only starts the host if it is currently stopped.
  */
 export async function restartSandbox(sandboxId?: string): Promise<void> {

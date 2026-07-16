@@ -64,8 +64,7 @@ Facts established by direct code inspection — each of these shapes a decision 
     agent can never exceed its launching human); the executor policy engine is
     risk-tiered per-call approval for discovered external actions. Folding CLI
     into connectors would forfeit the role ceiling. What CLI *lacks* is the
-    approval tier: `project.gitops.merge` and `project.deploy` are pure
-    allow/deny today.
+    approval tier: `project.gitops.merge` is pure allow/deny today.
 11. **The Members-page grant flow is agent-only** (picker hardcoded to agents;
     pyramid comment in code). **RESOLVED 2026-07-05**: `POST
     /resource-grants` now rejects any `resource_type` other than `agent`
@@ -332,7 +331,7 @@ executor gateway would duplicate the engine. What we take from the executor
 instead is its approval UX:
 
 - Add an optional risk tier to CLI leaf actions: `project.gitops.merge`,
-  `project.deploy`, `project.members.manage` (initial set) can be marked
+  `project.members.manage` (initial set) can be marked
   `require_approval` per project (manifest: `approvals.kortix_cli: [project.gitops.merge]`).
   Enforcement reuses `sessionToolApprovals` + the Review Center / Slack card
   machinery the executor already has — additive layer *after* the allow/deny
@@ -389,7 +388,7 @@ The complexity Marko flagged collapses under one rule:
 | Merge a change request | platform action on git | `project.cr.merge` (+ optional approval tier) |
 | CRUD connectors, secrets, channels bindings, model prefs | platform action | `project.connector.write`, `project.secret.write`, … |
 | Fire/create triggers & webhooks | split: definition is git write, firing is platform | definition via CR; `project.trigger.fire` for manual fires |
-| Start/stop sessions, deploy | platform action | `project.session.*`, `project.deploy` |
+| Start/stop sessions | platform action | `project.session.*` |
 | Member/group/role admin | platform action (account/project) | IAM roles + Enterprise entitlement for custom RBAC |
 
 - "Can he edit the agent's skills?" = "can he land a CR touching `.kortix/`" —

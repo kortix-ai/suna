@@ -1,7 +1,7 @@
 # Kortix CLI — design
 
 Status: **draft** · author: in-progress · scope: the cloud-aware
-`kortix` CLI commands beyond the local `init` / `apps` flow that
+`kortix` CLI commands beyond the local `init` flow that
 already ships.
 
 ## 1. Scope
@@ -19,7 +19,6 @@ from a terminal or a local coding agent. Concretely:
 - **Triggers** — list, fire, enable / disable. (These round-trip
   through `kortix.yaml` already; CLI is convenience over the existing
   API routes, not a new surface.)
-- **Deploy / apps** — list, deploy, stop, tail logs.
 - **Project init** — already exists (`kortix init` scaffolds a repo).
 
 ### Out
@@ -137,9 +136,6 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix triggers ls`                            | List triggers                                                        | `GET /v1/projects/:id/triggers`                                     |
 | `kortix triggers fire <slug>`                   | Manually fire                                                        | `POST /v1/projects/:id/triggers/:slug/fire`                         |
 | `kortix triggers enable/disable <slug>`         | Flip `enabled` in manifest                                           | `PATCH /v1/projects/:id/triggers/:slug`                             |
-| `kortix apps ls [--remote]`                     | Local from manifest, or `--remote` from API                          | `GET /v1/projects/:id/apps`                                         |
-| `kortix apps deploy <slug>`                     | Trigger deploy                                                       | `POST /v1/projects/:id/apps/:slug/deploy`                           |
-| `kortix apps logs <slug> [-f]`                  | Tail deploy logs                                                     | `GET /v1/projects/:id/apps/:slug/logs`                              |
 | `kortix env ls/pull/push`                       | Alias of `kortix secrets` plus dotenv import/export                  | same as secrets                                                     |
 
 Conventions:
@@ -191,7 +187,7 @@ endpoints the dashboard uses.** Two implications:
 ### 5.1 Already shared (dashboard + CLI use as-is)
 
 All `/v1/projects/:id/...` routes for secrets, triggers, sessions,
-apps, oauth credentials. The router is already auth-agnostic — it
+and oauth credentials. The router is already auth-agnostic — it
 accepts Supabase JWT or `kortix_` API key via the same
 `Authorization: Bearer` header.
 
@@ -215,8 +211,8 @@ router pattern. The dashboard for the approve / tokens pages goes in
 - Does the manifest-editor in the dashboard hit an API endpoint to
   read `kortix.yaml`, or does it fetch directly from GitHub?
   - If it fetches direct: move to API.
-- Does the trigger / app list in the dashboard hit
-  `/v1/projects/:id/{triggers,apps}` or re-parse the manifest in JS?
+- Does the trigger list in the dashboard hit
+  `/v1/projects/:id/triggers` or re-parse the manifest in JS?
   - If the latter: nothing to do (parsing is cheap), but the CLI uses
     the API surface either way.
 
@@ -234,7 +230,6 @@ apps/cli/
     scaffold.ts                    # init scaffold (existing)
     commands/
       init.ts                      # existing
-      apps.ts                      # existing — extended with --remote
       create.ts                    # existing
       login.ts                     # NEW
       logout.ts                    # NEW
@@ -285,7 +280,7 @@ Behavior:
 | **1a — API: PAT** | `/v1/account/{me,tokens}` endpoints + dashboard tokens page | dashboard usable for tokens |
 | **1b — CLI: login/whoami/projects** | `kortix login --token`, `logout`, `whoami`, `projects ls/info/link/unlink/open` | useful but read-only |
 | **2 — CLI: secrets + sessions** | `kortix secrets *`, `kortix sessions *` | feature parity with the dashboard's most-used screens |
-| **3 — CLI: triggers + apps + env** | The rest of the surface | full coverage |
+| **3 — CLI: triggers + env** | The rest of the surface | full coverage |
 | **4 — Device flow** | `/v1/cli/device/*` + dashboard approve page; `kortix login` opens browser by default | Vercel-style polish |
 | **(later, separate)** | MCP wrapper — **not part of this CLI**, reuses the same API | separate repo / package |
 

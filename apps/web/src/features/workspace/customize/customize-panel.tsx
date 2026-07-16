@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { Icon } from '@/features/icon/icon';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
@@ -25,9 +26,8 @@ import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
 import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -50,6 +50,7 @@ import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
+import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
@@ -335,9 +336,13 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                 </ModalClose>
               </div>
 
+              {detail.data?.project ? (
+                <RelatedProjectsSwitcher project={detail.data.project} />
+              ) : null}
+
               <nav
                 aria-label="Customize"
-                className="mt-8 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                className="mt-4 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               >
                 {groups.map((group, idx) => (
                   <div

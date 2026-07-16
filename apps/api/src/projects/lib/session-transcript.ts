@@ -99,7 +99,23 @@ export async function buildSessionTranscriptDigest(input: {
     };
   }
 
-  const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  // Endpoint resolution touches the sandbox provider (Daytona preview-link /
+  // service-key lookup) and can throw on a 429 `ThrottlerException` rate limit,
+  // an archived/deleted box, or a transient provider outage. This digest is
+  // best-effort enrichment (the session row is already loaded); a provider
+  // throw must NEVER bubble up and 500 the transcript read (see #3567 for the
+  // sibling title-sync fix — this is the same class of bug on a different
+  // post-#3567 call site). Degrade to an unavailable digest instead.
+  let endpoint: { url: string; headers: Record<string, string> } | null;
+  try {
+    endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ...unavailable(`could not reach sandbox: ${message}`),
+      opencode_session_id: opencodeSessionId,
+    };
+  }
   if (!endpoint) {
     return {
       ...unavailable('sandbox service key unavailable'),

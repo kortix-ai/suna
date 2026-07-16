@@ -171,7 +171,7 @@ export function SandboxTemplateForm({
         disk_gb: parsePosInt(diskGb) ?? null,
       }),
     onSuccess: () => {
-      toast.success('Template updated');
+      toast.success('Template updated — provider sync started');
       queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
       onOpenChange(false);

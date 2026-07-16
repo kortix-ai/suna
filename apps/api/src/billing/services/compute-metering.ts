@@ -21,6 +21,8 @@
 
 import { sandboxComputeSessions } from '@kortix/db';
 import { config } from '../../config';
+import type { ProviderName } from '../../platform/providers';
+import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import {
   insertComputeSession,
   getOpenComputeSession,
@@ -32,11 +34,7 @@ import {
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { deductCredits } from './credits';
 import {
-  COMPUTE_CPU_PRICE_PER_CORE_SECOND,
-  COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
-  COMPUTE_DISK_PRICE_PER_GB_SECOND,
   COMPUTE_PRICE_MARKUP,
-  DAYTONA_DISCOUNT,
   isPerSeatAccount,
 } from './tiers';
 
@@ -47,21 +45,27 @@ export interface StartComputeOpts {
   accountId: string;
   sessionId?: string | null;
   actorUserId?: string | null;
+  provider?: ProviderName;
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
 }
 
 /**
  * Compute the cost (in USD, pre-balance-deduction) for a window.
- * tiers.ts holds Daytona's LIST rates; here we apply our volume discount
- * (DAYTONA_DISCOUNT → our real cost) and then the markup (our margin).
+ * Provider rate cards hold list cost plus any provider-specific discount; this
+ * function applies the shared Kortix markup after selecting the owning provider.
  */
-export function calculateComputeCost(spec: SandboxSpec, durationSeconds: number): number {
+export function calculateComputeCost(
+  spec: SandboxSpec,
+  durationSeconds: number,
+  provider: ProviderName = 'daytona',
+): number {
   if (durationSeconds <= 0) return 0;
-  const cpuCost    = spec.cpuCores  * COMPUTE_CPU_PRICE_PER_CORE_SECOND  * durationSeconds;
-  const memCost    = spec.memoryGb  * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * durationSeconds;
-  const diskCost   = spec.diskGb    * COMPUTE_DISK_PRICE_PER_GB_SECOND   * durationSeconds;
-  return (cpuCost + memCost + diskCost) * DAYTONA_DISCOUNT * COMPUTE_PRICE_MARKUP;
+  const rate = getProviderComputeRateCard(provider);
+  const cpuCost = spec.cpuCores * rate.cpuPerCoreSecond * durationSeconds;
+  const memCost = spec.memoryGb * rate.memoryPerGbSecond * durationSeconds;
+  const diskCost = spec.diskGb * rate.diskPerGbSecond * durationSeconds;
+  return (cpuCost + memCost + diskCost) * rate.providerCostMultiplier * COMPUTE_PRICE_MARKUP;
 }
 
 /**
@@ -85,6 +89,7 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     sandboxId: opts.sandboxId,
     sessionId: opts.sessionId ?? null,
     actorUserId: opts.actorUserId ?? null,
+    provider: opts.provider ?? 'daytona',
     cpuCores: opts.spec.cpuCores,
     memoryGb: opts.spec.memoryGb,
     diskGb: opts.spec.diskGb,
@@ -117,7 +122,7 @@ async function settleComputeWindow(
     diskGb: row.diskGb,
     gpuCount: row.gpuCount,
   };
-  const windowCost = calculateComputeCost(spec, durationSeconds);
+  const windowCost = calculateComputeCost(spec, durationSeconds, row.provider as ProviderName);
   if (windowCost <= 0) {
     await updateComputeSession(row.id, { lastBilledAt: windowEnd.toISOString() });
     return 0;
@@ -192,13 +197,21 @@ export async function reopenComputeForSandbox(
   accountId: string,
   sessionId?: string | null,
   actorUserId?: string | null,
+  provider?: ProviderName,
 ): Promise<string | null> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const last = await getLatestComputeSession(sandboxId);
   const spec: SandboxSpec = last
     ? { cpuCores: last.cpuCores, memoryGb: last.memoryGb, diskGb: last.diskGb, gpuCount: last.gpuCount }
     : { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
-  return startComputeSession({ sandboxId, accountId, sessionId, actorUserId, spec });
+  return startComputeSession({
+    sandboxId,
+    accountId,
+    sessionId,
+    actorUserId,
+    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'daytona',
+    spec,
+  });
 }
 
 /**

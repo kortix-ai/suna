@@ -6,17 +6,16 @@ import { useTranslations } from 'next-intl';
 // reports. Pure read; the rest of BillingTab still owns mutations.
 
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
-import { Activity, Bot, Cpu, Layers, Play, Plug, Sparkles, Wallet } from 'lucide-react';
 
 type LimitRow = {
   id: string;
   label: string;
-  icon: React.ReactNode;
   active: number;
   limit: number;
 };
@@ -33,10 +32,10 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 
   if (accountState.isLoading) {
     return (
-      <div className="space-y-4 px-1 pb-2">
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-24 w-full" />
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full rounded-md" />
+        <Skeleton className="h-24 w-full rounded-md" />
+        <Skeleton className="h-32 w-full rounded-md" />
       </div>
     );
   }
@@ -44,7 +43,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   const state = accountState.data;
   if (!state) {
     return (
-      <p className="text-muted-foreground px-1 text-sm">
+      <p className="text-muted-foreground text-sm">
         {tI18nHardcoded.raw('autoFeaturesBillingAccountOverviewJsxTextCouldnTLoadAccountacf6a97f')}
       </p>
     );
@@ -69,90 +68,63 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   const limits = buildLimitRows(state.limits);
 
   return (
-    <div className="space-y-4">
-      {/* Plan + wallet + status — compact three-up */}
-      <section className="bg-card rounded-2xl border p-5">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Plan">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="font-medium">
-                {tierName}
+    <div className="space-y-8">
+      {/* Plan + wallet two-up: current plan on the left, wallet balance on
+          the right. */}
+      <section className="space-y-4">
+        <Label>Plan</Label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="bg-popover flex min-w-0 flex-col gap-3 rounded-md border p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-foreground text-sm font-medium">{tierName}</p>
+              <Badge variant="secondary" size="sm">
+                Current
               </Badge>
-              {subStatus && subStatus !== 'active' && (
-                <Badge variant="outline" className="text-xs">
-                  {subStatus}
-                </Badge>
-              )}
             </div>
-          </Field>
-          <Field
-            label={tI18nHardcoded.raw(
-              'autoFeaturesBillingAccountOverviewJsxAttrLabelWalletBalancecdd0c37d',
-            )}
-          >
-            <ValueLine
-              icon={<Wallet className="text-muted-foreground size-4" />}
-              value={walletValue}
-            />
-          </Field>
-          <Field label="Status">
-            <ValueLine
-              icon={<Activity className="text-muted-foreground size-4" />}
-              value={subStatus === 'active' ? 'Active' : (subStatus ?? 'Inactive')}
-            />
-          </Field>
+            <p
+              className={cn(
+                'text-xs capitalize',
+                subStatus === 'active' ? 'text-kortix-green' : 'text-muted-foreground',
+              )}
+            >
+              {subStatus === 'active' ? 'Active' : (subStatus ?? 'No subscription')}
+            </p>
+          </div>
+          <div className="bg-popover flex min-w-0 flex-col gap-3 rounded-md border p-4">
+            <p className="text-muted-foreground text-base">Wallet balance</p>
+            <p className="text-foreground truncate text-xl font-medium tabular-nums">
+              {walletValue}
+            </p>
+          </div>
         </div>
       </section>
 
       {/* Spend this period */}
-      {usage && (
-        <section className="bg-card rounded-2xl border p-5">
-          <div className="mb-4 flex items-baseline justify-between">
-            <h4 className="text-sm font-semibold">
-              {tI18nHardcoded.raw(
-                'autoFeaturesBillingAccountOverviewJsxTextSpendThisPeriodc3ec187b',
-              )}
-            </h4>
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {formatUsd(usage.total_usd)} total
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <StatCard
-              icon={<Cpu className="size-4" />}
-              label="Compute"
-              value={formatUsd(usage.compute_usd)}
-              sublabel={tI18nHardcoded.raw(
-                'autoFeaturesBillingAccountOverviewJsxAttrSublabelSandboxRuntimef66ba97a',
-              )}
-            />
-            <StatCard
-              icon={<Sparkles className="size-4" />}
-              label="LLM"
-              value={formatUsd(usage.llm_usd)}
-              sublabel="Inference"
-            />
+      {usage ? (
+        <section className="space-y-4">
+          <Label>Spend this period</Label>
+          <div className="bg-popover divide-border divide-y rounded-md border">
+            <SpendRow label="Compute" hint="Sandbox runtime" value={formatUsd(usage.compute_usd)} />
+            <SpendRow label="LLM" hint="Inference" value={formatUsd(usage.llm_usd)} />
+            <SpendRow label="Total" value={formatUsd(usage.total_usd)} strong />
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* Limits */}
-      {limits.length > 0 && (
-        <section className="bg-card rounded-2xl border p-5">
-          <h4 className="mb-4 text-sm font-semibold">Limits</h4>
-          <div className="space-y-3">
+      {limits.length > 0 ? (
+        <section className="space-y-4">
+          <Label>Limits</Label>
+          <div className="bg-popover space-y-6 rounded-md border px-5 py-6">
             {limits.map((row) => {
               const pct =
                 row.limit > 0 ? Math.min(100, Math.round((row.active / row.limit) * 100)) : 0;
               const atCap = row.limit > 0 && row.active >= row.limit;
               return (
-                <div key={row.id} className="space-y-1.5">
+                <div key={row.id} className="space-y-2.5">
                   <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">{row.icon}</span>
-                      <span>{row.label}</span>
-                    </div>
-                    <span className={cn('font-medium tabular-nums', atCap && 'text-destructive')}>
+                    <span className="text-foreground">{row.label}</span>
+                    <span className={cn('font-medium tabular-nums', atCap && 'text-kortix-red')}>
                       {row.active} / {row.limit}
                     </span>
                   </div>
@@ -162,7 +134,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
             })}
           </div>
         </section>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -176,7 +148,6 @@ function buildLimitRows(
     rows.push({
       id: 'sessions',
       label: 'Concurrent sessions',
-      icon: <Layers className="size-4" />,
       active: limits.concurrent_sessions.active,
       limit: limits.concurrent_sessions.limit,
     });
@@ -185,7 +156,6 @@ function buildLimitRows(
     rows.push({
       id: 'runs',
       label: 'Concurrent agent runs',
-      icon: <Play className="size-4" />,
       active: limits.concurrent_runs.running_count,
       limit: limits.concurrent_runs.limit,
     });
@@ -194,7 +164,6 @@ function buildLimitRows(
     rows.push({
       id: 'workers',
       label: 'AI workers',
-      icon: <Bot className="size-4" />,
       active: limits.ai_worker_count.current_count,
       limit: limits.ai_worker_count.limit,
     });
@@ -203,7 +172,6 @@ function buildLimitRows(
     rows.push({
       id: 'mcps',
       label: 'Custom MCP connectors',
-      icon: <Plug className="size-4" />,
       active: limits.custom_mcp_count.current_count,
       limit: limits.custom_mcp_count.limit,
     });
@@ -211,43 +179,28 @@ function buildLimitRows(
   return rows;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      {children}
-    </div>
-  );
-}
-
-function ValueLine({ icon, value }: { icon: React.ReactNode; value: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      {icon}
-      <span className="text-sm font-medium tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
+function SpendRow({
   label,
+  hint,
   value,
-  sublabel,
+  strong,
 }: {
-  icon: React.ReactNode;
   label: string;
+  hint?: string;
   value: string;
-  sublabel?: string;
+  strong?: boolean;
 }) {
   return (
-    <div className="bg-background rounded-2xl border p-3">
-      <div className="text-muted-foreground flex items-center gap-2 text-xs">
-        {icon}
-        <span>{label}</span>
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <p className={cn('text-sm', strong ? 'text-foreground font-medium' : 'text-foreground')}>
+          {label}
+        </p>
+        {hint ? <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p> : null}
       </div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {sublabel && <div className="text-muted-foreground mt-0.5 text-xs">{sublabel}</div>}
+      <span className={cn('text-sm tabular-nums', strong ? 'font-semibold' : 'font-medium')}>
+        {value}
+      </span>
     </div>
   );
 }

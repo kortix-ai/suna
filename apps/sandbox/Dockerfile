@@ -74,7 +74,8 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
     esac \
     && bun install --no-save \
     && BUN_COMPILE_TARGET="$BUN_COMPILE_TARGET" bash apps/cli/scripts/build.sh \
-    && cp apps/cli/dist/kortix /cli/kortix
+    && cp apps/cli/dist/kortix /cli/kortix \
+    && (cd packages/starter && bun run scripts/write-managed-skills.ts /cli/managed-skills)
 
 # ─── Stage 3: runtime ───────────────────────────────────────────────────
 
@@ -217,6 +218,10 @@ COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
 # project-scoped token the platform injects (KORTIX_CLI_TOKEN).
 COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
+# Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
+# agent server overlays these into every session's OpenCode skills dir at boot
+# (see injected-skills.ts) so no project ever goes stale on Kortix internals.
+COPY --from=cli-builder /cli/managed-skills /opt/kortix/managed-skills
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 # Keep the repo-relative layout under /opt/kortix so agent CLIs can import
 # shared workspace packages the same way they do in local tests.

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -8,10 +9,6 @@ import {
 } from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
 import { C, help, pad, status } from '../style.ts';
-import type {
-  ProjectSecret,
-  ProjectSecretsResponse,
-} from '../api/types.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
@@ -28,6 +25,9 @@ common case. Set it explicitly to keep a second value under the same key
 Subcommands:
   ls                                List secrets (by identifier, → key when it
                                     differs) + manifest [env] spec. --json.
+                                    JSON mirrors API fields: name, configured,
+                                    available, effective_source. Legacy key and
+                                    has_value aliases remain available.
   set KEY=VALUE [KEY=VALUE …]       Upsert one or more secrets. Identifier
                                     defaults to KEY.
                                     Use \`KEY=-\` to read VALUE from stdin.
@@ -100,7 +100,9 @@ type SecretRow = {
   identifier: string;
   key: string;
   spec: 'required' | 'optional' | 'undeclared';
-  set: boolean;
+  configured: boolean;
+  available: boolean;
+  effectiveSource: 'mine' | 'shared' | 'none';
 };
 
 async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
@@ -109,9 +111,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
 
   let resp: ProjectSecretsResponse;
   try {
-    resp = await ctx.client.get<ProjectSecretsResponse>(
-      `/projects/${ctx.projectId}/secrets`,
-    );
+    resp = await ctx.client.get<ProjectSecretsResponse>(`/projects/${ctx.projectId}/secrets`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -129,8 +129,9 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     }
   })();
   const usingLocal = resp.manifest_status !== 'loaded' && local !== null;
-  const required = usingLocal ? local!.env.required : resp.required;
-  const optional = usingLocal ? local!.env.optional : resp.optional;
+  const localEnv = usingLocal && local ? local.env : null;
+  const required = localEnv?.required ?? resp.required;
+  const optional = localEnv?.optional ?? resp.optional;
 
   // The manifest [env] contract is by env KEY (uppercased names the runtime
   // needs); a secret is addressed by IDENTIFIER and injects one KEY. So we match
@@ -138,8 +139,19 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   // two identifiers under one key as two distinct rows (the web does the same).
   const requiredSet = new Set(required);
   const optionalSet = new Set(optional);
-  const setKeys = new Set(resp.items.map((s) => s.name));
-  const requiredMissing = required.filter((k) => !setKeys.has(k));
+  const itemState = (secret: ProjectSecret) => {
+    const configured = secret.configured ?? true;
+    const effectiveSource = secret.effective_source ?? (configured ? 'shared' : 'none');
+    return {
+      configured,
+      effectiveSource,
+      available: effectiveSource !== 'none',
+    } as const;
+  };
+  const availableKeys = new Set(
+    resp.items.filter((secret) => itemState(secret).available).map((secret) => secret.name),
+  );
+  const requiredMissing = required.filter((key) => !availableKeys.has(key));
 
   const declaredOrder: string[] = [];
   const seenDeclared = new Set<string>();
@@ -155,16 +167,25 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     const spec = requiredSet.has(key) ? 'required' : 'optional';
     const backing = resp.items.filter((s) => s.name === key);
     if (backing.length === 0) {
-      allRows.push({ identifier: key, key, spec, set: false });
+      allRows.push({
+        identifier: key,
+        key,
+        spec,
+        configured: false,
+        available: false,
+        effectiveSource: 'none',
+      });
     } else {
       for (const s of backing) {
-        allRows.push({ identifier: s.identifier, key: s.name, spec, set: true });
+        const state = itemState(s);
+        allRows.push({ identifier: s.identifier, key: s.name, spec, ...state });
       }
     }
   }
   for (const s of resp.items) {
     if (!seenDeclared.has(s.name)) {
-      allRows.push({ identifier: s.identifier, key: s.name, spec: 'undeclared', set: true });
+      const state = itemState(s);
+      allRows.push({ identifier: s.identifier, key: s.name, spec: 'undeclared', ...state });
     }
   }
 
@@ -172,8 +193,13 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     emitJson({
       secrets: allRows.map((r) => ({
         identifier: r.identifier,
+        name: r.key,
+        configured: r.configured,
+        available: r.available,
+        effective_source: r.effectiveSource,
+        // Backward-compatible aliases for older CLI JSON consumers.
         key: r.key,
-        has_value: r.set,
+        has_value: r.available,
         source: r.spec,
       })),
       manifest: {
@@ -204,18 +230,16 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   const nameW = Math.max(...allRows.map((r) => r.identifier.length), 4);
-  process.stdout.write(
-    `  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    SPEC${C.reset}\n`,
-  );
+  process.stdout.write(`  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    SPEC${C.reset}\n`);
   for (const r of allRows) {
-    const marker = r.set ? `${C.green}● ${C.reset}` : `${C.yellow}○ ${C.reset}`;
-    const statusTxt = r.set ? 'set     ' : 'missing ';
+    const marker = r.available ? `${C.green}● ${C.reset}` : `${C.yellow}○ ${C.reset}`;
+    const statusTxt = r.available
+      ? r.effectiveSource === 'mine'
+        ? 'personal'
+        : 'set     '
+      : 'missing ';
     const specColor =
-      r.spec === 'required' && !r.set
-        ? C.yellow
-        : r.spec === 'undeclared'
-          ? C.faded
-          : C.dim;
+      r.spec === 'required' && !r.available ? C.yellow : r.spec === 'undeclared' ? C.faded : C.dim;
     // Show the injected env key only when it differs from the identifier —
     // the second-value-under-same-key case (mirrors the web's "→ key").
     const keyHint = r.key !== r.identifier ? ` ${C.dim}→ ${r.key}${C.reset}` : '';
@@ -234,8 +258,9 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       )}\n`,
     );
   }
+  const availableCount = allRows.filter((row) => row.available).length;
   process.stdout.write(
-    `  ${C.dim}${resp.items.length} set · ${required.length} required · ${optional.length} optional${C.reset}\n\n`,
+    `  ${C.dim}${availableCount} available · ${required.length} required · ${optional.length} optional${C.reset}\n\n`,
   );
   return 0;
 }

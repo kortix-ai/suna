@@ -14,7 +14,6 @@ import {
   oauthAccessTokens,
   oauthRefreshTokens,
   accountMembers,
-  sandboxes,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
@@ -251,7 +250,6 @@ export const oauthApp = makeOpenApiApp();
 oauthApp.use('/authorize/consent/:requestId', supabaseAuth);
 oauthApp.use('/authorize/consent', supabaseAuth);
 oauthApp.use('/userinfo', oauthTokenAuth);
-oauthApp.use('/claimable-machines', oauthTokenAuth);
 
 // oauth_clients.client_id is a uuid column. These endpoints are public (the
 // client authenticates via client_secret per the OAuth spec), so scanners probe
@@ -708,68 +706,6 @@ oauthApp.openapi(
     user_id: userId,
     account_id: accountId,
     email: user?.email ?? '',
-  });
-},
-);
-
-// ─── GET /claimable-machines ────────────────────────────────────────────────
-
-oauthApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/claimable-machines',
-    tags: ['oauth'],
-    summary: 'List claimable machines (requires the `machines:read` scope)',
-    ...auth,
-    responses: {
-      200: json(
-        z.object({
-          machines: z.array(
-            z.object({
-              sandbox_id: z.string(),
-              external_id: z.string().nullable(),
-              name: z.string().nullable(),
-              status: z.string(),
-              created_at: z.string().optional(),
-            }),
-          ),
-        }),
-        'Claimable machines',
-      ),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-  const scopeError = requireOAuthScope(c, 'machines:read');
-  if (scopeError) return scopeError;
-
-  const accountId = (c as any).get('oauthAccountId') as string;
-
-  const rows = await db
-    .select({
-      sandbox_id: sandboxes.sandboxId,
-      external_id: sandboxes.externalId,
-      name: sandboxes.name,
-      status: sandboxes.status,
-      created_at: sandboxes.createdAt,
-    })
-    .from(sandboxes)
-    .where(
-      and(
-        eq(sandboxes.accountId, accountId),
-        eq(sandboxes.provider, 'justavps'),
-        inArray(sandboxes.status, ['active', 'provisioning']),
-      ),
-    );
-
-  return c.json({
-    machines: rows.map((r) => ({
-      sandbox_id: r.sandbox_id,
-      external_id: r.external_id,
-      name: r.name,
-      status: r.status,
-      created_at: r.created_at?.toISOString(),
-    })),
   });
 },
 );

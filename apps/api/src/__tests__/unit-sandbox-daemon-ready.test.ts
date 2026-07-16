@@ -35,7 +35,7 @@ describe('waitForDaemonOpencodeReady', () => {
     const clock = fakeClock();
     const ready = await waitForDaemonOpencodeReady({
       previewUrl: 'http://127.0.0.1:1/',
-      previewToken: null,
+      providerHeaders: {},
       deps: {
         fetchImpl: fakeHealthFetch([
           { opencode: 'starting' },
@@ -53,7 +53,7 @@ describe('waitForDaemonOpencodeReady', () => {
     const clock = fakeClock();
     const ready = await waitForDaemonOpencodeReady({
       previewUrl: 'http://127.0.0.1:1/',
-      previewToken: 'tok',
+      providerHeaders: { 'e2b-traffic-access-token': 'tok' },
       deps: {
         fetchImpl: fakeHealthFetch(['fail', { opencode: 'starting' }, { opencode: 'ok' }]),
         sleep: clock.sleep,
@@ -67,7 +67,7 @@ describe('waitForDaemonOpencodeReady', () => {
     const clock = fakeClock();
     const ready = await waitForDaemonOpencodeReady({
       previewUrl: 'http://127.0.0.1:1/',
-      previewToken: null,
+      providerHeaders: {},
       deps: {
         fetchImpl: fakeHealthFetch([{ opencode: 'down', status: 'error' }]),
         sleep: clock.sleep,
@@ -81,7 +81,7 @@ describe('waitForDaemonOpencodeReady', () => {
     const clock = fakeClock();
     const ready = await waitForDaemonOpencodeReady({
       previewUrl: 'http://127.0.0.1:1/',
-      previewToken: null,
+      providerHeaders: {},
       budgetMs: 1_000,
       deps: {
         fetchImpl: fakeHealthFetch([{ opencode: 'starting' }]),

@@ -32,6 +32,7 @@ import {
   normalizeProjectId,
   scopeForService,
 } from './parse';
+import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { kickProjectWarmPrebake } from '../snapshots/builder';
@@ -115,17 +116,32 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   Object.assign(headers, upstream.headers);
 
   const method = c.req.method;
+  // Idempotent ref discovery (GET /info/refs) → buffer + bounded retry, so a
+  // transient upstream socket-close is caught here instead of escaping Bun's
+  // fetch streamer to the global uncaught handler (Better Stack `df7a31d4…`).
+  // Pack streams (POST upload/receive-pack) stay streamed: large / non-idempotent.
+  const isIdempotentGet = method === 'GET' || method === 'HEAD';
   let res: Response;
   try {
-    res = await fetch(target, {
-      method,
-      headers,
-      body: method === 'GET' || method === 'HEAD' ? undefined : c.req.raw.body,
-      redirect: 'manual',
-      // @ts-ignore — Bun extensions: stream the request body, don't decompress.
-      duplex: 'half',
-      decompress: false,
-    });
+    if (isIdempotentGet) {
+      res = await fetchUpstreamBuffered(target, {
+        method,
+        headers,
+        redirect: 'manual',
+        // @ts-ignore — Bun extension: don't decompress the git smart-HTTP body.
+        decompress: false,
+      });
+    } else {
+      res = await fetch(target, {
+        method,
+        headers,
+        body: c.req.raw.body,
+        redirect: 'manual',
+        // @ts-ignore — Bun extensions: stream the request body, don't decompress.
+        duplex: 'half',
+        decompress: false,
+      });
+    }
   } catch (err) {
     console.warn(`[git-proxy] upstream fetch failed for ${projectId}:`, err);
     return c.text('git upstream unreachable', 502);

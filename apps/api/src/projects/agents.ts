@@ -24,7 +24,7 @@
  *     kortix: {}                          # default GP agent — connectors/kortix_cli = "all" (∩ user)
  *     release-bot:
  *       connectors: ["github"]            # which integration profiles
- *       kortix_cli: ["project.deploy", "project.cr.open"]   # Kortix CLI/API powers
+ *       kortix_cli: ["project.trigger.create", "project.cr.open"]   # Kortix CLI/API powers
  *
  * Parser mirrors `projects/connectors.ts`: never throws on a bad entry, collects
  * them in `errors` so the UI can render them next to the good ones.

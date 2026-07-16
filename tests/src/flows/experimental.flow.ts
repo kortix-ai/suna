@@ -3,14 +3,13 @@
  * Maps to spec §EXP-*.
  *
  * `PATCH /v1/projects/:projectId/experimental {feature, enabled}` is the single
- * write path for opting a project into an experimental feature (apps,
- * agent_tunnel, …). State is DB-only (projects.metadata.experimental). The
+ * write path for opting a project into an experimental feature (agent_tunnel,
+ * review_center, …). State is DB-only (projects.metadata.experimental). The
  * response is the serialized project, which carries `experimental` (effective
  * map) and `experimental_features` (the self-describing catalog the UI renders).
  *
  * Not behind any feature gate — it's how a project opts in — so it's always
- * reachable for a project editor / account owner/admin. See apps.flow.ts §APP-4 for the legacy /apps-config
- * alias.
+ * reachable for a project editor / account owner/admin.
  */
 import { flow } from "../core/flow";
 

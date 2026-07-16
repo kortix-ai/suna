@@ -126,6 +126,11 @@ describe('launch envs', () => {
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
   });
 
+  test('worktrees do not pin a sandbox provider over dotenv or shell configuration', () => {
+    const env = apiLaunchEnv(ports, creds);
+    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBeUndefined();
+  });
+
   test('--stripe turns billing on and injects the webhook secret', () => {
     const env = apiLaunchEnv(ports, creds, { stripeWebhookSecret: 'whsec_x' });
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');

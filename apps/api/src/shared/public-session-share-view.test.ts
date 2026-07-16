@@ -22,10 +22,17 @@ let endpointResult: { url: string; headers: Record<string, string> } | null = {
   url: 'http://daemon.local',
   headers: {},
 };
+// When set, `sandboxOpencodeEndpoint` throws this error instead of resolving —
+// simulates a Daytona 429 `ThrottlerException` / archived box on preview-link
+// resolution (the post-#3567 recurrence path).
+let endpointThrow: Error | null = null;
 let resolvedRootId: string | null = 'oc-root-1';
 
 mock.module('../projects/opencode-mapping', () => ({
-  sandboxOpencodeEndpoint: async () => endpointResult,
+  sandboxOpencodeEndpoint: async () => {
+    if (endpointThrow) throw endpointThrow;
+    return endpointResult;
+  },
   listSandboxOpencodeSessions: async () => listResult,
   resolveRootSessionId: () => resolvedRootId,
 }));
@@ -36,6 +43,7 @@ beforeEach(() => {
   sessionRows = [];
   listResult = { ok: true, sessions: [] };
   endpointResult = { url: 'http://daemon.local', headers: {} };
+  endpointThrow = null;
   resolvedRootId = 'oc-root-1';
   globalThis.fetch = mock(async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
 });
@@ -203,6 +211,26 @@ describe('getPublicSessionMessages', () => {
       // reason only (the detail is logged server-side).
       expect(result.transcript.reason).not.toContain('ECONNRESET');
       expect(result.transcript.reason).toBeTruthy();
+    }
+  });
+
+  test('a Daytona 429 rate-limit on endpoint resolution degrades to unavailable (post-#3567 regression)', async () => {
+    // Regression: sandboxOpencodeEndpoint resolves the Daytona preview link,
+    // which throws DaytonaRateLimitError / ThrottlerException when the shared
+    // org is throttled. The public share route must NOT 500 / surface an
+    // unhandled Sentry event — it must degrade to an unavailable digest
+    // (sibling of the #3567 title-sync fix; this is the post-#3567 call site
+    // that was left unguarded).
+    endpointThrow = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
+    const result = await getPublicSessionMessages(activeShare);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.transcript.available).toBe(false);
+      // Anonymous audience: the raw provider error text must NOT leak.
+      expect(result.transcript.reason).not.toContain('ThrottlerException');
+      expect(result.transcript.reason).not.toContain('DaytonaRateLimit');
+      expect(result.transcript.reason).toBeTruthy();
+      expect(result.transcript.opencode_session_id).toBe('oc-root-1');
     }
   });
 });

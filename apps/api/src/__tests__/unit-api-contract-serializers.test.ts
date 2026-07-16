@@ -7,6 +7,7 @@ import {
   SessionStartResultSchema,
 } from '@kortix/api-contract';
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { config } from '../config';
 import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
 import { serializeSandboxRow } from '../projects/routes/shared';
 
@@ -123,6 +124,30 @@ describe('serializeProject ⇄ ProjectSchema', () => {
       Object.keys(ProjectSchema.shape.experimental.shape).sort(),
     );
   });
+
+  test('surfaces a configured E2B project pin', () => {
+    const originalAllowed = config.ALLOWED_SANDBOX_PROVIDERS;
+    const originalKey = config.E2B_API_KEY;
+    config.ALLOWED_SANDBOX_PROVIDERS = ['e2b'];
+    config.E2B_API_KEY = 'test-only';
+    try {
+      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: 'e2b' } }));
+      expect(out.default_sandbox_provider).toBe('e2b');
+      expect(ProjectSchema.strict().parse(out)).toEqual(out);
+    } finally {
+      config.ALLOWED_SANDBOX_PROVIDERS = originalAllowed;
+      config.E2B_API_KEY = originalKey;
+    }
+  });
+
+  test.each(['managed', 'local_docker', 'justavps', 'unknown']) (
+    'does not surface retired or unknown project pin %s',
+    (provider) => {
+      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: provider } }));
+      expect(out.default_sandbox_provider).toBeNull();
+      expect(ProjectSchema.strict().parse(out)).toEqual(out);
+    },
+  );
 });
 
 describe('serializeSession ⇄ ProjectSessionSchema', () => {

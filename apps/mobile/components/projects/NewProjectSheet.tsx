@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, Switch, ActivityIndicator, Linking } from 'react-native';
+import { View, Pressable, ActivityIndicator, Linking } from 'react-native';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -51,7 +51,6 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [name, setName] = useState('');
-  const [includeGKW, setIncludeGKW] = useState(false);
   const [selectedInstallationId, setSelectedInstallationId] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [repoSearch, setRepoSearch] = useState('');
@@ -131,7 +130,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
       const project = await provision.mutateAsync({
         account_id: accountId,
         name: cleaned,
-        starter_template: starterTemplateForManagedProject(includeGKW),
+        starter_template: starterTemplateForManagedProject(),
       });
       haptics.success();
       toast.success('Project created');
@@ -141,7 +140,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
       haptics.warning();
       toast.error(err?.message || 'Failed to create project');
     }
-  }, [accountId, name, includeGKW, provision, toast, onCreated]);
+  }, [accountId, name, provision, toast, onCreated]);
 
   const handleLinkGitHub = useCallback(async () => {
     if (!accountId) return toast.error('Select an account first');
@@ -232,21 +231,14 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
               style={{ marginBottom: 16 }}
             />
 
-            {/* Optional skills toggle */}
+            {/* Every project ships with the full Kortix starter skill kit. */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: border, marginBottom: 20 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Starter skills</Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Starter skills included</Text>
                 <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2, lineHeight: 16 }}>
                   Comes with ready-made skills for research, writing, documents, slides, data, and the web.
                 </Text>
               </View>
-              <Switch
-                value={includeGKW}
-                onValueChange={setIncludeGKW}
-                disabled={submitting}
-                trackColor={{ false: border, true: theme.primary }}
-                thumbColor="#ffffff"
-              />
             </View>
 
             <Pressable onPress={() => setMode('github')} disabled={submitting} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 20 }}>

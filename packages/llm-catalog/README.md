@@ -1,9 +1,10 @@
 # @kortix/llm-catalog
 
-The Kortix LLM model catalog — the set of models the Kortix gateway supports,
-the managed-model set and defaults, and the auto-model picker. The catalog data
-(`catalog.generated.json`) is generated from [models.dev](https://models.dev) and
-consumed across the Kortix platform (gateway, API, web) and by
+The Kortix build-time compatibility catalog — managed-model constants and a
+bundled [models.dev](https://models.dev) snapshot used by SDK/web releases and as
+the API's last-known fallback. Runtime gateway routing and the live served model
+catalog are owned by `apps/api/src/llm-gateway`; the standalone gateway does not
+depend on this package. This package is consumed by the API, web, and
 [`@kortix/sdk`](https://www.npmjs.com/package/@kortix/sdk).
 
 It ships to npm in lockstep with the platform release version, so a given
@@ -24,10 +25,10 @@ import {
 } from '@kortix/llm-catalog';
 ```
 
-- `CATALOG` — the full generated model catalog (providers → models).
+- `CATALOG` — bundled provider/model snapshot used until the API refreshes from its configured catalog URL.
 - `MANAGED_MODELS` / `getManagedModel` / `isManagedModelId` — the managed model set.
 - `AUTO_MODEL_ID`, `DEFAULT_MANAGED_MODEL_IDS`, `MANAGED_FLAGSHIP_MODEL_ID` — defaults.
-- `pickAutoModel(...)` — the "auto" model resolution helper.
+- `pickAutoModel(...)` — compatibility helper for SDK/client code; runtime routing is control-plane-owned.
 
 ## License
 

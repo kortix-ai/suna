@@ -106,7 +106,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 }
 
 export default async function UseCasePage(props: PageProps) {
-  if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'true') notFound();
+  if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false') notFound();
   const { slug } = await props.params;
   const page = useCasesSource.getPage([slug]);
   if (!page) notFound();
@@ -123,9 +123,9 @@ export default async function UseCasePage(props: PageProps) {
     .slice(0, 3);
   const toc = (data.toc ?? []) as TocItem[];
   const post = getAllUseCases().find((p) => p.slug === slug);
-  // Single kill-switch shared with the API (KORTIX_TEMPLATES_ENABLED) — the
-  // "Use this template" button stays hidden until the feature is turned on.
-  const templatesEnabled = process.env.KORTIX_TEMPLATES_ENABLED === 'true';
+  // Default-on kill-switch shared with the API (KORTIX_TEMPLATES_ENABLED) — set it
+  // to 'false' to hide the "Use this template" button.
+  const templatesEnabled = process.env.KORTIX_TEMPLATES_ENABLED !== 'false';
 
   const postUrl = `${siteMetadata.url}/use-cases/${slug}`;
   const jsonLd = {

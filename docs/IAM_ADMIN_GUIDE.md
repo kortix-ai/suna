@@ -371,7 +371,7 @@ later.
    | Field | Meaning | Notes |
    | --- | --- | --- |
    | Display name | Label in the UI | required |
-   | **Primary email domain** | Routes sign-ins for `you@thatdomain.com` to this IdP | e.g. `essentia-inc.com`; extra domains can be added at import |
+   | **Primary email domain** | Routes sign-ins for `you@thatdomain.com` to this IdP | e.g. `acme-inc.com`; extra domains can be added at import |
    | **Group claim name** | The SAML attribute carrying group memberships | default `groups` (Okta convention); Entra emits `memberOf` |
    | **Auto-create members** | Any successful SSO login from the domain self-provisions a baseline account `member` | default **on**; turn **off** for strict, invite/SCIM-only membership |
    | **Auto-provision groups** | Unmapped group claims automatically create an IAM group (+ mapping) on login | default **off** — see below |
@@ -529,7 +529,7 @@ effective = (launching user's role  |  agent's standing role)
       secrets: all             # which project secrets it may read ($ENV)
       kortix_cli: all          # which Kortix platform actions it may perform
     release-bot:
-      kortix_cli: [project.cr.open, project.deploy]   # exactly two powers
+      kortix_cli: [project.cr.open, project.trigger.create]   # exactly two powers
       connectors: [github]
       secrets: [DEPLOY_KEY]
   ```
@@ -663,7 +663,7 @@ audit log records both the grant and the expiry event.
 ```yaml
 agents:
   release-bot:
-    kortix_cli: [project.cr.open, project.deploy]
+    kortix_cli: [project.cr.open, project.trigger.create]
     connectors: [github]
     secrets: [DEPLOY_KEY]
 ```
@@ -684,7 +684,7 @@ else, no matter who launches them (the grant intersects the launcher's role).
 
 | Family | Actions |
 | --- | --- |
-| Core | `project.read` · `project.write` · `project.delete` · `project.deploy` |
+| Core | `project.read` · `project.write` · `project.delete` |
 | Change requests | `project.cr.open` · `project.cr.merge` *(aliases of `gitops.push`/`gitops.merge`)* |
 | Sessions | `project.session.read` · `project.session.start` · `project.session.stop` |
 | Members | `project.members.read` · `project.members.manage` |

@@ -40,8 +40,6 @@ export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
 export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
 
-export const AppSchema = z.object({}).passthrough().openapi('App');
-
 export const SnapshotSchema = z.object({}).passthrough().openapi('Snapshot');
 
 export const SandboxTemplateSchema = z.object({}).passthrough().openapi('SandboxTemplate');

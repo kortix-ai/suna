@@ -11,7 +11,7 @@ import {
   invalidatePreviewLink,
   loadSandbox,
   markSandboxUsed,
-  resolvePreviewLink,
+  resolveSandboxIngress,
   wakeSandbox,
 } from '../backend';
 
@@ -127,7 +127,12 @@ async function forwardPublicShare(c: any, args: {
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(args.share.externalId!, args.port);
+      const ingress = await resolveSandboxIngress(sandbox, {
+        port: args.port,
+        path: args.remainingPath,
+        transport: 'http',
+      });
+      const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + args.remainingPath + args.queryString;
       const headers = new Headers();
       for (const [key, value] of c.req.raw.headers.entries()) {
@@ -142,7 +147,7 @@ async function forwardPublicShare(c: any, args: {
         sandboxId: args.share.externalId!,
         userId: '',
         serviceKey: sandbox.serviceKey,
-        previewToken,
+        providerHeaders: ingress.headers,
       });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);

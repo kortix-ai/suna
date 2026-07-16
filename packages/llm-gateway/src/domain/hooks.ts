@@ -3,6 +3,7 @@ import type { UpstreamDescriptor } from './descriptor';
 import type { AuthedPrincipal } from './principal';
 import type { GatewayTrace } from './trace';
 import type { UsageEvent } from './usage';
+import type { ModelRouteInput, ModelRoutePlan } from './routing';
 
 // Outcome of the combined pre-dispatch gate (auth + billing + budget). On a
 // denial, `principal` is present when the token authenticated but a later gate
@@ -26,6 +27,13 @@ export interface GatewayHooks {
   // in-process mount omits it (its three direct calls are free) and keeps using
   // the granular hooks below. listModels still uses authenticate directly.
   authorize?: (token: string) => Promise<AuthorizeResult>;
+  // The host/control plane owns model names, catalog state, defaults, and
+  // fallback policy. The gateway sends only opaque model ids + request traits
+  // and executes the returned finite route generically.
+  resolveRoute?: (
+    principal: AuthedPrincipal,
+    input: ModelRouteInput,
+  ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   assertBillingActive: (accountId: string) => Promise<void>;
   assertBudget?: (principal: AuthedPrincipal) => Promise<void>;

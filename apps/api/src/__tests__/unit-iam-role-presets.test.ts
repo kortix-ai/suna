@@ -47,7 +47,7 @@ describe('built-in role presets', () => {
     expect(set.has(PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_WRITE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE)).toBe(false);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(false);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
   });
 });

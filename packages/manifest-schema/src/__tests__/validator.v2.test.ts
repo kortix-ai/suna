@@ -117,17 +117,12 @@ platform = "slack"
 enabled = true
 events = ["message"]
 
-[[apps]]
-slug = "site"
-name = "Marketing site"
-[apps.source]
-type = "git"
 `;
 
 // Golden-fixture regression guard: this v1 manifest exercises project, env,
 // opencode, sandbox.templates + default, triggers, connectors (incl. the
 // platform-written channel connector), [[agents]] (incl. the env grant-set),
-// [[channels]], and apps. Adding kortix_version 2 support must not change a
+// and [[channels]]. Adding kortix_version 2 support must not change a
 // single byte of how this validates — v1 stays byte-for-byte unchanged.
 describe('validateManifest — v1 regression (byte-for-byte unchanged after adding v2)', () => {
   test('a comprehensive v1 manifest still validates clean with zero issues', () => {
@@ -180,11 +175,6 @@ channels:
   - platform: slack
     enabled: true
     events: [message]
-apps:
-  - slug: site
-    name: Marketing site
-    source:
-      type: git
 `;
     const result = validateManifest(yaml, 'yaml');
     expect(result.valid).toBe(true);
@@ -888,19 +878,6 @@ connectors:
     expect(errorPaths).toContain('connectors[0].provider');
   });
 
-  test('apps validates identically to v1', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w: {}
-apps:
-  - slug: site
-    source:
-      type: ftp
-`);
-    expect(errorPaths).toContain('apps[0].source.type');
-  });
 });
 
 // ─── validateAgentMdFrontmatter ─────────────────────────────────────────────

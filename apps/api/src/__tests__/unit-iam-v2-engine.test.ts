@@ -153,9 +153,9 @@ describe('service-account standing identity — authority is policy-ONLY', () =>
   });
 
   test('an account-scoped SA role grants the action across every project', () => {
-    const ciBot: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_DEPLOY }];
-    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_DEPLOY, proj('a'))).toBe(true);
-    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_DEPLOY, proj('b'))).toBe(true);
+    const ciBot: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE }];
+    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj('a'))).toBe(true);
+    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj('b'))).toBe(true);
   });
 });
 
@@ -201,7 +201,6 @@ describe('agent grant central fold (userRole ∩ agentGrant)', () => {
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
-    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(true);
     // connector.write MUST be gated — the executor connector-admin fold depends
     // on it (a regression adding it to AGENT_GRANT_EXEMPT_ACTIONS would reopen
     // the scoped-agent connector-admin bypass).

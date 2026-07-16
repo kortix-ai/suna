@@ -9,26 +9,29 @@ import '@xterm/xterm/css/xterm.css';
 import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import type { Pty } from '@kortix/sdk/opencode-client';
+import { classifyPtyClose } from './pty-connection';
 
 // ============================================================================
 // Theme
 // ============================================================================
 
+// Neutral (zero-chroma) surface matching the app's dark background — no blue
+// tint. Selection stays neutral so it reads on any ANSI color underneath.
 const terminalTheme: ITheme = {
-  background: '#0f0f14',
-  foreground: '#e4e4e7',
-  cursor: '#e4e4e7',
-  cursorAccent: '#0f0f14',
-  selectionBackground: 'rgba(139, 92, 246, 0.3)',
-  black: '#27272a',
+  background: '#0f0f0f',
+  foreground: '#e5e5e5',
+  cursor: '#e5e5e5',
+  cursorAccent: '#0f0f0f',
+  selectionBackground: 'rgba(255, 255, 255, 0.18)',
+  black: '#262626',
   red: '#f87171',
   green: '#4ade80',
   yellow: '#fbbf24',
   blue: '#60a5fa',
   magenta: '#c084fc',
   cyan: '#22d3ee',
-  white: '#e4e4e7',
-  brightBlack: '#52525b',
+  white: '#e5e5e5',
+  brightBlack: '#525252',
   brightRed: '#fca5a5',
   brightGreen: '#86efac',
   brightYellow: '#fde047',
@@ -56,6 +59,8 @@ interface PtyTerminalProps {
   /** Server URL to connect to — locks the WS to this server even after instance switch. */
   serverUrl?: string;
   onStatusChange?: (status: ConnectionStatus) => void;
+  /** Called when reconnecting this ID can never work (daemon no longer owns it). */
+  onUnavailable?: () => void;
 }
 
 // ============================================================================
@@ -117,6 +122,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   hidden,
   serverUrl,
   onStatusChange,
+  onUnavailable,
 }, ref) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -340,16 +346,21 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         console.log('[PtyTerminal] WebSocket closed:', event.code, event.reason);
         wsRef.current = null;
 
-        const reason = (event.reason || '').toLowerCase();
-        const closedByIdleTimeout = event.code === 1000 && reason.includes('idle timeout');
-        const shouldReconnect = closedByIdleTimeout || event.code !== 1000;
+        const action = classifyPtyClose({
+          code: event.code,
+          reason: event.reason || '',
+          hadError: hadErrorRef.current,
+        });
 
         if (!hadErrorRef.current) {
           term.writeln(`\r\n\x1b[33mConnection closed${event.code ? ` (${event.code})` : ''}${event.reason ? ': ' + event.reason : ''}\x1b[0m`);
         }
 
-        if (shouldReconnect) {
-          scheduleReconnect(closedByIdleTimeout ? 'idle timeout' : `code ${event.code}`);
+        if (action === 'replace') {
+          updateStatus('error');
+          onUnavailable?.();
+        } else if (action === 'reconnect') {
+          scheduleReconnect(event.reason || `code ${event.code}`);
         } else {
           reconnectAttemptsRef.current = 0;
           updateStatus('disconnected');
@@ -390,8 +401,8 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       ref={terminalRef}
       className={cn(
         'overflow-hidden',
-        'bg-[#0f0f14]',
-        'p-2 px-3',
+        'bg-[#0f0f0f]',
+        'px-3 py-2',
         hidden && 'invisible pointer-events-none',
         className,
       )}

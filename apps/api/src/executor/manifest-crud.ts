@@ -1,6 +1,6 @@
 /**
  * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
- * flow (mirrors triggers/apps). The manifest holds the connector definition.
+ * flow (mirrors triggers). The manifest holds the connector definition.
  * Credential MODE is always `shared` (`per_user` — each member brings their
  * own — was removed 2026-07-05, docs/specs/2026-07-05-agent-first-config-
  * unification.md §2.5). Connectors are project-wide visible — the only ACCESS

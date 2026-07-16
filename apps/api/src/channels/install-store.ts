@@ -1,5 +1,5 @@
 import { chatInstalls, projectSecrets } from '@kortix/db';
-import { and, eq, isNull, like } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { config } from '../config';
 import {
   decryptProjectSecret,
@@ -572,6 +572,153 @@ export async function loadSlackTeamNameForProject(projectId: string): Promise<st
   return readSecret(projectId, SLACK_TEAM_NAME);
 }
 
+// ─── Microsoft Teams ──────────────────────────────────────────────────────
+
+export const MS_TEAMS_TENANT_ID = 'MS_TEAMS_TENANT_ID';
+export const MS_TEAMS_SERVICE_URL = 'MS_TEAMS_SERVICE_URL';
+export const MS_TEAMS_TEAM_ID = 'MS_TEAMS_TEAM_ID';
+export const MS_TEAMS_TEAM_NAME = 'MS_TEAMS_TEAM_NAME';
+export const MS_TEAMS_BOT_ID = 'MS_TEAMS_BOT_ID';
+export const MS_TEAMS_APP_ID = 'MS_TEAMS_APP_ID';
+export const MS_TEAMS_APP_PASSWORD = 'MS_TEAMS_APP_PASSWORD';
+export const MS_TEAMS_ORG_INSTALLED = 'MS_TEAMS_ORG_INSTALLED';
+export const MS_TEAMS_CATALOG_APP_ID = 'MS_TEAMS_CATALOG_APP_ID';
+
+const TEAMS_KEYS = [
+  MS_TEAMS_TENANT_ID,
+  MS_TEAMS_SERVICE_URL,
+  MS_TEAMS_TEAM_ID,
+  MS_TEAMS_TEAM_NAME,
+  MS_TEAMS_BOT_ID,
+  MS_TEAMS_APP_ID,
+  MS_TEAMS_APP_PASSWORD,
+  MS_TEAMS_ORG_INSTALLED,
+  MS_TEAMS_CATALOG_APP_ID,
+] as const;
+
+export interface TeamsInstallSummary {
+  tenantId: string;
+  teamId: string | null;
+  teamName: string | null;
+  botId: string | null;
+  serviceUrl: string | null;
+  byo: boolean;
+  orgInstalled: boolean;
+  catalogAppId: string | null;
+  installedAt: string;
+}
+
+export interface TeamsInstallInput {
+  projectId: string;
+  tenantId: string;
+  teamId?: string | null;
+  teamName?: string | null;
+  botId?: string | null;
+  serviceUrl?: string | null;
+  appId?: string | null;
+  appPassword?: string | null;
+}
+
+export interface TeamsBotCredentials {
+  appId: string;
+  appPassword: string;
+}
+
+export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsInstallSummary> {
+  const { projectId, tenantId } = input;
+  await db
+    .insert(chatInstalls)
+    .values({ platform: 'teams', workspaceId: tenantId, projectId })
+    .onConflictDoNothing();
+
+  await upsertSecret(projectId, MS_TEAMS_TENANT_ID, tenantId);
+  if (input.teamId != null) await upsertSecret(projectId, MS_TEAMS_TEAM_ID, input.teamId);
+  if (input.teamName != null) await upsertSecret(projectId, MS_TEAMS_TEAM_NAME, input.teamName);
+  if (input.botId != null) await upsertSecret(projectId, MS_TEAMS_BOT_ID, input.botId);
+  if (input.serviceUrl != null) await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
+  if (input.appId != null) await upsertSecret(projectId, MS_TEAMS_APP_ID, input.appId);
+  if (input.appPassword != null) await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
+
+  return {
+    tenantId,
+    teamId: input.teamId ?? null,
+    teamName: input.teamName ?? null,
+    botId: input.botId ?? null,
+    serviceUrl: input.serviceUrl ?? null,
+    byo: Boolean(input.appId),
+    orgInstalled: false,
+    catalogAppId: null,
+    installedAt: new Date().toISOString(),
+  };
+}
+
+export async function setTeamsOrgInstalled(projectId: string, installed: boolean): Promise<void> {
+  await upsertSecret(projectId, MS_TEAMS_ORG_INSTALLED, installed ? '1' : '');
+}
+
+export async function setTeamsCatalogAppId(projectId: string, catalogAppId: string): Promise<void> {
+  await upsertSecret(projectId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
+}
+
+export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
+  const secrets = await readTeamsSecrets(projectId);
+  const appId = secrets[MS_TEAMS_APP_ID];
+  const appPassword = secrets[MS_TEAMS_APP_PASSWORD];
+  if (!appId || !appPassword) return null;
+  return { appId, appPassword };
+}
+
+export async function loadTeamsAppIdForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, MS_TEAMS_APP_ID);
+}
+
+/** Update just the conversation serviceUrl — refreshed from each inbound activity. */
+export async function saveTeamsServiceUrl(projectId: string, serviceUrl: string): Promise<void> {
+  if (!serviceUrl) return;
+  await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, serviceUrl);
+}
+
+export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallSummary | null> {
+  const secrets = await readTeamsSecrets(projectId);
+  const tenantId = secrets[MS_TEAMS_TENANT_ID];
+  if (!tenantId) return null;
+  const [row] = await db
+    .select({ updatedAt: projectSecrets.updatedAt })
+    .from(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)))
+    .limit(1);
+  return {
+    tenantId,
+    teamId: secrets[MS_TEAMS_TEAM_ID] || null,
+    teamName: secrets[MS_TEAMS_TEAM_NAME] || null,
+    botId: secrets[MS_TEAMS_BOT_ID] || null,
+    serviceUrl: secrets[MS_TEAMS_SERVICE_URL] || null,
+    byo: Boolean(secrets[MS_TEAMS_APP_ID]),
+    orgInstalled: Boolean(secrets[MS_TEAMS_ORG_INSTALLED]),
+    catalogAppId: secrets[MS_TEAMS_CATALOG_APP_ID] || null,
+    installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
+  };
+}
+
+export async function loadTeamsTenantForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, MS_TEAMS_TENANT_ID);
+}
+
+export async function loadTeamsServiceUrlForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, MS_TEAMS_SERVICE_URL);
+}
+
+export async function deleteTeamsInstall(projectId: string): Promise<void> {
+  for (const name of TEAMS_KEYS) {
+    await db
+      .delete(projectSecrets)
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+  }
+  await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.projectId, projectId)));
+}
+
 async function upsertSecret(projectId: string, name: string, value: string): Promise<void> {
   const valueEnc = encryptProjectSecret(projectId, value);
   const updated = await updateSharedSecret(projectId, name, valueEnc);
@@ -621,6 +768,28 @@ function isUniqueConflict(err: unknown): boolean {
     error?.cause?.code === '23505' ||
     error?.cause?.cause?.code === '23505'
   );
+}
+
+async function readTeamsSecrets(projectId: string): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        isNull(projectSecrets.ownerUserId),
+        inArray(projectSecrets.name, TEAMS_KEYS as unknown as string[]),
+      ),
+    );
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (!row.valueEnc) continue;
+    try {
+      out[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+    } catch {
+    }
+  }
+  return out;
 }
 
 async function readSecret(projectId: string, name: string): Promise<string | null> {

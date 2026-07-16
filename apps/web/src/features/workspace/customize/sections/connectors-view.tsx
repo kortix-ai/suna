@@ -32,6 +32,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
+import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
@@ -2768,10 +2769,16 @@ function AddAppPanel({
   canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
+  // false) — hide the "Easy connect" tab outright instead of round-tripping
+  // to /connect-status just to disable it. Custom (OpenAPI/GraphQL/MCP/HTTP)
+  // and Channels don't depend on Pipedream, so they're unaffected.
+  const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
     queryFn: getConnectStatus,
     staleTime: 5 * 60_000,
+    enabled: connectorsEnabled,
   });
   if (!canWrite) {
     return (
@@ -2784,7 +2791,10 @@ function AddAppPanel({
       </div>
     );
   }
-  const easyConnectDisabled = connectStatus.data?.configured === false;
+  const easyConnectHidden = !connectorsEnabled;
+  // Live-configured flag lagging the deploy-time env flag (rare) still gets
+  // the softer disabled-with-hint treatment instead of vanishing outright.
+  const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
   const easyConnectLabel = tI18nHardcoded.raw(
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
@@ -2795,7 +2805,7 @@ function AddAppPanel({
       </header>
       <Tabs defaultValue={easyConnectDisabled ? 'channels' : 'apps'}>
         <TabsList type="underline">
-          {easyConnectDisabled ? (
+          {easyConnectHidden ? null : easyConnectDisabled ? (
             <Hint
               label={tI18nHardcoded.raw(
                 'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',

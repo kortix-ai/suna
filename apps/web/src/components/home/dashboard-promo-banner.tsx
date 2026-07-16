@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
+import { isBillingEnabled } from '@/lib/config';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { usePathname } from 'next/navigation';
@@ -31,8 +32,17 @@ export function DashboardPromoBanner() {
   // Show Welcome Bonus promo or KORTIX26 for free tier users
   const shouldShowPromo = promo?.isActive && (promo.promoId === 'welcome-bonus' || promo.promoCode === 'KORTIX26');
 
-  // Compute whether banner should be visible
-  const shouldShow = mounted && !isDismissed && isProjectsPage && !isLoading && isFreeTier && shouldShowPromo;
+  // Compute whether banner should be visible. This is a Kortix Cloud
+  // subscription promo — no plans/credits to promote when billing is off
+  // (self-host default).
+  const shouldShow =
+    mounted &&
+    !isDismissed &&
+    isProjectsPage &&
+    !isLoading &&
+    isFreeTier &&
+    shouldShowPromo &&
+    isBillingEnabled();
 
   // Update the store whenever visibility changes
   useEffect(() => {

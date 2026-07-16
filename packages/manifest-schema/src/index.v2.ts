@@ -155,7 +155,6 @@ export interface ManifestV2 {
   sandbox?: Record<string, unknown>;
   triggers?: Array<Record<string, unknown>>;
   connectors?: Array<Record<string, unknown>>;
-  apps?: Array<Record<string, unknown>>;
 }
 
 /**

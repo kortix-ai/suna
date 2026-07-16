@@ -1,0 +1,39 @@
+declare module '*.sh' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.sql' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.exs' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.txt' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.tf' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.hcl' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.tftpl' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.json' {
+  const text: string;
+  export default text;
+}

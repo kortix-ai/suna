@@ -37,6 +37,11 @@ import {
   reconcileServices as sdkReconcileServices,
   serviceAction as sdkServiceAction,
 } from '@kortix/sdk/opencode-client';
+import {
+  getProviders as sdkGetProviders,
+  type ProvidersInfo,
+  type SandboxProviderName,
+} from '@kortix/sdk/platform-client';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -50,7 +55,7 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'justavps';
+export type { SandboxProviderName } from '@kortix/sdk/platform-client';
 
 export interface SandboxInfo {
   sandbox_id: string;
@@ -276,7 +281,9 @@ export async function ensureSandbox(opts?: {
     throw new Error('Create a project before starting a sandbox');
   }
 
-  const session = (await createProjectSession(project.project_id, {})) as unknown as ProjectSessionSummary;
+  const session = (await createProjectSession(project.project_id, {
+    ...(opts?.provider ? { provider: opts.provider } : {}),
+  })) as unknown as ProjectSessionSummary;
   const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
   const sandbox = toSandboxInfo(project, session, runtime);
 
@@ -346,10 +353,10 @@ export async function deleteSandbox(sandboxId: string): Promise<void> {
 
 /**
  * Get available sandbox providers.
- * GET /platform/providers
+ * GET /setup/sandbox-providers
  */
-export async function getProviders(): Promise<string[]> {
-  return ['daytona'];
+export async function getProviders(): Promise<ProvidersInfo> {
+  return sdkGetProviders();
 }
 
 /**

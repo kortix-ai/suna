@@ -54,11 +54,11 @@ afterAll(async () => {
 describe('service-account authorization (standing identity)', () => {
   test('activated SA is allowed EXACTLY its policy actions, scoped to the policy scope', async () => {
     const sa = await seedSA();
-    await bindRole(sa, 'project', PROJECT, [PROJECT_ACTIONS.PROJECT_DEPLOY]);
+    await bindRole(sa, 'project', PROJECT, [PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE]);
 
-    expect(await can(sa, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(true); // granted
-    expect(await can(sa, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false); // no baseline → only deploy
-    expect(await can(sa, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(OTHER_PROJECT))).toBe(false); // scoped to PROJECT
+    expect(await can(sa, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(true); // granted
+    expect(await can(sa, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false); // no baseline → only the named action
+    expect(await can(sa, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(OTHER_PROJECT))).toBe(false); // scoped to PROJECT
   });
 
   test('an SA with NO policy is fail-closed (denied everything)', async () => {
@@ -71,9 +71,9 @@ describe('service-account authorization (standing identity)', () => {
 
   test('a DISABLED SA is denied even with a policy', async () => {
     const sa = await seedSA('disabled');
-    await bindRole(sa, 'project', PROJECT, [PROJECT_ACTIONS.PROJECT_DEPLOY]);
-    expect(await can(sa, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(false);
-    expect((await authorizeV2(sa, ACCOUNT, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).reason).toBe('not_a_member');
+    await bindRole(sa, 'project', PROJECT, [PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE]);
+    expect(await can(sa, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(false);
+    expect((await authorizeV2(sa, ACCOUNT, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).reason).toBe('not_a_member');
   });
 
   test('an account-scoped SA policy grants an account action (and reaches every project)', async () => {

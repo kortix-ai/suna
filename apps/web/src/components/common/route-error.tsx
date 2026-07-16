@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
@@ -24,6 +25,11 @@ export function RouteErrorFallback({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   useEffect(() => {
+    // Transient "session runtime not ready" is an expected, self-healing info
+    // state — never page Better Stack for it. Mirrors `app/error.tsx` +
+    // `ClientErrorBoundary`; the Sentry `ignoreErrors`/`beforeSend` filter
+    // backs this up at the SDK level.
+    if (isRuntimeNotReadyNoiseMessage(error?.message)) return;
     Sentry.captureException(error);
   }, [error]);
 

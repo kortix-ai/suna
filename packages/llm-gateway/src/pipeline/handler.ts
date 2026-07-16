@@ -4,6 +4,7 @@ import type {
   GatewayConfig,
   GatewayHooks,
   GatewayLogger,
+  ModelRoutePlan,
   TokenCounts,
   UpstreamDescriptor,
   UsageEvent,
@@ -18,7 +19,7 @@ import {
   jsonHasContent,
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
-import { runFailover } from './failover';
+import { type RoutedUpstreamCandidate, runFailover } from './failover';
 import { type StreamProbeResult, probeStream, relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -61,6 +62,20 @@ function newRequestId(): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function requestHasImage(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  return messages.some((message) => {
+    if (!message || typeof message !== 'object') return false;
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) return false;
+    return content.some((part) => {
+      if (!part || typeof part !== 'object') return false;
+      const type = (part as { type?: unknown }).type;
+      return type === 'image_url' || type === 'input_image' || type === 'image';
+    });
+  });
 }
 
 // An empty completion is often a transient upstream hiccup on one specific
@@ -248,9 +263,39 @@ export async function handleChatCompletions(
   }
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
-  // Resolve synthetic models (e.g. "auto") to a concrete one. `requestedModel`
-  // stays as asked for the trace; `routedModel` is what we actually resolve/bill.
-  const routedModel = config.autoRouter?.(requestedModel, body, principal) ?? requestedModel;
+  // Model names, defaults, catalog availability, and fallback policy belong to
+  // the host/control plane. The gateway sends only the requested id and minimal
+  // capability traits, then executes the returned finite route generically.
+  let route: ModelRoutePlan | null;
+  try {
+    route = await hooks.resolveRoute?.(principal, {
+      requestedModel,
+      requires: { imageInput: requestHasImage(body) },
+    }) ?? null;
+  } catch (err) {
+    const message = errorMessage(err);
+    step('route_resolution_failed', { ms: lap(), error: message });
+    emit({
+      ...id,
+      requestedModel,
+      resolvedModel: requestedModel,
+      status: 502,
+      ok: false,
+      errorCode: 'routing_unavailable',
+      errorMessage: message,
+      request: capture(body),
+    });
+    return gatewayErrorResponse(502, {
+      message: 'Model routing policy is unavailable',
+      code: 'routing_unavailable',
+      provider: '',
+      requestedModel,
+      resolvedModel: requestedModel,
+      requestId,
+      suggestion: 'Retry the request. If the error continues, check the gateway control plane.',
+    });
+  }
+  const routedModel = route?.primaryModel || requestedModel;
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
@@ -270,15 +315,51 @@ export async function handleChatCompletions(
     `[gateway] → ${requestId} ${requestedModel || '(no model)'}${routedModel !== requestedModel ? ` →${routedModel}` : ''}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
   );
 
-  const candidates = await hooks.resolveUpstream(principal, routedModel);
+  const maxFallbackModels = Math.min(8, Math.max(0, config.maxFallbackModels ?? 3));
+  const routeModels = [
+    routedModel,
+    ...(route?.fallbackModels ?? []).filter((model): model is string =>
+      typeof model === 'string' && model.length > 0,
+    ),
+  ]
+    .filter((model, index, all) => all.indexOf(model) === index)
+    .slice(0, maxFallbackModels + 1);
+  const fallbackOn = route?.fallbackOn ?? 'transient';
+  const routingMetadata = (selected: string | null): Record<string, unknown> =>
+    routeModels.length > 1
+      ? {
+          ...metadata,
+          gatewayRouting: {
+            policy: route?.policyId || 'control-plane',
+            models: routeModels,
+            selected,
+          },
+        }
+      : metadata;
+  const candidates: RoutedUpstreamCandidate[] = [];
+  for (const routeModel of routeModels) {
+    try {
+      const resolved = await hooks.resolveUpstream(principal, routeModel);
+      candidates.push(...resolved.map((descriptor) => ({ descriptor, routeModel })));
+    } catch (err) {
+      // Resolution can itself fail (for example, an expired Codex credential
+      // that cannot refresh). A configured model policy treats that like an
+      // unavailable candidate and continues to the next finite fallback.
+      logger.warn(`[llm-gateway] model resolution failed for ${routeModel} ${requestId}:`, err);
+      step('model_resolution_failed', { routeModel, error: errorMessage(err) });
+    }
+  }
   step('resolved_candidates', {
     ms: lap(),
     count: candidates.length,
-    candidates: candidates.map((c) => ({
-      provider: c.provider,
-      kind: c.kind,
-      resolvedModel: c.resolvedModel,
-      billingMode: c.billingMode,
+    routeModels,
+    fallbackOn,
+    candidates: candidates.map(({ descriptor, routeModel }) => ({
+      routeModel,
+      provider: descriptor.provider,
+      kind: descriptor.kind,
+      resolvedModel: descriptor.resolvedModel,
+      billingMode: descriptor.billingMode,
     })),
   });
   if (!candidates.length) {
@@ -291,7 +372,7 @@ export async function handleChatCompletions(
       ok: false,
       errorCode: 'model_unavailable',
       request: capture(body),
-      metadata,
+      metadata: routingMetadata(null),
     });
     return gatewayErrorResponse(400, {
       message: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable',
@@ -310,7 +391,7 @@ export async function handleChatCompletions(
     ? { ...body, stream: true, stream_options: { include_usage: true } }
     : body;
 
-  step('dispatch_upstream', { streaming, candidateCount: candidates.length });
+  step('dispatch_upstream', { streaming, candidateCount: candidates.length, routeModels });
 
   // An upstream can return a syntactically valid 200 with empty `choices`/content
   // (seen from OpenRouter/z-ai) — a real failure mode, not a legitimate zero-output
@@ -320,31 +401,41 @@ export async function handleChatCompletions(
   // retries is it excluded so the remaining candidates get a turn — only once
   // every candidate has produced nothing do we give up and tell the caller,
   // instead of silently forwarding a blank "stop".
-  const emptyProviders = new Set<string>();
-  const emptyAttemptsByProvider = new Map<string, number>();
+  const exhaustedCandidates = new Set<string>();
+  const emptyAttemptsByCandidate = new Map<string, number>();
+  const candidateKey = ({ descriptor, routeModel }: RoutedUpstreamCandidate): string =>
+    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}`;
   const sleep = config.retry?.sleep ?? realSleep;
   const rand = config.retry?.rand ?? Math.random;
   const baseDelayMs = config.retry?.baseDelayMs ?? 250;
   const maxDelayMs = config.retry?.maxDelayMs ?? 8_000;
   const jitter = config.retry?.jitter ?? true;
 
-  // Records an empty completion from `provider`. Retries the same candidate (via
+  // Records an empty completion from a routed candidate. Retries it (via
   // a short backoff, then `continue`) while it's under budget; once exhausted,
   // excludes it from `remaining` so the loop moves on to the next candidate (or
   // to the all-candidates-empty exit if there isn't one).
   const registerEmptyCompletion = async (
-    provider: string,
+    candidate: RoutedUpstreamCandidate,
     fields: Record<string, unknown>,
   ): Promise<void> => {
-    const attempt = (emptyAttemptsByProvider.get(provider) ?? 0) + 1;
-    emptyAttemptsByProvider.set(provider, attempt);
+    const key = candidateKey(candidate);
+    const { descriptor, routeModel } = candidate;
+    const attempt = (emptyAttemptsByCandidate.get(key) ?? 0) + 1;
+    emptyAttemptsByCandidate.set(key, attempt);
     const exhausted = attempt >= MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE;
     logger.warn(
-      `[llm-gateway] empty completion from ${provider} (attempt ${attempt}/${MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
+      `[llm-gateway] empty completion from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
     );
-    step('empty_completion_retry', { provider, attempt, exhausted, ...fields });
+    step('empty_completion_retry', {
+      provider: descriptor.provider,
+      routeModel,
+      attempt,
+      exhausted,
+      ...fields,
+    });
     if (exhausted) {
-      emptyProviders.add(provider);
+      exhaustedCandidates.add(key);
       return;
     }
     await sleep(backoffDelay(attempt, baseDelayMs, maxDelayMs, jitter, rand));
@@ -352,7 +443,9 @@ export async function handleChatCompletions(
 
   let upstream: Response | null = null;
   let descriptor: UpstreamDescriptor | null = null;
+  let selectedRouteModel = routedModel;
   let tried: string[] = [];
+  let modelsTried: string[] = [];
   let attempts = 0;
   let nonStreamBody: unknown;
   let streamProbe: StreamProbeResult | null = null;
@@ -362,7 +455,9 @@ export async function handleChatCompletions(
   let lastErrorFrame: SseErrorFrame | null = null;
 
   for (;;) {
-    const remaining = candidates.filter((c) => !emptyProviders.has(c.provider));
+    const remaining = candidates.filter(
+      (candidate) => !exhaustedCandidates.has(candidateKey(candidate)),
+    );
     if (remaining.length === 0) {
       step('all_candidates_empty', { ms: lap(), tried, hadErrorFrame: Boolean(lastErrorFrame) });
       // Prefer the real upstream cause (overloaded, request too large, content
@@ -372,9 +467,10 @@ export async function handleChatCompletions(
       const message = lastErrorFrame
         ? lastErrorFrame.message
         : 'All upstream candidates returned an empty completion';
-      const failedDescriptor = [...candidates].reverse().find((candidate) =>
-        emptyProviders.has(candidate.provider),
+      const failedCandidate = [...candidates].reverse().find((candidate) =>
+        exhaustedCandidates.has(candidateKey(candidate)),
       );
+      const failedDescriptor = failedCandidate?.descriptor;
       emit({
         ...id,
         requestedModel,
@@ -386,7 +482,7 @@ export async function handleChatCompletions(
         errorMessage: message,
         candidatesTried: tried,
         request: capture(payload),
-        metadata,
+        metadata: routingMetadata(null),
       });
       return json(
         gatewayErrorBody({
@@ -412,8 +508,14 @@ export async function handleChatCompletions(
       emit,
       logger,
       requestId,
-      trace: { ...id, requestedModel, streaming, metadata },
+      trace: {
+        ...id,
+        requestedModel,
+        streaming,
+        metadata: routingMetadata(null),
+      },
       capturedRequest: capture(payload),
+      fallbackOn,
     });
 
     if (result.kind === 'response') {
@@ -425,33 +527,43 @@ export async function handleChatCompletions(
       upstream: candidateUpstream,
       chosen,
       tried: triedThisRound,
+      modelsTried: modelsTriedThisRound,
       attempts: attemptsThisRound,
     } = result.value;
     tried = [...tried, ...triedThisRound];
+    modelsTried = [...modelsTried, ...modelsTriedThisRound]
+      .filter((model, index, all) => all.indexOf(model) === index);
     attempts += attemptsThisRound;
+    const { descriptor: chosenDescriptor, routeModel: chosenRouteModel } = chosen;
 
     if (!streaming) {
       const data = await candidateUpstream.json();
-      step('non_stream_body', { ms: lap(), provider: chosen.provider });
+      step('non_stream_body', {
+        ms: lap(),
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+      });
       if (jsonHasContent(data)) {
         upstream = candidateUpstream;
-        descriptor = chosen;
+        descriptor = chosenDescriptor;
+        selectedRouteModel = chosenRouteModel;
         nonStreamBody = data;
         break;
       }
-      await registerEmptyCompletion(chosen.provider, { streaming: false });
+      await registerEmptyCompletion(chosen, { streaming: false });
       continue;
     }
 
     if (!candidateUpstream.body) {
-      await registerEmptyCompletion(chosen.provider, { streaming: true, reason: 'no_body' });
+      await registerEmptyCompletion(chosen, { streaming: true, reason: 'no_body' });
       continue;
     }
 
     const probe = await probeStream(candidateUpstream.body);
     if (probe.hasContent) {
       upstream = candidateUpstream;
-      descriptor = chosen;
+      descriptor = chosenDescriptor;
+      selectedRouteModel = chosenRouteModel;
       streamProbe = probe;
       break;
     }
@@ -462,29 +574,31 @@ export async function handleChatCompletions(
     if (probe.errorFrame) {
       lastErrorFrame = probe.errorFrame;
       logger.warn(
-        `[llm-gateway] upstream error frame from ${chosen.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}`,
+        `[llm-gateway] upstream error frame from ${chosenDescriptor.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}`,
       );
       step('upstream_error_frame', {
-        provider: chosen.provider,
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
         message: probe.errorFrame.message,
         code: probe.errorFrame.code,
       });
-      emptyProviders.add(chosen.provider);
+      exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
     if (probe.readError) {
       lastErrorFrame = probe.readError;
       logger.warn(
-        `[llm-gateway] upstream stream read failed during probe from ${chosen.provider} ${requestId}: "${probe.readError.message}"`,
+        `[llm-gateway] upstream stream read failed during probe from ${chosenDescriptor.provider} ${requestId}: "${probe.readError.message}"`,
       );
       step('upstream_stream_error', {
-        provider: chosen.provider,
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
         message: probe.readError.message,
       });
-      emptyProviders.add(chosen.provider);
+      exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
-    await registerEmptyCompletion(chosen.provider, { streaming: true });
+    await registerEmptyCompletion(chosen, { streaming: true });
   }
 
   // Every loop exit above either `return`s (transport failure / all-empty) or
@@ -502,7 +616,11 @@ export async function handleChatCompletions(
     upstreamStatus: finalUpstream.status,
     attempts,
     tried,
+    modelsTried,
+    selectedRouteModel,
   });
+
+  const traceMetadata = routingMetadata(selectedRouteModel);
 
   const settle = async (
     usage: ExtractedUsage | null,
@@ -593,7 +711,7 @@ export async function handleChatCompletions(
       finalCost,
       request: capture(payload),
       response: capture(response),
-      metadata,
+      metadata: traceMetadata,
     });
   };
 

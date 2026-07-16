@@ -14,6 +14,7 @@ import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { config } from '../config';
+import { getProvider } from '../platform/providers';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
@@ -207,15 +208,19 @@ setupApp.openapi(
     config.isProviderEnabled(name),
   );
 
-  // Provider capabilities — tells the frontend how to handle provisioning UI
-  const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    daytona: { async: false, events: false, polling: false },
-  };
+  // Provider capabilities — sourced from the same runtime adapters used by
+  // session provisioning rather than a second provider-name switch.
+  const capabilities = Object.fromEntries(
+    available.map((provider) => [
+      provider,
+      { async: getProvider(provider).provisioning.async, events: false, polling: false },
+    ]),
+  );
 
   return c.json({
     providers: available,
     default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
-    capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
+    capabilities,
   });
   },
 );
@@ -366,14 +371,11 @@ setupApp.openapi(
   const checks: Record<string, HealthCheck> = {};
   // The API itself answered — by definition this check passes.
   checks.api = { ok: true };
-  // Daytona is the only provider — surface its config status so the
-  // setup wizard / health page can tell the operator they need to set
-  // DAYTONA_API_KEY. We don't ping Daytona here on purpose: that's a
-  // latency-sensitive UI call and Daytona's auth-check endpoint is
-  // their billing concern, not ours.
-  checks.daytona = config.DAYTONA_API_KEY
-    ? { ok: true }
-    : { ok: false, error: 'DAYTONA_API_KEY not configured' };
+  for (const provider of config.ALLOWED_SANDBOX_PROVIDERS) {
+    checks[provider] = config.isProviderEnabled(provider)
+      ? { ok: true }
+      : { ok: false, error: `${provider.toUpperCase()} credentials not configured` };
+  }
   return c.json(checks);
   },
 );

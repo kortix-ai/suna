@@ -19,6 +19,17 @@ import {
 } from '../../llm-gateway/hooks';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { config } from '../../config';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { getAccountModelDefaults } from '../../repositories/model-preferences';
+import {
+  getProjectRoutingPolicy,
+  resetProjectRoutingPolicy,
+  setProjectRoutingPolicy,
+} from '../../repositories/project-routing-policies';
+import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
+import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
+import { resolveGatewayRoute } from '../../llm-gateway/routing';
 
 async function canDo(c: any, projectId: string, accountId: string, action: string): Promise<boolean> {
   const verdict = await authorize(
@@ -921,5 +932,222 @@ projectsApp.openapi(
     );
 
     return c.json({ results });
+  },
+);
+
+type RoutingContext = { projectId: string; accountId: string; userId: string };
+
+function operatorFallbackFor(model: string) {
+  const policy = config.LLM_GATEWAY_FALLBACK_POLICIES.find((candidate) =>
+    candidate.models.includes(model),
+  );
+  return policy
+    ? { models: [...policy.fallbackModels], fallbackOn: policy.fallbackOn }
+    : { models: [], fallbackOn: 'transient' as const };
+}
+
+async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
+  const [stored, defaults] = await Promise.all([
+    getProjectRoutingPolicy(ctx.projectId),
+    getAccountModelDefaults(ctx.accountId),
+  ]);
+  const projectDefault = defaults.projects[ctx.projectId] ?? null;
+  const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+  const defaultModelSource = projectDefault
+    ? 'project' as const
+    : defaults.account
+      ? 'account' as const
+      : 'platform' as const;
+  const route = await resolveGatewayRoute(
+    {
+      userId: ctx.userId,
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      defaultModel: effectiveDefault,
+    },
+    { requestedModel: 'auto', requires: { imageInput: false } },
+  );
+  return {
+    version: 1 as const,
+    project: {
+      defaultModel: projectDefault,
+      visionModel: stored?.visionModel ?? null,
+      defaultFallback: stored?.defaultFallback ?? null,
+      rules: stored?.rules ?? [],
+    },
+    effective: {
+      defaultModel: effectiveDefault,
+      defaultModelSource,
+      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL,
+      defaultFallback: {
+        models: [...(route.fallbackModels ?? [])],
+        fallbackOn: route.fallbackOn ?? 'transient',
+      },
+    },
+    platform: {
+      defaultModel: config.LLM_GATEWAY_DEFAULT_MODEL,
+      visionModel: config.LLM_GATEWAY_VISION_MODEL,
+      defaultFallback: operatorFallbackFor(config.LLM_GATEWAY_DEFAULT_MODEL),
+    },
+    capabilities: { write: canWrite },
+  };
+}
+
+const routingPolicyResponses = {
+  200: json(z.any(), 'Project gateway routing policy'),
+  ...errors(400, 403, 404),
+};
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/gateway/routing-policy',
+    tags: ['gateway'],
+    summary: 'GET /:projectId/gateway/routing-policy',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const canWrite = await canDo(
+      c,
+      projectId,
+      loaded.row.accountId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
+    return c.json(await routingPolicyDocument({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
+    }, canWrite));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/gateway/routing-policy',
+    tags: ['gateway'],
+    summary: 'PUT /:projectId/gateway/routing-policy',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: z.any() } } },
+    },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    let policy;
+    try {
+      policy = parseProjectRoutingPolicyInput(await c.req.json());
+    } catch (error) {
+      return c.json({
+        error: error instanceof Error ? error.message : 'Invalid routing policy',
+        code: 'invalid_routing_policy',
+      }, 400);
+    }
+    const defaults = await getAccountModelDefaults(loaded.row.accountId);
+    const effectivePrimary = policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+    if (policy.defaultFallback?.models.includes(effectivePrimary)) {
+      return c.json({
+        error: `model "${effectivePrimary}" cannot fall back to itself`,
+        code: 'invalid_routing_policy',
+      }, 400);
+    }
+    await setProjectRoutingPolicy({
+      projectId,
+      accountId: loaded.row.accountId,
+      updatedBy: loaded.userId,
+      policy,
+    });
+    invalidateAccountModelDefaults(loaded.row.accountId);
+    return c.json(await routingPolicyDocument({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
+    }, true));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/gateway/routing-policy',
+    tags: ['gateway'],
+    summary: 'DELETE /:projectId/gateway/routing-policy',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await resetProjectRoutingPolicy({ projectId, accountId: loaded.row.accountId });
+    invalidateAccountModelDefaults(loaded.row.accountId);
+    return c.json(await routingPolicyDocument({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
+    }, true));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/gateway/routing-policy/preview',
+    tags: ['gateway'],
+    summary: 'POST /:projectId/gateway/routing-policy/preview',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              requestedModel: z.string().trim().min(1).max(128),
+              imageInput: z.boolean().default(false),
+            }),
+          },
+        },
+      },
+    },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await c.req.json();
+    const defaults = await getAccountModelDefaults(loaded.row.accountId);
+    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
+      : false;
+    const principal: AuthedPrincipal = {
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      freeModelsOnly,
+      defaultModel: defaults.projects[projectId] ?? defaults.account ?? undefined,
+    };
+    const route = await resolveGatewayRoute(principal, {
+      requestedModel: body.requestedModel,
+      requires: { imageInput: body.imageInput === true },
+    });
+    const models = [route.primaryModel, ...(route.fallbackModels ?? [])];
+    const availability = await Promise.all(models.map(async (model) => ({
+      model,
+      available: (await resolveCandidates(principal, model)).length > 0,
+    })));
+    return c.json({ version: 1, route, models: availability });
   },
 );

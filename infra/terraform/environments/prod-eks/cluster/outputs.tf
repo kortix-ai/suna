@@ -36,6 +36,16 @@ output "acm_certificate_arn" {
   value       = module.acm.certificate_arn
 }
 
+output "gateway_domain" {
+  description = "Origin hostname for the EKS LLM gateway."
+  value       = var.gateway_domain
+}
+
+output "acm_gateway_certificate_arn" {
+  description = "Cert ARN for the EKS LLM gateway ALB HTTPS listener."
+  value       = module.acm_gateway.certificate_arn
+}
+
 output "acm_argocd_certificate_arn" {
   description = "Cert ARN for the Argo CD UI ALB (ops.kortix.com)."
   value       = module.acm_argocd.certificate_arn

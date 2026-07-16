@@ -29,7 +29,6 @@ import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useInstances,
-  useProviders,
   useSandbox,
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
@@ -40,11 +39,7 @@ import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function providerLabel(provider: SandboxProviderName): string {
-  switch (provider) {
-    case 'justavps': return 'CLOUD';
-    case 'daytona': return 'CLOUD';
-    default: return 'INSTANCE';
-  }
+  return provider.toUpperCase();
 }
 
 function statusColor(status: string): string {
@@ -282,7 +277,6 @@ const AddInstanceSheet = React.forwardRef<
   const [isCreating, setIsCreating] = React.useState(false);
   const [progress, setProgress] = React.useState<{ percent: number; message: string } | null>(null);
 
-  const { data: providers } = useProviders();
   const fgColor = isDark ? '#f8f8f8' : '#121215';
 
   const snapPoints = React.useMemo(() => {

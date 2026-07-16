@@ -502,7 +502,7 @@ export function useProviders() {
 export function useCreateCloudInstance() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (provider: 'daytona' | 'justavps') => ensureSandbox({ provider }),
+    mutationFn: (provider: SandboxInfo['provider']) => ensureSandbox({ provider }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
       queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });

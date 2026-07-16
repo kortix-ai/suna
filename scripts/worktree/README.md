@@ -65,9 +65,14 @@ bumps the slot rather than colliding silently.
   dir under `~/.kortix/worktrees/<name>/sb` via `supabase --workdir`, so the
   worktree's **tracked `supabase/config.toml` stays pristine** (migrations are
   symlinked back, so they're shared + branch-correct).
-- **node_modules** — git worktrees have separate working trees, and each gets its
-  own pnpm store (`--store-dir ~/.kortix/worktrees/<name>/pnpm-store`) so a
-  sibling's `pnpm install` can never corrupt another's linked-modules layer.
+- **node_modules** — git worktrees have separate working trees, so each worktree
+  gets its own isolated `node_modules` (and `node_modules/.pnpm` virtual layer) —
+  a sibling's `pnpm install` can never touch it. Package **content** comes from
+  the **shared global pnpm store** (default `~/Library/pnpm/store`), which is
+  concurrency-safe and hardlinked, so N worktrees cost ~one copy on disk. (We used
+  to pass `--store-dir ~/.kortix/worktrees/<name>/pnpm-store`, giving each worktree
+  a full private ~2.8GB store; that defeated dedup and leaked 244GB across 91
+  abandoned slots. Don't reintroduce it.)
 - **Env** — the CLI **pre-sets** each slot's `PORT`/`WEB_PORT`/`DATABASE_URL`/
   `SUPABASE_URL`/`KORTIX_API_PROXY_TARGET`/… into the launched processes.
   `dotenvx run` does not override pre-set vars, so slot values win over the

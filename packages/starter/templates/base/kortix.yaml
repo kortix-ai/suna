@@ -162,11 +162,3 @@ triggers:
 # (Customize → Channels), not committed to git. The channel integration
 # itself still shows up here as a `connectors` entry with
 # `provider: channel` once you connect one — that part is unchanged.
-
-# ─── Apps ────────────────────────────────────────────────────────────────
-# Each `apps` entry is a deployable website. Kortix builds it and serves it
-# on a free `*.style.dev` URL (or your own domain). Experimental — gated by
-# the platform flag KORTIX_APPS_EXPERIMENTAL, not available in prod. No app
-# ships by default; manage these from the dashboard's Apps panel once the
-# flag is on for your project, or see docs/reference/manifest.mdx for the
-# field reference.

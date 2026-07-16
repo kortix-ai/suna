@@ -6,7 +6,7 @@ import {
   getSessionAgentContext,
 } from '../../repositories/model-preferences';
 import { chooseDefaultModel } from './choose-default-model';
-import { type ModelSource, chooseEffectiveModel, toWireModel } from './effective';
+import { type ModelSource, chooseEffectiveModel, degradeUnservableDefault, toWireModel } from './effective';
 import { resolveCandidates } from './resolve-candidates';
 
 // Resolves the account/agent/project-configured default model for a gateway
@@ -62,13 +62,27 @@ export async function resolveDefaultModelForPrincipal(
     agentName = await cachedSessionAgent(principal.sessionId);
   }
 
-  return chooseDefaultModel({
+  const chosen = chooseDefaultModel({
     accountDefault: defaults.account,
     agentDefaults: defaults.agents,
     agentName,
     projectDefault,
     freeModelsOnly: principal.freeModelsOnly,
   });
+
+  const kept = await degradeUnservableDefault(
+    chosen,
+    { hasProject: !!principal.projectId },
+    () =>
+      isModelServableForAccount({
+        userId: principal.userId,
+        accountId: principal.accountId,
+        projectId: principal.projectId as string,
+        freeModelsOnly: principal.freeModelsOnly ?? false,
+        model: chosen as string,
+      }),
+  );
+  return kept ?? undefined;
 }
 
 /**
@@ -132,10 +146,23 @@ export async function resolveEffectiveModel(params: {
     if (servable) return { model: toWireModel(params.explicit), source: 'explicit' };
   }
   const defaults = await getAccountModelDefaults(params.accountId);
-  return chooseEffectiveModel({
+  const chain = chooseEffectiveModel({
     agentDefault: params.agentName ? defaults.agents[params.agentName] : null,
     projectDefault: defaults.projects[params.projectId],
     accountDefault: defaults.account,
     freeModelsOnly: params.freeModelsOnly,
   });
+  // Degrade a stale/unservable resolved default (e.g. a BYOK model whose key was
+  // disconnected) to the platform default, so the UI's "resolved" model reflects
+  // what the gateway will actually serve rather than a dead ref.
+  const kept = await degradeUnservableDefault(chain.model, { hasProject: true }, () =>
+    isModelServableForAccount({
+      userId: params.userId,
+      accountId: params.accountId,
+      projectId: params.projectId,
+      freeModelsOnly: params.freeModelsOnly,
+      model: chain.model as string,
+    }),
+  );
+  return kept ? chain : { model: null, source: 'platform' };
 }

@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 
-import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
@@ -153,8 +152,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
         <CustomizPanel projectId={projectId} />
 
-        <AppsOverlay projectId={projectId} />
-
         <ProjectOnboardingWizard projectId={projectId} />
 
         <PersonalOnboardingWelcome projectId={projectId} />
@@ -177,7 +174,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
     <div
       className={cn(
         'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
-        isExpanded && 'border-border border-l-[1.5px]',
+        isExpanded && 'border-border border-l',
       )}
     >
       {/* Collapsed: an invisible strip on the viewport's left edge summons
@@ -206,7 +203,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
               // see DesktopChrome → MacTrafficLights). px values on purpose:
               // the lights are positioned in window px, while rem sizes
               // drift with the root font size.
-              '  text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96] shrink-0',
+              'text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]',
               // macOS: sit just past the traffic lights (they end at x≈62),
               // mirroring their own 10px inset. Win/Linux: controls live
               // top-right, so hug the left edge instead.
@@ -230,7 +227,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             onPointerLeave={peekLeave}
             variant="ghost"
             size="icon"
-            className=" text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 hidden shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] md:flex"
+            className="text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 hidden shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] md:flex"
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>

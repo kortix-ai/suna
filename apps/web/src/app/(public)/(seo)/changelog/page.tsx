@@ -1,3 +1,4 @@
+import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import ReactMarkdown from 'react-markdown';
@@ -21,14 +22,14 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Kortix Changelog',
     description: 'Every Kortix release, straight from the source.',
-    url: 'https://www.kortix.com/changelog',
+    url: `${CANONICAL_ORIGIN}/changelog`,
   },
   twitter: {
     card: 'summary',
     title: 'Kortix Changelog',
     description: 'Every Kortix release, straight from the source.',
   },
-  alternates: { canonical: 'https://www.kortix.com/changelog' },
+  alternates: { canonical: `${CANONICAL_ORIGIN}/changelog` },
 };
 
 // Rebuild hourly so new releases show up without a deploy.

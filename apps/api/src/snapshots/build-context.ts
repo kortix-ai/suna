@@ -14,7 +14,7 @@
 
 import { copyFile, cp, mkdir, mkdtemp, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
@@ -135,7 +135,16 @@ export async function stageBuildContext(
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
+  // This package is copied as source and imported directly by the in-sandbox
+  // channel CLIs. Its local node_modules is neither used nor portable: pnpm
+  // represents entries as links into the checkout-wide store, and E2B hashes
+  // every context entry before upload, so copying those links produces an
+  // immediate ENOENT outside the original checkout. Keep the provider context
+  // self-contained by staging source/package metadata only.
+  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), {
+    recursive: true,
+    filter: (source) => basename(source) !== 'node_modules',
+  });
   // Stage the starter opencode config for the build-time instance warm-up.
   // Best effort: if it's missing, skip the warm-up (the build still succeeds and
   // sessions just pay the first-instance cost at runtime as before).

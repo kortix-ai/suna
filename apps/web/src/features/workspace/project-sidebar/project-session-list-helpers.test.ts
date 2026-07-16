@@ -102,13 +102,10 @@ describe('getSessionDisplayTitle', () => {
     expect(getSessionDisplayTitle(session)).toBe('legacy-name');
   });
 
-  test('falls back to a 14-char slice of the branch name', () => {
+  test('untitled sessions fall back to a humane static label, never branch hex', () => {
     const session = makeSession({ branch_name: 'feature/a-very-long-branch-name' });
-    expect(getSessionDisplayTitle(session)).toBe('feature/a-very');
-  });
-
-  test('falls back to the literal "session" when nothing is available', () => {
-    expect(getSessionDisplayTitle(makeSession())).toBe('session');
+    expect(getSessionDisplayTitle(session)).toBe('New session');
+    expect(getSessionDisplayTitle(makeSession())).toBe('New session');
   });
 
   test('blank/whitespace-only names are treated as absent', () => {

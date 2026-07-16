@@ -18,7 +18,7 @@ function findCatalogFeature(key: string) {
 
 describe('isExperimentalFeatureKey', () => {
   test('accepts known keys, rejects others', () => {
-    expect(isExperimentalFeatureKey('apps')).toBe(true);
+    expect(isExperimentalFeatureKey('apps')).toBe(false);
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
@@ -30,19 +30,8 @@ describe('isExperimentalFeatureKey', () => {
 
 describe('resolveExperimentalFeature — explicit override wins', () => {
   test('per-project experimental map overrides the default', () => {
-    expect(resolveExperimentalFeature({ experimental: { apps: true } }, 'apps')).toBe(true);
-    expect(resolveExperimentalFeature({ experimental: { apps: false } }, 'apps')).toBe(false);
-  });
-
-  test('legacy top-level apps_enabled is honored for apps', () => {
-    expect(resolveExperimentalFeature({ apps_enabled: true }, 'apps')).toBe(true);
-    expect(resolveExperimentalFeature({ apps_enabled: false }, 'apps')).toBe(false);
-  });
-
-  test('experimental map takes precedence over the legacy field', () => {
-    expect(
-      resolveExperimentalFeature({ apps_enabled: false, experimental: { apps: true } }, 'apps'),
-    ).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { review_center: true } }, 'review_center')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { review_center: false } }, 'review_center')).toBe(false);
   });
 
   test('agent_tunnel respects explicit per-project choice', () => {
@@ -108,34 +97,34 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
   });
 
   test('null/empty metadata falls back to the operator default (no throw)', () => {
-    expect(typeof resolveExperimentalFeature(null, 'apps')).toBe('boolean');
+    expect(typeof resolveExperimentalFeature(null, 'marketplace')).toBe('boolean');
     expect(typeof resolveExperimentalFeature(undefined, 'agent_tunnel')).toBe('boolean');
-    expect(typeof resolveExperimentalFeature({}, 'apps')).toBe('boolean');
+    expect(typeof resolveExperimentalFeature({}, 'review_center')).toBe('boolean');
   });
 });
 
 describe('resolveExperimentalFeatures', () => {
   test('returns an entry for every registered key', () => {
-    const map = resolveExperimentalFeatures({ experimental: { apps: true } });
+    const map = resolveExperimentalFeatures({ experimental: { review_center: true } });
     for (const key of buildExperimentalCatalog({}).map((feature) => feature.key)) {
       expect(typeof map[key]).toBe('boolean');
     }
-    expect(map.apps).toBe(true);
+    expect(map.review_center).toBe(true);
   });
 });
 
 describe('buildExperimentalCatalog', () => {
   test('describes each feature with effective + overridden flags', () => {
-    const catalog = buildExperimentalCatalog({ experimental: { apps: true } });
+    const catalog = buildExperimentalCatalog({ experimental: { review_center: true } });
     expect(catalog.length).toBeGreaterThan(0);
 
-    const apps = catalog.find((f) => f.key === 'apps');
-    if (!apps) throw new Error('Missing Apps feature');
-    expect(apps.name).toBeTruthy();
-    expect(apps.description).toBeTruthy();
-    expect(apps.enabled).toBe(true);
-    expect(apps.overridden).toBe(true);
-    expect(typeof apps.available).toBe('boolean');
+    const reviewCenter = catalog.find((f) => f.key === 'review_center');
+    if (!reviewCenter) throw new Error('Missing Review Center feature');
+    expect(reviewCenter.name).toBeTruthy();
+    expect(reviewCenter.description).toBeTruthy();
+    expect(reviewCenter.enabled).toBe(true);
+    expect(reviewCenter.overridden).toBe(true);
+    expect(typeof reviewCenter.available).toBe('boolean');
 
     const tunnel = catalog.find((f) => f.key === 'agent_tunnel');
     if (!tunnel) throw new Error('Missing Agent Computer Tunnel feature');
@@ -145,7 +134,7 @@ describe('buildExperimentalCatalog', () => {
   test('an unavailable feature is never enabled', () => {
     // We can only assert the invariant relative to availability.
     for (const f of buildExperimentalCatalog({
-      experimental: { apps: true, agent_tunnel: true },
+      experimental: { review_center: true, agent_tunnel: true },
     })) {
       if (!f.available) expect(f.enabled).toBe(false);
     }
@@ -165,28 +154,16 @@ describe('applyExperimentalOverride', () => {
 
   test('merges with existing overrides without clobbering', () => {
     const next = applyExperimentalOverride(
-      { experimental: { apps: true }, name: 'keep-me' },
+      { experimental: { review_center: true }, name: 'keep-me' },
       'agent_tunnel',
       false,
     );
-    expect(next.experimental).toEqual({ apps: true, agent_tunnel: false });
+    expect(next.experimental).toEqual({ review_center: true, agent_tunnel: false });
     expect(next.name).toBe('keep-me');
   });
 
   test('null clears the override; empty map is removed', () => {
-    const next = applyExperimentalOverride({ experimental: { apps: true } }, 'apps', null);
-    expect(next.experimental).toBeUndefined();
-  });
-
-  test('clears the legacy apps_enabled mirror when writing apps', () => {
-    const next = applyExperimentalOverride({ apps_enabled: true }, 'apps', false);
-    expect((next as Record<string, unknown>).apps_enabled).toBeUndefined();
-    expect(next.experimental).toEqual({ apps: false });
-  });
-
-  test('writing apps:null also drops legacy apps_enabled', () => {
-    const next = applyExperimentalOverride({ apps_enabled: true }, 'apps', null);
-    expect((next as Record<string, unknown>).apps_enabled).toBeUndefined();
+    const next = applyExperimentalOverride({ experimental: { review_center: true } }, 'review_center', null);
     expect(next.experimental).toBeUndefined();
   });
 });

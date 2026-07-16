@@ -1,6 +1,8 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
+import { E2BProvider } from './e2b';
 import { PlatinumProvider } from './platinum';
+import { LocalDockerProvider } from './local-docker';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -8,13 +10,13 @@ import { PlatinumProvider } from './platinum';
  * `ProviderName` union. Call sites depend on the `SandboxProvider`
  * interface, not the concrete class, so they stay untouched.
  *
- *   - daytona — managed cloud (Daytona)
- *   - platinum — managed cloud (Platinum)
+ *   - daytona — Daytona Cloud
+ *   - platinum — Kortix Platinum
+ *   - e2b — E2B Cloud
+ *   - local-docker — EXPERIMENTAL. Same-machine Docker containers (see
+ *     local-docker.ts) — no cloud account, not horizontally scalable.
  */
-// 'daytona' is the managed cloud backend's identity. 'managed' is kept only as a
-// defensive read alias so any row written during the daytona→managed rename window
-// still resolves to the Daytona adapter; new writes use 'daytona'.
-export type ProviderName = 'daytona' | 'managed' | 'platinum';
+export type ProviderName = 'daytona' | 'platinum' | 'e2b' | 'local-docker';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -59,11 +61,36 @@ export interface ProvisionResult {
 }
 
 export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'unknown';
+export type InPlaceRecoveryStatus = 'running' | 'recovering' | 'unavailable';
 
 export interface ResolvedEndpoint {
   url: string;
   headers: Record<string, string>;
 }
+
+export interface SandboxIngressRequest {
+  /** Port named by the caller-facing Kortix proxy URL. */
+  port: number;
+  path?: string;
+  transport?: 'http' | 'websocket';
+}
+
+/**
+ * Provider-normalized sandbox ingress. Provider-specific edge auth, port
+ * bridging, and WebSocket query behavior live here so the proxy never branches
+ * on a provider name.
+ */
+export interface ResolvedSandboxIngress {
+  url: string;
+  headers: Record<string, string>;
+  effectivePort: number;
+  websocket?: {
+    userContextQueryParam?: string;
+    queryDefaults?: Record<string, string>;
+  };
+}
+
+export type SandboxIngressRoute = Pick<ResolvedSandboxIngress, 'effectivePort' | 'websocket'>;
 
 interface ProvisioningStage {
   id: string;
@@ -88,13 +115,51 @@ export interface ProvisioningStatus {
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
+  /**
+   * Whether this provider's sandboxes reach kortix-api over the PUBLIC
+   * internet. True for every remote cloud provider (Daytona/Platinum/E2B) —
+   * their sandbox VMs/containers run on infrastructure that can only resolve
+   * a publicly reachable KORTIX_URL, never a loopback address. False for a
+   * same-machine provider (local-docker) whose sandboxes reach kortix-api
+   * over the shared Docker network instead, so a loopback KORTIX_URL is
+   * perfectly fine there. Session creation's reachability preflight
+   * (sandboxCallbackUnreachableReason in projects/lib/sessions.ts) is the
+   * ONLY reader of this flag — keeping the capability on the provider
+   * instead of a call-site `provider === 'local-docker'` check.
+   */
+  readonly requiresPublicCallback: boolean;
+
+  /**
+   * The origin (scheme + host[:port], no trailing slash) sandboxes booted by
+   * this provider should use for any in-sandbox URL that is rooted at
+   * "kortix-api's own HTTP surface" — e.g. the LLM-gateway base URL the
+   * session-env layer hands OpenCode (KORTIX_LLM_BASE_URL), or any future
+   * such URL. OPTIONAL: every remote cloud provider (Daytona/Platinum/E2B)
+   * is happy with the generic public `config.KORTIX_URL`, so callers fall
+   * back to that when a provider doesn't implement this. local-docker is the
+   * one exception — its sandboxes share a private Docker network with
+   * kortix-api instead of reaching it over the public internet — so it's the
+   * only provider that overrides this (see local-docker.ts's
+   * sandboxInternalApiBase()). Keeping the capability on the provider (like
+   * requiresPublicCallback above) means a shared layer that needs "the API's
+   * origin, as this sandbox would see it" never branches on provider name.
+   */
+  sandboxFacingApiOrigin?(): string;
 
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   start(externalId: string): Promise<void>;
   stop(externalId: string): Promise<void>;
   remove(externalId: string): Promise<void>;
   getStatus(externalId: string): Promise<SandboxStatus>;
+  /**
+   * Recover the SAME provider object when provider state looks terminal.
+   * Implementations may restore a provider-native disk backup, but must never
+   * create or return a different external identity. Callers fail closed when
+   * this capability is absent or returns unavailable.
+   */
+  recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
   resolveEndpoint(externalId: string): Promise<ResolvedEndpoint>;
+  routeIngress(request: SandboxIngressRequest): SandboxIngressRoute;
   /**
    * Resolve a reachable upstream URL for an arbitrary port — the data path the
    * `/v1/p/<externalId>/<port>` reverse proxy forwards to. Unlike resolveEndpoint
@@ -103,15 +168,14 @@ export interface SandboxProvider {
    * silently broke every other provider's runtime connection (502/503). Keeping
    * it on the interface makes that regression a compile error.
    */
-  resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }>;
+  resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress>;
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
   /**
    * List the running boxes this deployment owns, for the orphan-box reaper
    * (boxes still running on the provider with no live DB row). OPTIONAL: a
-   * provider that can't enumerate — or where boxes are inherently per-host and
-   * can't leak org-wide (local Docker) — simply omits it and the reaper skips
-   * that provider. Implementations MUST scope the result to THIS environment
+   * provider that can't enumerate simply omits it and the reaper skips that
+   * provider. Implementations MUST scope the result to THIS environment
    * (the provider org may be shared across prod/dev/local) and return
    * `createdAt` so the reaper can age-gate.
    */
@@ -143,7 +207,6 @@ export function getProvider(name: ProviderName): SandboxProvider {
 
   switch (name) {
     case 'daytona':
-    case 'managed':
       if (!config.DAYTONA_API_KEY) {
         throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
       }
@@ -154,6 +217,18 @@ export function getProvider(name: ProviderName): SandboxProvider {
         throw new Error('Platinum provider requires PLATINUM_API_KEY to be set.');
       }
       provider = new PlatinumProvider();
+      break;
+    case 'e2b':
+      if (!config.E2B_API_KEY) {
+        throw new Error('E2B provider requires E2B_API_KEY to be set.');
+      }
+      provider = new E2BProvider();
+      break;
+    case 'local-docker':
+      // No required API key — Docker daemon reachability is checked lazily at
+      // first real use (create/start/stop/status), not at construction, so
+      // the API can still boot before Docker is wired up. See local-docker.ts.
+      provider = new LocalDockerProvider();
       break;
     default: {
       const exhaustive: never = name;

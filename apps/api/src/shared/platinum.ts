@@ -57,11 +57,56 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
   }
 }
 
+/**
+ * Expected, transient: Platinum auto-stops idle microVMs natively (see
+ * PlatinumProvider) and resumes them CoW on reopen. While a box is in that
+ * stopped state, POST /:id/expose (and any port-forwarding op) answers
+ * `409 {"error":"sandbox not running","code":"sandbox_not_running"}`. That is
+ * the system working as designed — the caller (preview proxy, transcript
+ * resolver, lease discoverer) either wakes the box and retries, or surfaces a
+ * retryable 503 to the client. It is NOT a 500-worthy error and must NOT page
+ * Sentry, so it gets its own typed error that `app.onError` classifies out of
+ * `captureException` (mirroring the request-deadline 503 pattern). Every OTHER
+ * Platinum failure (4xx/5xx, timeout, bad body) still throws the generic
+ * `platinum <method> <path> -> <status> <body>` Error and is captured normally
+ * — only this one expected state is special-cased, so unexpected failures stay
+ * loud.
+ */
+export class PlatinumSandboxNotRunningError extends Error {
+  constructor(message = 'sandbox is not running') {
+    super(message);
+    this.name = 'PlatinumSandboxNotRunningError';
+  }
+}
+
+export function isPlatinumSandboxNotRunningError(err: unknown): boolean {
+  return err instanceof PlatinumSandboxNotRunningError;
+}
+
+// Platinum signals a stopped box with `409 {"code":"sandbox_not_running"}`.
+// Match the structured `code` field (not a message substring) so a different
+// 409 reason never gets misclassified into the "expected" bucket.
+function isSandboxNotRunningBody(status: number, text: string): boolean {
+  if (status !== 409) return false;
+  try {
+    const body = JSON.parse(text) as { code?: unknown; error?: unknown };
+    return body.code === 'sandbox_not_running';
+  } catch {
+    return false;
+  }
+}
+
 /** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */
 export async function platinumJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await platinumFetch(path, init);
   const text = await res.text();
   if (!res.ok) {
+    // Expected auto-stopped state → typed error (controlled 503, no Sentry).
+    if (isSandboxNotRunningBody(res.status, text)) {
+      throw new PlatinumSandboxNotRunningError(
+        `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`,
+      );
+    }
     throw new Error(`platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`);
   }
   return (text ? JSON.parse(text) : {}) as T;

@@ -205,7 +205,7 @@ function SubjectPicker({
           placeholder={tI18nHardcoded.raw(
             'autoFeaturesCoWorkerSharedSharingPickerJsxAttrPlaceholderSearch5747dea4',
           )}
-          className="rounded-b-none pl-9"
+          className="rounded-b-none border-none pl-9"
           variant="transparent"
         />
         <Button
@@ -218,7 +218,7 @@ function SubjectPicker({
       </div>
 
       {selectedCount > 0 && (
-        <div className="border-border/60 flex items-center justify-between border-b px-3 py-1.5">
+        <div className="border-border flex items-center justify-between border-b px-3 py-1.5">
           <span className="text-muted-foreground text-xs">{selectedCount} selected</span>
           <Button
             type="button"

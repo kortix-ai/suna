@@ -277,3 +277,17 @@ lss "research question" -p /workspace --json -k 10
 - **Controversial topics:** Present all major viewpoints with evidence. Don't editorialize.
 - **Paywalled sources:** Extract what's available from abstracts and secondary reporting. Note when full text was not accessible.
 - **Resuming prior research:** If a research directory already exists, read the existing plan, notes, and sources-index. Continue from where the previous session left off rather than starting over.
+
+## Research For Assets
+
+When the request requires both research and a built deliverable (a website, deck, report, or other artifact), keep the phases distinct and sequential:
+
+1. **Research phase** -- gather facts, dates, numbers, citations, and source URLs using the workflow above.
+2. **Asset collection phase** -- gather verified images, logos, screenshots, or media inputs if the deliverable needs them.
+3. **Build phase** -- only then create the website, deck, report, or other asset from the completed research.
+
+Don't start building before the research phase is solid -- a deliverable built on thin research has to be redone.
+
+## Parallel and Long-Running Research
+
+For substantial parallel research, or research that runs alongside a separate build task, prefer background sessions over in-turn delegation: start separate sessions for separate subtopics or regions, then combine the outputs. This keeps each thread of research in its own context without polluting the main session. Tables, charts, and comparison matrices in the final report are encouraged whenever they reduce cognitive load for the reader.

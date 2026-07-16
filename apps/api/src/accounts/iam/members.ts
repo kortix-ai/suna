@@ -12,6 +12,7 @@ import {
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import {
   ACCOUNT_ACTIONS,
@@ -19,6 +20,7 @@ import {
   authorize,
   resourceTypeForAction,
 } from '../../iam';
+import { resolveBatchProbes } from './batch-probes';
 import { listGroupsForMember } from '../../repositories/iam';
 import {
   iamRouter,
@@ -446,33 +448,21 @@ iamRouter.openapi(
     parsed.push({ action, target });
   }
 
-  // Dedupe in-flight calls but preserve output positions. This makes
-  // duplicate (action,target) entries in the input free after the first.
-  const cache = new Map<string, ReturnType<typeof authorize>>();
-  const keyFor = (p: ParsedProbe) =>
-    p.target?.type === 'account'
-      ? `${p.action}|account|*`
-      : `${p.action}|${p.target?.type}|${
-          p.target && 'id' in p.target ? p.target.id : '*'
-        }`;
-
-  const results = await Promise.all(
-    parsed.map(async (p) => {
-      const key = keyFor(p);
-      let inflight = cache.get(key);
-      if (!inflight) {
-        inflight = authorize(targetUserId, accountId, p.action, p.target);
-        cache.set(key, inflight);
-      }
-      const r = await inflight;
-      return {
-        action: p.action,
-        resource_type: resourceTypeForAction(p.action),
-        resource_id: p.target && 'id' in p.target ? p.target.id : null,
-        allowed: r.allowed,
-        reason: r.reason ?? null,
-      };
-    }),
+  // Per-probe isolation: a transient `authorize` failure degrades to
+  // allowed:false (reason 'probe_error') instead of rejecting the whole
+  // batch as an opaque 500. See resolveBatchProbes. The structured log keeps
+  // the signal visible to ops without paging Sentry as an error pattern
+  // (mirrors the request-deadline 503 de-noise in PR #4524 / #4531).
+  const results = await resolveBatchProbes(
+    parsed,
+    authorize,
+    targetUserId,
+    accountId,
+    (ctx) =>
+      logger.error(
+        `effective:batch probe failed — degraded to allowed:false [${ctx.errorName}]`,
+        ctx,
+      ),
   );
 
   return c.json({ results });

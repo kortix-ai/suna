@@ -50,6 +50,7 @@ import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 
 // Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
@@ -62,6 +63,7 @@ async function openComputeSessionForSandbox(
   project: GitBackedProject,
   userId: string | null | undefined,
   sandboxSlug: string | undefined,
+  provider: ProviderName,
 ): Promise<void> {
   let spec = { ...DEFAULT_METERING_SPEC };
   try {
@@ -78,6 +80,7 @@ async function openComputeSessionForSandbox(
     accountId,
     sessionId: sandboxId,
     actorUserId: userId ?? null,
+    provider,
     spec,
   });
 }
@@ -197,6 +200,7 @@ export async function provisionSessionSandbox(opts: {
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
+  const providerWasExplicitlySelected = opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
@@ -283,6 +287,11 @@ export async function provisionSessionSandbox(opts: {
         status: 'provisioning',
         baseUrl: null,
         config: {},
+        // Legacy recovery placeholders may still exist while this release rolls
+        // out. Consume their authorization marker atomically so at most one
+        // allocator can claim the row and call provider.create(). New code never
+        // creates this marker because established identities are fail-closed.
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
         updatedAt: new Date(),
       })
       .where(
@@ -328,11 +337,13 @@ export async function provisionSessionSandbox(opts: {
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   tl.mark('row+tokens');
 
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  const llmBaseUrl =
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+  // provider.sandboxFacingApiOrigin() (optional) lets a same-machine provider
+  // (local-docker) swap in its private Docker-network origin here — same
+  // reason KORTIX_API_URL is never just config.KORTIX_URL verbatim for that
+  // provider. Every other provider omits the method and falls back to the
+  // generic public origin, unchanged from before.
+  const kortixOrigin = (provider.sandboxFacingApiOrigin?.() ?? config.KORTIX_URL).replace(/\/+$/, '');
+  const llmBaseUrl = resolveLlmGatewayBaseUrl(kortixOrigin);
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen
@@ -514,7 +525,7 @@ export async function provisionSessionSandbox(opts: {
               initAbortedAt: new Date().toISOString(),
               lastInitError: 'Session was stopped before provider create completed',
               provisionTimeline: timeline,
-              daytonaSandboxId: result.externalId,
+              providerExternalId: result.externalId,
             },
             updatedAt: new Date(),
           })
@@ -551,7 +562,7 @@ export async function provisionSessionSandbox(opts: {
                 {
                   ...result.metadata,
                   provisionTimeline: timeline,
-                  daytonaSandboxId: result.externalId,
+                  providerExternalId: result.externalId,
                 },
                 attempts,
               ),
@@ -596,9 +607,9 @@ export async function provisionSessionSandbox(opts: {
             ...result.metadata,
             provisioningStage: firstStage?.id,
             provisionTimeline: timeline,
-            daytonaSandboxId: result.externalId,
+            providerExternalId: result.externalId,
             runtimeArtifact: {
-              artifactType: (providerName === 'daytona' || providerName === 'managed') ? 'daytona_snapshot' : 'unknown',
+              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
               providerArtifactRef: imageInfo!.snapshotName,
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,
@@ -617,8 +628,8 @@ export async function provisionSessionSandbox(opts: {
         finishUpdate.status = 'active';
       } else {
         // For cloud providers we still flip to active here because the legacy
-        // provision-poller (which only handles JustAVPS) doesn't see this
-        // table; the frontend's own readiness poller validates port 8000.
+        // provider provisioning status does not gate this table; the frontend's
+        // own readiness poller validates port 8000.
         finishUpdate.status = 'active';
       }
 
@@ -695,7 +706,7 @@ export async function provisionSessionSandbox(opts: {
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug).catch(
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug, providerName).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
@@ -704,12 +715,12 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
-      // Daytona dropped the image between resolve and create. Force a rebuild
+      // The selected provider dropped the image between resolve and create. Force a rebuild
       // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug }).catch((err) =>
+        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName }).catch((err) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,
@@ -737,7 +748,7 @@ export async function provisionSessionSandbox(opts: {
       // only — a running box is never migrated here. The new provider re-resolves
       // its own image (the snapshot is provider-specific), so we clear all image
       // state and re-enter the loop.
-      if (!fallbackAttempted && providerFallbackSetting().enabled) {
+      if (!providerWasExplicitlySelected && !fallbackAttempted && providerFallbackSetting().enabled) {
         const next = config.ALLOWED_SANDBOX_PROVIDERS.find((p) => p !== providerName);
         if (next) {
           fallbackAttempted = true;

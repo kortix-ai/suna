@@ -4,8 +4,10 @@ import {
   listAgentMailInstalls,
   loadMeetInstall,
   loadSlackInstall,
+  loadTeamsInstall,
 } from '../channels/install-store';
 import { resolveExperimentalFeature } from '../experimental/features';
+import { teamsChannelEnabled } from '../channels/teams-auth';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -52,7 +54,6 @@ function channelSpec(
   };
 }
 
-/** True if this platform is explicitly declared, or if anything owns the reserved slug. */
 function channelAlreadyDeclared(
   declared: ConnectorSpec[],
   platform: ChannelPlatform,
@@ -84,6 +85,14 @@ export async function synthesizeChannelConnectors(
   if (!channelAlreadyDeclared(declared, 'slack', slackSlug)) {
     const install = await loadSlackInstall(projectId).catch(() => null);
     if (install) specs.push(channelSpec('slack', slackSlug));
+  }
+
+  if (teamsChannelEnabled()) {
+    const teamsSlug = channelDefaultSlug('teams');
+    if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
+      const install = await loadTeamsInstall(projectId).catch(() => null);
+      if (install) specs.push(channelSpec('teams', teamsSlug));
+    }
   }
 
   const [project] = await db

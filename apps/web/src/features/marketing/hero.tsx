@@ -53,7 +53,7 @@ const Hero = () => {
               {tHome('startBuildingCta')}
               <HiArrowRight className="size-4" />
             </Button>
-            <Button size="xl" variant="secondary" onClick={openDemo}>
+            <Button size="xl" variant="secondary" onClick={() => openDemo()}>
               {tHome('line149JsxTextTalkToSales')}
             </Button>
           </div>

@@ -4,5 +4,14 @@ export type { TokenCounts, UsageEvent } from './usage';
 export type { GatewayTrace } from './trace';
 export type { AuthorizeResult, GatewayHooks } from './hooks';
 export type { ModelInfo, ModelCatalog } from './catalog';
-export type { GatewayConfig } from './config';
+export type {
+  GatewayConfig,
+} from './config';
+export type {
+  ModelFallbackCondition,
+  ModelFallbackPolicy,
+  ModelFallbackPolicyMatch,
+  ModelRouteInput,
+  ModelRoutePlan,
+} from './routing';
 export type { GatewayLogger } from './logger';

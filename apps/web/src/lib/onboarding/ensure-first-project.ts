@@ -36,9 +36,26 @@ export function isProjectLimitError(err: unknown): boolean {
 }
 
 /**
+ * True for the 503 `POST /projects/provision` returns when no managed-git
+ * backend is configured (e.g. self-host with no MANAGED_GIT_* set) — an
+ * EXPECTED, operator-fixable state, not a bug. Checks the status code first
+ * (ApiError carries `.status`) and falls back to the message text for any
+ * caller that only has a plain Error.
+ */
+export function isManagedGitUnavailableError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  if (status === 503) return true;
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  return message.includes('is not configured on this server');
+}
+
+/**
  * Return the account's first project, creating "My First Project" when none
  * exist. If the free-tier cap is already consumed, recover by listing again
  * and returning the existing project instead of surfacing a dead-end error.
+ * If managed git isn't configured on this server, there is nothing to
+ * auto-create — return null so the caller falls back to its normal empty
+ * "create a project" state instead of treating it as a hard failure.
  */
 export async function ensureFirstProject(accountId: string): Promise<KortixProject | null> {
   const existing = await listProjectsForAccount(accountId);
@@ -53,6 +70,7 @@ export async function ensureFirstProject(accountId: string): Promise<KortixProje
       marketplace_items: marketplaceItems.map((item) => item.id),
     });
   } catch (err) {
+    if (isManagedGitUnavailableError(err)) return null;
     if (!isProjectLimitError(err)) throw err;
     const retry = await listProjectsForAccount(accountId);
     return retry[0] ?? null;

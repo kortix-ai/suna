@@ -1,14 +1,16 @@
 /**
- * `kortix marketplace <subcommand>` - browse and install from the Kortix
- * marketplace. This is intentionally a consumer surface only: no build,
- * validate, or publish commands live here.
+ * `kortix marketplace <subcommand>` - browse the Kortix marketplace. This is
+ * intentionally a discovery-only surface: no build, validate, or publish
+ * commands live here, and no deterministic install/update/remove machinery
+ * either — adding a marketplace item to a project is an agent import
+ * (start/continue a session and ask it to bring the item in), not a CLI
+ * write path.
  */
 
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
-import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
-import { runMarketplaceInstall } from './marketplace-install.ts';
 
 interface CatalogItem {
   id: string;
@@ -36,75 +38,34 @@ interface CatalogResponse {
   pending?: string[];
 }
 
-interface InstalledResponse {
-  installed: Array<{
-    name: string;
-    type: string;
-    source: string;
-    installed_at: string | null;
-    file_count: number;
-  }>;
-}
-
-interface UpdatesResponse {
-  updates: Array<{ name: string; type: string; status: string; changed: number }>;
-  update_available: string[];
-}
-
-interface WriteResponse {
-  ok: boolean;
-  commit_sha: string;
-  branch: string;
-  file_count: number;
-  updated?: string;
-  removed?: string;
-}
-
-interface UpdateAllResponse {
-  ok: boolean;
-  updated: string[];
-  commit_sha: string | null;
-  branch: string | null;
-  file_count: number;
-  installed: Array<{ name: string; type: string }>;
-}
-
 interface MarketplaceFlags {
   host?: string;
   query?: string;
   type?: string;
   source?: string;
-  project?: string;
-  all: boolean;
   json: boolean;
-  dryRun: boolean;
 }
 
 const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
-Browse and install items from the Kortix marketplace.
+Browse the Kortix marketplace.
 
 Subcommands:
   search [query]       Search marketplace items.
   list                 List marketplace items.
   show <id|name>       Show one marketplace item.
-  install <id|name>    Install into a linked cloud project.
-  status               List installed marketplace items for a project.
-  updates              List installed items with available updates.
-  update <name>        Update one installed marketplace item.
-  update --all         Update all outdated marketplace items in one commit.
-  remove <name>        Remove one installed marketplace item.
 
 Options:
   --query <text>       Search text (same as search [query]).
   --type <type>        Filter by item type, e.g. skill.
   --source <source>    Filter by marketplace/source, e.g. kortix.
-  --project <id>       Project for install/status/update/remove.
   --host <name>        Use a configured Kortix host.
-  --dry-run            install: show what would be installed.
-  --all                update: update all outdated items.
   --json               Machine-readable output.
   -h, --help           Show this help.
+
+Adding an item to your project is an agent import, not a CLI install: start
+or continue a session and ask it to bring the item in (it clones, reads,
+merges what fits, and opens a CR).
 `;
 
 function parseFlags(argv: string[]): MarketplaceFlags {
@@ -113,9 +74,6 @@ function parseFlags(argv: string[]): MarketplaceFlags {
     query: takeFlagValue(argv, ['--query', '-q']),
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
-    project: takeFlagValue(argv, ['--project']),
-    all: takeFlagBool(argv, ['--all']),
-    dryRun: takeFlagBool(argv, ['--dry-run']),
     json: takeFlagBool(argv, ['--json']),
   };
 }
@@ -175,7 +133,7 @@ function printItems(items: CatalogItem[], flags: MarketplaceFlags): void {
   }
   if (items.length > 40) process.stdout.write(`\n  ${C.dim}Showing 40 of ${items.length}. Narrow with --query.${C.reset}\n`);
   process.stdout.write(`\n  ${C.dim}Show details:${C.reset} ${C.cyan}kortix marketplace show <name>${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Install:${C.reset} ${C.cyan}kortix marketplace install <name> --project <id>${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import it${C.reset}\n`);
 }
 
 async function marketplaceSearch(argv: string[], flags: MarketplaceFlags): Promise<number> {
@@ -233,150 +191,7 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
   if (secrets.length > 0) process.stdout.write(`  ${C.dim}Needs secrets:${C.reset} ${secrets.join(', ')}\n`);
   if (connectors.length > 0) process.stdout.write(`  ${C.dim}Needs connectors:${C.reset} ${connectors.join(', ')}\n`);
   if (item.managedBy === 'kortix') process.stdout.write(`  ${C.dim}Managed by:${C.reset} Kortix (${item.updatePolicy})\n`);
-  process.stdout.write(`\n  ${C.dim}Install:${C.reset} ${C.cyan}kortix marketplace install ${item.name} --project <id>${C.reset}\n`);
-  return 0;
-}
-
-async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const raw = argv.find((a) => !a.startsWith('-'));
-  if (!raw) {
-    process.stderr.write(`${status.err('pass an item id or name: kortix marketplace install pdf')}\n`);
-    return 2;
-  }
-  const addArgs = [raw];
-  if (flags.project) addArgs.push('--project', flags.project);
-  if (flags.host) addArgs.push('--host', flags.host);
-  if (flags.dryRun) addArgs.push('--dry-run');
-  if (flags.json) addArgs.push('--json');
-  return runMarketplaceInstall(addArgs);
-}
-
-async function marketplaceStatus(flags: MarketplaceFlags): Promise<number> {
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  let res: InstalledResponse;
-  try {
-    res = await ctx.client.get<InstalledResponse>(`/projects/${ctx.projectId}/marketplace`);
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  const installed = res.installed ?? [];
-  if (flags.json) {
-    emitJson({ installed });
-    return 0;
-  }
-  if (installed.length === 0) {
-    process.stdout.write(`${status.info('No marketplace items installed in this project.')}\n`);
-    process.stdout.write(`  ${C.dim}Add one with${C.reset} ${C.cyan}kortix marketplace install <item> --project ${ctx.projectId}${C.reset}\n`);
-    return 0;
-  }
-  process.stdout.write(`\n  ${C.bold}Installed${C.reset} ${C.faded}- ${installed.length} item${installed.length === 1 ? '' : 's'}${C.reset}\n\n`);
-  const width = Math.min(26, Math.max(...installed.map((i) => i.name.length)));
-  for (const item of installed) {
-    const kind = item.type.replace('registry:', '');
-    process.stdout.write(
-      `  ${C.cyan}${item.name.padEnd(width)}${C.reset}  ${C.faded}${kind.padEnd(8)}${C.reset}  ${C.dim}${item.source}${C.reset}\n`,
-    );
-  }
-  return 0;
-}
-
-async function marketplaceUpdates(flags: MarketplaceFlags): Promise<number> {
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  let res: UpdatesResponse;
-  try {
-    res = await ctx.client.get<UpdatesResponse>(`/projects/${ctx.projectId}/marketplace/updates`);
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  if (flags.json) {
-    emitJson(res);
-    return 0;
-  }
-  const updates = res.updates ?? [];
-  if (updates.length === 0) {
-    process.stdout.write(`${status.info('No marketplace items installed in this project.')}\n`);
-    return 0;
-  }
-  process.stdout.write(`\n  ${C.bold}Marketplace Updates${C.reset}\n\n`);
-  for (const item of updates) {
-    const color = item.status === 'update-available' ? C.yellow : C.faded;
-    process.stdout.write(`  ${C.cyan}${item.name}${C.reset}  ${color}${item.status}${C.reset}`);
-    if (item.changed > 0) process.stdout.write(` ${C.dim}(${item.changed} changes)${C.reset}`);
-    process.stdout.write('\n');
-  }
-  return 0;
-}
-
-async function marketplaceUpdate(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const name = argv.find((a) => !a.startsWith('-'));
-  if (flags.all || name === 'all') return marketplaceUpdateAll(flags);
-  if (!name) {
-    process.stderr.write(`${status.err('pass an item name or --all: kortix marketplace update pdf')}\n`);
-    return 2;
-  }
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  let res: WriteResponse;
-  try {
-    res = await ctx.client.post<WriteResponse>(`/projects/${ctx.projectId}/marketplace/update`, { name });
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  if (flags.json) {
-    emitJson(res);
-    return 0;
-  }
-  process.stdout.write(`${status.ok(`Updated ${C.bold}${res.updated ?? name}${C.reset}`)}\n`);
-  process.stdout.write(`  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}on${C.reset} ${res.branch}\n`);
-  return 0;
-}
-
-async function marketplaceUpdateAll(flags: MarketplaceFlags): Promise<number> {
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  let res: UpdateAllResponse;
-  try {
-    res = await ctx.client.post<UpdateAllResponse>(`/projects/${ctx.projectId}/marketplace/update-all`);
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  if (flags.json) {
-    emitJson(res);
-    return 0;
-  }
-  const count = res.updated.length;
-  if (count === 0) {
-    process.stdout.write(`${status.ok('All marketplace items are up to date.')}\n`);
-    return 0;
-  }
-  process.stdout.write(`${status.ok(`Updated ${C.bold}${count}${C.reset} marketplace item${count === 1 ? '' : 's'}`)}\n`);
-  process.stdout.write(`  ${C.dim}items${C.reset} ${res.updated.join(', ')}\n`);
-  process.stdout.write(`  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}on${C.reset} ${res.branch}\n`);
-  return 0;
-}
-
-async function marketplaceRemove(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const name = argv.find((a) => !a.startsWith('-'));
-  if (!name) {
-    process.stderr.write(`${status.err('pass an item name: kortix marketplace remove pdf')}\n`);
-    return 2;
-  }
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  let res: WriteResponse;
-  try {
-    res = await ctx.client.delete<WriteResponse>(`/projects/${ctx.projectId}/marketplace/${encodeURIComponent(name)}`);
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  if (flags.json) {
-    emitJson(res);
-    return 0;
-  }
-  process.stdout.write(`${status.ok(`Removed ${C.bold}${res.removed ?? name}${C.reset}`)}\n`);
-  process.stdout.write(`  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}on${C.reset} ${res.branch}\n`);
+  process.stdout.write(`\n  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import "${item.name}"${C.reset}\n`);
   return 0;
 }
 
@@ -400,20 +215,6 @@ export async function runMarketplace(argv: string[]): Promise<number> {
     case 'show':
     case 'view':
       return marketplaceShow(rest, flags);
-    case 'install':
-    case 'add':
-      return marketplaceInstall(rest, flags);
-    case 'status':
-    case 'installed':
-      return marketplaceStatus(flags);
-    case 'updates':
-    case 'outdated':
-      return marketplaceUpdates(flags);
-    case 'update':
-      return marketplaceUpdate(rest, flags);
-    case 'remove':
-    case 'rm':
-      return marketplaceRemove(rest, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;

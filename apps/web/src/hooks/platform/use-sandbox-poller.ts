@@ -8,8 +8,8 @@
  * Fallback: if SSE fails or disconnects, falls back to HTTP polling
  *   GET /platform/sandbox/:id/status every 5s
  *
- * The backend provision-poller (sandbox-provision-poller.ts) polls JustAVPS
- * every 8s and emits events, so even without webhooks the SSE stream gets updates.
+ * The backend polls asynchronous instance status every 8s and emits events, so
+ * even without webhooks the SSE stream gets updates.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';

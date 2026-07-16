@@ -73,6 +73,8 @@ mock.module('../projects/git-backends', () => ({
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
   managedGithubInstallId: () => 'install-1',
+  managedGithubOwner: () => null,
+  managedGithubOwnerType: () => undefined,
   managedGithubToken: () => null,
 }));
 
@@ -91,18 +93,6 @@ mock.module('../shared/account-limits', () => ({
   accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   clearAccountLimitCache: () => {},
-}));
-
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://freestyle.example.test',
-  callFreestyle: async () => new Response('{}', { status: 200 }),
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),
-    stop: async () => {},
-    logs: async () => ({}),
-  },
 }));
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -156,6 +146,8 @@ mock.module('../snapshots/builder', () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickRoutedPreBuild: () => {},
+  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),

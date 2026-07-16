@@ -181,10 +181,20 @@ function wireNoProjects() {
 
 // ─── getProviders ────────────────────────────────────────────────────────────
 
-test('getProviders is pure — no network, always daytona', async () => {
+test('getProviders returns the live unified provider lineup', async () => {
+  handler = (url, method) => {
+    if (method === 'GET' && /\/setup\/sandbox-providers$/.test(url)) {
+      return {
+        status: 200,
+        body: { providers: ['daytona', 'platinum', 'e2b'], default: 'e2b' },
+      };
+    }
+    throw new Error(`unmocked ${method} ${url}`);
+  };
+
   const result = await getProviders();
-  expect(result).toEqual({ providers: ['daytona'], default: 'daytona' });
-  expect(calls.length).toBe(0);
+  expect(result).toEqual({ providers: ['daytona', 'platinum', 'e2b'], default: 'e2b' });
+  expect(callsMatching(/\/setup\/sandbox-providers$/)).toHaveLength(1);
 });
 
 // ─── ensureSandbox ───────────────────────────────────────────────────────────
@@ -212,6 +222,18 @@ test('ensureSandbox creates + starts a session when a project exists but has no 
   expect(result.sandbox.external_id).toBe('ext-2');
   expect(callsMatching(/\/projects\/proj-1\/sessions$/).some((c) => c.method === 'POST')).toBe(true);
   expect(callsMatching(/\/projects\/proj-1\/sessions\/sess-2\/start/).length).toBe(1);
+});
+
+test('ensureSandbox sends an explicit E2B selection in the provider field', async () => {
+  wireCreateFlow();
+
+  await ensureSandbox({ provider: 'e2b' });
+
+  const create = callsMatching(/\/projects\/proj-1\/sessions$/).find(
+    (call) => call.method === 'POST',
+  );
+  expect(create?.body).toMatchObject({ provider: 'e2b' });
+  expect(create?.body).not.toHaveProperty('agent_name');
 });
 
 test('ensureSandbox throws when there are no projects at all', async () => {

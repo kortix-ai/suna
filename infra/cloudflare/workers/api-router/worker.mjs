@@ -1,15 +1,17 @@
-// Kortix API router — the blue/green cutover switch in front of the public API.
+// Kortix API + gateway router — the blue/green cutover switch in front of both
+// public services. One worker per env handles BOTH hostnames:
 //
-//   api.kortix.com          → this worker (env "prod")    → EKS | ECS-Fargate
-//   staging-api.kortix.com  → this worker (env "staging") → EKS | ECS-Fargate
-//   dev-api.kortix.com      → this worker (env "dev")     → EKS | ECS-Fargate
+//   api.kortix.com          → API      → EKS | ECS-Fargate   (ACTIVE_BACKEND)
+//   gateway.kortix.com      → gateway  → EKS | ECS-Fargate   (GATEWAY_ACTIVE_BACKEND)
+//   (staging-/dev- variants route to the "staging"/"dev" worker envs)
 //
-// The active backend is chosen by the `ACTIVE_BACKEND` plain-text var; the two
-// concrete origins are `BACKEND_EKS` / `BACKEND_ECS_FARGATE` (per-env vars in
-// wrangler.toml). Flipping ACTIVE_BACKEND is an instant, instantly-reversible
-// failover with no DNS change. Both backends run the same image against the same
-// DB, so a flip is safe (background-worker leadership is a single global DB lease
-// — see apps/api/src/shared/leader-election.ts — so only one side ever runs cron).
+// The service is chosen by hostname (anything containing "gateway" is the LLM
+// gateway); each service has its OWN active-backend var + origin pair, so the
+// API and the gateway can be flipped or rolled back INDEPENDENTLY from this one
+// router with no DNS change. Both backends of a service run the same image
+// against the same DB, so a flip is safe (background-worker leadership is a
+// single global DB lease — see apps/api/src/shared/leader-election.ts — so only
+// one side ever runs cron). Flipping is instant and instantly reversible.
 const STRICT_TRANSPORT_SECURITY = 'max-age=31536000';
 
 function addSecurityHeaders(response) {
@@ -20,19 +22,20 @@ function addSecurityHeaders(response) {
 
 export default {
   async fetch(request, env) {
-    const active = env.ACTIVE_BACKEND || 'eks';
+    const url = new URL(request.url);
+    const isGateway = url.hostname.includes('gateway');
 
-    const backends = {
-      eks: env.BACKEND_EKS,
-      'ecs-fargate': env.BACKEND_ECS_FARGATE,
-    };
+    const active = (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'eks';
+    const backends = isGateway
+      ? { eks: env.GATEWAY_BACKEND_EKS, 'ecs-fargate': env.GATEWAY_BACKEND_ECS_FARGATE }
+      : { eks: env.BACKEND_EKS, 'ecs-fargate': env.BACKEND_ECS_FARGATE };
 
     const backendUrl = backends[active];
     if (!backendUrl) {
-      return new Response(`Invalid backend configuration: ${active}`, { status: 500 });
+      const svc = isGateway ? 'gateway' : 'api';
+      return new Response(`Invalid ${svc} backend configuration: ${active}`, { status: 500 });
     }
 
-    const url = new URL(request.url);
     if (url.protocol !== 'https:') {
       url.protocol = 'https:';
       return new Response(null, {
@@ -61,6 +64,7 @@ export default {
     const response = await fetch(modifiedRequest);
     const newResponse = new Response(response.body, response);
     newResponse.headers.set('X-Backend', active);
+    newResponse.headers.set('X-Backend-Service', isGateway ? 'gateway' : 'api');
     return addSecurityHeaders(newResponse);
   },
 };

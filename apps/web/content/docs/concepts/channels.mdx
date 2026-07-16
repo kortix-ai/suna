@@ -1,12 +1,12 @@
 ---
 title: Channels
-description: Drive a project from Slack — messages spawn sessions and the agent replies in-thread.
+description: Drive a project from chat — Slack and Microsoft Teams messages spawn sessions and the agent replies in-thread.
 ---
 
 A **channel** connects a chat workspace to a project so you can run the agent
-from chat. Connect Slack to a project, and a message or mention spawns a
-[session](/docs/concepts/sessions); the agent replies in the thread. Follow-up
-messages in that thread continue the same session.
+from chat. Connect Slack or Microsoft Teams to a project, and a message or
+mention spawns a [session](/docs/concepts/sessions); the agent replies in the
+thread. Follow-up messages in that thread continue the same session.
 
 - **Connect Slack** with [`kortix channels connect`](/docs/reference/cli) or
   from the project's Channels page in the dashboard. Both offer the same two
@@ -14,31 +14,37 @@ messages in that thread continue the same session.
   "Add to Slack" install link — open it, pick the workspace, click Allow), or
   bring your own Slack app (`--manual`: a bot token + signing secret, via
   flags, `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env vars, or stdin).
+- **Connect Microsoft Teams** from the project's Channels page when Teams is
+  enabled on your Kortix deployment. If a managed Kortix Teams bot is available,
+  the dashboard gives you the app manifest, admin-consent link, and install
+  steps; self-hosted deployments can bring their own multi-tenant Azure Bot with
+  an app ID, client secret, and Azure AD tenant ID.
 - **Credentials are stored as project [secrets](/docs/concepts/secrets)** (e.g.
-  `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`) — never in the repo.
-- **The agent talks to Slack through the Executor.** Connecting Slack
-  auto-materializes a `slack` [connector](/docs/concepts/connections) (provider
-  `channel`): the agent's Slack calls — posting, **file upload/download**,
-  history, reactions, search — run through the gateway with the bot token
-  resolved **server-side**, so the token is never exposed inside the sandbox. The
-  `slack` connector also shows up in the project's Connectors, where you control
-  who can use it.
+  `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, or Teams bot credentials for
+  self-hosted installs) — never in the repo.
+- **The agent talks to chat through the Executor.** Connecting Slack
+  auto-materializes the `kortix_slack` connector; connecting Teams
+  auto-materializes `kortix_teams`. Both use provider `channel`: the agent's
+  chat calls run through the gateway with the bot credential resolved
+  **server-side**, so the token is never exposed inside the sandbox. The channel
+  connector also shows up in the project's Connectors, where you control who can
+  use it.
 
 <Callout type="info" title="Note">
 Channels are configured through the dashboard, CLI, and secrets — **not**
 through the manifest (`kortix.yaml`/`kortix.toml`). v2 removes channel
-declarations from the schema outright; the `slack` connector auto-materializes
-on connect, you don't declare it.
+declarations from the schema outright; `kortix_slack` / `kortix_teams`
+connectors auto-materialize on connect, you don't declare them.
 </Callout>
 
 ## Who the agent runs as
 
-By default, every Slack sender — the first message in a channel, a thread
+By default, every chat sender — the first message in a channel, a thread
 follow-up, or a button click — must be linked to a Kortix account that has
 access to the project before the agent will act for them. Link your identity
-once with the `/kortix login` slash command (or the button on the prompt
-below); it opens a short-lived, private browser link that connects your
-Slack user to a Kortix account.
+once with Slack's `/kortix login` slash command, Teams' `/login` command, or the
+button on the prompt below; it opens a short-lived, private browser link that
+connects your chat user to a Kortix account.
 
 If there's no linked mapping yet, the agent doesn't run — it posts an
 ephemeral prompt nudging the sender to connect (or, if they're linked but

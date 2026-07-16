@@ -9,7 +9,7 @@ describe('buildTunnelConnectCommand', () => {
         origin: 'https://dev.kortix.com',
       }),
     ).toBe(
-      'npx @kortix/agent-tunnel connect --api-url https://dev-api.kortix.com/v1/tunnel',
+      'npx --yes @kortix/agent-tunnel@latest connect --api-url https://dev-api.kortix.com/v1/tunnel',
     );
   });
 
@@ -20,7 +20,7 @@ describe('buildTunnelConnectCommand', () => {
         origin: 'https://dev.kortix.com',
       }),
     ).toBe(
-      'npx @kortix/agent-tunnel connect --api-url https://dev.kortix.com/v1/tunnel',
+      'npx --yes @kortix/agent-tunnel@latest connect --api-url https://dev.kortix.com/v1/tunnel',
     );
   });
 });

@@ -306,6 +306,32 @@ flow(
   },
 );
 
+flow(
+  "GH-16",
+  { domain: "git", routes: ["GET /v1/projects/github/repository-branches"] },
+  async (ctx) => {
+    const path = "/v1/projects/github/repository-branches";
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get(path);
+      r.status(401);
+    });
+    await ctx.step("missing repository selection → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(path);
+      r.status(400);
+    });
+    await ctx.step("unknown installation → 409 install prompt", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(path, {
+        query: {
+          account_id: ctx.P.OWNER.accountId,
+          installation_id: "999999999",
+          repo_full_name: "octocat/hello-world",
+        },
+      });
+      r.status([400, 409]);
+    });
+  },
+);
+
 // ── Repo creation / import (need a real GitHub App install or PAT) ─────────
 
 flow(

@@ -462,8 +462,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
   const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
   const activeInstanceId = routeInstanceId || getActiveInstanceIdFromCookie() || '';
-  // Layered (per-host) health is a justavps-only feature; the cloud runtime
-  // never reports that provider, so it is permanently off here.
+  // Layered (per-host) health belongs to the retired host-managed runtime, so
+  // it is permanently off here.
   const supportsLayeredHealth = false;
   const { data: adminRole } = useAdminRole({ enabled: !!activeInstanceId });
   const isAdmin = !!adminRole?.isAdmin;

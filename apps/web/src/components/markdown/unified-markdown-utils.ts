@@ -3,12 +3,72 @@ import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-d
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
+/**
+ * Is the WebAssembly runtime Shiki needs available in this context?
+ *
+ * Shiki's oniguruma grammar engine compiles to WebAssembly. Some browsers /
+ * contexts block or disable WebAssembly entirely — privacy browsers (Brave with
+ * aggressive shields, LibreWolf, Tor Browser in high-security mode), hardened /
+ * sandboxed WebViews, enterprise-policy-locked browsers, and scrapers/bots with
+ * spoofed Chrome UAs running on runtimes without WebAssembly. In those contexts
+ * eagerly kicking off `getSingletonHighlighter()` at module init leaves a
+ * promise that rejects with `ReferenceError: WebAssembly is not defined` (V8) /
+ * `Can't find variable: WebAssembly` (WebKit). Because the singleton starts
+ * before any code block renders, the rejection has no consumer attached yet and
+ * fires `onunhandledrejection` → Sentry → Better Stack.
+ *
+ * Gate the highlighter on this check so such visitors degrade to plain
+ * (un-highlighted) code instead of paging on every page load.
+ *
+ * See Better Stack 1604d50a (`WebAssembly is not defined`).
+ */
+export function shikiWasmAvailable(): boolean {
+  return typeof WebAssembly !== 'undefined';
+}
+
 /** Same-origin link? Internal links route through next/link; the rest open externally. */
 export function isInternalUrl(href: string | undefined): boolean {
   if (!href) return false;
   if (href.startsWith('http://') || href.startsWith('https://')) return false;
   if (href.includes('://')) return false;
   return href.startsWith('/') || href.startsWith('#');
+}
+
+/**
+ * Can this href be handed to `next/link` without crashing the prefetch path?
+ *
+ * Next.js' app-router `createPrefetchURL` (in `app-router.tsx`) does
+ * `new URL(addBasePath(href), window.location.href)` and, on failure, throws
+ * `Cannot prefetch '<href>' because it cannot be converted to a URL.` — which
+ * fires whenever a `<Link>` carrying a malformed absolute href scrolls into
+ * view (segment-cache `pingVisibleLinks`). A valid external URL is fine
+ * (`isExternalURL` short-circuits prefetch); only URLs that fail `new URL()`
+ * blow up, e.g. `http://:` (an empty host/port template like
+ * `http://${HOST}:${PORT}` that leaked unsubstituted from content).
+ *
+ * Internal (`/`, `#`, `?`) and bare-relative hrefs are always safe. We only
+ * reject protocol-prefixed hrefs that don't parse, so the renderer can fall
+ * back to a plain `<a>` and never feed garbage to `next/link`.
+ */
+export function isLinkSafeHref(href: string | undefined): boolean {
+  if (!href) return false;
+  // Root-relative, hash, and query links are always safe for next/link.
+  if (href.startsWith('/') || href.startsWith('#') || href.startsWith('?')) {
+    return true;
+  }
+  // Protocol-prefixed URLs must parse, or next/link's prefetch throws on
+  // `new URL()` failure when the link enters the viewport.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(href)) {
+    try {
+      new URL(href);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  // Bare-relative paths are resolved against the current URL by next/link —
+  // `new URL(..., window.location.href)` always succeeds for them.
+  return true;
 }
 
 /** Normalise a fenced-code language hint to a Shiki grammar id. */

@@ -1,11 +1,4 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { sandboxEnvValue } from './sandbox-env.ts';
@@ -82,6 +75,15 @@ export interface Host {
   account_name?: string;
   /** Global default project for this host (see DefaultProjectRef). */
   default_project?: DefaultProjectRef;
+  /**
+   * The frontend/dashboard base URL for this host, when known authoritatively
+   * (e.g. `kortix self-host` registers it from its own `PUBLIC_URL`). Lets
+   * `kortix login`'s browser flow open the right origin instead of guessing
+   * one from the API host's shape — that guess (see web-url.ts) assumes cloud
+   * URL conventions (`api.<domain>` → `<domain>`, `:8008` → `:3000`) which
+   * silently breaks for a self-host stack on non-default ports.
+   */
+  dashboard_url?: string;
   logged_in_at: string;
 }
 
@@ -105,11 +107,7 @@ function defaultConfigPath(): string {
 export function configFilePath(): string {
   // Honor both config path env vars. KORTIX_AUTH_FILE is still used by the
   // existing e2e test harness.
-  return (
-    process.env.KORTIX_CONFIG_FILE ??
-    process.env.KORTIX_AUTH_FILE ??
-    defaultConfigPath()
-  );
+  return process.env.KORTIX_CONFIG_FILE ?? process.env.KORTIX_AUTH_FILE ?? defaultConfigPath();
 }
 
 function singleHostAuthFilePath(): string {
@@ -415,6 +413,7 @@ function normalizeConfig(parsed: Partial<Config>): Config {
       ...(typeof h.account_slug === 'string' ? { account_slug: h.account_slug } : {}),
       ...(typeof h.account_name === 'string' ? { account_name: h.account_name } : {}),
       ...(isDefaultProjectRef(h.default_project) ? { default_project: h.default_project } : {}),
+      ...(typeof h.dashboard_url === 'string' ? { dashboard_url: h.dashboard_url } : {}),
     };
   }
   // Tracks which old names were folded into new ones so we can retarget the
@@ -494,7 +493,9 @@ function defaultHost(url: string): Host {
   };
 }
 
-function importSingleHostAuth(parsed: Record<string, unknown> | Partial<Config> | null): Config | null {
+function importSingleHostAuth(
+  parsed: Record<string, unknown> | Partial<Config> | null,
+): Config | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const p = parsed as Record<string, unknown>;
   const token = typeof p.token === 'string' ? p.token : undefined;
@@ -507,8 +508,7 @@ function importSingleHostAuth(parsed: Record<string, unknown> | Partial<Config> 
     user_id: typeof p.user_id === 'string' ? p.user_id : '',
     user_email: typeof p.user_email === 'string' ? p.user_email : '',
     account_id: typeof p.account_id === 'string' ? p.account_id : '',
-    logged_in_at:
-      typeof p.logged_in_at === 'string' ? p.logged_in_at : new Date().toISOString(),
+    logged_in_at: typeof p.logged_in_at === 'string' ? p.logged_in_at : new Date().toISOString(),
   };
   return {
     active: CLOUD_HOST_NAME,

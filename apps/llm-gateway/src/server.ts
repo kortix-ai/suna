@@ -1,5 +1,4 @@
 import { createGateway, gatewayErrorResponse } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/llm-catalog';
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -46,6 +45,7 @@ export function buildServer(): GatewayServer {
       // (vs three sequential round-trips). authenticate/assertBillingActive/
       // assertBudget remain for the /models path and the interface contract.
       authorize: api.authorize,
+      resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
       assertBillingActive: api.assertBillingActive,
       assertBudget: api.assertBudget,
@@ -63,10 +63,6 @@ export function buildServer(): GatewayServer {
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
       maxRequestBytes: config.maxRequestBytes || undefined,
-      // Resolve `auto` against the principal's account/agent default (resolved
-      // API-side in withResolvedTier and carried across the authorize RPC).
-      autoRouter: (model, body, principal) =>
-        pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
     },
     { logger },
   );

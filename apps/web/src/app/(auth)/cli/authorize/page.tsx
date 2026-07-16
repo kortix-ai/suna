@@ -1,15 +1,23 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { CheckCircle2, KeyRound, Loader2, TerminalSquare, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import {
+  AuthPendingScreen,
+  AuthStatusScreen,
+  CopyCommand,
+  DetailPanel,
+  DetailRow,
+} from '@/features/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountTokensApi } from '@/lib/api/account-tokens';
+import { validateCallback } from './validate-callback';
 
 /**
  * Browser-callback authorization page. The CLI runs `kortix login`,
@@ -28,13 +36,7 @@ import { accountTokensApi } from '@/lib/api/account-tokens';
  */
 export default function CliAuthorizePage() {
   return (
-    <Suspense
-      fallback={
-        <Centered>
-          <Loader2 className="text-muted-foreground size-6 animate-spin" />
-        </Centered>
-      }
-    >
+    <Suspense fallback={<AuthPendingScreen />}>
       <CliAuthorizeInner />
     </Suspense>
   );
@@ -43,7 +45,6 @@ export default function CliAuthorizePage() {
 type Phase = 'idle' | 'authorizing' | 'success' | 'error';
 
 function CliAuthorizeInner() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -66,35 +67,21 @@ function CliAuthorizeInner() {
   }, [isLoading, user, params, router]);
 
   if (isLoading || !user) {
-    return (
-      <Centered>
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </Centered>
-    );
+    return <AuthPendingScreen />;
   }
 
   if (!callback || !state) {
     return (
-      <Centered>
-        <ErrorCard
-          title={tHardcodedUi.raw('appCliAuthorizePage.line70JsxAttrTitleMissingCallback')}
-          message={tHardcodedUi.raw(
-            'appCliAuthorizePage.line71JsxAttrMessageThisPageIsOpenedByTheKortixCli',
-          )}
-        />
-      </Centered>
+      <AuthStatusScreen
+        title="Open this page from the CLI"
+        description="Run this command in your terminal to get a fresh sign-in link."
+        action={<CopyCommand command="kortix login" />}
+      />
     );
   }
 
   if (!validation.ok) {
-    return (
-      <Centered>
-        <ErrorCard
-          title={tHardcodedUi.raw('appCliAuthorizePage.line80JsxAttrTitleInvalidCallback')}
-          message={validation.reason}
-        />
-      </Centered>
-    );
+    return <AuthStatusScreen title="Invalid callback" description={validation.reason} />;
   }
 
   async function authorize() {
@@ -164,208 +151,60 @@ function CliAuthorizeInner() {
 
   if (phase === 'success') {
     return (
-      <Centered>
-        <SuccessCard />
-      </Centered>
+      <AuthStatusScreen
+        title="CLI connected"
+        description="You're signed in. Return to your terminal — you can close this tab."
+      />
     );
   }
 
-  return (
-    <Centered>
-      <ConsentCard
-        userEmail={user.email ?? ''}
-        callbackHost={validation.display}
-        deviceLabel={label}
-        phase={phase}
-        error={error}
-        onAuthorize={authorize}
-      />
-    </Centered>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Layout
-// ──────────────────────────────────────────────────────────────────────────
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-muted/30 flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-md">{children}</div>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Consent card
-// ──────────────────────────────────────────────────────────────────────────
-
-interface ConsentProps {
-  userEmail: string;
-  callbackHost: string;
-  deviceLabel: string;
-  phase: Phase;
-  error: string | null;
-  onAuthorize: () => void;
-}
-
-function ConsentCard({
-  userEmail,
-  callbackHost,
-  deviceLabel,
-  phase,
-  error,
-  onAuthorize,
-}: ConsentProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const busy = phase === 'authorizing';
+
   return (
-    <div className="bg-background rounded-md border shadow-sm">
-      <div className="p-7">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="bg-muted/40 grid size-11 place-items-center rounded-sm border">
-            <TerminalSquare className="size-5" />
-          </div>
-          <div>
-            <div className="text-base font-semibold">
-              {tHardcodedUi.raw('appCliAuthorizePage.line214JsxTextAuthorizeKortixCli')}
-            </div>
-            <div className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw('appCliAuthorizePage.line216JsxTextKortixComYourTerminal')}
-            </div>
-          </div>
+    <AuthFrame>
+      <Rise>
+        <StepHeader
+          title="Sign in to the Kortix CLI"
+          description={
+            <>
+              <span className="text-foreground font-mono">kortix login</span> in your terminal is
+              waiting for you to approve this sign-in.
+            </>
+          }
+        />
+      </Rise>
+
+      <Rise delay={0.06}>
+        {phase === 'error' && error ? <ErrorStrip message={error} /> : null}
+
+        <DetailPanel>
+          <DetailRow label="Account" value={user.email ?? 'You'} />
+          <DetailRow label="Sends to" value={validation.display} mono />
+          {label ? <DetailRow label="Device" value={label} /> : null}
+        </DetailPanel>
+
+        <Button size="lg" className="mt-5 w-full" onClick={authorize} disabled={busy}>
+          {busy ? <Loading className="size-4 shrink-0" /> : null}
+          Authorize
+        </Button>
+
+        <div className="text-muted-foreground mt-8 space-y-2 text-sm">
+          <p>
+            This creates a personal access token. Revoke it anytime in{' '}
+            <span className="text-foreground">Settings → CLI tokens</span>.
+          </p>
+          <p>
+            <Link
+              href="/"
+              className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
+            >
+              Cancel
+            </Link>
+          </p>
         </div>
-
-        <p className="text-muted-foreground text-sm">
-          {tHardcodedUi.raw(
-            'appCliAuthorizePage.line222JsxTextApprovingWillCreateANewPersonalAccessToken',
-          )}
-        </p>
-
-        <dl className="bg-muted/30 mt-5 space-y-2 rounded-md border p-4 text-sm">
-          <Row label="Account" value={userEmail || 'You'} />
-          <Row label="Callback" value={callbackHost} />
-          {deviceLabel && <Row label="Device" value={deviceLabel} />}
-        </dl>
-
-        {phase === 'error' && error && (
-          <div className="border-destructive bg-destructive/5 text-destructive mt-5 flex items-start gap-2 rounded-md border p-3 text-sm">
-            <XCircle className="mt-0.5 size-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <div className="mt-6 flex items-center justify-between gap-3">
-          <Link
-            href="/"
-            className="text-muted-foreground text-sm underline-offset-4 hover:underline"
-          >
-            Cancel
-          </Link>
-          <Button onClick={onAuthorize} disabled={busy} size="lg">
-            {busy ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                {tHardcodedUi.raw('appCliAuthorizePage.line249JsxTextAuthorizing')}
-              </>
-            ) : (
-              <>
-                <KeyRound className="size-4" /> Authorize
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      <div className="bg-muted/30 text-muted-foreground border-t px-7 py-3 text-xs">
-        {tHardcodedUi.raw('appCliAuthorizePage.line261JsxTextYouCanRevokeThisTokenAnytimeUnder')}{' '}
-        <strong className="text-foreground">
-          {tHardcodedUi.raw('appCliAuthorizePage.line262JsxTextSettingsCliTokens')}
-        </strong>
-        .
-      </div>
-    </div>
+      </Rise>
+    </AuthFrame>
   );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="truncate font-mono text-xs">{value}</dd>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Success / error states
-// ──────────────────────────────────────────────────────────────────────────
-
-function SuccessCard() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <div className="bg-background rounded-md border p-7 text-center shadow-sm">
-      <div className="mx-auto grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-        <CheckCircle2 className="size-6" />
-      </div>
-      <div className="mt-4 text-base font-semibold">
-        {tHardcodedUi.raw('appCliAuthorizePage.line287JsxTextCliAuthorized')}
-      </div>
-      <p className="text-muted-foreground mt-1 text-sm">
-        {tHardcodedUi.raw('appCliAuthorizePage.line289JsxTextReturnToYourTerminalYouAposReSigned')}
-      </p>
-      <p className="text-muted-foreground mt-4 text-xs">
-        {tHardcodedUi.raw('appCliAuthorizePage.line292JsxTextYouCanCloseThisTab')}
-      </p>
-    </div>
-  );
-}
-
-function ErrorCard({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="bg-background rounded-md border p-7 text-center shadow-sm">
-      <div className="bg-destructive/10 text-destructive mx-auto grid size-12 place-items-center rounded-full">
-        <XCircle className="size-6" />
-      </div>
-      <div className="mt-4 text-base font-semibold">{title}</div>
-      <p className="text-muted-foreground mt-1 text-sm">{message}</p>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────
-
-interface Validation {
-  ok: boolean;
-  reason: string;
-  display: string;
-}
-
-function validateCallback(raw: string | null): Validation {
-  if (!raw) return { ok: false, reason: 'No callback URL provided.', display: '' };
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return { ok: false, reason: 'Callback is not a valid URL.', display: '' };
-  }
-  if (url.protocol !== 'http:') {
-    return {
-      ok: false,
-      reason: 'Callback must use http:// — refusing other protocols.',
-      display: url.origin,
-    };
-  }
-  if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
-    return {
-      ok: false,
-      reason: 'Callback must be a localhost address.',
-      display: url.origin,
-    };
-  }
-  return { ok: true, reason: '', display: `${url.hostname}:${url.port}` };
 }
 
 /** Race a promise against a timeout. Rejects with `message` if the

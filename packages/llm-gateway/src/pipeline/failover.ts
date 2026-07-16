@@ -1,4 +1,9 @@
-import type { GatewayConfig, GatewayLogger, UpstreamDescriptor } from '../domain';
+import type {
+  GatewayConfig,
+  GatewayLogger,
+  ModelFallbackCondition,
+  UpstreamDescriptor,
+} from '../domain';
 import { CircuitOpenError, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import type { CircuitBreaker } from '../resilience';
@@ -61,7 +66,7 @@ function suggestionFor(status: number): string {
 }
 
 export interface FailoverContext {
-  candidates: UpstreamDescriptor[];
+  candidates: RoutedUpstreamCandidate[];
   payload: Record<string, unknown>;
   config: GatewayConfig;
   fetchImpl?: FetchImpl;
@@ -71,32 +76,48 @@ export interface FailoverContext {
   requestId: string;
   trace: Partial<TraceFields>;
   capturedRequest: unknown;
+  fallbackOn: ModelFallbackCondition;
+}
+
+export interface RoutedUpstreamCandidate {
+  descriptor: UpstreamDescriptor;
+  routeModel: string;
 }
 
 export interface FailoverSuccess {
   upstream: Response;
-  chosen: UpstreamDescriptor;
+  chosen: RoutedUpstreamCandidate;
   tried: string[];
+  modelsTried: string[];
   attempts: number;
 }
 
 export type FailoverResult = { kind: 'response'; response: Response } | { kind: 'success'; value: FailoverSuccess };
 
 export async function runFailover(ctx: FailoverContext): Promise<FailoverResult> {
-  const { candidates, payload, config, fetchImpl, breakerFor, emit, logger, requestId, trace, capturedRequest } = ctx;
+  const {
+    candidates, payload, config, fetchImpl, breakerFor, emit, logger,
+    requestId, trace, capturedRequest, fallbackOn,
+  } = ctx;
   const tried: string[] = [];
+  const modelsTried: string[] = [];
   let attempts = 0;
   let upstream: Response | null = null;
-  let chosen: UpstreamDescriptor | null = null;
+  let chosen: RoutedUpstreamCandidate | null = null;
   let lastError: unknown;
 
   const debug = (event: string, fields?: Record<string, unknown>): void =>
     logger.debug?.(`[gateway] · ${requestId} ${event}`, { requestId, event, ...fields });
 
   for (let i = 0; i < candidates.length; i += 1) {
-    const descriptor = candidates[i];
+    const candidate = candidates[i];
+    const { descriptor, routeModel } = candidate;
     const hasFallback = i < candidates.length - 1;
+    const hasModelFallback = candidates
+      .slice(i + 1)
+      .some((next) => next.routeModel !== routeModel);
     tried.push(descriptor.provider);
+    if (modelsTried.at(-1) !== routeModel) modelsTried.push(routeModel);
     attempts += 1;
     const breaker = breakerFor(descriptor.provider);
     const attemptStart = Date.now();
@@ -105,6 +126,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       provider: descriptor.provider,
       kind: descriptor.kind,
       resolvedModel: descriptor.resolvedModel,
+      routeModel,
       baseUrl: descriptor.baseUrl,
       breakerState: breaker.current,
       hasFallback,
@@ -127,7 +149,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         binding: { provider: descriptor.provider, breaker },
         fetchImpl,
       });
-      chosen = descriptor;
+      chosen = candidate;
       debug('upstream_attempt_ok', {
         provider: descriptor.provider,
         status: upstream.status,
@@ -150,8 +172,19 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         // (429 was already retried on this candidate by callUpstream, so reaching
         // here means it's persistent, not a transient blip.) Other 4xx — bad
         // request, auth, model-not-found — are the caller's to fix: return as-is.
-        if (LIMIT_STATUSES.has(err.status) && hasFallback) {
-          debug('failover_to_next', { fromProvider: descriptor.provider, status: err.status });
+        if (
+          (LIMIT_STATUSES.has(err.status) && hasFallback) ||
+          (fallbackOn === 'any-error' && hasModelFallback)
+        ) {
+          debug('failover_to_next', {
+            fromProvider: descriptor.provider,
+            fromModel: routeModel,
+            status: err.status,
+            reason:
+              fallbackOn === 'any-error' && hasModelFallback
+                ? 'model_policy'
+                : 'provider_limit',
+          });
           continue;
         }
         debug('upstream_client_error_return', { provider: descriptor.provider, status: err.status });
@@ -184,7 +217,10 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const open = lastError instanceof CircuitOpenError;
     const status = open ? 503 : 502;
     const errorCode = open ? 'upstream_unavailable' : 'upstream_unreachable';
-    const lastDescriptor = [...candidates].reverse().find((candidate) => candidate.provider === tried.at(-1));
+    const lastCandidate = [...candidates].reverse().find(
+      (candidate) => candidate.descriptor.provider === tried.at(-1),
+    );
+    const lastDescriptor = lastCandidate?.descriptor;
     const upstreamError = lastError instanceof UpstreamHttpError
       ? parseUpstreamBody(lastError.body)
       : { message: errorMessage(lastError) };
@@ -211,5 +247,5 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     };
   }
 
-  return { kind: 'success', value: { upstream, chosen, tried, attempts } };
+  return { kind: 'success', value: { upstream, chosen, tried, modelsTried, attempts } };
 }

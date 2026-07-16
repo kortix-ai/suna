@@ -8,7 +8,7 @@ import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
   getProjectDetail,
-  getProjectLlmCatalog,
+  getProjectModelPicker,
   listProjectSecrets,
 } from '../../core/rest/projects-client';
 import {
@@ -52,7 +52,7 @@ export function useOpenCodeProviders() {
       : opencodeKeys.providers(),
     queryFn: async () => {
       if (projectId && projectGatewayEnabled) {
-        const catalog = await getProjectLlmCatalog(projectId);
+        const catalog = await getProjectModelPicker(projectId);
         const providers = projectLlmCatalogToProviderList(catalog);
         setLSCache(LS_PROVIDERS, providers, cacheScope);
         return providers;

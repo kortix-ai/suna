@@ -584,3 +584,104 @@ flow(
     });
   },
 );
+
+// CHN-T1 — Teams installation status (read ACL).
+flow(
+  "CHN-T1",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/teams/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads install status → 200 (null when not connected)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+      r.status(200);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-T2 — Teams mode discovery (read ACL).
+flow(
+  "CHN-T2",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/teams/mode"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads mode → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/teams/mode", { params: { projectId: p.id } });
+      r.status(200);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/teams/mode", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-T3 — Teams connect (manage ACL); a bad tenant id is rejected with 400.
+flow(
+  "CHN-T3",
+  {
+    domain: "channels",
+    routes: ["POST /v1/projects/:projectId/channels/teams/connect"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER with invalid tenant_id → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "contoso.onmicrosoft.com" }, { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "contoso.onmicrosoft.com" }, { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-T4 — Teams inbound webhook (public, JWT-gated). Unconfigured → 503; configured + no/invalid token → 401.
+flow(
+  "CHN-T4",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/teams/messages"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON unsigned activity → 503 (unconfigured) or 401 (no/invalid token)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/messages", { type: "message", text: "hi" });
+      r.status([401, 503]);
+    });
+  },
+);

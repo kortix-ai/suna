@@ -31,7 +31,7 @@ spec:
   {{- end }}
   containers:
     - name: gateway
-      image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      image: {{ include "kortix-gateway.image" . | quote }}
       imagePullPolicy: {{ .Values.image.pullPolicy }}
       ports:
         - name: http
@@ -40,6 +40,10 @@ spec:
       env:
         - name: PORT
           value: {{ .Values.containerPort | quote }}
+        {{- if .Values.kortixVersion }}
+        - name: KORTIX_VERSION
+          value: {{ .Values.kortixVersion | quote }}
+        {{- end }}
         {{- range $k, $v := .Values.extraEnv }}
         - name: {{ $k }}
           value: {{ $v | quote }}

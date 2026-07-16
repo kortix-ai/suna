@@ -89,7 +89,6 @@ export function lowestFreeSlot(reg: Registry): number {
 
 export function slotDir(name: string): string { return join(WT_HOME, name); }
 export function supaWorkdir(name: string): string { return join(slotDir(name), 'sb'); }
-export function pnpmStore(name: string): string { return join(slotDir(name), 'pnpm-store'); }
 
 export function writeMarker(worktreePath: string, entry: SlotEntry) {
   writeFileSync(join(worktreePath, '.kortix-worktree.json'), JSON.stringify(entry, null, 2));

@@ -55,3 +55,11 @@ export function marketplaceItemHref(id: string): string {
 export function marketplaceCompanyHref(marketplaceId: string): string {
   return `/marketplace/${companySlugFromId(marketplaceId)}`;
 }
+
+/** The unified marketplace page filtered to one source (in-place, not a
+ *  separate route). `all` links back to the unfiltered page. */
+export function marketplaceSourceHref(marketplaceId: string): string {
+  return marketplaceId === 'all'
+    ? '/marketplace'
+    : `/marketplace?source=${companySlugFromId(marketplaceId)}`;
+}

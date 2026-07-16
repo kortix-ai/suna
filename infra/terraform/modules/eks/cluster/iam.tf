@@ -18,7 +18,14 @@ data "aws_iam_policy_document" "cluster_assume" {
 resource "aws_iam_role" "cluster" {
   name               = "${var.name}-cluster"
   assume_role_policy = data.aws_iam_policy_document.cluster_assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-cluster"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "cluster" {
@@ -40,7 +47,14 @@ data "aws_iam_policy_document" "node_assume" {
 resource "aws_iam_role" "node" {
   name               = "${var.name}-node"
   assume_role_policy = data.aws_iam_policy_document.node_assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-node"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "node" {

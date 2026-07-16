@@ -7,26 +7,27 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Trash2, Shield } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { Plus, Trash2, Shield } from 'lucide-react';
+import { errorToast, successToast } from '@/components/ui/toast';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -35,6 +36,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   type IamPolicy,
   type IamRole,
@@ -157,11 +166,11 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
   const deleteMutation = useMutation({
     mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
     onSuccess: () => {
-      toast.success('Assignment removed');
+      successToast('Assignment removed');
       queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
       setDeleteTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove assignment'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove assignment'),
   });
 
   const policies = policiesQuery.data ?? [];
@@ -217,15 +226,20 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
 
   const newAssignmentButton = canManage ? (
     rbacEnabled ? (
-      <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
-        <Plus className="h-4 w-4" />
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => setCreateOpen(true)}
+        className="gap-1.5"
+      >
+        <Plus className="size-4" />
         New assignment
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
-          <Button size="sm" className="gap-1.5" disabled>
-            <Plus className="h-4 w-4" />
+          <Button size="sm" variant="secondary" className="gap-1.5" disabled>
+            <Plus className="size-4" />
             New assignment
           </Button>
           <Badge variant="outline" size="sm">
@@ -236,93 +250,106 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
     )
   ) : null;
 
+  const settled = !policiesQuery.isLoading && !hasError;
+
   return (
-    <SectionCard
-      title="Assignments"
-      description="Bind a member, group, or agent to a custom role at a scope."
-      action={!hasError ? newAssignmentButton : null}
-      flush
-    >
-      {hasError ? (
-        <div className="px-6 py-5">
-          <InfoBanner
-            tone="destructive"
-            title="Failed to load assignments"
-            action={
-              <Button variant="outline" size="sm" onClick={retryAll}>
-                Retry
-              </Button>
-            }
-          >
-            {errorMessage}
-          </InfoBanner>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
+            Assignments{settled ? ` · ${policies.length}` : ''}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            Bind a member, group, or agent to a custom role at a scope.
+          </p>
         </div>
+        {!hasError ? newAssignmentButton : null}
+      </div>
+
+      {hasError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load assignments"
+          description={errorMessage}
+          action={
+            <Button variant="outline" size="sm" onClick={retryAll}>
+              Retry
+            </Button>
+          }
+        />
       ) : policiesQuery.isLoading ? (
-        <div className="px-6 py-5">
-          <Skeleton className="h-16 w-full" />
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+          ))}
         </div>
       ) : policies.length === 0 ? (
         <EmptyState
           icon={Shield}
+          size="sm"
           title="No assignments yet"
           description="Bind a member, group, or agent to a custom role."
           action={newAssignmentButton}
         />
       ) : (
-        <div className="overflow-hidden px-6 py-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/60 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                <th className="py-2 font-medium">Principal</th>
-                <th className="py-2 font-medium">Role</th>
-                <th className="py-2 font-medium">Scope</th>
-                <th className="py-2 font-medium">Expires</th>
-                <th className="w-16 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {policies.map((p) => {
-                const principal = principalLabel(p);
-                return (
-                  <tr key={p.policy_id} className="hover:bg-muted/20">
-                    <td className="py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-foreground">{principal.name}</span>
-                        {principal.kind && (
-                          <Badge variant="outline" size="sm" className="font-normal">
-                            {principal.kind}
-                          </Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2 text-foreground">
-                      {roleNameById.get(p.role_id) ?? p.role_id}
-                    </td>
-                    <td className="py-2 text-muted-foreground">{scopeLabel(p)}</td>
-                    <td className="py-2 text-xs text-muted-foreground">
-                      {p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="py-2 text-right">
-                      {canManage && (
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Principal</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead className="w-16">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {policies.map((p) => {
+              const principal = principalLabel(p);
+              return (
+                <TableRow key={p.policy_id}>
+                  <TableCell className="max-w-[240px] whitespace-normal">
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {principal.name}
+                      </span>
+                      {principal.kind && (
+                        <Badge variant="outline" size="sm" className="font-normal">
+                          {principal.kind}
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-foreground text-sm">
+                    {roleNameById.get(p.role_id) ?? p.role_id}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{scopeLabel(p)}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {canManage && (
+                      <div className="flex justify-end">
                         <Hint label="Remove assignment">
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            className="text-muted-foreground hover:text-destructive"
                             onClick={() => setDeleteTarget(p)}
                             aria-label={`Remove assignment for ${principal.name}`}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="size-3.5" />
                           </Button>
                         </Hint>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
 
       <CreateAssignmentDialog
@@ -361,7 +388,7 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
           if (deleteTarget) deleteMutation.mutate(deleteTarget.policy_id);
         }}
       />
-    </SectionCard>
+    </div>
   );
 }
 
@@ -435,11 +462,11 @@ function CreateAssignmentDialog({
       });
     },
     onSuccess: () => {
-      toast.success('Assignment created');
+      successToast('Assignment created');
       reset();
       onCreated();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create assignment'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to create assignment'),
   });
 
   const principalValid = !!principalId;
@@ -449,7 +476,7 @@ function CreateAssignmentDialog({
   const isValid = principalValid && !!roleId && scopeValid;
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(next) => {
         if (mutation.isPending) return;
@@ -457,15 +484,15 @@ function CreateAssignmentDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New assignment</DialogTitle>
-          <DialogDescription>
+      <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>New assignment</ModalTitle>
+          <ModalDescription>
             Bind a member, group, or agent to a custom role at a scope.
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
 
-        <div className="space-y-4">
+        <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
           <div className="space-y-1.5">
             <Label htmlFor="assignment-principal-type">Principal type</Label>
             <Select
@@ -507,9 +534,9 @@ function CreateAssignmentDialog({
             <div className="space-y-1.5">
               <Label htmlFor="assignment-agent-project">Project</Label>
               {projectsLoading ? (
-                <p className="text-xs text-muted-foreground">Loading projects…</p>
+                <p className="text-muted-foreground text-xs">Loading projects…</p>
               ) : projects.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No projects in this account yet.</p>
+                <p className="text-muted-foreground text-xs">No projects in this account yet.</p>
               ) : (
                 <Select
                   value={projectId}
@@ -532,7 +559,7 @@ function CreateAssignmentDialog({
                   </SelectContent>
                 </Select>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Agents are project-scoped — choose the project first.
               </p>
             </div>
@@ -624,9 +651,9 @@ function CreateAssignmentDialog({
           <div className="space-y-1.5">
             <Label htmlFor="assignment-role">Role</Label>
             {rolesLoading ? (
-              <p className="text-xs text-muted-foreground">Loading roles…</p>
+              <p className="text-muted-foreground text-xs">Loading roles…</p>
             ) : customRoles.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Create a custom role first.</p>
+              <p className="text-muted-foreground text-xs">Create a custom role first.</p>
             ) : (
               <Select value={roleId} onValueChange={setRoleId} disabled={mutation.isPending}>
                 <SelectTrigger id="assignment-role">
@@ -675,9 +702,9 @@ function CreateAssignmentDialog({
             <div className="space-y-1.5">
               <Label htmlFor="assignment-project">Project</Label>
               {projectsLoading ? (
-                <p className="text-xs text-muted-foreground">Loading projects…</p>
+                <p className="text-muted-foreground text-xs">Loading projects…</p>
               ) : projects.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   No projects in this account yet.
                 </p>
               ) : (
@@ -698,7 +725,7 @@ function CreateAssignmentDialog({
                   </SelectContent>
                 </Select>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 The project this role applies to.
               </p>
             </div>
@@ -716,11 +743,12 @@ function CreateAssignmentDialog({
               disabled={mutation.isPending}
             />
           </div>
-        </div>
+        </ModalBody>
 
-        <DialogFooter>
+        <ModalFooter className="sm:justify-between">
           <Button
-            variant="outline"
+            type="button"
+            variant="outline-ghost"
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
@@ -731,11 +759,11 @@ function CreateAssignmentDialog({
             disabled={!isValid || mutation.isPending}
             className="gap-1.5"
           >
-            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {mutation.isPending && <Loading className="size-4 shrink-0" />}
             Create
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

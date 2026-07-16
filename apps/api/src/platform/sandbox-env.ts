@@ -50,6 +50,8 @@ const SANDBOX_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   // pattern below.
   'DATABASE_URL',
   'DAYTONA_API_KEY',
+  'PLATINUM_API_KEY',
+  'E2B_API_KEY',
 ]);
 
 /**

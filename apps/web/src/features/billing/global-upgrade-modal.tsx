@@ -12,6 +12,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
 import { useAccountState, useCreatePerSeatCheckout } from '@/hooks/billing';
@@ -20,7 +21,6 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { ArrowRight, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 
 export interface UpgradePlansModalProps {
   open: boolean;
@@ -31,6 +31,7 @@ export interface UpgradePlansModalProps {
 export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradePlansModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const createPerSeat = useCreatePerSeatCheckout();
+  const openDemo = useRequestDemo();
 
   const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
   const seatCount = Math.max(1, accountState?.member_count ?? accountState?.seats?.count ?? 1);
@@ -135,9 +136,16 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
 
           <p className="text-muted-foreground text-center text-xs">
             Need SSO, on-prem, or volume pricing?{' '}
-            <Link href="/enterprise" className="text-foreground underline-offset-4 hover:underline">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenChange(false);
+                openDemo({ source: 'billing-upgrade-modal' });
+              }}
+              className="text-foreground underline-offset-4 hover:underline"
+            >
               Contact sales
-            </Link>
+            </button>
           </p>
 
           {!canManageBilling && (

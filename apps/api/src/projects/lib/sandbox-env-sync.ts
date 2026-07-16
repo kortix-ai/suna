@@ -1,14 +1,32 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { resolvePreviewLink } from '../../sandbox-proxy/backend';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
+import { getProvider, type ProviderName } from '../../platform/providers';
 import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+
+/**
+ * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
+ * mirrors session-sandbox.ts's boot-time computation (see that file and
+ * `local-docker.ts`'s `sandboxFacingApiOrigin()`). Every hot env-push call
+ * site here recomputes the LLM-gateway base URL from scratch (a project's
+ * gateway opt-in can toggle, or secrets can rotate, mid-session), so it must
+ * ask the OWNING provider for its origin the same way the boot path does —
+ * otherwise a same-machine provider's boot-time fix is silently undone by the
+ * very next prompt or gateway-mode toggle, which re-pushes the generic public
+ * origin over the daemon's `/kortix/env` and re-breaks connectivity.
+ */
+export function llmGatewayBaseUrlForProvider(providerName: ProviderName): string {
+  const origin = getProvider(providerName).sandboxFacingApiOrigin?.() ?? config.KORTIX_URL;
+  return resolveLlmGatewayBaseUrl(origin);
+}
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -97,7 +115,7 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
 
 async function postEnvToDaemon(args: {
   previewUrl: string;
-  previewToken: string | null;
+  providerHeaders: Record<string, string>;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
   refreshModels?: boolean;
@@ -111,7 +129,7 @@ async function postEnvToDaemon(args: {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${args.serviceKey}`,
-    ...daytonaPreviewHeaders(args.previewToken),
+    ...args.providerHeaders,
   };
 
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
@@ -147,7 +165,11 @@ export async function syncSandboxEnvForPrompt(args: {
   sessionId: string;
   serviceKey: string | null;
   previewUrl: string;
-  previewToken: string | null;
+  providerHeaders: Record<string, string>;
+  /** The provider this sandbox actually runs on (`SandboxRecord.provider` at
+   *  the call site) — needed to resolve the LLM-gateway base URL onto the
+   *  RIGHT origin for a same-machine provider. */
+  providerName: ProviderName;
 }): Promise<void> {
   if (!args.serviceKey) return;
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
@@ -155,12 +177,12 @@ export async function syncSandboxEnvForPrompt(args: {
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
-    previewToken: args.previewToken,
+    providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
     llmGatewayEnabled,
-    llmGatewayBaseUrl: llmGatewayEnabled ? resolveLlmGatewayBaseUrl() : undefined,
+    llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
@@ -171,7 +193,7 @@ export async function syncSandboxEnvForPrompt(args: {
     const waitStartedAt = Date.now();
     const ready = await waitForDaemonOpencodeReady({
       previewUrl: args.previewUrl,
-      previewToken: args.previewToken,
+      providerHeaders: args.providerHeaders,
     });
     console.log(
       `[env-sync] opencode restarted by prompt env-sync (state=${opencodeState}); ` +
@@ -206,8 +228,8 @@ export async function propagateProjectSecretsToActiveSandboxes(
       try {
         const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) return;
-        const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
-        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot, refreshModels: opts?.refreshModels });
+        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
+        await postEnvToDaemon({ previewUrl: url, providerHeaders: headers, serviceKey, snapshot, refreshModels: opts?.refreshModels });
       } catch (err) {
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,
@@ -232,6 +254,7 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
       .select({
         externalId: sessionSandboxes.externalId,
         sessionId: sessionSandboxes.sessionId,
+        provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
       })
       .from(sessionSandboxes)
@@ -240,7 +263,9 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
     if (targets.length === 0) return;
 
-    const llmGatewayBaseUrl = resolveLlmGatewayBaseUrl();
+    // Computed PER ROW (not once, hoisted) — a project's active sandboxes can
+    // span more than one provider (mid-migration, failover), and each needs
+    // the base URL resolved onto ITS OWN provider's origin.
     await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
       const rowConfig = (row.config || {}) as Record<string, unknown>;
       const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
@@ -249,15 +274,15 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
         const snapshot =
           (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
           emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-        const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
+        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         await postEnvToDaemon({
           previewUrl: url,
-          previewToken: token,
+          providerHeaders: headers,
           serviceKey,
           snapshot,
           refreshModels: true,
           llmGatewayEnabled: enabled,
-          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrl : undefined,
+          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
           llmGatewayDenyEnv: enabled ? nativeProviderEnvNames().join(',') : '',
         });
         await markSandboxLlmGatewayMode(row.sessionId, enabled);
@@ -305,15 +330,6 @@ async function markSandboxLlmGatewayMode(
       updatedAt: new Date(),
     })
     .where(eq(sessionSandboxes.sessionId, sessionId));
-}
-
-function resolveLlmGatewayBaseUrl(): string {
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  return (
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`)
-  );
 }
 
 function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {

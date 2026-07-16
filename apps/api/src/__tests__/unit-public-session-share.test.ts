@@ -40,9 +40,9 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../sandbox-proxy/backend', () => ({
-  buildSandboxUpstreamHeaders: async ({ serviceKey, previewToken }: any) => ({
+  buildSandboxUpstreamHeaders: async ({ serviceKey, providerHeaders }: any) => ({
+    ...providerHeaders,
     ...(serviceKey ? { Authorization: `Bearer ${serviceKey}` } : {}),
-    ...(previewToken ? { 'X-Daytona-Preview-Token': previewToken } : {}),
   }),
   invalidatePreviewLink: () => {},
   loadSandbox: async () => ({
@@ -51,7 +51,11 @@ mock.module('../sandbox-proxy/backend', () => ({
     serviceKey: 'service-key',
   }),
   markSandboxUsed: async () => {},
-  resolvePreviewLink: async () => ({ url: 'https://preview.test', token: 'preview-token' }),
+  resolveSandboxIngress: async () => ({
+    url: 'https://preview.test',
+    headers: { 'e2b-traffic-access-token': 'preview-token' },
+    effectivePort: 3000,
+  }),
   wakeSandbox: async () => {},
 }));
 

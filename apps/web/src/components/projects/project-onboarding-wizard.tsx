@@ -10,6 +10,9 @@
  *   1. Welcome / book a call   — a warm start (founder concierge when eligible).
  *   2. Connect your tools      — pick the apps you live in and authorize them
  *                                right here (real Pipedream OAuth, inline).
+ *                                Skipped entirely when Pipedream isn't
+ *                                configured (self-host without PIPEDREAM_*,
+ *                                see isConnectorsEnabled()).
  *   3. Install to Slack        — one-click install, then we POLL for the install
  *                                and flip to a confirmed ✓ the moment it lands.
  *                                Gated (can't "Continue" until connected) with a
@@ -62,6 +65,7 @@ import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
+import { isConnectorsEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk/projects-client';
@@ -109,7 +113,15 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const [calOpen, setCalOpen] = useState(false);
   const [index, setIndex] = useState(0);
 
-  const steps = useMemo<StepId[]>(() => ['welcome', 'tools', 'slack', 'model', 'done'], []);
+  // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
+  // unset/false) has no "Connect your tools" catalogue to offer — skip the
+  // step entirely instead of landing on a dead 501. Cloud always has
+  // Pipedream configured (default true), so this is a no-op there.
+  const connectorsEnabled = isConnectorsEnabled();
+  const steps = useMemo<StepId[]>(
+    () => (connectorsEnabled ? ['welcome', 'tools', 'slack', 'model', 'done'] : ['welcome', 'slack', 'model', 'done']),
+    [connectorsEnabled],
+  );
   const stepId = steps[index] ?? 'welcome';
 
   // `?onboarding-reset` reopens the wizard from the top (clears completion flag).
@@ -725,9 +737,13 @@ function SlackGlyph() {
 
 function ModelStep() {
   const { data: providers, isLoading } = useOpenCodeProviders();
-  const { openConnectProvider, openUpgrade, modal, hasSelectableModels } = useModelConnectionGate(
-    flattenModels(providers),
-  );
+  const {
+    openConnectProvider,
+    openUpgrade,
+    modal,
+    hasSelectableModels,
+    showUpgradeOption,
+  } = useModelConnectionGate(flattenModels(providers));
 
   return (
     <div className="flex flex-col gap-5">
@@ -737,8 +753,9 @@ function ModelStep() {
           Connect a model
         </h1>
         <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
-          Your agent needs an LLM to think with. Upgrade to a Kortix plan for instant access, or
-          bring your own API key from Anthropic, OpenAI, or any other provider.
+          {showUpgradeOption
+            ? 'Your agent needs an LLM to think with. Upgrade to a Kortix plan for instant access, or bring your own API key from Anthropic, OpenAI, or any other provider.'
+            : 'Your agent needs an LLM to think with. Bring your own API key from Anthropic, OpenAI, or any other provider.'}
         </p>
       </div>
 
@@ -760,13 +777,15 @@ function ModelStep() {
             Pick whichever is faster for you right now — both take under a minute.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button size="lg" className="gap-2" onClick={openUpgrade}>
-              <CreditCard className="size-4" />
-              Upgrade
-            </Button>
+            {showUpgradeOption && (
+              <Button size="lg" className="gap-2" onClick={openUpgrade}>
+                <CreditCard className="size-4" />
+                Upgrade
+              </Button>
+            )}
             <Button
               size="lg"
-              variant="outline"
+              variant={showUpgradeOption ? 'outline' : 'default'}
               className="gap-2"
               onClick={() => openConnectProvider('providers')}
             >

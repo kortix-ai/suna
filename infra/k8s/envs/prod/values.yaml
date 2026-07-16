@@ -24,14 +24,18 @@ extraEnv:
   # catalog shape) and the model picker collapses to a single model.
   LLM_GATEWAY_BASE_URL: "https://gateway.kortix.com/v1/llm"
 
-# CUTOVER COMPLETE (2026-06-21): api.kortix.com is served by api-eks, and EKS now
-# OWNS the singleton workers (cron scheduler, project maintenance, migrations).
-# ECS Fargate is scaled to 0 — it had held the worker lease while running stale
-# 0.9.63 code whose trigger sweep silently skipped every cron fleet-wide
-# (pre-#3530), so no cron fired for ~18h. One Postgres leader lease is shared, so
-# exactly one EKS pod is leader. KEEP THIS true. If ECS is ever brought back as a
-# standby it MUST stay workers-disabled (KORTIX_TRIGGER_SCHEDULER_ENABLED=false)
-# so it can never grab the worker lease and starve the scheduler again.
+# BACKEND TOPOLOGY (2026-07-13, PR #4683): api.kortix.com is served by ECS
+# Fargate (api-ecs-fargate); THIS EKS deployment is the warm standby. Both run
+# the SAME image + the SAME kortix-prod-env blob on every release (deploy-prod's
+# deploy-ecs + deploy-api jobs hard-gate the release, and verify-live-version
+# asserts both report the released version) — so unlike the 2026-06-21 incident
+# (a scaled-down ECS held the worker lease while running stale 0.9.63 code and
+# starved cron fleet-wide for ~18h), neither side can silently run old code.
+# Singleton workers (cron scheduler, project maintenance) are arbitrated by ONE
+# Postgres leader lease shared across both backends (see
+# apps/api/src/shared/leader-election.ts): exactly one pod/task fleet-wide is
+# leader, whichever side it lands on. Keep workers enabled here so the standby
+# can take over the lease during a flip.
 workers:
   enabled: true
 

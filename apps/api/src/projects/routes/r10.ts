@@ -1,51 +1,33 @@
 /**
- * Marketplace install — project-scoped.
+ * Marketplace install — project-scoped, agent-driven.
  *
- *   POST /:projectId/marketplace/install { id } → commit an item's files (+ lock)
- *                                                  onto the default branch, live
- *                                                  in the next session.
- *   GET  /:projectId/marketplace                → what's installed (from the lock).
+ *   POST /:projectId/marketplace/install-session { id } → start a session that
+ *     clones/reads the marketplace item's source and merges it into this
+ *     project (skills/agents/tools/kortix.yaml), then opens a CR.
  *
- * The old /registry routes remain as compatibility aliases.
- *
- * Reuses @kortix/registry server-side: resolve from the catalog, plan the
- * install (with transitive bundle deps), and commit every file atomically via
- * the provider-agnostic multi-file git helper.
+ * The deterministic install/lock/update/remove engine (registry-lock.json,
+ * dependency resolution, hash-based update detection) has been removed — see
+ * docs/specs/2026-07-13-marketplace-as-projects.md. Adding a marketplace item
+ * to an existing project is now always an agent import; no file is ever
+ * committed without the agent reading + wiring it in first.
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
-import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
-import {
-  buildInstall,
-  buildInstallBatch,
-  catalogIdForName,
-  resolveItemFiles,
-} from '../../marketplace/install-service';
+import { getCatalogEntry } from '../../marketplace/catalog';
+import { buildTemplateInstallPrompt } from './marketplace-install-prompts';
 import { auth, errors, json } from '../../openapi';
-import { commitMultipleFilesToBranch } from '../git/branches';
-import { readManifestFromRepo, readRepoFile } from '../git/files';
-import { assertCommitCapabilities, loadProjectForUser } from '../lib/access';
+import { readManifestFromRepo } from '../git/files';
+import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
-import { readBody } from '../lib/serializers';
-
-async function repoFileOrNull(
-  project: Parameters<typeof readRepoFile>[0],
-  path: string,
-): Promise<string | null> {
-  try {
-    return await readRepoFile(project, path, project.defaultBranch);
-  } catch {
-    return null;
-  }
-}
+import { readBody, requestAuditContext } from '../lib/serializers';
+import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 
 /** The project's manifest raw text, preferring kortix.yaml over kortix.toml
- *  (dual-format). resolveOpencodeDir reads either format's `config_dir`. */
+ *  (dual-format). */
 async function manifestRawOrNull(
-  project: Parameters<typeof readRepoFile>[0],
+  project: Parameters<typeof readManifestFromRepo>[0],
 ): Promise<string | null> {
   const found = await readManifestFromRepo(
     project,
@@ -55,7 +37,101 @@ async function manifestRawOrNull(
   return found?.content ?? null;
 }
 
-async function handleMarketplaceInstall(c: any) {
+/** Build the initial prompt for an agent-driven merge of a `registry:project`
+ *  item into an EXISTING project. This is judgment-heavy (does the incoming
+ *  agent persona collide with one that already exists? does the target project
+ *  even want a new default agent?) — so an agent reads both sides and opens
+ *  a change request rather than a blind file overwrite. */
+function buildRegistryProjectInstallPrompt(
+  entry: NonNullable<Awaited<ReturnType<typeof getCatalogEntry>>>,
+  targetManifestRaw: string | null,
+): string {
+  const item = entry.item;
+  const ownFiles = (item.files ?? []).filter((f) => typeof f.content === 'string');
+  // Today every registry:project item is a base (inline-content) item, so
+  // `files[].content` is always populated here. If an EXTERNAL project item
+  // ever lands in the catalog, its file content is fetched lazily and isn't
+  // present on `item.files` — silently falling through would produce a prompt
+  // with none of the template's actual files, i.e. a no-op merge. Fail loudly
+  // instead of degrading silently (a full fix would resolve content via
+  // `getCatalogItemFile` per file).
+  if ((item.files ?? []).length > 0 && ownFiles.length === 0) {
+    throw new Error(
+      `Project template "${item.name}" has no resolvable file content (likely an external registry item) — install-session merge only supports base project items today.`,
+    );
+  }
+  const deps = item.registryDependencies ?? [];
+
+  const lines: string[] = [
+    `Integrate the "${item.title ?? item.name}" project template into THIS project — without breaking anything already here.`,
+    '',
+    item.description ?? '',
+    '',
+    "This project's current kortix.yaml:",
+    '```yaml',
+    targetManifestRaw ?? '(no manifest found)',
+    '```',
+    '',
+    'The template contributes these files. Its own kortix.yaml is a reference for what agent it expects to exist — do NOT overwrite this project\'s kortix.yaml with it verbatim.',
+  ];
+  for (const file of ownFiles) {
+    lines.push('', `--- ${file.path} ---`, '```', file.content ?? '', '```');
+  }
+  if (deps.length > 0) {
+    lines.push(
+      '',
+      "It also depends on these marketplace skills — install each one (they're additive, they won't conflict with anything already installed):",
+      ...deps.map((d) => `- ${d}`),
+    );
+  }
+  lines.push(
+    '',
+    'Steps:',
+    "1. Read this project's current kortix.yaml and .kortix/opencode/agents/ to see what already exists.",
+    '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
+    "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
+    '4. Install the marketplace skills listed above.',
+    '5. Open a change request with the result — do not push directly to the default branch.',
+  );
+  return lines.join('\n');
+}
+
+/** Agent-driven install of a skill/agent/command/tool into THIS project: the
+ *  session installs its files, then wires up whatever it needs (connectors,
+ *  secrets). */
+function buildItemInstallPrompt(
+  entry: NonNullable<Awaited<ReturnType<typeof getCatalogEntry>>>,
+  id: string,
+): string {
+  const item = entry.item;
+  const typeLabel = item.type.replace('registry:', '');
+  const meta = (item.meta ?? {}) as { capabilities?: { connectors?: string[]; secrets?: string[] } };
+  const needs = [
+    ...(meta.capabilities?.connectors ?? []),
+    ...(meta.capabilities?.secrets ?? []),
+    ...Object.keys((item as { envVars?: Record<string, unknown> }).envVars ?? {}),
+  ];
+  const lines: string[] = [
+    `Add the "${item.title ?? item.name}" ${typeLabel} to THIS project and set it up.`,
+    '',
+    item.description ?? '',
+    '',
+    'Steps:',
+    `1. Fetch its source (marketplace item id "${id}") — read its files (SKILL.md / agent / tool definition) and place them into this project, following the project's existing conventions.`,
+    '2. Read its SKILL.md (or equivalent) to see what it does and what it needs.',
+  ];
+  if (needs.length) {
+    lines.push(
+      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with the \`request_secret\` / \`connect\` tools (or \`kortix secrets request\` / \`kortix connectors link\`) — never ask me to paste a raw key.`,
+      '4. Tell me in one line what it can now do and how to use it.',
+    );
+  } else {
+    lines.push('3. Tell me in one line what it can now do and how to use it.');
+  }
+  return lines.join('\n');
+}
+
+async function handleMarketplaceInstallSession(c: any) {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -63,534 +139,58 @@ async function handleMarketplaceInstall(c: any) {
   const body = await readBody(c);
   const id = typeof body?.id === 'string' ? body.id.trim() : '';
   if (!id) return c.json({ error: 'id is required' }, 400);
-  const detail = await getCatalogItemDetail(id);
-  if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
+
+  const entry = await getCatalogEntry(id);
+  if (!entry) return c.json({ error: `Unknown item "${id}"` }, 400);
 
   const project = await loadGitProject(loaded);
-  const manifestRaw = await manifestRawOrNull(project);
-  const configDir = resolveOpencodeDir(manifestRaw);
-  const existingLockRaw = await repoFileOrNull(project, 'registry-lock.json');
-  const legacyLockRaw = await repoFileOrNull(project, 'skills-lock.json');
-
-  let built;
+  let prompt: string;
   try {
-    built = await buildInstall({
-      id,
-      configDir,
-      existingLockRaw,
-      legacyLockRaw,
-      now: new Date().toISOString(),
-    });
+    // Whole projects get merged (judgment-heavy, guards the target's kortix.yaml);
+    // a use-case template renders inputs + wires its scheduled trigger; everything
+    // else is a straight install + setup.
+    if (entry.item.type === 'registry:project') {
+      prompt = buildRegistryProjectInstallPrompt(entry, await manifestRawOrNull(project));
+    } else if (entry.item.type === 'registry:template') {
+      prompt = buildTemplateInstallPrompt(entry, id);
+    } else {
+      prompt = buildItemInstallPrompt(entry, id);
+    }
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
 
-  // Per-capability gate: installing an agent needs project.agent.write, a skill
-  // project.skill.write, etc. — so a role can be scoped to install some resource
-  // types but not others. (Editor/Manager hold them all; the agent-grant fold
-  // still fires through assertProjectCapability.)
-  await assertCommitCapabilities(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    built.files.map((f) => f.path),
-  );
-
-  const commit = await commitMultipleFilesToBranch(project, {
-    files: built.files,
-    message: `feat(marketplace): add ${detail.title}`,
-    branch: project.defaultBranch,
-  });
-
-  return c.json(
-    {
-      ok: true,
-      commit_sha: commit.commitSha,
-      branch: commit.branch,
-      file_count: commit.fileCount,
-      installed: built.installed,
-      capabilities: built.capabilities,
+  const result = await createProjectSession({
+    project: loaded.row,
+    userId: loaded.userId,
+    body: {
+      initial_prompt: prompt,
+      name: `Add ${entry.item.title ?? entry.item.name}`,
+      metadata: { kind: 'marketplace-install', item_id: id },
     },
-    201,
-  );
-}
-
-async function handleMarketplaceInstalled(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const project = await loadGitProject(loaded);
-  const lockRaw = await repoFileOrNull(project, 'registry-lock.json');
-  const legacyRaw = await repoFileOrNull(project, 'skills-lock.json');
-  const lock = parseLockContent(lockRaw, legacyRaw);
-
-  return c.json({
-    installed: Object.entries(lock.items).map(([name, e]) => ({
-      name,
-      type: e.type,
-      source: e.source,
-      installed_at: e.installedAt ?? null,
-      file_count: e.files.length,
-    })),
+    visibility: 'project',
+    request: requestAuditContext(c),
   });
-}
+  if (result.error) return sendSessionCreateError(c, result.error);
 
-async function handleMarketplaceUpdates(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const updates = await resolveMarketplaceUpdates(loaded);
-  return c.json({
-    updates,
-    update_available: updates.filter((u) => u.status === 'update-available').map((u) => u.name),
-  });
-}
-
-async function resolveMarketplaceUpdates(
-  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
-) {
-  const project = await loadGitProject(loaded);
-  const manifestRaw = await manifestRawOrNull(project);
-  const configDir = resolveOpencodeDir(manifestRaw);
-  const lock = parseLockContent(
-    await repoFileOrNull(project, 'registry-lock.json'),
-    await repoFileOrNull(project, 'skills-lock.json'),
-  );
-
-  const updates = await Promise.all(
-    Object.entries(lock.items).map(async ([name, e]) => {
-      let fresh: Awaited<ReturnType<typeof resolveItemFiles>> = null;
-      try {
-        fresh = await resolveItemFiles(name, configDir);
-      } catch {
-        fresh = null;
-      }
-      const diff = compareInstalled(e.files, fresh);
-      return {
-        name,
-        type: e.type,
-        status: diff.status,
-        changed: diff.changed.length + diff.added.length + diff.removed.length,
-      };
-    }),
-  );
-  return updates;
-}
-
-async function handleMarketplaceUpdate(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const body = await readBody(c);
-  const name = typeof body?.name === 'string' ? body.name.trim() : '';
-  if (!name) return c.json({ error: 'name is required' }, 400);
-
-  const id = await catalogIdForName(name);
-  if (!id)
-    return c.json({ error: `"${name}" is not in the catalog — cannot update (orphaned)` }, 400);
-
-  const project = await loadGitProject(loaded);
-  const manifestRaw = await manifestRawOrNull(project);
-  const configDir = resolveOpencodeDir(manifestRaw);
-
-  let built;
-  try {
-    built = await buildInstall({
-      id,
-      configDir,
-      existingLockRaw: await repoFileOrNull(project, 'registry-lock.json'),
-      legacyLockRaw: await repoFileOrNull(project, 'skills-lock.json'),
-      now: new Date().toISOString(),
-    });
-  } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
-  }
-
-  // Per-capability gate on the resource types this update rewrites.
-  await assertCommitCapabilities(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    built.files.map((f) => f.path),
-  );
-
-  const commit = await commitMultipleFilesToBranch(project, {
-    files: built.files,
-    message: `chore(marketplace): update ${name}`,
-    branch: project.defaultBranch,
-  });
-
-  return c.json({
-    ok: true,
-    updated: name,
-    commit_sha: commit.commitSha,
-    branch: commit.branch,
-    file_count: commit.fileCount,
-    installed: built.installed,
-  });
-}
-
-async function handleMarketplaceUpdateAll(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const updates = await resolveMarketplaceUpdates(loaded);
-  const names = updates.filter((u) => u.status === 'update-available').map((u) => u.name);
-  if (names.length === 0) {
-    return c.json({
-      ok: true,
-      updated: [],
-      commit_sha: null,
-      branch: null,
-      file_count: 0,
-      installed: [],
-    });
-  }
-
-  const project = await loadGitProject(loaded);
-  const manifestRaw = await manifestRawOrNull(project);
-  const configDir = resolveOpencodeDir(manifestRaw);
-
-  let built;
-  try {
-    const ids = await Promise.all(
-      names.map(async (name) => {
-        const id = await catalogIdForName(name);
-        if (!id) throw new Error(`"${name}" is not in the catalog — cannot update (orphaned)`);
-        return id;
-      }),
-    );
-    built = await buildInstallBatch({
-      ids,
-      configDir,
-      existingLockRaw: await repoFileOrNull(project, 'registry-lock.json'),
-      legacyLockRaw: await repoFileOrNull(project, 'skills-lock.json'),
-      now: new Date().toISOString(),
-    });
-  } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
-  }
-
-  // Per-capability gate on the resource types this bulk update rewrites.
-  await assertCommitCapabilities(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    built.files.map((f) => f.path),
-  );
-
-  const commit = await commitMultipleFilesToBranch(project, {
-    files: built.files,
-    message: `chore(marketplace): update ${names.length} item${names.length === 1 ? '' : 's'}`,
-    branch: project.defaultBranch,
-  });
-
-  return c.json({
-    ok: true,
-    updated: names,
-    commit_sha: commit.commitSha,
-    branch: commit.branch,
-    file_count: commit.fileCount,
-    installed: built.installed,
-  });
-}
-
-async function handleMarketplaceRemove(c: any) {
-  const projectId = c.req.param('projectId');
-  const name = c.req.param('name');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const project = await loadGitProject(loaded);
-  const lock = parseLockContent(
-    await repoFileOrNull(project, 'registry-lock.json'),
-    await repoFileOrNull(project, 'skills-lock.json'),
-  );
-  const entry = lock.items[name];
-  if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
-
-  const deletes = entry.files.map((f) => f.target);
-  // Per-capability gate on the resource type being removed (an agent removal
-  // needs project.agent.write, a skill project.skill.write, …).
-  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
-  delete lock.items[name];
-
-  const commit = await commitMultipleFilesToBranch(project, {
-    files: [{ path: 'registry-lock.json', content: serializeLock(lock) }],
-    deletes,
-    message: `chore(marketplace): remove ${name}`,
-    branch: project.defaultBranch,
-  });
-
-  return c.json({
-    ok: true,
-    removed: name,
-    commit_sha: commit.commitSha,
-    branch: commit.branch,
-    file_count: deletes.length,
-  });
+  return c.json({ session_id: result.row!.sessionId }, 201);
 }
 
 projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/marketplace/install',
+    path: '/{projectId}/marketplace/install-session',
     tags: ['marketplace'],
-    summary: 'POST /:projectId/marketplace/install',
+    summary: 'POST /:projectId/marketplace/install-session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      201: json(z.any(), 'Installed'),
+      201: json(z.any(), 'Session started'),
       ...errors(400, 404),
     },
   }),
-  handleMarketplaceInstall,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/registry/install',
-    tags: ['marketplace'],
-    summary: 'POST /:projectId/registry/install',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      201: json(z.any(), 'Installed'),
-      ...errors(400, 404),
-    },
-  }),
-  handleMarketplaceInstall,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/marketplace',
-    tags: ['marketplace'],
-    summary: 'GET /:projectId/marketplace',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Installed marketplace items'),
-      ...errors(404),
-    },
-  }),
-  handleMarketplaceInstalled,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/registry',
-    tags: ['marketplace'],
-    summary: 'GET /:projectId/registry',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Installed registry items'),
-      ...errors(404),
-    },
-  }),
-  handleMarketplaceInstalled,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/marketplace/updates',
-    tags: ['marketplace'],
-    summary: 'GET /:projectId/marketplace/updates',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Per-item update status'),
-      ...errors(404),
-    },
-  }),
-  handleMarketplaceUpdates,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/marketplace/update',
-    tags: ['marketplace'],
-    summary: 'POST /:projectId/marketplace/update',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Updated'),
-      ...errors(400, 404),
-    },
-  }),
-  handleMarketplaceUpdate,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/marketplace/update-all',
-    tags: ['marketplace'],
-    summary: 'POST /:projectId/marketplace/update-all',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Updated all outdated marketplace items'),
-      ...errors(400, 404),
-    },
-  }),
-  handleMarketplaceUpdateAll,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/marketplace/{name}',
-    tags: ['marketplace'],
-    summary: 'DELETE /:projectId/marketplace/:name',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), name: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Removed'),
-      ...errors(404),
-    },
-  }),
-  handleMarketplaceRemove,
-);
-
-// What's outdated — re-resolve each installed item from source, re-hash, and
-// compare to the lock. The "Updates available (N)" loop, WordPress-style.
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/registry/updates',
-    tags: ['marketplace'],
-    summary: 'GET /:projectId/registry/updates',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Per-item update status'),
-      ...errors(404),
-    },
-  }),
-  handleMarketplaceUpdates,
-);
-
-// Re-install an item from source (overwrites its files + refreshes the lock
-// hashes) — the "Update" button.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/registry/update',
-    tags: ['marketplace'],
-    summary: 'POST /:projectId/registry/update',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'Updated'),
-      ...errors(400, 404),
-    },
-  }),
-  handleMarketplaceUpdate,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/registry/update-all',
-    tags: ['marketplace'],
-    summary: 'POST /:projectId/registry/update-all',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Updated all outdated registry items'),
-      ...errors(400, 404),
-    },
-  }),
-  handleMarketplaceUpdateAll,
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/registry/{name}',
-    tags: ['marketplace'],
-    summary: 'DELETE /:projectId/registry/:name',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), name: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'Removed'),
-      ...errors(404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const name = c.req.param('name');
-    const loaded = await loadProjectForUser(c, projectId, 'write');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-    const project = await loadGitProject(loaded);
-    const lock = parseLockContent(
-      await repoFileOrNull(project, 'registry-lock.json'),
-      await repoFileOrNull(project, 'skills-lock.json'),
-    );
-    const entry = lock.items[name];
-    if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
-
-    const deletes = entry.files.map((f) => f.target);
-    // Per-capability gate on the resource type being removed.
-    await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
-    delete lock.items[name];
-
-    const commit = await commitMultipleFilesToBranch(project, {
-      files: [{ path: 'registry-lock.json', content: serializeLock(lock) }],
-      deletes,
-      message: `chore(registry): remove ${name}`,
-      branch: project.defaultBranch,
-    });
-
-    return c.json({
-      ok: true,
-      removed: name,
-      commit_sha: commit.commitSha,
-      branch: commit.branch,
-      file_count: deletes.length,
-    });
-  },
+  handleMarketplaceInstallSession,
 );

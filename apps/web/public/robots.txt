@@ -1,6 +1,7 @@
 # Kortix Robots.txt
 User-agent: *
 Allow: /
+Allow: /api/ai
 
 # Sitemap
 Sitemap: https://kortix.com/sitemap.xml
@@ -10,6 +11,7 @@ Disallow: /api/
 Disallow: /_next/
 Disallow: /admin/
 
-# Allow crawling of public pages
-Allow: /suna/
-
+# Machine-readable public content is intentionally crawlable.
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /markdown/

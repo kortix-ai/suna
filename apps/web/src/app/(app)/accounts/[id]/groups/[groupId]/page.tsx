@@ -1,10 +1,8 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { ChevronLeft, FolderOpen, Plus, Trash2, Users } from 'lucide-react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -17,23 +15,24 @@ import {
   sortGroupMembersByOverride,
   type AccountMeta,
 } from '@/components/iam/iam-display-helpers';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -43,7 +42,10 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   addGroupMembers,
@@ -55,6 +57,7 @@ import {
   updateGroup,
   type GroupProjectGrant,
 } from '@/lib/iam-client';
+import { cn } from '@/lib/utils';
 import {
   attachGroupToProject,
   detachGroupFromProject,
@@ -65,9 +68,10 @@ import {
 } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
+// Entity row dialect shared with the customize section views.
+const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
+
 export default function GroupDetailPage() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; groupId: string }>();
   const accountId = params?.id;
@@ -112,67 +116,92 @@ export default function GroupDetailPage() {
   const group = groupQuery.data;
 
   return (
-    <main className="w-full flex-1 px-4 py-8">
-      <div className="mx-auto w-full max-w-6xl space-y-8">
-        {groupQuery.isError && (
-          <InfoBanner
-            tone="destructive"
-            title={tHardcodedUi.raw(
-              'appAccountsIdGroupsGroupidPage.line139JsxAttrTitleFailedToLoadGroup',
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-10">
+      <div className="space-y-5">
+        <Link
+          href={`/accounts/${accountId}?tab=groups`}
+          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
+        >
+          <ChevronLeft className="size-4" />
+          {account?.name ?? 'Account'}
+        </Link>
+
+        <div className="flex min-w-0 items-center gap-3.5">
+          {groupQuery.isLoading ? (
+            <Skeleton className="size-10 rounded-md" />
+          ) : (
+            <EntityAvatar icon={Users} size="lg" />
+          )}
+          <div className="min-w-0 space-y-0.5">
+            {groupQuery.isLoading ? (
+              <Skeleton className="h-6 w-44" />
+            ) : (
+              <h2 className="text-foreground truncate text-xl font-medium">{group?.name}</h2>
             )}
-            action={
-              <Button variant="outline" size="sm" onClick={() => groupQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          >
-            {(groupQuery.error as Error).message}
-          </InfoBanner>
-        )}
-
-        {group && account && (
-          <Tabs defaultValue="members" className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="members">
-                {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}
-              </TabsTrigger>
-              <TabsTrigger value="projects">
-                {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextProject5cf58b9a')}
-              </TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="members">
-              <GroupMembersCard
-                accountId={account.account_id}
-                groupId={group.group_id}
-                canManage={canManageMembers}
-              />
-            </TabsContent>
-
-            <TabsContent value="projects">
-              <GroupProjectGrantsCard
-                accountId={account.account_id}
-                groupId={group.group_id}
-                groupName={group.name}
-              />
-            </TabsContent>
-
-            <TabsContent value="settings">
-              <GroupSettingsCard
-                accountId={account.account_id}
-                groupId={group.group_id}
-                initialName={group.name}
-                initialDescription={group.description ?? ''}
-                canEdit={canEditGroup}
-                canDelete={canDeleteGroup}
-                onDeleted={() => router.push(`/accounts/${account.account_id}`)}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
+            {group?.description ? (
+              <p className="text-muted-foreground truncate text-sm">{group.description}</p>
+            ) : null}
+          </div>
+        </div>
       </div>
-    </main>
+
+      {groupQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load group"
+          description={(groupQuery.error as Error).message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => groupQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : null}
+
+      {group && account ? (
+        <Tabs defaultValue="members" className="space-y-6">
+          <TabsList type="underline" className="flex w-full items-center justify-start">
+            <TabsTrigger value="members" className="w-fit flex-none">
+              Members
+            </TabsTrigger>
+            <TabsTrigger value="projects" className="w-fit flex-none">
+              Projects
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="w-fit flex-none">
+              Settings
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="members">
+            <GroupMembersCard
+              accountId={account.account_id}
+              groupId={group.group_id}
+              canManage={canManageMembers}
+            />
+          </TabsContent>
+
+          <TabsContent value="projects">
+            <GroupProjectGrantsCard
+              accountId={account.account_id}
+              groupId={group.group_id}
+              groupName={group.name}
+            />
+          </TabsContent>
+
+          <TabsContent value="settings">
+            <GroupSettingsCard
+              accountId={account.account_id}
+              groupId={group.group_id}
+              initialName={group.name}
+              initialDescription={group.description ?? ''}
+              canEdit={canEditGroup}
+              canDelete={canDeleteGroup}
+              onDeleted={() => router.push(`/accounts/${account.account_id}?tab=groups`)}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : null}
+    </div>
   );
 }
 
@@ -187,8 +216,6 @@ function GroupMembersCard({
   groupId: string;
   canManage: boolean;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
@@ -239,123 +266,117 @@ function GroupMembersCard({
   const removeMutation = useMutation({
     mutationFn: (userId: string) => removeGroupMember(accountId, groupId, userId),
     onSuccess: () => {
-      toast.success('Removed from group');
+      successToast('Removed from group');
       queryClient.invalidateQueries({ queryKey: ['group-members', accountId, groupId] });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setRemoveTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove member'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove member'),
   });
 
   const members = membersQuery.data ?? [];
 
   return (
-    <SectionCard
-      title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line249JsxAttrTitleGroupMembers')}
-      count={members.length}
-      description={tHardcodedUi.raw(
-        'appAccountsIdGroupsGroupidPage.line251JsxAttrDescriptionMembersOfThisGroupInheritEveryPolicyAttached',
-      )}
-      action={
-        canManage && (
-          <Button onClick={() => setAddOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line256JsxTextAddMembers')}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
+            Members{members.length > 0 ? ` · ${members.length}` : ''}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            Members of this group inherit every policy attached to it.
+          </p>
+        </div>
+        {canManage ? (
+          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setAddOpen(true)}>
+            <Plus className="size-4" />
+            Add members
           </Button>
-        )
-      }
-      flush
-    >
-      {membersQuery.isLoading && (
-        <List>
-          {Array.from({ length: 3 }).map((_, i) => (
-            <li key={i} className="px-6 py-3">
-              <Skeleton className="h-4 w-48" />
-            </li>
-          ))}
-        </List>
-      )}
+        ) : null}
+      </div>
 
-      {!membersQuery.isLoading && members.length === 0 && (
+      {membersQuery.isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+          ))}
+        </div>
+      ) : null}
+
+      {!membersQuery.isLoading && members.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={tHardcodedUi.raw(
-            'appAccountsIdGroupsGroupidPage.line275JsxAttrTitleNoMembersInThisGroup',
-          )}
+          size="sm"
+          title="No members in this group"
           description={
             canManage ? "Add account members to grant them this group's policies." : undefined
           }
         />
-      )}
+      ) : null}
 
-      {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 && (
-        <div className="border-border/60 border-b bg-amber-500/5 px-6 py-2.5 text-xs text-amber-700 dark:text-amber-300">
-          <span className="font-medium">Heads-up:</span> {overrideCount}{' '}
-          {overrideCount === 1 ? 'member is' : 'members are'}{' '}
-          {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAn3a706d13')}
-        </div>
-      )}
+      {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 ? (
+        <InfoBanner tone="warning">
+          {overrideCount} {overrideCount === 1 ? 'member is' : 'members are'} an account owner or
+          admin — they keep Manager access on every project regardless of this group&apos;s role.
+        </InfoBanner>
+      ) : null}
 
-      {!membersQuery.isLoading && members.length > 0 && (
-        <List>
+      {!membersQuery.isLoading && members.length > 0 ? (
+        <ul className="space-y-2">
           {sortGroupMembersByOverride(members, accountMetaByUserId).map((m) => {
             const label = emailByUserId.get(m.user_id) ?? m.user_id;
             const meta = accountMetaByUserId.get(m.user_id);
             const overrides = !!meta && isOverridingAccountRole(meta);
             const badgeLabel = meta?.isSuperAdmin ? 'super admin' : meta?.accountRole;
             return (
-              <ListRow
-                key={m.user_id}
-                leading={<UserAvatar email={label} size="md" />}
-                title={label}
-                badges={
-                  overrides && badgeLabel ? (
-                    <span
-                      className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-700 capitalize dark:text-amber-300"
-                      title={tI18nHardcoded.raw(
-                        'autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle5ac3c178',
-                      )}
-                    >
-                      {badgeLabel}
-                    </span>
-                  ) : meta?.accountRole === 'member' ? (
-                    <span className="border-border/60 text-muted-foreground rounded-2xl border px-1.5 py-0.5 text-[10px] font-normal capitalize">
-                      member
-                    </span>
-                  ) : null
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span>
-                      Added{' '}
-                      {new Date(m.added_at).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </span>
-                  </InlineMeta>
-                }
-                trailing={
-                  canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-foreground h-7 w-7"
-                      onClick={() => setRemoveTarget(m.user_id)}
-                      aria-label={tHardcodedUi.raw(
-                        'appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup',
-                      )}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )
-                }
-              />
+              <li key={m.user_id} className={MEMBER_ROW}>
+                <UserAvatar email={label} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground truncate text-sm font-medium">{label}</span>
+                    {overrides && badgeLabel ? (
+                      <Badge
+                        size="sm"
+                        className="bg-kortix-orange/15 text-kortix-orange border-transparent capitalize"
+                        title="Account owners and admins always have Manager on every project"
+                      >
+                        {badgeLabel}
+                      </Badge>
+                    ) : meta?.accountRole === 'member' ? (
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        Member
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <span className="text-muted-foreground text-xs">
+                    <InlineMeta>
+                      <span>
+                        Added{' '}
+                        {new Date(m.added_at).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </InlineMeta>
+                  </span>
+                </div>
+                {canManage ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-foreground size-7 shrink-0"
+                    onClick={() => setRemoveTarget(m.user_id)}
+                    aria-label="Remove from group"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                ) : null}
+              </li>
             );
           })}
-        </List>
-      )}
+        </ul>
+      ) : null}
 
       <AddGroupMembersDialog
         open={addOpen}
@@ -371,19 +392,15 @@ function GroupMembersCard({
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null);
         }}
-        title={tHardcodedUi.raw(
-          'appAccountsIdGroupsGroupidPage.line338JsxAttrTitleRemoveFromGroup',
-        )}
-        description={tHardcodedUi.raw(
-          'appAccountsIdGroupsGroupidPage.line339JsxAttrDescriptionTheUserStaysAMemberOfTheAccount',
-        )}
+        title="Remove from group"
+        description="They stay a member of the account and only lose this group's policies."
         confirmLabel="Remove"
         isPending={removeMutation.isPending}
         onConfirm={() => {
           if (removeTarget) removeMutation.mutate(removeTarget);
         }}
       />
-    </SectionCard>
+    </div>
   );
 }
 
@@ -402,7 +419,6 @@ function AddGroupMembersDialog({
   existingUserIds: Set<string>;
   candidates: Awaited<ReturnType<typeof listAccountMembers>>;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const currentUserId = user?.id ?? null;
@@ -425,13 +441,13 @@ function AddGroupMembersDialog({
   const addMutation = useMutation({
     mutationFn: () => addGroupMembers(accountId, groupId, Array.from(selected)),
     onSuccess: (res) => {
-      toast.success(`Added ${res.added} member${res.added === 1 ? '' : 's'}`);
+      successToast(`Added ${res.added} member${res.added === 1 ? '' : 's'}`);
       queryClient.invalidateQueries({ queryKey: ['group-members', accountId, groupId] });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setSelected(new Set());
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add members'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to add members'),
   });
 
   function toggle(userId: string) {
@@ -444,7 +460,7 @@ function AddGroupMembersDialog({
   }
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(next) => {
         if (addMutation.isPending) return;
@@ -452,26 +468,18 @@ function AddGroupMembersDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line406JsxTextAddMembers')}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw(
-              'appAccountsIdGroupsGroupidPage.line409JsxTextPickTheAccountMembersToAddToThis',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="px-6 py-5">
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Add members</ModalTitle>
+          <ModalDescription>Pick the account members to add to this group.</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
           {eligible.length === 0 ? (
-            <p className="border-border/60 text-muted-foreground rounded-2xl border border-dashed px-3 py-6 text-center text-xs">
-              {tHardcodedUi.raw(
-                'appAccountsIdGroupsGroupidPage.line415JsxTextEveryAccountMemberIsAlreadyInThisGroup',
-              )}
+            <p className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-6 text-center text-xs">
+              Every account member is already in this group.
             </p>
           ) : (
-            <div className="border-border/60 max-h-72 space-y-1 overflow-y-auto rounded-2xl border p-2">
+            <div className="bg-popover max-h-72 space-y-1 overflow-y-auto rounded-md border p-2">
               {eligible.map((m) => {
                 const checked = selected.has(m.user_id);
                 const label = m.email ?? m.user_id;
@@ -481,33 +489,34 @@ function AddGroupMembersDialog({
                     key={m.user_id}
                     type="button"
                     onClick={() => toggle(m.user_id)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
-                      checked ? 'bg-primary/5' : 'hover:bg-muted/40'
-                    }`}
+                    className={cn(
+                      'flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors',
+                      checked ? 'bg-primary/[0.05]' : 'hover:bg-accent',
+                    )}
                     disabled={addMutation.isPending}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       readOnly
-                      className="border-border accent-primary h-3.5 w-3.5 rounded"
+                      className="border-border accent-primary size-3.5 rounded"
                     />
                     <span className="truncate text-sm">{label}</span>
-                    {isMe && (
-                      <span className="border-border/60 text-muted-foreground ml-auto rounded-2xl border px-1.5 py-0.5 text-[10px] font-normal">
-                        you
-                      </span>
-                    )}
+                    {isMe ? (
+                      <Badge variant="secondary" size="sm" className="ml-auto">
+                        You
+                      </Badge>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
           )}
-        </div>
-        <div className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline-ghost"
             onClick={() => onOpenChange(false)}
             disabled={addMutation.isPending}
           >
@@ -519,12 +528,12 @@ function AddGroupMembersDialog({
             disabled={selected.size === 0 || addMutation.isPending}
             className="gap-1.5"
           >
-            {addMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {addMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
             Add {selected.size > 0 && `(${selected.size})`}
           </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -547,7 +556,6 @@ function GroupSettingsCard({
   canDelete: boolean;
   onDeleted: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
@@ -560,94 +568,98 @@ function GroupSettingsCard({
         description: description.trim() || null,
       }),
     onSuccess: () => {
-      toast.success('Group updated');
+      successToast('Group updated');
       queryClient.invalidateQueries({ queryKey: ['group', accountId, groupId] });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update group'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteGroup(accountId, groupId),
     onSuccess: () => {
-      toast.success('Group deleted');
+      successToast('Group deleted');
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       onDeleted();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to delete group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to delete group'),
   });
 
   const dirty = name.trim() !== initialName || description.trim() !== (initialDescription ?? '');
 
   return (
-    <div className="space-y-6">
-      <SectionCard
-        title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line522JsxAttrTitleGroupDetails')}
-      >
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="group-name">Name</Label>
-            <Input
-              id="group-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={128}
-              disabled={!canEdit || updateMutation.isPending}
-              className="max-w-md"
-            />
+    <div className="space-y-8">
+      <section className="space-y-4">
+        <Label>General</Label>
+        <div className="bg-popover rounded-md border">
+          <div className="space-y-4 px-4 py-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="group-name">Name</Label>
+              <Input
+                id="group-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={128}
+                disabled={!canEdit || updateMutation.isPending}
+                className="max-w-md"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="group-description">Description</Label>
+              <Input
+                id="group-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                maxLength={256}
+                disabled={!canEdit || updateMutation.isPending}
+                className="max-w-md"
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="group-description">Description</Label>
-            <Input
-              id="group-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={256}
-              disabled={!canEdit || updateMutation.isPending}
-              className="max-w-md"
-            />
-          </div>
-          <div className="border-border/60 flex justify-end border-t pt-4">
+          <div className="border-border flex justify-end border-t px-4 py-3">
             <Button
+              size="sm"
               onClick={() => updateMutation.mutate()}
               disabled={!canEdit || !dirty || !name.trim() || updateMutation.isPending}
               className="gap-1.5"
             >
-              {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {updateMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
               Save
             </Button>
           </div>
         </div>
-      </SectionCard>
+      </section>
 
-      {canDelete && (
-        <SectionCard
-          tone="destructive"
-          title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line562JsxAttrTitleDangerZone')}
-          description={tHardcodedUi.raw(
-            'appAccountsIdGroupsGroupidPage.line563JsxAttrDescriptionDeletingAGroupRemovesEveryPermissionPolicyAttached',
-          )}
-          flush
-        >
-          <div className="flex items-center justify-between px-6 py-4">
-            <p className="text-foreground text-sm">
-              {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line567JsxTextDeleteThisGroup')}
-            </p>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line569JsxTextDeleteGroup')}
-            </Button>
+      {canDelete ? (
+        <section className="space-y-4">
+          <Label>Danger zone</Label>
+          <div className="bg-popover rounded-md border px-4 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-foreground text-sm font-medium">Delete this group</p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  Removes every policy attached to it. Members keep their account access.
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete group
+              </Button>
+            </div>
           </div>
-        </SectionCard>
-      )}
+        </section>
+      ) : null}
 
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line578JsxAttrTitleDeleteGroup')}
+        title="Delete group"
         description={`Delete "${initialName}"? This cannot be undone.`}
-        confirmLabel={tHardcodedUi.raw(
-          'appAccountsIdGroupsGroupidPage.line580JsxAttrConfirmlabelDeleteGroup',
-        )}
+        confirmLabel="Delete group"
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
       />
@@ -666,7 +678,6 @@ function GroupProjectGrantsCard({
   groupId: string;
   groupName: string;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['group-project-grants', accountId, groupId];
   const [attachOpen, setAttachOpen] = useState(false);
@@ -709,7 +720,7 @@ function GroupProjectGrantsCard({
         return next;
       }),
     onSuccess: (_data, projectId) => {
-      toast.success('Group detached from project');
+      successToast('Group detached from project');
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       // The target project's Members card (in another tab) shows
@@ -719,136 +730,130 @@ function GroupProjectGrantsCard({
       queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to detach'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to detach'),
   });
 
   return (
-    <>
-      <SectionCard
-        flush
-        title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle82ea8920')}
-        description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
-        count={grants.length}
-        action={
-          <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
-            <Plus className="h-4 w-4" />
-            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAttachfc6eecb6')}
-          </Button>
-        }
-      >
-        {grantsQuery.isLoading && (
-          <div className="px-6 py-5">
-            <Skeleton className="h-8 w-full" />
-          </div>
-        )}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
+            Projects{grants.length > 0 ? ` · ${grants.length}` : ''}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            Every group member inherits the chosen role on these projects. Account owners and
+            admins always have Manager.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="gap-1.5"
+          onClick={() => setAttachOpen(true)}
+        >
+          <Plus className="size-4" />
+          Attach to project
+        </Button>
+      </div>
 
-        {!grantsQuery.isLoading && grantsQuery.isError && (
-          <div className="px-6 py-5">
-            <InfoBanner
-              tone="destructive"
-              title={tI18nHardcoded.raw(
-                'autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle724619d6',
-              )}
-              action={
-                <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
-                  Retry
-                </Button>
-              }
-            >
-              {(grantsQuery.error as Error)?.message}
-            </InfoBanner>
-          </div>
-        )}
-
-        {!grantsQuery.isLoading && !grantsQuery.isError && grants.length === 0 && (
-          <EmptyState
-            icon={FolderOpen}
-            title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitleb851c672')}
-            description={`Click "Attach to project" to give "${groupName}" access to one of your projects.`}
-          />
-        )}
-
-        <AttachToProjectDialog
-          accountId={accountId}
-          groupId={groupId}
-          groupName={groupName}
-          open={attachOpen}
-          onOpenChange={setAttachOpen}
-          attachedProjectIds={attachedProjectIds}
-          onAttached={(attachedProjectId) => {
-            queryClient.invalidateQueries({ queryKey });
-            queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
-            // The target project's Members card (in another tab) shows
-            // group-derived access for every member — without these the
-            // tab would be stale until the next focus + 20s staleTime.
-            queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
-            queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
-            setAttachOpen(false);
-          }}
+      {grantsQuery.isLoading ? (
+        <Skeleton className="h-[58px] w-full rounded-md" />
+      ) : grantsQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load projects"
+          description={(grantsQuery.error as Error)?.message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
+              Retry
+            </Button>
+          }
         />
-
-        {!grantsQuery.isLoading && grants.length > 0 && (
-          <List>
-            {grants.map((g: GroupProjectGrant) => {
-              const busy = pendingProjectIds.has(g.project_id);
-              return (
-                <ListRow
-                  key={g.project_id}
-                  leading={
-                    <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
-                      <FolderOpen className="text-muted-foreground h-4 w-4" />
+      ) : grants.length === 0 ? (
+        <EmptyState
+          icon={FolderOpen}
+          size="sm"
+          title="Not attached to any projects"
+          description={`Attach "${groupName}" to a project to give its members access.`}
+        />
+      ) : (
+        <ul className="space-y-2">
+          {grants.map((g: GroupProjectGrant) => {
+            const busy = pendingProjectIds.has(g.project_id);
+            return (
+              <li key={g.project_id} className={MEMBER_ROW}>
+                <EntityAvatar icon={FolderOpen} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground truncate text-sm font-medium">
+                      {g.project_name}
                     </span>
-                  }
-                  title={g.project_name}
-                  badges={
-                    <span className="border-border/60 text-muted-foreground rounded-2xl border px-1.5 py-0.5 text-[10px] font-normal capitalize">
+                    <Badge variant="outline" size="sm" className="capitalize">
                       {g.role}
-                    </span>
-                  }
-                  subtitle={
+                    </Badge>
+                  </div>
+                  <span className="text-muted-foreground text-xs">
                     <InlineMeta>
                       <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
-                      {g.expires_at && (
+                      {g.expires_at ? (
                         <span
                           className={
                             new Date(g.expires_at).getTime() < Date.now()
-                              ? 'text-rose-600 dark:text-rose-400'
-                              : 'text-amber-700 dark:text-amber-400'
+                              ? 'text-kortix-red'
+                              : 'text-kortix-yellow'
                           }
                           title={new Date(g.expires_at).toLocaleString()}
                         >
                           {formatExpiry(g.expires_at)}
                         </span>
-                      )}
+                      ) : null}
                     </InlineMeta>
-                  }
-                  trailing={
-                    busy ? (
-                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setDetachTarget(g)}
-                      >
-                        Detach
-                      </Button>
-                    )
-                  }
-                />
-              );
-            })}
-          </List>
-        )}
-      </SectionCard>
+                  </span>
+                </div>
+                {busy ? (
+                  <Loading className="text-muted-foreground size-4 shrink-0" />
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    onClick={() => setDetachTarget(g)}
+                  >
+                    Detach
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <AttachToProjectDialog
+        accountId={accountId}
+        groupId={groupId}
+        groupName={groupName}
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        attachedProjectIds={attachedProjectIds}
+        onAttached={(attachedProjectId) => {
+          queryClient.invalidateQueries({ queryKey });
+          queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+          // The target project's Members card (in another tab) shows
+          // group-derived access for every member — without these the
+          // tab would be stale until the next focus + 20s staleTime.
+          queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
+          queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
+          setAttachOpen(false);
+        }}
+      />
 
       <ConfirmDialog
         open={detachTarget !== null}
         onOpenChange={(open) => {
           if (!open) setDetachTarget(null);
         }}
-        title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle2c336348')}
+        title="Detach from project"
         description={
           detachTarget ? (
             <span>
@@ -868,13 +873,13 @@ function GroupProjectGrantsCard({
           detachMutation.mutate(target.project_id);
         }}
       />
-    </>
+    </div>
   );
 }
 
 // ─── V2: Attach group → project dialog ───────────────────────────────────
 //
-// Opens from the Project access card. Lists every project in the account
+// Opens from the Projects section. Lists every project in the account
 // the caller can manage (effective_project_role === 'manager'), minus
 // projects this group is already attached to. POSTs to the canonical
 // per-project group-grants endpoint (server-side gate on
@@ -899,7 +904,6 @@ function AttachToProjectDialog({
    *  invalidations to the project that was just attached. */
   onAttached: (projectId: string) => void;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const [selectedRole, setSelectedRole] = useState<ProjectRole>('member');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
@@ -947,35 +951,31 @@ function AttachToProjectDialog({
       return attachGroupToProject(selectedProjectId, groupId, selectedRole, expiresAt);
     },
     onSuccess: () => {
-      toast.success(`"${groupName}" attached to project`);
+      successToast(`"${groupName}" attached to project`);
       // selectedProjectId is non-null here — the mutationFn throws
       // synchronously if it isn't set, which short-circuits onSuccess.
       onAttached(selectedProjectId!);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to attach group to project'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to attach group to project'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAttachf3cd23a1')}
-            {groupName}
-            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextTo28a6368a')}
-          </DialogTitle>
-          <DialogDescription>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEvery625580cc')}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal open={open} onOpenChange={handleOpenChange}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Attach “{groupName}” to a project</ModalTitle>
+          <ModalDescription>
+            Every member of this group gets the chosen role on the project.
+          </ModalDescription>
+        </ModalHeader>
 
-        <div className="space-y-4 py-1">
+        <ModalBody className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="attach-project">Project</Label>
             {projectsQuery.isLoading ? (
-              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full rounded-lg" />
             ) : candidates.length === 0 ? (
-              <p className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
+              <p className="bg-popover text-muted-foreground rounded-md border px-3 py-2.5 text-xs">
                 {(projectsQuery.data ?? []).length === 0
                   ? 'No projects in this account yet.'
                   : attachedProjectIds.size > 0 &&
@@ -992,11 +992,7 @@ function AttachToProjectDialog({
                 onValueChange={(v) => setSelectedProjectId(v || undefined)}
               >
                 <SelectTrigger id="attach-project">
-                  <SelectValue
-                    placeholder={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdGroupsGroupIdPageJsxAttrPlaceholderb49f921c',
-                    )}
-                  />
+                  <SelectValue placeholder="Choose a project" />
                 </SelectTrigger>
                 <SelectContent>
                   {candidates.map((p) => (
@@ -1016,14 +1012,8 @@ function AttachToProjectDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="manager">
-                  {tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdGroupsGroupIdPageJsxTextManager33f373a5',
-                  )}
-                </SelectItem>
-                <SelectItem value="editor">
-                  {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEditor415a1a4b')}
-                </SelectItem>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
                 <SelectItem value="member">Member</SelectItem>
               </SelectContent>
             </Select>
@@ -1032,9 +1022,7 @@ function AttachToProjectDialog({
           <div className="space-y-1.5">
             <Label htmlFor="attach-expires" className="flex items-center gap-2">
               Expires
-              <span className="text-muted-foreground text-[10px] font-normal">
-                {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextOptional57a5222d')}
-              </span>
+              <span className="text-muted-foreground text-xs font-normal">optional</span>
             </Label>
             {/* datetime-local renders the OS-native picker. We convert
                 to ISO on submit. Min = now + 1 minute to dodge the
@@ -1048,15 +1036,15 @@ function AttachToProjectDialog({
               min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
               className="max-w-xs"
             />
-            <p className="text-muted-foreground text-[11px]">
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextThe40a6326f')}
+            <p className="text-muted-foreground text-xs">
+              The grant is removed automatically at this time.
             </p>
           </div>
-        </div>
+        </ModalBody>
 
-        <DialogFooter>
+        <ModalFooter className="sm:justify-between">
           <Button
-            variant="outline"
+            variant="outline-ghost"
             onClick={() => handleOpenChange(false)}
             disabled={attachMutation.isPending}
           >
@@ -1067,11 +1055,11 @@ function AttachToProjectDialog({
             disabled={!selectedProjectId || attachMutation.isPending || candidates.length === 0}
             className="gap-1.5"
           >
-            {attachMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {attachMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
             Attach
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

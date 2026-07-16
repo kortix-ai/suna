@@ -4,6 +4,8 @@ import type {
   AuthorizeResult,
   GatewayTrace,
   ModelCatalog,
+  ModelRouteInput,
+  ModelRoutePlan,
   UpstreamDescriptor,
   UsageEvent,
 } from '@kortix/llm-gateway';
@@ -37,6 +39,10 @@ export interface ApiPingResult {
 export interface ApiClient {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
   authorize: (token: string) => Promise<AuthorizeResult>;
+  resolveRoute: (
+    principal: AuthedPrincipal,
+    input: ModelRouteInput,
+  ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   assertBillingActive: (accountId: string) => Promise<void>;
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
@@ -93,6 +99,13 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     },
     authorize: async (token) => {
       return post<AuthorizeResult>('/internal/gateway/authorize', { token });
+    },
+    resolveRoute: async (principal, input) => {
+      const result = await post<{ route: ModelRoutePlan | null }>(
+        '/internal/gateway/resolve-route',
+        { principal, input },
+      );
+      return result.route ?? null;
     },
     resolveUpstream: async (principal, model) => {
       const result = await post<{ candidates: UpstreamDescriptor[] }>(

@@ -16,6 +16,7 @@ import {
   parseFilter,
   scimAudit,
   scimRouter,
+  userIdByEmail,
 } from './app';
 
 /**
@@ -49,13 +50,18 @@ async function addGroupMembersOrDeferInvites(
     await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
   }
 
-  // Anything not a real member may be a pending invite (SCIM id = invite_id) —
-  // record the group on the invite so it lands when they accept.
+  // Anything not a real member may be a pending invite (SCIM id = invite_id).
+  // The IdP caches that id forever, but the person can BECOME a member through
+  // a different door — SSO JIT auto-create — without ever "accepting" the
+  // invite. So resolve each invite's EMAIL to a live member first and add them
+  // directly; only park on the invite when the person truly isn't in yet.
   const unmatched = memberValues.filter((v) => !memberSet.has(v));
   if (unmatched.length === 0) return;
   const invites = await db
     .select({
       inviteId: accountInvitations.inviteId,
+      email: accountInvitations.email,
+      acceptedAt: accountInvitations.acceptedAt,
       bootstrapGrants: accountInvitations.bootstrapGrants,
     })
     .from(accountInvitations)
@@ -63,16 +69,149 @@ async function addGroupMembersOrDeferInvites(
       and(
         eq(accountInvitations.accountId, accountId),
         inArray(accountInvitations.inviteId, unmatched),
-        isNull(accountInvitations.acceptedAt),
       ),
     );
   for (const inv of invites) {
+    const resolvedUserId = await userIdByEmail(inv.email, accountId);
+    let resolvedMemberUserId: string | null = null;
+    if (resolvedUserId) {
+      const [member] = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(
+          and(
+            eq(accountMembers.accountId, accountId),
+            eq(accountMembers.userId, resolvedUserId),
+          ),
+        )
+        .limit(1);
+      resolvedMemberUserId = member?.userId ?? null;
+    }
+
+    const action = resolveInviteMemberAction({
+      accepted: inv.acceptedAt !== null,
+      resolvedMemberUserId,
+    });
+    if (action === 'add-member' && resolvedMemberUserId) {
+      await db
+        .insert(accountGroupMembers)
+        .values({ groupId, userId: resolvedMemberUserId })
+        .onConflictDoNothing();
+      continue;
+    }
+    if (action !== 'park') continue;
     const existing = inv.bootstrapGrants ?? [];
     if (existing.some((g) => 'group_id' in g && g.group_id === groupId)) continue;
     await db
       .update(accountInvitations)
       .set({ bootstrapGrants: [...existing, { group_id: groupId }] })
       .where(eq(accountInvitations.inviteId, inv.inviteId));
+  }
+}
+
+/**
+ * Pure decision for a SCIM member value that matched an invitation. Exported
+ * for unit tests.
+ *
+ *  - the person is ALREADY a member (SSO JIT or accepted invite) → add them
+ *    to the group directly; parking would strand the membership because JIT
+ *    never fires the invite-acceptance path.
+ *  - truly pending (no member row, not accepted) → park on the invite; it
+ *    materializes at first sign-in.
+ *  - accepted but no member row (member since removed) → skip; re-adding a
+ *    removed member is a user-provisioning decision, not a group PATCH's.
+ */
+export function resolveInviteMemberAction(args: {
+  accepted: boolean;
+  resolvedMemberUserId: string | null;
+}): 'add-member' | 'park' | 'skip' {
+  if (args.resolvedMemberUserId) return 'add-member';
+  if (!args.accepted) return 'park';
+  return 'skip';
+}
+
+/**
+ * Pure: strip a parked `{group_id}` entry from an invite's bootstrap_grants.
+ * Exported for unit tests. Project grants and other groups pass through.
+ */
+export function stripGroupGrant(
+  grants: Array<Record<string, unknown>> | null | undefined,
+  groupId: string,
+): { changed: boolean; remaining: Array<Record<string, unknown>> } {
+  const all = grants ?? [];
+  const remaining = all.filter((g) => !('group_id' in g && g.group_id === groupId));
+  return { changed: remaining.length !== all.length, remaining };
+}
+
+/**
+ * Un-park a group from pending invites' bootstrap_grants — the flip side of
+ * addGroupMembersOrDeferInvites. Without this, an IdP that removes a
+ * not-yet-signed-in person from a group (or replaces the member set) leaves
+ * the parked grant behind, and the person joins the group at first sign-in
+ * despite the IdP having removed them.
+ */
+async function unparkGroupFromInvites(
+  accountId: string,
+  groupId: string,
+  onlyInviteId?: string,
+): Promise<void> {
+  const conds = [
+    eq(accountInvitations.accountId, accountId),
+    isNull(accountInvitations.acceptedAt),
+  ];
+  if (onlyInviteId) conds.push(eq(accountInvitations.inviteId, onlyInviteId));
+  const invites = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(and(...conds));
+  for (const inv of invites) {
+    const { changed, remaining } = stripGroupGrant(inv.bootstrapGrants, groupId);
+    if (!changed) continue;
+    await db
+      .update(accountInvitations)
+      .set({ bootstrapGrants: remaining as typeof inv.bootstrapGrants })
+      .where(eq(accountInvitations.inviteId, inv.inviteId));
+  }
+}
+
+/**
+ * Remove one SCIM-referenced member from a group, mirroring the resolution
+ * rules of the add path. The IdP may reference the person by user_id OR by
+ * the invitation id it cached at provisioning time, so:
+ *   1. delete a membership row keyed by the value directly,
+ *   2. if the value is an invitation: un-park the group from it AND resolve
+ *      its email to a live member (SSO JIT) and delete THAT row too.
+ * Without (2) a removal for a JIT-signed-in member silently no-ops — access
+ * the IdP revoked would persist.
+ */
+async function removeGroupMemberValue(
+  accountId: string,
+  groupId: string,
+  value: string,
+): Promise<void> {
+  await db
+    .delete(accountGroupMembers)
+    .where(and(eq(accountGroupMembers.groupId, groupId), eq(accountGroupMembers.userId, value)));
+
+  const [invite] = await db
+    .select({ inviteId: accountInvitations.inviteId, email: accountInvitations.email })
+    .from(accountInvitations)
+    .where(and(eq(accountInvitations.accountId, accountId), eq(accountInvitations.inviteId, value)))
+    .limit(1);
+  if (!invite) return;
+
+  await unparkGroupFromInvites(accountId, groupId, invite.inviteId);
+
+  const resolvedUserId = await userIdByEmail(invite.email, accountId);
+  if (resolvedUserId) {
+    await db
+      .delete(accountGroupMembers)
+      .where(
+        and(eq(accountGroupMembers.groupId, groupId), eq(accountGroupMembers.userId, resolvedUserId)),
+      );
   }
 }
 
@@ -217,24 +356,14 @@ scimRouter.openapi(
       throw err;
     }
 
-    // Initial members can be supplied in the create body.
+    // Initial members can be supplied in the create body (Okta's group push
+    // does this). Same resolution rules as PATCH adds — a plain member-only
+    // filter here would silently drop invited/JIT people.
     if (Array.isArray(body.members)) {
       const userIds = (body.members as Array<{ value?: unknown }>)
         .map((m) => (typeof m.value === 'string' ? m.value : null))
         .filter((v): v is string => !!v);
-      if (userIds.length > 0) {
-        const valid = await db
-          .select({ userId: accountMembers.userId })
-          .from(accountMembers)
-          .where(
-            and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, userIds)),
-          );
-        const validSet = new Set(valid.map((v) => v.userId));
-        const rows = userIds.filter((u) => validSet.has(u)).map((u) => ({ groupId, userId: u }));
-        if (rows.length > 0) {
-          await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
-        }
-      }
+      await addGroupMembersOrDeferInvites(accountId, groupId, userIds);
     }
 
     await invalidateIamCacheForGroup(groupId);
@@ -347,9 +476,12 @@ scimRouter.openapi(
           const userIds = (v.members as Array<{ value?: unknown }>)
             .map((m) => (typeof m.value === 'string' ? m.value : null))
             .filter((u): u is string => !!u);
-          // Wholesale replace: drop existing, then add the new set — real members
-          // join now, pending invites ride their bootstrap_grants until accept.
+          // Wholesale replace: drop existing rows AND parked grants, then add
+          // the new set — real members join now, pending invites re-park. The
+          // un-park keeps a person the IdP dropped pre-login from joining the
+          // group at first sign-in off a stale grant.
           await db.delete(accountGroupMembers).where(eq(accountGroupMembers.groupId, groupId));
+          await unparkGroupFromInvites(accountId, groupId);
           await addGroupMembersOrDeferInvites(accountId, groupId, userIds);
         }
         continue;
@@ -364,15 +496,18 @@ scimRouter.openapi(
         continue;
       }
 
-      // Member removes: path looks like members[value eq "userId"]
+      // Member removes: path looks like members[value eq "userId"]. The value
+      // may be a user_id OR the invitation id the IdP cached at provisioning —
+      // removeGroupMemberValue resolves both (and un-parks a pending grant).
       if (opName === 'remove' && path.startsWith('members')) {
         const m = path.match(/value\s+eq\s+"([^"]+)"/i);
         if (m) {
-          await db
-            .delete(accountGroupMembers)
-            .where(
-              and(eq(accountGroupMembers.groupId, groupId), eq(accountGroupMembers.userId, m[1]!)),
-            );
+          await removeGroupMemberValue(accountId, groupId, m[1]!);
+        } else if (!path.includes('[')) {
+          // Bare `remove members` (no filter) — empty the group, both live
+          // rows and parked grants.
+          await db.delete(accountGroupMembers).where(eq(accountGroupMembers.groupId, groupId));
+          await unparkGroupFromInvites(accountId, groupId);
         }
         continue;
       }

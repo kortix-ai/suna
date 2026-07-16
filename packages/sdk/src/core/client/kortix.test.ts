@@ -64,23 +64,23 @@ test('session(...).audit hits the audit endpoint with the given limit', async ()
 
 test('project(id).access.invite forwards a time-bound expiry to the backend', async () => {
   const expiry = '2027-01-01T00:00:00.000Z';
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', expiry);
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member', expiry);
   expect(last().url).toContain('/projects/PID123/access/invite');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({
-    email: 'teammate@essentia.com',
+    email: 'teammate@acme.com',
     role: 'member',
     expires_at: expiry,
   });
 });
 
 test('project(id).access.invite omits expires_at for a permanent grant', async () => {
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member');
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member');
   expect(last().body).not.toHaveProperty('expires_at');
 });
 
 test('project(id).access.invite sends expires_at:null to clear a bound', async () => {
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', null);
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member', null);
   expect(last().body).toMatchObject({ expires_at: null });
 });
 
@@ -142,6 +142,30 @@ test('project(id).gateway hits the gateway observability + budget + key endpoint
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).gateway.routing binds policy CRUD and preview to the project', async () => {
+  await kortix.project('PID123').gateway.routing.get();
+  expect(last().url).toContain('/projects/PID123/gateway/routing-policy');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').gateway.routing.set({
+    defaultModel: 'codex/gpt-5.6-sol',
+    visionModel: null,
+    defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+    rules: [],
+  });
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').gateway.routing.preview({
+    requestedModel: 'auto',
+    imageInput: false,
+  });
+  expect(last().url).toContain('/projects/PID123/gateway/routing-policy/preview');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').gateway.routing.reset();
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).channels covers slack, email and meet', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');
@@ -157,13 +181,8 @@ test('project(id).channels covers slack, email and meet', async () => {
   expect(last().method).toBe('PUT');
 });
 
-test('project(id).apps hits the apps/deployments endpoints', async () => {
-  await kortix.project('PID123').apps.list();
-  expect(last().url).toContain('/projects/PID123/apps');
-
-  await kortix.project('PID123').apps.deploy('web');
-  expect(last().url).toContain('/projects/PID123/apps/web/deploy');
-  expect(last().method).toBe('POST');
+test('project(id) omits the retired hosted-app surface', () => {
+  expect('apps' in (kortix.project('PID123') as object)).toBe(false);
 });
 
 test('project(id).modelDefaults gets/sets/clears the default model', async () => {
@@ -175,6 +194,12 @@ test('project(id).modelDefaults gets/sets/clears the default model', async () =>
 
   await kortix.project('PID123').modelDefaults.clear({ scope: 'project' });
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).modelPicker loads the compact selector catalog', async () => {
+  await kortix.project('PID123').modelPicker();
+  expect(last().url).toContain('/projects/PID123/model-picker');
+  expect(last().method).toBe('GET');
 });
 
 test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
@@ -325,7 +350,7 @@ test('kortix.connectStatus hits the top-level connect-status endpoint (not proje
   expect(last().url).toContain('/executor/connect-status');
 });
 
-test('project(id) covers experimental-feature toggle, sandbox provider pin, apps config, and repo-collaborator invite', async () => {
+test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {
   await kortix.project('PID123').updateExperimentalFeature('marketplace', true);
   expect(last().url).toContain('/projects/PID123/experimental');
   expect(last().method).toBe('PATCH');
@@ -337,9 +362,6 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, apps
   await kortix.project('PID123').sandbox.setProvider('daytona');
   expect(last().url).toContain('/projects/PID123/sandbox-provider');
   expect(last().method).toBe('PATCH');
-
-  await kortix.project('PID123').apps.updateConfig({ enabled: true });
-  expect(last().url).toContain('/projects/PID123/experimental');
 
   await kortix.project('PID123').git.inviteCollaborator('octocat');
   expect(last().url).toContain('/projects/PID123/git/collaborators');
@@ -412,52 +434,6 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
 
   await kortix.billing.tierConfigurations();
   expect(last().url).toContain('/billing/tier-configurations');
-});
-
-test('project(id).marketplace covers list/install/updates/update/updateAll/remove', async () => {
-  await kortix.project('PID123').marketplace.list();
-  expect(last().url).toContain('/projects/PID123/marketplace');
-  expect(last().method).toBe('GET');
-
-  await kortix.project('PID123').marketplace.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updates();
-  expect(last().url).toContain('/projects/PID123/marketplace/updates');
-
-  await kortix.project('PID123').marketplace.update('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/update');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updateAll();
-  expect(last().url).toContain('/projects/PID123/marketplace/update-all');
-
-  await kortix.project('PID123').marketplace.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/researcher');
-  expect(last().method).toBe('DELETE');
-});
-
-test('project(id).registry is the compatibility alias of marketplace (same paths, /registry prefix)', async () => {
-  await kortix.project('PID123').registry.list();
-  expect(last().url).toContain('/projects/PID123/registry');
-
-  await kortix.project('PID123').registry.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/registry/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').registry.updates();
-  expect(last().url).toContain('/projects/PID123/registry/updates');
-
-  await kortix.project('PID123').registry.update('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/update');
-
-  await kortix.project('PID123').registry.updateAll();
-  expect(last().url).toContain('/projects/PID123/registry/update-all');
-
-  await kortix.project('PID123').registry.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/researcher');
-  expect(last().method).toBe('DELETE');
 });
 
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {

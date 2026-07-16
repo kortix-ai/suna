@@ -47,7 +47,13 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "execution" {
   name               = "${local.name}-exec"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-exec"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "execution" {
@@ -74,7 +80,13 @@ resource "aws_iam_role_policy" "secrets" {
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-task"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -97,13 +109,13 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = var.alb_ingress_cidrs
   }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-alb"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
   }
-  tags = var.tags
 }
 
 resource "aws_security_group" "service" {
@@ -124,7 +136,25 @@ resource "aws_security_group" "service" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-svc"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
+}
+
+# The ALB only needs to reach the application port on ECS tasks. Keeping this
+# as a standalone rule avoids the dependency cycle that inline rules create
+# when the service SG already references the ALB SG for ingress.
+resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
+  security_group_id            = aws_security_group.alb.id
+  referenced_security_group_id = aws_security_group.service.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  description                  = "ALB to ECS tasks only"
 }
 
 # ── Load balancer ─────────────────────────────────────────────────────────────
@@ -132,9 +162,18 @@ resource "aws_lb" "this" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = var.public_subnet_ids
-  idle_timeout       = var.alb_idle_timeout
-  tags               = var.tags
+  subnets = [
+    var.public_subnet_ids[0],
+    var.public_subnet_ids[1],
+  ]
+  idle_timeout = var.alb_idle_timeout
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-alb"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_lb_target_group" "this" {
@@ -205,7 +244,13 @@ resource "aws_ecs_cluster" "this" {
     name  = "containerInsights"
     value = var.container_insights ? "enabled" : "disabled"
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_ecs_cluster_capacity_providers" "this" {
@@ -229,7 +274,7 @@ resource "aws_ecs_task_definition" "this" {
   task_role_arn            = aws_iam_role.task.arn
 
   container_definitions = jsonencode([{
-    name      = "api"
+    name      = var.container_name
     image     = var.image
     essential = true
     portMappings = [{
@@ -243,7 +288,7 @@ resource "aws_ecs_task_definition" "this" {
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.this.name
         "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "api"
+        "awslogs-stream-prefix" = var.container_name
       }
     }
     # No container-level healthCheck: the Bun image has no curl/wget, and the
@@ -251,7 +296,13 @@ resource "aws_ecs_task_definition" "this" {
     # authoritative gate for routing + the deployment circuit breaker.
   }])
 
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_ecs_service" "this" {
@@ -275,7 +326,7 @@ resource "aws_ecs_service" "this" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.this.arn
-    container_name   = "api"
+    container_name   = var.container_name
     container_port   = var.container_port
   }
 
@@ -299,7 +350,13 @@ resource "aws_ecs_service" "this" {
   # Without this, the service can race ahead of the HTTPS listener on a fresh
   # apply ("target group ... does not have an associated load balancer").
   depends_on = [aws_lb_listener.http, aws_lb_listener.https]
-  tags       = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # ── Autoscaling (target tracking on CPU + memory) ─────────────────────────────

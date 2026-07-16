@@ -58,7 +58,9 @@ mock.module('../projects/opencode-mapping', () => ({
       : sessions.find((session) => !session.parentID)?.id ?? null,
 }));
 
-const { syncOpenCodeTitlesForSessions } = await import('../projects/opencode-title-sync');
+const { syncOpenCodeTitlesForSessions, isPlaceholderOpencodeTitle } = await import(
+  '../projects/opencode-title-sync'
+);
 
 afterEach(() => {
   sandboxRows.length = 0;
@@ -79,7 +81,55 @@ function row(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
+describe('isPlaceholderOpencodeTitle', () => {
+  test("matches OpenCode's default title in any casing, with or without a date", () => {
+    expect(isPlaceholderOpencodeTitle('New session - 2026-06-29T10:00:00Z')).toBe(true);
+    expect(isPlaceholderOpencodeTitle('new session')).toBe(true);
+    expect(isPlaceholderOpencodeTitle('  New Session - x  ')).toBe(true);
+  });
+
+  test('real titles and empty values are not placeholders', () => {
+    expect(isPlaceholderOpencodeTitle('Fix login bug')).toBe(false);
+    expect(isPlaceholderOpencodeTitle('New sessions dashboard')).toBe(false);
+    expect(isPlaceholderOpencodeTitle('')).toBe(false);
+    expect(isPlaceholderOpencodeTitle(null)).toBe(false);
+    expect(isPlaceholderOpencodeTitle(undefined)).toBe(false);
+  });
+});
+
 describe('syncOpenCodeTitlesForSessions', () => {
+  test("never persists OpenCode's placeholder default as the session name", async () => {
+    sandboxRows.push({ sessionId: 'session-1', externalId: 'sandbox-ext-1' });
+    listedSessions = [
+      { id: 'root-1', title: 'New session - 2026-06-29T10:00:00Z', time: { created: 1, updated: 1 } },
+    ];
+
+    const [synced] = await syncOpenCodeTitlesForSessions({
+      rows: [row()],
+      projectId: 'project-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+    });
+
+    const metadata = synced.metadata as Record<string, unknown>;
+    expect(metadata.name).toBeUndefined();
+  });
+
+  test('a real title replaces a previously frozen placeholder name', async () => {
+    sandboxRows.push({ sessionId: 'session-1', externalId: 'sandbox-ext-1' });
+    listedSessions = [{ id: 'root-1', title: 'Ship the wizard', time: { created: 1, updated: 9 } }];
+
+    const [synced] = await syncOpenCodeTitlesForSessions({
+      rows: [row({ metadata: { name: 'New session - 2026-06-29T10:00:00Z' } })],
+      projectId: 'project-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+    });
+
+    const metadata = synced.metadata as Record<string, unknown>;
+    expect(metadata.name).toBe('Ship the wizard');
+  });
+
   test('fetches OpenCode sessions server-side and mirrors the root title/tree', async () => {
     sandboxRows.push({ sessionId: 'session-1', externalId: 'sandbox-ext-1' });
     listedSessions = [

@@ -53,7 +53,7 @@ OpenCode owns everything under `.kortix/opencode/`. The Kortix platform
 never reads any of it — those files only matter to OpenCode itself.
 
 Conversely, Kortix-specific config (triggers, secrets schema, sandbox
-image, deployable apps, project metadata) lives in `kortix.yaml` at
+image, project metadata) lives in `kortix.yaml` at
 the repo root. OpenCode never reads `kortix.yaml`.
 
 Both halves are versioned in the same repo, but the boundary is

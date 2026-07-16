@@ -51,6 +51,77 @@ async function pendingInviteRows(
     .where(and(...conds));
 }
 
+type MemberRow = {
+  userId: string;
+  accountRole: string;
+  scimExternalId: string | null;
+  joinedAt: Date;
+};
+
+async function getMember(accountId: string, userId: string): Promise<MemberRow | null> {
+  const [member] = await db
+    .select({
+      userId: accountMembers.userId,
+      accountRole: accountMembers.accountRole,
+      scimExternalId: accountMembers.scimExternalId,
+      joinedAt: accountMembers.joinedAt,
+    })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .limit(1);
+  return member ?? null;
+}
+
+/**
+ * A pending invitation is "shadowed" when its email already belongs to a live
+ * member — the person signed in via SSO JIT instead of accepting the invite.
+ * The IdP still references them by the invitation id it cached at provisioning
+ * time, so id-addressed operations must resolve through the email to the real
+ * member or deprovisioning silently no-ops (the offboarding hole).
+ */
+async function shadowMemberForInvite(
+  accountId: string,
+  inviteEmail: string,
+): Promise<MemberRow | null> {
+  const resolvedUserId = await userIdByEmail(inviteEmail, accountId);
+  if (!resolvedUserId) return null;
+  return getMember(accountId, resolvedUserId);
+}
+
+/**
+ * Deprovision a live member: remove the membership, bust the IAM cache, and
+ * revoke PATs + live sandbox tokens. Callers must run the last-owner guard
+ * BEFORE calling. Returns the token-revocation error message (if any) for the
+ * audit event; the membership removal itself always proceeds.
+ */
+async function deprovisionMember(accountId: string, userId: string): Promise<string | null> {
+  await db
+    .delete(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+  invalidateIamCacheForUser(userId);
+  return revokeAllAccountTokensForUser(userId, accountId).then(
+    () => null,
+    (err) => {
+      console.error(
+        '[scim] token revocation FAILED on deprovision — user may retain live tokens',
+        { userId, accountId },
+        err,
+      );
+      return err instanceof Error ? err.message : String(err);
+    },
+  );
+}
+
+/** Last-owner guard shared by every deprovision path. */
+async function isLastOwner(accountId: string, member: MemberRow): Promise<boolean> {
+  if (member.accountRole !== 'owner') return false;
+  const owners = await db
+    .select({ userId: accountMembers.userId })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
+  return owners.length <= 1;
+}
+
 scimRouter.openapi(
   createRoute({
     method: 'get',
@@ -90,11 +161,19 @@ scimRouter.openapi(
 
     const emails = await emailsByUserId(members.map((m) => m.userId));
     const invites = await pendingInviteRows(accountId);
+    // Hide invites shadowed by a live member (same email, joined via SSO JIT
+    // instead of accepting) — otherwise the IdP sees TWO resources with one
+    // userName and reconciles against the stale invite id.
+    const memberEmails = new Set(
+      [...emails.values()].map((e) => e.trim().toLowerCase()).filter(Boolean),
+    );
     const allResources: UserShape[] = [
       ...members
         .filter((m) => emails.has(m.userId))
         .map((m) => buildUser(accountId, m, emails.get(m.userId)!)),
-      ...invites.map((i) => buildInviteUser(accountId, i)),
+      ...invites
+        .filter((i) => !memberEmails.has(i.email.trim().toLowerCase()))
+        .map((i) => buildInviteUser(accountId, i)),
     ];
 
     if (!filter) return c.json(listResponse(allResources));
@@ -151,7 +230,13 @@ scimRouter.openapi(
 
     // Not a live member — maybe a pending invitation (SCIM id = invitation id).
     const [invite] = await pendingInviteRows(accountId, userId);
-    if (invite) return c.json(buildInviteUser(accountId, invite));
+    if (invite) {
+      // Shadowed by a JIT member → 404 so the IdP re-resolves by userName and
+      // picks up the member's id (list/GET hide the stale invite identity).
+      const shadow = await shadowMemberForInvite(accountId, invite.email);
+      if (shadow) return scimError(c, 404, 'User not found in this account');
+      return c.json(buildInviteUser(accountId, invite));
+    }
 
     return scimError(c, 404, 'User not found in this account');
   },
@@ -361,53 +446,23 @@ async function applyUserWrite(
   userId: string,
   changes: Map<string, unknown>,
 ) {
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      accountRole: accountMembers.accountRole,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
+  const member = await getMember(accountId, userId);
 
   if (member) {
     // Deactivate
     if (changes.get('active') === false) {
       // Refuse to deactivate the last owner — same invariant the human UI
       // enforces, so an IdP misconfiguration can't lock everyone out.
-      if (member.accountRole === 'owner') {
-        const owners = await db
-          .select({ userId: accountMembers.userId })
-          .from(accountMembers)
-          .where(
-            and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')),
-          );
-        if (owners.length <= 1) {
-          return scimError(c, 409, 'Cannot deactivate the last owner of this account');
-        }
+      if (await isLastOwner(accountId, member)) {
+        return scimError(c, 409, 'Cannot deactivate the last owner of this account');
       }
       const emailsBefore = await emailsByUserId([userId]);
-      await db
-        .delete(accountMembers)
-        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-      invalidateIamCacheForUser(userId);
-      // IdP-driven offboarding: revoke PATs + live sandbox session tokens so
-      // deactivation is immediate. A failure would leave a "deactivated" user
-      // with LIVE tokens — a silent offboarding hole — so surface it loudly and
-      // record it on the audit event, while still removing the membership.
-      const revocationError = await revokeAllAccountTokensForUser(userId, accountId).then(
-        () => null,
-        (err) => {
-          console.error(
-            '[scim] token revocation FAILED on deactivate — user may retain live tokens',
-            { userId, accountId },
-            err,
-          );
-          return err instanceof Error ? err.message : String(err);
-        },
-      );
+      // IdP-driven offboarding: remove the membership and revoke PATs + live
+      // sandbox session tokens so deactivation is immediate. A revocation
+      // failure would leave a "deactivated" user with LIVE tokens — a silent
+      // offboarding hole — so it's logged loudly and recorded on the audit
+      // event, while the membership removal still stands.
+      const revocationError = await deprovisionMember(accountId, userId);
       await scimAudit(c, {
         accountId,
         action: 'scim.user.deactivate',
@@ -439,6 +494,31 @@ async function applyUserWrite(
   const [invite] = await pendingInviteRows(accountId, userId);
   if (invite) {
     if (changes.get('active') === false) {
+      // The person may ALSO be a live member under a different id — SSO JIT
+      // creates the membership without accepting the invite, and the IdP
+      // keeps deprovisioning against the invite id it cached. Revoking only
+      // the invite would leave the member with full access and live tokens:
+      // the offboarding hole. Resolve the email and deprovision both.
+      const shadow = await shadowMemberForInvite(accountId, invite.email);
+      if (shadow) {
+        if (await isLastOwner(accountId, shadow)) {
+          return scimError(c, 409, 'Cannot deactivate the last owner of this account');
+        }
+        const revocationError = await deprovisionMember(accountId, shadow.userId);
+        await scimAudit(c, {
+          accountId,
+          action: 'scim.user.deactivate',
+          resourceType: 'account_member',
+          resourceId: shadow.userId,
+          before: { user_id: shadow.userId, account_role: shadow.accountRole },
+          metadata: {
+            via_invite_id: invite.inviteId,
+            ...(revocationError
+              ? { token_revocation_failed: true, token_revocation_error: revocationError }
+              : {}),
+          },
+        });
+      }
       await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));
       await scimAudit(c, {
         accountId,
@@ -508,16 +588,35 @@ scimRouter.openapi(
     const accountId = c.req.param('accountId');
     const userId = c.req.param('userId');
 
-    const [member] = await db
-      .select({ accountRole: accountMembers.accountRole })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-      .limit(1);
+    const member = await getMember(accountId, userId);
     if (!member) {
-      // Not a live member — if the id is a pending invitation, revoke it
-      // (deprovision). Either way DELETE is idempotent → 204.
+      // Not a live member — if the id is a pending invitation, revoke it. The
+      // person may ALSO be a live member under a different id (SSO JIT never
+      // accepts the invite), so resolve the email and deprovision them too —
+      // otherwise the IdP's delete silently leaves live access + tokens.
+      // Either way DELETE is idempotent → 204.
       const [invite] = await pendingInviteRows(accountId, userId);
       if (invite) {
+        const shadow = await shadowMemberForInvite(accountId, invite.email);
+        if (shadow) {
+          if (await isLastOwner(accountId, shadow)) {
+            return scimError(c, 409, 'Cannot delete the last owner of this account');
+          }
+          const revocationError = await deprovisionMember(accountId, shadow.userId);
+          await scimAudit(c, {
+            accountId,
+            action: 'scim.user.delete',
+            resourceType: 'account_member',
+            resourceId: shadow.userId,
+            before: { user_id: shadow.userId, account_role: shadow.accountRole },
+            metadata: {
+              via_invite_id: invite.inviteId,
+              ...(revocationError
+                ? { token_revocation_failed: true, token_revocation_error: revocationError }
+                : {}),
+            },
+          });
+        }
         await db
           .delete(accountInvitations)
           .where(eq(accountInvitations.inviteId, invite.inviteId));
@@ -533,37 +632,15 @@ scimRouter.openapi(
     }
 
     // Same last-owner guard as PATCH active=false.
-    if (member.accountRole === 'owner') {
-      const owners = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(
-          and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')),
-        );
-      if (owners.length <= 1) {
-        return scimError(c, 409, 'Cannot delete the last owner of this account');
-      }
+    if (await isLastOwner(accountId, member)) {
+      return scimError(c, 409, 'Cannot delete the last owner of this account');
     }
 
-    await db
-      .delete(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-    invalidateIamCacheForUser(userId);
-    // Revoke PATs + live sandbox session tokens so the deprovision is immediate.
-    // A failure must not be swallowed — a "deleted" member with live tokens is a
-    // silent offboarding hole — so log loudly and record it on the audit event.
-    const revocationError = await revokeAllAccountTokensForUser(userId, accountId).then(
-      () => null,
-      (err) => {
-        console.error(
-          '[scim] token revocation FAILED on delete — user may retain live tokens',
-          { userId, accountId },
-          err,
-        );
-        return err instanceof Error ? err.message : String(err);
-      },
-    );
-
+    // Remove the membership and revoke PATs + live sandbox session tokens so
+    // the deprovision is immediate. A revocation failure must not be swallowed
+    // — a "deleted" member with live tokens is a silent offboarding hole — so
+    // it's logged loudly and recorded on the audit event.
+    const revocationError = await deprovisionMember(accountId, userId);
     await scimAudit(c, {
       accountId,
       action: 'scim.user.delete',

@@ -61,7 +61,7 @@ Bun.serve({
     // clone-credential: accepts the SANDBOX key (matches prod auth).
     if (p === \`/v1/projects/\${PROJECT}/git/clone-credential\`) {
       if (tok !== SBKEY) return Response.json({ error: "bad" }, { status: 401 });
-      return Response.json({ repo_url: "https://git.freestyle.sh/repo", auth: { username: "x-access-token", token: PUSH, type: "basic" }, source: "managed" });
+      return Response.json({ repo_url: "https://git.example.test/repo", auth: { username: "x-access-token", token: PUSH, type: "basic" }, source: "managed" });
     }
     // change-requests: require the PROJECT PAT; reject the sandbox key.
     if (p === \`/v1/projects/\${PROJECT}/change-requests\`) {
@@ -129,8 +129,8 @@ echo
 echo "4. git push authenticates via the daemon credential helper"
 DAEMON="apps/kortix-sandbox-agent-server/src/main.ts"
 HOME_T="$(mktemp -d)"
-HOME="$HOME_T" git config --global --replace-all "credential.https://git.freestyle.sh.helper" "!bun '$REPO_ROOT/$DAEMON' git-credential"
-CRED="$(printf 'protocol=https\nhost=git.freestyle.sh\npath=repo\n\n' | \
+HOME="$HOME_T" git config --global --replace-all "credential.https://git.example.test.helper" "!bun '$REPO_ROOT/$DAEMON' git-credential"
+CRED="$(printf 'protocol=https\nhost=git.example.test\npath=repo\n\n' | \
   HOME="$HOME_T" KORTIX_API_URL="http://127.0.0.1:$PORT/v1" KORTIX_PROJECT_ID="$PROJECT" KORTIX_TOKEN="$SBKEY" \
   git credential fill 2>/dev/null || true)"
 rm -rf "$HOME_T"

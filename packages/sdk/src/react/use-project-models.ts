@@ -2,22 +2,21 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getProjectLlmCatalog } from '../core/rest/projects-client';
+import { getProjectModelPicker } from '../core/rest/projects-client';
 import { type FlatModel, flattenModels } from './model-flatten';
 import { projectLlmCatalogToProviderList } from './provider-selection';
 
 /**
  * Server-side model list for a project — the model parallel to
- * `useVisibleAgents({ projectId })`. Reads the project's gateway catalog
- * (`GET /projects/:id/llm-catalog`) and flattens it to `FlatModel[]` with correct
- * provider/model ids. Works BEFORE any sandbox runtime exists, so a "new session"
- * screen can show + pre-select a model, and the in-session picker shares the same
- * source — no runtime round-trip, no gateway-vs-BYOK key guessing.
+ * `useVisibleAgents({ projectId })`. Reads the compact, connection-aware picker
+ * catalog (`GET /projects/:id/model-picker`) and flattens it to `FlatModel[]`
+ * with correct provider/model ids. Works before any sandbox runtime exists and
+ * avoids transferring or scanning the complete runtime models.dev catalog.
  */
 export function useProjectModels(projectId: string | null | undefined): FlatModel[] {
   const { data } = useQuery({
-    queryKey: ['project-llm-catalog', projectId],
-    queryFn: () => getProjectLlmCatalog(projectId as string),
+    queryKey: ['project-model-picker', projectId],
+    queryFn: () => getProjectModelPicker(projectId as string),
     enabled: !!projectId,
     staleTime: 30_000,
     retry: false,

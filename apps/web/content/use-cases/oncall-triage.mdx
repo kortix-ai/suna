@@ -7,6 +7,7 @@ tags:
   - SRE
   - Case Study
   - Enterprise
+template: oncall-triage
 ---
 
 An alert fires at 3am. Before anyone can act on it, someone has to wake up, pull
@@ -48,11 +49,6 @@ logs, and GitHub. The agent pulls the stack trace, lists the deploys since the
 error first appeared, correlates the logs around the spike, and posts a first-pass
 diagnosis to the incident channel. It pages a human only when it can't resolve the
 alert or the severity is high.
-
-<Figure
-  caption="The triage agent posting a first-pass diagnosis in the incident channel"
-  aspect="16/9"
-/>
 
 ## How it works
 
@@ -131,11 +127,6 @@ The agent reads production telemetry, so the access is scoped and contained:
 - **Everything is code.** The agent's configuration, skills, and permissions are
   files in the repo, versioned and changed through a reviewed **change request**
   rather than a dashboard setting.
-
-<Figure
-  caption="A high-severity alert paged to on-call with the diagnosis attached"
-  aspect="16/9"
-/>
 
 ## The outcome
 

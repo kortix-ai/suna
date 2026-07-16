@@ -5,23 +5,14 @@ import { useTranslations } from 'next-intl';
 // Groups tab on the account page. List + create + delete + navigate to
 // detail. Mirrors Cloudflare's "User Groups" surface.
 
-import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
-import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,11 +24,28 @@ import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
 
 // Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
@@ -59,10 +67,10 @@ interface GroupsTabProps {
 }
 
 export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
+  const openDemo = useRequestDemo();
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AccountGroup | null>(null);
@@ -76,11 +84,11 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
   const deleteMutation = useMutation({
     mutationFn: (groupId: string) => deleteGroup(accountId, groupId),
     onSuccess: () => {
-      toast.success('Group deleted');
+      successToast('Group deleted');
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setDeleteTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to delete group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to delete group'),
   });
 
   const filtered = useMemo(() => {
@@ -96,16 +104,21 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
   const gated = canCreate && !rbacEnabled;
   const createAction = canCreate ? (
     rbacEnabled ? (
-      <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-        <Plus className="h-4 w-4" />
-        {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
+      <Button
+        onClick={() => setCreateOpen(true)}
+        size="sm"
+        variant="secondary"
+        className="gap-1.5"
+      >
+        <Plus className="size-4" />
+        Create a group
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
-          <Button size="sm" className="gap-1.5" disabled>
-            <Plus className="h-4 w-4" />
-            {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
+          <Button size="sm" variant="secondary" className="gap-1.5" disabled>
+            <Plus className="size-4" />
+            Create a group
           </Button>
           <Badge variant="outline" size="sm">
             Enterprise
@@ -115,80 +128,81 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
     )
   ) : null;
 
-  return (
-    <SectionCard
-      title="Groups"
-      description={tI18nHardcoded.raw(
-        'autoComponentsIamGroupsTabJsxAttrDescriptionBundleMembersTogether2839aadc',
-      )}
-      action={createAction}
-      flush
-    >
-      {gated && (
-        <div className="border-border/60 border-b px-6 py-4">
-          <InfoBanner
-            tone="info"
-            title="Enterprise feature"
-            action={
-              <Button asChild variant="outline" size="sm">
-                <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
-                  Contact sales
-                </a>
-              </Button>
-            }
-          >
-            {RBAC_UPSELL_MESSAGE}
-          </InfoBanner>
-        </div>
-      )}
+  const total = groupsQuery.data?.length ?? 0;
+  const settled = !groupsQuery.isLoading && !groupsQuery.isError;
 
-      <div className="border-border/60 border-b px-6 py-3">
-        <div className="relative max-w-sm">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'componentsIamGroupsTab.line104JsxAttrPlaceholderSearchByUserGroupName',
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
+            Groups{settled ? ` · ${total}` : ''}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'autoComponentsIamGroupsTabJsxAttrDescriptionBundleMembersTogether2839aadc',
             )}
-            className="h-9 pl-9"
-          />
+          </p>
         </div>
+        {createAction}
       </div>
 
+      {gated && (
+        <InfoBanner
+          tone="info"
+          title="Enterprise feature"
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openDemo({ source: 'accounts-groups' })}
+            >
+              Contact sales
+            </Button>
+          }
+        >
+          {RBAC_UPSELL_MESSAGE}
+        </InfoBanner>
+      )}
+
+      <InputGroupSearch>
+        <InputGroupSearchIcon>
+          <Search />
+        </InputGroupSearchIcon>
+        <InputGroupSearchInput
+          placeholder="Search by user group name"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          variant="popover"
+        />
+        {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
+      </InputGroupSearch>
+
       {groupsQuery.isError && (
-        <div className="px-6 py-5">
-          <InfoBanner
-            tone="destructive"
-            title={tHardcodedUi.raw('componentsIamGroupsTab.line114JsxAttrTitleFailedToLoadGroups')}
-            action={
-              <Button variant="outline" size="sm" onClick={() => groupsQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          >
-            {(groupsQuery.error as Error)?.message}
-          </InfoBanner>
-        </div>
+        <ErrorState
+          size="sm"
+          title="Failed to load groups"
+          description={(groupsQuery.error as Error)?.message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => groupsQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       )}
 
       {groupsQuery.isLoading && (
-        <List>
+        <div className="space-y-2">
           {Array.from({ length: 2 }).map((_, i) => (
-            <li key={i} className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="size-8 rounded-md" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-40" />
-                <Skeleton className="h-3 w-56" />
-              </div>
-            </li>
+            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
           ))}
-        </List>
+        </div>
       )}
 
-      {!groupsQuery.isLoading && !groupsQuery.isError && filtered.length === 0 && (
+      {settled && filtered.length === 0 && (
         <EmptyState
           icon={Users}
+          size="sm"
           title={search ? 'No groups match your search' : 'No groups yet'}
           description={
             !search && canCreate
@@ -201,56 +215,64 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
       )}
 
       {!groupsQuery.isLoading && filtered.length > 0 && (
-        <List>
+        <ul className="space-y-2">
           {filtered.map((g) => {
             const memberCount = g.member_count ?? 0;
             const projectCount = g.project_count ?? 0;
             return (
-              <ListRow
+              <li
                 key={g.group_id}
                 onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-                leading={<EntityAvatar icon={Users} />}
-                title={g.name}
-                badges={
-                  <Badge variant="outline" size="sm" className="capitalize">
-                    {g.source}
-                  </Badge>
-                }
-                subtitle={
-                  <InlineMeta>
-                    {g.description || null}
-                    {`${memberCount} member${memberCount === 1 ? '' : 's'}`}
-                    {`${projectCount} project${projectCount === 1 ? '' : 's'}`}
-                  </InlineMeta>
-                }
-                trailing={
-                  canCreate ? (
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground h-7 w-7"
-                            aria-label={`Actions for ${g.name}`}
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem onSelect={() => setDeleteTarget(g)} className="gap-2">
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {tHardcodedUi.raw('componentsIamGroupsTab.line219JsxTextDeleteGroup')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  ) : undefined
-                }
-              />
+                className="bg-popover hover:bg-popover-foreground/5 flex cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+              >
+                <EntityAvatar icon={Users} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground truncate text-sm font-medium">
+                      {g.name}
+                    </span>
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.source}
+                    </Badge>
+                  </div>
+                  <span className="text-muted-foreground text-xs">
+                    <InlineMeta>
+                      {g.description || null}
+                      <span>
+                        {memberCount} member{memberCount === 1 ? '' : 's'}
+                      </span>
+                      <span>
+                        {projectCount} project{projectCount === 1 ? '' : 's'}
+                      </span>
+                    </InlineMeta>
+                  </span>
+                </div>
+                {canCreate ? (
+                  <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-foreground size-7"
+                          aria-label={`Actions for ${g.name}`}
+                        >
+                          <MoreHorizontal className="size-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onSelect={() => setDeleteTarget(g)} className="gap-2">
+                          <Trash2 className="size-3.5" />
+                          Delete group
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                ) : null}
+              </li>
             );
           })}
-        </List>
+        </ul>
       )}
 
       <CreateGroupDialog open={createOpen} onOpenChange={setCreateOpen} accountId={accountId} />
@@ -260,21 +282,20 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title={tHardcodedUi.raw('componentsIamGroupsTab.line243JsxAttrTitleDeleteGroup')}
+        title="Delete group"
         description={
           deleteTarget
             ? `Delete "${deleteTarget.name}"? Any permission policies attached to this group will be removed.`
             : ''
         }
-        confirmLabel={tHardcodedUi.raw(
-          'componentsIamGroupsTab.line249JsxAttrConfirmlabelDeleteGroup',
-        )}
+        confirmLabel="Delete group"
+        confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.group_id);
         }}
       />
-    </SectionCard>
+    </div>
   );
 }
 
@@ -297,14 +318,14 @@ function CreateGroupDialog({
     mutationFn: () =>
       createGroup(accountId, { name: name.trim(), description: description.trim() || undefined }),
     onSuccess: (group) => {
-      toast.success('Group created');
+      successToast('Group created');
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setName('');
       setDescription('');
       onOpenChange(false);
       router.push(`/accounts/${accountId}/groups/${group.group_id}`);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to create group'),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -314,7 +335,7 @@ function CreateGroupDialog({
   }
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(next) => {
         if (createMutation.isPending) return;
@@ -325,23 +346,19 @@ function CreateGroupDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            {tHardcodedUi.raw('componentsIamGroupsTab.line308JsxTextCreateAGroup')}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground text-sm">
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Create a group</ModalTitle>
+          <ModalDescription>
             {tHardcodedUi.raw(
               'componentsIamGroupsTab.line311JsxTextGroupsBundleMembersTogetherAttachPermissionPoliciesTo',
             )}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4 px-6 py-5">
+          <ModalBody className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="group-name">
-                {tHardcodedUi.raw('componentsIamGroupsTab.line318JsxTextGroupName')}
-              </Label>
+              <Label htmlFor="group-name">Group name</Label>
               <Input
                 id="group-name"
                 value={name}
@@ -362,18 +379,16 @@ function CreateGroupDialog({
                 id="group-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder={tHardcodedUi.raw(
-                  'componentsIamGroupsTab.line339JsxAttrPlaceholderEngineersShippingThePlatform',
-                )}
+                placeholder="Engineers shipping the platform"
                 maxLength={256}
                 disabled={createMutation.isPending}
               />
             </div>
-          </div>
-          <div className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline-ghost"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
             >
@@ -384,12 +399,12 @@ function CreateGroupDialog({
               disabled={!name.trim() || createMutation.isPending}
               className="gap-1.5"
             >
-              {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {tHardcodedUi.raw('componentsIamGroupsTab.line360JsxTextCreateGroup')}
+              {createMutation.isPending && <Loading className="size-4 shrink-0" />}
+              Create group
             </Button>
-          </div>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }

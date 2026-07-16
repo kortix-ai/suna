@@ -40,6 +40,7 @@ import {
   getProject,
   inviteRepoCollaborator,
   isManagedGithubProject,
+  listProjectBranches,
   listProjectTriggers,
   setProjectTriggersActivation,
   updateExperimentalFeature,
@@ -48,7 +49,8 @@ import {
   type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
-} from '@kortix/sdk/projects-client';
+  type SandboxProviderName,
+} from '@kortix/sdk';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -179,6 +181,17 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   const githubUrl = githubRepoWebUrl(repoUrl);
   const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
   const managed = isManagedGithubProject(project);
+  const branchesQuery = useQuery({
+    queryKey: ['project-branches', project.project_id],
+    queryFn: () => listProjectBranches(project.project_id),
+    staleTime: 60_000,
+  });
+  const branchNames = Array.from(
+    new Set([
+      project.default_branch,
+      ...(branchesQuery.data?.branches.map((branch) => branch.name) ?? []),
+    ]),
+  );
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
@@ -202,6 +215,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
@@ -251,14 +265,25 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
               </FieldLabel>
               {saving ? <SaveStatus /> : null}
             </div>
-            <Input
-              id="default-branch"
+            <Select
               value={defaultBranch}
-              onChange={(e) => setDefaultBranch(e.target.value)}
+              onValueChange={setDefaultBranch}
               disabled={!canManage || isPending}
-              className="font-mono text-xs"
-              variant="popover"
-            />
+            >
+              <SelectTrigger id="default-branch" className="font-mono text-xs" variant="popover">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {branchNames.map((branch) => (
+                  <SelectItem key={branch} value={branch} className="font-mono text-xs">
+                    {branch}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              New sessions and change requests use this branch as their base.
+            </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="manifest-path">
@@ -399,7 +424,8 @@ function SandboxProviderRow({
   const current = project.default_sandbox_provider ?? null;
 
   const mutation = useMutation({
-    mutationFn: (next: string | null) => updateProjectSandboxProvider(project.project_id, next),
+    mutationFn: (next: SandboxProviderName | null) =>
+      updateProjectSandboxProvider(project.project_id, next),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.setQueryData<ProjectDetail | undefined>(
@@ -433,7 +459,9 @@ function SandboxProviderRow({
       </div>
       <Select
         value={current ?? AUTO_PROVIDER}
-        onValueChange={(v) => mutation.mutate(v === AUTO_PROVIDER ? null : v)}
+        onValueChange={(v) =>
+          mutation.mutate(v === AUTO_PROVIDER ? null : available.find((provider) => provider === v) ?? null)
+        }
         disabled={!canManage || mutation.isPending}
       >
         <SelectTrigger className="w-40 shrink-0" variant="popover">

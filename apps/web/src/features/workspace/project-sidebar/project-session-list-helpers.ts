@@ -41,7 +41,9 @@ export function getSessionDisplayTitle(session: ProjectSession): string {
     session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim();
 
   if (titleCandidate) return titleCandidate;
-  return session.branch_name ? session.branch_name.slice(0, 14) : 'session';
+  // Untitled (the real title lands seconds after the first prompt): a humane
+  // static label beats a raw branch-hash slice in the sidebar.
+  return 'New session';
 }
 
 /** Compresses date-fns' `formatDistanceToNowStrict` output ("5 minutes") down

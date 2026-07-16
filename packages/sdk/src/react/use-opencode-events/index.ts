@@ -107,7 +107,21 @@ export function useOpenCodeEventStream() {
     // requests that each sit for 30s and retry.
     if (!activeServerUrl || sandboxStatus !== 'connected' || runtimeHealthy !== true) return;
 
-    const client = getClient();
+    // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
+    // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
+    // briefly diverge on a session switch: the server-store url is set before the
+    // current-runtime url is pinned. In that window getClient() throws
+    // RuntimeNotReadyError — and because this hook runs in the page render tree
+    // (outside SandboxLoadingBoundary), a synchronous throw here is caught by the
+    // GLOBAL error boundary and flashes the whole route to blank. "Runtime not
+    // ready" is a transient info state, never an error: skip this tick and let the
+    // effect re-run (deps include runtimeVersion/activeServerUrl) once it pins.
+    let client: ReturnType<typeof getClient>;
+    try {
+      client = getClient();
+    } catch {
+      return;
+    }
 
     const handleEvent = createEventHandler({
       queryClient,

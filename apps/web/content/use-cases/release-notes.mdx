@@ -7,6 +7,7 @@ tags:
   - Engineering
   - Case Study
   - DevTools
+template: release-notes
 ---
 
 Release notes are the first thing that gets skipped under a deadline. The
@@ -46,11 +47,6 @@ spawns an isolated session (a cloud sandbox) with scoped access to the repositor
 The agent finds the previous release, reads every PR merged in between, groups
 them by area, writes notes in plain language, and opens a PR to the changelog. A
 human reviews and merges.
-
-<Figure
-  caption="The release-notes agent opening a changelog PR grouped by area"
-  aspect="16/9"
-/>
 
 ## How it works
 
@@ -126,11 +122,6 @@ contained:
 - **Everything is code.** The agent's configuration, skills, and permissions are
   files in the repo, versioned and changed through a reviewed **change request**
   rather than a dashboard setting.
-
-<Figure
-  caption="A changelog PR with notes grouped by area, ready for review"
-  aspect="16/9"
-/>
 
 ## The outcome
 

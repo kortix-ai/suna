@@ -1,18 +1,17 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 // PAT lifecycle policy on the Settings tab. Caps how long a CLI Personal
 // Access Token can live, requires expiry on every mint, and auto-revokes
 // idle tokens. Project-scoped tokens (sandbox-injected) are exempt.
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2 } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   type PatPolicy,
@@ -29,7 +28,6 @@ interface PatPolicyCardProps {
 }
 
 export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['iam-pat-policy', accountId],
@@ -63,11 +61,11 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
   const mutation = useMutation({
     mutationFn: (patch: Partial<PatPolicy>) => updatePatPolicy(accountId, patch),
     onSuccess: () => {
-      toast.success('PAT policy updated');
+      successToast('PAT policy updated');
       queryClient.invalidateQueries({ queryKey: ['iam-pat-policy', accountId] });
       setError(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update PAT policy'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update PAT policy'),
   });
 
   function handleSave() {
@@ -90,80 +88,85 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
   }
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <KeyRound className="h-4 w-4 text-muted-foreground" />
-          {tHardcodedUi.raw('componentsIamPatPolicyCard.line95JsxTextCLITokenLifecycle')}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {tHardcodedUi.raw('componentsIamPatPolicyCard.line98JsxTextApplyToPersonalAccessTokensCLIProgrammaticClients')}</p>
-      </header>
+    <div className="space-y-4">
+      <div className="space-y-0.5">
+        <p className="text-foreground text-sm font-medium">CLI token lifecycle</p>
+        <p className="text-muted-foreground text-xs">
+          Apply to Personal Access Tokens (CLI / programmatic clients). Sandbox-injected tokens
+          are exempt — their lifetime is bound to the sandbox itself.
+        </p>
+      </div>
 
-      <div className="space-y-5 px-6 py-5">
-        {query.isLoading ? (
-          <Skeleton className="h-32 w-full" />
-        ) : (
-          <>
-            <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={requireExpiry}
-                onChange={(e) => setRequireExpiry(e.target.checked)}
-                disabled={!canManage || mutation.isPending}
-                className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
-              />
-              <span>
-                <span className="font-medium">{tHardcodedUi.raw('componentsIamPatPolicyCard.line118JsxTextRequireExpiryOnEveryPAT')}</span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line120JsxTextWhenOnTheMintEndpointRefusesPATsWithout')}<span className="font-mono"> expires_at</span>.
+      <div className="bg-popover rounded-md border">
+        <div className="space-y-5 px-4 py-5">
+          {query.isLoading ? (
+            <Skeleton className="h-32 w-full rounded-md" />
+          ) : (
+            <>
+              <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={requireExpiry}
+                  onChange={(e) => setRequireExpiry(e.target.checked)}
+                  disabled={!canManage || mutation.isPending}
+                  className="border-border accent-primary mt-0.5 size-3.5 rounded"
+                />
+                <span>
+                  <span className="font-medium">Require expiry on every PAT</span>
+                  <span className="text-muted-foreground block text-xs">
+                    When on, the mint endpoint refuses PATs without an
+                    <span className="font-mono"> expires_at</span>.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs">{tHardcodedUi.raw('componentsIamPatPolicyCard.line128JsxTextMaxLifetimeDays')}</Label>
-                <Input
-                  value={maxLifetime}
-                  onChange={(e) => setMaxLifetime(e.target.value)}
-                  placeholder={tHardcodedUi.raw('componentsIamPatPolicyCard.line132JsxAttrPlaceholderBlankNoCap')}
-                  inputMode="numeric"
-                  disabled={!canManage || mutation.isPending}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line137JsxTextRefusesPATsWhoseRequestedExpiresAtIsFurther')}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Max lifetime (days)</Label>
+                  <Input
+                    value={maxLifetime}
+                    onChange={(e) => setMaxLifetime(e.target.value)}
+                    placeholder="blank = no cap"
+                    inputMode="numeric"
+                    disabled={!canManage || mutation.isPending}
+                    variant="popover"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Refuses PATs whose requested expires_at is further out than this many days
+                    from now.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Idle auto-revoke (days)</Label>
+                  <Input
+                    value={idleRevoke}
+                    onChange={(e) => setIdleRevoke(e.target.value)}
+                    placeholder="blank = never"
+                    inputMode="numeric"
+                    disabled={!canManage || mutation.isPending}
+                    variant="popover"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Tokens not used in this many days are auto-revoked on the next sign-in
+                    attempt.
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">{tHardcodedUi.raw('componentsIamPatPolicyCard.line142JsxTextIdleAutoRevokeDays')}</Label>
-                <Input
-                  value={idleRevoke}
-                  onChange={(e) => setIdleRevoke(e.target.value)}
-                  placeholder={tHardcodedUi.raw('componentsIamPatPolicyCard.line146JsxAttrPlaceholderBlankNever')}
-                  inputMode="numeric"
-                  disabled={!canManage || mutation.isPending}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line151JsxTextTokensNotUsedInThisManyDaysAre')}</p>
-              </div>
-            </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+              {error && <p className="text-destructive text-xs">{error}</p>}
+            </>
+          )}
+        </div>
 
-            {canManage && (
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={mutation.isPending}
-                  className="gap-1.5"
-                >
-                  {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line168JsxTextSavePolicy')}</Button>
-              </div>
-            )}
-          </>
+        {canManage && !query.isLoading && (
+          <div className="border-border flex items-center justify-end border-t px-4 py-3">
+            <Button size="sm" onClick={handleSave} disabled={mutation.isPending} className="gap-1.5">
+              {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
+              Save policy
+            </Button>
+          </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }

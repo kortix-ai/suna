@@ -8,15 +8,15 @@ import {
   type FileCategory,
   type FileContentRendererProps,
 } from '@/features/file-viewer';
-import { useProjectFileSource } from '../file-source';
+import { useFileExplorerSource } from '../explorer-source';
 
 // Re-export the shared helpers/types so existing import sites keep working.
 export { getFileCategory, getLanguageFromExt };
 export type { FileCategory, FileContentRendererProps };
 
-/** The shared file viewer, bound to the project's git ref. */
+/** The shared file viewer, bound to the explorer's injected data source. */
 export function FileContentRenderer(props: FileContentRendererProps) {
-  const source = useProjectFileSource();
+  const source = useFileExplorerSource().useFileViewerSource();
   return (
     <FileSourceProvider value={source}>
       <BaseFileContentRenderer {...props} />

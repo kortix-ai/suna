@@ -23,7 +23,7 @@ export function BlogCta() {
         Get started
         <HiArrowRight className="size-4" />
       </Button>
-      <Button size="lg" variant="secondary" onClick={openDemo}>
+      <Button size="lg" variant="secondary" onClick={() => openDemo()}>
         Request demo
       </Button>
     </div>

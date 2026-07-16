@@ -7,6 +7,7 @@ tags:
   - Sales
   - Case Study
   - Team
+template: outbound-outreach
 ---
 
 Personalized outbound doesn't scale by hand, so most teams give up the
@@ -41,26 +42,24 @@ segment away from putting unreviewed email in front of thousands of people.
 
 ## What we built
 
-On Kortix, a new segment or lead list triggers an agent. Each contact spawns an
-isolated session (a cloud sandbox) with scoped access to enrichment, the CRM, and
-email. The agent researches the account, drafts a first-touch and a follow-up
-sequence grounded in what it found, and logs every draft to the CRM. No message
-sends on its own: every batch waits for a person to approve, under a daily cap.
-
-<Figure
-  caption="A batch of drafted, account-specific messages waiting for approval under the daily cap"
-  aspect="16/9"
-/>
+On Kortix, a periodic sweep triggers the agent in a fresh session (a cloud
+sandbox) with scoped access to enrichment, the CRM, and email. The agent works
+through the batch of new contacts one by one, researches each account, drafts
+a first-touch and a follow-up sequence grounded in what it found, and logs
+every draft to the CRM. No message sends on its own: every batch waits for a
+person to approve, under a daily cap.
 
 ## How it works
 
 <Steps>
 <Step title="Connect the lead list as the trigger">
 
-A new segment or lead list in the CRM is the trigger. Each contact fires a fresh
-**session** in its own sandbox, seeded with that lead. One contact maps to one
-session on one disposable machine, so research on each account is independent and
-the list processes in parallel.
+A new segment or lead list in the CRM is the trigger. On a schedule, the agent
+fires a fresh **session** in its own sandbox and works through the batch of
+contacts that list contains. Each contact is handled as an independent unit —
+a research or drafting failure on one contact is logged and skipped, and never
+blocks the rest of the batch — with the run capped so a sweep always stays a
+size a person can review.
 
 </Step>
 <Step title="Give the agent the outreach playbook">
@@ -107,7 +106,7 @@ and nothing leaves without a person clearing it.
 </Steps>
 
 <Callout title="The pattern" tone="accent">
-  A **trigger** on a new list spawns a session per contact with scoped
+  A **trigger** on a new list fires a fresh session with scoped
   **connectors** into enrichment, the CRM, and email. The outreach approach is
   encoded as **skills** and **memory**. Every batch is approved by a person and
   the daily cap meters the sends — nothing mass-sends unreviewed.
@@ -117,9 +116,11 @@ and nothing leaves without a person clearing it.
 
 The agent can draft and send email, so the send is the tightly controlled step:
 
-- **Isolation.** Every contact runs in its own microVM sandbox. The session reaches
-  only enrichment, the CRM, and email, and only drafted messages leave it; nothing
-  sends from inside the sandbox.
+- **Isolation.** Each sweep runs in its own fresh microVM sandbox, torn down when
+  it finishes. The session reaches only enrichment, the CRM, and email, and only
+  drafted messages leave it; nothing sends from inside the sandbox. A failure on
+  one contact is logged and skipped — it never blocks or corrupts the rest of the
+  batch.
 - **Scoped secrets.** The enrichment, CRM, and email credentials are encrypted in
   the Secrets Manager and injected into the sandbox at runtime, never exposed to
   the model or the logs.
@@ -129,11 +130,6 @@ The agent can draft and send email, so the send is the tightly controlled step:
 - **Everything is code.** The agent's configuration, skills, and permissions are
   files in the repo, versioned and changed through a reviewed **change request**
   rather than a dashboard setting.
-
-<Figure
-  caption="The approval gate and daily cap metering a batch before any message sends"
-  aspect="16/9"
-/>
 
 ## The outcome
 

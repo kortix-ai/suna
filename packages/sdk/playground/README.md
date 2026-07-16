@@ -43,7 +43,6 @@ Stack must be up (`pnpm dev` from the repo root; `curl localhost:8008/v1/health`
 | 22 | `review/22-review-and-changes.ts` | change requests, Review Center, approvals inbox | no |
 | 23 | `sandbox/23-sandbox.ts` | sandbox health, templates, list, snapshots | no |
 | 24 | `triggers/24-triggers.ts` | trigger list (cron/event automations) | no |
-| 25 | `apps/25-apps.ts` | project apps/deployments list | no |
 | 26 | `audit/26-audit.ts` | account audit log + SIEM webhooks | no |
 | 27 | `session-extras/27-session-lifecycle.ts` | get/health/transcript/audit/shares/previews + previewUrl/proxyUrl + file search/status | **yes** |
 | 28 | `channels/28-email-and-meet.ts` | email installation/mode, meet voices | no |
@@ -58,7 +57,7 @@ Stack must be up (`pnpm dev` from the repo root; `curl localhost:8008/v1/health`
 ## Deliberately NOT covered (and why)
 
 - **Mutations that change your project/account for real** — marketplace install,
-  trigger create/fire, app deploy, `updateAgentConfig`/`setAgentScope`,
+  trigger create/fire, `updateAgentConfig`/`setAgentScope`,
   experimental-feature toggles, access invites, connector create, channel
   connect/disconnect (except opt-in Slack), meet voice/bot mutations,
   `session.commit()`, `restart()`, `setSharing()`. Each script's header says

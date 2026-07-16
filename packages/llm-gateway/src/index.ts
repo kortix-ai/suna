@@ -40,8 +40,10 @@ export type { ExtractedUsage } from './usage';
 export { buildUpstreamRequest } from './transports';
 export type { UpstreamRequest } from './transports';
 
-export { resolveCatalogUpstream, OPENAI_COMPATIBLE_NPM, providerKindForNpm } from './catalog';
-export type { CatalogUpstream } from './catalog';
+export { createModelFallbackPolicyEngine } from './routing';
+export type { ModelFallbackPolicyEngine } from './routing';
+
+export { OPENAI_COMPATIBLE_NPM, providerKindForNpm } from './catalog';
 
 export type {
   AuthedPrincipal,
@@ -51,6 +53,11 @@ export type {
   GatewayHooks,
   GatewayLogger,
   GatewayTrace,
+  ModelFallbackCondition,
+  ModelFallbackPolicy,
+  ModelFallbackPolicyMatch,
+  ModelRouteInput,
+  ModelRoutePlan,
   ModelCatalog,
   ModelInfo,
   ProviderKind,

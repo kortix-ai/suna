@@ -46,7 +46,7 @@ spec:
   {{- end }}
   containers:
     - name: api
-      image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      image: {{ include "kortix-api.image" . | quote }}
       imagePullPolicy: {{ .Values.image.pullPolicy }}
       ports:
         - name: http
@@ -80,7 +80,7 @@ spec:
           value: {{ $v | quote }}
         {{- end }}
       # All secrets (the synced bundle) as environment variables.
-      {{- if .Values.externalSecrets.enabled }}
+      {{- if .Values.externalSecrets.targetSecretName }}
       envFrom:
         - secretRef:
             name: {{ .Values.externalSecrets.targetSecretName }}

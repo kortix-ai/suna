@@ -108,7 +108,7 @@ export default function Home() {
                       {tHome('line337JsxTextGetStarted')}
                       <HiArrowRight className="size-4" />
                     </Button>
-                    <Button size="lg" className="w-full" variant="accent" onClick={openDemo}>
+                    <Button size="lg" className="w-full" variant="accent" onClick={() => openDemo()}>
                       {tHome('line338JsxTextTalkToSales')}
                     </Button>
                   </div>

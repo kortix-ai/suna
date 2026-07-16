@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { access, constants, stat } from 'node:fs/promises'
+import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, EXECUTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
@@ -322,6 +323,40 @@ async function fetchGatewayModels(
   return null
 }
 
+export type GatewayCatalogRefreshResult = {
+  changed: boolean
+  catalogFile: string
+}
+
+/**
+ * Refresh the catalog inherited from a warm snapshot with the authenticated,
+ * project-scoped gateway catalog available after fork adoption.
+ *
+ * OpenCode materializes provider models at process start. Updating the file is
+ * therefore not sufficient by itself: callers must restart OpenCode when
+ * `changed` is true. A matching catalog preserves the warm no-restart path.
+ */
+export async function refreshGatewayCatalogFile(opts: {
+  currentCatalogFile: string
+  targetCatalogFile: string
+  fetchBaseURL: string
+  fetchApiKey: string
+}): Promise<GatewayCatalogRefreshResult | null> {
+  const liveModels = await fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
+  if (!liveModels) return null
+
+  const currentModels = readCatalogFile(opts.currentCatalogFile)
+  const changed = !isDeepStrictEqual(currentModels, liveModels)
+  mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
+  writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: liveModels }), { mode: 0o600 })
+  logger.info('[opencode] refreshed authenticated gateway catalog', {
+    changed,
+    models: Object.keys(liveModels).length,
+    target: opts.targetCatalogFile,
+  })
+  return { changed, catalogFile: opts.targetCatalogFile }
+}
+
 // New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
 // images → a vision model) — not a single pinned model. Used for both the main
 // model and the cheap `small_model`.
@@ -336,7 +371,7 @@ type KortixGatewayModel = {
   limit?: { context?: number; output?: number }
 }
 
-const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
+export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   // AUTO — the default model; present so the baked default never dangles when this
   // fallback is used (gateway + baked catalog both unreachable at boot).
   auto: {
@@ -378,7 +413,12 @@ const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     reasoning: true,
     tool_call: true,
     attachment: true,
-    temperature: true,
+    // models.dev: false — OpenAI reasoning models (gpt-5.x) reject a
+    // client-sent `temperature`, so advertising support here would make
+    // OpenCode send one and 400 the turn whenever this fallback catalog is
+    // in effect. Must match capabilitiesOf() in the served catalog
+    // (apps/api/src/llm-gateway/models/catalog-models.ts).
+    temperature: false,
     limit: { context: 1_050_000, output: 64_000 },
   },
   'google/gemini-3.5-flash': {

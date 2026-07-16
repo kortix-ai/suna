@@ -10,7 +10,7 @@
  * forward). This module collapses all of that into one place:
  *
  *   - `loadSandbox`            — one row fetch, returns a typed SandboxRecord
- *   - `resolvePreviewLink`     — cached Daytona preview URL + token (per port)
+ *   - `resolveSandboxIngress` — cached provider-normalized URL + auth (per port)
  *   - `resolveServiceKey`      — cached service key (for callers that only need it)
  *   - `buildSandboxUpstreamHeaders` — the auth headers every upstream call needs
  *   - `markSandboxUsed` / `wakeSandbox` — lifecycle side-effects
@@ -23,7 +23,13 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
-import { getProvider, type ProviderName } from '../platform/providers';
+import {
+  getProvider,
+  type ProviderName,
+  type ResolvedSandboxIngress,
+  type SandboxIngressRequest,
+  type SandboxIngressRoute,
+} from '../platform/providers';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
@@ -61,8 +67,7 @@ export interface SandboxRecord {
 // transitions immediately so auto-wake and "not ready" responses stay correct.
 
 interface PreviewLinkEntry {
-  url: string;
-  token: string | null;
+  ingress: ResolvedSandboxIngress;
   expiresAt: number;
 }
 interface ServiceKeyEntry {
@@ -74,8 +79,8 @@ const previewLinkCache = new Map<string, PreviewLinkEntry>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 const sandboxTouchCache = new Map<string, number>();
 
-function previewLinkKey(sandboxId: string, port: number): string {
-  return `${sandboxId}:${port}`;
+function previewLinkKey(sandboxId: string, request: SandboxIngressRequest): string {
+  return `${sandboxId}:${request.port}:${request.transport ?? 'http'}:${request.path ?? ''}`;
 }
 
 function preferredSandboxOrder() {
@@ -177,29 +182,39 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
 // preview link. (This is the fix for the 502/503 every non-Daytona sandbox hit
 // through `/v1/p/`.)
 
-export async function resolvePreviewLink(
+export async function resolveSandboxIngress(
   sandboxRef: string | SandboxRecord,
-  port: number,
-): Promise<{ url: string; token: string | null }> {
+  request: SandboxIngressRequest,
+): Promise<ResolvedSandboxIngress> {
   const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
-  const key = previewLinkKey(sandboxId, port);
+  const key = previewLinkKey(sandboxId, request);
   const cached = previewLinkCache.get(key);
   if (cached && Date.now() < cached.expiresAt) {
-    return { url: cached.url, token: cached.token };
+    return cached.ingress;
   }
   previewLinkCache.delete(key);
 
   const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
   if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
-  const { url, token } = await getProvider(record.provider as ProviderName).resolvePreviewLink(record.externalId, port);
+  const ingress = await getProvider(record.provider as ProviderName).resolveIngress(record.externalId, request);
 
-  previewLinkCache.set(key, { url, token, expiresAt: Date.now() + CACHE_TTL_MS });
-  return { url, token };
+  previewLinkCache.set(key, { ingress, expiresAt: Date.now() + CACHE_TTL_MS });
+  return ingress;
+}
+
+export function routeSandboxIngress(
+  sandbox: SandboxRecord,
+  request: SandboxIngressRequest,
+): SandboxIngressRoute {
+  return getProvider(sandbox.provider as ProviderName).routeIngress(request);
 }
 
 /** Drop a cached preview link — called when an upstream returns 502/503 (stale). */
 export function invalidatePreviewLink(sandboxId: string, port: number): void {
-  previewLinkCache.delete(previewLinkKey(sandboxId, port));
+  const prefix = `${sandboxId}:${port}:`;
+  for (const key of previewLinkCache.keys()) {
+    if (key.startsWith(prefix)) previewLinkCache.delete(key);
+  }
 }
 
 // ── Upstream auth headers (shared by HTTP forward + WebSocket) ────────────────
@@ -217,14 +232,10 @@ export async function buildSandboxUpstreamHeaders(opts: {
   sandboxId: string;
   userId: string;
   serviceKey: string | null;
-  previewToken: string | null;
+  providerHeaders?: Record<string, string>;
 }): Promise<Record<string, string>> {
-  const { sandboxId, userId, serviceKey, previewToken } = opts;
-  const headers: Record<string, string> = {
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (previewToken) headers['X-Daytona-Preview-Token'] = previewToken;
+  const { sandboxId, userId, serviceKey, providerHeaders } = opts;
+  const headers: Record<string, string> = { ...providerHeaders };
   if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
 
   if (userId && serviceKey) {

@@ -342,42 +342,6 @@
     "gated": "funded daytona"
   },
   {
-    "id": "APP-1",
-    "domain": "apps",
-    "status": "passed",
-    "cases": 3,
-    "routes": 1,
-    "tags": "smoke",
-    "gated": ""
-  },
-  {
-    "id": "APP-2",
-    "domain": "apps",
-    "status": "passed",
-    "cases": 5,
-    "routes": 3,
-    "tags": "",
-    "gated": ""
-  },
-  {
-    "id": "APP-3",
-    "domain": "apps",
-    "status": "passed",
-    "cases": 4,
-    "routes": 3,
-    "tags": "",
-    "gated": ""
-  },
-  {
-    "id": "APP-4",
-    "domain": "apps",
-    "status": "passed",
-    "cases": 5,
-    "routes": 1,
-    "tags": "",
-    "gated": ""
-  },
-  {
     "id": "AUD-1",
     "domain": "audit",
     "status": "passed",
@@ -951,7 +915,7 @@
     "cases": 1,
     "routes": 2,
     "tags": "",
-    "gated": "freestyle"
+    "gated": "managedGit"
   },
   {
     "id": "SHIP-2",
@@ -978,7 +942,7 @@
     "cases": 1,
     "routes": 2,
     "tags": "",
-    "gated": "freestyle"
+    "gated": "managedGit"
   },
   {
     "id": "SHIP-5",
@@ -996,7 +960,7 @@
     "cases": 1,
     "routes": 4,
     "tags": "",
-    "gated": "freestyle"
+    "gated": "managedGit"
   },
   {
     "id": "SHIP-7",
@@ -1023,7 +987,7 @@
     "cases": 2,
     "routes": 4,
     "tags": "",
-    "gated": "freestyle"
+    "gated": "managedGit"
   },
   {
     "id": "WHOAMI-1",
@@ -1833,7 +1797,7 @@
     "cases": 1,
     "routes": 1,
     "tags": "",
-    "gated": "freestyle"
+    "gated": "managedGit"
   },
   {
     "id": "PROJ-5",
@@ -1959,7 +1923,7 @@
     "cases": 2,
     "routes": 2,
     "tags": "",
-    "gated": "freestyle stripe"
+    "gated": "managedGit stripe"
   },
   {
     "id": "SESS-10",

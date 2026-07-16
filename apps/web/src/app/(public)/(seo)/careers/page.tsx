@@ -1,3 +1,4 @@
+import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
 import CareersPageClient from './careers-client';
 
@@ -10,8 +11,8 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Careers at Kortix – Build the Autonomous Company OS',
     description:
-      'An extremely small, tight-knit team building the operating system for autonomous companies. Founders, builders, hackers, engineers — we care that you\'ve built something real.',
-    url: 'https://www.kortix.com/careers',
+      "An extremely small, tight-knit team building the operating system for autonomous companies. Founders, builders, hackers, engineers — we care that you've built something real.",
+    url: `${CANONICAL_ORIGIN}/careers`,
     images: [
       {
         url: '/images/careers/shackleton.png',
@@ -25,11 +26,11 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Careers at Kortix – Build the Autonomous Company OS',
     description:
-      'An extremely small, tight-knit team building the operating system for autonomous companies. Founders, builders, hackers, engineers — we care that you\'ve built something real.',
+      "An extremely small, tight-knit team building the operating system for autonomous companies. Founders, builders, hackers, engineers — we care that you've built something real.",
     images: ['/images/careers/shackleton.png'],
   },
   alternates: {
-    canonical: 'https://www.kortix.com/careers',
+    canonical: `${CANONICAL_ORIGIN}/careers`,
   },
 };
 

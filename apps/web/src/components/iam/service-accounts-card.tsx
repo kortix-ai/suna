@@ -1,14 +1,13 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 // Service accounts on the Settings tab. First-class machine identities
 // owned by the account itself; policies attach via the standard policy
 // editor (pick scope_type='token' principal). One bearer per SA;
 // rotation = disable + create new.
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Copy, ExternalLink, Loader2, PauseCircle, Plus, Trash2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, MoreHorizontal, PauseCircle, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -16,16 +15,32 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   type CreatedServiceAccount,
   type ServiceAccount,
@@ -41,7 +56,6 @@ interface ServiceAccountsCardProps {
 }
 
 export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCardProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [createdBearer, setCreatedBearer] = useState<CreatedServiceAccount | null>(null);
@@ -57,136 +71,119 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
   const disableMutation = useMutation({
     mutationFn: (saId: string) => disableServiceAccountApi(accountId, saId),
     onSuccess: () => {
-      toast.success('Service account disabled');
+      successToast('Service account disabled');
       queryClient.invalidateQueries({ queryKey: ['service-accounts', accountId] });
       setDisableTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to disable'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to disable'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (saId: string) => deleteServiceAccountApi(accountId, saId),
     onSuccess: () => {
-      toast.success('Service account deleted');
+      successToast('Service account deleted');
       queryClient.invalidateQueries({ queryKey: ['service-accounts', accountId] });
       setDeleteTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to delete'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to delete'),
   });
 
   const sas = sasQuery.data ?? [];
 
   return (
-    <section className="border-border/70 bg-card rounded-xl border">
-      <header className="border-border/60 border-b px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
-              <Bot className="text-muted-foreground h-4 w-4" />
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line93JsxTextServiceAccounts')}
-            </h2>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {tHardcodedUi.raw(
-                'componentsIamServiceAccountsCard.line96JsxTextMachineIdentitiesForCICDAndIntegrationsAttach',
-              )}
-            </p>
-          </div>
-          {canManage && (
-            <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line104JsxTextNewServiceAccount')}
-            </Button>
-          )}
-        </div>
-      </header>
-
-      <div className="px-6 py-4">
-        {sasQuery.isLoading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : sas.length === 0 ? (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">Service accounts</p>
           <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw(
-              'componentsIamServiceAccountsCard.line115JsxTextNoServiceAccountsYetCreateOneToGet',
-            )}
+            Machine identities for CI/CD and integrations. Attach policies just like a member —
+            pick the service account as the principal when creating a policy.
           </p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-border/60 text-muted-foreground border-b text-left text-[10px] font-medium tracking-wider uppercase">
-                <th className="py-2 font-medium">Name</th>
-                <th className="py-2 font-medium">Status</th>
-                <th className="py-2 font-medium">
-                  {tHardcodedUi.raw('componentsIamServiceAccountsCard.line124JsxTextLastUsed')}
-                </th>
-                <th className="w-32 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-border divide-y">
-              {sas.map((sa) => (
-                <tr key={sa.service_account_id} className="hover:bg-muted/20">
-                  <td className="py-2">
-                    <div className="text-foreground font-medium">{sa.name}</div>
-                    <div className="text-muted-foreground font-mono text-[10px]">
-                      {sa.public_prefix}
-                    </div>
-                    {sa.description && (
-                      <div className="text-muted-foreground mt-0.5 text-[11px]">
-                        {sa.description}
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-2">
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      className={
-                        sa.status === 'active'
-                          ? 'border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                          : 'text-muted-foreground'
-                      }
-                    >
-                      {sa.status}
-                    </Badge>
-                  </td>
-                  <td className="text-muted-foreground py-2 text-xs">
-                    {sa.last_used_at ? formatRelative(sa.last_used_at) : 'never'}
-                  </td>
-                  <td className="py-2 text-right">
-                    {canManage && (
-                      <div className="flex justify-end gap-1.5">
-                        {sa.status === 'active' && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="text-muted-foreground h-8 w-8 hover:text-amber-600"
-                            onClick={() => setDisableTarget(sa)}
-                            aria-label="Disable"
-                            title="Disable"
-                          >
-                            <PauseCircle className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive h-8 w-8"
-                          onClick={() => setDeleteTarget(sa)}
-                          aria-label="Delete"
-                          title={tHardcodedUi.raw(
-                            'componentsIamServiceAccountsCard.line179JsxAttrTitleDeletePermanently',
-                          )}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        </div>
+        {canManage && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setCreateOpen(true)}
+            className="shrink-0 gap-1.5"
+          >
+            <Plus className="size-4 shrink-0" />
+            New service account
+          </Button>
         )}
       </div>
+
+      {sasQuery.isLoading ? (
+        <Skeleton className="h-16 w-full rounded-md" />
+      ) : sas.length === 0 ? (
+        <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
+          No service accounts yet. Create one to get a bearer token for your CI and automations.
+        </div>
+      ) : (
+        <Table className="overflow-hidden rounded-md">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Name</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead className="w-[52px]">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sas.map((sa) => (
+              <TableRow key={sa.service_account_id}>
+                <TableCell className="max-w-[280px] align-top whitespace-normal">
+                  <div className="min-w-0">
+                    <p className="text-foreground truncate text-sm font-medium">{sa.name}</p>
+                    <p className="text-muted-foreground truncate font-mono text-xs">
+                      {sa.public_prefix}
+                    </p>
+                    {sa.description && (
+                      <p className="text-muted-foreground mt-0.5 text-xs">{sa.description}</p>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="align-top whitespace-normal">
+                  <Badge variant={sa.status === 'active' ? 'success' : 'muted'} size="sm">
+                    {sa.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground align-top text-xs whitespace-normal">
+                  {sa.last_used_at ? formatRelative(sa.last_used_at) : 'never'}
+                </TableCell>
+                <TableCell className="align-top">
+                  {canManage && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="icon" variant="ghost" aria-label="Actions">
+                          <MoreHorizontal className="size-3.5 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        {sa.status === 'active' && (
+                          <DropdownMenuItem onClick={() => setDisableTarget(sa)}>
+                            <PauseCircle className="size-3.5 shrink-0" />
+                            Disable
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          onClick={() => setDeleteTarget(sa)}
+                          variant="destructive"
+                        >
+                          <Trash2 className="size-3.5 shrink-0" />
+                          Delete permanently
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
 
       <CreateServiceAccountDialog
         accountId={accountId}
@@ -211,9 +208,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         onOpenChange={(o) => {
           if (!o) setDisableTarget(null);
         }}
-        title={tHardcodedUi.raw(
-          'componentsIamServiceAccountsCard.line216JsxAttrTitleDisableServiceAccount',
-        )}
+        title="Disable service account?"
         description={
           disableTarget
             ? `"${disableTarget.name}" will start failing auth on its next request. Its bearer becomes unusable but the account row is preserved for audit. Re-enable by deleting + creating a new one.`
@@ -232,9 +227,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         onOpenChange={(o) => {
           if (!o) setDeleteTarget(null);
         }}
-        title={tHardcodedUi.raw(
-          'componentsIamServiceAccountsCard.line235JsxAttrTitleDeleteServiceAccount',
-        )}
+        title="Delete service account?"
         description={
           deleteTarget
             ? `Permanently removes "${deleteTarget.name}" and revokes its bearer. Any IAM policies attached to it are also dropped.`
@@ -247,7 +240,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
           if (deleteTarget) deleteMutation.mutate(deleteTarget.service_account_id);
         }}
       />
-    </section>
+    </div>
   );
 }
 
@@ -264,7 +257,6 @@ function CreateServiceAccountDialog({
   onOpenChange: (o: boolean) => void;
   onCreated: (sa: CreatedServiceAccount) => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
@@ -280,23 +272,20 @@ function CreateServiceAccountDialog({
       setDescription('');
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to create'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line287JsxTextNewServiceAccount')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsIamServiceAccountsCard.line289JsxTextABearerTokenWillBeShownOnceAfter',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
+    <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>New service account</ModalTitle>
+          <ModalDescription>
+            A bearer token will be shown once after creation. Attach policies to it from the
+            member detail view (it appears under the Token principal type).
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody className="space-y-4">
           <div className="space-y-1.5">
             <Label>Name</Label>
             <Input
@@ -305,56 +294,54 @@ function CreateServiceAccountDialog({
               placeholder="ci-deploy"
               disabled={mutation.isPending}
               autoFocus
+              variant="popover"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>
-              {tHardcodedUi.raw(
-                'componentsIamServiceAccountsCard.line306JsxTextDescriptionOptional',
-              )}
-            </Label>
+            <Label>Description (optional)</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder={tHardcodedUi.raw(
-                'componentsIamServiceAccountsCard.line310JsxAttrPlaceholderGitHubActionsDeployWorker',
-              )}
+              placeholder="GitHub Actions deploy worker"
               disabled={mutation.isPending}
+              variant="popover"
             />
           </div>
-        </div>
-        <DialogFooter>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
           <Button
-            variant="outline"
+            type="button"
+            variant="outline-ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={() => mutation.mutate()}
             disabled={!name.trim() || mutation.isPending}
             className="gap-1.5"
           >
-            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
             Create
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
 function ShowBearerDialog({
-  accountId,
   bearer,
   onClose,
+  accountId,
 }: {
   accountId: string;
   bearer: CreatedServiceAccount;
   onClose: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -362,49 +349,44 @@ function ShowBearerDialog({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error('Clipboard unavailable — select and copy manually.');
+      errorToast('Clipboard unavailable — select and copy manually.');
     }
   }
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line360JsxTextSaveThisBearerNow')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsIamServiceAccountsCard.line362JsxTextThisIsTheOnlyTimeWeLlShow',
-            )}
-            <strong>{bearer.name}</strong>
-            {tHardcodedUi.raw(
-              'componentsIamServiceAccountsCard.line362JsxTextSSecretStoreItInYourSecretsManager',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="border-border/60 bg-muted/30 rounded-2xl border px-3 py-2 font-mono text-xs break-all">
+    <Modal open onOpenChange={onClose}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Save this bearer now</ModalTitle>
+          <ModalDescription>
+            This is the only time we&apos;ll show <strong>{bearer.name}</strong>&apos;s secret.
+            Store it in your secrets manager — we can&apos;t recover it if you lose it.
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody className="space-y-3">
+          <div className="bg-muted/30 rounded-md border px-3 py-2 font-mono text-xs break-all">
             {bearer.secret}
           </div>
           <div className="flex items-center justify-between gap-2">
             <Button size="sm" variant="outline" onClick={copy} className="gap-1.5">
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? <Check className="size-3.5 shrink-0" /> : <Copy className="size-3.5 shrink-0" />}
               {copied ? 'Copied' : 'Copy'}
             </Button>
             <Link
               href={`/accounts/${accountId}/tokens/${bearer.service_account_id}`}
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
             >
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line380JsxTextAttachPolicies')}
-              <ExternalLink className="h-3 w-3" />
+              Attach policies
+              <ExternalLink className="size-3 shrink-0" />
             </Link>
           </div>
-        </div>
-        <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalBody>
+        <ModalFooter>
+          <Button size="sm" onClick={onClose}>
+            Done
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 

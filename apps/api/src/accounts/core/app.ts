@@ -1,12 +1,12 @@
-import { Context } from 'hono';
 import { z } from '@hono/zod-openapi';
+import { accountInvitations, accountMembers, type accounts } from '@kortix/db';
 import { and, asc, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
-import { accountInvitations, accountMembers, accounts } from '@kortix/db';
-import type { AppEnv } from '../../types';
 import { db } from '../../shared/db';
-import { getSupabase } from '../../shared/supabase';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { getSupabase } from '../../shared/supabase';
+import type { AppEnv } from '../../types';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();
@@ -53,6 +53,8 @@ export const AccountDetailSchema = z
     member_count: z.number(),
     project_count: z.number(),
     role: z.string(),
+    /** Account-wide MFA enforcement flag — drives the members-list MFA badges. */
+    mfa_required: z.boolean().optional(),
     created_at: z.string(),
     updated_at: z.string(),
   })
@@ -105,15 +107,17 @@ export const MeSchema = z
   .object({
     user_id: z.string(),
     email: z.string(),
-    token_context: z.object({
-      auth_type: z.string().nullable(),
-      project_id: z.string().nullable(),
-      session_id: z.string().nullable(),
-      agent: z.string().nullable(),
-      connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
-      kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
-      env: z.union([z.literal('all'), z.array(z.string())]).nullable(),
-    }).optional(),
+    token_context: z
+      .object({
+        auth_type: z.string().nullable(),
+        project_id: z.string().nullable(),
+        session_id: z.string().nullable(),
+        agent: z.string().nullable(),
+        connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+        env: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+      })
+      .optional(),
     accounts: z.array(
       z.object({
         account_id: z.string(),
@@ -200,7 +204,9 @@ export async function countOwners(accountId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
+export async function lookupEmailsByUserIds(
+  userIds: string[],
+): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
   if (userIds.length === 0) return result;
   const supabase = getSupabase();
@@ -241,10 +247,9 @@ export async function resolveAccountDisplayNames(
     const owners = await db
       .select({ accountId: accountMembers.accountId, userId: accountMembers.userId })
       .from(accountMembers)
-      .where(and(
-        inArray(accountMembers.accountId, unnamed),
-        eq(accountMembers.accountRole, 'owner'),
-      ))
+      .where(
+        and(inArray(accountMembers.accountId, unnamed), eq(accountMembers.accountRole, 'owner')),
+      )
       .orderBy(asc(accountMembers.joinedAt));
     for (const o of owners) {
       if (!ownerByAccount.has(o.accountId)) ownerByAccount.set(o.accountId, o.userId);
@@ -260,9 +265,10 @@ export async function resolveAccountDisplayNames(
 
   for (const accountId of unnamed) {
     const ownerId = ownerByAccount.get(accountId);
-    const email = !ownerId || ownerId === caller.userId
-      ? caller.email // ownerless account: caller email beats a bare 'Account'
-      : ownerEmails.get(ownerId) ?? caller.email;
+    const email =
+      !ownerId || ownerId === caller.userId
+        ? caller.email // ownerless account: caller email beats a bare 'Account'
+        : (ownerEmails.get(ownerId) ?? caller.email);
     names.set(accountId, defaultAccountName(email));
   }
   return names;

@@ -193,10 +193,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
     try {
       await deleteMutation.mutateAsync(confirmDelete.sandboxId);
       toast.success(`Deleted instance ${confirmDelete.sandboxId.slice(0, 8)}`, {
-        description:
-          confirmDelete.provider === 'justavps'
-            ? 'Removed from DB and JustaVPS machine deleted.'
-            : 'Removed from DB.',
+        description: 'Removed from DB.',
       });
     } catch (err: any) {
       toast.error('Failed to delete instance', { description: err.message });
@@ -286,8 +283,9 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
                   'componentsAdminAdminDashboardSections.line214JsxTextAllProviders',
                 )}
               </SelectItem>
-              <SelectItem value="justavps">JustAVPS</SelectItem>
               <SelectItem value="daytona">Daytona</SelectItem>
+              <SelectItem value="platinum">Platinum</SelectItem>
+              <SelectItem value="e2b">E2B</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -482,7 +480,6 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
                 <span className="text-foreground font-mono">
                   {confirmDelete?.sandboxId.slice(0, 8)}
                 </span>
-                {confirmDelete?.provider === 'justavps' && ' and terminate the JustaVPS machine'}
                 {tHardcodedUi.raw(
                   'componentsAdminAdminDashboardSections.line264JsxTextThisCannotBeUndone',
                 )}

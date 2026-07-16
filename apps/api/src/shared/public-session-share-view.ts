@@ -210,7 +210,23 @@ export async function getPublicSessionMessages(
     return { ok: true, transcript: unavailable('No OpenCode session found in the sandbox yet') };
   }
 
-  const endpoint = await sandboxOpencodeEndpoint(row.externalId, undefined);
+  // Endpoint resolution touches the sandbox provider (Daytona preview-link /
+  // service-key lookup) and can throw on a 429 `ThrottlerException` rate limit,
+  // an archived/deleted box, or a transient provider outage. This anonymous
+  // transcript read is best-effort enrichment (the share row is already
+  // resolved); a provider throw must NEVER bubble up and 500 the public share
+  // route (sibling of the #3567 title-sync fix — same class of bug on a
+  // different post-#3567 call site). Degrade to an unavailable digest.
+  let endpoint: { url: string; headers: Record<string, string> } | null;
+  try {
+    endpoint = await sandboxOpencodeEndpoint(row.externalId, undefined);
+  } catch (err) {
+    console.warn('[public-session-share-view] sandbox endpoint resolution failed:', err);
+    return {
+      ok: true,
+      transcript: unavailable('Could not read the shared session right now.', opencodeSessionId),
+    };
+  }
   if (!endpoint) {
     return { ok: true, transcript: unavailable('Sandbox credentials unavailable', opencodeSessionId) };
   }

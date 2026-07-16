@@ -5,7 +5,7 @@ description: Status model, branch creation, sandbox layout, injected environment
 
 The runtime mechanics of a session. For the technical model of what a session is, see [Sessions](/docs/concepts/sessions).
 
-A session is one conversation with the agent, run in an isolated sandbox VM (provisioned on Daytona) with the project repo cloned and checked out on a branch named after the session id. The sandbox is ephemeral; the branch persists. Work reaches the default branch only through a [change request](/docs/reference/change-requests).
+A session is one conversation with the agent, run in an isolated sandbox VM on Daytona, Platinum, or E2B Cloud, with the project repo cloned and checked out on a branch named after the session id. The provider is an implementation detail of the same session-scoped API. Work reaches the default branch only through a [change request](/docs/reference/change-requests).
 
 ## Status model
 
@@ -37,7 +37,9 @@ An open dashboard, preview, SSE connection, or health poll does **not** create a
 
 ## What survives
 
-Only what the agent commits and pushes to the session branch. The sandbox filesystem is disposable — re-cloned fresh on every boot, torn down on stop, hibernation, or restart. Commit in small chunks so a mid-run teardown loses nothing already pushed. The branch reaches the default branch only once a [change request](/docs/reference/change-requests) merges it.
+An in-place stop/resume preserves the same provider sandbox identity and its filesystem while dropping RAM and processes; the Kortix entrypoint and OpenCode restart on resume. E2B uses a filesystem-only pause (`keepMemory: false`), and Daytona and Platinum expose the same Kortix lifecycle contract through their native stop/resume primitives. Permanent deletion removes the provider sandbox.
+
+The session branch is the only durable, provider-independent record. Commit and push in small chunks so work survives provider deletion or recovery, and merge a [change request](/docs/reference/change-requests) to land it on the default branch.
 
 ## Layout inside the sandbox
 

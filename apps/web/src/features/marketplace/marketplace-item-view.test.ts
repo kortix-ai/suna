@@ -4,6 +4,7 @@ import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client'
 import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
+  groupBundleMembersByType,
   groupCapabilities,
   itemCountLabel,
   resolveBundleMembers,
@@ -91,7 +92,13 @@ describe('resolveBundleMembers', () => {
     });
 
     expect(members).toEqual([
-      { key: 'kortix:review', title: 'Review', type: 'registry:skill', href: '/marketplace/kortix:review' },
+      {
+        key: 'kortix:review',
+        title: 'Review',
+        type: 'registry:skill',
+        description: null,
+        href: '/marketplace/kortix:review',
+      },
     ]);
   });
 
@@ -117,11 +124,53 @@ describe('resolveBundleMembers', () => {
       hrefForId,
     });
 
-    expect(members).toEqual([{ key: 'unresolved-item', title: 'unresolved-item', type: null, href: null }]);
+    expect(members).toEqual([
+      { key: 'unresolved-item', title: 'unresolved-item', type: null, description: null, href: null },
+    ]);
   });
 
   test('an empty dependency list produces no members', () => {
     expect(resolveBundleMembers({ dependencies: [], dependencyItems: [], hrefForId })).toEqual([]);
+  });
+});
+
+describe('groupBundleMembersByType', () => {
+  const m = (key: string, type: string | null) => ({
+    key,
+    title: key,
+    type,
+    description: null,
+    href: null,
+  });
+
+  test('buckets members by type in a stable order (skills, agents, tools, …)', () => {
+    const groups = groupBundleMembersByType([
+      m('t1', 'registry:tool'),
+      m('s1', 'registry:skill'),
+      m('a1', 'registry:agent'),
+      m('s2', 'registry:skill'),
+    ]);
+    expect(groups.map((g) => [g.label, g.members.map((x) => x.key)])).toEqual([
+      ['Skills', ['s1', 's2']],
+      ['Agents', ['a1']],
+      ['Tools', ['t1']],
+    ]);
+  });
+
+  test('collects null/unrecognized types into an "Other" bucket at the end', () => {
+    const groups = groupBundleMembersByType([
+      m('s1', 'registry:skill'),
+      m('x', null),
+      m('y', 'registry:mystery'),
+    ]);
+    expect(groups[0].label).toBe('Skills');
+    const other = groups[groups.length - 1];
+    expect(other.label).toBe('Other');
+    expect(other.members.map((x) => x.key).sort()).toEqual(['x', 'y']);
+  });
+
+  test('empty input produces no groups', () => {
+    expect(groupBundleMembersByType([])).toEqual([]);
   });
 });
 

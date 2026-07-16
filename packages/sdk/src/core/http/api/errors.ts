@@ -61,8 +61,18 @@ export class ApiError extends Error {
     Object.assign(this, rest);
     if (name) this.name = name;
     if (stack) this.stack = stack;
+    // `message` is redefined as an enumerable own property on purpose (see the
+    // class doc), but the RAW argument is stored — so a non-string `message`
+    // (e.g. a backend JSON body like `{ "message": { ... } }` that
+    // `makeRequest` failed to coerce) would land here as an object/number and
+    // later crash any consumer doing `err.message.includes(...)` with
+    // `TypeError: t.message.includes is not a function`. Coerce to a string so
+    // `ApiError.message` is ALWAYS a string, matching every consumer's
+    // assumption and the `Error` contract.
+    const messageStr =
+      typeof message === 'string' ? message : message == null ? '' : String(message);
     Object.defineProperty(this, 'message', {
-      value: message,
+      value: messageStr,
       enumerable: true,
       writable: true,
       configurable: true,

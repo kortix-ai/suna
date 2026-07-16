@@ -162,9 +162,23 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     console.error('API Error:', error, context);
   }
 
-  // Report server errors (5xx) and network failures to Better Stack via Sentry.
-  // 4xx errors are expected (auth, validation) and don't need alerting.
-  if (status >= 500 || error?.code === 'TIMEOUT' || error?.code === 'NETWORK_ERROR') {
+  // Report server errors (5xx) and genuine network failures to Better Stack via
+  // Sentry. 4xx errors are expected (auth, validation) and don't need alerting.
+  //
+  // A client-side request TIMEOUT (`code === 'TIMEOUT'`, the SDK's 30s fetch
+  // deadline — packages/sdk/src/core/http/api-client.ts) is intentionally NOT
+  // captured here. It is the frontend mirror of the API's request-deadline 503
+  // (apps/api/src/middleware/request-deadline.ts, de-noised from Sentry by
+  // https://github.com/kortix-ai/suna/pull/4524): the API has a 25s server
+  // deadline that returns a clean 503 + Retry-After, and react-query retries
+  // background polls, so a 30s client abort is an EXPECTED, retryable
+  // degradation under momentary API saturation — not an actionable bug. The
+  // saturation signal stays visible in the per-route
+  // `http_request_duration_seconds` metric and the structured
+  // `Request completed: … 503 …` warn log. Real 5xx server errors and genuine
+  // connectivity loss (NETWORK_ERROR) still report. The message-shape backstop
+  // for leak paths lives in browser-error-noise.ts (`isClientRequestTimeoutMessage`).
+  if (status >= 500 || error?.code === 'NETWORK_ERROR') {
     Sentry.captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {

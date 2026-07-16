@@ -13,8 +13,8 @@ export type TargetName = "local" | "dev" | "prod" | "custom";
 export interface Capabilities {
   /** Real Daytona sandbox provisioning available. */
   daytona: boolean;
-  /** Freestyle managed git available. */
-  freestyle: boolean;
+  /** Managed GitHub repository provisioning available. */
+  managedGit: boolean;
   /** Stripe test-mode billing wired (webhook secret present). */
   stripe: boolean;
   /** Supabase service-role admin available (mint/confirm users). */
@@ -134,7 +134,7 @@ export function loadEnv(): Env {
 
   const capabilities: Capabilities = {
     daytona: pick("KE2E_CAP_DAYTONA") !== "0",
-    freestyle: pick("KE2E_CAP_FREESTYLE") !== "0",
+    managedGit: pick("KE2E_CAP_MANAGED_GIT") !== "0",
     stripe: stripeSecretKey != null,
     supabaseAdmin: supabaseServiceRoleKey != null,
     database: databaseUrl != null,

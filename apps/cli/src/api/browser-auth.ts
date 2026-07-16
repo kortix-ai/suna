@@ -1,5 +1,5 @@
-import { createServer, type Server } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { type Server, createServer } from 'node:http';
 
 export interface BrowserAuthResult {
   /** The plaintext PAT the dashboard minted on behalf of the user. */
@@ -48,6 +48,19 @@ export function startCallbackServer(opts: StartOpts = {}): Promise<BrowserAuthSe
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
+      // Chrome's Private/Local Network Access preflight: when a page's fetch
+      // targets a "more private" address space (this loopback listener
+      // qualifies even from another loopback origin on some Chrome versions'
+      // stricter phases), the browser adds this request header to the
+      // preflight and requires the matching response header before it will
+      // let the actual request through — otherwise the fetch fails exactly
+      // like a CORS block (generic "Failed to fetch", no distinguishing
+      // detail). Harmless to always send when asked: this is a one-shot
+      // loopback receiver guarded by the `state` nonce, not a same-origin
+      // security boundary.
+      if (req.headers['access-control-request-private-network'] === 'true') {
+        res.setHeader('Access-Control-Allow-Private-Network', 'true');
+      }
       res.writeHead(204);
       res.end();
       return;
