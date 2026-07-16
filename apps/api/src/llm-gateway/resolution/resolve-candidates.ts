@@ -15,9 +15,20 @@ import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import { resolveGatewayRoute } from '../routing';
-import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
+import { bedrockByokBaseUrl, codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
+
+// Bedrock is the one native-transport BYOK provider whose credential is
+// multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
+// doc comment): AWS_BEARER_TOKEN_BEDROCK (fetched below via `byok.envVar`,
+// same as every other BYOK provider) PLUS the project's own AWS_REGION, which
+// no other BYOK provider needs — every other provider publishes a static
+// baseUrl from resolveCatalogUpstream. AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY
+// are collected by the dashboard's connect form too, but unused until the
+// SigV4 signing path lands (see transports/bedrock/request.ts's
+// TODO(bedrock-sigv4)); only the bearer token + region are read here today.
+const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 
 // Tier resolution is the SHARED 30s-TTL cache in billing/services/entitlements
 // (getCachedAccountTier) — this used to keep its own independent cache/Map
@@ -142,10 +153,26 @@ export async function resolveCandidates(
       // transport can decide which params a reasoning-restricted model
       // actually rejects, instead of hardcoding a model-id list.
       const capabilities = capabilitiesForModel(provider, resolvedModelId);
+      // Bedrock has no static catalog baseUrl (see CatalogUpstream's doc
+      // comment in provider-registry.ts) — its runtime endpoint is resolved
+      // HERE, per-project, from the project's own AWS_REGION secret (falling
+      // back to DEFAULT_BEDROCK_BYOK_REGION when unset), never from deployment
+      // config. Every other BYOK provider already carries a static baseUrl on
+      // `byok`, narrowed to `string` by the `byok.kind === 'bedrock'` check.
+      const baseUrl =
+        byok.kind === 'bedrock'
+          ? bedrockByokBaseUrl(
+              await getResolvedProjectSecretValue(
+                principal.projectId,
+                BEDROCK_REGION_ENV_VAR,
+                principal.userId,
+              ),
+            )
+          : byok.baseUrl;
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
-        baseUrl: byok.baseUrl,
+        baseUrl,
         apiKey: key,
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
