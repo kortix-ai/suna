@@ -37,6 +37,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { getEnv } from '@/lib/env-config';
 import {
@@ -56,6 +57,7 @@ import {
   type ProviderConfig,
   type ProviderGuide,
   SCIM_PROVIDER_GUIDES,
+  type StepSchematic,
   getProviderGuide,
   getScimGuide,
 } from './guides';
@@ -183,22 +185,75 @@ function InstructionText({ text }: { text: string }) {
 }
 
 /**
+ * Schematic stand-in for a console screenshot — OUR OWN styled panel (never a
+ * copy of a vendor's screenshot) rendering the step's `schematic` data: a
+ * title bar naming the console + click path, then labeled rows shaped like
+ * the field/button/badge they represent. This is the DEFAULT rendering for a
+ * screenshot slot that hasn't landed yet; a real screenshot silently takes
+ * over the moment its file exists (see StepFigure below).
+ */
+function SchematicPanel({ schematic }: { schematic: StepSchematic }) {
+  return (
+    <div className="border-border/60 bg-popover w-full overflow-hidden rounded-md border">
+      <div className="border-border/60 bg-muted/30 border-b px-3 py-2">
+        <p className="text-muted-foreground truncate text-xs font-medium">{schematic.title}</p>
+      </div>
+      <div className="divide-border/40 divide-y">
+        {schematic.rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
+          >
+            <span className="text-muted-foreground min-w-0 truncate text-xs">{row.label}</span>
+            {row.as === 'button' ? (
+              <span className="border-border/70 bg-secondary text-foreground shrink-0 rounded px-2 py-0.5 text-xs font-medium">
+                {row.value ?? row.label}
+              </span>
+            ) : row.as === 'badge' ? (
+              <Badge variant="outline" size="xs" className="shrink-0">
+                {row.value ?? row.label}
+              </Badge>
+            ) : row.value ? (
+              <code className="bg-muted/50 min-w-0 max-w-[60%] truncate rounded px-1.5 py-0.5 font-mono text-xs">
+                {row.value}
+              </code>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Console screenshot for a guide step. Guides can declare image slots before
  * the capture run lands the PNGs — instead of a broken-image frame (looks
  * like a bug) or rendering nothing (looks like the step is incomplete), a
- * missing asset falls back to a labeled placeholder so the admin knows a
- * screenshot is coming and can still read the alt text describing what it
- * would show.
+ * missing asset falls back to a schematic (when the guide provides one) or a
+ * labeled placeholder, so the admin always sees SOMETHING useful and can
+ * still read the alt text describing what the real screenshot would show.
  */
-function StepFigure({ src, alt }: { src: string; alt: string }) {
+function StepFigure({
+  src,
+  alt,
+  schematic,
+}: {
+  src: string;
+  alt: string;
+  schematic?: StepSchematic;
+}) {
   const [missing, setMissing] = useState(false);
   return (
     <figure className="space-y-1">
       {missing ? (
-        <div className="border-border/60 bg-muted/30 text-muted-foreground flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 text-center text-xs">
-          <span className="font-medium">Screenshot coming</span>
-          <span className="text-muted-foreground/80">{alt}</span>
-        </div>
+        schematic ? (
+          <SchematicPanel schematic={schematic} />
+        ) : (
+          <div className="border-border/60 bg-muted/30 text-muted-foreground flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 text-center text-xs">
+            <span className="font-medium">Screenshot coming</span>
+            <span className="text-muted-foreground/80">{alt}</span>
+          </div>
+        )
       ) : (
         <img
           src={src}
@@ -550,6 +605,12 @@ function ImportForm({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  // The current admin's own email domain — if they route it to the IdP and
+  // aren't ALSO the identity that comes back from that IdP, they can lock
+  // themselves out or (worse) silently land signed in as someone else via
+  // IdP session reuse. Warn before that surprises anyone.
+  const adminEmailDomain = user?.email?.split('@')[1]?.trim().toLowerCase() || null;
   const [name, setName] = useState(providerName);
   const [domain, setDomain] = useState('');
   const [claim, setClaim] = useState(config.groupClaimName);
@@ -626,6 +687,17 @@ function ImportForm({
             placeholder="acme.com"
             disabled={mutation.isPending}
           />
+          <p className="text-muted-foreground text-xs">
+            Every sign-in from this domain is routed to this identity provider instead of password
+            login — only add a domain your IdP actually controls. Users on other domains are
+            unaffected.
+          </p>
+          {adminEmailDomain && domain.trim().toLowerCase() === adminEmailDomain && (
+            <p className="text-kortix-yellow text-xs">
+              This is your own email domain — saving this will route YOUR next sign-in to the IdP
+              too. Make sure your account exists there before you continue.
+            </p>
+          )}
         </div>
       </div>
 
@@ -1022,7 +1094,7 @@ function StepBody({
           <ClaimsTable key={i} rows={block.rows} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <StepFigure key={i} src={block.src} alt={block.alt} />
+          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
         ),
       )}
 
@@ -1041,7 +1113,9 @@ function StepBody({
         </ol>
       )}
 
-      {step.image && <StepFigure src={step.image.src} alt={step.image.alt} />}
+      {step.image && (
+        <StepFigure src={step.image.src} alt={step.image.alt} schematic={step.image.schematic} />
+      )}
 
       {step.showSpValues && <SpValueRows urls={spUrls} />}
 
