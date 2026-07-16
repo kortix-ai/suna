@@ -152,4 +152,60 @@ describe('ACP daemon auth gate', () => {
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ error: 'not found' })
   })
+
+  // Gate 2 (WS3-P4-a): the HMAC gate is a single `app.use('*', ...)` middleware
+  // mounted before every non-/kortix route, so proving it on the collection
+  // route above is structurally representative — but the hard gate calls out
+  // "every /acp route" by name. Assert each verb/shape explicitly so a future
+  // per-route auth bypass (e.g. a route registered before the middleware)
+  // fails loudly here instead of only in the collection-route test above.
+  it('rejects an unsigned POST to a specific ACP server id', async () => {
+    const app = buildAcpApp(baseConfig(), Date.now())
+    const res = await app.request('/acp/session-1?agent=codex', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+    })
+    expect(res.status).toBe(401)
+    expect(await res.json()).toMatchObject({ error: 'unauthorized', reason: 'malformed' })
+  })
+
+  it('rejects an unsigned GET (SSE) to a specific ACP server id', async () => {
+    const app = buildAcpApp(baseConfig(), Date.now())
+    const res = await app.request('/acp/session-1', { headers: { Accept: 'text/event-stream' } })
+    expect(res.status).toBe(401)
+    expect(await res.json()).toMatchObject({ error: 'unauthorized', reason: 'malformed' })
+  })
+
+  it('rejects an unsigned DELETE to a specific ACP server id', async () => {
+    const app = buildAcpApp(baseConfig(), Date.now())
+    const res = await app.request('/acp/session-1', { method: 'DELETE' })
+    expect(res.status).toBe(401)
+    expect(await res.json()).toMatchObject({ error: 'unauthorized', reason: 'malformed' })
+  })
+
+  it('rejects a bad-signature DELETE to a specific ACP server id', async () => {
+    const app = buildAcpApp(baseConfig(), Date.now())
+    const res = await app.request('/acp/session-1', {
+      method: 'DELETE',
+      headers: {
+        [KORTIX_USER_CONTEXT_HEADER]: signCtx(
+          { userId: 'u', sandboxId: 's', sandboxRole: 'owner' },
+          'wrong-secret',
+        ),
+      },
+    })
+    expect(res.status).toBe(401)
+    expect(await res.json()).toMatchObject({ error: 'unauthorized', reason: 'bad_signature' })
+  })
+
+  it('keeps /kortix/health open even when a garbage auth header is sent', async () => {
+    const app = buildAcpApp(baseConfig(), Date.now())
+    const res = await app.request('/kortix/health', {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: 'not-a-real-token' },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { daemon: string }
+    expect(body.daemon).toBe('ok')
+  })
 })
