@@ -27,9 +27,10 @@ resources:
 # on gateway pods, not the API — API deploys don't cut in-flight streams.
 ingress:
   enabled: true
-  host: gateway.kortix.com
-  # ACM cert for gateway.kortix.com in eu-west-2 (the prod-eks ALB region).
-  certificateArn: "arn:aws:acm:eu-west-2:935064898258:certificate/89358fa4-c7a1-4ea8-82b6-310e9118b41a"
+  # Dedicated EKS origin behind the gateway.kortix.com Cloudflare router.
+  host: gateway-eks.kortix.com
+  # ACM cert for gateway-eks.kortix.com in eu-west-2 (the prod-eks ALB region).
+  certificateArn: "arn:aws:acm:eu-west-2:935064898258:certificate/7dc99167-c60b-4bd0-a731-f77251ef8e04"
   cloudflareProxied: true
   # Lock the origin ALB to Cloudflare's edge ranges so the LLM gateway can only be
   # reached THROUGH Cloudflare — no direct-to-origin bypass of the edge.
