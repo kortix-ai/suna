@@ -194,7 +194,7 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="overflow-hidden">
+      <div className="overflow-hidden pt-2">
         <div data-scrollable className="max-h-96 overflow-auto font-mono text-xs">
           {entries.map((entry, i) => (
             <Fragment key={i}>
