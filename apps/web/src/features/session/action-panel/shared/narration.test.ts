@@ -593,6 +593,15 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
     expect(line).toBe('Showed you 8080-abc123.e2b.app');
   });
 
+  it('never renders an unparseable url — falls back to the generic "a link" label', () => {
+    const line = narrateStep('create', [
+      part('show', { url: '/internal/x?token=secret' }),
+    ]);
+    expect(line).not.toContain('token');
+    expect(line).not.toContain('/internal');
+    expect(line).toBe('Showed you a link');
+  });
+
   it('falls back to the vague-but-true default when nothing at all is available', () => {
     const line = narrateStep('create', [part('show', {})]);
     expect(line).toBe('Showed you the result');

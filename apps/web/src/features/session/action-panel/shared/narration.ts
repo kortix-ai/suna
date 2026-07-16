@@ -19,6 +19,7 @@
 
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import { wsDomain } from '../../tool/shared/web-helpers';
+import { safeHttpUrl } from '@/lib/safe-url';
 import type { ToolPart } from '@/ui';
 
 export type StepFamily =
@@ -380,7 +381,11 @@ function basename(p: string): string {
  * non-technical user — rule 2 forbids exactly this). ShowTool itself renders
  * `input.title` as its own heading, so prefer that; then a description; and
  * only when neither exists fall back to a BASENAME or DOMAIN — never the raw
- * path/URL itself.
+ * path/URL itself. `wsDomain` echoes its input verbatim when URL parsing
+ * fails, so the url fallback is gated through `safeHttpUrl` first (the same
+ * pattern show-tool.tsx uses): a relative path, embedded token, or
+ * scheme-less string never reaches this always-visible sentence — it
+ * degrades to the generic 'a link'.
  */
 function showLabel(part: ToolPart): string {
   const input = rawInput(part);
@@ -391,7 +396,10 @@ function showLabel(part: ToolPart): string {
   const path = typeof input.path === 'string' ? input.path : '';
   if (path) return basename(path);
   const url = typeof input.url === 'string' ? input.url : '';
-  if (url) return wsDomain(url);
+  if (url) {
+    const safeUrl = safeHttpUrl(url);
+    return safeUrl ? wsDomain(safeUrl) : 'a link';
+  }
   return '';
 }
 
