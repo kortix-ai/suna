@@ -3,13 +3,14 @@ import { describe, expect, mock, test } from 'bun:test';
 let mockEnv: {
   BILLING_ENABLED: boolean;
   MANAGED_PROVIDER_ENABLED?: boolean;
+  RESTRICT_ACCOUNT_CREATION?: boolean;
 };
 
 mock.module('@/lib/env-config', () => ({
   getEnv: () => mockEnv,
 }));
 
-const { isBillingEnabled, isManagedProviderEnabled } = await import('./config');
+const { isBillingEnabled, isManagedProviderEnabled, isAccountCreationRestricted } = await import('./config');
 
 describe('isBillingEnabled', () => {
   test('mirrors the runtime env BILLING_ENABLED flag', () => {
@@ -32,5 +33,14 @@ describe('isManagedProviderEnabled', () => {
       MANAGED_PROVIDER_ENABLED: true,
     };
     expect(isManagedProviderEnabled()).toBe(true);
+  });
+});
+
+describe('isAccountCreationRestricted', () => {
+  test('mirrors the runtime env RESTRICT_ACCOUNT_CREATION flag', () => {
+    mockEnv = { BILLING_ENABLED: false, RESTRICT_ACCOUNT_CREATION: true };
+    expect(isAccountCreationRestricted()).toBe(true);
+    mockEnv = { BILLING_ENABLED: false, RESTRICT_ACCOUNT_CREATION: false };
+    expect(isAccountCreationRestricted()).toBe(false);
   });
 });

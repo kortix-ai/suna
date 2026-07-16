@@ -19,7 +19,8 @@ import { Input } from '@/components/ui/input';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { isBillingEnabled } from '@/lib/config';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,12 @@ export function AccountSwitcher({
   const queryClient = useQueryClient();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const billingActive = isBillingEnabled();
+  const { data: adminRole } = useAdminRole();
+  // Self-host: hide the "New account" dropdown item for non-admins when
+  // account creation is restricted (see isAccountCreationRestricted()) —
+  // the backend 403 (account_creation_restricted) remains the authoritative
+  // gate either way.
+  const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -220,12 +227,14 @@ export function AccountSwitcher({
           </span>
         </DropdownMenuItem> */}
 
-        <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
-          <Icon.Plus className="size-3.5" />
-          <span className="flex-1 truncate text-sm font-medium">
-            {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}
-          </span>
-        </DropdownMenuItem>
+        {canCreateAccount && (
+          <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
+            <Icon.Plus className="size-3.5" />
+            <span className="flex-1 truncate text-sm font-medium">
+              {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}
+            </span>
+          </DropdownMenuItem>
+        )}
         {billingActive && canManageBilling && (
           <DropdownMenuItem
             onSelect={() =>

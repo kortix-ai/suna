@@ -46,3 +46,18 @@ describe('RuntimeEnvSchema — MANAGED_PROVIDER_ENABLED', () => {
     expect(env.MANAGED_PROVIDER_ENABLED).toBe(true);
   });
 });
+
+// Self-host account-creation restriction: KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION.
+// Defaults false (cloud is unaffected); the self-host CLI sets it explicitly
+// via SHARED_FEATURE_FLAG_DEFAULTS.
+describe('RuntimeEnvSchema — RESTRICT_ACCOUNT_CREATION', () => {
+  test('defaults to false', () => {
+    const env = parseRuntimeEnv(REQUIRED);
+    expect(env.RESTRICT_ACCOUNT_CREATION).toBe(false);
+  });
+
+  test('flips on when explicitly true', () => {
+    const env = parseRuntimeEnv({ ...REQUIRED, RESTRICT_ACCOUNT_CREATION: true });
+    expect(env.RESTRICT_ACCOUNT_CREATION).toBe(true);
+  });
+});
