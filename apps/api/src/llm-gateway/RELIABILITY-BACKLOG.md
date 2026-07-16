@@ -87,6 +87,27 @@ managed fallback with tier gating), real unit tests on the core pipeline.
     during the cache window" bug shape are both unit-testable without a real
     wall-clock sleep. *(test: resolution/resolve-candidates.test.ts)* — PR #4815.
 
+### Also landed this wave (sibling PRs, all with tests)
+
+- **max_tokens → max_completion_tokens for genuine OpenAI** — #4805 (+ the
+  gpt-5.5 fallback-temperature / playground wire-shape follow-up #4809).
+- **Transport correctness** — #4814: `tool_choice:'none'` no longer silently
+  becomes Anthropic's default `auto` (safety-critical), plus reasoning-model
+  param quirks (temperature/top_p), role normalization, and Bedrock
+  event-stream error/exception frame surfacing.
+- **LiteLLM stateless translation sidecar** — #4817: per-request translation
+  routing behind the control plane (the `translationSidecar` option on
+  `callUpstream`).
+- **Honest, actionable error taxonomy** — #4820: `resolveCandidates` now throws
+  a typed `GatewayResolutionError` (distinct `code` + suggestion:
+  `provider_not_connected` / `provider_key_private` / `provider_reauth_required`
+  / `plan_upgrade_required` / `model_disabled_on_deployment` / `model_not_found`)
+  instead of collapsing every no-upstream case into one generic message; this
+  PR's tier-gating/BYOK tests (item 12) assert that taxonomy.
+- **Streaming reliability** — #4821: client-disconnect abort propagation
+  (see the heartbeat item below), mid-stream error surfacing, bounded buffers,
+  and stream deadlines.
+
 ## ◻️ Remaining (need design / infra, not a code tweak)
 
 2. **Atomic budget check + deduction** — `hooks.ts` / `budgets.ts`
@@ -132,10 +153,15 @@ managed fallback with tier gating), real unit tests on the core pipeline.
      Tracked here as the next infra-adjacent pass on this RPC boundary, not
      scheduled.
 
-- **Heartbeat read loop after client disconnect** — currently we keep draining
-  upstream to capture full usage even when the client is gone. Intentional
-  (billing completeness > the minor wasted read); revisit only if it shows up in
-  profiles.
+- ~~**Heartbeat read loop after client disconnect**~~ — **addressed by #4821.**
+  The old behavior kept draining the upstream to capture full usage even after
+  the client was gone (accepted as "billing completeness > the minor wasted
+  read"). #4821 (streaming reliability) threads the inbound request's
+  `AbortSignal` through the dispatch/relay pipeline: on a client disconnect the
+  upstream reader is cancelled (a new `ClientAbortError` stops the failover loop
+  and `relayStream` cancels the in-flight read), so a departed client no longer
+  keeps spending upstream tokens — plus a stream inactivity deadline bounds a
+  silently-stalled upstream.
 - **Gateway-key `lastUsedAt`** is fire-and-forget (stale admin view only).
 - **Idempotency key** *(flagged, not implemented — feature, not a fix)* —
   client retries still double-record and double-bill usage
