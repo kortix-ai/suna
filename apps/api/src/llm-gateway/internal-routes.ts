@@ -13,7 +13,7 @@ import {
   persistGatewayTrace,
   recordGatewayUsage,
 } from './hooks';
-import { matchesInternalToken } from './internal-auth';
+import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
@@ -26,6 +26,10 @@ import { logger } from '../lib/logger';
 export function createInternalGatewayRoutes() {
   const app = new Hono();
   const internalToken = process.env.GATEWAY_INTERNAL_TOKEN;
+
+  for (const warning of weakInternalTokenWarnings(internalToken)) {
+    logger.warn(`[gateway-internal-auth] ${warning}`);
+  }
 
   app.use('*', async (c, next) => {
     if (!internalToken) return c.json({ error: 'internal gateway disabled' }, 503);
