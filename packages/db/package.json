@@ -22,7 +22,10 @@
     "migrate:down": "bun scripts/migrate.ts down",
     "migrate:fake": "bun scripts/migrate.ts fake",
     "migrate:generate": "bun scripts/generate.ts",
-    "migrate:lint": "bun scripts/lint-migrations.ts"
+    "migrate:create": "bun scripts/create-migration.ts",
+    "migrate:lint": "bun scripts/lint-migrations.ts",
+    "lint:squawk": "bun scripts/squawk-lint.ts",
+    "lint": "bun scripts/lint-migrations.ts && bun scripts/squawk-lint.ts"
   },
   "dependencies": {
     "drizzle-kit": "^0.31.10",
