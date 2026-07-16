@@ -10,6 +10,7 @@ import {
   readHarnessAuthRoutes,
   resolveActiveHarnessConnection,
   writeHarnessAuthRoute,
+  type HarnessAuthKind,
 } from './composer-capabilities';
 
 describe('composer capability auth resolution', () => {
@@ -135,6 +136,55 @@ describe('composer capability auth resolution', () => {
     expect(readHarnessAuthRoutes(metadata)).toEqual({ codex: 'codex_subscription' });
     expect(metadata.existing).toBe(true);
     expect(readHarnessAuthRoutes(writeHarnessAuthRoute(metadata, 'codex', null))).toEqual({});
+  });
+});
+
+// WS2-P4-a — explicit pins on the founder auth decisions (2026-07-15),
+// worded so a future descriptor/CONNECTIONS edit that relaxes the law fails a
+// test that names the decision, not just an incidental assertion elsewhere.
+// This deliberately overlaps the WS2-P1-a descriptor-conformance coverage
+// above ('2026-07-15 simplification: ...', 'per-harness compatible
+// connection kinds match ...') — that's by design (see WS2-P4-a brief): those
+// tests prove the api matches the descriptor; these prove the founder
+// decision itself, independent of whether the descriptor happens to agree.
+describe('founder decision 2026-07-15 pins (WS2-P4-a): claude/codex harness-only, opencode/pi keep the gateway, anthropic_compatible parked', () => {
+  test('founder decision 2026-07-15: claude/codex are harness-access only — NO managed_gateway, NO openai_compatible, NO anthropic_compatible in their compatible kinds', () => {
+    const connections = buildHarnessConnections({ env: {}, gatewayEnabled: false });
+    const forbidden: HarnessAuthKind[] = ['managed_gateway', 'openai_compatible', 'anthropic_compatible'];
+    for (const harness of ['claude', 'codex'] as const) {
+      const compatibleKinds = connections
+        .filter((connection) => connection.compatible_harnesses.includes(harness))
+        .map((connection) => connection.id);
+      for (const kind of forbidden) {
+        expect(compatibleKinds).not.toContain(kind);
+      }
+    }
+  });
+
+  test('founder decision 2026-07-15: anthropic_compatible is parked — compatible_harnesses is EMPTY, but the kind still exists (not deleted from the connections table or the type union)', () => {
+    const connections = buildHarnessConnections({ env: {}, gatewayEnabled: false });
+    const anthropicCompatible = connections.find((connection) => connection.id === 'anthropic_compatible');
+    expect(anthropicCompatible).toBeDefined();
+    expect(anthropicCompatible?.compatible_harnesses).toEqual([]);
+    // Type-level pin: this assignment only compiles while 'anthropic_compatible'
+    // remains a member of the HarnessAuthKind union. If a future change deletes
+    // the kind outright (rather than just emptying its compatible_harnesses),
+    // this line fails `tsc --noEmit`, not just a runtime assertion.
+    const stillInUnion: HarnessAuthKind = 'anthropic_compatible';
+    expect(stillInUnion).toBe('anthropic_compatible');
+  });
+
+  test('founder decision 2026-07-15: opencode/pi retain the full gateway story — managed_gateway AND openai_compatible stay compatible with both', () => {
+    const connections = buildHarnessConnections({ env: {}, gatewayEnabled: false });
+    const required: HarnessAuthKind[] = ['managed_gateway', 'openai_compatible'];
+    for (const harness of ['opencode', 'pi'] as const) {
+      const compatibleKinds = connections
+        .filter((connection) => connection.compatible_harnesses.includes(harness))
+        .map((connection) => connection.id);
+      for (const kind of required) {
+        expect(compatibleKinds).toContain(kind);
+      }
+    }
   });
 });
 
