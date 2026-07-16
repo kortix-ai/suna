@@ -7,6 +7,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from "../domain";
+import { GatewayResolutionError } from "../errors";
 import type { FetchImpl } from "../http";
 
 const principal = {
@@ -128,6 +129,31 @@ describe("gateway.chatCompletions", () => {
     expect((await res.json()).code).toBe("subscription_required");
   });
 
+  // A host's billing gate (e.g. apps/api's BillingGateError) can attach the
+  // REAL reason as a `.reason` string on the thrown error — insufficient_credits
+  // and no_account are just as real a 402 cause as subscription_required, and
+  // used to always report the same hardcoded code regardless. admit() must
+  // read it instead of hardcoding, without needing to import the host's class.
+  test("402 surfaces the billing gate's real reason instead of hardcoding subscription_required", async () => {
+    const { hooks } = makeHooks({
+      assertBillingActive: async () => {
+        const err = new Error("Out of credits. Top up to continue.");
+        (err as Error & { reason: string }).reason = "insufficient_credits";
+        throw err;
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: fastRetry,
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.code).toBe("insufficient_credits");
+    expect(body.message).toBe("Out of credits. Top up to continue.");
+  });
+
   test("400 on invalid JSON", async () => {
     const { hooks } = makeHooks();
     const res = await createGateway(hooks, {
@@ -149,6 +175,75 @@ describe("gateway.chatCompletions", () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()).code).toBe("model_unavailable");
+  });
+
+  // A host's resolveUpstream hook (e.g. apps/api's resolveCandidates) can throw
+  // a GatewayResolutionError instead of returning [] when it knows exactly WHY
+  // there's no upstream — "No upstream configured" used to be the ONE message
+  // for every one of these causes. The specific code/message/suggestion must
+  // survive into the response instead of collapsing to the generic fallback.
+  test("400 surfaces a GatewayResolutionError's specific code/message/suggestion instead of the generic model_unavailable", async () => {
+    const { hooks } = makeHooks({
+      resolveUpstream: async () => {
+        throw new GatewayResolutionError(
+          "provider_key_private",
+          "A openai API key is connected by a teammate, but it's private and not shared with this project.",
+          "Ask them to share the openai key with the project, or add your own openai API key.",
+        );
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: fastRetry,
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"openai/gpt-4.1"}',
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("provider_key_private");
+    expect(body.message).toBe(
+      "A openai API key is connected by a teammate, but it's private and not shared with this project.",
+    );
+    expect(body.suggestion).toBe(
+      "Ask them to share the openai key with the project, or add your own openai API key.",
+    );
+  });
+
+  // Multiple fallback route models can each fail resolution for a different
+  // reason — the FIRST (the model the caller actually asked for) should win,
+  // not whichever fallback happened to run last.
+  test("400 prefers the PRIMARY route model's resolution reason over a later fallback's", async () => {
+    const { hooks } = makeHooks({
+      resolveRoute: async () => ({
+        policyId: "test",
+        primaryModel: "primary",
+        fallbackModels: ["secondary"],
+        fallbackOn: "any-error",
+      }),
+      resolveUpstream: async (_p, model) => {
+        if (model === "primary") {
+          throw new GatewayResolutionError(
+            "plan_upgrade_required",
+            "primary requires a paid plan.",
+            "Upgrade your plan.",
+          );
+        }
+        throw new GatewayResolutionError(
+          "model_not_found",
+          "secondary is not a recognized model.",
+          "Check the model id.",
+        );
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: fastRetry,
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"primary"}',
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("plan_upgrade_required");
   });
 
   test("200 success records usage and a full trace", async () => {
@@ -1065,6 +1160,297 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
   });
 });
 
+describe("gateway.chatCompletions — BILLING-CORRECTNESS: discarded-attempt usage + zero-usage safeguard", () => {
+  function sseResponse(body: string): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+  }
+
+  test("non-streaming: a discarded empty-completion candidate that carried real usage is folded into the eventual billed usage — Kortix doesn't eat the upstream cost silently", async () => {
+    // A malformed/empty completion that STILL reports real usage (the exact
+    // OpenRouter/z-ai pattern the empty-completion retry loop exists for) —
+    // the upstream may have already charged for it even though `choices` is
+    // empty.
+    const emptyButBilled = JSON.stringify({
+      model: "m",
+      choices: [],
+      usage: { prompt_tokens: 40, completion_tokens: 0 },
+    });
+    const good = JSON.stringify({
+      model: "m",
+      choices: [{ message: { content: "real answer" } }],
+      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    });
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(calls < 2 ? emptyButBilled : good, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage).toHaveLength(1);
+    // 40 (discarded) + 5 (billed candidate) = 45 — not just the 5 from the
+    // candidate that actually won.
+    expect(usage[0].promptTokens).toBe(45);
+    expect(usage[0].completionTokens).toBe(3);
+  });
+
+  test("streaming: a discarded empty-stream candidate carrying a trailing usage-only frame is folded into the eventual billed usage", async () => {
+    const emptyButBilled =
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":0}}\n\n' +
+      "data: [DONE]\n\n";
+    const good =
+      'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}\n\n' +
+      "data: [DONE]\n\n";
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(calls < 2 ? emptyButBilled : good);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(usage[0].promptTokens).toBe(45);
+    expect(usage[0].completionTokens).toBe(3);
+  });
+
+  test("a genuinely empty discarded attempt (zero usage, no cost hint) contributes nothing — unchanged from prior behavior", async () => {
+    const emptyZero = JSON.stringify({
+      model: "m",
+      choices: [],
+      usage: { prompt_tokens: 0, completion_tokens: 0 },
+    });
+    const good = JSON.stringify({
+      model: "m",
+      choices: [{ message: { content: "real answer" } }],
+      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    });
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(calls < 2 ? emptyZero : good, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage[0].promptTokens).toBe(5);
+    expect(usage[0].completionTokens).toBe(3);
+  });
+
+  test("a billable streaming route that settles with literally zero extracted usage logs a distinct warning and skips recordUsage", async () => {
+    const warnCalls: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (msg: string) => warnCalls.push(msg),
+      error: () => {},
+      debug: () => {},
+    };
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] }); // managed.markup = 2 (billable)
+    // A stream that produces real relayed content but never emits any `usage`
+    // key anywhere (e.g. an upstream that silently omits it) — hasContent is
+    // true so it's relayed, but extractUsageFromSseBuffer returns null.
+    const noUsageSse =
+      'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+      "data: [DONE]\n\n";
+    const fetchImpl: FetchImpl = async () => sseResponse(noUsageSse);
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl, logger },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    expect(usage).toHaveLength(0); // nothing to bill — but NOT silent:
+    expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(true);
+  });
+
+  test("a non-billable (billingMode 'none') route settling with zero usage does NOT trigger the zero-usage warning", async () => {
+    const warnCalls: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (msg: string) => warnCalls.push(msg),
+      error: () => {},
+      debug: () => {},
+    };
+    const free: UpstreamDescriptor = { ...managed, billingMode: "none", markup: 0 };
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [free] });
+    const noUsageSse =
+      'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+      "data: [DONE]\n\n";
+    const fetchImpl: FetchImpl = async () => sseResponse(noUsageSse);
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl, logger },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    expect(usage).toHaveLength(0);
+    expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(false);
+  });
+
+  test("a stream that fails mid-flight (upstream error frame, zero usage) does NOT trigger the zero-usage-extraction warning — a failed turn legitimately bills $0, that's not a usage-extraction bug", async () => {
+    const warnCalls: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (msg: string) => warnCalls.push(msg),
+      error: () => {},
+      debug: () => {},
+    };
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] }); // billable (markup 2)
+    // Real content streamed, then the upstream dies mid-flight with a
+    // structured error frame and no usage — exactly the "mid-stream failure"
+    // case PR #4821 (streaming reliability) surfaces as a real error, not a
+    // clean empty completion.
+    const midStreamErrorSse =
+      'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n' +
+      'data: {"error":{"message":"Overloaded","type":"overloaded_error","code":"overloaded_error"}}\n\n';
+    const fetchImpl: FetchImpl = async () => sseResponse(midStreamErrorSse);
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl, logger },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    // Nothing billable — but this must read as a FAILED turn, not silence.
+    expect(usage).toHaveLength(0);
+    expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(false);
+  });
+});
+
+describe("gateway.chatCompletions — BILLING-CORRECTNESS: atomic admission-hold reconciliation", () => {
+  test("a hold taken at admission is reconciled (topped up) against the real cost on a successful request", async () => {
+    const { hooks, usage } = makeHooks({
+      resolveUpstream: async () => [managed],
+      assertBillingActive: async () => ({ holdUsd: 0.01 }),
+    });
+    const fetchImpl = okFetch({
+      model: "m",
+      choices: [{ message: { content: "hi" } }],
+      usage: { prompt_tokens: 100, completion_tokens: 20 },
+    });
+
+    const res = await createGateway(hooks, {}, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(usage[0].billingHoldUsd).toBe(0.01);
+  });
+
+  test("a hold is refunded (a zero-usage recordUsage call carrying billingHoldUsd) when the request fails BEFORE dispatch — model_unavailable", async () => {
+    const { hooks, usage } = makeHooks({
+      resolveUpstream: async () => [], // → no candidates → model_unavailable, before any dispatch
+      assertBillingActive: async () => ({ holdUsd: 0.01 }),
+    });
+
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("model_unavailable");
+    await flush();
+    // The refund is its own recordUsage call — zero usage, zero cost, hold present.
+    expect(usage).toHaveLength(1);
+    expect(usage[0].billingHoldUsd).toBe(0.01);
+    expect(usage[0].promptTokens).toBe(0);
+    expect(usage[0].finalCost).toBe(0);
+  });
+
+  test("a hold is refunded when the budget gate denies the request AFTER billing already admitted it", async () => {
+    const { hooks, usage } = makeHooks({
+      resolveUpstream: async () => [managed],
+      assertBillingActive: async () => ({ holdUsd: 0.01 }),
+      assertBudget: async () => {
+        throw new Error("Project budget exhausted");
+      },
+    });
+
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(402);
+    expect((await res.json()).code).toBe("budget_exceeded");
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(usage[0].billingHoldUsd).toBe(0.01);
+  });
+
+  test("no hold, no refund noise — a request with no billingHold never emits a hold-refund event on failure", async () => {
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [] });
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(400);
+    await flush();
+    expect(usage).toHaveLength(0);
+  });
+});
+
 describe("gateway.chatCompletions — request size guard", () => {
   test("a body over maxRequestBytes is rejected with 413 before any upstream dispatch", async () => {
     const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
@@ -1104,6 +1490,85 @@ describe("gateway.chatCompletions — request size guard", () => {
     });
 
     expect(res.status).toBe(200);
+  });
+});
+
+// End-to-end regression coverage for the client-disconnect finding: the
+// inbound request's own AbortSignal must reach both the upstream fetch (before
+// any response is chosen) and the streaming relay (after headers are already
+// committed), through the full createGateway → handleChatCompletions →
+// runFailover/relayStream pipeline — not just the lower-level units in
+// isolation.
+describe("gateway.chatCompletions — client abort propagation", () => {
+  test("an already-aborted signal short-circuits before dispatching to the upstream fetch", async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    let fetchCalls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "x" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const ac = new AbortController();
+    ac.abort();
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+      signal: ac.signal,
+    });
+
+    expect(res.status).toBe(499);
+    expect((await res.json()).code).toBe("client_disconnected");
+    expect(fetchCalls).toBe(0); // never spent an upstream call on a caller already gone
+  });
+
+  test("an abort mid-stream cancels the upstream reader instead of draining a stream that never closes", async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    let upstreamCancelled = false;
+    let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
+    const fetchImpl: FetchImpl = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            upstreamController = c;
+          },
+          cancel() {
+            upstreamCancelled = true;
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+
+    const ac = new AbortController();
+    const resPromise = createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+      signal: ac.signal,
+    });
+    // The probe phase needs at least one content chunk before chatCompletions
+    // resolves with a Response — push it as soon as the mock fetch has handed
+    // back its controller (a handful of hook/auth microtasks upstream of this).
+    for (let i = 0; i < 100 && !upstreamController; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    upstreamController.enqueue(
+      new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'),
+    );
+    const res = await resPromise;
+    expect(res.status).toBe(200);
+
+    // Drain the one chunk, then disconnect — the mock upstream never calls
+    // close(), so if the abort weren't honored this would hang forever.
+    const reader = res.body!.getReader();
+    await reader.read();
+    ac.abort();
+    for (;;) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+    expect(upstreamCancelled).toBe(true);
   });
 });
 

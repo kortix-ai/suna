@@ -51,6 +51,7 @@ export function createGateway(
     captureBodies,
     capture,
     breakerFor,
+    maxCapturedBodyBytes: maxBodyBytes,
   };
 
   const jsonResponse = (data: unknown, status = 200): Response =>

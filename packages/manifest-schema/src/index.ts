@@ -636,7 +636,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
     } else {
       seenSlugs.add(slug);
     }
-    // The runtime caps sandbox-template slugs at 64 chars (apps/api dockerfile-layer
+    // The runtime caps sandbox-template slugs at 64 chars (@kortix/shared/sandbox
     // SLUG_RE) — a longer slug parses here but is silently dropped at sync, so warn.
     if (slug && SLUG_RE.test(slug) && slug.length > 64) {
       issues.push({

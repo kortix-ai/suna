@@ -10,7 +10,6 @@ import Hint from '@/components/ui/hint';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { Icon } from '@/features/icon/icon';
 import { useIsMobile } from '@/hooks/utils';
-import { cn } from '@/lib/utils';
 
 function useChatGptConnectDialog(projectId: string) {
   const [open, setOpen] = useState(false);
@@ -57,13 +56,8 @@ export function ProjectChatGptConnectRailItem({ projectId }: { projectId: string
   return (
     <>
       <Hint label="Connect GPT subscription">
-        <SidebarMenuButton
-          type="button"
-          aria-label="Connect GPT subscription"
-          onClick={openDialog}
-          className={cn('border-border/60 bg-muted/30 hover:bg-muted/50 border')}
-        >
-          <Icon.OpenAI className="text-foreground" />
+        <SidebarMenuButton type="button" aria-label="Connect GPT subscription" onClick={openDialog}>
+          <Icon.OpenAI className="text-foreground size-4.5!" />
         </SidebarMenuButton>
       </Hint>
       <ChatGptSubscriptionConnectDialog projectId={projectId} open={open} onOpenChange={setOpen} />

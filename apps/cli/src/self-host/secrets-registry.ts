@@ -161,6 +161,11 @@ export const SECRET_DEFS: SecretDef[] = [
 
   // Internal tokens
   { key: 'GATEWAY_INTERNAL_TOKEN', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
+  // Master-key auth for the stateless LiteLLM translation sidecar (`litellm`
+  // Compose service) — never required (the sidecar itself is opt-in, see
+  // LLM_TRANSLATION_SIDECAR_ENABLED), but always generated up front so
+  // turning the feature on later never needs a fresh secret.
+  { key: 'LITELLM_MASTER_KEY', category: 'internal_tokens', kind: 'generated', required: false, rotatable: true },
   { key: 'INTERNAL_SERVICE_KEY', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
   { key: 'API_KEY_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
   { key: 'TUNNEL_SIGNING_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
@@ -294,6 +299,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   INTERNAL_SERVICE_KEY: ['kortix-api'],
   API_KEY_SECRET: ['kortix-api'],
   TUNNEL_SIGNING_SECRET: ['kortix-api'],
+  LITELLM_MASTER_KEY: ['kortix-api', 'litellm'],
+
+  // Stateless LiteLLM translation sidecar (not in SECRET_DEFS — not secrets —
+  // but still restart-relevant for `env set`).
+  LITELLM_IMAGE: ['litellm'],
+  LLM_TRANSLATION_SIDECAR_ENABLED: ['kortix-api', 'litellm'],
+  LLM_TRANSLATION_SIDECAR_URL: ['kortix-api'],
 };
 
 /** Safe fallback for any key not explicitly mapped above. */

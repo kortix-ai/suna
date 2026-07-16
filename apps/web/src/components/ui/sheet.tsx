@@ -7,6 +7,7 @@ import * as React from 'react';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import { buttonVariants } from './button';
 
 const Sheet = ({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) => {
   const parentDepth = useDialogDepth();
@@ -101,7 +102,12 @@ const SheetContent = React.forwardRef<
         >
           {children}
           {showCloseButton && (
-            <SheetPrimitive.Close className="border-input bg-background/80 text-primary ring-offset-background hover:bg-background/80 hover:text-primary focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 inline-flex size-8 items-center justify-center rounded-md border p-0 text-xs font-medium opacity-70 transition-all hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
+            <SheetPrimitive.Close
+              className={cn(
+                'absolute top-4 right-4',
+                buttonVariants({ variant: 'ghost', size: 'icon' }),
+              )}
+            >
               <Icon.Close className="size-[1.15rem] stroke-0" />
               <span className="sr-only">Close</span>
             </SheetPrimitive.Close>

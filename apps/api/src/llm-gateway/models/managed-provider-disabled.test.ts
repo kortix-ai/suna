@@ -51,12 +51,25 @@ mock.module('../../config', () => ({
 
 mock.module('../../billing/services/entitlements', () => ({
   getAccountTier: async () => 'free',
+  // resolveCandidates now calls the shared cached tier resolver directly
+  // (getCachedAccountTier) instead of keeping its own duplicate cache — see
+  // unit-account-tier-cache-unified.test.ts for that cache's own behavior.
+  getCachedAccountTier: async () => 'free',
 }));
 
 mock.module('../../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'operators-own-anthropic-key',
+  // resolveCandidates' BYOK path now calls this (shared-vs-private fallback —
+  // see projects/secrets.ts pickResolvedSecretRow); stub it the same as
+  // getProjectSecretValue since this file isn't exercising that distinction.
+  getResolvedProjectSecretValue: async () => 'operators-own-anthropic-key',
+  // resolveCandidates only calls this on the "no key resolved" path, which this
+  // file never exercises (getResolvedProjectSecretValue above always resolves)
+  // — stubbed purely so importing the real resolve-candidates.ts doesn't pull
+  // in the real (DB-backed) implementation.
+  projectSecretExistsForAnyOwner: async () => false,
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
@@ -124,11 +137,15 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
   });
 
   test('a request explicitly naming a managed model resolves to NO candidates — never a silent fallback to Kortix credits', async () => {
-    const candidates = await resolveCandidates(
-      { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
-      'claude-sonnet-4.6',
-    );
-    expect(candidates).toEqual([]);
+    await expect(
+      resolveCandidates(
+        { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
+        'claude-sonnet-4.6',
+      ),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_disabled_on_deployment',
+    });
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
   });

@@ -92,6 +92,22 @@ function capabilitiesOf(
   };
 }
 
+// Model-level capability lookup for descriptor-building code (BYOK resolution),
+// as opposed to the list-shaped `gatewayModelsAll` above which serves the
+// models API. Single source of truth for "does this model reject a
+// non-default temperature / is it a reasoning model" so transports never need
+// to hardcode a model-id list — see UpstreamDescriptor.reasoning/temperature.
+export function capabilitiesForModel(
+  providerId: string,
+  modelId: string,
+  catalog: Catalog = runtimeModelCatalog.snapshot(),
+): { reasoning: boolean; temperature: boolean } {
+  const provider = catalog.providers.find((p) => p.id === providerId);
+  const model = provider?.models.find((m) => m.id === modelId);
+  const caps = capabilitiesOf(model);
+  return { reasoning: !!caps.reasoning, temperature: !!caps.temperature };
+}
+
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   // RUNTIME_MANAGED_MODELS is already empty when KORTIX_MANAGED_PROVIDER_ENABLED

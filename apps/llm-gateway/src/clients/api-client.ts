@@ -44,7 +44,7 @@ export interface ApiClient {
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
-  assertBillingActive: (accountId: string) => Promise<void>;
+  assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace: (trace: GatewayTrace) => Promise<void>;
@@ -118,21 +118,32 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       return result.candidates ?? [];
     },
     assertBillingActive: async (accountId) => {
-      const result = await post<{ active: boolean; message?: string }>(
+      const result = await post<{ active: boolean; message?: string; holdUsd?: number }>(
         '/internal/gateway/billing',
         { accountId },
       );
       if (!result.active) {
         throw new Error(result.message ?? 'subscription required');
       }
+      return result.holdUsd ? { holdUsd: result.holdUsd } : undefined;
     },
     assertBudget: async (principal) => {
-      const result = await post<{ exceeded: boolean; message?: string }>(
+      const result = await post<{ exceeded: boolean; message?: string; warnings?: string[] }>(
         '/internal/gateway/budget-check',
         {
           principal,
         },
       );
+      // A 'warn' budget must never block — but it must not be a silent no-op
+      // either (see checkBudget in the API's budgets.ts). This granular
+      // fallback path isn't on the standalone gateway's hot path (it always
+      // sets the combined `authorize` hook instead), but keep it honest too.
+      for (const message of result.warnings ?? []) {
+        console.warn(`[gateway] budget warn threshold reached: ${message}`, {
+          accountId: principal.accountId,
+          projectId: principal.projectId,
+        });
+      }
       if (result.exceeded) {
         throw new Error(result.message ?? 'Budget exceeded');
       }

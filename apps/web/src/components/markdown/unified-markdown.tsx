@@ -284,7 +284,7 @@ function CodeBlock({
   return (
     <div
       className={cn(
-        'group not-prose bg-muted dark:bg-card relative my-5 overflow-hidden rounded-lg border',
+        'group not-prose bg-muted dark:bg-card relative my-5 overflow-hidden rounded-md border',
         className,
       )}
     >

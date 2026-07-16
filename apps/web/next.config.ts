@@ -5,6 +5,41 @@ import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
+import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+
+// --- Viewer wasm asset guarantee ------------------------------------------
+// Document viewers (PDF/DOCX/XLSX) fetch their wasm engines from `public/`
+// (see scripts/viewer-wasm.mjs for why). Normally `pnpm dev`/`pnpm build`
+// prepend `node scripts/copy-viewer-wasm.mjs` to populate them, but any path
+// that invokes `next build`/`next dev` directly bypasses that and would
+// silently 404 on these assets at runtime. Belt-and-suspenders: repeat the
+// same copy here as a side effect of loading this config, then verify the
+// outputs actually exist regardless of how the attempt went.
+let viewerWasmCopyError: unknown = null;
+try {
+  copyViewerWasm();
+} catch (err) {
+  viewerWasmCopyError = err;
+}
+const missingViewerWasmOutputs = getViewerWasmOutputPaths().filter(
+  (output) => !fs.existsSync(output),
+);
+if (missingViewerWasmOutputs.length > 0) {
+  throw new Error(
+    `[next.config.ts] scripts/viewer-wasm.mjs failed to produce required viewer wasm asset(s): ` +
+      `${missingViewerWasmOutputs.join(', ')}` +
+      (viewerWasmCopyError ? ` (${(viewerWasmCopyError as Error).message})` : '') +
+      `. Run \`node scripts/copy-viewer-wasm.mjs\` manually to diagnose.`,
+  );
+} else if (viewerWasmCopyError) {
+  // Expected in a slim prod image: `next start` ships a `public/` populated
+  // at build time but not the node_modules the wasm ships in. Only reach
+  // here when the outputs already exist, so it's safe to continue.
+  console.warn(
+    `[next.config.ts] Could not refresh viewer wasm assets (${(viewerWasmCopyError as Error).message}), ` +
+      `but all expected outputs already exist in public/ — continuing.`,
+  );
+}
 
 // Unified platform version. Prefer the explicit build env (CI passes
 // NEXT_PUBLIC_KORTIX_VERSION = X.Y.Z-dev.<sha> on dev, clean X.Y.Z on prod);

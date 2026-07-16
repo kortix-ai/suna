@@ -375,11 +375,7 @@ function ProjectSessionRow({
           aria-busy={isSwitching || undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          {isSwitching ? (
-            <Loading className="text-kortix-green size-3 shrink-0" />
-          ) : (
-            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
-          )}
+          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
 
           <span
             title={displayTitle}

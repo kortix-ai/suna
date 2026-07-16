@@ -5,6 +5,7 @@ import {
   deleteProjectSecret,
   listProjectSecrets,
   pollProjectProviderOAuth,
+  promoteProjectSecretToShared,
   setPersonalProjectSecret,
   startProjectProviderOAuth,
   upsertProjectGitCredential,
@@ -139,4 +140,13 @@ test('deletePersonalProjectSecret encodes special characters in the secret name'
   nextResponse = { status: 200, body: { ok: true } };
   await deletePersonalProjectSecret('P1', 'FOO/BAR');
   expect(last().url).toContain('/projects/P1/secrets/FOO%2FBAR/personal');
+});
+
+test('promoteProjectSecretToShared POSTs to the /promote-to-shared sub-route with no body', async () => {
+  nextResponse = { status: 200, body: { name: 'FOO', configured: true } };
+  const result = await promoteProjectSecretToShared('P1', 'FOO');
+  expect(last().url).toContain('/projects/P1/secrets/FOO/promote-to-shared');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({});
+  expect(result.configured).toBe(true);
 });

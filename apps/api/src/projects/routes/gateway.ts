@@ -859,11 +859,13 @@ projectsApp.openapi(
           const usage = data?.usage ?? {};
           const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
           const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
-          const cachedTokens = Number(usage.cached_tokens ?? 0) || 0;
+          const cachedTokens = Number(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
+          const cacheWriteTokens =
+            Number(usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0) || 0;
           const resolvedModel = String(data?.model ?? descriptor.resolvedModel ?? model);
           const { upstreamCost, finalCost } = calculateCost(
             resolvedModel,
-            { promptTokens, completionTokens, cachedTokens },
+            { promptTokens, completionTokens, cachedTokens, cacheWriteTokens },
             descriptor.billingMode === 'none' ? 0 : descriptor.markup,
             typeof usage.cost === 'number' ? usage.cost : undefined,
             descriptor.pricing,
@@ -885,7 +887,7 @@ projectsApp.openapi(
             latencyMs,
             attempts: 1,
             candidatesTried: [descriptor.provider],
-            usage: { promptTokens, completionTokens, cachedTokens },
+            usage: { promptTokens, completionTokens, cachedTokens, cacheWriteTokens },
             upstreamCost,
             finalCost,
             request,
@@ -897,6 +899,7 @@ projectsApp.openapi(
               promptTokens,
               completionTokens,
               cachedTokens,
+              cacheWriteTokens,
               accountId: principal.accountId,
               actorUserId: principal.userId,
               projectId,

@@ -371,7 +371,7 @@ type KortixGatewayModel = {
   limit?: { context?: number; output?: number }
 }
 
-const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
+export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   // AUTO — the default model; present so the baked default never dangles when this
   // fallback is used (gateway + baked catalog both unreachable at boot).
   auto: {
@@ -413,7 +413,12 @@ const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     reasoning: true,
     tool_call: true,
     attachment: true,
-    temperature: true,
+    // models.dev: false — OpenAI reasoning models (gpt-5.x) reject a
+    // client-sent `temperature`, so advertising support here would make
+    // OpenCode send one and 400 the turn whenever this fallback catalog is
+    // in effect. Must match capabilitiesOf() in the served catalog
+    // (apps/api/src/llm-gateway/models/catalog-models.ts).
+    temperature: false,
     limit: { context: 1_050_000, output: 64_000 },
   },
   'google/gemini-3.5-flash': {

@@ -56,4 +56,4 @@ export * from './search/workspace-search-core';
 
 // Presentational tree row — takes its icon resolver and its one differing
 // label ("View History" vs "Checkpoint history") as props
-export { FileTreeItem, type GitStatusType, type FileIconResolver } from './components/file-tree-item';
+export { FileTreeItem, type GitStatusType } from './components/file-tree-item';

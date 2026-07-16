@@ -2,8 +2,11 @@
 {{- if not .Values.ingress.certificateArn }}
 {{- fail "ingress.certificateArn is required (the ACM cert ARN from terraform output acm_certificate_arn)" }}
 {{- end }}
+{{- if not .Values.ingress.wafAclArn }}
+{{- fail "ingress.wafAclArn is required so the AWS Load Balancer Controller preserves the WAF association" }}
+{{- end }}
 # The AWS Load Balancer Controller turns this Ingress into a real ALB (the same
-# shape as the ECS stack: internet-facing, ACM TLS, :80 -> :443 redirect, IP
+# shape as the ECS stack: internet-facing, ACM TLS on :443 only, IP
 # targets, /v1/health checks). external-dns then points api-eks.kortix.com at it
 # (Cloudflare, proxied).
 apiVersion: networking.k8s.io/v1
@@ -21,9 +24,9 @@ metadata:
     alb.ingress.kubernetes.io/group.name: {{ .Values.ingress.albGroup | quote }}
     {{- end }}
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.ingress.wafAclArn | quote }}
     # Primary cert + any extra certs (multi-host ALB serves the right one via SNI).
     alb.ingress.kubernetes.io/certificate-arn: {{ prepend (.Values.ingress.extraCertificateArns | default list) .Values.ingress.certificateArn | join "," | quote }}
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP

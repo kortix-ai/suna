@@ -1,7 +1,7 @@
 import { ApiError } from '../api/client.ts';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { opencodeClient } from '../api/sandbox-proxy.ts';
+import { DEFAULT_SANDBOX_RUNTIME_PORT, opencodeClient } from '../api/sandbox-proxy.ts';
 import { loadLink } from '../project-link.ts';
 import {
   resolveProjectContext,
@@ -173,7 +173,16 @@ export async function runDoctor(argv: string[]): Promise<number> {
     );
 
     // ── 6. Open an opencode session + send a prompt ──────────────────────
-    const oc = opencodeClient({ auth, sandboxId: running.sandbox_id! });
+    const sandboxTarget = opencodeTargetFromSession(running);
+    if (!sandboxTarget) {
+      process.stdout.write(`${status.err('running session has no reachable sandbox target')}\n`);
+      return 1;
+    }
+    const oc = opencodeClient({
+      auth,
+      sandboxId: sandboxTarget.sandboxId,
+      port: sandboxTarget.port,
+    });
     let ocSid: string;
     try {
       const created = await oc.createSession({ title: 'kortix doctor' });
@@ -222,6 +231,25 @@ export async function runDoctor(argv: string[]): Promise<number> {
   }
   process.stdout.write(`${status.ok('all checks passed')}\n\n`);
   return 0;
+}
+
+function opencodeTargetFromSession(session: { sandbox_id?: string | null; sandbox_url?: string | null }): {
+  sandboxId: string;
+  port: number;
+} | null {
+  if (session.sandbox_url) {
+    const match = session.sandbox_url.match(/\/p\/([^/]+)\/(\d+)(?:\/|$)/);
+    if (match?.[1]) {
+      const port = Number(match[2]);
+      return {
+        sandboxId: match[1],
+        port: Number.isInteger(port) && port > 0 ? port : DEFAULT_SANDBOX_RUNTIME_PORT,
+      };
+    }
+  }
+  return session.sandbox_id
+    ? { sandboxId: session.sandbox_id, port: DEFAULT_SANDBOX_RUNTIME_PORT }
+    : null;
 }
 
 function parseFlags(argv: string[]): DoctorFlags {

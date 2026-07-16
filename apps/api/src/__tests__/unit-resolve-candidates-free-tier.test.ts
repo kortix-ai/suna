@@ -47,12 +47,43 @@ mock.module('../billing/services/entitlements', () => ({
     accountTierCalls += 1;
     return accountTier;
   },
+  // resolveCandidates now calls the SAME cached tier resolver the rest of the
+  // gateway uses (entitlements.getCachedAccountTier) instead of keeping its own
+  // duplicate cache — see unit-account-tier-cache-unified.test.ts for the
+  // caching/invalidation behavior itself. This mock intentionally does NOT
+  // cache: every call increments accountTierCalls, which is what every
+  // existing assertion below counts on.
+  getCachedAccountTier: async () => {
+    accountTierCalls += 1;
+    return accountTier;
+  },
 }));
+
+// `getResolvedProjectSecretValue` stands in for the shared-vs-private BYOK
+// fallback (see projects/secrets.ts `pickResolvedSecretRow`, unit-tested in
+// unit-secrets-v2.test.ts). Defaults to the old unconditional 'user-key' so
+// every pre-existing test below is unaffected; the BYOK-fallback describe
+// block further down overrides it per-test and records call args to assert
+// resolveCandidates actually threads the session's principal.userId through.
+let resolvedSecretValue: string | null = 'user-key';
+let lastResolvedSecretCall: { projectId: string; name: string; userId: string | null } | null = null;
+
+// Whether ANY row exists for the requested secret name, regardless of owner —
+// stands in for `projectSecretExistsForAnyOwner` (distinguishes
+// `provider_not_connected` from `provider_key_private` in resolveCandidates'
+// GatewayResolutionError). Defaults to false (nobody has connected the
+// provider at all) so every pre-existing test below is unaffected.
+let anyOwnerSecretExists = false;
 
 mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',
+  getResolvedProjectSecretValue: async (projectId: string, name: string, userId: string | null) => {
+    lastResolvedSecretCall = { projectId, name, userId };
+    return resolvedSecretValue;
+  },
+  projectSecretExistsForAnyOwner: async () => anyOwnerSecretExists,
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({
@@ -69,6 +100,7 @@ mock.module('../projects/secrets', () => ({
 }));
 
 mock.module('../llm-gateway/credentials/codex', () => ({
+  CodexRefreshError: class CodexRefreshError extends Error {},
   resolveCodexCredential: async () => ({
     access: 'codex-token',
     accountId: 'chatgpt-account',
@@ -119,12 +151,17 @@ describe('resolveCandidates free-tier premium gate', () => {
     accountTier = 'free';
     accountTierCalls = 0;
     managedProviderEnabled = true;
+    resolvedSecretValue = 'user-key';
+    lastResolvedSecretCall = null;
+    anyOwnerSecretExists = false;
   });
 
   test('blocks managed premium candidates for free accounts', async () => {
     accountTier = 'free';
-    const candidates = await resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6');
-    expect(candidates).toEqual([]);
+    await expect(resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'plan_upgrade_required',
+    });
     expect(accountTierCalls).toBe(1);
   });
 
@@ -197,11 +234,12 @@ describe('resolveCandidates free-tier premium gate', () => {
   test('CLOUD-ONLY gate: blocks an explicitly-named managed model when KORTIX_MANAGED_PROVIDER_ENABLED is off, even for a paid tier', async () => {
     managedProviderEnabled = false;
     accountTier = 'per_seat';
-    const candidates = await resolveCandidates(
-      principal('self-host-flag-off'),
-      'claude-sonnet-4.6',
-    );
-    expect(candidates).toEqual([]);
+    await expect(
+      resolveCandidates(principal('self-host-flag-off'), 'claude-sonnet-4.6'),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_disabled_on_deployment',
+    });
   });
 
   test('CLOUD-ONLY gate: a self-host BYOK request gets no managed fallback candidate appended when the flag is off', async () => {
@@ -213,5 +251,74 @@ describe('resolveCandidates free-tier premium gate', () => {
     );
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('platform-fee');
+  });
+});
+
+describe('resolveCandidates BYOK gateway fallback wiring (private-key blindness fix)', () => {
+  afterAll(() => {
+    mock.restore();
+  });
+
+  beforeEach(() => {
+    billingEnabled = true;
+    accountTier = 'per_seat';
+    accountTierCalls = 0;
+    managedProviderEnabled = true;
+    resolvedSecretValue = 'user-key';
+    lastResolvedSecretCall = null;
+    anyOwnerSecretExists = false;
+  });
+
+  test('threads the SESSION-CREATOR principal.userId through to secret resolution (the actual bug: this used to be dropped)', async () => {
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(2);
+    expect(lastResolvedSecretCall).toEqual({
+      projectId: 'project-1',
+      name: 'OPENAI_API_KEY',
+      userId: 'user-alice',
+    });
+  });
+
+  test("own-session-with-private-key routes: resolver finding only the caller's own private key still produces a candidate", async () => {
+    resolvedSecretValue = 'alice-private-key';
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]?.apiKey).toBe('alice-private-key');
+  });
+
+  test("other member's session does NOT see it: when resolution finds nothing for THIS user (no shared key, no key of their own), the rejection is 'provider_not_connected'", async () => {
+    resolvedSecretValue = null;
+    anyOwnerSecretExists = false;
+    await expect(
+      resolveCandidates({ userId: 'user-bob', accountId: 'acct-1', projectId: 'project-1' }, 'openai/gpt-4.1'),
+    ).rejects.toMatchObject({ name: 'GatewayResolutionError', code: 'provider_not_connected' });
+    expect(lastResolvedSecretCall).toEqual({
+      projectId: 'project-1',
+      name: 'OPENAI_API_KEY',
+      userId: 'user-bob',
+    });
+  });
+
+  test("a teammate's key exists but is private (not shared): the rejection is 'provider_key_private', distinct from never-connected", async () => {
+    resolvedSecretValue = null;
+    anyOwnerSecretExists = true;
+    await expect(
+      resolveCandidates({ userId: 'user-bob', accountId: 'acct-1', projectId: 'project-1' }, 'openai/gpt-4.1'),
+    ).rejects.toMatchObject({ name: 'GatewayResolutionError', code: 'provider_key_private' });
+  });
+
+  test('shared key still wins when both exist: resolveCandidates uses whatever value resolution returns (shared-vs-private precedence is pickResolvedSecretRow\'s job, unit-tested separately) and never asks twice', async () => {
+    resolvedSecretValue = 'the-shared-key';
+    const candidates = await resolveCandidates(
+      { userId: 'user-alice', accountId: 'acct-1', projectId: 'project-1' },
+      'openai/gpt-4.1',
+    );
+    expect(candidates[0]?.apiKey).toBe('the-shared-key');
   });
 });

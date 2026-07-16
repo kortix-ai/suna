@@ -23,7 +23,7 @@ import type {
   TurnCostInfo,
   TurnLike,
 } from './types';
-import { unwrapError } from './errors';
+import { extractGatewayErrorDetails, unwrapError } from './errors';
 import { isReasoningPart, isTextPart, isToolPart } from './parts';
 
 // ============================================================================
@@ -108,6 +108,20 @@ export function getTurnError(turn: TurnLike): string | undefined {
     if (info.error) {
       return unwrapError(info.error);
     }
+  }
+  return undefined;
+}
+
+/** The LLM gateway's structured error fields (provider/code/suggestion/
+ *  upstreamStatus/requestId) for the same failure `getTurnError` reports as a
+ *  plain message, when recoverable — see `extractGatewayErrorDetails`.
+ *  `undefined` both when the turn has no error and when the error carries no
+ *  gateway envelope (a renderer falls back to `getTurnError`'s message-only
+ *  form in either case). */
+export function getTurnErrorDetails(turn: TurnLike): ReturnType<typeof extractGatewayErrorDetails> {
+  for (const msg of turn.assistantMessages) {
+    const info = msg.info;
+    if (info.error) return extractGatewayErrorDetails(info.error);
   }
   return undefined;
 }

@@ -214,6 +214,14 @@ function translateStream(upstream: Response): Response {
         }
         const tail = parseFrame(buffer);
         if (tail) for (const out of eventToChunks(tail, state)) send(out);
+      } catch (err) {
+        // A network-level failure while reading the upstream body must not be
+        // laundered into a clean stop by the `finally` below — surface it as
+        // an OpenAI-shaped error frame (matching `response.failed`/`error`
+        // handling above) so probeStream/relayStream see a real failure
+        // instead of a silent empty completion.
+        const message = err instanceof Error ? err.message : String(err);
+        send(errorChunk(message || 'Upstream stream failed', 'upstream_stream_error', 'upstream_stream_error'));
       } finally {
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();

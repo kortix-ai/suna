@@ -1,0 +1,905 @@
+/**
+ * Compose the layered Dockerfile that becomes a session sandbox image.
+ *
+ * The user's Dockerfile defines whatever workspace they want (language
+ * toolchains, system packages, seed data). We append a final stage that
+ * makes the result *connectable* by the Kortix dashboard:
+ *
+ *   1. apt-get install ca-certificates curl git nodejs npm
+ *   2. npm install -g opencode-ai@<pinned-version>
+ *   3. COPY the kortix-agent + kortix-entrypoint binaries to /usr/local/bin
+ *   4. ENV KORTIX_WORKSPACE=/workspace, WORKDIR /workspace, EXPOSE 8000
+ *   5. ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
+ *
+ * The project workspace is NOT baked in — the daemon git-clones it at boot
+ * via `KORTIX_PROJECT_AUTO_CLONE`. That keeps the image identity decoupled
+ * from project source code, so a code change never invalidates a snapshot
+ * and most projects share a single global default image.
+ *
+ * Steps 1-2 require apt (Debian/Ubuntu family base). Step 5 means the
+ * user's ENTRYPOINT is always overridden — see docs/dockerfile.mdx for
+ * the user-facing constraint list.
+ */
+
+import {
+  AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '../runtime-versions';
+
+/**
+ * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
+ * the layer when the caller doesn't pin one explicitly. The builder may pass an
+ * override via `agentBrowserVersion` to centralize the pin (and fold it into the
+ * snapshot fingerprint); this fallback keeps the layer self-contained.
+ */
+
+/**
+ * Chromium source for `agent-browser`. agent-browser's own `install` fetches
+ * Chrome for Testing, which has NO linux-arm64 build — so we source Chromium
+ * from Playwright instead: it ships both linux-x64 AND linux-arm64, and
+ * `--with-deps` installs the OS libraries Chromium needs. Keep in sync with the
+ * pin in apps/sandbox/Dockerfile + apps/api/src/snapshots/warm-bake.ts, and bump
+ * RUNTIME_LAYER_VERSION in templates.ts when this changes so cached images
+ * rebuild (the rendered Dockerfile text is not itself part of the fingerprint).
+ */
+
+/**
+ * Hardcoded "platform default" Dockerfile. Used when a session boots from
+ * Kortix's default template — no user customization, just Ubuntu plus the
+ * Kortix runtime layer on top. The workspace gets cloned at boot.
+ *
+ * This is fed into `buildLayeredDockerfile` like any other user Dockerfile.
+ * Exposed so the snapshot identity hash treats it as a stable input.
+ */
+export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
+  '# syntax=docker/dockerfile:1.7',
+  '# Kortix platform default sandbox base.',
+  '# Sessions clone the project workspace at boot — nothing project-specific',
+  '# is baked in here. Customize via `sandbox.templates` in kortix.yaml.',
+  'FROM ubuntu:24.04',
+  '',
+  'WORKDIR /workspace',
+  '',
+].join('\n') + '\n';
+
+/**
+ * Inputs for the toolchain half of the layer — everything that installs into
+ * the image from the NETWORK (apt, pip, npm, bun, Playwright) plus the
+ * build-time opencode warm-ups. It stages NO artifacts, so it renders against
+ * an empty build context: a caller that only wants the toolchain floor (the
+ * CLI's local sandbox) can build it without producing a single staged file.
+ */
+export interface KortixToolchainLayerOpts {
+  /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
+  opencodeVersion: string;
+  /**
+   * Pinned `agent-browser` CLI version. Optional — defaults to
+   * `DEFAULT_AGENT_BROWSER_VERSION`. The builder passes the platform-wide
+   * `AGENT_BROWSER_VERSION` so the pin is centralized and fingerprinted.
+   */
+  agentBrowserVersion?: string;
+  /**
+   * Path (in the build context) to the canonical starter `.kortix/opencode`
+   * config tree (pty plugin + standard tools + skills). When provided, the
+   * layer warms a real opencode PROJECT INSTANCE against it at build time so the
+   * costly first-instance work (Bun plugin auto-install/transpile, models.dev
+   * fetch, ripgrep) is cached into the image instead of paid on the session hot
+   * path. Optional — omit to skip the instance warm-up.
+   */
+  opencodeConfigPath?: string;
+  /**
+   * True iff this image is the platform's SHARED default (no user Dockerfile —
+   * `PLATFORM_DEFAULT_USER_DOCKERFILE`). Gates the post-warm-up /workspace WIPE.
+   *
+   * The wipe exists to clear the starter opencode config the warm-up stages into
+   * /workspace, and for the shared default that is ALL /workspace holds, so
+   * "delete everything" is exact. On a CUSTOM template it is not: the user's
+   * Dockerfile ran FIRST and `WORKDIR /workspace` is a documented convention, so
+   * any image that seeds data/caches/a toolchain there had it silently deleted by
+   * a step it never asked for (and one wrapped in `set +e … true`, so it couldn't
+   * even fail loudly). Custom templates therefore get a TARGETED cleanup of only
+   * what the warm-up itself staged.
+   *
+   * KNOWN GAP (narrow, deliberately not closed here). A surviving /workspace is
+   * safe for the daemon's boot clone: materializeRepo (agent-server/src/git.ts)
+   * clones into a temp dir and `rm -rf`s + renames over the target, so a non-empty
+   * /workspace is replaced wholesale rather than cloned INTO — no dirty-target
+   * failure. The one exception is a custom image that bakes a `.git` at the
+   * /workspace ROOT (not a subdir): materializeRepo keys its "using baked repo
+   * checkout (warm)" fast path purely on `${target}/.git` existing. A FRESH session
+   * still re-materializes correctly (the baked HEAD != the session's baseSha →
+   * `mismatched`), but a restart/resume has no baseSha to compare and would reuse
+   * the user's unrelated repo as the project checkout. Previously the wipe hid this
+   * by deleting that .git. The safe close is in the DAEMON, not here: have the fast
+   * path require a platform-written marker (the warmRepo bake / seed paths are the
+   * only things that legitimately bake a /workspace/.git) instead of inferring
+   * ownership from a bare .git. Tracked rather than fixed in this change because it
+   * alters boot semantics for the warm-seed paths too and wants its own rollout.
+   */
+  isSharedDefault?: boolean;
+  /**
+   * Per-project COLD warm: bake the project's repo checkout into /workspace at
+   * build time so a session booted from this (capture:'none') image skips the
+   * boot-time git clone entirely — the daemon's git.ts fast-paths a baked
+   * `${target}/.git` whose HEAD matches the session base. Requires NO memory
+   * snapshot: the checkout is plain rootfs bytes that BOTH Daytona and Platinum
+   * boot cold. When set, the layer clones the repo into /workspace BEFORE the
+   * opencode instance warm-up (so opencode indexes the REAL project) and does
+   * NOT wipe /workspace afterward. Omit for the shared, project-independent
+   * default image (workspace stays empty; the daemon clones at boot).
+   */
+  warmRepo?: {
+    /** Upstream URL to clone from at BUILD time (real git host or proxy). */
+    cloneUrl: string;
+    /**
+     * Auth headers for the build-time clone, passed via `git -c
+     * http.extraHeader` inside a RUN that deletes the script in the same
+     * invocation — nothing credential-shaped survives into the image layer.
+     */
+    cloneHeaders: Record<string, string>;
+    /** Branch to check out (the default branch tip is baked). */
+    branch: string;
+    /**
+     * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
+     * the daemon's per-session credential helper re-auths pushes/fetches at
+     * runtime (the build credential is never persisted).
+     */
+    originUrl: string;
+  };
+}
+
+/**
+ * Inputs for the artifact half of the layer — the contiguous tail that COPYs
+ * Kortix's own staged build artifacts (agent + CLI binaries, entrypoint,
+ * slack-cli, executor-sdk, scaffold.git) and wires the container's entrypoint.
+ *
+ * Every artifact path is REQUIRED, deliberately: an agent-less image would
+ * still build, still hash to a fresh snapshot identity, and only fail once a
+ * session tried to connect to it. Callers that legitimately have no artifacts
+ * to stage call `kortixToolchainLayer` alone — "no artifacts" is a different
+ * call, not a forgotten field.
+ */
+export interface KortixArtifactLayerOpts {
+  /** Path the snapshot builder will reference for the gzipped kortix-agent binary. */
+  agentBinaryPath: string;
+  /**
+   * Path the snapshot builder will reference for the gzipped `kortix` CLI
+   * binary. This is the admin CLI every in-sandbox agent reaches for
+   * (`kortix cr open`, `secrets`, `sessions`, …); it lands on PATH as
+   * `/usr/local/bin/kortix`, pre-authenticated via the injected
+   * KORTIX_CLI_TOKEN. Always provided by the production builder.
+   */
+  cliBinaryPath: string;
+  /** Path the snapshot builder will reference for the entrypoint script. */
+  entrypointScriptPath: string;
+  /**
+   * Path the snapshot builder will reference for the slack-cli source tree
+   * (apps/sandbox/slack-cli). The layer COPYs it into
+   * /opt/kortix/apps/sandbox/slack-cli
+   * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
+   * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
+   * agent to invoke from inside the sandbox. (The Executor moved into the
+   * `kortix` CLI as `kortix executor` / `kortix executor mcp`.)
+   */
+  slackCliPath: string;
+  /**
+   * Path the snapshot builder will reference for packages/executor-sdk.
+   * The agent CLI imports it via the same repo-relative path in dev and in
+   * real snapshots.
+   */
+  executorSdkPath: string;
+  /**
+   * Path (in the build context) to the baked full gateway model catalog JSON.
+   * COPY'd into the image so the no-restart warm seed — which has no sandbox
+   * token / projectId to fetch the catalog at PARK — gets the full model picker
+   * instead of the daemon's minimal fallback. Optional; omit to skip.
+   */
+  catalogPath?: string;
+}
+
+export interface BuildLayeredDockerfileOpts
+  extends KortixToolchainLayerOpts,
+    KortixArtifactLayerOpts {
+  /** Literal contents of the user's project Dockerfile. */
+  userDockerfile: string;
+}
+
+/**
+ * The network-install half of the Kortix runtime layer: the apt floor, the
+ * starter Python package floor, opencode + its baked config deps, bun, the
+ * build-time opencode warm-ups (incl. the optional per-project repo bake), and
+ * agent-browser + its Playwright Chromium.
+ *
+ * Renders against an EMPTY build context — it stages nothing. Ends with a
+ * trailing newline so it concatenates directly onto `kortixArtifactLayer`.
+ */
+export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
+  const {
+    opencodeVersion,
+    agentBrowserVersion = DEFAULT_AGENT_BROWSER_VERSION,
+    opencodeConfigPath,
+    isSharedDefault,
+    warmRepo,
+  } = opts;
+
+  // Single-quote a value for safe embedding in a build-time bash RUN.
+  const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+  // Per-project COLD warm: clone the repo into /workspace at BUILD time. The auth
+  // header goes through `git -c http.extraHeader` (never written to git config)
+  // and the whole step is one RUN, so no credential-shaped bytes persist. origin
+  // is reset to the Kortix proxy so the daemon re-auths per session at runtime.
+  const warmRepoClone = warmRepo
+    ? [
+        '',
+        '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
+        // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
+        // small; the daemon fast-paths the baked .git and deepens on demand.
+        // NOTE: an earlier base layer sets `WORKDIR /workspace`, so the build
+        // shell's CWD IS /workspace. We must NOT `rm -rf /workspace` (that orphans
+        // the CWD inode → git dies with "Unable to read current working
+        // directory"). Instead `cd /`, clone into a scratch dir, then move the
+        // contents into the (emptied) /workspace so the CWD inode stays valid.
+        `RUN cd / \\`,
+        `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
+        `    && git ${Object.entries(warmRepo.cloneHeaders)
+          .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
+          .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
+        `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
+        `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
+        `    && rm -rf /tmp/kortix-warm-repo \\`,
+        `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
+        `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
+        '',
+      ]
+    : [];
+
+  return [
+    '',
+    '# ─── Kortix runtime layer (auto-injected) ──────────────────────────',
+    '# Everything below is added by the Kortix snapshot builder. Do not',
+    "# edit by hand — your project Dockerfile above is preserved verbatim.",
+    '',
+    'USER root',
+    // tmux: lets the agent run long-running processes (dev servers for preview)
+    // in a detached session that survives the agent\'s bash tool call.
+    // python3 + pip + office/PDF/data packages: the starter marketplace skills
+    // assume these are present (xlsx/openpyxl, visualization/pandas,
+    // pdf/docx/pptx/presentations, LaTeX paper creation). Bake them into every
+    // layered image so custom sandbox Dockerfiles get the same runtime floor as
+    // the platform default image.
+    // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a
+    // snapshot-restored VM keeps its snapshot-baked IP until the
+    // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
+    // inside the guest. Without these the IP never changes → the guest stays on
+    // the baked IP while the edge routes to the allocated IP → every request
+    // 502s. (Harmless on Daytona, which doesn't memory-restore.)
+    // apt is non-interactive by construction here (no TTY), but a package with a
+    // debconf prompt (tzdata, libreoffice's font EULAs) can still stall or fail
+    // the build. This ENV used to be supplied only by whatever the USER's base
+    // image happened to leak in — ubuntu:24.04 doesn't set it, so the floor was
+    // relying on luck. Set it ourselves. It persists to runtime deliberately:
+    // the agent's own `apt-get install` in a session has no TTY either, and a
+    // debconf prompt there is an unrecoverable hang, not a question anyone answers.
+    'ENV DEBIAN_FRONTEND=noninteractive',
+    // `base_py` MUST be resolved BEFORE the apt floor runs — see the venv step at
+    // the end of this RUN for why. It is a shell var, so it cannot cross a RUN
+    // boundary; that is the only reason the venv is created here rather than in
+    // its own step.
+    'RUN base_py="$(command -v python3 || true)" \\',
+    '    && apt-get update \\',
+    '    && apt-get install -y --no-install-recommends \\',
+    '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
+    '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
+    '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
+    '        python3 python3-dev python3-pip python3-venv \\',
+    '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
+    '        texlive-latex-extra texlive-latex-recommended \\',
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    // ─── The Python floor lives in a venv, NOT in the system interpreter ───────
+    // History: the floor used to be `pip install --break-system-packages` straight
+    // into the system interpreter. That made it fight dpkg for ownership of any
+    // package the USER's Dockerfile had pulled in via apt. Real incident: a project
+    // apt-installed `gdal-bin` → `python3-gdal` → `python3-numpy` (dpkg-owned
+    // 1.26.4); our floor's `numpy>=1.26` resolved to 2.x, pip tried to UNINSTALL the
+    // dpkg-owned copy and hard-failed the whole snapshot build with "Cannot
+    // uninstall numpy 1.26.4, RECORD file not found. Hint: The package was installed
+    // by debian." The user's image was correct — our layer broke it. numpy was just
+    // the member that got hit: numpy/scipy/pandas/scikit-learn/lxml/pillow/
+    // matplotlib/requests ALL have dpkg counterparts, so ANY dpkg-owned package in
+    // the floor's dependency closure was the same landmine.
+    //
+    // A venv kills the whole class: pip inside it can NEVER uninstall a dpkg-owned
+    // package (worst case it installs a newer copy INTO the venv, shadowing it), and
+    // `--system-site-packages` keeps the user's OWN installs (apt python3-* AND
+    // their `pip install` into dist-packages, e.g. geopandas/fiona next to that
+    // gdal) importable from the floor's interpreter.
+    //
+    // WHICH interpreter the venv is built from is load-bearing. `/opt/kortix/pyfloor
+    // /bin` goes on the front of PATH below, so the venv's python3 SHADOWS whatever
+    // python3 the user's image shipped. That is intended on a bare Debian base (the
+    // interpreter is ours either way) — but on e.g. `python:3.12-slim` the apt floor
+    // above ALSO drops Debian's own python3 at /usr/bin/python3 (whatever the base's
+    // suite pins — 3.13.5 as of writing), and building the venv from THAT would
+    // shadow the image's 3.12 with a different minor: today's harmless bloat becomes
+    // tomorrow's breakage. So we build from `base_py` — the python3 that was
+    // on PATH BEFORE our apt ran. If the user's image had one, the floor IS their
+    // interpreter (+ our packages) and the shadow is semantically a no-op; if it had
+    // none, `base_py` is empty and we fall back to the python3 our apt just
+    // installed. Note this is strictly better than "skip apt python3 when one
+    // exists": a base that apt-installed a bare `python3` with no `python3-venv`
+    // would then have no venv module at all — here our apt supplies it for that very
+    // interpreter.
+    '    && "${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\',
+    `    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'`,
+    '',
+    // Put the floor ahead of the system interpreter for every later build step AND
+    // for the agent at runtime. `$PATH` expansion in ENV is REQUIRED to work under
+    // BOTH builders — BuildKit (Daytona) and buildah's classic imagebuilder
+    // (Platinum, which ignores `# syntax` and rejects RUN heredocs; see the
+    // portability guard in build-context.ts). Verified empirically against
+    // buildah bud (isolation=oci AND =chroot) and BuildKit: both expand it from the
+    // base image's config env, yielding
+    // `/opt/kortix/pyfloor/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`.
+    // Do NOT "simplify" this to a hardcoded absolute PATH: that would stomp any PATH
+    // the user's Dockerfile set (cargo, nvm, conda) — the exact bug class this
+    // change is here to remove.
+    //
+    // CAVEAT 1: anything that spells `/usr/bin/python3` (or `/usr/local/bin/python3`)
+    // explicitly bypasses the floor and sees only the system site-packages. PATH is
+    // the contract; absolute interpreter paths opt out of it.
+    //
+    // CAVEAT 2 (the flip side, and a real one): the venv's site-packages precedes
+    // the system's, so where the floor and the user's apt packages disagree on a
+    // version, the FLOOR wins for `python3`. Verified on the gdal image above: the
+    // floor's python gets numpy 2.x, so `from osgeo import gdal` works but
+    // `osgeo.gdal_array` — a dpkg C extension compiled against numpy 1.x — raises
+    // "numpy.core.multiarray failed to import" under it. `/usr/bin/python3` keeps
+    // the user's coherent numpy-1.x stack and runs that workload fine, so the
+    // escape hatch is real and one line. This is strictly better than the status
+    // quo it replaces, which was: the build hard-fails and there is NO image at
+    // all. We are trading "nothing works" for "both interpreters work, each for
+    // its own stack".
+    'ENV PATH=/opt/kortix/pyfloor/bin:$PATH',
+    '',
+    '# Starter skill Python package floor (document/data/PDF/presentation helpers).',
+    '# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned',
+    '# package no matter what the resolver picks.',
+    'RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\',
+    '        "beautifulsoup4>=4.12" \\',
+    '        "lxml>=5" \\',
+    '        "markdownify>=0.13" \\',
+    '        "markitdown[pptx]>=0.1.0" \\',
+    '        "matplotlib>=3.8" \\',
+    '        "numpy>=1.26" \\',
+    '        "openpyxl>=3.1" \\',
+    '        "pandas>=2.2" \\',
+    '        "pdf2docx>=0.5" \\',
+    '        "pdf2image>=1.17" \\',
+    '        "pdfplumber>=0.11" \\',
+    '        "pillow>=10" \\',
+    '        "playwright>=1.58" \\',
+    '        "plotly>=5.22" \\',
+    '        "pymupdf>=1.24" \\',
+    '        "pypdf>=4" \\',
+    '        "pypdfium2>=4.30" \\',
+    '        "pytesseract>=0.3" \\',
+    '        "python-docx>=1.1" \\',
+    '        "python-pptx>=1.0" \\',
+    '        "reportlab>=4.2" \\',
+    '        "requests>=2.32" \\',
+    '        "scikit-learn>=1.4" \\',
+    '        "scipy>=1.12" \\',
+    '        "seaborn>=0.13" \\',
+    '        "youtube-transcript-api>=0.6" \\',
+    // Verify the import floor with a `python3 -c` ONE-LINER, NOT a RUN heredoc.
+    // Platinum builds with buildah's classic imagebuilder, which does not support
+    // Dockerfile RUN heredocs (and ignores `# syntax=docker/dockerfile:1.7`): it
+    // parses the heredoc body's first line ("import importlib") as a Dockerfile
+    // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
+    // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
+    // equivalent (still fails the layer if any module is missing) and portable.
+    '    && /opt/kortix/pyfloor/bin/python -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
+    '',
+    `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
+    '    && command -v opencode \\',
+    '    && opencode --version',
+    '',
+    // Bake OpenCode's "one time database migration" at BUILD time. The first time
+    // opencode serves, it migrates its sqlite schema — logged as "Performing one
+    // time database migration (may take a few minutes)" — before it answers any
+    // request. On a fresh VM that runs on the session hot path, adding ~15-35s
+    // before opencode replies to /session; on a restored warm snapshot that
+    // window is exactly what surfaces as the FE's "sandbox not ready" 503s.
+    // opencode's db
+    // lives in a BAKED path (XDG_DATA_HOME=/opt/kortix/home/.local/share), so we
+    // run opencode here once to complete the migration and bake the migrated db
+    // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
+    // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
+    // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). Best
+    // effort: if opencode can't serve at build time it just falls back to the
+    // old boot-time migration — never fail the whole image build over a warm-up.
+    'RUN set +e; \\',
+    '    export HOME=/opt/kortix/home \\',
+    '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
+    '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
+    '        XDG_CACHE_HOME=/opt/kortix/home/.cache; \\',
+    '    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; \\',
+    '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-bake.log 2>&1 & oc_pid=$!; \\',
+    '    for i in $(seq 1 180); do \\',
+    '        curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; \\',
+    '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+    '        sleep 1; \\',
+    '    done; \\',
+    '    sleep 3; \\',
+    '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+    '    echo "=== migration-bake: opencode data dir ==="; ls -laR "$XDG_DATA_HOME/opencode" 2>/dev/null | head -40; \\',
+    '    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\',
+    '    rm -f /tmp/oc-bake.log; true',
+    '',
+    // bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
+    'RUN curl -fsSL https://bun.com/install | bash \\',
+    '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
+    '    && bun --version',
+    '',
+    // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
+    // into a stable baked location. The cloned config dir's plugin + tools import
+    // @opencode-ai/plugin (+ its effect/zod/@opencode-ai/sdk tree) and
+    // @mendable/firecrawl-js / @tavily/core / replicate, and OpenCode runs
+    // `bun install` in that dir the first time a session opens — but node_modules/
+    // bun.lock are gitignored, so that boot install would otherwise fetch over the
+    // network (a 1.5–6s — sometimes minutes — stall on the session hot path). The
+    // daemon's ensureOpencodeConfigDeps() links this baked node_modules + bun.lock
+    // into the resolved config dir before opencode starts, making the boot install a
+    // verified OFFLINE no-op. The same caches warm Bun at HOME=/opt/kortix/home.
+    //
+    // CRITICAL — @opencode-ai/plugin is pinned to the OPENCODE BINARY version
+    // (`opencodeVersion`), NOT the version declared in the project/starter
+    // package.json. OpenCode loads the plugin SDK that matches its OWN binary: it
+    // overwrites whatever @opencode-ai/plugin the config dir pins with its binary
+    // version, fetching it over the network if absent. Baking the stale starter pin
+    // (e.g. 1.17.9 while the binary is 1.17.11) therefore left opencode re-fetching
+    // the matching plugin on EVERY boot — the ~5–8s "opencode-session-created" gap.
+    // Baking the binary version makes opencode find it already present → no fetch.
+    // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
+    // NOTE: this dependency set (and the "axios"/"form-data" security overrides
+    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
+    // Keep both in sync —
+    // a version bump made in only one place is exactly how this file's axios
+    // override once diverged and shipped a bundle-breaking install (see the
+    // verification RUN step right below, added after that incident).
+    'RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\',
+    '    && cd /opt/kortix/opencode-config-deps \\',
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\`,
+    '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
+    '',
+    // Verify the baked tree is actually usable by OpenCode's own runtime
+    // bundler (Bun, invoked live by ToolRegistry the first time a session
+    // resolves its tools) — not just that `bun install` exited 0. A CVE-driven
+    // axios override bump here once produced an installed tree that resolved
+    // fine but failed to BUNDLE at session runtime
+    // (`AggregateError: N errors building ".../axios/lib/utils.js"`), which
+    // silently baked into every sandbox cloned from this image until a user
+    // hit it on their very first prompt. Bundling the override targets here,
+    // at build time, turns that failure mode into a build failure instead —
+    // intentionally NOT `set +e`: an unbundlable dependency tree must fail
+    // the image build, unlike the best-effort warm-up steps below.
+    'RUN cd /opt/kortix/opencode-config-deps \\',
+    '    && HOME=/opt/kortix/home bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\',
+    '    && rm -rf /tmp/opencode-deps-bundle-check \\',
+    '    && echo "opencode-config-deps: baked tree bundles cleanly"',
+    '',
+    // Per-project COLD warm: bake the repo checkout into /workspace BEFORE the
+    // opencode instance warm-up below, so opencode indexes the REAL project (its
+    // config, file tree, sqlite rows) — all baked into the cold rootfs. git is
+    // installed by the first apt RUN above, so this is safe here. For the shared
+    // default image warmRepo is absent → /workspace stays empty (unchanged).
+    ...warmRepoClone,
+    // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
+    // creates an instance for a project dir it loads that dir's .kortix/opencode
+    // surface — importing the pty plugin + tools — which makes Bun auto-install /
+    // transpile the plugin dep tree and opencode fetch its model catalog +
+    // ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
+    // GitHub are contended) that gates runtimeReady right on the session hot path.
+    // We pay it ONCE here, against the canonical starter config staged at the SAME
+    // runtime path (/workspace) so Bun's content-addressed transpile cache hits at
+    // boot. For the SHARED default image we then wipe /workspace (the session
+    // clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
+    // already baked at /workspace and we KEEP it — the daemon boots off the baked
+    // checkout with NO clone. For a CUSTOM template we remove only the config we
+    // staged: /workspace is the user's. Either way the warmed caches under /opt/kortix/home
+    // persist in the image layer. Measured: cold first-instance 6–60s → ~2–4s
+    // after this bake. Requires opencode + bun + the
+    // baked config deps above, so it must come after them. Best effort: a build
+    // without network (or a warm-up failure) just falls back to the runtime cost —
+    // set +e + trailing `true` keep the image build green.
+    ...(opencodeConfigPath
+      ? [
+          `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+          // Same "does it actually bundle" check as the opencode-config-deps
+          // verification above, but exercised against the REAL starter tool
+          // files (web_search / scrape_webpage / image_search / memory / show)
+          // instead of just their axios/form-data override targets — this is
+          // what actually walks the full transitive dependency tree
+          // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
+          // on a session's first prompt. Deliberately its own RUN step (not
+          // folded into the `set +e` warm-up below): a tool that can't bundle
+          // breaks every session's first prompt, not just startup latency, so
+          // it must fail the build — the warm-up readiness probe below stays
+          // best-effort as before.
+          'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
+          '    && rm -rf node_modules \\',
+          '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
+          '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
+          '    && rm -rf /tmp/opencode-tools-bundle-check \\',
+          '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
+          '',
+          'RUN set +e; \\',
+          '    export HOME=/opt/kortix/home \\',
+          '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
+          '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
+          '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
+          '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
+          '    mkdir -p /workspace/.kortix; \\',
+          // Stage the canonical starter opencode config so the instance warm-up
+          // has the pty plugin + tools to load. For a per-project warm the baked
+          // repo may already ship its own .kortix/opencode — keep it (its config
+          // is what the session actually resolves at runtime) and only fall back
+          // to the staged starter when the repo has none.
+          // `staged_starter_config` records whether the starter config in
+          // /workspace is OURS (we copied it) or the image's own — it decides what
+          // the non-shared cleanup below is allowed to delete.
+          '    staged_starter_config=0; \\',
+          '    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\',
+          '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
+          '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
+          '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
+          '    cd /workspace; \\',
+          '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
+          '    ready=0; \\',
+          '    for i in $(seq 1 300); do \\',
+          `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
+          '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
+          '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+          '        sleep 1; \\',
+          '    done; \\',
+          '    echo "=== instance-warm: ready=$ready ==="; \\',
+          '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+          // Three cases, and only one of them may delete indiscriminately:
+          //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
+          //    the daemon boots off it with no clone.
+          //  • SHARED default: /workspace contains only what this warm-up put
+          //    there (the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a
+          //    WORKDIR), so wiping it is exact, and it also clears anything opencode
+          //    itself dropped while serving. The session clones into it at boot.
+          //  • CUSTOM template: the user's Dockerfile owns /workspace. Remove ONLY
+          //    the starter config we staged (and the .kortix dir if that leaves it
+          //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
+          //    purpose; a user's own /workspace/.kortix survives untouched.
+          warmRepo
+            ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
+            : isSharedDefault
+              ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
+              : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\',
+          '    rm -rf /opt/kortix/warm-config; \\',
+          '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
+          '    rm -f /tmp/oc-warm.log; true',
+          '',
+        ]
+      : []),
+    // agent-browser (Vercel) — the browser-automation CLI the agent-browser
+    // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
+    // bake a real Chromium into the image and wire agent-browser to it TWO
+    // independent ways:
+    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable /usr/local/bin/chromium
+    //      symlink (the documented API; verified working on agent-browser 0.27.0).
+    //   2. a symlink into agent-browser's OWN browser cache (chrome-linux64),
+    //      which its auto-detect finds even if the env var is ever ignored again
+    //      — it WAS, historically (vercel-labs/agent-browser#422). Belt + braces.
+    // PLAYWRIGHT_BROWSERS_PATH is set BEFORE the install so Chromium lands in
+    // /opt/pw-browsers (a stable system path the symlinks resolve against). HOME
+    // is pinned to the runtime HOME (/opt/kortix/home, see opencode.ts) so the
+    // cache symlink lands where the agent looks at runtime. The build FAILS LOUDLY
+    // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
+    // every sandbox ships a working browser; we never install one on the session
+    // hot path.
+    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
+    `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
+    '    && agent-browser --version \\',
+    `    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
+    '    && test -n "$pw_chrome" \\',
+    '    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\',
+    '    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\',
+    '    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\',
+    '    && /usr/local/bin/chromium --version \\',
+    // Assert agent-browser RESOLVES the browser via its env-independent cache —
+    // match the resolved path (deterministic), not the browser NAME (which is
+    // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
+    // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
+    // detection line, not the launch verdict, so the gate is emulation-safe.
+    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
+    '',
+    // The staged-artifact tail lives in `kortixArtifactLayer`. The split is
+    // here — everything above installs from the network into an empty build
+    // context; everything below COPYs bytes the caller had to stage first.
+  ].join('\n') + '\n';
+}
+
+/**
+ * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
+ * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
+ * executor-sdk, the optional LLM catalog, scaffold.git), the unpack/shim RUN
+ * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
+ *
+ * Every path here must exist in the build context — see
+ * `KortixArtifactLayerOpts` for why none of them are optional.
+ */
+export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
+  const {
+    agentBinaryPath,
+    cliBinaryPath,
+    entrypointScriptPath,
+    slackCliPath,
+    executorSdkPath,
+    catalogPath,
+  } = opts;
+
+  return [
+    `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
+    `COPY ${cliBinaryPath} /tmp/kortix.gz`,
+    `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
+    // Keep the repo-relative layout so CLIs can import shared packages.
+    `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
+    `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    // Full gateway model catalog, baked at build so the token-less no-restart
+    // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
+    ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),
+    // Canonical scaffold repo (bare). Its root commit matches every seeded
+    // project's root (pinned dates, seed.ts), enabling local-clone +
+    // delta-fetch repo materialization in the daemon (git.ts).
+    `COPY scaffold.git /opt/kortix/scaffold.git`,
+    'RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\',
+    '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
+    '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
+    '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
+    '        /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\',
+    '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
+    // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
+    '    && kortix --version',
+    '',
+    // The daemon clones the project workspace at boot using KORTIX_PROJECT_AUTO_CLONE
+    // — nothing project-specific is baked into the image. /workspace is created
+    // empty here; the daemon's materializeRepo path fills it.
+    'ENV KORTIX_WORKSPACE=/workspace',
+    'RUN mkdir -p /workspace /opt/kortix/home /ephemeral/kortix-master/opencode',
+    'WORKDIR /workspace',
+    'EXPOSE 8000',
+    'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',
+    '',
+  ].join('\n');
+}
+
+/**
+ * The production composition: the user's Dockerfile verbatim, then the full
+ * Kortix runtime layer (toolchain + artifacts).
+ *
+ * The two halves are concatenated with NO separator — `kortixToolchainLayer`
+ * already ends with the newline that used to sit between them in the single
+ * array this was split out of, so the output is byte-identical to the
+ * pre-split renderer by construction. That identity is what lets
+ * RUNTIME_LAYER_VERSION (templates.ts) stay put across the split; it is
+ * asserted directly in sandbox/__tests__/layer-split.test.ts.
+ */
+export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
+  const trimmed = normalizeUserDockerfileForSnapshot(opts.userDockerfile).trimEnd();
+  return `${trimmed}\n${kortixToolchainLayer(opts)}${kortixArtifactLayer(opts)}`;
+}
+
+export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
+  // The legacy starter Dockerfile installed baseline tools that the injected
+  // Kortix layer installs again. Strip that exact starter block so existing
+  // user Dockerfiles still build cleanly.
+  const starterBlock =
+    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
+  return dockerfile.replace(starterBlock, '');
+}
+
+/**
+ * A sandbox template defines one bootable image. Projects can declare multiple
+ * via `sandbox.templates` in kortix.yaml; sessions pick one by slug. The platform
+ * default template is always available without any config.
+ */
+export interface SandboxTemplate {
+  /** Stable identifier the session creator references. Unique per project. */
+  slug: string;
+  /** Display label shown in the dashboard picker. Optional. */
+  name?: string;
+  /**
+   * Repo-relative path to a Dockerfile. The builder reads its bytes and layers
+   * the Kortix runtime on top. Mutually exclusive with `image`.
+   */
+  dockerfile?: string;
+  /**
+   * Public Docker image reference (e.g. `python:3.12-slim`). The builder
+   * generates a tiny `FROM <image>` shim and layers the Kortix runtime on top.
+   * Mutually exclusive with `dockerfile`.
+   */
+  image?: string;
+  /** Hardware spec (cpu/memory/disk). GPUs are intentionally not supported. */
+  spec: SandboxSpec;
+  /**
+   * True iff this is the platform default (no user customization). Never
+   * declared in kortix.yaml — the platform synthesizes one of these.
+   */
+  isDefault?: boolean;
+}
+
+/** Reserved slug for the platform-provided default template. */
+export const DEFAULT_SANDBOX_SLUG = 'default';
+
+/**
+ * Build the canonical platform default template. Always available, identity
+ * derived purely from the platform runtime fingerprint — every project on the
+ * same Kortix release shares one image.
+ */
+export function buildDefaultSandboxTemplate(spec: SandboxSpec = {}): SandboxTemplate {
+  return {
+    slug: DEFAULT_SANDBOX_SLUG,
+    name: 'Default',
+    spec,
+    isDefault: true,
+  };
+}
+
+/**
+ * Hardware spec for the sandbox, read from `sandbox.templates` entries in
+ * kortix.yaml. Fields map onto Daytona's snapshot `Resources` (vCPU cores,
+ * memory & disk in GiB). GPU is intentionally omitted. Every field is
+ * optional; an unset field uses the platform default.
+ */
+export interface SandboxSpec {
+  /** vCPU cores. */
+  cpu?: number;
+  /** Memory in GiB. */
+  memory?: number;
+  /** Disk in GiB. */
+  disk?: number;
+}
+
+/**
+ * Defensive bounds for each spec field. A value below `min` is dropped and
+ * the platform default is used; a value above `max` is clamped to `max`.
+ */
+export const SANDBOX_SPEC_LIMITS = {
+  cpu: { min: 1, max: 32 },
+  memory: { min: 1, max: 128 }, // GiB
+  disk: { min: 1, max: 500 }, // GiB
+} as const;
+
+function pickResource(value: unknown, bounds: { min: number; max: number }): number | undefined {
+  let n: number | undefined;
+  if (typeof value === 'number') n = value;
+  else if (typeof value === 'string' && value.trim() !== '') n = Number(value);
+  if (n === undefined || !Number.isFinite(n)) return undefined;
+  n = Math.round(n);
+  if (n < bounds.min) return undefined;
+  if (n > bounds.max) n = bounds.max;
+  return n;
+}
+
+function extractSpecFromRow(row: Record<string, unknown>): SandboxSpec {
+  const spec: SandboxSpec = {};
+  const cpu = pickResource(row.cpu ?? row.cpus, SANDBOX_SPEC_LIMITS.cpu);
+  const memory = pickResource(row.memory ?? row.memory_gb ?? row.mem, SANDBOX_SPEC_LIMITS.memory);
+  const disk = pickResource(row.disk ?? row.disk_gb, SANDBOX_SPEC_LIMITS.disk);
+  if (cpu !== undefined) spec.cpu = cpu;
+  if (memory !== undefined) spec.memory = memory;
+  if (disk !== undefined) spec.disk = disk;
+  return spec;
+}
+
+const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/**
+ * Parse `sandbox.templates` from a parsed manifest. Returns the
+ * user-declared templates in declaration order. The platform default is NOT
+ * included here; callers always add it themselves so it can't be shadowed by
+ * a misnamed slug.
+ *
+ * The slug `default` is reserved for the platform-shared template — any
+ * `sandbox.templates` entry that tries to claim it is dropped with a warning.
+ *
+ * Malformed entries are skipped (logged) so a broken table can't take down
+ * session boot for the rest of the project.
+ */
+export function extractSandboxTemplates(
+  manifestRaw: Record<string, unknown> | null | undefined,
+): SandboxTemplate[] {
+  if (!manifestRaw) return [];
+  const out: SandboxTemplate[] = [];
+  const seenSlugs = new Set<string>();
+
+  // kortix.yaml: `sandbox: { templates: [...] }` — legacy kortix.toml:
+  // `[[sandbox.templates]]` (array of tables). Both parse to the same
+  // `sandbox.templates` shape below.
+  const sandbox = manifestRaw.sandbox;
+  const nested =
+    sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
+      ? (sandbox as Record<string, unknown>).templates
+      : undefined;
+  // Migration safety net: the pre-rename `[[sandboxes]]` form still parses at
+  // boot so an un-migrated project on main doesn't lose its templates. The
+  // validator (ship / CR-merge gate) is what enforces the new name.
+  const arr = Array.isArray(nested) ? nested : manifestRaw.sandboxes;
+  if (Array.isArray(arr)) {
+    for (const entry of arr) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const row = entry as Record<string, unknown>;
+      const tpl = parseSandboxTemplate(row);
+      if (!tpl) continue;
+      if (tpl.slug === DEFAULT_SANDBOX_SLUG) {
+        console.warn(`[sandbox-templates] slug "default" is reserved — skipping entry`);
+        continue;
+      }
+      if (seenSlugs.has(tpl.slug)) {
+        console.warn(`[sandbox-templates] duplicate slug "${tpl.slug}" — keeping first`);
+        continue;
+      }
+      seenSlugs.add(tpl.slug);
+      out.push(tpl);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Read `[sandbox] default` — the project-wide default template slug that every
+ * session boots when the caller doesn't pass an explicit `sandbox_slug`.
+ * Returns null when unset (→ the platform default image). The reserved
+ * "default" is treated as "no override" since it IS the platform default.
+ */
+export function extractSandboxDefault(
+  manifestRaw: Record<string, unknown> | null | undefined,
+): string | null {
+  const sandbox = manifestRaw?.sandbox;
+  if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return null;
+  const raw = (sandbox as Record<string, unknown>).default;
+  const slug = typeof raw === 'string' ? raw.trim() : '';
+  if (!slug || slug === DEFAULT_SANDBOX_SLUG || !SLUG_RE.test(slug)) return null;
+  return slug;
+}
+
+function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | null {
+  const slugRaw = typeof row.slug === 'string' ? row.slug.trim() : '';
+  if (!slugRaw || !SLUG_RE.test(slugRaw)) {
+    console.warn(`[sandbox-templates] entry missing or invalid slug, skipped:`, row);
+    return null;
+  }
+  const dockerfile = typeof row.dockerfile === 'string' ? row.dockerfile.trim() : '';
+  const image = typeof row.image === 'string' ? row.image.trim() : '';
+  if (dockerfile && image) {
+    console.warn(`[sandbox-templates] "${slugRaw}" sets both dockerfile and image — keeping dockerfile`);
+  }
+  const spec = extractSpecFromRow(row);
+  const name = typeof row.name === 'string' ? row.name.trim() : undefined;
+  const sanitizedDockerfile = dockerfile ? sanitizeRelPath(dockerfile) : '';
+  return {
+    slug: slugRaw,
+    name: name || undefined,
+    dockerfile: sanitizedDockerfile || undefined,
+    image: !sanitizedDockerfile && image ? image : undefined,
+    spec,
+  };
+}
+
+function sanitizeRelPath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('/')) return '';
+  if (trimmed.split('/').includes('..')) return '';
+  return trimmed;
+}

@@ -104,6 +104,8 @@ ingress:
   host: qa.kortix.com
   # ACM cert ARN for the ALB HTTPS listener. REQUIRED.
   certificateArn: ""
+  # Regional WAFv2 Web ACL ARN. Required when ingress is enabled.
+  wafAclArn: ""
   # Cloudflare proxies the record (orange cloud) — external-dns sets this.
   cloudflareProxied: true
   idleTimeout: 60

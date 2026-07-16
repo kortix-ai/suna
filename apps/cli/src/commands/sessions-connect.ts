@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 
-import { OPENCODE_PORT } from '../api/sandbox-proxy.ts';
 import { takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import {
@@ -81,6 +80,7 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
       apiBase: resolved.auth.api_base,
       token: resolved.auth.token,
       sandboxId: resolved.proxyId,
+      runtimePort: resolved.runtimePort,
       port: proxyPort,
     });
   } catch (err) {
@@ -121,6 +121,7 @@ interface StartOpenCodeProxyOpts {
   apiBase: string;
   token: string;
   sandboxId: string;
+  runtimePort: number;
   port?: number;
 }
 
@@ -134,10 +135,10 @@ interface ProxyWsData {
 /**
  * Expose the sandbox OpenCode API on localhost so `opencode attach` can use its
  * normal SDK client. The remote API requires Kortix Bearer auth and lives behind
- * `/v1/p/{sandbox}/{4096}`; this proxy hides both details from OpenCode.
+ * `/v1/p/{sandbox}/{runtimePort}`; this proxy hides both details from OpenCode.
  */
 export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCodeProxy {
-  const baseHttp = buildProxyBase(opts.apiBase, opts.sandboxId);
+  const baseHttp = buildProxyBase(opts.apiBase, opts.sandboxId, opts.runtimePort);
   const baseWs = baseHttp.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
 
   const server = Bun.serve<ProxyWsData>({
@@ -245,9 +246,9 @@ async function forwardOpenCodeHttp(
   });
 }
 
-function buildProxyBase(apiBase: string, sandboxId: string): string {
+function buildProxyBase(apiBase: string, sandboxId: string, runtimePort: number): string {
   const base = apiBase.replace(/\/+$/, '').replace(/\/v1$/, '');
-  return `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
+  return `${base}/v1/p/${encodeURIComponent(sandboxId)}/${runtimePort}`;
 }
 
 function buildAttachArgs(

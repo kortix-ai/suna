@@ -2,6 +2,7 @@
 
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { cn } from '@/lib/utils';
+import { useIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import type { Turn } from '@/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -18,6 +19,10 @@ interface ChatMinimapProps {
 }
 
 export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
+  // With the side panel open the panel body already pads the chat's right
+  // edge, so the rail sits flush (right-0); full-width chat keeps its own
+  // right-2 breathing room. Same store signal `session-layout` renders from.
+  const isSidePanelOpen = useIsSidePanelOpen();
   const [activeId, setActiveId] = useState<string | null>(null);
   // Mirrors the hover card's open state so the active row can be scrolled
   // into view when the list mounts.
@@ -124,9 +129,12 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
   return (
     <nav
       aria-label="Jump to message"
-      className="pointer-events-none absolute top-1/2 right-3 z-10 -translate-y-1/2 sm:right-4"
+      className={cn(
+        'pointer-events-none absolute top-1/2 z-10 -translate-y-1/2',
+        isSidePanelOpen ? '-right-1' : 'right-2',
+      )}
     >
-      <HoverCard openDelay={100} closeDelay={150} onOpenChange={setOpen}>
+      <HoverCard openDelay={50} closeDelay={150} onOpenChange={setOpen}>
         {/* Collapsed rail — a quiet position indicator, like a scrollbar.
             Fades out while the jump list is open so the card reads as the
             rail's expanded form. */}
@@ -161,7 +169,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
         <HoverCardContent
           side="left"
           align="center"
-          sideOffset={0}
+          sideOffset={-10}
           collisionPadding={16}
           className="scrollbar-hide flex max-h-[60vh] w-64 flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-lg p-1"
         >

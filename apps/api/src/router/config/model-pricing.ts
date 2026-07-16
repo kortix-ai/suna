@@ -20,6 +20,7 @@ export interface ModelPricingEntry {
   inputPer1M: number;
   outputPer1M: number;
   cacheReadPer1M?: number;
+  cacheWritePer1M?: number;
 }
 
 const normModelId = (id: string): string => id.toLowerCase().replace(/\./g, '-');
@@ -27,7 +28,7 @@ const normModelId = (id: string): string => id.toLowerCase().replace(/\./g, '-')
 /** Shape of a single model in the models.dev API response. */
 interface ModelsDevModel {
   id: string;
-  cost?: { input?: number; output?: number; cache_read?: number };
+  cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number };
   [key: string]: unknown;
 }
 
@@ -158,6 +159,8 @@ async function refreshPricing(): Promise<void> {
         const entry: ModelPricingEntry = { inputPer1M: input, outputPer1M: output };
         if (typeof model.cost?.cache_read === 'number')
           entry.cacheReadPer1M = model.cost.cache_read;
+        if (typeof model.cost?.cache_write === 'number')
+          entry.cacheWritePer1M = model.cost.cache_write;
         if (!newMap.has(model.id)) newMap.set(model.id, entry);
         const nk = normModelId(model.id);
         if (!newNorm.has(nk)) newNorm.set(nk, entry);

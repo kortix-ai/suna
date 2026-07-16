@@ -4,6 +4,7 @@ import { eq, lt } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { loadTeamsBotCredentials, loadTeamsTenantForProject } from '../install-store';
 import { sendActivity } from '../teams-api';
+import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { graphToken } from '../teams-auth';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
@@ -65,6 +66,16 @@ export async function initiateTeamsUpload(
     return {
       ok: false,
       error: 'serviceUrl, conversationId, filename and content_base64 are required',
+      status: 400,
+    };
+  }
+  // F-7: the caller-supplied serviceUrl must be a trusted Microsoft Bot Framework
+  // endpoint, otherwise the bot connector token would be leaked to an arbitrary
+  // host when the consent card is posted. Reject before persisting.
+  if (!assertValidTeamsServiceUrl(args.serviceUrl)) {
+    return {
+      ok: false,
+      error: 'serviceUrl must be an https Microsoft Bot Framework endpoint',
       status: 400,
     };
   }

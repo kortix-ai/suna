@@ -2,11 +2,12 @@
 
 import { Button } from '@/components/ui/marketing/button';
 import { useCopy } from '@/hooks/use-copy';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { Check, Copy, GitBranch } from 'lucide-react';
 import { AnimatePresence, motion, useInView } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
-import { FOR_DEVELOPERS, type AuthorType, type Commit } from './section3-content';
+import { type AuthorType, type Commit, FOR_DEVELOPERS } from './section3-content';
 
 const { commits } = FOR_DEVELOPERS;
 
@@ -147,26 +148,17 @@ function CommitRow({ commit, fresh = false }: { commit: Commit; fresh?: boolean 
   );
 }
 
-const DEFAULT_INSTALL_HOST = 'kortix.com';
-
 function CloneBox() {
   const { copied, copy } = useCopy();
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
-
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
-
-  useEffect(() => {
-    setInstallHost(window.location.host);
-  }, []);
 
   return (
     <div className="border-border bg-background flex h-10 items-center gap-2 rounded-md border px-3 pr-1">
       <div className="flex min-w-0 flex-1 gap-3 overflow-hidden">
         <span className="text-foreground min-w-0 truncate font-mono text-xs select-all">
-          {installCmd}
+          {KORTIX_CLI_INSTALL_COMMAND}
         </span>
       </div>
-      <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
+      <Button size="icon-sm" variant="ghost" onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}>
         {copied ? (
           <Check className="text-kortix-green size-4" />
         ) : (

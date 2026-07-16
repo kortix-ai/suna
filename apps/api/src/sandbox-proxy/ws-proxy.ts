@@ -24,6 +24,7 @@
 
 import { authenticatePreviewPrincipal } from './preview-auth';
 import { resolvePreviewWsUpstream } from './routes/preview';
+import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 
 // opencode's internal port — its PTY WebSocket endpoint lives here, reachable
 // via a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
@@ -82,7 +83,8 @@ export async function preparePreviewWsUpgrade(
   // opencode PTY (and any other opencode endpoint) must reach opencode directly
   // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
   // proxied against the port the client addressed.
-  const upstreamPort = remainingPath.startsWith('/pty/') ? OPENCODE_INTERNAL_PORT : port;
+  const ptyKind = classifyPtyWebSocketPath(remainingPath);
+  const upstreamPort = ptyKind === 'opencode' ? OPENCODE_INTERNAL_PORT : port;
 
   // Strip our own auth token before forwarding — opencode authenticates via the
   // Daytona preview token header, not our query param.
@@ -111,13 +113,21 @@ export async function preparePreviewWsUpgrade(
   }
 }
 
-// WebSocket close codes are constrained: a server may only emit 1000 or
-// 3000–4999. Anything else (1006 abnormal, 1005 no-status, …) must be mapped.
-function sanitizeCloseCode(code: number | undefined): number {
-  if (typeof code !== 'number') return 1000;
-  if (code === 1000) return 1000;
-  if (code >= 3000 && code <= 4999) return code;
-  return 1000;
+// Preserve meaningful standard close codes, but never emit reserved wire-only
+// values (1005/1006) or an arbitrary invalid number.
+export function sanitizePreviewWsCloseCode(code: number | undefined): number {
+  // 1004/1005/1006/1015 are reserved and cannot be emitted on the wire. Keep
+  // every other standard close code intact so clients can distinguish a clean
+  // shell exit from an upstream restart/server failure. Unknown values use a
+  // stable application code instead of being disguised as a normal 1000 close.
+  if (
+    typeof code === 'number' &&
+    ((code >= 1000 && code <= 1014 && ![1004, 1005, 1006].includes(code)) ||
+      (code >= 3000 && code <= 4999))
+  ) {
+    return code;
+  }
+  return 4500;
 }
 
 // ── Byte-piping handlers, wired into Bun.serve's `websocket` config ──────────
@@ -156,11 +166,11 @@ export const previewWsHandlers = {
     };
 
     upstream.onclose = (ev: CloseEvent) => {
-      try { ws.close(sanitizeCloseCode(ev.code), (ev.reason || '').slice(0, 120)); } catch {}
+      try { ws.close(sanitizePreviewWsCloseCode(ev.code), (ev.reason || '').slice(0, 120)); } catch {}
     };
 
     upstream.onerror = () => {
-      try { ws.close(1011, 'upstream error'); } catch {}
+      try { ws.close(4502, 'upstream error'); } catch {}
     };
   },
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCopy } from '@/hooks/use-copy';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { Check, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -255,7 +256,6 @@ const PALETTE: { cmd: string; desc: string }[] = [
   { cmd: 'kortix cr open', desc: 'open a change request' },
 ];
 
-const DEFAULT_INSTALL_HOST = 'kortix.com';
 const INSTALL_CTA_MESSAGE =
   'Install the CLI to start an agent from your terminal, give it the right tools, and review every change before you merge.';
 
@@ -363,7 +363,6 @@ export function CliDemo() {
   const [scrollback, setScrollback] = useState<Block[]>([]);
   const [typed, setTyped] = useState('');
   const [isNote, setIsNote] = useState(false);
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
 
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
@@ -380,7 +379,7 @@ export function CliDemo() {
   const paletteItems = paletteOpen
     ? PALETTE.filter((p) => p.cmd.toLowerCase().includes(draft.slice(1).trim().toLowerCase()))
     : [];
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
+  const installCmd = KORTIX_CLI_INSTALL_COMMAND;
 
   useEffect(() => {
     const el = rootRef.current;
@@ -398,10 +397,6 @@ export function CliDemo() {
     const h = () => setReduced(m.matches);
     m.addEventListener('change', h);
     return () => m.removeEventListener('change', h);
-  }, []);
-
-  useEffect(() => {
-    setInstallHost(window.location.host);
   }, []);
 
   useEffect(() => {

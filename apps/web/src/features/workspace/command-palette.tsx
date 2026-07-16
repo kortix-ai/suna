@@ -30,7 +30,9 @@ import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { systemReload } from '@kortix/sdk/opencode-client';
@@ -89,6 +91,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
+import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
@@ -393,6 +396,7 @@ export function CommandPalette() {
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
+  const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
   const billingEnabled = isBillingEnabled();
 
   const { data: agents } = useOpenCodeAgents();
@@ -998,6 +1002,41 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
+  const handleTogglePanelMode = useCallback(() => {
+    close();
+    const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
+    track('panel_mode_switched', { to: nextMode });
+    useUserPreferencesStore.getState().togglePanelMode();
+  }, [close, panelMode]);
+
+  /**
+   * "Open Terminal" / "Open Audit" / "Open Browser" (Easy: the Easy panel's
+   * detail layer, Advanced: the panel's Terminal/Audit/Browser tab). The
+   * id-space-sensitive branching lives in `openSessionQuickView` — shared
+   * with the session header's terminal/browser buttons, so it can never
+   * drift between them.
+   */
+  const handleOpenQuickView = useCallback(
+    (view: 'terminal' | 'audit' | 'browser') => {
+      close();
+      openSessionQuickView(view, 'palette');
+    },
+    [close],
+  );
+
+  const handleOpenSessionTerminal = useCallback(
+    () => handleOpenQuickView('terminal'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionAudit = useCallback(
+    () => handleOpenQuickView('audit'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionBrowser = useCallback(
+    () => handleOpenQuickView('browser'),
+    [handleOpenQuickView],
+  );
+
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
       close();
@@ -1110,6 +1149,10 @@ export function CommandPalette() {
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
       toggleSidebar: handleToggleSidebar,
+      togglePanelMode: handleTogglePanelMode,
+      openSessionTerminal: handleOpenSessionTerminal,
+      openSessionAudit: handleOpenSessionAudit,
+      openSessionBrowser: handleOpenSessionBrowser,
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
@@ -1124,6 +1167,10 @@ export function CommandPalette() {
       handleViewChanges,
       handleInviteMembers,
       handleToggleSidebar,
+      handleTogglePanelMode,
+      handleOpenSessionTerminal,
+      handleOpenSessionAudit,
+      handleOpenSessionBrowser,
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
@@ -1494,6 +1541,7 @@ export function CommandPalette() {
                         {filteredNavItems.map((item) => {
                           const Icon = item.icon;
                           const isToggleSidebar = item.id === 'toggle-sidebar';
+                          const isTogglePanelMode = item.id === 'toggle-panel-mode';
                           const SidebarIcon = isToggleSidebar
                             ? sidebarOpen
                               ? PanelLeftClose
@@ -1503,7 +1551,11 @@ export function CommandPalette() {
                             ? sidebarOpen
                               ? 'Collapse Sidebar'
                               : 'Expand Sidebar'
-                            : item.label;
+                            : isTogglePanelMode
+                              ? panelMode === 'easy'
+                                ? 'Switch to Advanced View'
+                                : 'Switch to Easy View'
+                              : item.label;
                           const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
                           const isActiveWallpaper =
                             item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;
