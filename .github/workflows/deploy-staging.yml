@@ -217,9 +217,11 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
-  # Roll staging ECS Fargate (api + gateway) alongside the EKS deploy. The script
-  # skips gracefully until the staging ECS infra exists (Terraform greenfield), so
-  # this is safe to keep wired now and auto-activates the moment the services exist.
+  # Roll staging ECS Fargate (api + gateway) alongside the EKS deploy, stamping
+  # the same staging version string the EKS values pin carries (kortixVersion)
+  # so both backends report identical versions — the same parity rule prod
+  # enforces. deploy-web `needs:` this job, so a broken ECS staging deploy fails
+  # the staging rollout loudly instead of silently drifting the standby.
   deploy-ecs:
     name: Deploy API + gateway to staging (ECS Fargate)
     needs: [preflight, sync-secret, migrate-db]
@@ -231,6 +233,7 @@ jobs:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       SHA8: ${{ needs.preflight.outputs.sha8 }}
+      VERSION: ${{ needs.preflight.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -240,8 +243,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll staging ECS (api + gateway) from the staging-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}"
-          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway
+          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
 
   deploy-k8s:
     name: Deploy API and gateway to staging
@@ -395,6 +398,13 @@ jobs:
             exit 1
           fi
 
+          # DRIFT WARNING: this REST deploy REPLACES the staging Worker's
+          # bindings wholesale on every staging rollout — it re-asserts
+          # ACTIVE_BACKEND=eks and drops any GATEWAY_* vars a `wrangler deploy
+          # --env staging` (wrangler.toml says ecs-fargate) may have set. Live
+          # staging is therefore EKS-active BY THIS JOB. If staging is ever
+          # flipped to ECS-active like prod, change the binding here (and
+          # wrangler.toml) together, or the next staging deploy flips it back.
           metadata="$(jq -cn '{
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
@@ -432,7 +442,9 @@ jobs:
 
   deploy-web:
     name: Deploy staging web to Vercel
-    needs: [preflight, wire-cloudflare]
+    # deploy-ecs in needs = ECS/EKS parity gates the staging rollout the same way
+    # verify-live-version gates prod: a failed ECS roll can't pass silently.
+    needs: [preflight, wire-cloudflare, deploy-ecs]
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

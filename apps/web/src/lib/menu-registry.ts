@@ -100,6 +100,7 @@ export type MenuItemKind =
 
 export type SettingsTabId =
   | 'general'
+  | 'security'
   | 'appearance'
   | 'sounds'
   | 'notifications'

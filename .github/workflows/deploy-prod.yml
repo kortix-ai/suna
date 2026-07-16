@@ -7,17 +7,32 @@ name: Deploy Prod
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
-#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds).
-#   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
+#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
+#      self-host `:stable` channel is promoted SEPARATELY and manually via
+#      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
+#   2. Deploy BOTH prod backends in parallel, with perfect parity:
+#      - ECS Fargate (the ACTIVE backend behind api.kortix.com since PR #4683):
+#        deploy-ecs rolls api + gateway task-defs rendered from the prod env
+#        blob, stamped with the clean KORTIX_VERSION.
+#      - EKS (standby): the promote PR merge already bumped infra/k8s/envs/prod,
+#        so Argo CD rolls the prod Deployment — deploy-api WATCHES it reach vX.Y.Z.
+#   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
+#      asserts the live reported version == X.Y.Z. Nothing that announces
+#      success — the GitHub Release, the Slack announce, the banner-lower — runs
+#      unless BOTH deploys succeeded AND the public API demonstrably serves the
+#      released version. A failed ECS or EKS deploy fails the whole release,
+#      loudly (learned the hard way: v0.10.0/v0.10.1 announced while deploy-ecs
+#      failed on IAM and prod kept serving the old version).
+#   4. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
-#   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
-#      Argo CD rolls the prod Deployment — this job WATCHES it reach vX.Y.Z and
-#      announces to Slack.
-#   4. Deploy the prod frontend on Vercel (the `prod` branch → kortix.com).
+#   5. Deploy the prod frontend on Vercel (the `prod` branch → kortix.com).
 #
-# The prod stack is api.kortix.com → EKS + kortix.com (Vercel). api.kortix.com is
-# a Cloudflare Worker (infra/cloudflare/workers/api-router) routing to api-eks.
-# EKS rolls via Argo CD GitOps.
+# The prod stack is api.kortix.com + gateway.kortix.com → a Cloudflare Worker
+# (infra/cloudflare/workers/api-router) whose ACTIVE_BACKEND / GATEWAY_ACTIVE_BACKEND
+# vars pick the origin: ECS Fargate (api-ecs-fargate / gateway-ecs-fargate,
+# ACTIVE) or EKS (api-eks / gateway-eks, standby). Both backends are ALWAYS
+# deployed on every release so the flip stays instant and safe, plus kortix.com
+# on Vercel.
 
 on:
   push:
@@ -162,7 +177,12 @@ jobs:
               echo "::error::$IMAGE: no staging/dev image is published for this release source."
               exit 1
             fi
-            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + $IMAGE:latest"
+            # A prod release publishes :X.Y.Z + :latest only. The self-host
+            # `:stable` channel — the tag self-hosted boxes auto-update to — is
+            # CURATED, not automatic: a human promotes a proven version to
+            # :stable via the "Promote Self-Host Stable" workflow (promote-self-host-stable.yml).
+            # Released != auto-shipped to every self-hosted customer overnight.
+            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + :latest"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
@@ -474,15 +494,19 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # Cut the release as soon as the CLI + images are ready — it does NOT wait on
-  # desktop. Desktop builds on slow, scarce, signed macOS/Windows runners that
-  # can get stuck queued for ~50min (or fail on a cert problem); waiting on them
-  # would block every release. Desktop installers are attached afterward by the
-  # separate `attach-desktop` job, best-effort. So a desktop problem can never
-  # delay or block the API/frontend/CLI release.
+  # HARD-GATED on both backend deploys (deploy-ecs = the ACTIVE backend, and
+  # deploy-api = the EKS standby) AND on verify-live-version proving the public
+  # endpoints serve exactly X.Y.Z. The vX.Y.Z tag + Release are the public
+  # announcement — they must never exist for a version prod isn't running
+  # (v0.10.0/v0.10.1 shipped Releases while deploy-ecs failed on IAM and
+  # api.kortix.com kept serving the old build; that is now impossible).
+  # It still does NOT wait on desktop: desktop builds on slow, scarce, signed
+  # macOS/Windows runners that can get stuck queued for ~50min (or fail on a cert
+  # problem). Desktop installers are attached afterward by the separate
+  # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli]
+    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -649,17 +673,22 @@ jobs:
           fi
           bun packages/db/scripts/verify-live-schema.ts
 
-  # ── Deploy API to prod (EKS / Argo CD GitOps) ───────────────────────────────
-  # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
-  # + kortixVersion), so Argo CD on the prod-eks cluster rolls the Deployment.
-  # This job WATCHES that roll finish on exactly :VERSION, then announces to Slack.
-  # kortixVersion comes from the values bump, so /v1/health reports the clean
-  # X.Y.Z — no task-def version stamping like the old ECS roll needed.
-  # Roll prod ECS Fargate (api + gateway) to the release image, keeping it current
-  # alongside EKS. The script skips gracefully until the prod ECS gateway infra
-  # exists, and keeps each service's task-def current WITHOUT changing its desired
-  # count — so prod ECS stays a scaled-to-zero standby (no extra cost) until the
-  # gated prod traffic flip deliberately scales it up. Deploy ≠ flip.
+  # ── Deploy API + gateway to prod ECS Fargate (the ACTIVE backend) ───────────
+  # api.kortix.com and gateway.kortix.com are served by ECS Fargate (the
+  # Cloudflare api-router's ACTIVE_BACKEND / GATEWAY_ACTIVE_BACKEND = ecs-fargate
+  # since PR #4683); EKS is the standby. This job rolls both prod ECS services to
+  # the release image with task-defs rendered fresh from the kortix-prod-env
+  # Secrets Manager blob (the same blob external-secrets syncs into EKS), and
+  # stamps KORTIX_VERSION=<X.Y.Z> so /v1/health reports the clean released
+  # version — release images are retagged staging manifests, so without the
+  # stamp ECS would report the baked staging string (that is exactly how prod
+  # "served" 0.9.109-staging.* after the v0.10.x announces). It does NOT change
+  # desired counts — Terraform/autoscaling own capacity; deploy ≠ flip.
+  #
+  # HARD GATE: this job is `needs`-upstream of verify-live-version and therefore
+  # of the GitHub Release, the Slack announce, and the banner-lower. A failed
+  # ECS deploy fails the release — never again a release announced while the
+  # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
     needs: [version, retag-images, migrate-db]
@@ -680,9 +709,18 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll prod ECS (api + gateway) from the prod-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}"
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}"
 
+  # ── Deploy API to prod EKS (the standby backend, kept in perfect parity) ─────
+  # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
+  # + kortixVersion), so Argo CD on the prod-eks cluster rolls the Deployment.
+  # This job WATCHES that roll finish on exactly :VERSION. kortixVersion comes
+  # from the values bump, so /v1/health reports the clean X.Y.Z — matching the
+  # KORTIX_VERSION stamp deploy-ecs puts on the active backend. EKS is the
+  # standby, but it HARD-GATES the release exactly like ECS (via
+  # verify-live-version → github-release/announce/banner-off): a standby that
+  # silently drifts is worthless the day you need the flip.
   deploy-api:
     name: Deploy API to prod (EKS / GitOps)
     needs: [version, retag-images, migrate-db]
@@ -696,7 +734,6 @@ jobs:
       NAMESPACE: kortix-prod
       APP: kortix-api
       ARGO_APP: kortix-prod
-      API_HOST: api-eks.kortix.com
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
       - name: Configure AWS credentials (OIDC)
@@ -778,101 +815,8 @@ jobs:
             fi
             sleep 15
           done
-          echo "::error::Deployment did not roll out to :${VERSION} within ~20m (stuck or pods never became Ready). No release announcement sent."
+          echo "::error::Deployment did not roll out to :${VERSION} within ~20m (stuck or pods never became Ready). Release blocked — nothing is announced."
           exit 1
-
-      # Source the truth from the running service (the commit field we bake in).
-      - name: Read live /v1/health
-        if: steps.guard.outputs.exists == 'true' && steps.wait.outputs.deployed == 'true'
-        id: health
-        run: |
-          set -uo pipefail
-          h="$(curl -s --max-time 10 "https://${API_HOST}/v1/health" || true)"
-          echo "commit=$(printf '%s' "$h" | jq -r '.commit // ""' 2>/dev/null)" >> "$GITHUB_OUTPUT"
-
-      - name: Announce to Slack
-        if: steps.guard.outputs.exists == 'true' && steps.wait.outputs.deployed == 'true'
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_RELEASE_CHANNEL: ${{ secrets.SLACK_RELEASE_CHANNEL }}
-          VERSION: ${{ needs.version.outputs.version }}
-          TAG: ${{ needs.version.outputs.tag }}
-          TITLE: ${{ needs.version.outputs.title }}
-          NOTES: ${{ needs.version.outputs.notes }}
-          META_SHA: ${{ needs.version.outputs.source_sha }}
-          LIVE_COMMIT: ${{ steps.health.outputs.commit }}
-          ACTOR: ${{ github.actor }}
-          REPO: ${{ github.repository }}
-          SERVER: ${{ github.server_url }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -uo pipefail
-          if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_RELEASE_CHANNEL:-}" ]; then
-            echo "::notice::SLACK_BOT_TOKEN / SLACK_RELEASE_CHANNEL not set — skipping Slack."
-            exit 0
-          fi
-
-          # Prefer the commit actually serving (/v1/health); fall back to the
-          # promoted source SHA. Truncate notes to a Slack-safe length.
-          SHA="${LIVE_COMMIT:-$META_SHA}"
-          SHA8="${SHA:0:8}"
-          [ -n "$SHA8" ] || SHA8="unknown"
-          NOTES="$(printf '%s' "${NOTES:-}" | head -c 1200)"
-          REL_URL="${SERVER}/${REPO}/releases/tag/${TAG}"
-          COMMIT_URL="${SERVER}/${REPO}/commit/${SHA}"
-
-          payload="$(jq -n \
-            --arg channel "$SLACK_RELEASE_CHANNEL" \
-            --arg header "🚀 Kortix ${TAG} is live (EKS)" \
-            --arg title "${TITLE:-Release $TAG}" \
-            --arg notes "${NOTES:-}" \
-            --arg version "$VERSION" \
-            --arg sha8 "$SHA8" \
-            --arg commit_url "$COMMIT_URL" \
-            --arg actor "$ACTOR" \
-            --arg rel_url "$REL_URL" \
-            --arg run_url "$RUN_URL" \
-            '{
-              channel: $channel,
-              text: $header,
-              blocks: [
-                { type:"header", text:{ type:"plain_text", text:$header, emoji:true } },
-                ( { type:"section", text:{ type:"mrkdwn",
-                    text: ("*" + $title + "*" + (if $notes == "" then "" else ("\n" + $notes) end)) } } ),
-                { type:"section", fields: [
-                  { type:"mrkdwn", text: ("*Version*\n`" + $version + "`") },
-                  { type:"mrkdwn", text: ("*Commit*\n<" + $commit_url + "|`" + $sha8 + "`>") },
-                  { type:"mrkdwn", text: ("*Released by*\n" + $actor) },
-                  { type:"mrkdwn", text: "*Where*\nEKS (Argo CD) · CLI · Desktop · Web" }
-                ]},
-                { type:"actions", elements: [
-                  { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
-                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
-                  { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
-                ]}
-              ]
-            }')"
-
-          for attempt in 1 2 3 4 5; do
-            resp="$(curl -sS --max-time 30 \
-              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
-              -H "Content-type: application/json; charset=utf-8" \
-              --data "$payload" \
-              https://slack.com/api/chat.postMessage || true)"
-            ok="$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)"
-            if [ "$ok" = "true" ]; then
-              echo "✓ Slack notified (${SLACK_RELEASE_CHANNEL})"; exit 0
-            fi
-            err="$(printf '%s' "$resp" | jq -r '.error // "no_response"' 2>/dev/null || echo no_response)"
-            echo "::warning::Slack attempt ${attempt}/5 failed: ${err}"
-            case "$err" in
-              invalid_auth|not_authed|account_inactive|token_revoked|channel_not_found|not_in_channel|is_archived|missing_scope)
-                echo "::error::Slack permanent error '${err}'. Check SLACK_BOT_TOKEN (xoxb + chat:write), SLACK_RELEASE_CHANNEL (channel ID), and that the bot is invited to the channel."
-                exit 1 ;;
-            esac
-            sleep $((attempt * 3))
-          done
-          echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
 
   # ── Deploy gateway to prod (EKS / Argo CD GitOps) ───────────────────────────
   # The promote PR merge bumped infra/k8s/envs/prod/gateway-values.yaml image.tag,
@@ -980,6 +924,194 @@ jobs:
             sleep 15
           done
           echo "::warning::gateway did not roll out to :${VERSION} within ~20m (Argo lag, or kortix-gateway-prod not yet tracking the prod values)."
+
+  # ── Verify the release is ACTUALLY live on the public endpoints ──────────────
+  # The backstop that catches ANY deploy/routing divergence regardless of cause:
+  # curls the PUBLIC hosts (the Cloudflare api-router = whatever backend is
+  # ACTIVE) plus each backend origin directly, and asserts the reported version
+  # equals the released X.Y.Z within a ~5 min retry window.
+  #
+  #   HARD (unreachable OR wrong version ⇒ release fails):
+  #     api.kortix.com/v1/health          — the public API, via the router
+  #     gateway.kortix.com/health/live    — the public gateway, via the router
+  #   ORIGIN (wrong version ⇒ fails; unreachable ⇒ warns — a standby origin may
+  #   be deliberately dark, but if it speaks it must speak the released version):
+  #     api-ecs-fargate.kortix.com / api-eks.kortix.com
+  #     gateway-ecs-fargate.kortix.com / gateway-eks.kortix.com
+  #
+  # Everything that announces success (github-release, announce, banner-off)
+  # needs: this job — a release whose live version doesn't match can no longer
+  # be published. This is what would have caught the v0.10.0/v0.10.1 night, where
+  # deploy-ecs failed twice while the release went out and api.kortix.com (ECS
+  # active) kept serving the previous build.
+  verify-live-version:
+    name: Verify live version == v${{ needs.version.outputs.version }}
+    needs: [version, deploy-ecs, deploy-api, deploy-gateway]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Assert public + origin endpoints report v${{ needs.version.outputs.version }}
+        run: |
+          set -uo pipefail
+
+          # name|url|kind  (kind: required = public router host, origin = direct backend)
+          ENDPOINTS=(
+            "router-api|https://api.kortix.com/v1/health|required"
+            "router-gateway|https://gateway.kortix.com/health/live|required"
+            "origin-api-ecs|https://api-ecs-fargate.kortix.com/v1/health|origin"
+            "origin-api-eks|https://api-eks.kortix.com/v1/health|origin"
+            "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin"
+            "origin-gateway-eks|https://gateway-eks.kortix.com/health/live|origin"
+          )
+
+          declare -A live
+          # ~5 min window: 20 polls, 15s apart. Retries absorb router/DNS/ALB
+          # propagation and the last pods draining; a real mismatch stays a mismatch.
+          for attempt in $(seq 1 20); do
+            all_ok=1
+            for e in "${ENDPOINTS[@]}"; do
+              IFS='|' read -r name url kind <<< "$e"
+              v="$(curl -fsS --max-time 10 "$url" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+              live[$name]="$v"
+              if [ "$v" = "$VERSION" ]; then
+                echo "($attempt/20) ✓ $name  $v"
+              else
+                echo "($attempt/20) … $name  ${v:-<unreachable>}"
+                all_ok=0
+              fi
+            done
+            if [ "$all_ok" = 1 ]; then
+              echo "✅ every endpoint reports v${VERSION} — release is live on both backends."
+              exit 0
+            fi
+            sleep 15
+          done
+
+          # Deadline: classify what's still off.
+          fail=0
+          for e in "${ENDPOINTS[@]}"; do
+            IFS='|' read -r name url kind <<< "$e"
+            v="${live[$name]:-}"
+            if [ "$v" = "$VERSION" ]; then
+              continue
+            elif [ -z "$v" ]; then
+              if [ "$kind" = "required" ]; then
+                echo "::error::$name ($url) is unreachable — the PUBLIC endpoint must serve the release. Release blocked."
+                fail=1
+              else
+                echo "::warning::$name ($url) is unreachable — tolerated for a direct origin (dark standby), but check it."
+              fi
+            else
+              echo "::error::$name ($url) reports '$v', expected '$VERSION' — a backend is serving the WRONG version. Release blocked."
+              fail=1
+            fi
+          done
+          if [ "$fail" = 1 ]; then
+            echo "::error::Live version verification failed after ~5m. Nothing will be announced; fix the deploy and re-run this workflow."
+            exit 1
+          fi
+          echo "✅ public endpoints report v${VERSION} (some dark origins warned above)."
+
+  # ── Announce to Slack — ONLY after the release is verifiably live ────────────
+  # Moved out of deploy-api (which announced as soon as EKS rolled — even when
+  # ECS, the ACTIVE backend, had failed). Now gated on verify-live-version AND
+  # github-release, so the message links a release that exists and describes a
+  # version the public API demonstrably serves.
+  announce:
+    name: Announce release to Slack
+    needs: [version, github-release, verify-live-version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read live /v1/health (public router — the serving backend)
+        id: health
+        run: |
+          set -uo pipefail
+          h="$(curl -s --max-time 10 "https://api.kortix.com/v1/health" || true)"
+          echo "commit=$(printf '%s' "$h" | jq -r '.commit // ""' 2>/dev/null)" >> "$GITHUB_OUTPUT"
+
+      - name: Announce to Slack
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_RELEASE_CHANNEL: ${{ secrets.SLACK_RELEASE_CHANNEL }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          TITLE: ${{ needs.version.outputs.title }}
+          NOTES: ${{ needs.version.outputs.notes }}
+          META_SHA: ${{ needs.version.outputs.source_sha }}
+          LIVE_COMMIT: ${{ steps.health.outputs.commit }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_RELEASE_CHANNEL:-}" ]; then
+            echo "::notice::SLACK_BOT_TOKEN / SLACK_RELEASE_CHANNEL not set — skipping Slack."
+            exit 0
+          fi
+
+          # Prefer the commit actually serving (/v1/health); fall back to the
+          # promoted source SHA. Truncate notes to a Slack-safe length.
+          SHA="${LIVE_COMMIT:-$META_SHA}"
+          SHA8="${SHA:0:8}"
+          [ -n "$SHA8" ] || SHA8="unknown"
+          NOTES="$(printf '%s' "${NOTES:-}" | head -c 1200)"
+          REL_URL="${SERVER}/${REPO}/releases/tag/${TAG}"
+          COMMIT_URL="${SERVER}/${REPO}/commit/${SHA}"
+
+          payload="$(jq -n \
+            --arg channel "$SLACK_RELEASE_CHANNEL" \
+            --arg header "🚀 Kortix ${TAG} is live (verified on api.kortix.com)" \
+            --arg title "${TITLE:-Release $TAG}" \
+            --arg notes "${NOTES:-}" \
+            --arg version "$VERSION" \
+            --arg sha8 "$SHA8" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg actor "$ACTOR" \
+            --arg rel_url "$REL_URL" \
+            --arg run_url "$RUN_URL" \
+            '{
+              channel: $channel,
+              text: $header,
+              blocks: [
+                { type:"header", text:{ type:"plain_text", text:$header, emoji:true } },
+                ( { type:"section", text:{ type:"mrkdwn",
+                    text: ("*" + $title + "*" + (if $notes == "" then "" else ("\n" + $notes) end)) } } ),
+                { type:"section", fields: [
+                  { type:"mrkdwn", text: ("*Version*\n`" + $version + "`") },
+                  { type:"mrkdwn", text: ("*Commit*\n<" + $commit_url + "|`" + $sha8 + "`>") },
+                  { type:"mrkdwn", text: ("*Released by*\n" + $actor) },
+                  { type:"mrkdwn", text: "*Where*\nECS Fargate (active) + EKS (standby) · CLI · Desktop · Web" }
+                ]},
+                { type:"actions", elements: [
+                  { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
+                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
+                  { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
+                ]}
+              ]
+            }')"
+
+          for attempt in 1 2 3 4 5; do
+            resp="$(curl -sS --max-time 30 \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+              -H "Content-type: application/json; charset=utf-8" \
+              --data "$payload" \
+              https://slack.com/api/chat.postMessage || true)"
+            ok="$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)"
+            if [ "$ok" = "true" ]; then
+              echo "✓ Slack notified (${SLACK_RELEASE_CHANNEL})"; exit 0
+            fi
+            err="$(printf '%s' "$resp" | jq -r '.error // "no_response"' 2>/dev/null || echo no_response)"
+            echo "::warning::Slack attempt ${attempt}/5 failed: ${err}"
+            case "$err" in
+              invalid_auth|not_authed|account_inactive|token_revoked|channel_not_found|not_in_channel|is_archived|missing_scope)
+                echo "::error::Slack permanent error '${err}'. Check SLACK_BOT_TOKEN (xoxb + chat:write), SLACK_RELEASE_CHANNEL (channel ID), and that the bot is invited to the channel."
+                exit 1 ;;
+            esac
+            sleep $((attempt * 3))
+          done
+          echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
 
   # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
   # No job here: the Vercel project is git-connected and auto-deploys the `prod`
@@ -1100,16 +1232,17 @@ jobs:
             || true
 
   # ── Lower the "release in progress" banner — ONLY when the rollout is green ───
-  # `needs: deploy-api` with the default `if: success()` means this runs only
-  # after the API has rolled out to the new version AND passed its health gate
-  # (deploy-api hard-fails otherwise). migrate-db is upstream of deploy-api, so a
-  # failed migration also keeps the banner up. If the rollout fails, this job is
-  # skipped and the critical banner stays raised — deliberately, so users keep
-  # seeing it until an admin clears or escalates it from the console. Best-effort
-  # and non-clobbering: only clears the banner if it is still OUR rollout banner.
+  # `needs: verify-live-version` with the default `if: success()` means this runs
+  # only after BOTH backends deployed (deploy-ecs + deploy-api are upstream of
+  # verify-live-version, and migrate-db is upstream of those) AND the public
+  # endpoints verifiably serve the released version. If any of that fails, this
+  # job is skipped and the critical banner stays raised — deliberately, so users
+  # keep seeing it until an admin clears or escalates it from the console.
+  # Best-effort and non-clobbering: only clears the banner if it is still OUR
+  # rollout banner.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [deploy-api]
+    needs: [verify-live-version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

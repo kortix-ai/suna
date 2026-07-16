@@ -45,10 +45,19 @@ export function parseManagedModels(
   return models;
 }
 
-/** API/control-plane managed model overlay used by runtime routing and catalog responses. */
-export const RUNTIME_MANAGED_MODELS: readonly ManagedModel[] = parseManagedModels(
-  config.LLM_GATEWAY_MANAGED_MODELS,
-);
+/**
+ * API/control-plane managed model overlay used by runtime routing and catalog
+ * responses. CLOUD-ONLY: empty whenever KORTIX_MANAGED_PROVIDER_ENABLED is off
+ * (the self-host default) — a self-host operator brings their own LLM keys and
+ * must never see or route to Kortix's shared Bedrock/OpenRouter credentials.
+ * This is the single choke point: every consumer (the served model catalog,
+ * the picker, and request-time routing) reads through here or getRuntimeManagedModel()
+ * below, so gating it here alone keeps the managed lineup off everywhere.
+ */
+export const RUNTIME_MANAGED_MODELS: readonly ManagedModel[] =
+  config.KORTIX_MANAGED_PROVIDER_ENABLED
+    ? parseManagedModels(config.LLM_GATEWAY_MANAGED_MODELS)
+    : [];
 
 const MANAGED_BY_ID = new Map(RUNTIME_MANAGED_MODELS.map((model) => [model.id, model] as const));
 

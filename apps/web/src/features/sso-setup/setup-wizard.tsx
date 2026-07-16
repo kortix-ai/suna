@@ -18,9 +18,11 @@ import {
   Copy,
   ExternalLink,
   KeyRound,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
+  Users,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -30,28 +32,32 @@ import { useEffect, useMemo, useState } from 'react';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing/use-account-state';
-import { cn } from '@/lib/utils';
 import { getEnv } from '@/lib/env-config';
 import {
   type CreatedScimToken,
   createScimToken,
   getSsoProvider,
   importSsoProviderFromMetadata,
+  listGroups,
 } from '@/lib/iam-client';
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 import { buildScimBaseUrl } from '@/lib/scim-url';
+import { cn } from '@/lib/utils';
+import { listAccountMembers } from '@kortix/sdk/projects-client';
 import {
   type GuideStep,
+  PROVIDER_GUIDES,
   type ProviderConfig,
   type ProviderGuide,
-  PROVIDER_GUIDES,
   SCIM_PROVIDER_GUIDES,
+  type StepSchematic,
   getProviderGuide,
   getScimGuide,
 } from './guides';
@@ -179,21 +185,85 @@ function InstructionText({ text }: { text: string }) {
 }
 
 /**
- * Console screenshot for a guide step. Hides itself until the asset exists
- * (guides can declare image blocks before the capture run lands the PNGs) —
- * a broken-image frame would read as a bug.
+ * Schematic stand-in for a console screenshot — OUR OWN styled panel (never a
+ * copy of a vendor's screenshot) rendering the step's `schematic` data: a
+ * title bar naming the console + click path, then labeled rows shaped like
+ * the field/button/badge they represent. This is the DEFAULT rendering for a
+ * screenshot slot that hasn't landed yet; a real screenshot silently takes
+ * over the moment its file exists (see StepFigure below).
  */
-function GuideImage({ src, alt }: { src: string; alt: string }) {
-  const [missing, setMissing] = useState(false);
-  if (missing) return null;
+function SchematicPanel({ schematic }: { schematic: StepSchematic }) {
   return (
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      onError={() => setMissing(true)}
-      className="border-border/60 w-full rounded-md border"
-    />
+    <div className="border-border/60 bg-popover w-full overflow-hidden rounded-md border">
+      <div className="border-border/60 bg-muted/30 border-b px-3 py-2">
+        <p className="text-muted-foreground truncate text-xs font-medium">{schematic.title}</p>
+      </div>
+      <div className="divide-border/40 divide-y">
+        {schematic.rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
+          >
+            <span className="text-muted-foreground min-w-0 truncate text-xs">{row.label}</span>
+            {row.as === 'button' ? (
+              <span className="border-border/70 bg-secondary text-foreground shrink-0 rounded px-2 py-0.5 text-xs font-medium">
+                {row.value ?? row.label}
+              </span>
+            ) : row.as === 'badge' ? (
+              <Badge variant="outline" size="xs" className="shrink-0">
+                {row.value ?? row.label}
+              </Badge>
+            ) : row.value ? (
+              <code className="bg-muted/50 min-w-0 max-w-[60%] truncate rounded px-1.5 py-0.5 font-mono text-xs">
+                {row.value}
+              </code>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Console screenshot for a guide step. Guides can declare image slots before
+ * the capture run lands the PNGs — instead of a broken-image frame (looks
+ * like a bug) or rendering nothing (looks like the step is incomplete), a
+ * missing asset falls back to a schematic (when the guide provides one) or a
+ * labeled placeholder, so the admin always sees SOMETHING useful and can
+ * still read the alt text describing what the real screenshot would show.
+ */
+function StepFigure({
+  src,
+  alt,
+  schematic,
+}: {
+  src: string;
+  alt: string;
+  schematic?: StepSchematic;
+}) {
+  const [missing, setMissing] = useState(false);
+  return (
+    <figure className="space-y-1">
+      {missing ? (
+        schematic ? (
+          <SchematicPanel schematic={schematic} />
+        ) : (
+          <div className="border-border/60 bg-muted/30 text-muted-foreground flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 text-center text-xs">
+            <span className="font-medium">Screenshot coming</span>
+            <span className="text-muted-foreground/80">{alt}</span>
+          </div>
+        )
+      ) : (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          onError={() => setMissing(true)}
+          className="border-border/60 w-full rounded-md border"
+        />
+      )}
+    </figure>
   );
 }
 
@@ -348,8 +418,8 @@ function ProviderSelect({
               </Button>
             }
           >
-            Directory Sync provisions accounts, but without SSO those users have no way to sign
-            in. Connecting SAML first is strongly recommended.
+            Directory Sync provisions accounts, but without SSO those users have no way to sign in.
+            Connecting SAML first is strongly recommended.
           </InfoBanner>
         </div>
       )}
@@ -425,8 +495,7 @@ function MetadataInputStep({
   }, [accountId, providerId]);
 
   const value = mode === 'url' ? url : xml;
-  const ready =
-    mode === 'url' ? /^https?:\/\/.+/i.test(url.trim()) : xml.trim().length > 40;
+  const ready = mode === 'url' ? /^https?:\/\/.+/i.test(url.trim()) : xml.trim().length > 40;
 
   const persist = (kind: 'url' | 'xml', v: string) =>
     saveMetadataStash(accountId, providerId, { kind, value: v.trim() });
@@ -461,7 +530,9 @@ function MetadataInputStep({
       </div>
 
       <div className="border-border/60 bg-popover space-y-1.5 rounded-md border p-4">
-        <Label>{mode === 'url' ? 'Identity provider metadata URL' : 'Identity provider metadata XML'}</Label>
+        <Label>
+          {mode === 'url' ? 'Identity provider metadata URL' : 'Identity provider metadata XML'}
+        </Label>
         {mode === 'url' ? (
           <Input
             value={url}
@@ -494,7 +565,9 @@ function MetadataInputStep({
               ready ? 'bg-kortix-green/15' : 'bg-muted',
             )}
           >
-            <Check className={cn('size-3.5', ready ? 'text-kortix-green' : 'text-muted-foreground')} />
+            <Check
+              className={cn('size-3.5', ready ? 'text-kortix-green' : 'text-muted-foreground')}
+            />
           </span>
           <span className="text-foreground truncate text-sm">{doneLabel}</span>
         </span>
@@ -532,11 +605,21 @@ function ImportForm({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  // The current admin's own email domain — if they route it to the IdP and
+  // aren't ALSO the identity that comes back from that IdP, they can lock
+  // themselves out or (worse) silently land signed in as someone else via
+  // IdP session reuse. Warn before that surprises anyone.
+  const adminEmailDomain = user?.email?.split('@')[1]?.trim().toLowerCase() || null;
   const [name, setName] = useState(providerName);
   const [domain, setDomain] = useState('');
   const [claim, setClaim] = useState(config.groupClaimName);
   const [autoCreate, setAutoCreate] = useState(true);
-  const [autoProvision, setAutoProvision] = useState(false);
+  // Default ON: connecting an IdP should make its groups appear in Kortix
+  // without hand-mapping each claim — the admin just attaches project roles.
+  // (Groups auto-created this way are source='sso' and never annex manual
+  // groups; the toggle stays for admins who want mapping-only.)
+  const [autoProvision, setAutoProvision] = useState(true);
   // Default to the form this IdP actually hands out (Google: XML only).
   const [metaKind, setMetaKind] = useState<'url' | 'xml'>(config.preferredMetadata ?? 'url');
   const [metaUrl, setMetaUrl] = useState('');
@@ -559,7 +642,9 @@ function ImportForm({
         group_claim_name: claim.trim() || config.groupClaimName,
         auto_create_members: autoCreate,
         auto_provision_groups: autoProvision,
-        ...(metaKind === 'xml' ? { metadata_xml: metaXml.trim() } : { metadata_url: metaUrl.trim() }),
+        ...(metaKind === 'xml'
+          ? { metadata_xml: metaXml.trim() }
+          : { metadata_url: metaUrl.trim() }),
       }),
     onSuccess: () => {
       successToast('Identity provider connected');
@@ -588,7 +673,11 @@ function ImportForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label>Display name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} disabled={mutation.isPending} />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={mutation.isPending}
+          />
         </div>
         <div className="space-y-1.5">
           <Label>Primary email domain</Label>
@@ -598,6 +687,17 @@ function ImportForm({
             placeholder="acme.com"
             disabled={mutation.isPending}
           />
+          <p className="text-muted-foreground text-xs">
+            Every sign-in from this domain is routed to this identity provider instead of password
+            login — only add a domain your IdP actually controls. Users on other domains are
+            unaffected.
+          </p>
+          {adminEmailDomain && domain.trim().toLowerCase() === adminEmailDomain && (
+            <p className="text-kortix-yellow text-xs">
+              This is your own email domain — saving this will route YOUR next sign-in to the IdP
+              too. Make sure your account exists there before you continue.
+            </p>
+          )}
         </div>
       </div>
 
@@ -704,28 +804,34 @@ function ImportForm({
 }
 
 // ─── Directory Sync: inline token mint ─────────────────────────────────────
+//
+// The minted token/tenant URL are lifted to WizardCore (not local state here)
+// so they survive navigating to later steps — a persistent values panel
+// (ScimValuesPanel below) then keeps both visible on every remaining Entra
+// step, instead of vanishing the moment you click Continue.
 
 function ScimTokenStep({
   accountId,
   providerName,
+  tenantUrl,
+  minted,
+  onMinted,
   onDone,
 }: {
   accountId: string;
   providerName: string;
+  tenantUrl: string;
+  minted: CreatedScimToken | null;
+  onMinted: (token: CreatedScimToken) => void;
   onDone: () => void;
 }) {
   const [name, setName] = useState(`${providerName} provisioning`);
-  const [minted, setMinted] = useState<CreatedScimToken | null>(null);
-  const tenantUrl = useMemo(
-    () => buildScimBaseUrl(accountId, getEnv().BACKEND_URL),
-    [accountId],
-  );
 
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
     onSuccess: (token) => {
-      setMinted(token);
-      successToast('SCIM token minted — copy it now');
+      onMinted(token);
+      successToast('SCIM token minted — both values stay visible for the rest of this setup');
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to mint the token'),
   });
@@ -742,12 +848,14 @@ function ScimTokenStep({
       {minted ? (
         <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
           <CopyRow label="Secret token" value={minted.secret} />
-          <p className="text-kortix-orange text-xs">
-            Shown once — after you leave this step only the prefix ({minted.public_prefix}) is
-            visible. Manage or revoke it from the SCIM card in settings.
+          <p className="text-muted-foreground text-xs">
+            Both values stay pinned in the panel on this page through the rest of setup — you can
+            switch steps without losing them. The secret itself is only ever shown during this
+            visit; if you leave and come back later only the prefix ({minted.public_prefix}) is
+            visible, and you'd mint a new token from the SCIM card in Settings.
           </p>
           <Button onClick={onDone}>
-            I’ve copied both values
+            Continue to Entra
             <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
           </Button>
         </div>
@@ -755,7 +863,11 @@ function ScimTokenStep({
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-56 space-y-1.5">
             <Label>Token name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={mutation.isPending} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={mutation.isPending}
+            />
           </div>
           <Button
             onClick={() => mutation.mutate()}
@@ -775,6 +887,125 @@ function ScimTokenStep({
   );
 }
 
+/**
+ * Persistent "your values" panel — pinned above the step content on every
+ * Entra-side SCIM step once the token is minted. Fixes the #1 complaint
+ * about this wizard: the Tenant URL + secret token were only ever visible on
+ * the one step where you minted them, so by the time you reached the Entra
+ * screen that needed them, you were copy-pasting from memory or scrollback.
+ * Hidden on the mint step itself (ScimTokenStep already shows these same
+ * rows there) and once the wizard is finished (the page navigates away).
+ */
+function ScimValuesPanel({
+  tenantUrl,
+  minted,
+}: {
+  tenantUrl: string;
+  minted: CreatedScimToken | null;
+}) {
+  return (
+    <div className="border-border/70 bg-popover space-y-3 rounded-md border p-4">
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+        <KeyRound className="size-3.5 shrink-0" />
+        Your values — keep this open while you configure your identity provider
+      </p>
+      <CopyRow label="Tenant URL" value={tenantUrl} />
+      {minted ? (
+        <CopyRow label="Secret token" value={minted.secret} />
+      ) : (
+        <p className="text-muted-foreground text-xs">
+          Secret token not minted yet — go back to "Mint a SCIM token" to create it.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Live status for the verify step — polls the account's existing member and
+ * group lists (no new API surface) so an admin watching Entra's provisioning
+ * run doesn't have to tab back and forth to see whether anything landed.
+ * SCIM-provisioned groups are already tagged `source: 'scim'` by the groups
+ * API; there is no equivalent per-member tag today, so member count is
+ * reported for the whole account (framed honestly below) while the
+ * SCIM-group figures are exact.
+ */
+function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
+  const membersQuery = useQuery({
+    queryKey: ['scim-verify-members', accountId],
+    queryFn: () => listAccountMembers(accountId),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['scim-verify-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
+
+  const scimGroups = (groupsQuery.data ?? []).filter((g) => g.source === 'scim');
+  const scimMemberCount = scimGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
+  const totalMembers = membersQuery.data?.length ?? null;
+  const isLoading = membersQuery.isLoading || groupsQuery.isLoading;
+
+  return (
+    <div className="border-border/70 bg-popover space-y-3 rounded-md border p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+          <span className="bg-kortix-green relative flex size-1.5 shrink-0 rounded-full">
+            <span className="bg-kortix-green absolute inline-flex size-full animate-ping rounded-full opacity-75" />
+          </span>
+          Live status
+        </p>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          aria-label="Refresh now"
+          onClick={() => {
+            membersQuery.refetch();
+            groupsQuery.refetch();
+          }}
+        >
+          <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
+        </Button>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-12 w-full rounded-md" />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="border-border/60 bg-background flex items-center gap-3 rounded-md border p-3">
+            <Users className="text-muted-foreground size-4 shrink-0" />
+            <div>
+              <p className="text-foreground text-lg leading-none font-semibold tabular-nums">
+                {totalMembers ?? '—'}
+              </p>
+              <p className="text-muted-foreground text-xs">Members in this account</p>
+            </div>
+          </div>
+          <div className="border-border/60 bg-background flex items-center gap-3 rounded-md border p-3">
+            <ShieldCheck className="text-muted-foreground size-4 shrink-0" />
+            <div>
+              <p className="text-foreground text-lg leading-none font-semibold tabular-nums">
+                {scimMemberCount}
+              </p>
+              <p className="text-muted-foreground text-xs">
+                Members in {scimGroups.length} SCIM-provisioned group
+                {scimGroups.length === 1 ? '' : 's'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      <p className="text-muted-foreground text-xs">
+        Refreshes automatically every few seconds — give Entra's provisioning cycle a minute after
+        you click Start (or use Provision on demand for an instant push).
+      </p>
+    </div>
+  );
+}
+
 // ─── Step body ───────────────────────────────────────────────────────────────
 
 function StepBody({
@@ -786,6 +1017,9 @@ function StepBody({
   providerName,
   config,
   alreadyConnected,
+  scimTenantUrl,
+  scimMinted,
+  onScimMinted,
   onCompleteStep,
   onFinish,
 }: {
@@ -797,15 +1031,44 @@ function StepBody({
   providerName: string;
   config: ProviderConfig;
   alreadyConnected: boolean;
+  /** SCIM-only: lifted so the values panel below can outlive the mint step. */
+  scimTenantUrl: string;
+  scimMinted: CreatedScimToken | null;
+  onScimMinted: (token: CreatedScimToken) => void;
   onCompleteStep: () => void;
   onFinish: () => void;
 }) {
   // The test step's bullets are a verification CHECKLIST (unordered outcomes);
   // every other step's bullets are a numbered sequence of console actions.
   const isChecklist = step.kind === 'test';
+  // Shown on every SCIM step once minting has happened at least once this
+  // visit — except the mint step itself, which already shows these rows.
+  const showScimValuesPanel = flow === 'scim' && step.kind !== 'scim-token' && !!scimMinted;
 
   return (
     <div className="space-y-4">
+      {showScimValuesPanel && <ScimValuesPanel tenantUrl={scimTenantUrl} minted={scimMinted} />}
+
+      {(step.where || step.menuPath) && (
+        <div className="border-border/60 bg-muted/20 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border px-3 py-2">
+          {step.where && (
+            <Badge variant="outline" size="xs" className="shrink-0 gap-1 font-medium">
+              {step.where === 'idp' ? (
+                <ExternalLink className="size-3" />
+              ) : (
+                <ShieldCheck className="size-3" />
+              )}
+              {step.where === 'idp' ? providerName : 'Kortix dashboard'}
+            </Badge>
+          )}
+          {step.menuPath && (
+            <span className="text-muted-foreground min-w-0 flex-1 font-mono text-xs">
+              {step.menuPath}
+            </span>
+          )}
+        </div>
+      )}
+
       <p className="text-muted-foreground text-sm">
         <InstructionText text={step.intro} />
       </p>
@@ -831,7 +1094,7 @@ function StepBody({
           <ClaimsTable key={i} rows={block.rows} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <GuideImage key={i} src={block.src} alt={block.alt} />
+          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
         ),
       )}
 
@@ -851,18 +1114,16 @@ function StepBody({
       )}
 
       {step.image && (
-        // Our own IdP-console captures (public/sso-setup/<provider>/) — plain
-        // <img> like other static assets; screenshots keep their light chrome
-        // in both themes.
-        <img
-          src={step.image.src}
-          alt={step.image.alt}
-          loading="lazy"
-          className="border-border/60 w-full rounded-md border"
-        />
+        <StepFigure src={step.image.src} alt={step.image.alt} schematic={step.image.schematic} />
       )}
 
       {step.showSpValues && <SpValueRows urls={spUrls} />}
+
+      {step.success && (
+        <InfoBanner tone="success" title="Success looks like">
+          {step.success}
+        </InfoBanner>
+      )}
 
       {step.warning && (
         <InfoBanner tone="warning" title="Watch out">
@@ -890,21 +1151,31 @@ function StepBody({
           onDone={onCompleteStep}
         />
       ) : step.kind === 'scim-token' ? (
-        <ScimTokenStep accountId={accountId} providerName={providerName} onDone={onCompleteStep} />
+        <ScimTokenStep
+          accountId={accountId}
+          providerName={providerName}
+          tenantUrl={scimTenantUrl}
+          minted={scimMinted}
+          onMinted={onScimMinted}
+          onDone={onCompleteStep}
+        />
       ) : step.kind === 'test' ? (
-        <div className="flex flex-wrap items-center gap-3">
-          {flow === 'sso' && (
-            <Button asChild variant="outline">
-              <a href="/auth" target="_blank" rel="noreferrer">
-                Open the sign-in page
-                <ExternalLink className="ml-1.5 size-3.5 shrink-0" />
-              </a>
+        <div className="space-y-4">
+          {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
+          <div className="flex flex-wrap items-center gap-3">
+            {flow === 'sso' && (
+              <Button asChild variant="outline">
+                <a href="/auth" target="_blank" rel="noreferrer">
+                  Open the sign-in page
+                  <ExternalLink className="ml-1.5 size-3.5 shrink-0" />
+                </a>
+              </Button>
+            )}
+            <Button onClick={onFinish}>
+              Finish
+              <Check className="ml-1.5 size-3.5 shrink-0" />
             </Button>
-          )}
-          <Button onClick={onFinish}>
-            Finish
-            <Check className="ml-1.5 size-3.5 shrink-0" />
-          </Button>
+          </div>
         </div>
       ) : (
         // Vercel-style completion bar: the step's outcome as a checkable
@@ -948,6 +1219,14 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   });
 
   const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  // SCIM-only, but harmless to compute for the SSO flow too — pure function
+  // of accountId. Lifted here (rather than local to the token step) so the
+  // values panel can keep showing both after the step unmounts.
+  const scimTenantUrl = useMemo(
+    () => buildScimBaseUrl(accountId, getEnv().BACKEND_URL),
+    [accountId],
+  );
+  const [scimMinted, setScimMinted] = useState<CreatedScimToken | null>(null);
 
   const [activeStep, setActiveStep] = useState(0);
   const [completed, setCompleted] = useState<string[]>([]);
@@ -998,10 +1277,11 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   };
 
   const finish = () => {
-    markDone(guide.steps[guide.steps.length - 1]!.id);
+    markDone(guide.steps[guide.steps.length - 1]?.id);
     router.push(`/accounts/${accountId}?tab=identity`);
   };
 
+  // biome-ignore lint/style/noNonNullAssertion: guide.steps is always non-empty (guide is checked above) and the index is clamped into range.
   const step = guide.steps[Math.min(activeStep, guide.steps.length - 1)]!;
 
   return (
@@ -1085,6 +1365,9 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               providerName={guide.name}
               config={guide.config}
               alreadyConnected={!!providerQuery.data}
+              scimTenantUrl={scimTenantUrl}
+              scimMinted={scimMinted}
+              onScimMinted={setScimMinted}
               onCompleteStep={() => markDone(step.id)}
               onFinish={finish}
             />
@@ -1105,7 +1388,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
             )}
             <span className="text-muted-foreground text-xs">
               {activeStep < guide.steps.length - 1
-                ? `Next: ${guide.steps[activeStep + 1]!.title}`
+                ? `Next: ${guide.steps[activeStep + 1]?.title}`
                 : 'Last step'}
             </span>
           </div>

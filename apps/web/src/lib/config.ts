@@ -79,4 +79,49 @@ export const isBillingEnabled = (): boolean => {
   return getEnv().BILLING_ENABLED;
 };
 
+/**
+ * Whether Kortix's own managed model lineup ("Managed · Included with your
+ * plan" — Claude/GLM/Qwen/DeepSeek/… routed through Kortix's shared Bedrock/
+ * OpenRouter credentials) can appear anywhere in the UI. CLOUD-ONLY: mirrors
+ * the backend's KORTIX_MANAGED_PROVIDER_ENABLED, which already keeps managed
+ * models out of the served model catalog when off. Use this for a surface
+ * that reasons about "is `kortix` connected" independently of the live
+ * catalog (so it hides the managed entry outright instead of rendering it
+ * with zero models) — most surfaces need no extra check since the catalog
+ * itself is already empty of managed models on a self-host.
+ */
+export const isManagedProviderEnabled = (): boolean => {
+  return getEnv().MANAGED_PROVIDER_ENABLED;
+};
+
+/**
+ * Whether Pipedream-backed connector UI (the "Connect your tools" onboarding
+ * step, the "Easy connect" app catalogue) is enabled. Cloud always has
+ * Pipedream configured (defaults true); self-host without PIPEDREAM_client
+ * credentials set should flip NEXT_PUBLIC_CONNECTORS_ENABLED to 'false' so
+ * those surfaces don't dead-end in a 501. Custom connectors (OpenAPI/
+ * GraphQL/MCP/HTTP) and Slack/email channels are unaffected — they don't
+ * depend on Pipedream.
+ */
+export const isConnectorsEnabled = (): boolean => {
+  return getEnv().CONNECTORS_ENABLED;
+};
+
+/**
+ * Whether creating an ADDITIONAL/org account is restricted to platform
+ * admins on this deployment. Mirrors the backend's
+ * KORTIX_RESTRICT_ACCOUNT_CREATION (which 403s POST /v1/accounts for
+ * non-admins) — this is a UI convenience so ordinary users don't even see a
+ * "New account" affordance they can't use; the backend gate is authoritative
+ * regardless of what the UI hides. Signups, existing teams, and SSO/JIT
+ * membership are entirely unaffected by this flag — only spinning up a
+ * brand-new organization is gated. Off by default (cloud); self-host
+ * defaults it on. Callers should still check platform-admin status (e.g.
+ * `useAdminRole()`) before hiding "New account" UI, since admins are exempt
+ * from the restriction.
+ */
+export const isAccountCreationRestricted = (): boolean => {
+  return getEnv().RESTRICT_ACCOUNT_CREATION;
+};
+
 import { getEnv } from '@/lib/env-config';

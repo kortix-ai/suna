@@ -1,7 +1,12 @@
 'use client';
 
 /**
- * Unified auth — quiet, flat, staged UX (email → credentials → code).
+ * Unified auth — ONE flow for login and registration (email → code or
+ * password). There is no sign-in/sign-up toggle: the visitor types an email,
+ * Continue resolves whether that address already has an account, and the
+ * password step renders in the mode the flow already knows — "Welcome back"
+ * for existing accounts, "Create your account" for new ones. A wrong password
+ * says wrong password; a new email is never told "Invalid login credentials".
  *
  * Identical in local and cloud. The only mode-dependent piece is whether
  * Supabase requires email confirmation (Supabase config, not a billing flag).
@@ -27,23 +32,33 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  type CredentialsMode,
+  type EmailFlowMode,
+  SIGNUPS_CLOSED_MESSAGE,
+  SSO_REQUIRED_MESSAGE,
+  credentialsCopy,
+  parseAuthMethods,
+  passwordFailureCopy,
+} from '@/lib/auth/unified-auth-flow';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
-import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import {
-  signIn as signInWithMagicLink,
+  createClient as createBrowserSupabaseClient,
+  fetchSamlEnabled,
+} from '@/lib/supabase/client';
+import {
+  resolveAuthMode,
+  sendEmailCode,
   signInWithPassword,
-  signUp as signUpWithMagicLink,
   signUpWithPassword,
   verifyOtp,
 } from './actions';
 
 const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
-type Mode = 'signin' | 'signup';
-type AuthMethod = 'magic' | 'password';
-type Step = 'entry' | 'credentials' | 'code';
+type Step = 'entry' | 'sso' | 'credentials' | 'code';
 
 const RESEND_COOLDOWN_SECONDS = 30;
 const EASE = [0.23, 1, 0.32, 1] as const;
@@ -96,34 +111,33 @@ function PasswordInput({
 /* ─── The staged auth flow ─────────────────────────────────────────────── */
 
 function AuthCardForm({
-  mode,
-  onModeChange,
   returnUrl,
   mobileCallbackState,
 }: {
-  mode: Mode;
-  onModeChange: (mode: Mode) => void;
   returnUrl: string;
   mobileCallbackState: string | null;
 }) {
   const router = useRouter();
   const prefersReducedMotion = useReducedMotion();
-  const enabledMethods = useMemo(() => {
-    const raw = getEnv().AUTH_METHODS || 'magic,password';
-    const parsed = raw
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter((s): s is AuthMethod => s === 'magic' || s === 'password');
-    return parsed.length ? parsed : ['magic', 'password'];
-  }, []);
+  const enabledMethods = useMemo(() => parseAuthMethods(getEnv().AUTH_METHODS), []);
   const magicLinkEnabled = enabledMethods.includes('magic');
   const passwordEnabled = enabledMethods.includes('password');
 
   const [step, setStep] = useState<Step>('entry');
   const [email, setEmail] = useState('');
+  // What the flow knows about the address by the time the password step shows:
+  // 'signin' (account exists), 'signup' (new), or 'unknown' (the existence
+  // check couldn't answer — the adaptive signup action covers both).
+  const [credMode, setCredMode] = useState<CredentialsMode>('unknown');
+  // SSO interstitial state: the IdP redirect URL from the signInWithSSO probe,
+  // plus what the existence check said the escape hatches should do.
+  const [ssoUrl, setSsoUrl] = useState<string | null>(null);
+  const [ssoFallbackMode, setSsoFallbackMode] = useState<EmailFlowMode>('unknown');
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
-  const [pendingAction, setPendingAction] = useState<'continue' | 'code' | 'resend' | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    'continue' | 'code' | 'resend' | 'password' | null
+  >(null);
   const pending = pendingAction !== null;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -159,6 +173,21 @@ function AuthCardForm({
   }, []);
   const googleEnabled = enabledProviders.includes('google');
 
+  // Only probe SSO when the Supabase instance actually has SAML enabled. A fresh
+  // self-hosted deployment has it off, so probing every work-email Continue would
+  // just surface a scary `saml_provider_disabled` 404. Gate on the live setting so
+  // SSO stays an opt-in path that lights up once an operator configures a provider.
+  const [samlEnabled, setSamlEnabled] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void fetchSamlEnabled().then((enabled) => {
+      if (active) setSamlEnabled(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const clearNotices = () => {
     setErrorMessage(null);
     setInfo(null);
@@ -176,12 +205,9 @@ function AuthCardForm({
     clearNotices();
     setSentEmail(null);
     setCode('');
+    setSsoUrl(null);
+    setSsoFallbackMode('unknown');
     setStep('entry');
-  };
-
-  const switchMode = (next: Mode) => {
-    onModeChange(next);
-    clearNotices();
   };
 
   const establishSessionAndRedirect = async (result: any) => {
@@ -234,12 +260,11 @@ function AuthCardForm({
 
     try {
       const formData = buildBaseFormData(target);
-      if (mode === 'signup') formData.set('acceptedTerms', 'true');
+      // One flow: continuing IS the agreement (the legal footer says so), and
+      // the code path signs in existing accounts and registers new ones alike.
+      formData.set('acceptedTerms', 'true');
 
-      const result =
-        mode === 'signup'
-          ? await signUpWithMagicLink(null, formData)
-          : await signInWithMagicLink(null, formData);
+      const result = await sendEmailCode(null, formData);
 
       if (result && (result as any).success) {
         setSentEmail((result as any).email || target);
@@ -278,7 +303,7 @@ function AuthCardForm({
     // routing with the email flow as the always-present fallback.
     try {
       const domain = emailDomain(trimmed);
-      if (domain && isWorkEmail(trimmed)) {
+      if (samlEnabled && domain && isWorkEmail(trimmed)) {
         try {
           const supabase = createBrowserSupabaseClient();
           const callbackParams = new URLSearchParams();
@@ -298,9 +323,21 @@ function AuthCardForm({
             options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
           });
           if (!error && data?.url) {
-            // Full navigation to the IdP; the callback route exchanges the code
-            // on return (same PKCE path as Google OAuth).
-            window.location.href = data.url;
+            // The domain is bound to a SAML provider. Ask the flow how strict
+            // the org is: enforced SSO redirects straight to the IdP (no
+            // password door), everything else lands on an interstitial that
+            // defaults to SSO but keeps the password/code escapes visible —
+            // a pre-SSO password account must never dead-end here.
+            const { mode: resolved } = await resolveAuthMode(trimmed);
+            if (resolved === 'sso') {
+              // Full navigation to the IdP; the callback route exchanges the
+              // code on return (same PKCE path as Google OAuth).
+              window.location.href = data.url;
+              return;
+            }
+            setSsoFallbackMode(resolved);
+            setSsoUrl(data.url);
+            setStep('sso');
             return;
           }
           // Work domain with no SAML provider → fall through to magic/password.
@@ -310,12 +347,26 @@ function AuthCardForm({
       }
 
       // Magic link is the default path: Continue emails a code and lands the
-      // user on the code step. Password is the secondary route, reachable from
-      // the button below the form — so it only loads for people who want it.
+      // user on the code step (the code signs in existing accounts and
+      // registers new ones — no mode needed). Password-only deployments go
+      // through the existence check instead, so the password step opens
+      // already knowing whether this is a sign-in or a registration.
       if (magicLinkEnabled) {
         await sendMagic(trimmed, 'continue');
         return;
       }
+      const { mode: resolved } = await resolveAuthMode(trimmed);
+      if (resolved === 'closed') {
+        failWith(SIGNUPS_CLOSED_MESSAGE);
+        return;
+      }
+      if (resolved === 'sso') {
+        // Enforced-SSO domain that slipped past the probe above (e.g. SAML
+        // temporarily unreachable) — never open the password door.
+        failWith(SSO_REQUIRED_MESSAGE);
+        return;
+      }
+      setCredMode(resolved);
       setStep('credentials');
     } finally {
       setPendingAction(null);
@@ -326,7 +377,8 @@ function AuthCardForm({
   // The address can live in either field depending on how the step was reached,
   // and the credentials step renders it read-only from `email` — so settle on
   // one before switching, and bounce focus back if we somehow have neither.
-  const goToPassword = () => {
+  // Resolves existence on the way so the step opens in the right mode.
+  const goToPassword = async () => {
     const target = (email || sentEmail || '').trim();
     if (!target) {
       emailRef.current?.focus();
@@ -334,8 +386,23 @@ function AuthCardForm({
     }
     if (email !== target) setEmail(target);
     clearNotices();
-    setCode('');
-    setStep('credentials');
+    setPendingAction('password');
+    try {
+      const { mode: resolved } = await resolveAuthMode(target);
+      if (resolved === 'closed') {
+        failWith(SIGNUPS_CLOSED_MESSAGE);
+        return;
+      }
+      if (resolved === 'sso') {
+        failWith(SSO_REQUIRED_MESSAGE);
+        return;
+      }
+      setCredMode(resolved);
+      setCode('');
+      setStep('credentials');
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   const handleCredentialsSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -351,7 +418,8 @@ function AuthCardForm({
       formData.set('mobileCallback', 'true');
       formData.set('mobileCallbackState', mobileCallbackState);
     }
-    if (mode === 'signup') {
+    const copy = credentialsCopy(credMode);
+    if (copy.submitsAs === 'signup') {
       // Single password field (with reveal toggle) — the server still expects
       // a confirmation value, so mirror it.
       formData.set('confirmPassword', (formData.get('password') as string) || '');
@@ -360,7 +428,7 @@ function AuthCardForm({
 
     try {
       const result =
-        mode === 'signup'
+        copy.submitsAs === 'signup'
           ? await signUpWithPassword(null, formData)
           : await signInWithPassword(null, formData);
 
@@ -371,7 +439,16 @@ function AuthCardForm({
         (!('success' in result) || !(result as any).success) &&
         !(result as any).requiresEmailConfirmation
       ) {
-        failWith(result.message as string);
+        const failure = passwordFailureCopy({
+          mode: credMode,
+          code: (result as any).code ?? null,
+          fallback: result.message as string,
+        });
+        // The attempt itself proved the account exists (e.g. the existence
+        // check was degraded, or it raced an account created elsewhere) —
+        // relabel the step so the retry reads as the sign-in it really is.
+        if (failure.switchToSignin) setCredMode('signin');
+        failWith(failure.message);
         return;
       }
 
@@ -427,6 +504,94 @@ function AuthCardForm({
     if (!sentEmail || pending || resendIn > 0) return;
     await sendMagic(sentEmail, 'resend');
   };
+
+  // Password escape off the SSO interstitial. The existence check already ran
+  // when the interstitial opened, so this is a synchronous relabel + step move.
+  const usePasswordFromSso = () => {
+    if (ssoFallbackMode === 'closed') {
+      failWith(SIGNUPS_CLOSED_MESSAGE);
+      return;
+    }
+    clearNotices();
+    setCredMode(
+      ssoFallbackMode === 'signin' || ssoFallbackMode === 'signup' ? ssoFallbackMode : 'unknown',
+    );
+    setStep('credentials');
+  };
+
+  /* ── SSO step (domain matched a SAML provider, org does NOT enforce it) ── */
+  if (step === 'sso' && ssoUrl) {
+    return (
+      <>
+        <motion.div {...rise(0)}>
+          <StepHeader
+            title="Use single sign-on"
+            description={
+              <>
+                <span className="text-foreground font-medium break-words">{email}</span> can sign in
+                through your organization&apos;s identity provider.
+              </>
+            }
+          />
+        </motion.div>
+
+        <motion.div {...rise(0.06)}>
+          {info && <InfoStrip message={info} />}
+
+          <Button
+            type="button"
+            size="lg"
+            className="w-full"
+            disabled={pending}
+            onClick={() => {
+              window.location.href = ssoUrl;
+            }}
+          >
+            Continue with SSO
+          </Button>
+
+          <div className="text-muted-foreground mt-6 space-y-2 text-sm">
+            <p className="flex flex-wrap items-center gap-2">
+              {passwordEnabled && (
+                <button
+                  type="button"
+                  onClick={usePasswordFromSso}
+                  disabled={pending}
+                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                >
+                  Use a password instead
+                </button>
+              )}
+              {passwordEnabled && magicLinkEnabled && (
+                <span aria-hidden className="text-muted-foreground/40 select-none">
+                  ·
+                </span>
+              )}
+              {magicLinkEnabled && (
+                <button
+                  type="button"
+                  onClick={() => sendMagic(email, 'code')}
+                  disabled={pending}
+                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                >
+                  {pendingAction === 'code' ? 'Sending…' : 'Email me a code instead'}
+                </button>
+              )}
+            </p>
+            <p>
+              <button
+                type="button"
+                onClick={goToEntry}
+                className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+              >
+                Use a different email
+              </button>
+            </p>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
 
   /* ── Code step ── */
   if (step === 'code') {
@@ -498,11 +663,11 @@ function AuthCardForm({
                       </span>
                       <button
                         type="button"
-                        onClick={goToPassword}
+                        onClick={() => void goToPassword()}
                         disabled={pending}
                         className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
                       >
-                        Use password instead
+                        {pendingAction === 'password' ? 'One moment…' : 'Use password instead'}
                       </button>
                     </>
                   )}
@@ -517,10 +682,11 @@ function AuthCardForm({
 
   /* ── Credentials step (password, with email-code alternative) ── */
   if (step === 'credentials') {
+    const copy = credentialsCopy(credMode);
     return (
       <>
         <motion.div {...rise(0)}>
-          <StepHeader title={mode === 'signup' ? 'Create your password' : 'Enter your password'} />
+          <StepHeader title={copy.title} description={copy.description ?? undefined} />
         </motion.div>
 
         <motion.div {...rise(0.06)}>
@@ -552,7 +718,7 @@ function AuthCardForm({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <FieldLabel htmlFor="password">Password</FieldLabel>
-                {mode === 'signin' && (
+                {copy.showForgotPassword && (
                   <Link
                     href="/auth/forgot-password"
                     className="text-muted-foreground hover:text-foreground text-sm transition-colors"
@@ -564,8 +730,8 @@ function AuthCardForm({
               <PasswordInput
                 id="password"
                 name="password"
-                placeholder={mode === 'signup' ? 'Create a password' : 'Your password'}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                placeholder={copy.passwordPlaceholder}
+                autoComplete={copy.passwordAutoComplete}
                 autoFocus
                 invalid={!!errorMessage}
               />
@@ -589,7 +755,7 @@ function AuthCardForm({
               {pendingAction === 'code' ? (
                 <Loading className="text-foreground! size-4 shrink-0" />
               ) : null}
-              {mode === 'signup' ? 'Continue with email code' : 'Email sign-in code'}
+              Email me a code instead
             </Button>
           )}
         </motion.div>
@@ -601,10 +767,7 @@ function AuthCardForm({
   return (
     <>
       <motion.div {...rise(0)}>
-        <StepHeader
-          title={mode === 'signup' ? 'Create your account' : 'Welcome to Kortix'}
-          tagline="Your AI Command Center"
-        />
+        <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
       </motion.div>
 
       <motion.div {...rise(0.06)}>
@@ -648,15 +811,10 @@ function AuthCardForm({
           </Button>
         </form>
 
+        {/* One system: no sign-in/sign-up toggle. Continue routes new emails
+            into registration and existing ones into sign-in automatically. */}
         <p className="text-muted-foreground mt-8 text-sm">
-          {mode === 'signup' ? 'Already have an account? ' : "Don't have an account? "}
-          <button
-            type="button"
-            onClick={() => switchMode(mode === 'signup' ? 'signin' : 'signup')}
-            className="text-foreground underline-offset-4 hover:underline"
-          >
-            {mode === 'signup' ? 'Sign in' : 'Sign up'}
-          </button>
+          New here? Continue creates your account automatically.
         </p>
       </motion.div>
     </>
@@ -675,7 +833,6 @@ function AuthContent() {
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const hasStartedMobileHandoff = useRef(false);
-  const [mode, setMode] = useState<Mode>('signin');
 
   // A web session may already exist when the mobile user returns to this page.
   // Preserve the native handoff instead of routing that browser session to the
@@ -721,13 +878,8 @@ function AuthContent() {
   // flight. Signed-out visitors (the common case) get an instantly usable
   // page; a signed-in visitor sees the form for a beat before the redirect.
   return (
-    <AuthFrame footerVariant={mode === 'signup' ? 'signup' : 'default'}>
-      <AuthCardForm
-        mode={mode}
-        onModeChange={setMode}
-        returnUrl={returnUrl}
-        mobileCallbackState={mobileCallbackState}
-      />
+    <AuthFrame footerVariant="continue">
+      <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />
     </AuthFrame>
   );
 }

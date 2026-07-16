@@ -25,7 +25,6 @@ KEY_TABLES=(
   "kortix.accounts"
   "kortix.account_members"
   "kortix.api_keys"
-  "kortix.deployments"
   "kortix.sandboxes"
   "kortix.credit_ledger"
 )

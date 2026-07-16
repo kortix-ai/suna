@@ -50,13 +50,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Separator } from '@/components/ui/separator';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
-import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
   getMarketplaceItem,
   listMarketplaceItems,
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
+  getManagedGitStatus,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -68,6 +69,7 @@ import {
   type KortixProject,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
@@ -75,6 +77,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
+import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
 import {
   startProjectOnboardingSession,
   startTemplateSetupSession,
@@ -163,11 +166,26 @@ export const ProjectCreateModal = ({
     staleTime: 60_000,
     enabled: open,
   });
+
+  // Pre-check whether managed git (the "Create project" quick path, backed by
+  // POST /projects/provision) is usable BEFORE the user hits its 503 —
+  // self-host with no MANAGED_GIT_* configured is the primary case. Only
+  // gates 'managed'/'template' modes; the BYO GitHub import ('github' mode)
+  // doesn't depend on it. `configured` defaults true while loading so the
+  // form isn't disabled by a flash of "unavailable".
+  const managedGitStatusQuery = useQuery({
+    queryKey: ['managed-git-status'],
+    queryFn: getManagedGitStatus,
+    staleTime: 10_000,
+    enabled: open,
+  });
+  const managedGitUnavailable = managedGitStatusQuery.data?.configured === false;
   const accountSelection = useMemo(
     () => resolveCreateAccountSelection(accountsQuery.data, accountId, pickedAccountId),
     [accountsQuery.data, accountId, pickedAccountId],
   );
   const effectiveAccountId = accountSelection.effectiveAccountId;
+  const isGitAdmin = isAccountGitAdmin(accountSelection.currentAccount?.account_role);
 
   const managedForm = useForm<ManagedProjectFormValues>({
     resolver: zodResolver(managedProjectSchema),
@@ -279,6 +297,29 @@ export const ProjectCreateModal = ({
         } catch {
           // Fall through to the generic toast below.
         }
+      }
+      if (isManagedGitUnavailableError(error)) {
+        const gitSettingsAccountId =
+          effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+        errorToast("Managed git isn't set up on this server", {
+          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          ...(gitSettingsAccountId
+            ? {
+                button: (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      resetAndClose();
+                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
+                    }}
+                  >
+                    Open Git settings
+                  </Button>
+                ),
+              }
+            : {}),
+        });
+        return;
       }
       errorToast(error.message || 'Failed to create project');
     },
@@ -465,7 +506,32 @@ export const ProjectCreateModal = ({
           />
         ) : null}
 
-        {mode === 'template' ? (
+        {mode !== 'github' && managedGitUnavailable ? (
+          <>
+            <ModalBody>
+              <GitHubSetupRequiredPanel
+                accountId={effectiveAccountId}
+                isAdmin={isGitAdmin}
+                onNavigate={resetAndClose}
+                secondaryAction={
+                  <Button type="button" variant="ghost" size="sm" onClick={switchToGitHubMode}>
+                    Import an existing repo
+                  </Button>
+                }
+              />
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                type="button"
+                variant="outline-ghost"
+                className="w-full sm:w-auto"
+                onClick={resetAndClose}
+              >
+                Cancel
+              </Button>
+            </ModalFooter>
+          </>
+        ) : mode === 'template' ? (
           <TemplatePicker
             templates={templates}
             loading={templatesQuery.isLoading}
@@ -610,38 +676,51 @@ export const ProjectCreateModal = ({
                       )}
                     </div>
                   ) : githubInstallations.length === 0 ? (
-                    <Item variant="outline" className={cn('items-start')}>
-                      <ItemMedia variant="icon" className="rounded-full bg-transparent">
-                        <Icon.Github />
-                      </ItemMedia>
-                      <ItemContent>
-                        <ItemTitle>
-                          {tHardcodedUi.raw(
-                            'componentsProjectsProjectCreateModal.line362JsxAttrTitleConnectTheKortixGithubApp',
-                          )}
-                        </ItemTitle>
-                        <ItemDescription>
-                          {tHardcodedUi.raw(
-                            'componentsProjectsProjectCreateModal.line383JsxTextKortixUsesTheGithubAppToListRepositories',
-                          )}
-                        </ItemDescription>
-                      </ItemContent>
-                      <ItemActions>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={
-                            isConnectingGitHub ||
-                            (!installUrl && githubInstallationsQuery.isFetching)
-                          }
-                          onClick={handleConnectGitHub}
-                        >
-                          {isConnectingGitHub ? <Loading /> : <Icon.Github />}
-                          {isConnectingGitHub ? 'Connecting' : 'Connect'}
-                        </Button>
-                      </ItemActions>
-                    </Item>
+                    githubInstallationsQuery.data?.configured === false ? (
+                      // No GitHub App exists at all on this server (self-host
+                      // with only a PAT, or nothing, configured) — the "install
+                      // this App" card below has nothing to install. Route to
+                      // Git settings instead of a dead-end Connect button.
+                      <GitHubSetupRequiredPanel
+                        accountId={effectiveAccountId}
+                        isAdmin={isGitAdmin}
+                        onNavigate={resetAndClose}
+                        size="sm"
+                      />
+                    ) : (
+                      <Item variant="outline" className={cn('items-start')}>
+                        <ItemMedia variant="icon" className="rounded-full bg-transparent">
+                          <Icon.Github />
+                        </ItemMedia>
+                        <ItemContent>
+                          <ItemTitle>
+                            {tHardcodedUi.raw(
+                              'componentsProjectsProjectCreateModal.line362JsxAttrTitleConnectTheKortixGithubApp',
+                            )}
+                          </ItemTitle>
+                          <ItemDescription>
+                            {tHardcodedUi.raw(
+                              'componentsProjectsProjectCreateModal.line383JsxTextKortixUsesTheGithubAppToListRepositories',
+                            )}
+                          </ItemDescription>
+                        </ItemContent>
+                        <ItemActions>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={
+                              isConnectingGitHub ||
+                              (!installUrl && githubInstallationsQuery.isFetching)
+                            }
+                            onClick={handleConnectGitHub}
+                          >
+                            {isConnectingGitHub ? <Loading /> : <Icon.Github />}
+                            {isConnectingGitHub ? 'Connecting' : 'Connect'}
+                          </Button>
+                        </ItemActions>
+                      </Item>
+                    )
                   ) : (
                     <>
                       <FormField

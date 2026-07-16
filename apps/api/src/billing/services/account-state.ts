@@ -1,6 +1,7 @@
 import { projectSessions, sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { config } from '../../config';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -199,6 +200,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
       entitlements,
     },
+    enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
     models: [],
     auto_topup: autoTopup,
     instances,
@@ -288,6 +290,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       can_purchase_credits: false,
       entitlements: getTierEntitlements('free'),
     },
+    enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
     models: [],
     auto_topup: {
       enabled: false,

@@ -19,6 +19,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { Switch } from '@/components/ui/switch';
 import {
   Modal,
   ModalBody,
@@ -36,6 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
   type SsoGroupMapping,
   type SsoProvider,
@@ -162,6 +164,31 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   const mappings = mappingsQuery.data ?? [];
   const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
 
+  // Off by default — orgs opt in once their SAML connection is proven. Re-sends
+  // every other stored field unchanged (the PUT route is a full upsert), only
+  // flipping enforce_sso, so this toggle never touches the rest of the config.
+  const enforceSsoMutation = useMutation({
+    mutationFn: (enforce: boolean) => {
+      if (!provider) throw new Error('No SSO provider configured');
+      return upsertSsoProvider(accountId, {
+        supabase_sso_provider_id: provider.supabase_sso_provider_id,
+        name: provider.name,
+        primary_domain: provider.primary_domain,
+        group_claim_name: provider.group_claim_name,
+        auto_create_members: provider.auto_create_members,
+        auto_provision_groups: provider.auto_provision_groups,
+        enforce_sso: enforce,
+      });
+    },
+    onSuccess: (updated) => {
+      successToast(
+        updated.enforce_sso ? 'SSO is now enforced for this domain' : 'SSO enforcement turned off',
+      );
+      queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to update SSO enforcement'),
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
@@ -260,6 +287,34 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 </div>
               </dl>
             )}
+          </div>
+        )}
+
+        {provider && (
+          <div className="border-border border-t px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-foreground text-sm font-medium">
+                  Enforce SSO for this domain
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Members must sign in with your identity provider — the password option
+                  disappears.
+                </p>
+              </div>
+              {canManage && (
+                <Switch
+                  checked={!!provider.enforce_sso}
+                  onCheckedChange={(checked) => enforceSsoMutation.mutate(checked)}
+                  disabled={enforceSsoMutation.isPending || providerQuery.isLoading}
+                  aria-label="Enforce SSO for this domain"
+                />
+              )}
+            </div>
+            <p className="text-muted-foreground mt-2 text-xs">
+              Anyone on this domain who currently signs in with a password loses that option the
+              moment you turn this on — only your identity provider works after that.
+            </p>
           </div>
         )}
 
@@ -407,11 +462,19 @@ function EditProviderDialog({
   existing: SsoProvider | null;
   onSaved: () => void;
 }) {
+  const { user } = useAuth();
+  // The current admin's own email domain — if this account routes it to the
+  // IdP and the admin isn't ALSO the identity that comes back from that IdP,
+  // they can lock themselves out or silently land signed in as someone else
+  // via IdP session reuse. Warn before that surprises anyone.
+  const adminEmailDomain = user?.email?.split('@')[1]?.trim().toLowerCase() || null;
   const [name, setName] = useState(existing?.name ?? '');
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
-  const [autoProvision, setAutoProvision] = useState(existing?.auto_provision_groups ?? false);
+  // New connections default auto-provision ON (groups appear without
+  // hand-mapping); an existing provider keeps whatever the admin chose.
+  const [autoProvision, setAutoProvision] = useState(existing ? existing.auto_provision_groups : true);
   // New providers register by importing the IdP metadata (XML or URL) — the
   // backend handles the identity-provider registration; no internals surface in
   // the UI. Edits reuse the stored provider id under the hood.
@@ -426,7 +489,7 @@ function EditProviderDialog({
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
-      setAutoProvision(existing?.auto_provision_groups ?? false);
+      setAutoProvision(existing ? existing.auto_provision_groups : true);
       setMetaKind('xml');
       setMetaXml('');
       setMetaUrl('');
@@ -562,8 +625,16 @@ function EditProviderDialog({
               variant="popover"
             />
             <p className="text-muted-foreground text-xs">
-              Used to route sign-in flows for this domain through your IdP.
+              Every sign-in from this domain is routed to this identity provider instead of
+              password login — only add a domain your IdP actually controls. Users on other
+              domains are unaffected.
             </p>
+            {adminEmailDomain && domain.trim().toLowerCase() === adminEmailDomain && (
+              <p className="text-kortix-yellow text-xs">
+                This is your own email domain — saving this will route YOUR next sign-in to the
+                IdP too. Make sure your account exists there before you continue.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

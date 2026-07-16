@@ -17,15 +17,34 @@
 export type StepKind = 'instructions' | 'metadata-input' | 'import' | 'scim-token' | 'test';
 
 /**
+ * A schematic stand-in for a console screenshot: OUR OWN small styled panel
+ * depicting the relevant fields of one Entra (or other IdP) screen — e.g. a
+ * bordered box titled "Entra → Provisioning → Admin Credentials" listing
+ * "Tenant URL", "Secret Token", and a "Test Connection" button. Never a copy
+ * of a vendor's screenshot; StepFigure renders this whenever the real
+ * screenshot file at `src` hasn't landed yet (schematic first, real
+ * screenshot silently takes over once the file exists).
+ */
+export interface StepSchematic {
+  /** The console + click path this panel represents, e.g. "Entra →
+   *  Provisioning → Admin Credentials". Rendered as the panel title. */
+  title: string;
+  /** Labeled rows in reading order — a field, a value/placeholder, or a
+   *  button, each rendered with a shape matching its `as`. */
+  rows: Array<{ label: string; value?: string; as?: 'field' | 'button' | 'badge' }>;
+}
+
+/**
  * Rich step content — prose and console screenshots interleaved in reading
  * order (the Vercel/WorkOS wizard layout). Screenshots are OUR OWN captures
  * (from the kortixssotest test tenants) under /public/sso-setup/<provider>/ —
  * never another vendor's doc assets; the UI hides an image until its file
- * exists, so blocks can land before the capture run.
+ * exists, so blocks can land before the capture run. `schematic` gives that
+ * "coming soon" gap a useful placeholder instead of an empty box.
  */
 export type StepBlock =
   | { kind: 'text'; text: string }
-  | { kind: 'image'; src: string; alt: string }
+  | { kind: 'image'; src: string; alt: string; schematic?: StepSchematic }
   /** The copyable SP values (Entity ID + ACS), positioned inline. Labels are
    *  per-IdP: Entra says "Identifier (Entity ID)" / "Reply URL (ACS)", Okta
    *  says "Audience URI (SP Entity ID)" / "Single sign-on URL" — show the
@@ -57,15 +76,27 @@ export interface GuideStep {
   bullets?: string[];
   /** Render the copyable SP values (Entity ID + ACS URL) in this step. */
   showSpValues?: boolean;
-  /** Amber callout for the sharp edges (the stuff that silently fails). */
+  /** Amber callout for the sharp edges (the stuff that silently fails) —
+   *  double as the "#1 failure mode" note where relevant. */
   warning?: string;
   /** Muted footnote. */
   note?: string;
   /** Screenshot of the IdP console for this step (single-image steps). */
-  image?: { src: string; alt: string };
+  image?: { src: string; alt: string; schematic?: StepSchematic };
   /** Completion-bar label, e.g. "I've created an enterprise application". */
   doneLabel?: string;
   kind?: StepKind;
+  /** Which console this step happens in — rendered as a "you are here" badge
+   *  so an admin never has to guess whether a step means the Kortix
+   *  dashboard or the IdP's own admin center. Omit for steps not tied to a
+   *  single console (e.g. pure prep/reading). */
+  where?: 'kortix' | 'idp';
+  /** Exact click path inside that console, e.g. "Enterprise applications →
+   *  Kortix → Provisioning → Users and groups" — rendered as a breadcrumb
+   *  so the admin can navigate without reading prose. */
+  menuPath?: string;
+  /** Short reassuring line: what success looks like once this step is done. */
+  success?: string;
 }
 
 /**
@@ -139,7 +170,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       groupValueHint:
         'Entra sends group Object IDs (GUIDs) by default — map those GUIDs, or emit display names via "Groups assigned to the application" (needs Entra ID P1/P2).',
       preferredMetadata: 'url',
-      metadataSource: 'Single sign-on → section 3 "SAML Certificates" → App Federation Metadata Url',
+      metadataSource:
+        'Single sign-on → section 3 "SAML Certificates" → App Federation Metadata Url',
       metadataUrlPlaceholder:
         'https://login.microsoftonline.com/<tenant-id>/federationmetadata/2007-06/federationmetadata.xml?appid=…',
     },
@@ -147,7 +179,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'create-app',
         title: 'Create an enterprise application',
-        intro: 'Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.',
+        intro:
+          'Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.',
         content: [
           {
             kind: 'text',
@@ -157,6 +190,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/create-app-1.png',
             alt: 'Entra admin center — Enterprise applications list with New application highlighted',
+            schematic: {
+              title: 'Entra ID → Enterprise applications',
+              rows: [{ label: '+ New application', as: 'button' }],
+            },
           },
           {
             kind: 'text',
@@ -170,6 +207,18 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/create-app-2.png',
             alt: 'Create your own application panel with the Non-gallery option selected',
+            schematic: {
+              title: 'Browse Microsoft Entra Gallery → Create your own application',
+              rows: [
+                { label: "What's the name of your app?", value: 'Kortix', as: 'field' },
+                {
+                  label:
+                    "Integrate any other application you don't find in the gallery (Non-gallery)",
+                  as: 'badge',
+                },
+                { label: 'Create', as: 'button' },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve created an enterprise application',
@@ -184,6 +233,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/basic-saml-1.png',
             alt: 'Select SAML as the single sign-on method',
+            schematic: {
+              title: 'Single sign-on → Select a single sign-on method',
+              rows: [{ label: 'SAML', as: 'badge' }],
+            },
           },
           {
             kind: 'text',
@@ -193,6 +246,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/basic-saml-2.png',
             alt: 'Basic SAML Configuration section with the Edit button',
+            schematic: {
+              title: 'Set up Single Sign-On with SAML → Basic SAML Configuration',
+              rows: [{ label: 'Edit', as: 'button' }],
+            },
           },
           {
             kind: 'text',
@@ -203,6 +260,19 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/basic-saml-3.png',
             alt: 'Basic SAML Configuration panel with the Identifier and Reply URL filled in',
+            schematic: {
+              title: 'Basic SAML Configuration',
+              rows: [
+                { label: 'Identifier (Entity ID)', value: '(pasted from below)', as: 'field' },
+                {
+                  label: 'Reply URL (Assertion Consumer Service URL)',
+                  value: '(pasted from below)',
+                  as: 'field',
+                },
+                { label: 'Sign on URL', value: 'https://yourapp/auth', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve completed basic SAML configuration',
@@ -217,6 +287,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/claims-1.png',
             alt: 'Attributes & Claims section with the Edit button',
+            schematic: {
+              title: 'Set up Single Sign-On with SAML → Attributes & Claims',
+              rows: [{ label: 'Edit', as: 'button' }],
+            },
           },
           {
             kind: 'text',
@@ -239,11 +313,32 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/claims-2.png',
             alt: 'Manage claim panel showing the namespace and source attribute',
+            schematic: {
+              title: 'Manage claim',
+              rows: [
+                {
+                  label: 'Namespace',
+                  value: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims',
+                  as: 'field',
+                },
+                { label: 'Source attribute', value: 'user.userprincipalname', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
           },
           {
             kind: 'image',
             src: '/sso-setup/entra/claims-3.png',
             alt: 'Attributes & Claims list with the configured claims',
+            schematic: {
+              title: 'Attributes & Claims',
+              rows: [
+                { label: 'emailaddress', value: 'user.userprincipalname', as: 'field' },
+                { label: 'Unique User Identifier', value: 'user.userprincipalname', as: 'field' },
+                { label: 'givenname', value: 'user.givenname', as: 'field' },
+                { label: 'surname', value: 'user.surname', as: 'field' },
+              ],
+            },
           },
         ],
         warning:
@@ -259,6 +354,23 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/group-claim-1.png',
             alt: 'Group Claims panel in Attributes & Claims',
+            schematic: {
+              title: 'Group Claims',
+              rows: [
+                {
+                  label: 'Which groups associated with the user should be returned in the claim?',
+                  value: 'Groups assigned to the application',
+                  as: 'field',
+                },
+                { label: 'Source attribute', value: 'Cloud-only group display names', as: 'field' },
+                {
+                  label: 'Advanced options → Customize the name of the group claim',
+                  value: 'memberOf',
+                  as: 'field',
+                },
+                { label: 'Save', as: 'button' },
+              ],
+            },
           },
         ],
         bullets: [
@@ -280,15 +392,26 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/assign-users-1.png',
             alt: 'Users and groups in the Manage section',
+            schematic: {
+              title: 'Manage → Users and groups',
+              rows: [{ label: '+ Add user/group', as: 'button' }],
+            },
           },
           {
             kind: 'text',
-            text: 'Click "Add user/group", select the users or groups that should sign in to Kortix, then click "Assign".',
+            text: 'Click "Add user/group", click "None Selected" under Users and groups, select the users or groups that should sign in to Kortix, click "Select", then click "Assign".',
           },
           {
             kind: 'image',
             src: '/sso-setup/entra/assign-users-2.png',
             alt: 'Selecting users and groups to assign to the application',
+            schematic: {
+              title: 'Add Assignment',
+              rows: [
+                { label: 'Users', value: 'None Selected', as: 'field' },
+                { label: 'Assign', as: 'button' },
+              ],
+            },
           },
         ],
         note: 'Assigning a whole group (rather than individual users) requires Entra ID P1/P2.',
@@ -305,6 +428,16 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/entra/metadata-1.png',
             alt: 'SAML Certificates section with the App Federation Metadata Url',
+            schematic: {
+              title: 'Set up Single Sign-On with SAML → SAML Certificates',
+              rows: [
+                {
+                  label: 'App Federation Metadata Url',
+                  value: 'https://login.microsoftonline.com/…/federationmetadata.xml?appid=…',
+                  as: 'field',
+                },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve added the identity provider metadata URL',
@@ -339,12 +472,20 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/create-app-1.png',
             alt: 'Okta admin console with the Applications section expanded',
+            schematic: {
+              title: 'Applications → Applications',
+              rows: [{ label: 'Create App Integration', as: 'button' }],
+            },
           },
           { kind: 'text', text: 'Click "Create App Integration".' },
           {
             kind: 'image',
             src: '/sso-setup/okta/create-app-2.png',
             alt: 'Applications page with the Create App Integration button',
+            schematic: {
+              title: 'Applications',
+              rows: [{ label: 'Create App Integration', as: 'button' }],
+            },
           },
           {
             kind: 'text',
@@ -354,6 +495,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/create-app-3.png',
             alt: 'Create a new app integration dialog with SAML 2.0 selected',
+            schematic: {
+              title: 'Create a new app integration',
+              rows: [
+                { label: 'Sign-in method', value: 'SAML 2.0', as: 'field' },
+                { label: 'Next', as: 'button' },
+              ],
+            },
           },
           {
             kind: 'text',
@@ -363,8 +511,17 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/create-app-4.png',
             alt: 'General Settings step with the app name field',
+            schematic: {
+              title: 'Create SAML Integration → General Settings',
+              rows: [
+                { label: 'App name', value: 'Kortix', as: 'field' },
+                { label: 'App logo (optional)', as: 'field' },
+                { label: 'Next', as: 'button' },
+              ],
+            },
           },
         ],
+        note: 'On the wizard\'s last step ("Help Okta Support understand how you configured this application"), select "This is an internal app that we have created" and click "Finish" — it\'s just Okta\'s own telemetry question, not a Kortix setting.',
         doneLabel: 'I’ve created a SAML app integration',
       },
       {
@@ -383,6 +540,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/basic-saml-1.png',
             alt: 'Configure SAML step with the Single sign-on URL and Audience URI fields',
+            schematic: {
+              title: 'Create SAML Integration → Configure SAML',
+              rows: [
+                { label: 'Single sign-on URL', value: '(pasted from below)', as: 'field' },
+                { label: 'Audience URI (SP Entity ID)', value: '(pasted from below)', as: 'field' },
+              ],
+            },
           },
           {
             kind: 'text',
@@ -392,6 +556,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/basic-saml-2.png',
             alt: 'Name ID format and Application username settings',
+            schematic: {
+              title: 'Configure SAML → Name ID format',
+              rows: [
+                { label: 'Name ID format', value: 'EmailAddress', as: 'field' },
+                { label: 'Application username', value: 'Email', as: 'field' },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve configured the SAML settings',
@@ -406,6 +577,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/email-attribute-1.png',
             alt: 'Application settings page with the Sign On tab selected',
+            schematic: {
+              title: 'Your app → Sign On',
+              rows: [{ label: 'Show legacy configuration', as: 'button' }],
+            },
           },
           {
             kind: 'text',
@@ -415,6 +590,14 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/email-attribute-2.png',
             alt: 'Show legacy configuration expanded with profile and group attribute statements',
+            schematic: {
+              title: 'Sign On → Legacy configuration',
+              rows: [
+                { label: 'Profile attribute statements', as: 'badge' },
+                { label: 'Group attribute statements', as: 'badge' },
+                { label: 'Edit', as: 'button' },
+              ],
+            },
           },
           { kind: 'text', text: 'Create the following attribute mapping statements:' },
           {
@@ -430,6 +613,15 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/email-attribute-3.png',
             alt: 'Profile attribute statements filled with email, firstName, and lastName',
+            schematic: {
+              title: 'Profile attribute statements',
+              rows: [
+                { label: 'email', value: 'user.email', as: 'field' },
+                { label: 'firstName', value: 'user.firstName', as: 'field' },
+                { label: 'lastName', value: 'user.lastName', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
           },
         ],
         note: 'Belt and braces: the NameID already carries the email, but an explicit email attribute keeps sign-in working if the NameID format ever changes.',
@@ -445,6 +637,14 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/group-claim-1.png',
             alt: 'Group attribute statements form below the profile attribute statements',
+            schematic: {
+              title: 'Group attribute statements',
+              rows: [
+                { label: 'Name', value: 'groups', as: 'field' },
+                { label: 'Filter', value: 'Matches regex  .*', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
           },
         ],
         note: 'Okta sends the matching groups by NAME — those names are what you map in Kortix. The attribute name (groups) is what Kortix reads as the group claim.',
@@ -460,6 +660,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/assign-users-1.png',
             alt: 'Assignments tab with the Assign dropdown open',
+            schematic: {
+              title: 'Your app → Assignments',
+              rows: [
+                { label: 'Assign to People', as: 'button' },
+                { label: 'Assign to Groups', as: 'button' },
+              ],
+            },
           },
           {
             kind: 'text',
@@ -469,6 +676,13 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/assign-users-2.png',
             alt: 'Assign to Groups dialog with groups being assigned',
+            schematic: {
+              title: 'Assign Group to App',
+              rows: [
+                { label: 'Search', value: 'Engineers', as: 'field' },
+                { label: 'Done', as: 'button' },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve assigned users and groups',
@@ -484,6 +698,17 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'image',
             src: '/sso-setup/okta/metadata-1.png',
             alt: 'Sign On tab with the Metadata URL and Copy button',
+            schematic: {
+              title: 'Your app → Sign On → Metadata details',
+              rows: [
+                {
+                  label: 'Metadata URL',
+                  value: 'https://<org>.okta.com/app/<app-id>/sso/saml/metadata',
+                  as: 'field',
+                },
+                { label: 'Copy', as: 'button' },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve added the identity provider metadata URL',
@@ -508,7 +733,24 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'create-app',
         title: 'Create a custom SAML app',
-        intro: 'In the Google Admin console (admin.google.com): Apps → Web and mobile apps → Add app → Add custom SAML app.',
+        intro:
+          'In the Google Admin console (admin.google.com): Apps → Web and mobile apps → Add app → Add custom SAML app.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/google/create-app-1.png',
+            alt: 'Google Admin console Web and mobile apps page with Add app menu open',
+            schematic: {
+              title: 'Apps → Web and mobile apps',
+              rows: [{ label: 'Add app → Add custom SAML app', as: 'button' }],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Enter an app name, such as "Kortix" — optionally upload an app icon. Click "Continue".',
+          },
+        ],
+        doneLabel: 'I’ve created a custom SAML app',
       },
       {
         id: 'metadata',
@@ -516,7 +758,18 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         kind: 'metadata-input',
         intro:
           'On the "Google Identity Provider details" step, click "Download metadata" and paste the XML file’s contents below to continue.',
-        note: 'Google only offers the XML download — there is no hosted metadata URL.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/google/metadata-1.png',
+            alt: 'Google Identity Provider details step with the Download metadata button',
+            schematic: {
+              title: 'Add custom SAML app → Google Identity Provider details',
+              rows: [{ label: 'Download metadata', as: 'button' }],
+            },
+          },
+        ],
+        note: "Google only offers the XML download — there is no hosted metadata URL. Come back to re-download it if you change the app's configuration later; Kortix reads whatever is in the file at import time.",
         doneLabel: 'I’ve added the identity provider metadata',
       },
       {
@@ -524,6 +777,23 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         title: 'Service provider details',
         intro: 'On the "Service provider details" step, paste these two values.',
         showSpValues: true,
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/google/basic-saml-1.png',
+            alt: 'Service provider details step with ACS URL and Entity ID fields',
+            schematic: {
+              title: 'Service provider details',
+              rows: [
+                { label: 'ACS URL', value: '(pasted from below)', as: 'field' },
+                { label: 'Entity ID', value: '(pasted from below)', as: 'field' },
+                { label: 'Name ID format', value: 'EMAIL', as: 'field' },
+                { label: 'Name ID', value: 'Basic Information > Primary email', as: 'field' },
+                { label: 'Continue', as: 'button' },
+              ],
+            },
+          },
+        ],
         bullets: [
           'ACS URL → the Reply URL (ACS) below.',
           'Entity ID → the Identifier (Entity ID) below.',
@@ -531,17 +801,70 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         ],
       },
       {
+        id: 'attribute-mapping',
+        title: 'Map user attributes',
+        intro:
+          'On the "Attribute mapping" step, click "Add mapping" for each row and select the matching Google category/attribute.',
+        content: [
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'primaryEmail', source: 'Basic Information > Primary email', required: true },
+              { name: 'firstName', source: 'Basic Information > First name' },
+              { name: 'lastName', source: 'Basic Information > Last name' },
+            ],
+          },
+        ],
+        doneLabel: 'I’ve mapped the user attributes',
+      },
+      {
         id: 'group-claim',
         title: 'Map the groups attribute',
         intro:
-          'On the attribute mapping step, under "Group membership (optional)" select the groups to send and set the App attribute to groups.',
+          'Still on the attribute mapping step, scroll to "Group membership (optional)", click "Add Google groups", select the groups to send, and set the "App attribute" to groups. Click "Finish".',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/google/group-claim-1.png',
+            alt: 'Attribute mapping step Group membership section with the groups app attribute',
+            schematic: {
+              title: 'Attribute mapping → Group membership (optional)',
+              rows: [
+                { label: 'Google groups', value: 'Engineers, Support, …', as: 'field' },
+                { label: 'App attribute', value: 'groups', as: 'field' },
+                { label: 'Finish', as: 'button' },
+              ],
+            },
+          },
+        ],
         warning:
           'Google only sends groups you EXPLICITLY select here (max 75). Add every group you plan to map in Kortix — an unselected group is silently omitted from the claim.',
       },
       {
         id: 'assign-users',
         title: 'Turn the app on',
-        intro: 'Back on the app page, set User access to ON for the org units or groups that may sign in.',
+        intro:
+          'Back on the app page, select "User access", set the service to ON for the org units or groups that may sign in, then click "Save".',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/google/assign-users-1.png',
+            alt: 'App page User access section with the service toggle',
+            schematic: {
+              title: 'Kortix → User access',
+              rows: [
+                {
+                  label: 'Service status',
+                  value: 'ON for everyone / ON for some organizational units',
+                  as: 'field',
+                },
+                { label: 'Save', as: 'button' },
+              ],
+            },
+          },
+        ],
+        note: 'Google can take up to 24 hours to fully propagate an access change — a user reporting "not assigned" right after you flip this on may just need to wait.',
+        doneLabel: 'I’ve turned the app on for the right users',
       },
       importStep('groups'),
       testStep(),
@@ -601,17 +924,37 @@ const scimTokenStep: GuideStep = {
   id: 'token',
   title: 'Mint a SCIM token',
   kind: 'scim-token',
+  where: 'kortix',
   intro:
-    'Create the bearer token your identity provider will authenticate with, and copy the Tenant URL it posts to.',
+    'Create the bearer token your identity provider will authenticate with, and copy the Tenant URL it posts to. Both values stay visible in the panel on this page for the rest of the setup — you won’t need to write them down.',
+  success: 'A token appears with a public prefix, and the Tenant URL above it is ready to paste.',
   warning:
-    'The token is shown ONCE — copy it now. To rotate later: mint a new token, update the IdP, then revoke the old one from the SCIM card.',
+    'The secret is shown once at mint time — after that only its prefix is visible. If you lose it before finishing, mint a new one and revoke the old one from the SCIM card in Settings.',
 };
 
 const scimTestStep = (extra?: string): GuideStep => ({
   id: 'test',
   title: 'Verify provisioning',
   kind: 'test',
-  intro: 'Push a test user from your identity provider and confirm the lifecycle end to end.',
+  where: 'idp',
+  intro:
+    'Back in Kortix, watch the live status below while you push or wait for the sync — no need to tab back and forth to check.',
+  content: [
+    {
+      kind: 'image',
+      src: '/docs/entra/07-verify.png',
+      alt: 'Entra Provisioning overview showing a completed cycle with Import, Scope, Match, and Provision all reporting Success',
+      schematic: {
+        title: 'Provisioning → Overview → Current cycle',
+        rows: [
+          { label: 'Import', value: 'Success', as: 'badge' },
+          { label: 'Scope', value: 'Success', as: 'badge' },
+          { label: 'Match', value: 'Success', as: 'badge' },
+          { label: 'Provision', value: 'Success', as: 'badge' },
+        ],
+      },
+    },
+  ],
   bullets: [
     'A pushed user appears under Members (as a pending invite until their first sign-in).',
     'Deactivating the user in the IdP removes their membership and revokes their tokens.',
@@ -619,6 +962,8 @@ const scimTestStep = (extra?: string): GuideStep => ({
     'Group membership for a user who hasn’t signed in yet is held on their invite and applies automatically at their FIRST sign-in — an empty group before that is expected, not a failure.',
     ...(extra ? [extra] : []),
   ],
+  success:
+    'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
 });
 
 export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
@@ -635,53 +980,124 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'before',
         title: 'Before you start',
+        where: 'idp',
         intro:
-          'Directory Sync pushes users and groups from Entra proactively — deactivations apply without waiting for a sign-in.',
+          'Directory Sync pushes users and groups from Entra proactively — deactivations apply without waiting for a sign-in. It reuses the same enterprise application you already registered for SAML SSO; nothing new to create.',
+        content: [
+          {
+            kind: 'image',
+            src: '/docs/entra/01-enterprise-app.png',
+            alt: 'Entra enterprise application overview page with the Single sign-on, Provisioning, and Users and groups tabs in the left nav',
+            schematic: {
+              title: 'Enterprise application → Overview',
+              rows: [
+                { label: 'Single sign-on', as: 'badge' },
+                { label: 'Provisioning', as: 'badge' },
+                { label: 'Users and groups', as: 'badge' },
+              ],
+            },
+          },
+        ],
         bullets: [
-          'Use the same enterprise application you created for SAML SSO.',
-          'Automatic provisioning requires Entra ID P1/P2 (trial works).',
-          'Connect SAML SSO first so provisioned users can actually sign in.',
+          'Open the same enterprise application you created for SAML SSO (Entra ID → Enterprise applications → your app).',
+          'Automatic provisioning requires Entra ID P1/P2 (a trial works fine).',
+          'Connect SAML SSO first — Directory Sync can create and remove accounts, but users still need SSO to sign in.',
         ],
       },
       scimTokenStep,
       {
-        id: 'connect',
-        title: 'Connect provisioning in Entra',
-        intro: 'In your enterprise application: Provisioning → Get started.',
-        bullets: [
-          'Provisioning Mode: Automatic.',
-          'Tenant URL → the Tenant URL from the previous step.',
-          'Secret Token → the token from the previous step.',
-          'Click "Test Connection", then Save.',
+        id: 'configure',
+        title: 'Configure provisioning in Entra',
+        where: 'idp',
+        menuPath: 'Enterprise applications → your app → Provisioning',
+        intro:
+          'One page, four things to check, in order: credentials, mappings, assignment, then start. The values panel on the left has everything you need to paste.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Open "Provisioning" in the left nav and click "Get started" (first time) or "Edit provisioning" (if already configured). Set "Provisioning Mode" to "Automatic".',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/03-provisioning-credentials.png',
+            alt: 'Entra Provisioning Admin Credentials section with Tenant URL, Secret Token, and Test Connection',
+            schematic: {
+              title: 'Entra → Provisioning → Admin Credentials',
+              rows: [
+                { label: 'Tenant URL', value: '(from the panel on the left)', as: 'field' },
+                { label: 'Secret Token', value: '(from the panel on the left)', as: 'field' },
+                { label: 'Test Connection', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Under "Admin Credentials", paste the values from the panel: "Tenant URL" and "Secret Token". Click "Test Connection" — a green "Testing the connection was successful" banner is success. Click "Save".',
+          },
+          {
+            kind: 'text',
+            text: 'Expand "Mappings" → "Provision Microsoft Entra ID Users". The one row that matters: "userName" must map to source attribute "user.userprincipalname" — that is how Kortix matches the SCIM user to a Kortix account. Leave the default "objectId → externalId" mapping as-is (that\'s how Entra recognizes a record it already pushed on later syncs) and leave the rest at their defaults.',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/04-attribute-mappings.png',
+            alt: 'Entra provisioning attribute mappings list with the userName to user.userprincipalname row highlighted',
+            schematic: {
+              title: 'Provisioning → Mappings → Provision Microsoft Entra ID Users',
+              rows: [
+                { label: 'userName', value: 'user.userprincipalname', as: 'field' },
+                { label: 'objectId', value: 'externalId', as: 'field' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Assignment is the allow-list: only users/groups assigned to this application get provisioned. In the left nav click "Users and groups" → "+ Add user/group" → click "None Selected" under Users → pick a user (recommended: assign yourself first so you can watch yourself arrive) → "Select" → "Assign".',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/05-assign-users.png',
+            alt: 'Entra Users and groups panel with Add user/group open and a user selected for assignment',
+            schematic: {
+              title: 'Manage → Users and groups',
+              rows: [
+                { label: '+ Add user/group', as: 'button' },
+                { label: 'Users', value: 'None Selected', as: 'field' },
+                { label: 'Assign', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Back in "Provisioning" → "Settings", set "Scope" to "Sync only assigned users and groups" — it only appears here after credentials are saved. Then click "Start provisioning" at the top of the Provisioning overview page (or "Provision on demand" to push one assigned user instantly instead of waiting for the ~40-minute cycle).',
+          },
+          {
+            kind: 'text',
+            text: '"Sync only assigned users and groups" makes this app\'s Users and groups list your allowlist: roll out team-by-team, and unassigning someone removes their Kortix access. "Sync all users and groups" gives every person in your Entra tenant a Kortix account — fine for a small or dedicated tenant, rarely what a company tenant wants on day one.',
+          },
+          {
+            kind: 'image',
+            src: '/docs/entra/06-start-provisioning.png',
+            alt: 'Entra Provisioning overview page toolbar with Start provisioning and Provision on demand buttons',
+            schematic: {
+              title: 'Provisioning → Overview',
+              rows: [
+                { label: 'Provisioning Status', value: 'On', as: 'field' },
+                { label: 'Scope', value: 'Sync only assigned users and groups', as: 'field' },
+                { label: 'Start provisioning', as: 'button' },
+                { label: 'Provision on demand', as: 'button' },
+              ],
+            },
+          },
         ],
+        success:
+          'Test Connection passes, the Mappings list shows userName → user.userprincipalname, at least one user/group is assigned, and the Provisioning overview shows "On".',
         warning:
-          'Paste the Tenant URL exactly as shown — it is NOT the regular API URL (no /v1 suffix). A hand-built URL is the #1 cause of a failing Test Connection.',
-      },
-      {
-        id: 'mappings',
-        title: 'Check the attribute mappings',
-        intro:
-          'The default mappings work. The one that matters: userName must map to the user’s email (userPrincipalName) — it is how Kortix matches accounts.',
-      },
-      {
-        id: 'scope',
-        title: 'Assign who gets provisioned',
-        intro:
-          'In "Users and groups", assign the users/groups to provision. Keep "Scope" on "Sync only assigned users and groups".',
-        note: 'The Scope selector only appears under Settings AFTER you save the provisioning credentials — if you don’t see it, save first. Assigning a whole group requires Entra ID P1/P2.',
-      },
-      {
-        id: 'provision',
-        title: 'Push a test user',
-        intro:
-          'Use "Provision on demand" (instant, P1/P2) to push one assigned user now — or "Start provisioning" for the regular ~40-minute cycles.',
-        bullets: [
-          'Provision on demand → pick the user → Provision.',
-          'All four stages (Import, Scope, Match, Perform action) should report Success.',
-        ],
+          '#1 failure mode: Test Connection fails. Almost always a hand-typed or truncated Tenant URL — re-copy it exactly from the panel on the left (it is not the regular Kortix API URL and has no /v1 suffix). Assigning a whole GROUP (rather than individual users) needs Entra ID P1/P2; on Free, assign users one at a time.',
+        doneLabel: 'I’ve configured, mapped, assigned, and started provisioning',
       },
       scimTestStep(
-        'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again.',
+        'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again — or run "Provision on demand" to apply it immediately.',
       ),
     ],
   },
@@ -691,8 +1107,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     blurb: 'Automatic provisioning from Okta',
     config: {
       groupClaimName: 'groups',
-      groupValueHint:
-        'Groups pushed via Push Groups are created in Kortix under their Okta names.',
+      groupValueHint: 'Groups pushed via Push Groups are created in Kortix under their Okta names.',
     },
     steps: [
       {
@@ -705,28 +1120,100 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       {
         id: 'enable-scim',
         title: 'Enable SCIM on the app',
+        where: 'idp',
+        menuPath: 'Your app → General → App Settings',
         intro: 'In the Okta admin console, open the app → General → App Settings → Edit.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/scim-credentials-1.png',
+            alt: 'Okta app Provisioning tab with the Configure API Integration panel',
+            schematic: {
+              title: 'App → Provisioning → Configure API Integration',
+              rows: [
+                { label: 'Enable API integration', as: 'field' },
+                {
+                  label: 'SCIM connector base URL',
+                  value: '(the Tenant URL from the token step)',
+                  as: 'field',
+                },
+                { label: 'Unique identifier field for users', value: 'userName', as: 'field' },
+                { label: 'Authentication Mode', value: 'HTTP Header', as: 'field' },
+                { label: 'API Token', value: '(the minted secret)', as: 'field' },
+                { label: 'Test API Credentials', as: 'button' },
+              ],
+            },
+          },
+        ],
         bullets: [
           'Provisioning: SCIM → Save.',
           'A Provisioning tab appears → Configure API Integration → Enable API integration.',
           'SCIM connector base URL → the Tenant URL from the token step.',
           'Unique identifier field for users: userName.',
-          'Authentication mode: HTTP Header → paste the token → Test Connector Configuration → Save.',
+          'Authentication mode: HTTP Header → paste the token → Test API Credentials → Save.',
         ],
+        doneLabel: 'I’ve enabled and connected SCIM',
       },
       {
         id: 'to-app',
         title: 'Turn on the sync actions',
+        where: 'idp',
+        menuPath: 'Your app → Provisioning → To App',
         intro: 'On the Provisioning tab → To App → Edit.',
-        bullets: [
-          'Enable Create Users, Update User Attributes, and Deactivate Users → Save.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/scim-to-app-1.png',
+            alt: 'Provisioning To App settings with the three sync-action checkboxes',
+            schematic: {
+              title: 'Provisioning → To App',
+              rows: [
+                { label: 'Create Users', as: 'field' },
+                { label: 'Update User Attributes', as: 'field' },
+                { label: 'Deactivate Users', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
+          },
         ],
+        bullets: ['Enable Create Users, Update User Attributes, and Deactivate Users → Save.'],
+        doneLabel: 'I’ve turned on the sync actions',
       },
       {
         id: 'assign',
         title: 'Assign people and push groups',
+        where: 'idp',
+        menuPath: 'Your app → Assignments / Push Groups',
         intro:
-          'Assignments → assign the people/groups to provision. Use the Push Groups tab to sync group memberships.',
+          'Assignments is the allow-list: only assigned people/groups get provisioned. Push Groups is separate — it syncs group membership for groups you explicitly push.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Assignments tab → "Assign" → "Assign to People" (or "Assign to Groups") → pick who should be provisioned → "Done".',
+          },
+          {
+            kind: 'text',
+            text: 'Push Groups tab → "+ Push Groups" → "Find groups by name" → search and select the group → check "Push Immediately" → "Save".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/scim-push-groups-1.png',
+            alt: 'Push Groups tab with Find groups by name and Push Immediately option',
+            schematic: {
+              title: 'Push Groups',
+              rows: [
+                { label: 'Find groups by name', value: 'Engineers', as: 'field' },
+                { label: 'Push Immediately', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: '"Assign to People/Groups" makes the Assignments tab your allowlist: roll out team-by-team, and unassigning someone removes their Kortix access. There is no "sync everyone" toggle in Okta the way Entra has one — Assignments IS the scope, always.',
+          },
+        ],
+        doneLabel: 'I’ve assigned people and pushed groups',
       },
       scimTestStep(),
     ],

@@ -317,6 +317,34 @@ projectsApp.openapi(
 },
 );
 
+// GET /v1/projects/managed-git/status
+// Lets the frontend pre-check whether the managed-git "Create project" path
+// (POST /provision) is usable BEFORE the user hits its 503, so the create UI
+// can disable/annotate that option instead of surfacing a raw server error.
+// Self-host deployments with no MANAGED_GIT_* configured are the primary
+// case — the BYO-repo import path (POST / and /create-repo) stays available
+// regardless.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/managed-git/status',
+    tags: ['projects'],
+    summary: 'GET /managed-git/status',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ configured: z.boolean(), provider: z.string() }),
+        'Whether the managed-git provider is configured on this server',
+      ),
+    },
+  }),
+  async (c: any) => {
+    const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
+    const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
+    return c.json({ configured, provider });
+  },
+);
+
 // POST /v1/projects/provision
 // Managed-git "Create project": provisions a repo on the managed backend +
 // scoped per-project push token, optionally seeds the starter (web flow), and

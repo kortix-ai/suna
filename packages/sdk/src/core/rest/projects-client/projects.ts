@@ -280,6 +280,32 @@ export async function provisionProject(input: ProvisionProjectInput) {
   );
 }
 
+export interface ManagedGitStatus {
+  configured: boolean;
+  provider: string;
+}
+
+/**
+ * Whether the managed-git "Create project" path (provisionProject/POST
+ * /projects/provision) is usable on this server. Lets the create-project UI
+ * pre-check and disable/annotate that option instead of letting the user hit
+ * a 503 — self-host deployments with no MANAGED_GIT_* configured are the
+ * primary case (the BYO-repo import path stays available regardless).
+ * `showErrors: false` — a failure here is a soft "assume unavailable", not
+ * something that should ever surface as a toast of its own.
+ */
+export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
+  try {
+    return unwrap(
+      await backendApi.get<ManagedGitStatus>('/projects/managed-git/status', {
+        showErrors: false,
+      }),
+    );
+  } catch {
+    return { configured: false, provider: 'github' };
+  }
+}
+
 export async function updateProject(
   projectId: string,
   input: Partial<ProjectInput>,

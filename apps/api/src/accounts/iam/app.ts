@@ -104,6 +104,7 @@ export const SsoProviderSchema = z
     primary_domain: z.string(),
     group_claim_name: z.string().nullable().optional(),
     auto_create_members: z.boolean().optional(),
+    enforce_sso: z.boolean().optional(),
     created_at: z.string(),
     updated_at: z.string(),
   })

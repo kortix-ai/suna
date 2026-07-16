@@ -1,0 +1,227 @@
+---
+title: Self-hosting
+description: Run your own private instance of Kortix on a VPS you control — one Docker Compose stack, one CLI.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Run the full Kortix stack — frontend, API, LLM gateway, and the official
+Supabase distribution — as one Docker Compose project, on any box you
+control. Agent sessions still run on a cloud sandbox provider (Daytona, E2B,
+or Platinum) — sandboxes are managed compute, not part of this box.
+
+**Kortix self-host is VPS-first.** The supported way to run it for real is
+your own VPS or server with a persistent domain pointed at it. A local
+machine with no public domain can run the identical stack for evaluation via
+a Cloudflare tunnel, but that path is not recommended for production — see
+[Reachability](#reachability) below.
+
+## Quickstart: VPS + domain
+
+<Steps>
+
+<Step>
+### Point DNS at the box
+
+Create an A/AAAA record for your domain (and its API subdomain, `api.<domain>`
+by default) pointing at the box's public IP. Ports **80** and **443** must be
+reachable from the internet — the bundled Caddy reverse proxy uses ACME
+HTTP-01 to issue a TLS certificate automatically.
+</Step>
+
+<Step>
+### Install and initialize
+
+```sh
+curl -fsSL https://kortix.com/install | bash
+kortix self-host init --domain kortix.example.com
+```
+
+`init` is a short guided flow (skippable non-interactively with flags, or
+`--yes` for defaults) that asks, in order:
+
+1. **Reachability** — confirms the domain above, or `--tunnel cloudflare` if
+   you have no public domain (local machine / evaluation only).
+2. **Admin email** — which account gets platform-admin on first sign-up.
+3. **Deployment shape** — whether you hold an Enterprise license
+   (SSO/SCIM/RBAC/audit), and whether to restrict account creation to the
+   admin (on by default — see "Configuration" below).
+4. **Sandbox provider** — `daytona` (default), `e2b`, or `platinum`, plus its
+   API key.
+5. **Pipedream** (optional) — the 3,000+ app connector catalog.
+6. **Update policy** — auto-update on/off, channel (`stable`/`latest`), and
+   the daily update window.
+
+On a bare Linux box, `scripts/kortix-selfhost-up.sh` (in the main repo) does
+this whole step for you — installs Docker and the CLI, then runs `init` with
+your `--domain`/`--email`.
+</Step>
+
+<Step>
+### Start the stack
+
+```sh
+kortix self-host start
+```
+
+Pulls images and brings the stack up. `kortix self-host status` / `logs` /
+`doctor` are your friends while it comes up.
+</Step>
+
+<Step>
+### Finish in the dashboard
+
+Open `https://kortix.example.com` and sign up with the admin email from step
+2, then:
+
+- **Settings → Git** — connect a GitHub App (or PAT) so the platform can
+  create project repos.
+- **Settings → Model** — connect your own model key (BYOK: Anthropic, OpenAI,
+  OpenRouter, etc.).
+</Step>
+
+</Steps>
+
+That's a complete, working instance. From here, use the main `kortix` CLI
+against it exactly like you would against Kortix Cloud:
+
+```sh
+kortix hosts use selfhost   # already registered + pointed at your instance by `init`/`start`
+kortix login
+kortix whoami
+kortix projects ls
+cd your-project && kortix ship
+```
+
+## Reachability
+
+Agent sessions run on a **cloud** sandbox VM — outside your network — that
+calls back to this instance's API over the public internet. That callback is
+the one thing that can never be a loopback/internal address: the sandbox
+itself is perfectly reachable compute, it's this API being reachable *from*
+the sandbox that has to be real. `init`/`configure` only ever offer two
+choices:
+
+- **`--domain <domain>`** — you have a public domain pointed at this
+  machine. The recommended, production path: turns on the bundled Caddy
+  reverse proxy + ACME TLS.
+- **`--tunnel cloudflare`** — no public domain. Exposes the API through a
+  Cloudflare tunnel with zero DNS/firewall setup. For local machines /
+  evaluation only — not recommended for production; the default quick-tunnel
+  URL is ephemeral (a fresh one every restart).
+
+<Callout type="warn">
+There is no third "local-only" mode to pick. If you're on a local machine
+with no public domain, use the tunnel — passing neither flag just leaves
+reachability unconfigured, and agent sessions won't run until you set one.
+`init`/`start` print a warning every time that's the case.
+</Callout>
+
+Switch any time with `kortix self-host configure` (interactive) or the same
+flags on `init`/`update`.
+
+## Configuration: one `.env`, one command
+
+Every value this instance's Docker services read — ports, URLs, feature
+flags, and every secret — lives in a single `.env` file per instance
+(`~/.config/kortix/self-host/<instance>/.env`), consumed via Compose's
+`env_file:`. Nothing leaves your machine. One command reads and writes it:
+
+```sh
+kortix self-host env ls                       # every value, grouped by service; secrets masked
+kortix self-host env ls --show                # reveal masked values
+kortix self-host env set DAYTONA_API_KEY=...  # set anything; restarts only the services it affects
+kortix self-host env rotate SUPABASE_JWT_SECRET   # regenerate a rotatable generated secret
+kortix self-host env rotate --all-generated   # regenerate every rotatable generated secret
+```
+
+By default, only the admin (the account(s) listed in `KORTIX_PLATFORM_ADMIN_EMAILS`)
+can create new accounts/organizations on a self-hosted instance — everyone
+else joins an existing account by invitation or SSO. This doesn't touch
+signups, teams, or SSO/JIT provisioning; it only gates spinning up a brand
+new organization, and `init`/`configure` ask about it as part of "Deployment
+shape". Disable it to let any signed-in user create accounts freely:
+
+```sh
+kortix self-host env set KORTIX_RESTRICT_ACCOUNT_CREATION=false KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION=false
+```
+
+## Updates
+
+Every instance runs an in-compose `kortix-updater` service (on by default)
+that pulls the configured channel's newest images on a schedule, migrates,
+and rolls the stack forward with zero downtime. `stable` (default) or
+`latest`; pin an exact version with `kortix self-host update --tag <version>`.
+
+```sh
+kortix self-host update              # converge to the configured channel/version right now
+kortix self-host version             # what's running vs. what's published
+```
+
+<Callout type="info">
+A migration that needs a brief downtime window sets `KORTIX_ALLOW_DOWNTIME`
+— there's no dedicated flag for it. A release that requires it will say so;
+set it yourself with `kortix self-host env set KORTIX_ALLOW_DOWNTIME=1`.
+</Callout>
+
+## Run a specific version or your own build
+
+```sh
+kortix self-host init --channel latest             # track the bleeding-edge moving tag instead of stable
+kortix self-host init --version 0.10.1             # pin an exact released version
+kortix self-host init --version dev-a1b2c3d        # pin a published dev build (e.g. from a branch's CI)
+```
+
+Testing a locally-built image (never pushed to any registry):
+
+```sh
+docker build -t kortix/kortix-api:mytest apps/api
+kortix self-host init --version mytest --local-images
+kortix self-host start
+```
+
+`--local-images` skips `docker compose pull` (a locally-built tag isn't on
+any registry) and forces auto-update off — a box running an unpublished
+build must never let the nightly updater try to pull it from nowhere.
+
+## Uninstalling
+
+```sh
+kortix self-host uninstall           # interactive: type the instance name to confirm
+kortix self-host uninstall --yes     # non-interactive / scripts
+```
+
+Stops the stack, removes its containers and Docker volumes, deletes the
+instance's config directory, and clears the CLI's `selfhost` host entry if it
+points at this instance. **This permanently deletes all data for that
+instance** — back up first if you might need it (see the runbook). Reinstall
+any time with `init` + `start`.
+
+## Provisioning a VPS with Terraform (optional)
+
+If you'd rather provision the box declaratively than run a script by hand,
+`infra/terraform/modules/selfhost-ec2` is a thin, optional convenience
+provisioner — not a different deployment system. It creates the EC2
+instance, an encrypted EBS data volume, a security group, an Elastic IP,
+optional Route53 records, and a scheduled snapshot policy, then cloud-init
+runs the exact same `kortix self-host init`/`start` described above.
+
+```hcl
+module "kortix_selfhost" {
+  source = "github.com/kortix-ai/suna//infra/terraform/modules/selfhost-ec2"
+
+  domain = "kortix.example.com"
+  tags   = { Project = "kortix-selfhost" }
+}
+```
+
+## Learn more
+
+- [Self-hosting architecture](/docs/reference/self-hosting-architecture) —
+  how the Compose stack fits together.
+- [CLI reference](/docs/reference/cli#self-host) — every `kortix self-host`
+  subcommand and flag.
+- [Operator runbook](https://github.com/kortix-ai/suna/blob/main/docs/runbooks/self-hosting.md)
+  — the full day-to-day reference: troubleshooting, backup/restore mechanics,
+  SMTP, using the CLI from a different machine, and the auto-updater's
+  internals.

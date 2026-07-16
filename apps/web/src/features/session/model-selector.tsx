@@ -153,7 +153,12 @@ export function ModelSelector({
   // Where Upgrade / Connect provider should route, given the current route
   // context — shared with the chat input's full-block gate and onboarding so
   // they all open the exact same dialogs.
-  const { openConnectProvider, openUpgrade, modal: connectionModal } = useModelConnectionGate();
+  const {
+    openConnectProvider,
+    openUpgrade,
+    modal: connectionModal,
+    showUpgradeOption,
+  } = useModelConnectionGate();
 
   // When mounted under /projects/[id]/..., route model filtering to the
   // per-project gateway catalog. On every other route (instance dashboard,
@@ -496,17 +501,21 @@ export function ModelSelector({
                   <div className="px-3 py-5 text-center">
                     <div className="text-foreground text-sm font-medium">No models available</div>
                     <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                      Upgrade or connect your own provider to start using this session.
+                      {showUpgradeOption
+                        ? 'Upgrade or connect your own provider to start using this session.'
+                        : 'Connect your own provider to start using this session.'}
                     </p>
                     <div className="mt-4 flex items-center justify-center gap-2">
-                      <Button type="button" size="xs" onClick={handleUpgrade}>
-                        <CreditCard className="size-3.5" />
-                        Upgrade
-                      </Button>
+                      {showUpgradeOption && (
+                        <Button type="button" size="xs" onClick={handleUpgrade}>
+                          <CreditCard className="size-3.5" />
+                          Upgrade
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         size="xs"
-                        variant="outline"
+                        variant={showUpgradeOption ? 'outline' : 'default'}
                         onClick={() => handleOpenProviderModal('providers')}
                       >
                         <KeyRound className="size-3.5" />

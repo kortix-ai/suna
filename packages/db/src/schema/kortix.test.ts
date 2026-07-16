@@ -27,6 +27,7 @@ import {
   sandboxMembers,
   kortixApiKeys,
   sandboxComputeSessions,
+  accountSsoProviders,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -383,5 +384,22 @@ describe('kortixApiKeys table', () => {
       (i) => i.config.name === 'idx_kortix_api_keys_public_key',
     );
     expect(unique?.config.unique).toBe(true);
+  });
+});
+
+describe('accountSsoProviders table', () => {
+  test('maps to account_sso_providers inside the kortix schema', () => {
+    const cfg = getTableConfig(accountSsoProviders);
+    expect(cfg.name).toBe('account_sso_providers');
+    expect(cfg.schema).toBe('kortix');
+  });
+
+  test('enforce_sso is a not-null boolean defaulting to false', () => {
+    const col = getTableConfig(accountSsoProviders).columns.find(
+      (c) => c.name === 'enforce_sso',
+    );
+    expect(col).toBeDefined();
+    expect(col?.notNull).toBe(true);
+    expect(col?.default).toBe(false);
   });
 });

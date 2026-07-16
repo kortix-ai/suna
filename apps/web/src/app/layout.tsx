@@ -6,6 +6,7 @@ import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
+import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
@@ -331,7 +332,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                       so every enterprise CTA across the app (accounts settings,
                       billing, IAM) can open it via useRequestDemo(). */}
                   <RequestDemoProvider>
-                    <KortixProjectScope>{children}</KortixProjectScope>
+                    {/* Account-wide MFA: catches the SDK's kortix:mfa-required
+                        event (coded 403) and walks the user through a TOTP
+                        step-up so the retried action passes the IAM gate. */}
+                    <MfaStepUpProvider>
+                      <KortixProjectScope>{children}</KortixProjectScope>
+                    </MfaStepUpProvider>
                   </RequestDemoProvider>
                   {/* Global maintenance/incident banner (info/warning/critical).
                       Needs the query client, so it mounts inside ReactQueryProvider. */}

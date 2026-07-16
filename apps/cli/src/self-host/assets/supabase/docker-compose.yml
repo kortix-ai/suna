@@ -220,14 +220,25 @@ services:
       # GOTRUE_MFA_PHONE_VERIFY_ENABLED: ${MFA_PHONE_VERIFY_ENABLED}
       # GOTRUE_MFA_MAX_ENROLLED_FACTORS: ${MFA_MAX_ENROLLED_FACTORS}
 
-      # SAML SSO
+      # SAML SSO — enabled by default so `kortix self-host` matches Kortix Cloud
+      # out of the box: GOTRUE_SAML_ENABLED is "true" and GOTRUE_SAML_PRIVATE_KEY
+      # is a per-instance RSA-2048 key the CLI generates at `init` (see
+      # samlPrivateKeyDer() in commands/self-host.ts), the same way it generates
+      # SUPABASE_JWT_SECRET/POSTGRES_PASSWORD. This only turns on the GoTrue SAML
+      # *capability* — no IdP is registered until an operator/admin actually
+      # configures one (Account → Settings → SAML SSO, gated on the `sso`
+      # entitlement — see --enterprise-license). Do not rotate SAML_PRIVATE_KEY
+      # once an IdP is registered: it changes the SP's signing identity, which
+      # breaks every already-trusted IdP relationship until re-registered.
       # See: https://supabase.com/docs/guides/self-hosting/self-hosted-saml-sso
-      # GOTRUE_SAML_ENABLED: ${SAML_ENABLED}
-      # GOTRUE_SAML_PRIVATE_KEY: ${SAML_PRIVATE_KEY}
+      GOTRUE_SAML_ENABLED: ${SAML_ENABLED}
+      GOTRUE_SAML_PRIVATE_KEY: ${SAML_PRIVATE_KEY}
       # GOTRUE_SAML_ALLOW_ENCRYPTED_ASSERTIONS: ${SAML_ALLOW_ENCRYPTED_ASSERTIONS}
       # GOTRUE_SAML_RELAY_STATE_VALIDITY_PERIOD: ${SAML_RELAY_STATE_VALIDITY_PERIOD}
       # GOTRUE_SAML_RATE_LIMIT_ASSERTION: ${SAML_RATE_LIMIT_ASSERTION}
-      # Optional, defaults to API_EXTERNAL_URL if not set
+      # Optional, defaults to API_EXTERNAL_URL if not set — API_EXTERNAL_URL is
+      # already domain/tunnel-aware (see normalizeFullSupabaseEnv), so this never
+      # needs to hardcode a public URL.
       # GOTRUE_SAML_EXTERNAL_URL: ${SAML_EXTERNAL_URL}
 
       # Uncomment to enable custom access token hook.
