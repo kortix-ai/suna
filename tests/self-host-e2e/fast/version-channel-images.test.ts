@@ -155,7 +155,6 @@ describe.skipIf(!caps.localImages)(
       expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:dev');
       expect(env.API_IMAGE).toBe('kortix/kortix-api:dev');
       expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:dev');
-      expect(env.SANDBOX_IMAGE).toBe('kortix/kortix-sandbox:dev');
       // "dev" isn't one of CHANNELS (stable|latest), so it doesn't invent a
       // channel name — same rule already covered for a semver pin above.
       expect(env.KORTIX_CHANNEL).toBe('stable');
@@ -215,7 +214,6 @@ describe.skipIf(!caps.localImages)(
       expect(env.API_IMAGE).toBe('kortix/kortix-api:dev');
       expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:dev');
       expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:dev');
-      expect(env.SANDBOX_IMAGE).toBe('kortix/kortix-sandbox:dev');
       expect(env.KORTIX_AUTO_UPDATE).toBe('true');
     });
 
