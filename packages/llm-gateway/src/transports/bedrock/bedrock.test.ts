@@ -50,3 +50,51 @@ describe('buildBedrockRequest', () => {
     });
   });
 });
+
+describe('buildBedrockRequest — reasoning/thinking (inherits the anthropic core payload)', () => {
+  test('reasoning_effort translates to a thinking.budget_tokens block, not silently dropped', () => {
+    const req = buildBedrockRequest(
+      { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' },
+      descriptor,
+    );
+    expect((req.payload as any).thinking).toEqual({ type: 'enabled', budget_tokens: 16000 });
+  });
+});
+
+describe('buildBedrockRequest — tool_choice (SAFETY: inherits the anthropic core payload)', () => {
+  const withTools = (tool_choice: unknown) => ({
+    messages: [{ role: 'user', content: 'go' }],
+    tools: [{ type: 'function', function: { name: 'search', parameters: { type: 'object' } } }],
+    tool_choice,
+  });
+
+  test("'none' maps to the explicit {type:'none'} value, not omitted", () => {
+    const req = buildBedrockRequest(withTools('none'), descriptor);
+    expect((req.payload as any).tool_choice).toEqual({ type: 'none' });
+  });
+
+  test("'auto' omits tool_choice", () => {
+    const req = buildBedrockRequest(withTools('auto'), descriptor);
+    expect((req.payload as any).tool_choice).toBeUndefined();
+  });
+
+  test('omitted/null tool_choice omits it from the payload', () => {
+    const req = buildBedrockRequest(withTools(undefined), descriptor);
+    expect((req.payload as any).tool_choice).toBeUndefined();
+    const req2 = buildBedrockRequest(withTools(null), descriptor);
+    expect((req2.payload as any).tool_choice).toBeUndefined();
+  });
+
+  test("'required' maps to {type:'any'}", () => {
+    const req = buildBedrockRequest(withTools('required'), descriptor);
+    expect((req.payload as any).tool_choice).toEqual({ type: 'any' });
+  });
+
+  test('a named function tool_choice maps to {type:"tool", name}', () => {
+    const req = buildBedrockRequest(
+      withTools({ type: 'function', function: { name: 'search' } }),
+      descriptor,
+    );
+    expect((req.payload as any).tool_choice).toEqual({ type: 'tool', name: 'search' });
+  });
+});
