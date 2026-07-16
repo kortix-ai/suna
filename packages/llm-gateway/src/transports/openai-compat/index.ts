@@ -134,6 +134,31 @@ function normalizeRoleSequenceForPerplexity(messages: unknown[]): unknown[] {
   return out;
 }
 
+// OpenAI's real streaming Chat Completions API only emits a `usage` object on
+// a trailing chunk when the request sets `stream_options: {include_usage:
+// true}` — without it, no chunk ever carries usage, and the whole completion
+// bills at $0 (extractUsageFromSseBuffer finds nothing to extract). The
+// handler already force-injects this for every streaming request generically
+// (pipeline/handler.ts, before any transport sees the body), but that's a
+// second, upstream layer this transport doesn't control — so genuine OpenAI
+// traffic gets its own belt-and-suspenders injection here too, exactly like
+// the max_tokens translation above, so a future refactor of the handler's
+// payload construction can't silently reopen the $0-billing gap for OpenAI
+// specifically. A caller that already set stream_options is never overridden.
+function ensureStreamUsageForGenuineOpenAi(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (payload.stream !== true) return payload;
+  const existing = payload.stream_options;
+  if (existing && typeof existing === 'object') {
+    if ((existing as { include_usage?: unknown }).include_usage === undefined) {
+      return { ...payload, stream_options: { ...existing, include_usage: true } };
+    }
+    return payload;
+  }
+  return { ...payload, stream_options: { include_usage: true } };
+}
+
 export function buildUpstreamRequest(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
@@ -151,6 +176,7 @@ export function buildUpstreamRequest(
   if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
   if (isGenuineOpenAiUpstream(descriptor.baseUrl)) {
     payload = translateMaxTokensForGenuineOpenAi(payload);
+    payload = ensureStreamUsageForGenuineOpenAi(payload);
     if (descriptor.temperature === false) {
       payload = stripReasoningRestrictedSamplingParams(payload);
     }

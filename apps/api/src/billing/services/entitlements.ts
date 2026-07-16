@@ -23,10 +23,18 @@ const TIER_CACHE_TTL_MS = 30_000;
 const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
 
 /**
- * getAccountTier with a short per-process TTL cache. Used on the gateway auth
- * hot path (every chat-completions request authenticates), where the tier is
- * needed to decide a free account's model visibility + `auto` routing and a
- * fresh DB read per request would be wasteful. Tiers change rarely; 30s is fine.
+ * getAccountTier with a short per-process TTL cache — the SINGLE tier cache for
+ * the whole gateway control plane. Used on the gateway auth hot path (every
+ * chat-completions request authenticates, withResolvedTier in llm-gateway/
+ * hooks.ts) AND by resolveCandidates (llm-gateway/resolution/resolve-
+ * candidates.ts) for the BYOK platform-fee/waiver decision and the managed-
+ * model free-tier gate. Previously each of those had its OWN independent 30s-
+ * TTL cache/Map, so the BYOK fee decision and the managed-model gate could see
+ * different tiers (stale vs fresh) for up to 30s after an upgrade/downgrade,
+ * independently of each other — unifying to one cache with one invalidation
+ * point removes that skew (both call sites now share the same cached value and
+ * expire at the same wall-clock instant for a given account). Tiers change
+ * rarely; 30s is fine.
  */
 export async function getCachedAccountTier(accountId: string): Promise<string> {
   const cached = accountTierCache.get(accountId);
@@ -34,6 +42,17 @@ export async function getCachedAccountTier(accountId: string): Promise<string> {
   const tier = await getAccountTier(accountId);
   accountTierCache.set(accountId, { tier, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
   return tier;
+}
+
+/**
+ * Invalidate the cached tier for one account (or the whole cache when no id is
+ * given). Exposed so a tier-change webhook/admin action can force an immediate
+ * re-read instead of waiting out the TTL, and so tests can deterministically
+ * exercise "tier changed mid-window" without faking timers.
+ */
+export function invalidateCachedAccountTier(accountId?: string): void {
+  if (accountId) accountTierCache.delete(accountId);
+  else accountTierCache.clear();
 }
 
 /** The full enterprise entitlement set for an account. */

@@ -88,6 +88,11 @@ describe('ApiClient', () => {
     await expect(c.assertBillingActive('a1')).resolves.toBeUndefined();
   });
 
+  test('assertBillingActive surfaces an admission holdUsd when the API took one (BILLING-CORRECTNESS atomic hold)', async () => {
+    const c = client(async () => jsonResponse({ active: true, holdUsd: 0.01 }));
+    await expect(c.assertBillingActive('a1')).resolves.toEqual({ holdUsd: 0.01 });
+  });
+
   test('retries a 503 then succeeds', async () => {
     let calls = 0;
     const c = client(async () => {

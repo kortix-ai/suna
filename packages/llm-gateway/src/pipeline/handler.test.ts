@@ -1160,6 +1160,262 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
   });
 });
 
+describe("gateway.chatCompletions — BILLING-CORRECTNESS: discarded-attempt usage + zero-usage safeguard", () => {
+  function sseResponse(body: string): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+  }
+
+  test("non-streaming: a discarded empty-completion candidate that carried real usage is folded into the eventual billed usage — Kortix doesn't eat the upstream cost silently", async () => {
+    // A malformed/empty completion that STILL reports real usage (the exact
+    // OpenRouter/z-ai pattern the empty-completion retry loop exists for) —
+    // the upstream may have already charged for it even though `choices` is
+    // empty.
+    const emptyButBilled = JSON.stringify({
+      model: "m",
+      choices: [],
+      usage: { prompt_tokens: 40, completion_tokens: 0 },
+    });
+    const good = JSON.stringify({
+      model: "m",
+      choices: [{ message: { content: "real answer" } }],
+      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    });
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(calls < 2 ? emptyButBilled : good, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage).toHaveLength(1);
+    // 40 (discarded) + 5 (billed candidate) = 45 — not just the 5 from the
+    // candidate that actually won.
+    expect(usage[0].promptTokens).toBe(45);
+    expect(usage[0].completionTokens).toBe(3);
+  });
+
+  test("streaming: a discarded empty-stream candidate carrying a trailing usage-only frame is folded into the eventual billed usage", async () => {
+    const emptyButBilled =
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":0}}\n\n' +
+      "data: [DONE]\n\n";
+    const good =
+      'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}\n\n' +
+      "data: [DONE]\n\n";
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(calls < 2 ? emptyButBilled : good);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(usage[0].promptTokens).toBe(45);
+    expect(usage[0].completionTokens).toBe(3);
+  });
+
+  test("a genuinely empty discarded attempt (zero usage, no cost hint) contributes nothing — unchanged from prior behavior", async () => {
+    const emptyZero = JSON.stringify({
+      model: "m",
+      choices: [],
+      usage: { prompt_tokens: 0, completion_tokens: 0 },
+    });
+    const good = JSON.stringify({
+      model: "m",
+      choices: [{ message: { content: "real answer" } }],
+      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    });
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(calls < 2 ? emptyZero : good, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage[0].promptTokens).toBe(5);
+    expect(usage[0].completionTokens).toBe(3);
+  });
+
+  test("a billable streaming route that settles with literally zero extracted usage logs a distinct warning and skips recordUsage", async () => {
+    const warnCalls: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (msg: string) => warnCalls.push(msg),
+      error: () => {},
+      debug: () => {},
+    };
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [managed] }); // managed.markup = 2 (billable)
+    // A stream that produces real relayed content but never emits any `usage`
+    // key anywhere (e.g. an upstream that silently omits it) — hasContent is
+    // true so it's relayed, but extractUsageFromSseBuffer returns null.
+    const noUsageSse =
+      'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+      "data: [DONE]\n\n";
+    const fetchImpl: FetchImpl = async () => sseResponse(noUsageSse);
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl, logger },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    expect(usage).toHaveLength(0); // nothing to bill — but NOT silent:
+    expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(true);
+  });
+
+  test("a non-billable (billingMode 'none') route settling with zero usage does NOT trigger the zero-usage warning", async () => {
+    const warnCalls: string[] = [];
+    const logger = {
+      info: () => {},
+      warn: (msg: string) => warnCalls.push(msg),
+      error: () => {},
+      debug: () => {},
+    };
+    const free: UpstreamDescriptor = { ...managed, billingMode: "none", markup: 0 };
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [free] });
+    const noUsageSse =
+      'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+      "data: [DONE]\n\n";
+    const fetchImpl: FetchImpl = async () => sseResponse(noUsageSse);
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl, logger },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    await new Response(res.body).text();
+    await flush();
+    expect(usage).toHaveLength(0);
+    expect(warnCalls.some((m) => m.includes("ZERO extracted usage"))).toBe(false);
+  });
+});
+
+describe("gateway.chatCompletions — BILLING-CORRECTNESS: atomic admission-hold reconciliation", () => {
+  test("a hold taken at admission is reconciled (topped up) against the real cost on a successful request", async () => {
+    const { hooks, usage } = makeHooks({
+      resolveUpstream: async () => [managed],
+      assertBillingActive: async () => ({ holdUsd: 0.01 }),
+    });
+    const fetchImpl = okFetch({
+      model: "m",
+      choices: [{ message: { content: "hi" } }],
+      usage: { prompt_tokens: 100, completion_tokens: 20 },
+    });
+
+    const res = await createGateway(hooks, {}, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(usage[0].billingHoldUsd).toBe(0.01);
+  });
+
+  test("a hold is refunded (a zero-usage recordUsage call carrying billingHoldUsd) when the request fails BEFORE dispatch — model_unavailable", async () => {
+    const { hooks, usage } = makeHooks({
+      resolveUpstream: async () => [], // → no candidates → model_unavailable, before any dispatch
+      assertBillingActive: async () => ({ holdUsd: 0.01 }),
+    });
+
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("model_unavailable");
+    await flush();
+    // The refund is its own recordUsage call — zero usage, zero cost, hold present.
+    expect(usage).toHaveLength(1);
+    expect(usage[0].billingHoldUsd).toBe(0.01);
+    expect(usage[0].promptTokens).toBe(0);
+    expect(usage[0].finalCost).toBe(0);
+  });
+
+  test("a hold is refunded when the budget gate denies the request AFTER billing already admitted it", async () => {
+    const { hooks, usage } = makeHooks({
+      resolveUpstream: async () => [managed],
+      assertBillingActive: async () => ({ holdUsd: 0.01 }),
+      assertBudget: async () => {
+        throw new Error("Project budget exhausted");
+      },
+    });
+
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(402);
+    expect((await res.json()).code).toBe("budget_exceeded");
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(usage[0].billingHoldUsd).toBe(0.01);
+  });
+
+  test("no hold, no refund noise — a request with no billingHold never emits a hold-refund event on failure", async () => {
+    const { hooks, usage } = makeHooks({ resolveUpstream: async () => [] });
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(400);
+    await flush();
+    expect(usage).toHaveLength(0);
+  });
+});
+
 describe("gateway.chatCompletions — request size guard", () => {
   test("a body over maxRequestBytes is rejected with 413 before any upstream dispatch", async () => {
     const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });

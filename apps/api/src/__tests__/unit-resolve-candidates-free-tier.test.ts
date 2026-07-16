@@ -47,6 +47,16 @@ mock.module('../billing/services/entitlements', () => ({
     accountTierCalls += 1;
     return accountTier;
   },
+  // resolveCandidates now calls the SAME cached tier resolver the rest of the
+  // gateway uses (entitlements.getCachedAccountTier) instead of keeping its own
+  // duplicate cache — see unit-account-tier-cache-unified.test.ts for the
+  // caching/invalidation behavior itself. This mock intentionally does NOT
+  // cache: every call increments accountTierCalls, which is what every
+  // existing assertion below counts on.
+  getCachedAccountTier: async () => {
+    accountTierCalls += 1;
+    return accountTier;
+  },
 }));
 
 // `getResolvedProjectSecretValue` stands in for the shared-vs-private BYOK

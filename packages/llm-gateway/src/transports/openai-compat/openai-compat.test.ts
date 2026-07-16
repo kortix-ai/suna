@@ -298,6 +298,65 @@ describe('openai-compat: Perplexity role-sequence normalization', () => {
   });
 });
 
+describe('openai-compat genuine-OpenAI stream_options.include_usage injection (BILLING-CORRECTNESS)', () => {
+  const openaiDescriptor: UpstreamDescriptor = {
+    ...descriptor,
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    resolvedModel: 'gpt-5.6-sol',
+  };
+
+  test('genuine OpenAI streaming request without stream_options gets include_usage force-injected', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openai/gpt-5.6-sol', messages: [], stream: true },
+      openaiDescriptor,
+    );
+    expect(req.payload.stream_options).toEqual({ include_usage: true });
+  });
+
+  test('genuine OpenAI streaming request that already set stream_options.include_usage is left untouched', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'openai/gpt-5.6-sol',
+        messages: [],
+        stream: true,
+        stream_options: { include_usage: false },
+      },
+      openaiDescriptor,
+    );
+    expect(req.payload.stream_options).toEqual({ include_usage: false });
+  });
+
+  test('a non-streaming genuine OpenAI request is never given stream_options', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openai/gpt-5.6-sol', messages: [] },
+      openaiDescriptor,
+    );
+    expect('stream_options' in req.payload).toBe(false);
+  });
+
+  test('other openai-compat upstreams (OpenRouter, Groq, etc.) are untouched — they already emit usage without this flag', () => {
+    const req = buildUpstreamRequest(
+      { model: 'kortix/glm-5.2', messages: [], stream: true },
+      { ...descriptor, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
+    );
+    expect('stream_options' in req.payload).toBe(false);
+  });
+
+  test('preserves other keys already present on a caller-supplied stream_options object', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'openai/gpt-5.6-sol',
+        messages: [],
+        stream: true,
+        stream_options: { some_other_flag: true },
+      },
+      openaiDescriptor,
+    );
+    expect(req.payload.stream_options).toEqual({ some_other_flag: true, include_usage: true });
+  });
+});
+
 describe('openai-compat bodyExtras', () => {
   test('merges descriptor bodyExtras into the payload, overriding client fields', () => {
     const req = buildUpstreamRequest(

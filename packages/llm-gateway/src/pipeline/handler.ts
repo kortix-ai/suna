@@ -17,6 +17,7 @@ import {
   type SseErrorFrame,
   calculateCost,
   extractUsageFromJson,
+  extractUsageFromSseBuffer,
   jsonHasContent,
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
@@ -78,6 +79,17 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function concatChunks(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
 function requestHasImage(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   return messages.some((message) => {
@@ -128,14 +140,15 @@ async function admit(
     return outcome;
   }
 
-  const principal = await hooks.authenticate(token);
+  let principal = await hooks.authenticate(token);
   if (!principal) {
     step('auth_failed', { ms: lap() });
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
 
   try {
-    await hooks.assertBillingActive(principal.accountId);
+    const billing = await hooks.assertBillingActive(principal.accountId);
+    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     step('billing_ok', { ms: lap() });
   } catch (err) {
     // The host's billing gate may attach the real reason (subscription_required
@@ -204,6 +217,41 @@ export async function handleChatCompletions(
       ...fields,
     });
 
+  // Every early exit BETWEEN a successful billing-gate admission hold and the
+  // point where settle() takes over reconciliation (dispatch/routing
+  // failures, oversized/invalid bodies, no candidates, all-candidates-empty)
+  // must refund that hold — otherwise a pre-dispatch failure silently keeps
+  // the reserved dollars forever. Reuses the same recordUsage reconciliation
+  // path settle() uses (see recordGatewayUsage): a synthetic zero-usage,
+  // zero-cost event with `billingHoldUsd` set always resolves to a full
+  // refund. Fire-and-forget — never blocks or fails the response being
+  // returned to the caller.
+  const refundBillingHold = (target: AuthedPrincipal | undefined): void => {
+    const hold = target?.billingHold;
+    if (!hold) return;
+    const refundEvent: UsageEvent = {
+      promptTokens: 0,
+      completionTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+      accountId: target.accountId,
+      actorUserId: target.userId,
+      projectId: target.projectId,
+      sessionId: target.sessionId,
+      provider: '',
+      model: 'unknown',
+      upstreamCost: 0,
+      finalCost: 0,
+      billingMode: 'none',
+      streaming: false,
+      requestId,
+      billingHoldUsd: hold.amountUsd,
+    };
+    void hooks.recordUsage(refundEvent).catch((err) =>
+      logger.warn(`[llm-gateway] billing-hold refund failed for ${requestId}:`, err),
+    );
+  };
+
   step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
 
   const token = bearer(req.authorization);
@@ -224,6 +272,9 @@ export async function handleChatCompletions(
   // outcome: a principal, or a 401/402 denial with the same response + trace.
   const gate = await admit(hooks, token, lap, step);
   if (!gate.ok) {
+    // Billing succeeded (hold taken) but a LATER gate (budget) denied the
+    // request — the hold must not be kept for a request that never dispatched.
+    refundBillingHold(gate.principal);
     const denyId = gate.principal ? idOf(gate.principal) : {};
     emit({
       ...denyId,
@@ -256,6 +307,7 @@ export async function handleChatCompletions(
   // that silently drops an over-limit request into an immediate, actionable 413
   // instead of a multi-second retry storm that ends in a generic 502.
   if (config.maxRequestBytes && req.rawBody.length > config.maxRequestBytes) {
+    refundBillingHold(principal);
     step('request_too_large', { bytes: req.rawBody.length, limit: config.maxRequestBytes });
     emit({
       ...id,
@@ -275,6 +327,7 @@ export async function handleChatCompletions(
   try {
     body = JSON.parse(req.rawBody) as Record<string, unknown>;
   } catch {
+    refundBillingHold(principal);
     step('invalid_json');
     emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
     return gatewayErrorResponse(400, {
@@ -295,6 +348,7 @@ export async function handleChatCompletions(
       requires: { imageInput: requestHasImage(body) },
     }) ?? null;
   } catch (err) {
+    refundBillingHold(principal);
     const message = errorMessage(err);
     step('route_resolution_failed', { ms: lap(), error: message });
     emit({
@@ -398,6 +452,7 @@ export async function handleChatCompletions(
     })),
   });
   if (!candidates.length) {
+    refundBillingHold(principal);
     const errorCode = resolutionError?.code ?? 'model_unavailable';
     const message = resolutionError?.message ?? `No upstream configured for model "${routedModel}"`;
     const suggestion =
@@ -494,11 +549,56 @@ export async function handleChatCompletions(
   // empty-completion 502 when every candidate ends up producing nothing usable.
   let lastErrorFrame: SseErrorFrame | null = null;
 
+  // Usage from candidates the dispatch loop discarded (empty-completion retries
+  // and failed-over attempts) before ever reaching settle(). A "malformed"
+  // completion can still have consumed real upstream tokens (prompt processing,
+  // or a fully-generated-but-badly-shaped response) — most providers report
+  // `usage` even then. Accumulated here and folded into the eventually-chosen
+  // candidate's usage at settle() so Kortix doesn't eat upstream cost with zero
+  // corresponding customer charge. Purely additive: never changes what's
+  // relayed to the caller, only what gets billed.
+  let discardedUsage: TokenCounts = {
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
+  };
+  let discardedUpstreamCostHint = 0;
+  let discardedUpstreamCostHintSeen = false;
+  const accumulateDiscardedUsage = (usage: ExtractedUsage | null | undefined): void => {
+    if (!usage) return;
+    const hadTokens =
+      (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0) + (usage.cachedTokens ?? 0) > 0;
+    if (!hadTokens && typeof usage.upstreamCostHint !== 'number') return;
+    discardedUsage = {
+      promptTokens: discardedUsage.promptTokens + (usage.promptTokens ?? 0),
+      completionTokens: discardedUsage.completionTokens + (usage.completionTokens ?? 0),
+      cachedTokens: discardedUsage.cachedTokens + (usage.cachedTokens ?? 0),
+      cacheWriteTokens: discardedUsage.cacheWriteTokens + (usage.cacheWriteTokens ?? 0),
+    };
+    if (typeof usage.upstreamCostHint === 'number') {
+      discardedUpstreamCostHint += usage.upstreamCostHint;
+      discardedUpstreamCostHintSeen = true;
+    }
+    logger.warn(
+      `[llm-gateway] discarded attempt carried non-zero usage — folding into final billing ${requestId}`,
+    );
+  };
+
   for (;;) {
     const remaining = candidates.filter(
       (candidate) => !exhaustedCandidates.has(candidateKey(candidate)),
     );
     if (remaining.length === 0) {
+      // Every candidate failed — nothing was ever relayed to the caller, so
+      // any admission hold must be returned. (Known, documented gap: usage
+      // discarded along the way from candidates that DID carry real tokens
+      // — e.g. an empty-completion retry that still consumed upstream input
+      // processing — is NOT billed on this total-failure path; only the
+      // eventually-*successful*-candidate path below folds discarded usage
+      // in. Billing a fully-failed turn is a judgment call left as a
+      // follow-up rather than done here.)
+      refundBillingHold(principal);
       step('all_candidates_empty', { ms: lap(), tried, hadErrorFrame: Boolean(lastErrorFrame) });
       // Prefer the real upstream cause (overloaded, request too large, content
       // filter) that a candidate reported over the generic "empty" message that
@@ -560,6 +660,7 @@ export async function handleChatCompletions(
     });
 
     if (result.kind === 'response') {
+      refundBillingHold(principal);
       step('upstream_failed', { ms: lap(), status: result.response.status });
       return result.response;
     }
@@ -591,6 +692,10 @@ export async function handleChatCompletions(
         nonStreamBody = data;
         break;
       }
+      // Empty/malformed, but the upstream may have already billed Kortix for it
+      // (a real generation that came back badly shaped) — capture any usage
+      // before discarding the body.
+      accumulateDiscardedUsage(extractUsageFromJson(data));
       await registerEmptyCompletion(chosen, { streaming: false });
       continue;
     }
@@ -639,6 +744,13 @@ export async function handleChatCompletions(
       exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
+    // A cleanly-closed empty stream can still carry a trailing usage-only
+    // frame (exactly the shape `stream_options.include_usage` produces) — pull
+    // it out of the probed chunks before they're discarded.
+    if (probe.chunks.length) {
+      const decoded = new TextDecoder().decode(concatChunks(probe.chunks));
+      accumulateDiscardedUsage(extractUsageFromSseBuffer(decoded));
+    }
     await registerEmptyCompletion(chosen, { streaming: true });
   }
 
@@ -674,29 +786,63 @@ export async function handleChatCompletions(
       requestedModel ??
       'unknown'
     ).toString();
+    // Fold in any usage from candidates the dispatch loop discarded before this
+    // one settled (empty-completion retries, failed-over attempts) — the
+    // upstream may have already charged Kortix for those even though nothing
+    // usable came back. Purely additive to what's billed; never touches what
+    // was relayed to the caller.
     const counts: TokenCounts = {
-      promptTokens: usage?.promptTokens ?? 0,
-      completionTokens: usage?.completionTokens ?? 0,
-      cachedTokens: usage?.cachedTokens ?? 0,
+      promptTokens: (usage?.promptTokens ?? 0) + discardedUsage.promptTokens,
+      completionTokens: (usage?.completionTokens ?? 0) + discardedUsage.completionTokens,
+      cachedTokens: (usage?.cachedTokens ?? 0) + discardedUsage.cachedTokens,
+      cacheWriteTokens: (usage?.cacheWriteTokens ?? 0) + discardedUsage.cacheWriteTokens,
     };
+    const combinedUpstreamCostHint =
+      typeof usage?.upstreamCostHint === 'number' || discardedUpstreamCostHintSeen
+        ? (usage?.upstreamCostHint ?? 0) + discardedUpstreamCostHint
+        : undefined;
     const markup = finalDescriptor.billingMode === 'none' ? 0 : finalDescriptor.markup;
     const { upstreamCost, finalCost } = calculateCost(
       usedModel,
       counts,
       markup,
-      usage?.upstreamCostHint,
+      combinedUpstreamCostHint,
       finalDescriptor.pricing,
     );
 
+    // promptTokens already includes cachedTokens/cacheWriteTokens as a subset
+    // (the Anthropic transport folds cache-read/cache-write into the total
+    // input count for total_tokens back-compat) — completionTokens is the only
+    // independent addend.
+    const billedTokenTotal = counts.promptTokens + counts.completionTokens;
+
     // A billable request that priced to $0 means we have no pricing for the
     // resolved model (stale catalog) — surface it so it can't silently leak.
-    if (markup > 0 && upstreamCost === 0 && counts.promptTokens + counts.completionTokens > 0) {
+    if (markup > 0 && upstreamCost === 0 && billedTokenTotal > 0) {
       logger.warn(
         `[llm-gateway] billable request priced at $0 — missing pricing? ${requestId} model=${usedModel} provider=${finalDescriptor.provider}`,
       );
     }
 
-    if (counts.promptTokens + counts.completionTokens > 0) {
+    // A billable (non-free, markup>0) route that settles with LITERALLY zero
+    // extracted usage — not merely zero-cost — means usage extraction itself
+    // came back empty (e.g. an upstream that doesn't emit a usage frame for
+    // this call shape). That's the exact failure mode that let genuine-OpenAI
+    // streaming completions bill $0 with no signal at all (the check below
+    // that gates recordUsage would otherwise skip silently). Distinct from the
+    // $0-pricing warning above, which fires only when tokens WERE counted.
+    if (markup > 0 && billedTokenTotal === 0) {
+      logger.warn(
+        `[llm-gateway] billable ${streaming ? 'streaming' : 'non-streaming'} request settled with ZERO extracted usage — usage extraction likely broken for this upstream shape ${requestId} model=${usedModel} provider=${finalDescriptor.provider}`,
+      );
+    }
+
+    // Also fires on zero usage when an admission hold was taken (principal.
+    // billingHold) — even a request that produced nothing billable still
+    // reserved real dollars at admission that must be refunded, or the hold
+    // itself becomes a (small, but real) overcharge on every zero-usage
+    // request.
+    if (billedTokenTotal > 0 || principal.billingHold) {
       const event: UsageEvent = {
         ...counts,
         accountId: principal.accountId,
@@ -710,6 +856,7 @@ export async function handleChatCompletions(
         billingMode: finalDescriptor.billingMode,
         streaming,
         requestId,
+        ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
       };
       try {
         await hooks.recordUsage(event);
@@ -724,6 +871,7 @@ export async function handleChatCompletions(
       promptTokens: counts.promptTokens,
       completionTokens: counts.completionTokens,
       cachedTokens: counts.cachedTokens,
+      cacheWriteTokens: counts.cacheWriteTokens,
       upstreamCost,
       finalCost,
       streaming,

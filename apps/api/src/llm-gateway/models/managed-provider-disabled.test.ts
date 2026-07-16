@@ -51,6 +51,10 @@ mock.module('../../config', () => ({
 
 mock.module('../../billing/services/entitlements', () => ({
   getAccountTier: async () => 'free',
+  // resolveCandidates now calls the shared cached tier resolver directly
+  // (getCachedAccountTier) instead of keeping its own duplicate cache — see
+  // unit-account-tier-cache-unified.test.ts for that cache's own behavior.
+  getCachedAccountTier: async () => 'free',
 }));
 
 mock.module('../../projects/secrets', () => ({
