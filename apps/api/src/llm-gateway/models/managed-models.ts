@@ -69,4 +69,18 @@ export function isRuntimeManagedModelId(id: string): boolean {
   return MANAGED_BY_ID.has(id);
 }
 
+// The BUNDLED catalog (never gated by KORTIX_MANAGED_PROVIDER_ENABLED) — used
+// only to answer "is this id a REAL managed-model id at all", regardless of
+// whether the managed provider happens to be enabled on this deployment.
+// RUNTIME_MANAGED_MODELS/MANAGED_BY_ID above are empty whenever the flag is
+// off, so they can't tell "self-host operator hasn't turned this on" apart
+// from "no such model exists anywhere" — this can, which lets gateway error
+// messaging say "this model needs the managed provider, which is off here"
+// instead of the misleading "no such model".
+const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, model] as const));
+
+export function isKnownManagedModelId(id: string): boolean {
+  return BUNDLED_BY_ID.has(id);
+}
+
 export type { ManagedModel };
