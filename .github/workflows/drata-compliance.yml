@@ -26,17 +26,23 @@ on:
         description: "Optional prior Drata scan ID to print sanitized finding details"
         required: false
         type: string
+      print_monitor_state:
+        description: "Print sanitized production monitor status"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
   drata-iac-results:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.results_run_id != '' || inputs.print_monitor_state) }}
     name: sanitized-finding-details
     runs-on: ubuntu-latest
     steps:
       - name: Print finding details
+        if: ${{ inputs.results_run_id != '' }}
         env:
           DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
           RUN_ID: ${{ inputs.results_run_id }}
@@ -55,6 +61,24 @@ jobs:
                 currentValue,
                 preferredValue,
                 resourceMetadata
+              }'
+
+      - name: Print production monitor state
+        if: ${{ inputs.print_monitor_state }}
+        env:
+          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DRATA_API_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --header "User-Agent: kortix-compliance-ci" \
+            "https://public-api.drata.com/public/v2/workspaces/1/monitoring-tests?size=500&includeTotalCount=true" \
+            | jq '{
+                total: .pagination.totalCount,
+                statusCounts: (.data | group_by(.checkResultStatus) | map({key: .[0].checkResultStatus, value: length}) | from_entries),
+                enabled: [.data[] | select(.checkStatus == "ENABLED") | {testId, name, checkResultStatus}],
+                failing: [.data[] | select(.checkStatus == "ENABLED" and .checkResultStatus != "PASSED") | {testId, name, checkResultStatus}]
               }'
 
   drata-iac-scan:
