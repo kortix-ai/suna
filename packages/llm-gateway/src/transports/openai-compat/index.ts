@@ -19,7 +19,10 @@ const GENUINE_OPENAI_HOSTNAME = 'api.openai.com';
 // even though those share `kind: 'openai-compat'` and flow through this same
 // transport. Checked on the resolved base URL rather than `descriptor.provider`
 // so it stays correct even if a future catalog entry mislabels the provider id.
-function isGenuineOpenAiUpstream(baseUrl: string): boolean {
+// Exported: also used by ../route-kind.ts to decide whether a reasoning-model
+// request with function tools must be routed to the openai-responses transport
+// instead (chat/completions rejects that combination — see route-kind.ts).
+export function isGenuineOpenAiUpstream(baseUrl: string): boolean {
   try {
     return new URL(baseUrl).hostname === GENUINE_OPENAI_HOSTNAME;
   } catch {
@@ -125,7 +128,11 @@ function normalizeRoleSequenceForPerplexity(messages: unknown[]): unknown[] {
       continue;
     }
     const prev = out[out.length - 1];
-    if (prev && prev.role !== 'system' && effectiveRole(prev.role) === effectiveRole(message.role)) {
+    if (
+      prev &&
+      prev.role !== 'system' &&
+      effectiveRole(prev.role) === effectiveRole(message.role)
+    ) {
       out[out.length - 1] = mergeSameRoleMessages(prev, message);
       continue;
     }
@@ -182,7 +189,10 @@ export function buildUpstreamRequest(
     }
   }
   if (descriptor.provider === 'perplexity' && Array.isArray(payload.messages)) {
-    payload = { ...payload, messages: normalizeRoleSequenceForPerplexity(payload.messages as unknown[]) };
+    payload = {
+      ...payload,
+      messages: normalizeRoleSequenceForPerplexity(payload.messages as unknown[]),
+    };
   }
 
   return {
