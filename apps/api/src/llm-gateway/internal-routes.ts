@@ -6,6 +6,7 @@ import type {
 } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { assertBillingActive } from '../billing/services/billing-gate';
+import { logger } from '../lib/logger';
 import { checkBudget } from './budgets';
 import {
   authenticatePrincipal,
@@ -13,11 +14,10 @@ import {
   persistGatewayTrace,
   recordGatewayUsage,
 } from './hooks';
-import { matchesInternalToken } from './internal-auth';
+import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
-import { logger } from '../lib/logger';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
 // wrapper over the shared in-process hooks in ./hooks — the standalone service
@@ -26,6 +26,10 @@ import { logger } from '../lib/logger';
 export function createInternalGatewayRoutes() {
   const app = new Hono();
   const internalToken = process.env.GATEWAY_INTERNAL_TOKEN;
+
+  for (const warning of weakInternalTokenWarnings(internalToken)) {
+    logger.warn(`[gateway-internal-auth] ${warning}`);
+  }
 
   app.use('*', async (c, next) => {
     if (!internalToken) return c.json({ error: 'internal gateway disabled' }, 503);
@@ -67,10 +71,7 @@ export function createInternalGatewayRoutes() {
 
   app.post('/resolve-route', async (c) => {
     const { principal, input } = await c.req.json();
-    const route = await resolveGatewayRoute(
-      principal as AuthedPrincipal,
-      input as ModelRouteInput,
-    );
+    const route = await resolveGatewayRoute(principal as AuthedPrincipal, input as ModelRouteInput);
     return c.json({ route });
   });
 

@@ -1,30 +1,39 @@
 import {
   type AuthedPrincipal,
-  type UpstreamDescriptor,
   GatewayResolutionError,
+  type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
-import { getResolvedProjectSecretValue, projectSecretExistsForAnyOwner } from '../../projects/secrets';
+import {
+  getResolvedProjectSecretValue,
+  projectSecretExistsForAnyOwner,
+} from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
-import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
-import { resolveCatalogUpstream } from '../models/provider-registry';
 import { capabilitiesForModel } from '../models/catalog-models';
-import { resolveGatewayRoute } from '../routing';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
+import { resolveCatalogUpstream } from '../models/provider-registry';
+import { resolveGatewayRoute } from '../routing';
+import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 const TIER_CACHE_TTL_MS = 30_000;
 
 const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
 
-async function resolveCachedAccountTier(accountId: string): Promise<string> {
+// `now` is injectable (defaults to Date.now()) purely so the 30s TTL boundary
+// is unit-testable without a real wall-clock sleep — every production call
+// site leaves it unset and gets the real clock.
+export async function resolveCachedAccountTier(
+  accountId: string,
+  now: number = Date.now(),
+): Promise<string> {
   const cached = accountTierCache.get(accountId);
-  if (cached && cached.expiresAt > Date.now()) return cached.tier;
+  if (cached && cached.expiresAt > now) return cached.tier;
 
   const tier = await getAccountTier(accountId);
-  accountTierCache.set(accountId, { tier, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
+  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
   return tier;
 }
 
@@ -66,12 +75,15 @@ export async function resolveCandidates(
   // resolve it against the same account/agent default the control plane used.
   // Free-tier principals cannot use managed Kortix models, so stale AUTO below
   // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel = model === 'auto' || model === 'kortix/auto'
-    ? (await resolveGatewayRoute(principal, {
-        requestedModel: model,
-        requires: { imageInput: false },
-      })).primaryModel
-    : model;
+  const effectiveModel =
+    model === 'auto' || model === 'kortix/auto'
+      ? (
+          await resolveGatewayRoute(principal, {
+            requestedModel: model,
+            requires: { imageInput: false },
+          })
+        ).primaryModel
+      : model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
@@ -121,7 +133,11 @@ export async function resolveCandidates(
     // PRIVATE key (never another member's) so a member who saved a personal
     // provider key isn't left with a "connected" provider that silently
     // routes nothing — see pickResolvedSecretRow's doc comment.
-    const key = await getResolvedProjectSecretValue(principal.projectId, byok.envVar, principal.userId);
+    const key = await getResolvedProjectSecretValue(
+      principal.projectId,
+      byok.envVar,
+      principal.userId,
+    );
     if (key) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
@@ -154,7 +170,10 @@ export async function resolveCandidates(
     // provider at all" from "a teammate connected their own key but kept it
     // private" — both used to read as the same generic "No upstream
     // configured" message with no clue which of the two applies.
-    const anyOwnerConnected = await projectSecretExistsForAnyOwner(principal.projectId, byok.envVar);
+    const anyOwnerConnected = await projectSecretExistsForAnyOwner(
+      principal.projectId,
+      byok.envVar,
+    );
     byokFailure = anyOwnerConnected
       ? new GatewayResolutionError(
           'provider_key_private',

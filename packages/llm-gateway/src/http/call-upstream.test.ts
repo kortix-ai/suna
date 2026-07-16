@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { callUpstream, type FetchImpl } from './call-upstream';
-import { buildUpstreamRequest } from '../transports';
-import { CircuitBreaker } from '../resilience';
-import { ClientAbortError, CircuitOpenError, UpstreamHttpError } from '../errors';
 import type { UpstreamDescriptor } from '../domain';
+import { ClientAbortError, CircuitOpenError, UpstreamHttpError } from '../errors';
+import { CircuitBreaker } from '../resilience';
+import { buildUpstreamRequest } from '../transports';
+import { type FetchImpl, callUpstream } from './call-upstream';
 
 const descriptor: UpstreamDescriptor = {
   provider: 'openrouter',
@@ -31,6 +31,18 @@ function makeFetch(steps: Step[]) {
     });
   };
   return { impl, getCalls: () => calls };
+}
+
+function makeRecordingFetch() {
+  const seenHeaders: Record<string, string>[] = [];
+  const impl: FetchImpl = async (_input, init) => {
+    seenHeaders.push({ ...(init.headers as Record<string, string>) });
+    return new Response('{"ok":true}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  return { impl, seenHeaders };
 }
 
 describe('buildUpstreamRequest', () => {
@@ -66,10 +78,18 @@ describe('callUpstream', () => {
     };
     await callUpstream(
       playgroundRequest,
-      { ...descriptor, provider: 'openai', baseUrl: 'https://api.openai.com/v1', resolvedModel: 'gpt-5.5' },
+      {
+        ...descriptor,
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        resolvedModel: 'gpt-5.5',
+      },
       { retry: fastRetry, fetchImpl: capturingFetch },
     );
-    await callUpstream(playgroundRequest, descriptor, { retry: fastRetry, fetchImpl: capturingFetch });
+    await callUpstream(playgroundRequest, descriptor, {
+      retry: fastRetry,
+      fetchImpl: capturingFetch,
+    });
 
     const toOpenAi = JSON.parse(bodies[0]!);
     expect(toOpenAi.max_completion_tokens).toBe(512);
@@ -81,8 +101,14 @@ describe('callUpstream', () => {
   });
 
   test('retries a 503 then returns the ok response', async () => {
-    const fetchMock = makeFetch([{ status: 503, body: 'down' }, { status: 200, body: '{"ok":true}' }]);
-    const res = await callUpstream({ model: 'x' }, descriptor, { retry: fastRetry, fetchImpl: fetchMock.impl });
+    const fetchMock = makeFetch([
+      { status: 503, body: 'down' },
+      { status: 200, body: '{"ok":true}' },
+    ]);
+    const res = await callUpstream({ model: 'x' }, descriptor, {
+      retry: fastRetry,
+      fetchImpl: fetchMock.impl,
+    });
     expect(res.status).toBe(200);
     expect(fetchMock.getCalls()).toBe(2);
   });
@@ -112,7 +138,11 @@ describe('callUpstream', () => {
     const fetchMock = makeFetch([{ status: 500, body: 'boom' }]);
     const binding = { provider: descriptor.provider, breaker };
 
-    await callUpstream({}, descriptor, { retry: { ...fastRetry, maxAttempts: 1 }, fetchImpl: fetchMock.impl, binding }).catch(() => {});
+    await callUpstream({}, descriptor, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      fetchImpl: fetchMock.impl,
+      binding,
+    }).catch(() => {});
     expect(breaker.current).toBe('open');
 
     const callsBefore = fetchMock.getCalls();
@@ -120,6 +150,22 @@ describe('callUpstream', () => {
       callUpstream({}, descriptor, { retry: fastRetry, fetchImpl: fetchMock.impl, binding }),
     ).rejects.toBeInstanceOf(CircuitOpenError);
     expect(fetchMock.getCalls()).toBe(callsBefore);
+  });
+
+  test('threads requestId through to the upstream as a correlation header', async () => {
+    const recording = makeRecordingFetch();
+    await callUpstream({ model: 'x' }, descriptor, {
+      retry: fastRetry,
+      fetchImpl: recording.impl,
+      requestId: 'req_abc123',
+    });
+    expect(recording.seenHeaders[0]?.['x-kortix-request-id']).toBe('req_abc123');
+  });
+
+  test('omits the correlation header when no requestId is given', async () => {
+    const recording = makeRecordingFetch();
+    await callUpstream({ model: 'x' }, descriptor, { retry: fastRetry, fetchImpl: recording.impl });
+    expect(recording.seenHeaders[0]).not.toHaveProperty('x-kortix-request-id');
   });
 });
 

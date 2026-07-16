@@ -1,8 +1,8 @@
+import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
-import { withResilience, type BreakerBinding, type RetryOptions } from '../resilience';
+import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
 import { transportFor } from '../transports';
 import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
-import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -16,6 +16,12 @@ export interface CallUpstreamOptions {
    *  signal so a caller disconnect aborts the in-flight upstream fetch too,
    *  instead of only bounding it by the retry timeout. */
   signal?: AbortSignal;
+  // Kortix-internal correlation id for this request (see pipeline/handler.ts's
+  // newRequestId()). Sent to the upstream as a best-effort header so a failed
+  // or slow completion can be cross-referenced against the provider's own
+  // request logs/support tooling — every provider here tolerates unknown
+  // headers, so this is safe to always send rather than gated per-transport.
+  requestId?: string;
 }
 
 export async function callUpstream(
@@ -30,6 +36,9 @@ export async function callUpstream(
     opts.translationSidecar && isSidecarEligible(descriptor)
       ? buildSidecarRequest(direct, descriptor, opts.translationSidecar)
       : direct;
+  if (opts.requestId) {
+    request.headers = { ...request.headers, 'x-kortix-request-id': opts.requestId };
+  }
   const streaming = body.stream === true;
   const clientSignal = opts.signal;
 
