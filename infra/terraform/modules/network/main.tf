@@ -111,10 +111,6 @@ resource "aws_subnet" "private" {
 # exposed at all.
 resource "aws_default_network_acl" "this" {
   default_network_acl_id = aws_vpc.this.default_network_acl_id
-  subnet_ids = concat(
-    aws_subnet.public[*].id,
-    aws_subnet.private[*].id,
-  )
 
   ingress {
     protocol   = "-1"
