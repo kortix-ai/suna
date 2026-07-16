@@ -160,4 +160,29 @@ describe('panelWide (wide split for presentation details)', () => {
     s.closeSidePanel();
     expect(useKortixComputerStore.getState().panelWide).toBe(false);
   });
+
+  // ─── the REAL close path: the chat header toggle / ⌘I / mobile drawer all
+  // call setIsSidePanelOpen(false) directly, never closeSidePanel — a stale
+  // panelWide/isExpanded must not survive a real close into the next open. ──
+  test('setIsSidePanelOpen(false) resets panelWide and isExpanded, snapping (not gliding)', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setIsSidePanelOpen(true);
+    s.setPanelWide(true);
+    s.setIsExpanded(true);
+    s.setIsSidePanelOpen(false);
+    const after = useKortixComputerStore.getState();
+    expect(after.panelWide).toBe(false);
+    expect(after.isExpanded).toBe(false);
+    expect(after.skipNextExpandAnimation).toBe(true);
+  });
+
+  test('setIsSidePanelOpen(true) leaves the width states alone', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setPanelWide(true);
+    s.setIsSidePanelOpen(true);
+    expect(useKortixComputerStore.getState().panelWide).toBe(true);
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
+  });
 });

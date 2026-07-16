@@ -20,12 +20,12 @@ export function stepForCallId(steps: Step[], callId: string): Step | undefined {
 /**
  * Whether an output deliverable should grow the Easy-mode panel to its
  * widest split (70/30) instead of the default 35/65 — a slide deck needs
- * real width to read, unlike a text file or a screenshot. True for a real
- * `presentation_gen` artifact (`kind === 'presentation'`, set only for a
- * `create`d deck with metadata behind it — see `derive-panels.ts`) AND for a
- * raw `.pptx`/`.ppt`/`.key` FILE the agent merely `show`ed, which keeps
- * `kind: 'file'` since it has no deck metadata of its own — both read as
- * decks from the user's point of view, so both earn the wide split.
+ * real width to read, unlike a text file or a screenshot. True for anything
+ * `derive-panels.ts` already classified as a deck (`kind === 'presentation'`:
+ * a `presentation_gen` artifact, or a `show`n deck file — `showPayloadToOutput`
+ * matches DECK_EXT itself) AND for a `.pptx`/`.ppt`/`.key` filename whose
+ * output kept `kind: 'file'` anyway — write/edit/apply_patch outputs hardcode
+ * `'file'` regardless of extension, and a deck written by hand is still a deck.
  */
 export function isWideDeliverable(output: Pick<OutputItem, 'kind' | 'name'>): boolean {
   return output.kind === 'presentation' || /\.(pptx?|key)$/i.test(output.name);

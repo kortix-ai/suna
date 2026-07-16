@@ -213,6 +213,18 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
         if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        // Every REAL close path routes through here (chat header toggle, ⌘I,
+        // mobile drawer dismiss) — reset the width states or a stale
+        // `panelWide`/`isExpanded` survives into the next open. Snap, not
+        // glide: the panel is disappearing; animating widths under a hidden
+        // panel is pointless, and the next open's resize effect must read
+        // clean state. `closeSidePanel`/`handleSidePanelClose` stay harmless
+        // and idempotent on top of this.
+        if (!open) {
+          update.panelWide = false;
+          update.isExpanded = false;
+          update.skipNextExpandAnimation = true;
+        }
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: open };
         }
