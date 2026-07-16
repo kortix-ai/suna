@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { UpstreamDescriptor } from '../domain';
-import { ClientAbortError, CircuitOpenError, UpstreamHttpError } from '../errors';
+import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
 import { CircuitBreaker } from '../resilience';
 import { buildUpstreamRequest } from '../transports';
 import { type FetchImpl, callUpstream } from './call-upstream';
@@ -254,7 +254,12 @@ describe('callUpstream — translation sidecar mode', () => {
     const capture = makeCapturingFetch();
     await callUpstream(
       { model: 'x', messages: [], max_tokens: 4096 },
-      { ...descriptor, provider: 'openai', baseUrl: 'https://api.openai.com/v1', resolvedModel: 'gpt-5.6-sol' },
+      {
+        ...descriptor,
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        resolvedModel: 'gpt-5.6-sol',
+      },
       { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
     );
     expect(capture.requests[0].body).toMatchObject({ max_completion_tokens: 4096 });
@@ -301,12 +306,258 @@ describe('callUpstream — translation sidecar mode', () => {
 
   test('sidecar auth token is optional (no master key configured)', async () => {
     const capture = makeCapturingFetch();
-    await callUpstream(
-      { model: 'x' },
-      descriptor,
-      { fetchImpl: capture.impl, translationSidecar: { url: 'http://litellm.internal:4000' } },
-    );
+    await callUpstream({ model: 'x' }, descriptor, {
+      fetchImpl: capture.impl,
+      translationSidecar: { url: 'http://litellm.internal:4000' },
+    });
     expect(capture.requests[0].headers.authorization).toBeUndefined();
+  });
+});
+
+// Regression coverage for the "gpt-5.5/5.6 BYOK sessions fail with 'Function
+// tools with reasoning_effort are not supported ... in /v1/chat/completions'"
+// incident (essentia.kortix.cloud, session 21c6cfd0-5157-4e78-9d26-4198656b1a81):
+// a genuine api.openai.com reasoning model + function tools + a live
+// reasoning_effort must be dispatched over the Responses API
+// (packages/llm-gateway/src/transports/openai-responses), not chat/completions —
+// see transports/route-kind.ts for the exact gating.
+describe('callUpstream — genuine OpenAI reasoning model auto-routes to /v1/responses', () => {
+  const byokReasoningDescriptor: UpstreamDescriptor = {
+    provider: 'openai',
+    kind: 'openai-compat',
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: 'sk-byok-test',
+    billingMode: 'platform-fee',
+    markup: 0.1,
+    resolvedModel: 'gpt-5.5',
+    reasoning: true,
+    temperature: false,
+  };
+
+  const weatherTool = {
+    type: 'function',
+    function: { name: 'get_weather', description: 'get weather', parameters: { type: 'object' } },
+  };
+
+  test('the exact failing shape (tools + reasoning_effort) targets /responses with a translated payload', async () => {
+    const capture = makeCapturingFetch(
+      200,
+      JSON.stringify({
+        id: 'resp_1',
+        model: 'gpt-5.5',
+        output: [
+          { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'sunny' }] },
+        ],
+        usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 },
+      }),
+    );
+    const res = await callUpstream(
+      {
+        model: 'openai/gpt-5.5',
+        messages: [{ role: 'user', content: 'weather in sf?' }],
+        tools: [weatherTool],
+        reasoning_effort: 'medium',
+        stream: false,
+      },
+      byokReasoningDescriptor,
+      { fetchImpl: capture.impl, retry: fastRetry },
+    );
+
+    expect(capture.requests).toHaveLength(1);
+    const req = capture.requests[0];
+    expect(req.url).toBe('https://api.openai.com/v1/responses');
+    expect(req.headers.authorization).toBe('Bearer sk-byok-test');
+    const body = req.body as Record<string, unknown>;
+    expect(body.model).toBe('gpt-5.5');
+    expect(body.input).toEqual([{ role: 'user', content: 'weather in sf?' }]);
+    expect(body.tools).toEqual([
+      {
+        type: 'function',
+        name: 'get_weather',
+        description: 'get weather',
+        parameters: { type: 'object' },
+      },
+    ]);
+    expect(body.reasoning).toEqual({ effort: 'medium' });
+    expect(body.stream).toBe(false);
+
+    // The response comes back translated into an OpenAI chat.completion shape,
+    // not the raw Responses API envelope.
+    const chat = await res.json();
+    expect(chat.object).toBe('chat.completion');
+    expect(chat.choices[0].message.content).toBe('sunny');
+  });
+
+  test('reasoning_effort explicitly "none": stays on chat/completions (OpenAI\'s own documented escape hatch)', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'openai/gpt-5.5',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [weatherTool],
+        reasoning_effort: 'none',
+      },
+      byokReasoningDescriptor,
+      { fetchImpl: capture.impl, retry: fastRetry },
+    );
+    expect(capture.requests[0].url).toBe('https://api.openai.com/v1/chat/completions');
+  });
+
+  test('no tools: a plain reasoning-model turn is untouched, still chat/completions', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'openai/gpt-5.5',
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning_effort: 'medium',
+      },
+      byokReasoningDescriptor,
+      { fetchImpl: capture.impl, retry: fastRetry },
+    );
+    expect(capture.requests[0].url).toBe('https://api.openai.com/v1/chat/completions');
+  });
+
+  test('non-reasoning genuine-OpenAI model (capability flag false): tools + reasoning_effort still chat/completions (no regression)', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'openai/gpt-4.1',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [weatherTool],
+        reasoning_effort: 'medium',
+      },
+      { ...byokReasoningDescriptor, resolvedModel: 'gpt-4.1', reasoning: false },
+      { fetchImpl: capture.impl, retry: fastRetry },
+    );
+    expect(capture.requests[0].url).toBe('https://api.openai.com/v1/chat/completions');
+  });
+
+  test('a reasoning-flagged model on a different openai-compat host (OpenRouter) is not rerouted', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'kortix/o3',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [weatherTool],
+        reasoning_effort: 'medium',
+      },
+      {
+        ...byokReasoningDescriptor,
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+      },
+      { fetchImpl: capture.impl, retry: fastRetry },
+    );
+    expect(capture.requests[0].url).toBe('https://openrouter.ai/api/v1/chat/completions');
+  });
+
+  test('the translation sidecar is bypassed for the rerouted request — dispatches directly to api.openai.com/v1/responses', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'openai/gpt-5.5',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [weatherTool],
+        reasoning_effort: 'medium',
+      },
+      byokReasoningDescriptor,
+      {
+        fetchImpl: capture.impl,
+        retry: fastRetry,
+        translationSidecar: { url: 'http://litellm.internal:4000', authToken: 'sk-sidecar-master' },
+      },
+    );
+    expect(capture.requests[0].url).toBe('https://api.openai.com/v1/responses');
+    expect(capture.requests[0].body).not.toHaveProperty('api_key');
+    expect(capture.requests[0].body).not.toHaveProperty('api_base');
+  });
+
+  test('a non-rerouted request for the SAME reasoning model (no tools) still uses the sidecar when enabled', async () => {
+    const capture = makeCapturingFetch();
+    await callUpstream(
+      {
+        model: 'openai/gpt-5.5',
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning_effort: 'medium',
+      },
+      byokReasoningDescriptor,
+      {
+        fetchImpl: capture.impl,
+        retry: fastRetry,
+        translationSidecar: { url: 'http://litellm.internal:4000' },
+      },
+    );
+    expect(capture.requests[0].url).toBe('http://litellm.internal:4000/v1/chat/completions');
+    expect(capture.requests[0].body).toMatchObject({
+      api_key: 'sk-byok-test',
+      api_base: 'https://api.openai.com/v1',
+    });
+  });
+
+  test('streaming tool-call round trip: SSE Responses events translate into OpenAI tool_call chunks for a genuine BYOK descriptor', async () => {
+    const encoder = new TextEncoder();
+    const events = [
+      { type: 'response.created', response: { id: 'resp_9', model: 'gpt-5.5' } },
+      {
+        type: 'response.output_item.added',
+        item: { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather' },
+      },
+      { type: 'response.function_call_arguments.delta', item_id: 'fc_1', delta: '{"city":' },
+      { type: 'response.function_call_arguments.delta', item_id: 'fc_1', delta: '"sf"}' },
+      {
+        type: 'response.completed',
+        response: {
+          model: 'gpt-5.5',
+          usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 },
+        },
+      },
+    ];
+    const fetchImpl: FetchImpl = async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const event of events) {
+            controller.enqueue(
+              encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`),
+            );
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+
+    const res = await callUpstream(
+      {
+        model: 'openai/gpt-5.5',
+        messages: [{ role: 'user', content: 'weather in sf?' }],
+        tools: [weatherTool],
+        reasoning_effort: 'medium',
+        stream: true,
+      },
+      byokReasoningDescriptor,
+      { fetchImpl, retry: fastRetry },
+    );
+
+    const text = await res.text();
+    const chunks = text
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .filter((p) => p && p !== '[DONE]')
+      .map((p) => JSON.parse(p));
+
+    const args = chunks
+      .flatMap((c) => c.choices?.[0]?.delta?.tool_calls ?? [])
+      .map(
+        (tc: Record<string, unknown>) =>
+          (tc.function as Record<string, unknown> | undefined)?.arguments ?? '',
+      )
+      .join('');
+    expect(args).toBe('{"city":"sf"}');
+    expect(chunks.at(-1).choices[0].finish_reason).toBe('tool_calls');
   });
 });
 
@@ -366,9 +617,12 @@ describe('callUpstream client abort propagation', () => {
       ac.abort();
       throw new DOMException('The operation was aborted', 'AbortError');
     };
-    await callUpstream({}, descriptor, { retry: fastRetry, fetchImpl, signal: ac.signal, binding }).catch(
-      () => {},
-    );
+    await callUpstream({}, descriptor, {
+      retry: fastRetry,
+      fetchImpl,
+      signal: ac.signal,
+      binding,
+    }).catch(() => {});
     expect(breaker.current).toBe('closed');
   });
 });

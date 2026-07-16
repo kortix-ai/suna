@@ -1,7 +1,8 @@
 export type { Transport } from './transport';
 export { transportFor } from './registry';
+export { resolveTransportKind } from './route-kind';
 
-export { buildUpstreamRequest } from './openai-compat';
+export { buildUpstreamRequest, isGenuineOpenAiUpstream } from './openai-compat';
 export type { UpstreamRequest } from './openai-compat';
 
 export {

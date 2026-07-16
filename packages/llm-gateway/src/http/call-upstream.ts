@@ -2,6 +2,7 @@ import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
 import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
 import { transportFor } from '../transports';
+import { resolveTransportKind } from '../transports/route-kind';
 import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
@@ -30,10 +31,18 @@ export async function callUpstream(
   opts: CallUpstreamOptions = {},
 ): Promise<Response> {
   const fetchImpl: FetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  const transport = transportFor(descriptor.kind);
+  // Resolved per-request (not just from the descriptor's static `kind`): a
+  // genuine-OpenAI reasoning model with function tools + a live reasoning
+  // effort must go out over the Responses API even though descriptor
+  // resolution (apps/api's resolveCandidates, which doesn't see the body)
+  // labeled it 'openai-compat' — see route-kind.ts. Every other request keeps
+  // the descriptor's own kind unchanged.
+  const kind = resolveTransportKind(body, descriptor);
+  const transport = transportFor(kind);
   const direct = transport.buildRequest(body, descriptor);
   const request =
-    opts.translationSidecar && isSidecarEligible(descriptor)
+    opts.translationSidecar &&
+    isSidecarEligible({ kind, omitAuthorization: descriptor.omitAuthorization })
       ? buildSidecarRequest(direct, descriptor, opts.translationSidecar)
       : direct;
   if (opts.requestId) {
