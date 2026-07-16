@@ -221,6 +221,93 @@ describe('buildAnthropicRequest — reasoning/thinking passthrough', () => {
     expect(req.payload.max_tokens).toBe(2000);
     expect((req.payload.thinking as any).budget_tokens).toBeLessThan(2000);
   });
+
+  test('drops temperature/top_p when thinking is enabled (Anthropic 400s on any non-default value)', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning_effort: 'high',
+        temperature: 0.7,
+        top_p: 0.9,
+      },
+      descriptor,
+    );
+    expect(req.payload.thinking).toBeTruthy();
+    expect(req.payload.temperature).toBeUndefined();
+    expect(req.payload.top_p).toBeUndefined();
+  });
+
+  test('a raw Anthropic-shaped thinking block also suppresses temperature/top_p', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [{ role: 'user', content: 'hi' }],
+        thinking: { type: 'enabled', budget_tokens: 4096 },
+        temperature: 1,
+        top_p: 0.5,
+      },
+      descriptor,
+    );
+    expect(req.payload.temperature).toBeUndefined();
+    expect(req.payload.top_p).toBeUndefined();
+  });
+
+  test('temperature/top_p still forwarded normally when thinking is not requested', () => {
+    const req = buildAnthropicRequest(
+      { messages: [{ role: 'user', content: 'hi' }], temperature: 0.3, top_p: 0.8 },
+      descriptor,
+    );
+    expect(req.payload.thinking).toBeUndefined();
+    expect(req.payload.temperature).toBe(0.3);
+    expect(req.payload.top_p).toBe(0.8);
+  });
+});
+
+describe('buildAnthropicRequest — vision content-part translation', () => {
+  test('translates a base64 data-URL image_url part into a native Anthropic image block', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'what is this?' },
+              {
+                type: 'image_url',
+                image_url: { url: 'data:image/png;base64,AAAA' },
+              },
+            ],
+          },
+        ],
+      },
+      descriptor,
+    );
+    const messages = req.payload.messages as any[];
+    const content = messages[0].content as any[];
+    expect(content[0]).toEqual({ type: 'text', text: 'what is this?' });
+    // Last content block also carries the prompt-cache breakpoint (existing
+    // applyPromptCaching behavior) — assert the image translation itself,
+    // not the cache_control tail-stamping.
+    expect(content[1].type).toBe('image');
+    expect(content[1].source).toEqual({ type: 'base64', media_type: 'image/png', data: 'AAAA' });
+  });
+
+  test('translates a remote-URL image_url part into a native Anthropic url-sourced image block', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'image_url', image_url: { url: 'https://example.com/cat.png' } }],
+          },
+        ],
+      },
+      descriptor,
+    );
+    const messages = req.payload.messages as any[];
+    const content = messages[0].content as any[];
+    expect(content[0].type).toBe('image');
+    expect(content[0].source).toEqual({ type: 'url', url: 'https://example.com/cat.png' });
+  });
 });
 
 describe('translateAnthropicResponse (non-streaming)', () => {

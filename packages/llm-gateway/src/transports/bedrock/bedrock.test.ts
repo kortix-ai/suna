@@ -59,6 +59,20 @@ describe('buildBedrockRequest — reasoning/thinking (inherits the anthropic cor
     );
     expect((req.payload as any).thinking).toEqual({ type: 'enabled', budget_tokens: 16000 });
   });
+
+  test('drops temperature/top_p when thinking is enabled, same as the anthropic transport', () => {
+    const req = buildBedrockRequest(
+      {
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning_effort: 'high',
+        temperature: 0.7,
+        top_p: 0.9,
+      },
+      descriptor,
+    );
+    expect((req.payload as any).temperature).toBeUndefined();
+    expect((req.payload as any).top_p).toBeUndefined();
+  });
 });
 
 describe('buildBedrockRequest — tool_choice (SAFETY: inherits the anthropic core payload)', () => {
