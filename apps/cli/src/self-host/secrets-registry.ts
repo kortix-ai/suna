@@ -194,6 +194,13 @@ export const UPDATER_MANAGED_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'GATEWAY_IMAGE',
   'SANDBOX_IMAGE',
   'KORTIX_APP_REPLICAS',
+  // The instance directory's absolute HOST path — recomputed from
+  // instanceDir() on every render (see normalizeFullSupabaseEnv() in
+  // commands/self-host.ts). Hand-setting it to anything other than where the
+  // instance's docker-compose.yml/.env actually live would break the
+  // in-compose auto-updater's bind mount (see the KORTIX_INSTANCE_DIR field's
+  // doc comment on SelfHostEnv), and the very next render clobbers it anyway.
+  'KORTIX_INSTANCE_DIR',
 ]);
 
 export function isUpdaterManagedKey(key: string): boolean {

@@ -1,4 +1,4 @@
-# kortix-selfhost/terraform — AWS/EC2 provisioner for Kortix self-host.
+# self-host/terraform — AWS/EC2 provisioner for Kortix self-host.
 #
 # This is a THIN root module: it does not define any resources itself, it
 # just instantiates infra/terraform/modules/selfhost-ec2, which does the
@@ -8,7 +8,7 @@
 # self-host user runs by hand — see ../README.md and
 # docs/runbooks/self-hosting.md in the main repo for the full picture.
 #
-#   cd kortix-selfhost/terraform
+#   cd self-host/terraform
 #   cp terraform.tfvars.example terraform.tfvars   # fill in your values
 #   terraform init
 #   terraform apply
@@ -17,9 +17,9 @@
 # inputs — see the post_apply_next_steps output after apply, and finish setup
 # in the dashboard (Settings -> Git, Settings -> Sandbox).
 #
-# NOTE for when kortix-selfhost/ becomes its own standalone repo: flip
+# NOTE for when self-host/ becomes its own standalone repo: flip
 # `source` below from the relative path to this repo's own git URL, e.g.
-#   source = "github.com/kortix-ai/kortix-selfhost//terraform/modules/selfhost-ec2?ref=vX.Y.Z"
+#   source = "github.com/kortix-ai/self-host//terraform/modules/selfhost-ec2?ref=vX.Y.Z"
 # (or wherever the module ends up living in that repo) — today it stays a
 # relative path so this folder shares one copy of the module with the rest of
 # the monorepo instead of duplicating it.

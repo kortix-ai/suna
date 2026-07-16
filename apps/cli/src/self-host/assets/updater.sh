@@ -15,9 +15,23 @@ set -eu
 STATE_DIR="/state"
 LOCK_FILE="$STATE_DIR/updater.lock"
 BREADCRUMB="$STATE_DIR/deployed-version.json"
-COMPOSE_FILE="/workspace/docker-compose.yml"
+# This container talks to the HOST Docker daemon over the mounted socket
+# (Docker-outside-of-Docker), so every relative bind mount THIS COMPOSE FILE
+# declares (kong's ./volumes/api/kong.yml, supabase-db's ./volumes/db/*, ...)
+# gets resolved by the `docker compose` CLI running in here, and that
+# resolved absolute path is what actually gets sent to the host daemon to
+# satisfy. It only works if that path also exists on the real host — which is
+# exactly what KORTIX_INSTANCE_DIR is: the instance directory bind-mounted at
+# the SAME absolute path inside this container as on the host (see the
+# kortix-updater service comment in kortix-compose.yml), with working_dir set
+# to match. Falls back to the historical /workspace only as a defensive
+# default; writeCompose()/normalizeFullSupabaseEnv() (commands/self-host.ts)
+# always set KORTIX_INSTANCE_DIR before this container ever runs, so that
+# fallback should never actually be exercised.
+WORKDIR="${KORTIX_INSTANCE_DIR:-/workspace}"
+COMPOSE_FILE="$WORKDIR/docker-compose.yml"
 PROJECT_NAME="${KORTIX_COMPOSE_PROJECT:-kortix}"
-COMPOSE="docker compose --project-name $PROJECT_NAME --env-file /workspace/.env -f $COMPOSE_FILE"
+COMPOSE="docker compose --project-name $PROJECT_NAME --env-file $WORKDIR/.env -f $COMPOSE_FILE"
 
 # The stateless app-tier services rolled start-first, in order. Must match
 # ROLLING_APP_SERVICES in compose-assets.ts.
@@ -60,10 +74,10 @@ container_image_id() {
 # in the instance .env for a locally-built image that isn't on any registry —
 # `docker compose pull` would just fail (or silently no-op) against it, so skip
 # it entirely and roll using whatever image is already in the local Docker
-# engine. Read straight from /workspace/.env, same as write_breadcrumb reads
+# engine. Read straight from "$WORKDIR/.env", same as write_breadcrumb reads
 # KORTIX_VERSION below — this script never sees CLI flags, only the env file.
 image_pull_mode() {
-  grep '^KORTIX_IMAGE_PULL=' /workspace/.env 2>/dev/null | tail -n1 | cut -d= -f2-
+  grep '^KORTIX_IMAGE_PULL=' "$WORKDIR/.env" 2>/dev/null | tail -n1 | cut -d= -f2-
 }
 
 # healthy|running (both count as "up"), or anything else counts as not-ready.
@@ -243,7 +257,7 @@ reconcile_stateful_services() {
 }
 
 write_breadcrumb() {
-  version=$(grep '^KORTIX_VERSION=' /workspace/.env | tail -n1 | cut -d= -f2-)
+  version=$(grep '^KORTIX_VERSION=' "$WORKDIR/.env" | tail -n1 | cut -d= -f2-)
   printf '{"deployed_at":"%s","version":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${version:-unknown}" >"$BREADCRUMB"
   log "update complete (version=${version:-unknown})"
 }

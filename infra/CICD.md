@@ -103,19 +103,25 @@ A docs-only push to main = a no-op CI run.
 
 ### Two deploy mechanisms (always parallel on a main push)
 
-- **Backend** (dev-api / api): GitHub Actions builds/retags images and bumps
-  `infra/k8s/envs/<env>/values.yaml`; Argo CD rolls EKS. ECS Fargate remains a
-  warm standby behind the Cloudflare Worker, not the primary deploy path.
+- **Backend** (dev-api / api): GitHub Actions deploys BOTH runtimes in lockstep —
+  it rolls the ECS Fargate services (task-defs rendered from the per-env Secrets
+  Manager blob by `infra/scripts/ecs-deploy.sh`, `KORTIX_VERSION` stamped) and
+  bumps `infra/k8s/envs/<env>/values.yaml` so Argo CD rolls EKS. ECS Fargate is
+  the ACTIVE backend behind the Cloudflare Worker for prod + dev (since
+  PR #4683); EKS is the warm standby (staging is EKS-active).
 - **Frontend** (dev.kortix.com / kortix.com): **Vercel git integration** —
   auto-builds from the branch, *not* a workflow step.
 
-### Desktop is decoupled from the release
+### Desktop is decoupled from the release; the deploys are NOT
 
-`deploy-prod`'s `github-release` job needs only `[version, retag-images,
-build-cli]` — it cuts the `vX.Y.Z` release in ~2 min and does **not** wait on
+`deploy-prod`'s `github-release` job needs `[version, retag-images, build-cli,
+deploy-ecs, deploy-api, verify-live-version]` — the `vX.Y.Z` tag + Release are
+only cut once BOTH backends (ECS Fargate active + EKS standby) rolled AND the
+public endpoints verifiably serve the released version. It does **not** wait on
 desktop (slow/scarce signed mac/win runners that can hang or fail on certs). A
 separate `attach-desktop` job uploads installers to the release afterward,
-best-effort. Desktop can never block or delay a release.
+best-effort. Desktop can never block or delay a release; a failed backend
+deploy always does.
 
 ---
 
@@ -128,9 +134,14 @@ best-effort. Desktop can never block or delay a release.
    `RELEASE_SOURCE_SHA`, bumps prod GitOps values, and opens a PR into `prod`.
 5. A reviewer merges the PR. The push to `prod` triggers `deploy-prod.yml`:
    - retag staging images → `:X.Y.Z` + `:latest` (no rebuild)
-   - build prod CLI (clean version) → cut **GitHub Release `vX.Y.Z`**
-   - run node-pg-migrate against prod before pods roll
-   - watch Argo CD roll `kortix-prod` on EKS (api reports the clean version)
+   - run node-pg-migrate against prod before anything rolls
+   - roll prod ECS Fargate api + gateway (the ACTIVE backend; `KORTIX_VERSION`
+     stamped so /v1/health reports the clean version)
+   - watch Argo CD roll `kortix-prod` on EKS (the standby; also clean version)
+   - **verify-live-version**: assert api.kortix.com / gateway.kortix.com (and
+     each responding origin) report exactly `X.Y.Z` — else the release FAILS
+   - only then: cut **GitHub Release `vX.Y.Z`**, announce to Slack, lower the
+     rollout banner
    - attach desktop installers (best-effort)
    - Vercel auto-deploys `prod` → kortix.com
 
@@ -142,11 +153,11 @@ release; `KORTIX_CHANNEL=dev` → `dev-latest` prerelease.
 
 ## Environments & hosts
 
-| Env  | Branch | Frontend                | Public API                         |
+| Env  | Branch | Frontend                | Public API (Worker → ACTIVE backend; the other stays deployed as standby) |
 | ---- | ------ | ----------------------- | ---------------------------------- |
-| DEV | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → Worker → EKS `kortix-dev` |
-| STAGING | `staging` | staging.kortix.com (Vercel) | staging-api.kortix.com → Worker → EKS namespace `kortix-staging` |
-| PROD | `prod` | kortix.com (Vercel) | api.kortix.com → Worker → EKS `kortix-prod` |
+| DEV | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → Worker → **ECS Fargate** `kortix-dev` (EKS standby) |
+| STAGING | `staging` | staging.kortix.com (Vercel) | staging-api.kortix.com → Worker → **EKS** ns `kortix-staging` (ECS standby) |
+| PROD | `prod` | kortix.com (Vercel) | api.kortix.com → Worker → **ECS Fargate** `kortix-prod` (EKS standby) |
 
 AWS: account `935064898258`; dev EKS runs in `us-west-2`, prod EKS in
 `eu-west-2`. Terraform state lives in S3 (`kortix-terraform-state` + DynamoDB
@@ -160,13 +171,17 @@ whose `ACTIVE_BACKEND` plain-text var selects the origin:
 
 ```
 api.kortix.com ─► api-kortix-router Worker ─► ACTIVE_BACKEND
-    eks          → api-eks.kortix.com          ← live primary
-    ecs-fargate  → api-ecs-fargate.kortix.com  ← warm standby
+    ecs-fargate  → api-ecs-fargate.kortix.com  ← live primary (since PR #4683)
+    eks          → api-eks.kortix.com          ← warm standby
 ```
 
-Failover = flip `ACTIVE_BACKEND` to `ecs-fargate` (one Worker var; instant and
-reversible), then flip back to `eks` after recovery. Verify with the `X-Backend`
-header on `/v1/health`. ECS stays available as standby; EKS is the primary path.
+Failover = flip `ACTIVE_BACKEND` to `eks` (one Worker var; instant and
+reversible), then flip back to `ecs-fargate` after recovery. Verify with the
+`X-Backend` header on `/v1/health`. Both backends are deployed on every release
+and `deploy-prod.yml`'s `verify-live-version` job asserts the public host (and
+each origin that responds) reports the released version before the GitHub
+Release / Slack announce / banner-lower run — a failed or drifted backend
+deploy fails the release loudly.
 
 ---
 

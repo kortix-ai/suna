@@ -8,17 +8,20 @@
 // the public prefix. There is no "regenerate" — you revoke and mint a new
 // one, which matches how Okta/Azure AD admins expect to operate.
 
-import { FormEvent, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
-import Link from 'next/link';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
+import { cn } from '@/lib/utils';
+import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Users } from 'lucide-react';
+import Link from 'next/link';
+import { type FormEvent, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -34,16 +37,79 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
-  createScimToken,
-  listScimTokens,
-  revokeScimToken,
   type CreatedScimToken,
   type ScimToken,
+  createScimToken,
+  getSsoProvider,
+  listGroups,
+  listScimTokens,
+  revokeScimToken,
 } from '@/lib/iam-client';
 
 interface ScimCardProps {
   accountId: string;
   canManage: boolean;
+}
+
+/**
+ * Live provisioning health — polls the account's existing member and group
+ * lists (no new API surface) so an admin watching an IdP provisioning run
+ * doesn't have to tab back and forth to see whether anything landed. Mirrors
+ * the wizard's verify-step panel (features/sso-setup/setup-wizard.tsx
+ * ProvisionedStatusPanel).
+ */
+function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
+  const membersQuery = useQuery({
+    queryKey: ['scim-verify-members', accountId],
+    queryFn: () => listAccountMembers(accountId),
+    refetchInterval: 15_000,
+    staleTime: 8_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['scim-verify-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    refetchInterval: 15_000,
+    staleTime: 8_000,
+  });
+
+  const scimGroups = (groupsQuery.data ?? []).filter((g) => g.source === 'scim');
+  const scimMemberCount = scimGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
+  const isLoading = membersQuery.isLoading || groupsQuery.isLoading;
+
+  return (
+    <div className="border-border/60 bg-muted/10 space-y-2 rounded-md border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
+          <ShieldCheck className="size-3.5 shrink-0" />
+          Provisioning health
+        </p>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          aria-label="Refresh provisioning health"
+          onClick={() => {
+            membersQuery.refetch();
+            groupsQuery.refetch();
+          }}
+        >
+          <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
+        </Button>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-6 w-full rounded" />
+      ) : (
+        <p className="text-foreground flex items-center gap-1.5 text-xs">
+          <Users className="text-muted-foreground size-3.5 shrink-0" />
+          <span className="font-medium tabular-nums">{scimMemberCount}</span>
+          <span className="text-muted-foreground">
+            member{scimMemberCount === 1 ? '' : 's'} across {scimGroups.length} SCIM-provisioned
+            group{scimGroups.length === 1 ? '' : 's'}
+          </span>
+        </p>
+      )}
+    </div>
+  );
 }
 
 function formatRelative(iso: string | null): string {
@@ -78,6 +144,15 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   const tokensQuery = useQuery({
     queryKey: ['scim-tokens', accountId],
     queryFn: () => listScimTokens(accountId),
+    staleTime: 30_000,
+  });
+  // Same query key SsoCard uses — React Query dedupes this, so checking
+  // whether SAML is connected here costs no extra round-trip. Light-touch
+  // ordering nudge only: provisioned accounts still need SSO to sign in, but
+  // this card stays fully usable either way (copy, not a hard gate).
+  const providerQuery = useQuery({
+    queryKey: ['iam-sso-provider', accountId],
+    queryFn: () => getSsoProvider(accountId),
     staleTime: 30_000,
   });
 
@@ -118,8 +193,16 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         )}
       </div>
 
+      {!providerQuery.isLoading && !providerQuery.data && (
+        <InfoBanner tone="info" title="Connect SAML SSO first">
+          Directory Sync provisions accounts, but without SSO those users have no way to sign in.
+          Connect the SAML SSO card above before you configure your IdP here.
+        </InfoBanner>
+      )}
+
       <div className="bg-popover rounded-md border">
         <div className="space-y-4 px-4 py-5">
+          {tokens.length > 0 && <ProvisioningHealthPanel accountId={accountId} />}
           {/* Endpoint URL */}
           <div className="space-y-1.5">
             <Label className="text-xs">SCIM base URL</Label>
@@ -179,8 +262,8 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             <div>
               <p className="text-foreground text-sm font-medium">Bearer tokens</p>
               <p className="text-muted-foreground text-xs">
-                Each token authenticates a single IdP integration. Rotate by minting a new one
-                and revoking the old.
+                Each token authenticates a single IdP integration. Rotate by minting a new one and
+                revoking the old.
               </p>
             </div>
             {canManage && (
@@ -253,11 +336,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         </div>
       </div>
 
-      <CreateScimTokenDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        accountId={accountId}
-      />
+      <CreateScimTokenDialog open={createOpen} onOpenChange={setCreateOpen} accountId={accountId} />
 
       <ConfirmDialog
         open={!!revokeTarget}

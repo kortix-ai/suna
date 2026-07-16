@@ -19,6 +19,7 @@ export type SsoProvider = {
   groupClaimName: string;
   autoCreateMembers: boolean;
   autoProvisionGroups: boolean;
+  enforceSso: boolean;
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +62,20 @@ export async function getSsoProviderBySupabaseId(
   return row ?? null;
 }
 
+/**
+ * Domain lookup for the unified auth flow's `/access/check-email`: is this
+ * email domain bound to a SAML provider, and does that org enforce SSO-only
+ * sign-in? Domains are stored lowercase (see upsert below).
+ */
+export async function getSsoProviderByDomain(domain: string): Promise<SsoProvider | null> {
+  const [row] = await db
+    .select()
+    .from(accountSsoProviders)
+    .where(eq(accountSsoProviders.primaryDomain, domain.toLowerCase()))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function upsertSsoProvider(args: {
   accountId: string;
   supabaseSsoProviderId: string;
@@ -69,6 +84,7 @@ export async function upsertSsoProvider(args: {
   groupClaimName?: string;
   autoCreateMembers?: boolean;
   autoProvisionGroups?: boolean;
+  enforceSso?: boolean;
   createdBy: string;
 }): Promise<SsoProvider> {
   const existing = await getSsoProvider(args.accountId);
@@ -82,6 +98,7 @@ export async function upsertSsoProvider(args: {
         groupClaimName: args.groupClaimName ?? existing.groupClaimName,
         autoCreateMembers: args.autoCreateMembers ?? existing.autoCreateMembers,
         autoProvisionGroups: args.autoProvisionGroups ?? existing.autoProvisionGroups,
+        enforceSso: args.enforceSso ?? existing.enforceSso,
         updatedAt: new Date(),
       })
       .where(eq(accountSsoProviders.ssoProviderId, existing.ssoProviderId))
@@ -98,6 +115,7 @@ export async function upsertSsoProvider(args: {
       groupClaimName: args.groupClaimName ?? 'groups',
       autoCreateMembers: args.autoCreateMembers ?? true,
       autoProvisionGroups: args.autoProvisionGroups ?? false,
+      enforceSso: args.enforceSso ?? false,
       createdBy: args.createdBy,
     })
     .returning();

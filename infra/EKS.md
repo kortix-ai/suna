@@ -1,14 +1,19 @@
 # Kortix API on EKS — prod, staging, and dev
 
-EKS is the active API runtime for prod, staging, and dev. Public API hosts route
-through the Cloudflare Worker:
+EKS is the **standby** API runtime for prod and dev, and the active runtime for
+staging. Public API hosts route through the Cloudflare Worker
+(`infra/cloudflare/workers/api-router`, `ACTIVE_BACKEND` per env):
 
-- `api.kortix.com` → `api-eks.kortix.com`
-- `staging-api.kortix.com` → `staging-api-eks.kortix.com`
-- `dev-api.kortix.com` → `dev-api-eks.kortix.com`
+- `api.kortix.com` → `api-ecs-fargate.kortix.com` (ECS ACTIVE since PR #4683; `api-eks.kortix.com` = standby)
+- `staging-api.kortix.com` → `staging-api-eks.kortix.com` (EKS active; ECS standby)
+- `dev-api.kortix.com` → `dev-api-ecs-fargate.kortix.com` (ECS active; `dev-api-eks.kortix.com` = standby)
 
-ECS Fargate remains available as the Cloudflare Worker warm standby; do not
-delete it as "legacy" while it is still the failover origin.
+Both runtimes are ALWAYS deployed in lockstep by CI (ECS task-defs rendered from
+the same Secrets Manager env blob EKS consumes, with `KORTIX_VERSION` stamped so
+both report identical versions; EKS via Argo CD GitOps). Do not delete either
+side as "legacy" — the standby is only worth having if it is never allowed to
+drift, and on prod `deploy-prod.yml`'s `verify-live-version` job enforces that
+on every release.
 
 ## Why EKS, and why it auto-heals better
 
@@ -118,10 +123,12 @@ merged to `prod` deploys prod via `deploy-prod.yml`.
 
 ## Switch-back / coexistence
 
-- **EKS** → `api-eks.kortix.com` / `staging-api-eks.kortix.com` /
-  `dev-api-eks.kortix.com` (active).
-- **ECS** → keep it permanently reachable at `api-ecs-fargate.kortix.com` /
-  `dev-api-ecs-fargate.kortix.com` as standby (the module supports extra hostnames):
+- **ECS Fargate** → `api-ecs-fargate.kortix.com` /
+  `dev-api-ecs-fargate.kortix.com` (ACTIVE for prod + dev since PR #4683).
+- **EKS** → `api-eks.kortix.com` / `dev-api-eks.kortix.com` (standby) and
+  `staging-api-eks.kortix.com` (active for staging).
+- Keep BOTH origins permanently reachable (the ecs-api module supports extra
+  hostnames):
 
   ```hcl
   # infra/terraform/environments/prod/terraform.tfvars
@@ -131,11 +138,12 @@ merged to `prod` deploys prod via `deploy-prod.yml`.
   does not disturb anything else).
 - **`api.kortix.com` / `staging-api.kortix.com` / `dev-api.kortix.com`** flip via the Cloudflare Worker
   `ACTIVE_BACKEND` var (see `infra/CICD.md` and
-  `infra/cloudflare/workers/api-router`): `eks` is active, `ecs-fargate` is
-  rollback/standby — sub-second, no DNS surgery.
+  `infra/cloudflare/workers/api-router`): `ecs-fargate` is active on prod/dev
+  and `eks` is the rollback/standby (staging is the inverse) — sub-second, no
+  DNS surgery.
 
-Discontinue ECS only after the standby decision is explicit; until then keep both
-origins healthy.
+Discontinue either runtime only after an explicit decision; until then CI keeps
+both origins deployed and healthy on every roll.
 
 ## Operations
 

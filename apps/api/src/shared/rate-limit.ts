@@ -162,6 +162,7 @@ const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
+const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
@@ -279,10 +280,41 @@ export function createDemoRequestRateLimitMiddleware() {
   };
 }
 
+/**
+ * Guards the public, unauthenticated `POST /v1/access/check-email` endpoint.
+ * Its response drives the unified auth flow (sign-in vs registration), which
+ * makes it an account-existence oracle by construction — the limiter is what
+ * keeps it useless for bulk enumeration. Keyed on client IP: the web server
+ * action forwards the visitor's `x-forwarded-for`, and direct browser calls
+ * carry their own address.
+ */
+export function createCheckEmailRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const denied = await enforceRateLimit(
+      c,
+      checkEmailLimiter,
+      clientIp(c),
+      {
+        limit: positiveInt((config as any).KORTIX_CHECK_EMAIL_REQS_PER_MIN, 60),
+        windowMs: 60_000,
+      },
+      {
+        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        resourceType: 'access_check_email',
+        resourceId: null,
+        metadata: { limiter: 'check_email' },
+      },
+    );
+    if (denied) return denied;
+    await next();
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
   publicSessionShareLimiter.reset();
   demoRequestLimiter.reset();
+  checkEmailLimiter.reset();
   sessionLlmLimiter.reset();
 }

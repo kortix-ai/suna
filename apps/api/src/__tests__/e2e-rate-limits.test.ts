@@ -5,6 +5,7 @@ let auditRows: Array<Record<string, unknown>> = [];
 
 mock.module('../config', () => ({
   config: {
+    KORTIX_CHECK_EMAIL_REQS_PER_MIN: 1,
     KORTIX_INVITE_ACCEPT_REQS_PER_MIN: 1,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 1,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
@@ -24,6 +25,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const {
+  createCheckEmailRateLimitMiddleware,
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
   createPublicSessionShareRateLimitMiddleware,
@@ -100,12 +102,15 @@ describe('audited rate limits', () => {
     app.get('/v1/public/session-shares/:shareId', (c) => c.json({ ok: true }));
     app.get('/v1/public/session-shares/:shareId/messages', (c) => c.json({ ok: true }));
 
-    const first = await app.request('/v1/public/session-shares/share-1', {
+    const shareA = '11111111-1111-4111-a111-111111111111';
+    const shareB = '22222222-2222-4222-a222-222222222222';
+
+    const first = await app.request(`/v1/public/session-shares/${shareA}`, {
       headers: { 'X-Forwarded-For': '203.0.113.20' },
     });
     expect(first.status).toBe(200);
 
-    const second = await app.request('/v1/public/session-shares/share-1', {
+    const second = await app.request(`/v1/public/session-shares/${shareA}`, {
       headers: { 'X-Forwarded-For': '203.0.113.20' },
     });
     expect(second.status).toBe(429);
@@ -113,16 +118,48 @@ describe('audited rate limits', () => {
     // A DIFFERENT share id from the exact same IP is a separate bucket — every
     // visitor to one shared link is legitimately behind the same limiter, but
     // one caller shouldn't be able to starve every other share from the same
-    // (possibly shared) IP.
-    const otherShare = await app.request('/v1/public/session-shares/share-2', {
+    // (possibly shared) IP. Ids must be well-formed uuids: anything else keys
+    // on client IP instead (the anti-OOM fallback).
+    const otherShare = await app.request(`/v1/public/session-shares/${shareB}`, {
       headers: { 'X-Forwarded-For': '203.0.113.20' },
     });
     expect(otherShare.status).toBe(200);
 
     expect(auditRows.at(-1)).toMatchObject({
       resourceType: 'public_session_share',
-      resourceId: 'share-1',
+      resourceId: shareA,
       metadata: { limiter: 'public_session_share' },
+    });
+  });
+
+  test('limits public check-email probes by client IP and writes an audit event on hit', async () => {
+    const app = new Hono();
+    app.use('/v1/access/check-email', createCheckEmailRateLimitMiddleware());
+    app.post('/v1/access/check-email', (c) => c.json({ allowed: true, mode: 'signup' }));
+
+    const first = await app.request('/v1/access/check-email', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.30' },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request('/v1/access/check-email', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.30' },
+    });
+    expect(second.status).toBe(429);
+    expect(second.headers.get('Retry-After')).toBeTruthy();
+
+    const otherIp = await app.request('/v1/access/check-email', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.31' },
+    });
+    expect(otherIp.status).toBe(200);
+
+    expect(auditRows.at(-1)).toMatchObject({
+      resourceType: 'access_check_email',
+      ip: '203.0.113.30',
+      metadata: { limiter: 'check_email' },
     });
   });
 

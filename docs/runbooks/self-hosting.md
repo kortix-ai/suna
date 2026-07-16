@@ -446,6 +446,21 @@ Notes:
   Part A/C; it is not a self-host-specific concern once the plumbing above is
   in place.
 
+## Restricting account creation
+
+By default only the admin (`KORTIX_PLATFORM_ADMIN_EMAILS`) creates new
+accounts/organizations on a self-hosted instance; everyone else joins an
+existing account by invitation or SSO. This is narrower than the removed
+single-account mode — signups still work, existing teams/orgs still fully
+function, and SSO/JIT still lands users in their org; only `POST
+/v1/accounts` (spinning up a brand-new organization) is gated to platform
+admins. `kortix self-host init`/`configure` ask about it as part of
+"Deployment shape" (default Yes); disable it with:
+
+```sh
+kortix self-host env set KORTIX_RESTRICT_ACCOUNT_CREATION=false KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION=false
+```
+
 ## Backups
 
 There is no separate backup system — it's plain Docker volumes and bind

@@ -21,6 +21,7 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     MANAGED_PROVIDER_ENABLED: read('MANAGED_PROVIDER_ENABLED') === 'true',
     CONNECTORS_ENABLED: read('CONNECTORS_ENABLED') !== 'false',
     DISABLE_LANDING_PAGE: read('DISABLE_LANDING_PAGE') === 'true',
+    RESTRICT_ACCOUNT_CREATION: read('RESTRICT_ACCOUNT_CREATION') === 'true',
     APP_URL: read('APP_URL') || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
     SANDBOX_ID: read('SANDBOX_ID') || undefined,
     AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,

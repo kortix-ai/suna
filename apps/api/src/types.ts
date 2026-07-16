@@ -199,6 +199,12 @@ export interface AccountStateResponse {
      *  the SSO / SCIM setup cards. */
     entitlements: TierEntitlements;
   };
+  /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
+   *  forces every enterprise entitlement on platform-wide. When true, the
+   *  frontend hides the self-serve "Enterprise features — Demo" toggle and
+   *  any "Request enterprise access" upsell — there's nothing to demo-enable
+   *  or upsell when the license already turned it on unconditionally. */
+  enterprise_license_available: boolean;
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];
   auto_topup: {
