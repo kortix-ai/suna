@@ -523,6 +523,40 @@ describe('classifyTurn — error normalization + isEmpty', () => {
     expect(result.isEmpty).toBe(false);
   });
 
+  // ERROR-TAXONOMY fix: the gateway's structured error fields (provider/code/
+  // suggestion/request_id from gatewayErrorBody()) must survive all the way
+  // into TurnError, not just the bare message — opencode's turn-level ApiError
+  // carries the gateway's raw JSON response text as `data.responseBody`.
+  test("surfaces the gateway's structured fields (provider/code/suggestion/requestId) when the turn error carries them", () => {
+    const message: MessageWithParts = {
+      info: assistantMessage('a1', {
+        error: {
+          name: 'APIError',
+          data: {
+            message: 'No upstream configured for model "openai/gpt-4.1"',
+            statusCode: 400,
+            isRetryable: false,
+            responseBody: JSON.stringify({
+              message: 'No upstream configured for model "openai/gpt-4.1"',
+              code: 'provider_not_connected',
+              provider: 'openai',
+              request_id: 'req_xyz',
+              suggestion: 'Add an openai API key in project settings, then retry.',
+            }),
+          },
+        },
+      }),
+      parts: [],
+    };
+    const result = classifyTurn(message);
+    expect(result.error?.name).toBe('APIError');
+    expect(result.error?.message).toBe('No upstream configured for model "openai/gpt-4.1"');
+    expect(result.error?.provider).toBe('openai');
+    expect(result.error?.code).toBe('provider_not_connected');
+    expect(result.error?.suggestion).toBe('Add an openai API key in project settings, then retry.');
+    expect(result.error?.requestId).toBe('req_xyz');
+  });
+
   test('a turn with only step markers and no error is empty', () => {
     const message: MessageWithParts = {
       info: assistantMessage('a1'),

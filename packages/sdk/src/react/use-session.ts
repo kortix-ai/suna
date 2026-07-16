@@ -39,6 +39,7 @@ import {
 import { isSessionFresh } from '../core/http/fresh-sessions';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
+import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
@@ -103,6 +104,19 @@ export interface KortixSendError {
   message: string;
   /** Present when `kind === 'billing'` — the parsed 402 detail. */
   billing?: BillingError;
+  /**
+   * Present when `kind === 'runtime-error'` and the failure carries the LLM
+   * gateway's structured error envelope (provider/code/suggestion/...) — see
+   * `extractGatewayErrorDetails`. Lets a host render WHICH provider failed and
+   * WHAT to do about it instead of only the provider's raw error text.
+   */
+  gateway?: {
+    provider?: string;
+    code?: string;
+    suggestion?: string;
+    upstreamStatus?: number;
+    requestId?: string;
+  };
   /** The original thrown value, for callers that want more detail. */
   cause: unknown;
 }
@@ -135,8 +149,26 @@ export function classifySendError(error: unknown): KortixSendError {
     }
   }
 
+  const gateway = extractGatewayErrorDetails(error);
   const formatted = formatOpenCodeRuntimeError(error);
-  return { kind: 'runtime-error', message: formatted.message, cause: error };
+  return {
+    kind: 'runtime-error',
+    // Prefer the gateway's own message (already human-written server-side per
+    // status/cause) over opencode's raw runtime-error formatting when present.
+    message: gateway?.message || formatted.message,
+    ...(gateway
+      ? {
+          gateway: {
+            provider: gateway.provider,
+            code: gateway.code,
+            suggestion: gateway.suggestion,
+            upstreamStatus: gateway.upstreamStatus,
+            requestId: gateway.requestId,
+          },
+        }
+      : {}),
+    cause: error,
+  };
 }
 
 /** The optimistic-send + last-error state `send` drives. Modeled as a small
