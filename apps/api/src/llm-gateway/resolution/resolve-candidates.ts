@@ -9,6 +9,7 @@ import { getResolvedProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 import { resolveCatalogUpstream } from '../models/provider-registry';
+import { capabilitiesForModel } from '../models/catalog-models';
 import { resolveGatewayRoute } from '../routing';
 import { getRuntimeManagedModel } from '../models/managed-models';
 
@@ -78,6 +79,11 @@ export async function resolveCandidates(
         ? await resolveCachedAccountTier(principal.accountId)
         : 'self-hosted';
       const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
+      const resolvedModelId = effectiveModel.slice(provider.length + 1);
+      // Capability flags from the catalog (models.dev enrichment) so the
+      // transport can decide which params a reasoning-restricted model
+      // actually rejects, instead of hardcoding a model-id list.
+      const capabilities = capabilitiesForModel(provider, resolvedModelId);
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
@@ -86,8 +92,10 @@ export async function resolveCandidates(
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
-        resolvedModel: effectiveModel.slice(provider.length + 1),
-        pricing: livePricing(effectiveModel.slice(provider.length + 1)),
+        resolvedModel: resolvedModelId,
+        pricing: livePricing(resolvedModelId),
+        reasoning: capabilities.reasoning,
+        temperature: capabilities.temperature,
       };
       // Queue a managed model behind the BYOK key: if the user's key hits a
       // rate-limit / quota / billing error, the failover loop falls over to it

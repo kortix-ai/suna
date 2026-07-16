@@ -109,6 +109,195 @@ describe('openai-compat max_tokens -> max_completion_tokens translation', () => 
   });
 });
 
+describe('openai-compat: reasoning-restricted sampling params for genuine OpenAI', () => {
+  const reasoningModelDescriptor: UpstreamDescriptor = {
+    ...descriptor,
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    resolvedModel: 'gpt-5.6-sol',
+    temperature: false,
+  };
+
+  test('strips temperature/top_p/penalties/logprobs for a genuine-OpenAI reasoning model', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'openai/gpt-5.6-sol',
+        messages: [],
+        temperature: 0.4,
+        top_p: 0.9,
+        presence_penalty: 0.2,
+        frequency_penalty: 0.1,
+        logprobs: true,
+        top_logprobs: 3,
+        logit_bias: { '123': 1 },
+      },
+      reasoningModelDescriptor,
+    );
+    for (const key of [
+      'temperature',
+      'top_p',
+      'presence_penalty',
+      'frequency_penalty',
+      'logprobs',
+      'top_logprobs',
+      'logit_bias',
+    ]) {
+      expect(key in req.payload).toBe(false);
+    }
+  });
+
+  test('leaves sampling params alone for a non-reasoning genuine-OpenAI model (capability flag true)', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openai/gpt-4.1', messages: [], temperature: 0.4, top_p: 0.9 },
+      { ...reasoningModelDescriptor, resolvedModel: 'gpt-4.1', temperature: true },
+    );
+    expect(req.payload.temperature).toBe(0.4);
+    expect(req.payload.top_p).toBe(0.9);
+  });
+
+  test('leaves sampling params alone when the capability flag is unknown (undefined)', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openai/some-model', messages: [], temperature: 0.4 },
+      { ...reasoningModelDescriptor, temperature: undefined },
+    );
+    expect(req.payload.temperature).toBe(0.4);
+  });
+
+  test('does not strip sampling params for a reasoning-marked model on a DIFFERENT openai-compat host (OpenRouter)', () => {
+    const req = buildUpstreamRequest(
+      { model: 'kortix/o3', messages: [], temperature: 0.4, top_p: 0.9 },
+      {
+        ...descriptor,
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        temperature: false,
+      },
+    );
+    expect(req.payload.temperature).toBe(0.4);
+    expect(req.payload.top_p).toBe(0.9);
+  });
+
+  test('does not touch max_tokens translation behavior (both fixes compose cleanly)', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openai/gpt-5.6-sol', messages: [], max_tokens: 4096, temperature: 0.7 },
+      reasoningModelDescriptor,
+    );
+    expect(req.payload.max_completion_tokens).toBe(4096);
+    expect('max_tokens' in req.payload).toBe(false);
+    expect('temperature' in req.payload).toBe(false);
+  });
+});
+
+describe('openai-compat: Perplexity role-sequence normalization', () => {
+  const perplexityDescriptor: UpstreamDescriptor = {
+    ...descriptor,
+    provider: 'perplexity',
+    baseUrl: 'https://api.perplexity.ai',
+    resolvedModel: 'sonar-pro',
+  };
+
+  test('merges two consecutive user messages into one', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'perplexity/sonar-pro',
+        messages: [
+          { role: 'user', content: 'first' },
+          { role: 'user', content: 'second' },
+        ],
+      },
+      perplexityDescriptor,
+    );
+    const messages = req.payload.messages as any[];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('user');
+    expect(messages[0].content).toBe('first\n\nsecond');
+  });
+
+  test('folds a `tool` result into the preceding user turn (no native tool role on Perplexity)', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'perplexity/sonar-pro',
+        messages: [
+          { role: 'user', content: 'question' },
+          { role: 'tool', tool_call_id: 't1', content: 'tool result' },
+        ],
+      },
+      perplexityDescriptor,
+    );
+    const messages = req.payload.messages as any[];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('user');
+    expect(messages[0].content).toBe('question\n\ntool result');
+  });
+
+  test('a leading system message is preserved and never merged', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'perplexity/sonar-pro',
+        messages: [
+          { role: 'system', content: 'be helpful' },
+          { role: 'user', content: 'first' },
+          { role: 'user', content: 'second' },
+        ],
+      },
+      perplexityDescriptor,
+    );
+    const messages = req.payload.messages as any[];
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toEqual({ role: 'system', content: 'be helpful' });
+    expect(messages[1].content).toBe('first\n\nsecond');
+  });
+
+  test('an already-alternating sequence passes through unchanged', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'perplexity/sonar-pro',
+        messages: [
+          { role: 'user', content: 'q1' },
+          { role: 'assistant', content: 'a1' },
+          { role: 'user', content: 'q2' },
+        ],
+      },
+      perplexityDescriptor,
+    );
+    const messages = req.payload.messages as any[];
+    expect(messages).toHaveLength(3);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+  });
+
+  test('does not touch message sequencing for a non-Perplexity provider, even with same-role runs', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'kortix/glm-5.2',
+        messages: [
+          { role: 'user', content: 'first' },
+          { role: 'user', content: 'second' },
+        ],
+      },
+      { ...descriptor, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
+    );
+    const messages = req.payload.messages as any[];
+    expect(messages).toHaveLength(2);
+  });
+
+  test('merges consecutive assistant tool_calls arrays instead of dropping either', () => {
+    const req = buildUpstreamRequest(
+      {
+        model: 'perplexity/sonar-pro',
+        messages: [
+          { role: 'assistant', content: '', tool_calls: [{ id: 'a', type: 'function', function: { name: 'x', arguments: '{}' } }] },
+          { role: 'assistant', content: '', tool_calls: [{ id: 'b', type: 'function', function: { name: 'y', arguments: '{}' } }] },
+        ],
+      },
+      perplexityDescriptor,
+    );
+    const messages = req.payload.messages as any[];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].tool_calls).toHaveLength(2);
+    expect(messages[0].tool_calls.map((t: any) => t.id)).toEqual(['a', 'b']);
+  });
+});
+
 describe('openai-compat bodyExtras', () => {
   test('merges descriptor bodyExtras into the payload, overriding client fields', () => {
     const req = buildUpstreamRequest(
