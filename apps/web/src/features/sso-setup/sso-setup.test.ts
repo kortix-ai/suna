@@ -283,8 +283,11 @@ describe('domain field explains its consequence in the guided wizard (live incid
 // walks every image src in guides.ts and fails on the first dead slot, so a
 // guide edit can never reference an asset that was never shipped.
 describe('guide screenshots ship with the guides', () => {
-  test('every referenced /sso-setup image exists on disk', () => {
-    const refs = [...guidesSource.matchAll(/['"](\/sso-setup\/[a-z-]+\/[a-z0-9-]+\.png)['"]/g)].map(
+  test('every referenced guide image exists on disk (any path)', () => {
+    // ANY absolute image path — the Entra Directory Sync guide once referenced
+    // /docs/entra/*.png (a path outside /sso-setup/) whose files were never
+    // shipped, so a prefix-scoped guard missed a fully text-only guide.
+    const refs = [...guidesSource.matchAll(/src: '(\/[a-z0-9/._-]+\.(?:png|jpg|webp))'/g)].map(
       (m) => m[1],
     );
     expect(refs.length).toBeGreaterThan(0);

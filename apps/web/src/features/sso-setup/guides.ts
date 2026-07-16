@@ -942,7 +942,7 @@ const scimTestStep = (extra?: string): GuideStep => ({
   content: [
     {
       kind: 'image',
-      src: '/docs/entra/07-verify.png',
+      src: '/sso-setup/entra/scim-verify-1.png',
       alt: 'Entra Provisioning overview showing a completed cycle with Import, Scope, Match, and Provision all reporting Success',
       schematic: {
         title: 'Provisioning → Overview → Current cycle',
@@ -986,7 +986,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'image',
-            src: '/docs/entra/01-enterprise-app.png',
+            src: '/sso-setup/entra/scim-before-1.png',
             alt: 'Entra enterprise application overview page with the Single sign-on, Provisioning, and Users and groups tabs in the left nav',
             schematic: {
               title: 'Enterprise application → Overview',
@@ -1019,7 +1019,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'image',
-            src: '/docs/entra/03-provisioning-credentials.png',
+            src: '/sso-setup/entra/scim-credentials-1.png',
             alt: 'Entra Provisioning Admin Credentials section with Tenant URL, Secret Token, and Test Connection',
             schematic: {
               title: 'Entra → Provisioning → Admin Credentials',
@@ -1040,7 +1040,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'image',
-            src: '/docs/entra/04-attribute-mappings.png',
+            src: '/sso-setup/entra/scim-mappings-1.png',
             alt: 'Entra provisioning attribute mappings list with the userName to user.userprincipalname row highlighted',
             schematic: {
               title: 'Provisioning → Mappings → Provision Microsoft Entra ID Users',
@@ -1056,7 +1056,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'image',
-            src: '/docs/entra/05-assign-users.png',
+            src: '/sso-setup/entra/scim-assign-1.png',
             alt: 'Entra Users and groups panel with Add user/group open and a user selected for assignment',
             schematic: {
               title: 'Manage → Users and groups',
@@ -1077,7 +1077,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'image',
-            src: '/docs/entra/06-start-provisioning.png',
+            src: '/sso-setup/entra/scim-start-1.png',
             alt: 'Entra Provisioning overview page toolbar with Start provisioning and Provision on demand buttons',
             schematic: {
               title: 'Provisioning → Overview',
