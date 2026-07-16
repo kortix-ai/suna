@@ -21,6 +21,28 @@ export const CONVERTED: string[] = [
   'dcp-distill-tool.tsx',
   'dcp-prune-tool.tsx',
   'context-info-tool.tsx',
+  // Task 7 — sessions, projects, connectors, triggers, media (S4)
+  'session-read-tool.tsx',
+  'session-message-tool.tsx',
+  'session-lineage-tool.tsx',
+  'session-list-background-tool.tsx',
+  'session-stats-tool.tsx',
+  'session-get-tool.tsx',
+  'session-search-tool.tsx',
+  'session-spawn-tool.tsx',
+  'project-get-tool.tsx',
+  'project-create-tool.tsx',
+  'project-delete-tool.tsx',
+  'project-list-tool.tsx',
+  'project-select-tool.tsx',
+  'connector-get-tool.tsx',
+  'connector-list-tool.tsx',
+  'connector-setup-tool.tsx',
+  'triggers-tool.tsx',
+  'image-gen-tool.tsx',
+  'video-gen-tool.tsx',
+  'image-search-tool.tsx',
+  'removed-integration-tool.tsx',
 ];
 
 describe('tool/tools/ conformance — no bespoke design system in converted files', () => {

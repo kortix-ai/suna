@@ -240,9 +240,11 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
         </div>
       ) : isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="connector_list" />
+      ) : output ? (
+        <div className="text-muted-foreground p-3 text-xs">No connectors found</div>
       ) : (
-        <div className="text-muted-foreground p-3 text-xs">
-          {output ? 'No connectors found' : 'Loading...'}
+        <div className="p-3">
+          <TextShimmer>Loading...</TextShimmer>
         </div>
       )}
     </BasicTool>

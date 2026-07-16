@@ -67,6 +67,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -213,12 +214,9 @@ export function SessionMessageTool({ part }: ToolProps) {
     >
       {message && (
         <div className="px-3 py-2">
-          <div className="text-muted-foreground/50 mb-1 text-xs tracking-wider uppercase">
-            Message
-          </div>
-          <div className="text-foreground/70 bg-muted/20 border-border/20 rounded border p-2 text-xs whitespace-pre-wrap">
-            {message.slice(0, 500)}
-          </div>
+          <ToolSection label="Message">
+            <OutputBlock text={message.slice(0, 500)} />
+          </ToolSection>
         </div>
       )}
     </BasicTool>

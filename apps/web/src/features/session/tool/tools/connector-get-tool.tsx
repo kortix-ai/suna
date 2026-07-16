@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -239,13 +240,13 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
             ) : isErrorOutput(output) ? (
               <ToolOutputFallback output={output} toolName="connector_get" />
             ) : (
-              <div className="text-muted-foreground max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-                {output}
-              </div>
+              <OutputBlock text={output} />
             )}
           </div>
         ) : (
-          <div className="text-muted-foreground p-3 text-xs">Loading...</div>
+          <div className="p-3">
+            <TextShimmer>Loading...</TextShimmer>
+          </div>
         )}
       </div>
     </BasicTool>

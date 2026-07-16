@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -362,28 +363,28 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
             )}
           </div>
         ) : output ? (
-          <div className="text-muted-foreground max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-            {output.slice(0, 3000)}
-          </div>
+          <OutputBlock text={output.slice(0, 3000)} />
         ) : (
-          <div className="text-muted-foreground p-3 text-xs">
-            {action === 'create'
-              ? 'Creating trigger...'
-              : action === 'delete'
-                ? 'Deleting trigger...'
-                : 'Loading...'}
+          <div className="p-3">
+            <TextShimmer>
+              {action === 'create'
+                ? 'Creating trigger...'
+                : action === 'delete'
+                  ? 'Deleting trigger...'
+                  : 'Loading...'}
+            </TextShimmer>
           </div>
         )}
 
         {action === 'create' && typeof input.prompt === 'string' && (
           <div className="border-border/30 mt-2 border-t pt-2">
-            <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-              Prompt
-            </div>
-            <div className="text-muted-foreground max-h-24 overflow-y-auto font-mono text-xs leading-relaxed whitespace-pre-wrap">
-              {input.prompt.slice(0, 400)}
-              {input.prompt.length > 400 ? '...' : ''}
-            </div>
+            <ToolSection label="Prompt">
+              <OutputBlock
+                text={
+                  input.prompt.slice(0, 400) + (input.prompt.length > 400 ? '...' : '')
+                }
+              />
+            </ToolSection>
           </div>
         )}
       </div>

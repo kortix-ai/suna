@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -219,11 +220,7 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
       {isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="session_lineage" />
       ) : output ? (
-        <div data-scrollable className="max-h-56 overflow-auto px-3 py-2">
-          <div className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">
-            <UnifiedMarkdown content={output} isStreaming={false} />
-          </div>
-        </div>
+        <OutputBlock text={output} markdown />
       ) : null}
     </BasicTool>
   );

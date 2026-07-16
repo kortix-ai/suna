@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -227,15 +228,13 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
                 <span className="font-medium">{conn}</span>
               </div>
             ))}
-            {!data && (
-              <div className="text-muted-foreground max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-                {output}
-              </div>
-            )}
+            {!data && <OutputBlock text={output} />}
           </div>
         ) : (
-          <div className="text-muted-foreground p-3 text-xs">
-            {tHardcodedUi.raw('componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors')}
+          <div className="p-3">
+            <TextShimmer>
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors')}
+            </TextShimmer>
           </div>
         )}
       </div>

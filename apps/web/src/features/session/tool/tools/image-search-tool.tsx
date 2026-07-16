@@ -313,7 +313,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
-                  <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/50 to-transparent p-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="absolute inset-x-0 bottom-0 flex items-end bg-black/60 p-1 opacity-0 transition-opacity group-hover:opacity-100">
                     <span className="truncate text-xs text-white">{title}</span>
                   </div>
                 </a>

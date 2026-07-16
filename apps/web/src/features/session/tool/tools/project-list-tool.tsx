@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -230,9 +231,7 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
           ))}
         </div>
       ) : output ? (
-        <div className="text-muted-foreground/60 text-xs whitespace-pre-wrap">
-          {output.slice(0, 2000)}
-        </div>
+        <OutputBlock text={output.slice(0, 2000)} />
       ) : null}
     </BasicTool>
   );

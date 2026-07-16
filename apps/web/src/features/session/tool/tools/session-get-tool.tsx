@@ -1,6 +1,5 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
 import {
   BasicTool,
@@ -10,6 +9,7 @@ import {
   partStatus,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
@@ -204,10 +204,8 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                 </span>
               </button>
               {showConv && (
-                <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
-                    <UnifiedMarkdown content={parsed.conversation} isStreaming={false} />
-                  </div>
+                <div className="px-3 py-2">
+                  <OutputBlock text={parsed.conversation} markdown />
                 </div>
               )}
             </div>

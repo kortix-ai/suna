@@ -1,6 +1,5 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { StatusDot } from '@/components/ui/status';
 import {
   BasicTool,
@@ -11,6 +10,7 @@ import {
   ToolEmptyState,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { Layers } from 'lucide-react';
@@ -75,11 +75,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
       ) : isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="session_list" />
       ) : output ? (
-        <div data-scrollable className="max-h-56 overflow-auto px-3 py-2">
-          <div className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">
-            <UnifiedMarkdown content={output} isStreaming={false} />
-          </div>
-        </div>
+        <OutputBlock text={output} markdown />
       ) : noWorkers ? (
         <ToolEmptyState
           message={tHardcodedUi.raw(

@@ -197,13 +197,16 @@ export function ProjectDeleteTool({ part }: ToolProps) {
   const input = partInput(part);
   const project = (input.project as string) || '';
   return (
-    <div className="text-muted-foreground/40 flex items-center gap-2 px-2.5 py-1 text-xs">
-      <Trash2 className="size-3 flex-shrink-0" />
-      <span>
-        {tHardcodedUi.raw('componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled')}{' '}
-        {project ? ` (${project})` : ''}
-      </span>
-    </div>
+    <BasicTool
+      icon={<Trash2 className="text-muted-foreground/40 size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Workspace',
+        subtitle: tHardcodedUi.raw(
+          'componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled',
+        ),
+        args: project ? [project] : undefined,
+      }}
+    />
   );
 }
 ToolRegistry.register('project_delete', ProjectDeleteTool);

@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -210,10 +211,8 @@ export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       {isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="video_gen" />
       ) : output ? (
-        <div data-scrollable className="max-h-72 overflow-auto p-2">
-          <pre className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">
-            {output}
-          </pre>
+        <div className="p-2">
+          <OutputBlock text={output} />
         </div>
       ) : null}
     </BasicTool>

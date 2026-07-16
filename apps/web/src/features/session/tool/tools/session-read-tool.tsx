@@ -68,6 +68,7 @@ import {
   InlineSessionMessagesList,
   formatSessionTime,
 } from '@/features/session/tool/shared/session-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import {
   InlineFileList,
   InlineGrepResults,
@@ -283,11 +284,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       ) : isErrorOutput(output) ? (
         <ToolOutputFallback output={output} toolName="session_read" />
       ) : output ? (
-        <div data-scrollable className="max-h-72 overflow-auto px-3 py-2">
-          <div className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">
-            <UnifiedMarkdown content={output} isStreaming={false} />
-          </div>
-        </div>
+        <OutputBlock text={output} markdown />
       ) : null}
     </BasicTool>
   );
