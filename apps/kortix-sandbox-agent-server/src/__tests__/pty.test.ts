@@ -188,6 +188,35 @@ describe('kortix-native pty', () => {
     }
   })
 
+  it('keeps the default interactive shell alive until its first viewer attaches', async () => {
+    const proxy = startTestProxy()
+    try {
+      const created = await createPty(proxy.port, {})
+      await Bun.sleep(50)
+
+      const list = (await (
+        await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty`, { headers: authHeaders() })
+      ).json()) as PtyMeta[]
+      expect(list.find((pty) => pty.id === created.id)?.status).toBe('running')
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`,
+        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
+      )
+      await waitForOpen(ws)
+      ws.send("printf 'DEFAULT_SHELL_MARKER\\n'\n")
+      await waitForData(ws, (acc) => acc.includes('DEFAULT_SHELL_MARKER'))
+      ws.close()
+
+      await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+    } finally {
+      await proxy.stop()
+    }
+  })
+
   it('streams real command output over the websocket', async () => {
     const proxy = startTestProxy()
     try {
