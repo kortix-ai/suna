@@ -279,7 +279,7 @@ export function SessionSiteHeader({
                 size="icon"
                 aria-label="Open terminal"
                 onClick={() => openSessionQuickView('terminal', 'header')}
-                className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
               >
                 <SquareTerminal className="h-4 w-4" />
               </Button>
@@ -295,7 +295,7 @@ export function SessionSiteHeader({
                 size="icon"
                 aria-label="Open browser"
                 onClick={() => openSessionQuickView('browser', 'header')}
-                className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
               >
                 <Globe className="h-4 w-4" />
               </Button>
