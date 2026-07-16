@@ -2,6 +2,7 @@
  * Unit tests for the secrets v2 identifier model's pure logic:
  *   - isValidIdentifier / identifierKeyConflicts (validation)
  *   - resolveGrantedSecretEnv (the whole agent-grant-by-identifier decision)
+ *   - pickResolvedSecretRow (BYOK gateway shared-vs-private precedence)
  *
  * This is the SOLE authorization gate on agent secret access — there is no
  * resource-side agent allow-list and no per-secret member/group sharing.
@@ -11,6 +12,7 @@ import {
   AmbiguousSecretGrantError,
   identifierKeyConflicts,
   isValidIdentifier,
+  pickResolvedSecretRow,
   resolveGrantedSecretEnv,
   type ResolvedProjectSecret,
 } from '../projects/secrets';
@@ -127,6 +129,60 @@ describe('resolveGrantedSecretEnv', () => {
       ['GMAPS-backup'],
     );
     expect(env).toEqual({ GOOGLE_MAPS_API_KEY: 'backup-val' });
+  });
+});
+
+describe('pickResolvedSecretRow — BYOK gateway shared-vs-private fallback', () => {
+  const KEY = 'ANTHROPIC_API_KEY';
+  const sharedRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    identifier: KEY,
+    ownerUserId: null,
+    valueEnc: 'shared-value',
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  });
+  const privateRow = (ownerUserId: string, overrides: Partial<Record<string, unknown>> = {}) => ({
+    identifier: KEY,
+    ownerUserId,
+    valueEnc: `private-value-${ownerUserId}`,
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  });
+
+  test('no rows at all → null', () => {
+    expect(pickResolvedSecretRow([], KEY, 'user-a')).toBeNull();
+  });
+
+  test('only a shared row → shared row resolves', () => {
+    const shared = sharedRow();
+    expect(pickResolvedSecretRow([shared], KEY, 'user-a')).toBe(shared);
+  });
+
+  test("own-session fallback: only the caller's own private row exists → it resolves", () => {
+    const mine = privateRow('user-a');
+    expect(pickResolvedSecretRow([mine], KEY, 'user-a')).toBe(mine);
+  });
+
+  test('shared key still wins when both a shared row and the caller\'s private row exist', () => {
+    const shared = sharedRow();
+    const mine = privateRow('user-a');
+    expect(pickResolvedSecretRow([shared, mine], KEY, 'user-a')).toBe(shared);
+  });
+
+  test("another member's private row is never selected for a different caller (no shared configured)", () => {
+    const someoneElses = privateRow('user-b');
+    expect(pickResolvedSecretRow([someoneElses], KEY, 'user-a')).toBeNull();
+  });
+
+  test('no acting user (e.g. webhook-triggered session) never falls back to a private row', () => {
+    const mine = privateRow('user-a');
+    expect(pickResolvedSecretRow([mine], KEY, null)).toBeNull();
+  });
+
+  test('multiple identifiers sharing a KEY: the canonical (identifier === key) row wins among same-scope duplicates', () => {
+    const canonical = sharedRow({ identifier: KEY, valueEnc: 'canonical' });
+    const alias = sharedRow({ identifier: 'ANTHROPIC-backup', valueEnc: 'alias', updatedAt: new Date('2026-02-01T00:00:00Z') });
+    expect(pickResolvedSecretRow([alias, canonical], KEY, 'user-a')).toBe(canonical);
   });
 });
 

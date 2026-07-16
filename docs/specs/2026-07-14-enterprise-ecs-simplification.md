@@ -148,7 +148,8 @@ project).
 - **WS-LIVE**: stop the zombie Step Functions execution on customer-zero; tear
   down the EKS-era stack; fresh A-to-Z `init → doctor → plan → deploy`;
   certify (authenticated app flow + agent turn on Bedrock + backup recovery
-  point); then the customer (account 327903111249) from the same signed revision.
+  point); then the enterprise pilot customer's own account from the same
+  signed revision.
 
 ## Certification checklist (per deployment)
 

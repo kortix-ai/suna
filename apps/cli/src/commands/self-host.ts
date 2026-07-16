@@ -371,6 +371,13 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
   applyAdminEmail(env, flags);
+  // Non-interactive fresh init never reaches promptAdminEmail below, so a
+  // missing admin email would otherwise fail silently — and the operator only
+  // finds out at the "Only a platform admin can configure GitHub" dead-end in
+  // the dashboard. Same loud warning the interactive blank-answer path gets.
+  if (!shouldPrompt(flags) && existing === null && !env.KORTIX_PLATFORM_ADMIN_EMAILS.trim()) {
+    warnNoAdminEmail();
+  }
   warnIfReachabilityUnconfigured(env, flags);
 
   // The complete guided `init` flow, in this exact order and no other
@@ -896,12 +903,18 @@ async function promptAdminEmail(env: SelfHostEnv, flags: GlobalFlags): Promise<v
     env.KORTIX_PLATFORM_ADMIN_EMAILS || '',
   );
   env.KORTIX_PLATFORM_ADMIN_EMAILS = answer;
-  if (!answer.trim()) {
-    process.stdout.write(
-      `  ${C.yellow}warning${C.reset}  ${C.dim}No admin email set — some in-app server settings (e.g. Settings → Git)${C.reset}\n` +
-        `           ${C.dim}need at least one platform admin. Set later: ${C.reset}${C.cyan}kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com${C.reset}\n\n`,
-    );
-  }
+  if (!answer.trim()) warnNoAdminEmail();
+}
+
+/** Shared by the interactive blank-answer path and non-interactive fresh
+ *  init (--yes / no TTY / piped) — the two ways an instance ends up with no
+ *  platform admin. */
+function warnNoAdminEmail(): void {
+  process.stdout.write(
+    `  ${C.yellow}warning${C.reset}  ${C.dim}No admin email set — some in-app server settings (e.g. Settings → Git)${C.reset}\n` +
+      `           ${C.dim}need at least one platform admin. Pass ${C.reset}${C.cyan}--admin-email you@example.com${C.reset}${C.dim} or set later:${C.reset}\n` +
+      `           ${C.cyan}kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com${C.reset}\n\n`,
+  );
 }
 
 /**
