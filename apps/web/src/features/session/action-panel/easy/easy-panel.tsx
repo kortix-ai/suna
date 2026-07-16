@@ -19,8 +19,13 @@
  * and the Context card's "Files read" bucket.
  */
 
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
+import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
+import { cn } from '@/lib/utils';
 import { track } from '@/lib/track';
 import {
   useClearFocusedToolCall,
@@ -33,7 +38,7 @@ import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
-import { FileText } from 'lucide-react';
+import { FileText, Terminal as TerminalIcon } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
@@ -45,7 +50,7 @@ import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
 import { AppsCard } from './apps-card';
 import { ContextCard } from './context-card';
-import { type Detail, DetailLayer, ToolParts } from './detail-view';
+import { CloseButton, type Detail, DetailLayer, ToolParts } from './detail-view';
 import {
   deriveIsRunning,
   neighborOutputs,
@@ -56,6 +61,7 @@ import {
 } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
+import { PanelQuickNav } from './panel-quick-nav';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
 
@@ -69,11 +75,18 @@ export const EasyPanel = memo(function EasyPanel({
   sessionId,
   messages,
   isSessionBusy = false,
+  projectId,
+  projectSessionId,
 }: {
   sessionId: string;
   messages: MessageWithParts[] | undefined;
   /** The session's own busy/retry status — see `deriveIsRunning`. */
   isSessionBusy?: boolean;
+  /** Route ids the Audit button/detail need to resolve a session's audit
+   *  trail — see `session-audit-shared.ts`. Absent while booting/transient,
+   *  in which case the Audit button doesn't render at all (see `PanelQuickNav`). */
+  projectId?: string;
+  projectSessionId?: string;
 }) {
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
   const steps = useMemo(() => groupSteps(parts), [parts]);
@@ -159,6 +172,47 @@ export const EasyPanel = memo(function EasyPanel({
     // width back in the same instant avoids a second, competing motion.
     setIsExpanded(false, { animate: false });
   }, [setIsExpanded]);
+
+  /**
+   * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
+   * owns a long-lived PTY WebSocket that must not tear down every time the
+   * user glances away, and `DetailLayer` unmounts its body via a keyed
+   * `AnimatePresence` on every close (that's correct for a file preview, fatal
+   * for a live shell: the connection drops and scrollback replays on reopen).
+   * So it gets its own `open` flag plus a once-true `activated` latch — the
+   * exact pattern `session-layout.tsx`'s Advanced-mode terminal uses — and is
+   * rendered as a sibling of `DetailLayer` below, hidden (not unmounted) via a
+   * plain `hidden` class rather than an exit animation.
+   *
+   * Because it isn't a `detail`, `DetailLayer`'s Escape/Tab/arrow-key hooks
+   * stay inert while it's open (`useDetailKeyboard` only listens when
+   * `detail` is non-null) — keystrokes fall straight through to xterm. That's
+   * deliberate, not an oversight: adding an Escape-to-close here would eat the
+   * Escape key every vim/nano/fzf user inside the shell needs. The X button
+   * is the only way to close it.
+   */
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalActivated, setTerminalActivated] = useState(false);
+  useEffect(() => {
+    if (terminalOpen) setTerminalActivated(true);
+  }, [terminalOpen]);
+
+  // Mutual exclusion: the terminal layer and a `detail` never show at once —
+  // opening one closes the other. `closeDetail()` also exits fullscreen, so
+  // opening the terminal from a maximized detail snaps the panel back first.
+  const openTerminal = useCallback(() => {
+    closeDetail();
+    setTerminalOpen(true);
+  }, [closeDetail]);
+  const closeTerminal = useCallback(() => setTerminalOpen(false), []);
+
+  // Every `detail` open funnels through here (instead of raw `setDetail`) so
+  // opening a file/app/step/Audit always closes the terminal — the other half
+  // of the mutual exclusion above.
+  const openDetail = useCallback((next: Detail) => {
+    setTerminalOpen(false);
+    setDetail(next);
+  }, []);
 
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/
   // metadata URLs (it calls useSandboxProxy() itself — see
@@ -253,7 +307,7 @@ export const EasyPanel = memo(function EasyPanel({
 
       if (output.kind === 'app' && output.url) {
         track('deliverable_opened', { kind: output.kind, source });
-        setDetail({
+        openDetail({
           key: `app:${output.url}`,
           title: displayName,
           hideHeader: true,
@@ -273,7 +327,7 @@ export const EasyPanel = memo(function EasyPanel({
 
       if (!output.path) return;
       track('deliverable_opened', { kind: output.kind, source });
-      setDetail({
+      openDetail({
         key: `file:${output.path}`,
         title: displayName,
         icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
@@ -292,7 +346,7 @@ export const EasyPanel = memo(function EasyPanel({
         ),
       });
     },
-    [sessionId, getServiceUrl, closeDetail],
+    [sessionId, getServiceUrl, closeDetail, openDetail],
   );
 
   const outcome = useMemo(
@@ -390,7 +444,7 @@ export const EasyPanel = memo(function EasyPanel({
     if (!focusedToolCallId) return;
     const step = stepForCallId(steps, focusedToolCallId);
     if (step) {
-      setDetail({
+      openDetail({
         key: `step:${step.id}`,
         title: step.label,
         icon: <StepIcon family={step.family} status={step.status} />,
@@ -399,34 +453,128 @@ export const EasyPanel = memo(function EasyPanel({
       });
     }
     clearFocusedToolCall();
-  }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId]);
+  }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId, openDetail]);
+
+  // Pending-approval count for the Audit button's amber pill — shares the
+  // same query key `session-layout.tsx`'s header nudge and Advanced-mode
+  // Audit tab use (`useSessionAudit`/`sessionAuditKey`), so this is one
+  // deduped request and every surface agrees on the count. `enabled`-gated,
+  // not conditionally called — the hook itself always runs (React rule),
+  // it just does nothing until both ids are known.
+  const auditReady = !!projectId && !!projectSessionId;
+  const { data: auditData } = useSessionAudit(projectId, projectSessionId, {
+    enabled: auditReady,
+    silent: true,
+  });
+  const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
+
+  const openAudit = useCallback(() => {
+    openDetail({
+      key: 'audit',
+      title: 'Audit',
+      padded: false,
+      body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
+    });
+  }, [openDetail, projectId, projectSessionId]);
 
   const goHome = closeDetail;
 
   return (
-    <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
-      <div className="flex h-full flex-col gap-3 overflow-auto p-3">
-        <ProgressCard
-          steps={latestSteps}
-          isRunning={isRunning}
-          elapsedMs={elapsedMs}
-          outcome={outcome}
-          waitingOnUser={waitingOnUser}
-        />
-        <OutputsCard
-          outputs={files}
-          defaultExpanded={outputsDefaultOpen}
-          onOpenOutput={(o) => handleOpenOutput(o, files)}
-        />
-        <ContextCard
-          files={context.files}
-          web={context.web}
-          tools={context.tools}
-          sessionId={sessionId}
-          onOpenDetail={setDetail}
-        />
-        {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
-      </div>
-    </DetailLayer>
+    <div className="relative h-full w-full">
+      <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
+        <div className="flex h-full flex-col gap-3 overflow-auto p-3">
+          <ProgressCard
+            steps={latestSteps}
+            isRunning={isRunning}
+            elapsedMs={elapsedMs}
+            outcome={outcome}
+            waitingOnUser={waitingOnUser}
+          />
+          <OutputsCard
+            outputs={files}
+            defaultExpanded={outputsDefaultOpen}
+            onOpenOutput={(o) => handleOpenOutput(o, files)}
+          />
+          <ContextCard
+            files={context.files}
+            web={context.web}
+            tools={context.tools}
+            sessionId={sessionId}
+            onOpenDetail={openDetail}
+          />
+          {apps.length > 0 && (
+            <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />
+          )}
+          <PanelQuickNav
+            onOpenTerminal={openTerminal}
+            showAudit={auditReady}
+            onOpenAudit={openAudit}
+            auditPending={auditPendingCount}
+          />
+        </div>
+      </DetailLayer>
+
+      {isMobile ? (
+        // Mobile: a standard detail-style vaul Drawer, not the desktop
+        // keep-alive layer below. vaul unmounts `DrawerContent` on close, so
+        // the shell reconnects on every open — the same tradeoff
+        // `session-layout.tsx`'s Advanced-mode terminal accepts for its own
+        // mobile drawer; there is no room for a persistent absolutely
+        // positioned layer inside a bottom sheet.
+        <Drawer open={terminalOpen} onOpenChange={(next) => !next && closeTerminal()}>
+          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+            <DrawerHeader className="shrink-0 px-4 py-3 text-left">
+              <DrawerTitle className="flex items-center justify-between gap-2 text-base">
+                <span className="flex items-center gap-2.5">
+                  <TerminalIcon className="text-muted-foreground size-4 shrink-0" />
+                  Terminal
+                </span>
+                <CloseButton onClose={closeTerminal} />
+              </DrawerTitle>
+            </DrawerHeader>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <SessionTerminalPanel sessionId={sessionId} projectSessionId={projectSessionId} />
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        terminalActivated && (
+          // Desktop keep-alive layer: mirrors the detail card's exact frame
+          // (same inset/rounding/border/shadow) so swapping between them
+          // reads as one continuous surface. Rendered as a LATER sibling of
+          // `DetailLayer` in this shared `relative` wrapper — with no
+          // explicit z-index, that DOM order alone is what paints it above
+          // the detail card whenever both would otherwise overlap (they
+          // never do in practice, since opening either closes the other).
+          // `hidden` (not an unmount) is what keeps `SessionTerminalPanel`'s
+          // PTY WebSocket alive while the layer is closed — see the
+          // `terminalOpen` state comment above for why this can't be a
+          // `detail`. No enter/exit animation: a `hidden`-class toggle has
+          // nothing to transition between (display:none has no intermediate
+          // frame), so this plays no motion at all rather than fake one.
+          <div
+            className={cn(
+              'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow',
+              !terminalOpen && 'hidden',
+            )}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+              <span className="flex min-w-0 items-center gap-2">
+                <TerminalIcon className="text-muted-foreground size-4 shrink-0" />
+                <span className="text-foreground truncate text-sm font-semibold">Terminal</span>
+              </span>
+              <CloseButton onClose={closeTerminal} />
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <SessionTerminalPanel
+                sessionId={sessionId}
+                projectSessionId={projectSessionId}
+                hidden={!terminalOpen}
+              />
+            </div>
+          </div>
+        )
+      )}
+    </div>
   );
 });

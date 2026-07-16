@@ -40,10 +40,17 @@ export function ActionPanel({
   sessionId,
   messages,
   isSessionBusy = false,
+  projectId,
+  projectSessionId,
 }: {
   sessionId: string;
   messages: MessageWithParts[] | undefined;
   isSessionBusy?: boolean;
+  /** Route ids `EasyPanel`'s Terminal/Audit quick-nav needs — see its own
+   *  prop doc. `AdvancedPanel` has its own Terminal/Audit tabs wired from
+   *  `session-layout.tsx` directly, so it ignores these. */
+  projectId?: string;
+  projectSessionId?: string;
 }) {
   // Users with preferences persisted before this shipped have no panelMode key.
   const mode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
@@ -62,6 +69,12 @@ export function ActionPanel({
   return mode === 'advanced' ? (
     <AdvancedPanel sessionId={sessionId} messages={messages} />
   ) : (
-    <EasyPanel sessionId={sessionId} messages={messages} isSessionBusy={isSessionBusy} />
+    <EasyPanel
+      sessionId={sessionId}
+      messages={messages}
+      isSessionBusy={isSessionBusy}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
   );
 }

@@ -1,11 +1,24 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { PanelMode } from '@/stores/user-preferences-store';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel, shouldDiscardPendingPrimaryOpen } from './index';
+
+// `EasyPanel` calls `useSessionAudit` (react-query) unconditionally for its
+// Terminal/Audit footer row's pending-count pill — `enabled: false` when no
+// projectId/projectSessionId is passed (as none of these tests pass one), but
+// the hook still needs a `QueryClientProvider` ancestor even though no query
+// actually fires under a static render (same requirement as
+// `show-tool.test.tsx`'s `useFileContent`).
+function withQueryClient(node: ReactNode) {
+  const queryClient = new QueryClient();
+  return <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>;
+}
 
 /**
  * Panel-mode regression coverage.
@@ -52,7 +65,7 @@ describe('panel mode gate', () => {
   test('missing panelMode (pre-panelMode persisted state) falls back to Easy', () => {
     mockPanelMode = undefined;
     const html = renderToStaticMarkup(
-      <ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />,
+      withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
@@ -61,7 +74,7 @@ describe('panel mode gate', () => {
   test("panelMode: 'easy' renders the Easy card home", () => {
     mockPanelMode = 'easy';
     const html = renderToStaticMarkup(
-      <ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />,
+      withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
@@ -71,7 +84,7 @@ describe('panel mode gate', () => {
     mockPanelMode = 'advanced';
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-        <ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />
+        {withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />)}
       </NextIntlClientProvider>,
     );
     expect(html).not.toContain('Outputs');
@@ -80,7 +93,7 @@ describe('panel mode gate', () => {
 
   test('EasyPanel renders the card home — Progress/Outputs/Context promises, no stepper', () => {
     const html = renderToStaticMarkup(
-      <EasyPanel sessionId="s1" messages={[]} isSessionBusy={false} />,
+      withQueryClient(<EasyPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
@@ -94,6 +107,32 @@ describe('panel mode gate', () => {
     );
     expect(html).not.toContain('Outputs');
     expect(html).not.toContain('Context');
+  });
+});
+
+describe('EasyPanel Terminal/Audit footer row (PanelQuickNav)', () => {
+  test('Terminal always renders; Audit is absent without projectId/projectSessionId', () => {
+    const html = renderToStaticMarkup(
+      withQueryClient(<EasyPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
+    );
+    expect(html).toContain('Terminal');
+    expect(html).not.toContain('Audit');
+  });
+
+  test('Audit renders once projectId && projectSessionId are both known', () => {
+    const html = renderToStaticMarkup(
+      withQueryClient(
+        <EasyPanel
+          sessionId="s1"
+          messages={[]}
+          isSessionBusy={false}
+          projectId="p1"
+          projectSessionId="ps1"
+        />,
+      ),
+    );
+    expect(html).toContain('Terminal');
+    expect(html).toContain('Audit');
   });
 });
 

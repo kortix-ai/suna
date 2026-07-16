@@ -285,7 +285,13 @@ export const SessionLayout = memo(function SessionLayout({
       projectSessionId={projectSessionId}
     />
   ) : (
-    <ActionPanel sessionId={sessionId} messages={messages} isSessionBusy={isSessionBusy} />
+    <ActionPanel
+      sessionId={sessionId}
+      messages={messages}
+      isSessionBusy={isSessionBusy}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
   );
   const panelBody = (
     <div className="relative h-full w-full">
