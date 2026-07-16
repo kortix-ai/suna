@@ -48,7 +48,6 @@ describe.skipIf(!caps.localImages)(
       expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:0.9.107');
       expect(env.API_IMAGE).toBe('kortix/kortix-api:0.9.107');
       expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:0.9.107');
-      expect(env.SANDBOX_IMAGE).toBe('kortix/kortix-sandbox:0.9.107');
       // Pinning an explicit version doesn't invent/overwrite the channel name.
       expect(env.KORTIX_CHANNEL).toBe('stable');
       expect(env.KORTIX_AUTO_UPDATE).toBe('true');
@@ -136,6 +135,86 @@ describe.skipIf(!caps.localImages)(
       expect(env.API_IMAGE).toBe('kortix/kortix-api:dev-abc123');
       expect(env.KORTIX_IMAGE_PULL).toBe('never');
       expect(env.KORTIX_AUTO_UPDATE).toBe('false');
+    });
+
+    // Moving-tag tracking (CI now publishes kortix/kortix-{api,gateway,
+    // frontend}:dev / :staging / :prod by re-tagging the deployed build — see
+    // .github/workflows/deploy-dev.yml, deploy-staging.yml, deploy-prod.yml).
+    // `--channel` itself stays stable|latest only (see isChannel/CHANNELS
+    // above) — `--tag`/`--version` is the existing, already-generic way an
+    // operator points at ANY published tag, moving or pinned. This just
+    // proves the tag→image resolution and the auto-update override work
+    // end-to-end for the new moving tags, exactly as they already do for a
+    // pinned semver above.
+    test('--tag dev renders every *_IMAGE at :dev, auto-update defaults ON (a moving tag)', async () => {
+      const { code } = await sandbox.run(['init', '--yes', '--tag', 'dev']);
+      expect(code).toBe(0);
+      const env = sandbox.readEnv();
+
+      expect(env.KORTIX_VERSION).toBe('dev');
+      expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:dev');
+      expect(env.API_IMAGE).toBe('kortix/kortix-api:dev');
+      expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:dev');
+      // "dev" isn't one of CHANNELS (stable|latest), so it doesn't invent a
+      // channel name — same rule already covered for a semver pin above.
+      expect(env.KORTIX_CHANNEL).toBe('stable');
+      expect(env.KORTIX_AUTO_UPDATE).toBe('true');
+    });
+
+    test('--tag dev --auto-update on: the explicit flag wins (still ON), so the box actually tracks the moving tag nightly', async () => {
+      const { code } = await sandbox.run([
+        'init',
+        '--yes',
+        '--tag',
+        'dev',
+        '--auto-update',
+        'on',
+      ]);
+      expect(code).toBe(0);
+      const env = sandbox.readEnv();
+      expect(env.API_IMAGE).toBe('kortix/kortix-api:dev');
+      expect(env.KORTIX_AUTO_UPDATE).toBe('true');
+    });
+
+    test('--tag staging / --tag prod render the matching moving-tag images too', async () => {
+      const staging = await sandbox.run(['init', '--yes', '--tag', 'staging']);
+      expect(staging.code).toBe(0);
+      expect(sandbox.readEnv().API_IMAGE).toBe('kortix/kortix-api:staging');
+      expect(sandbox.readEnv().GATEWAY_IMAGE).toBe('kortix/kortix-gateway:staging');
+      expect(sandbox.readEnv().FRONTEND_IMAGE).toBe('kortix/kortix-frontend:staging');
+      expect(sandbox.readEnv().KORTIX_AUTO_UPDATE).toBe('true');
+
+      const prodSandbox = new SelfHostSandbox();
+      try {
+        const prod = await prodSandbox.run(['init', '--yes', '--tag', 'prod']);
+        expect(prod.code).toBe(0);
+        expect(prodSandbox.readEnv().API_IMAGE).toBe('kortix/kortix-api:prod');
+        expect(prodSandbox.readEnv().KORTIX_AUTO_UPDATE).toBe('true');
+      } finally {
+        prodSandbox.cleanup();
+      }
+    });
+
+    // `update` shares the exact same resolveTag()/applyImagesForTag() path as
+    // `init` (see self-host.ts selfHostUpdate) — re-running init on an
+    // already-initialized instance with a different --tag exercises that
+    // same "move the channel forward" code path without needing a live Docker
+    // daemon (which the real `update` subcommand additionally requires, to
+    // actually shell out to `docker compose` — out of scope for this fast,
+    // no-Docker suite).
+    test('re-running init with --tag dev after a prior pin moves every *_IMAGE to :dev (the update path)', async () => {
+      const first = await sandbox.run(['init', '--yes', '--tag', '0.9.107']);
+      expect(first.code).toBe(0);
+      expect(sandbox.readEnv().API_IMAGE).toBe('kortix/kortix-api:0.9.107');
+
+      const second = await sandbox.run(['init', '--yes', '--tag', 'dev']);
+      expect(second.code).toBe(0);
+      const env = sandbox.readEnv();
+      expect(env.KORTIX_VERSION).toBe('dev');
+      expect(env.API_IMAGE).toBe('kortix/kortix-api:dev');
+      expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:dev');
+      expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:dev');
+      expect(env.KORTIX_AUTO_UPDATE).toBe('true');
     });
 
     test('--local-images forces auto-update off even on the default stable channel', async () => {

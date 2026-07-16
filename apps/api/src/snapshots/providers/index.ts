@@ -12,6 +12,7 @@
 import { daytonaProvider } from './daytona';
 import { e2bProvider } from './e2b';
 import { platinumProvider } from './platinum';
+import { localDockerSnapshotProvider } from './local-docker';
 import type { WarmRepoContext } from '../build-context';
 
 interface SandboxResourceSpec {
@@ -93,6 +94,7 @@ const ADAPTERS = new Map<string, SandboxProviderAdapter>();
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
 ADAPTERS.set(e2bProvider.id, e2bProvider);
+ADAPTERS.set(localDockerSnapshotProvider.id, localDockerSnapshotProvider);
 
 export function getSandboxProvider(id: string): SandboxProviderAdapter {
   const adapter = ADAPTERS.get(id);

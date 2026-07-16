@@ -2,6 +2,7 @@ import { locales, type Locale } from '@/i18n/config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
+import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -245,6 +246,14 @@ export async function middleware(request: NextRequest) {
     request,
   });
 
+  // Every redirect issued after the Supabase client below runs must go
+  // through this (see redirect-preserving-session.ts for why): otherwise the
+  // browser gets bounced while still carrying the very cookie that caused the
+  // bounce — the single-use refresh token never actually gets cleared/rotated
+  // on the client, so the next request just repeats the same failure.
+  const redirectPreservingSession = (url: URL) =>
+    redirectPreservingCookies(url, supabaseResponse.cookies);
+
   // IMPORTANT: NEXT_PUBLIC_ vars are inlined at build time by Next.js, so in
   // Docker containers they contain placeholder values. We MUST use runtime
   // env vars (SUPABASE_URL, SUPABASE_ANON_KEY) with fallback to NEXT_PUBLIC_.
@@ -336,12 +345,12 @@ export async function middleware(request: NextRequest) {
 
   // FAST PATH: authenticated users hitting the homepage go straight to /projects.
   if (pathname === '/' && user) {
-    return NextResponse.redirect(new URL('/projects', request.url));
+    return redirectPreservingSession(new URL('/projects', request.url));
   }
 
   // Desktop shell never shows the marketing homepage — bounce to /projects.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return NextResponse.redirect(new URL('/projects', request.url));
+    return redirectPreservingSession(new URL('/projects', request.url));
   }
 
   // Self-host: when the landing/marketing site is disabled
@@ -361,7 +370,7 @@ export async function middleware(request: NextRequest) {
       pathname === '/' ||
       SELF_HOST_MARKETING_ONLY.some((route) => pathname === route || pathname.startsWith(`${route}/`));
     if (isMarketingContent) {
-      return NextResponse.redirect(new URL(user ? '/projects' : '/auth', request.url));
+      return redirectPreservingSession(new URL(user ? '/projects' : '/auth', request.url));
     }
   }
 
@@ -381,7 +390,11 @@ export async function middleware(request: NextRequest) {
       url.pathname = '/auth';
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;
       url.searchParams.set('redirect', redirectTarget);
-      return NextResponse.redirect(url);
+      // Must preserve the self-heal cookie-clear above — without it, the
+      // browser bounces to /auth still carrying the poisoned cookie, and the
+      // auth page's own client-side session check has to rediscover the same
+      // invalidity from scratch before it can show a usable form.
+      return redirectPreservingSession(url);
     }
 
     // ── Billing-related routes (activate-trial, etc.) ────────────────────

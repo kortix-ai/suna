@@ -155,6 +155,40 @@ export function composeServiceEnv(serviceBlock: string): Record<string, string> 
   return out;
 }
 
+/** Look up a scalar (`key: value`) field directly under a service block —
+ *  e.g. `mem_limit: 384m`, `oom_score_adj: -900`, `image: ...`. Returns
+ *  undefined if absent. Deliberately only matches 4-space-indented keys (one
+ *  level under the service header), same convention as composeServiceEnv. */
+export function composeServiceField(serviceBlock: string, key: string): string | undefined {
+  const m = new RegExp(`^ {4}${key}:\\s*(.*)$`, 'm').exec(serviceBlock);
+  return m?.[1]?.replace(/^"(.*)"$/, '$1');
+}
+
+/** Parse a service's `logging.options` mapping (8-space-indented under
+ *  `  logging:\n    options:`). Returns {} if the service has no logging
+ *  block at all. */
+export function composeServiceLoggingOptions(serviceBlock: string): { driver?: string; options: Record<string, string> } {
+  const loggingHeaderMatch = /^ {4}logging:$/m.exec(serviceBlock);
+  if (!loggingHeaderMatch) return { options: {} };
+  const from = serviceBlock.slice(loggingHeaderMatch.index + loggingHeaderMatch[0].length);
+  const nextSameOrLessIndent = from.search(/^ {0,4}[a-zA-Z0-9_-]+:/m);
+  const block = from.slice(0, nextSameOrLessIndent === -1 ? undefined : nextSameOrLessIndent);
+  const driverMatch = /^ {6}driver:\s*(.*)$/m.exec(block);
+  const optionsHeaderMatch = /^ {6}options:$/m.exec(block);
+  const options: Record<string, string> = {};
+  if (optionsHeaderMatch) {
+    const optionsBlock = block.slice(optionsHeaderMatch.index + optionsHeaderMatch[0].length);
+    for (const line of optionsBlock.split('\n')) {
+      const m = /^ {8}["']?([\w-]+)["']?:\s*(.*)$/.exec(line);
+      if (!m) continue;
+      const key = m[1] ?? '';
+      const value = (m[2] ?? '').replace(/^"(.*)"$/, '$1');
+      options[key] = value;
+    }
+  }
+  return { driver: driverMatch?.[1], options };
+}
+
 let cachedHelp: string | undefined;
 
 /** Feature-flag probes against the CLI's own `-h` output, so this suite

@@ -7,8 +7,11 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 Run the full Kortix stack — frontend, API, LLM gateway, and the official
 Supabase distribution — as one Docker Compose project, on any box you
-control. Agent sessions still run on a cloud sandbox provider (Daytona, E2B,
-or Platinum) — sandboxes are managed compute, not part of this box.
+control. Agent sessions still run on a sandbox provider — [Daytona](https://www.daytona.io/)
+or [Platinum](https://www.platinum.dev/) are the recommended, standard
+choices (managed compute, not part of this box); [E2B](https://e2b.dev/) is
+also supported. `local-docker` (same-machine containers) is available too,
+listed last — it is experimental and not recommended for production.
 
 **Kortix self-host is VPS-first.** The supported way to run it for real is
 your own VPS or server with a persistent domain pointed at it. A local
@@ -46,8 +49,10 @@ kortix self-host init --domain kortix.example.com
 3. **Deployment shape** — whether you hold an Enterprise license
    (SSO/SCIM/RBAC/audit), and whether to restrict account creation to the
    admin (on by default — see "Configuration" below).
-4. **Sandbox provider** — `daytona` (default), `e2b`, or `platinum`, plus its
-   API key.
+4. **Sandbox provider** — `daytona` (default) or `platinum` (recommended),
+   `e2b` (also supported), or `local-docker` (experimental, listed last, not
+   recommended for production — same-machine containers, noticeably slower
+   since it builds sandbox images locally), plus its API key.
 5. **Pipedream** (optional) — the 3,000+ app connector catalog.
 6. **Update policy** — auto-update on/off, channel (`stable`/`latest`), and
    the daily update window.
@@ -171,6 +176,28 @@ kortix self-host init --channel latest             # track the bleeding-edge mov
 kortix self-host init --version 0.10.1             # pin an exact released version
 kortix self-host init --version dev-a1b2c3d        # pin a published dev build (e.g. from a branch's CI)
 ```
+
+### Tracking dev/staging/prod
+
+CI keeps `kortix/kortix-{api,gateway,frontend}:dev` / `:staging` / `:prod`
+pointed at whatever's actually deployed to that live environment right now
+(re-tagged after each environment's deploy succeeds — never a rebuild).
+`--version`/`--tag` already accepts any published tag, so tracking one is the
+same recipe as any other moving tag:
+
+```sh
+kortix self-host init --tag dev --auto-update on     # track dev.kortix.com's current build, nightly
+kortix self-host init --tag staging --auto-update on # track staging.kortix.com
+kortix self-host init --tag prod --auto-update on    # track api.kortix.com's current release
+```
+
+These may break at any time — `dev` especially — and are for testing against
+a specific live environment, not production self-hosting. `stable` (the
+default) is the only curated, promoted channel.
+
+`kortix/kortix-sandbox` isn't published by any of these pipelines yet, so the
+sandbox image doesn't move with `dev`/`staging`/`prod` — a box keeps whatever
+`SANDBOX_IMAGE` it already has.
 
 Testing a locally-built image (never pushed to any registry):
 

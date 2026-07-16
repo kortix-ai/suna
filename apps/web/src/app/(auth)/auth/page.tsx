@@ -32,6 +32,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
   type EmailFlowMode,
@@ -136,7 +137,7 @@ function AuthCardForm({
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
   const [pendingAction, setPendingAction] = useState<
-    'continue' | 'code' | 'resend' | 'password' | null
+    'continue' | 'code' | 'resend' | 'password' | 'sso' | null
   >(null);
   const pending = pendingAction !== null;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -283,6 +284,93 @@ function AuthCardForm({
     }
   };
 
+
+  /**
+   * Probe the address's domain for a registered SAML provider and hand the
+   * browser to the IdP (or the SSO interstitial) when one exists. Shared by
+   * the silent home-realm discovery in handleEntryContinue and the explicit
+   * "Use single sign-on" action — one redirect/callback construction, two
+   * entry points. Returns 'handled' when navigation/step change happened,
+   * 'none' when the domain has no provider (callers decide whether that is a
+   * silent fall-through or a user-facing error).
+   */
+  const attemptSsoRedirect = async (address: string): Promise<'handled' | 'none'> => {
+    const domain = emailDomain(address);
+    if (!domain) return 'none';
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const callbackParams = new URLSearchParams();
+      if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+      if (mobileCallbackState) {
+        callbackParams.set('mobile_callback', '1');
+        callbackParams.set('state', mobileCallbackState);
+      }
+      const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
+        callbackParams.size ? `?${callbackParams.toString()}` : ''
+      }`;
+      const { data, error } = await supabase.auth.signInWithSSO({
+        domain,
+        // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
+        // bounce stays authoritative; without skipBrowserRedirect, auth-js also
+        // calls window.location.assign(data.url) — a redundant double-navigation.
+        options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
+      });
+      if (!error && data?.url) {
+        // The domain is bound to a SAML provider. Ask the flow how strict
+        // the org is: enforced SSO redirects straight to the IdP (no
+        // password door), everything else lands on an interstitial that
+        // defaults to SSO but keeps the password/code escapes visible —
+        // a pre-SSO password account must never dead-end here.
+        const { mode: resolved } = await resolveAuthMode(address);
+        if (resolved === 'sso') {
+          // Full navigation to the IdP; the callback route exchanges the
+          // code on return (same PKCE path as Google OAuth).
+          window.location.href = data.url;
+          return 'handled';
+        }
+        setSsoFallbackMode(resolved);
+        setSsoUrl(data.url);
+        setStep('sso');
+        return 'handled';
+      }
+      // Work domain with no SAML provider.
+    } catch {
+      // SAML not enabled on this Supabase, or a transient error.
+    }
+    return 'none';
+  };
+
+  /**
+   * Explicit "Use single sign-on" — the discoverable counterpart of the
+   * silent home-realm discovery above. Two deliberate differences: it skips
+   * the isWorkEmail consumer-domain gate (typing the button IS the intent),
+   * and a domain with no provider surfaces a real error instead of silently
+   * falling through to magic link — an invisible fall-through here reads as
+   * "SSO is broken".
+   */
+  const handleSsoContinue = async () => {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      clearNotices();
+      setInfo('Enter your work email above, then choose single sign-on.');
+      emailRef.current?.focus();
+      return;
+    }
+    clearNotices();
+    setPendingAction('sso');
+    try {
+      const outcome = await attemptSsoRedirect(trimmed);
+      if (outcome === 'none') {
+        const domain = emailDomain(trimmed) ?? trimmed;
+        failWith(
+          `Single sign-on isn't set up for "${domain}". Ask your admin to configure it, or continue with email.`,
+        );
+      }
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const handleEntryContinue = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmed = email.trim();
@@ -304,46 +392,8 @@ function AuthCardForm({
     try {
       const domain = emailDomain(trimmed);
       if (samlEnabled && domain && isWorkEmail(trimmed)) {
-        try {
-          const supabase = createBrowserSupabaseClient();
-          const callbackParams = new URLSearchParams();
-          if (returnUrl) callbackParams.set('returnUrl', returnUrl);
-          if (mobileCallbackState) {
-            callbackParams.set('mobile_callback', '1');
-            callbackParams.set('state', mobileCallbackState);
-          }
-          const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
-            callbackParams.size ? `?${callbackParams.toString()}` : ''
-          }`;
-          const { data, error } = await supabase.auth.signInWithSSO({
-            domain,
-            // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
-            // bounce stays authoritative; without skipBrowserRedirect, auth-js also
-            // calls window.location.assign(data.url) — a redundant double-navigation.
-            options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
-          });
-          if (!error && data?.url) {
-            // The domain is bound to a SAML provider. Ask the flow how strict
-            // the org is: enforced SSO redirects straight to the IdP (no
-            // password door), everything else lands on an interstitial that
-            // defaults to SSO but keeps the password/code escapes visible —
-            // a pre-SSO password account must never dead-end here.
-            const { mode: resolved } = await resolveAuthMode(trimmed);
-            if (resolved === 'sso') {
-              // Full navigation to the IdP; the callback route exchanges the
-              // code on return (same PKCE path as Google OAuth).
-              window.location.href = data.url;
-              return;
-            }
-            setSsoFallbackMode(resolved);
-            setSsoUrl(data.url);
-            setStep('sso');
-            return;
-          }
-          // Work domain with no SAML provider → fall through to magic/password.
-        } catch {
-          // SAML not enabled on this Supabase, or a transient error — fall through.
-        }
+        if ((await attemptSsoRedirect(trimmed)) === 'handled') return;
+        // Work domain with no SAML provider → fall through to magic/password.
       }
 
       // Magic link is the default path: Continue emails a code and lands the
@@ -811,6 +861,23 @@ function AuthCardForm({
           </Button>
         </form>
 
+        {/* Explicit SSO entry — the discoverable counterpart of the silent
+            home-realm discovery Continue already performs. Same dialect as the
+            code-step footer links; only rendered when this deployment has SAML
+            enabled, so self-hosted installs without SSO never show a dead door. */}
+        {samlEnabled && (
+          <p className="text-muted-foreground mt-4 text-sm">
+            <button
+              type="button"
+              onClick={() => void handleSsoContinue()}
+              disabled={pending}
+              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+            >
+              {pendingAction === 'sso' ? 'Looking up your identity provider…' : 'Use single sign-on (SSO)'}
+            </button>
+          </p>
+        )}
+
         {/* One system: no sign-in/sign-up toggle. Continue routes new emails
             into registration and existing ones into sign-in automatically. */}
         <p className="text-muted-foreground mt-8 text-sm">
@@ -823,10 +890,21 @@ function AuthCardForm({
 
 /* ─── Page shell ───────────────────────────────────────────────────────── */
 
+// How long the "signed in, redirecting" placeholder is allowed to sit on
+// screen before we stop trusting it. A legitimate redirect (the overwhelming
+// common case) leaves this page well within this window — router.replace is a
+// same-tab client transition, not a network round trip. This is a safety net
+// for the case the client's cached `user` is stale (e.g. a revoked/rotated
+// refresh token that hasn't hit its own `exp` yet, so the cheaper local
+// expiry check below doesn't catch it) and the redirect it kicks off keeps
+// bouncing back here instead of leaving — without this, the placeholder is a
+// dead end with no form, spinner, or escape hatch.
+const STALE_SESSION_FALLBACK_MS = 2500;
+
 function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, session, isLoading } = useAuth();
+  const { user, session, isLoading, signOut } = useAuth();
   const returnUrl = sanitizeAuthReturnUrl(
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
@@ -834,11 +912,35 @@ function AuthContent() {
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const hasStartedMobileHandoff = useRef(false);
 
+  // `useAuth()`'s `user` can be stale: it's seeded from whatever session the
+  // client already had cached, and only gets corrected once something
+  // (an ambient refresh timer, another API call) happens to notice it died.
+  // Landing on /auth with a `redirect`/`returnUrl` param is itself a strong
+  // signal the session just failed server-side validation — so the moment we
+  // can locally prove the cached session is dead (its own `expires_at` is
+  // already in the past), stop trusting it immediately instead of waiting for
+  // that ambient correction, which can take seconds in production and leaves
+  // this component committed to the placeholder below with nothing on screen.
+  const sessionExpired = isSessionExpired(session);
+
+  const [forceForm, setForceForm] = useState(false);
+  const trustedUser = !!user && !sessionExpired && !forceForm;
+
   // A web session may already exist when the mobile user returns to this page.
   // Preserve the native handoff instead of routing that browser session to the
   // web dashboard and stranding the mobile app on its auth screen.
   useEffect(() => {
-    if (isLoading || !user) return;
+    if (isLoading) return;
+
+    if (user && sessionExpired) {
+      // Dead session, proven locally — clear it now and fall through to the
+      // real form on this same render pass rather than the placeholder.
+      setForceForm(true);
+      void signOut();
+      return;
+    }
+
+    if (!trustedUser) return;
 
     if (mobileCallbackState) {
       // Strict Mode re-runs effects after the deep-link navigation begins.
@@ -861,12 +963,33 @@ function AuthContent() {
     }
 
     router.replace(returnUrl);
-  }, [isLoading, mobileCallbackState, returnUrl, router, session, user]);
+  }, [
+    isLoading,
+    mobileCallbackState,
+    returnUrl,
+    router,
+    session,
+    sessionExpired,
+    signOut,
+    trustedUser,
+    user,
+  ]);
+
+  // Safety net for staleness the local expiry check can't see (a refresh
+  // token invalidated server-side while the access token's own `exp` is still
+  // in the future): if we're still showing the placeholder after a beat, stop
+  // trusting the cached session and render the form instead of leaving the
+  // visitor on a dead screen.
+  useEffect(() => {
+    if (!trustedUser) return;
+    const timer = setTimeout(() => setForceForm(true), STALE_SESSION_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [trustedUser]);
 
   // A session is already established — the effect above is redirecting (or
   // handing off to mobile). Keep the quiet branded frame up instead of a
   // spinner, a blank screen, or a dead form.
-  if (user) {
+  if (trustedUser) {
     return (
       <AuthFrame footerVariant="default">
         <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
@@ -877,6 +1000,8 @@ function AuthContent() {
   // Render the form immediately — even while the session check is still in
   // flight. Signed-out visitors (the common case) get an instantly usable
   // page; a signed-in visitor sees the form for a beat before the redirect.
+  // A stale/invalidated session (sessionExpired, or forceForm from the
+  // safety-net timeout) also lands here — never a dead shell.
   return (
     <AuthFrame footerVariant="continue">
       <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />

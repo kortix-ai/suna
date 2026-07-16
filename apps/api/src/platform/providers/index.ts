@@ -2,6 +2,7 @@ import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
 import { E2BProvider } from './e2b';
 import { PlatinumProvider } from './platinum';
+import { LocalDockerProvider } from './local-docker';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -12,8 +13,10 @@ import { PlatinumProvider } from './platinum';
  *   - daytona — Daytona Cloud
  *   - platinum — Kortix Platinum
  *   - e2b — E2B Cloud
+ *   - local-docker — EXPERIMENTAL. Same-machine Docker containers (see
+ *     local-docker.ts) — no cloud account, not horizontally scalable.
  */
-export type ProviderName = 'daytona' | 'platinum' | 'e2b';
+export type ProviderName = 'daytona' | 'platinum' | 'e2b' | 'local-docker';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -112,6 +115,36 @@ export interface ProvisioningStatus {
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
+  /**
+   * Whether this provider's sandboxes reach kortix-api over the PUBLIC
+   * internet. True for every remote cloud provider (Daytona/Platinum/E2B) —
+   * their sandbox VMs/containers run on infrastructure that can only resolve
+   * a publicly reachable KORTIX_URL, never a loopback address. False for a
+   * same-machine provider (local-docker) whose sandboxes reach kortix-api
+   * over the shared Docker network instead, so a loopback KORTIX_URL is
+   * perfectly fine there. Session creation's reachability preflight
+   * (sandboxCallbackUnreachableReason in projects/lib/sessions.ts) is the
+   * ONLY reader of this flag — keeping the capability on the provider
+   * instead of a call-site `provider === 'local-docker'` check.
+   */
+  readonly requiresPublicCallback: boolean;
+
+  /**
+   * The origin (scheme + host[:port], no trailing slash) sandboxes booted by
+   * this provider should use for any in-sandbox URL that is rooted at
+   * "kortix-api's own HTTP surface" — e.g. the LLM-gateway base URL the
+   * session-env layer hands OpenCode (KORTIX_LLM_BASE_URL), or any future
+   * such URL. OPTIONAL: every remote cloud provider (Daytona/Platinum/E2B)
+   * is happy with the generic public `config.KORTIX_URL`, so callers fall
+   * back to that when a provider doesn't implement this. local-docker is the
+   * one exception — its sandboxes share a private Docker network with
+   * kortix-api instead of reaching it over the public internet — so it's the
+   * only provider that overrides this (see local-docker.ts's
+   * sandboxInternalApiBase()). Keeping the capability on the provider (like
+   * requiresPublicCallback above) means a shared layer that needs "the API's
+   * origin, as this sandbox would see it" never branches on provider name.
+   */
+  sandboxFacingApiOrigin?(): string;
 
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   start(externalId: string): Promise<void>;
@@ -190,6 +223,12 @@ export function getProvider(name: ProviderName): SandboxProvider {
         throw new Error('E2B provider requires E2B_API_KEY to be set.');
       }
       provider = new E2BProvider();
+      break;
+    case 'local-docker':
+      // No required API key — Docker daemon reachability is checked lazily at
+      // first real use (create/start/stop/status), not at construction, so
+      // the API can still boot before Docker is wired up. See local-docker.ts.
+      provider = new LocalDockerProvider();
       break;
     default: {
       const exhaustive: never = name;

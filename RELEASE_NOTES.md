@@ -1,22 +1,20 @@
-Self-host SSO out of the box, unified sign-in, and safer defaults
+Self-host hardening, experimental local-docker sandboxes, and an auth refresh fix
 
-### New
+Self-host hardening wave from the production-readiness audit, an experimental local-docker sandbox provider, and an auth refresh fix.
 
-- **Unified sign-in** — login and registration are now one email-first flow: enter your email and Kortix routes you to sign-in, sign-up, or your company's SSO automatically (with closed-signup and enforce-SSO support).
-- **SSO out of the box on self-host** — SAML is enabled by default, each instance generates its own SAML signing key at init, and SSO/SCIM setup is fully documented.
-- **Identity setup wizard overhaul** — reworked Entra wizard, SAML-before-SCIM ordering guidance, a provisioning health panel, an enforce-SSO toggle with clear domain consequences, and illustrated guides for all four SSO/SCIM flows.
-- **Admin-controlled account creation on self-host** — creating additional accounts is now restricted to the server admin by default (signups, teams, and SSO provisioning are unaffected), and the UI hides account creation when restricted.
-- **Simpler self-host CLI** — one `env` command, an `uninstall` command, and a friendlier init: a missing sandbox key warns instead of refusing to boot.
-- Enterprise license availability is now exposed on account state (API + SDK).
+**New**
+- **Experimental local-docker sandbox provider for self-host** — run agent sandboxes as plain Docker containers on the same machine as your Kortix instance, with no cloud sandbox account. All sandbox-facing URLs resolve over the Docker network. Listed last in the provider picker and not recommended for production: it builds sandbox images locally and is noticeably slower than Daytona or Platinum.
+- **Moving `dev` / `staging` / `prod` image tags** — self-host instances can now track a channel-style tag (`kortix self-host init --tag dev|staging|prod`); CI re-tags the deployed build by digest, no rebuild.
+- **Smoother SSO/SCIM setup** — mint the SCIM token and paste it into your IdP on one page, live SSO verification with a resume story, complete Directory Sync and Google guide screenshots, and a visible "Use single sign-on (SSO)" entry on the sign-in page.
 
-### Fixed
+**Improved**
+- **Self-host updater** — resilient update runs with visible outcomes (`kortix self-host status` now shows the last update result), rotated container logs, and per-service memory limits so one service can't starve the box.
+- **Self-host EC2 (Terraform)** — the data volume now survives instance replacement (AZ pinned to the subnet, not the instance), reboot-surviving bootstrap, containerd relocated to the data volume, and CloudWatch status/disk/memory alarms.
+- **Zero-downtime migration policy** — every new database migration is linted by squawk plus deterministic mixed-version and enum-value guards in CI, with a rewritten migrations runbook.
 
-- **Managed model provider now follows billing configuration by default**, fixing managed models being unavailable on some deployments.
-- Self-host updater no longer fails on Docker-in-Docker mounts; the provider menu is always visible; `configure` records the admin email.
-- Non-admins no longer see a spurious Git-status error.
-
-### Behind the scenes
-
-- Production deploys are now hard-gated end to end: the release only publishes after the API and gateway deploys verify the live version.
-- Demo requests notify the team directly with lead-domain classification, and new signups sync to the contact list that powers onboarding emails.
-- Repo cleanup: self-host layout consolidated, stale roots removed, self-host docs moved under Guides.
+**Fixed**
+- **Silent auth refresh** — sessions renew in the background; an expired token no longer leaves a dead, blank page.
+- **Git PAT import** — a saved managed-git personal access token is now recognized as a connected GitHub account, so repo import works without reconnecting.
+- SCIM Tenant URL is now correct on same-origin and self-hosted deployments.
+- Removed the legacy `SANDBOX_IMAGE` configuration surface from self-host.
+- Scoped the ECS deploy role's describe/list IAM actions to Kortix ARNs.
