@@ -1,0 +1,17 @@
+-- Add 'local-docker' to the sandbox_provider enum — the EXPERIMENTAL
+-- same-machine Docker provider (apps/api/src/platform/providers/local-docker.ts).
+--
+-- Same precedent as 'platinum' (20260708154500000_sandbox_provider_add_platinum.sql)
+-- and 'managed' before it: the value lives in the Drizzle schema
+-- (packages/db/src/schema/kortix.ts) so fresh databases already have it; this
+-- migration is what carries it onto every OTHER database (dev/staging/prod,
+-- and any baseline that FAKED past the original CREATE TYPE — see that
+-- migration's comment for the mixed-version-baseline mechanics that make this
+-- ADD VALUE necessary even though the type "already has it" in a fresh schema).
+--
+-- ADD VALUE only (never USED in this same transaction) — Postgres forbids
+-- using a freshly-added enum value in the same transaction that added it, so a
+-- session actually pinning provider='local-docker' must happen in a later
+-- transaction (it always does — this migration only ever runs standalone).
+-- Non-destructive + idempotent.
+ALTER TYPE "kortix"."sandbox_provider" ADD VALUE IF NOT EXISTS 'local-docker';

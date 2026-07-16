@@ -173,9 +173,19 @@ describe('ProjectSchema', () => {
     expect(() => ProjectSchema.parse(projectFixture({
       default_sandbox_provider: 'managed',
     }))).toThrow();
+    // The RETIRED single-instance provider ('local_docker', underscore) stays
+    // rejected — a genuinely different identifier from the new EXPERIMENTAL
+    // 'local-docker' (hyphen) provider below.
     expect(() => ProjectSchema.parse(projectFixture({
       available_sandbox_providers: ['daytona', 'local_docker'],
     }))).toThrow();
+  });
+
+  test('accepts the EXPERIMENTAL local-docker (hyphenated) sandbox provider', () => {
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'local-docker',
+      available_sandbox_providers: ['local-docker'],
+    }))).not.toThrow();
   });
 
   test('rejects an unknown status', () => {
@@ -257,7 +267,7 @@ describe('SessionStartResultSchema', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['daytona', 'platinum', 'e2b', 'local-docker']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
