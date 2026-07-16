@@ -20,12 +20,43 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      results_run_id:
+        description: "Optional prior Drata scan ID to print sanitized finding details"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  drata-iac-results:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
+    name: sanitized-finding-details
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print finding details
+        env:
+          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
+          RUN_ID: ${{ inputs.results_run_id }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DRATA_API_TOKEN}" \
+            --header "Content-Type: application/json" \
+            "https://public-api.drata.com/public/workspaces/1/pipelines/results?runId=${RUN_ID}" \
+            | jq --compact-output '.designGaps[] | {
+                severity,
+                testId,
+                fileName,
+                lineNumber,
+                description,
+                currentValue,
+                preferredValue,
+                resourceMetadata
+              }'
+
   drata-iac-scan:
     name: compliance-as-code-action
     runs-on: ubuntu-latest

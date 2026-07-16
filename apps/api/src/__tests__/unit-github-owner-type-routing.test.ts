@@ -1,5 +1,5 @@
 /**
- * Regression coverage for the self-host VPC-demo incident: a managed GitHub
+ * Regression coverage for the self-host personal-owner incident: a managed GitHub
  * App installed on a PERSONAL (User) account instead of an Organization made
  * every managed-git repo create/list 404 on `/orgs/{owner}/repos`, because
  * `managedAdminAuth()` (projects/git-backends/github.ts) used to hardcode
