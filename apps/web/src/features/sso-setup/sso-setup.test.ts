@@ -346,3 +346,46 @@ describe('novice-walkthrough fixes stay fixed', () => {
     }
   });
 });
+
+// Follow-up polish pins (live verify, resume story, no dead-ends, copy fixes).
+describe('setup polish stays fixed', () => {
+  test('the SSO test step has live verification (not eyeball-a-tab)', () => {
+    expect(wizardSource).toContain('SsoTestStatusPanel');
+    expect(wizardSource).toContain("flow === 'sso' && <SsoTestStatusPanel");
+  });
+
+  test('a returning admin with a prior token gets an explanation + a skip', () => {
+    expect(wizardSource).toContain('listScimTokens');
+    expect(wizardSource).toContain('Continue without minting');
+  });
+
+  test('the already-connected import state is not a dead end', () => {
+    expect(wizardSource).toContain('Continue to testing');
+  });
+
+  test('the Free-tier group-claim path restates the memberOf rename', () => {
+    const entra = getProviderGuide('entra')!;
+    const group = entra.steps.find((s) => s.id === 'group-claim')!;
+    expect(group.warning).toContain('memberOf');
+    expect(group.warning).toContain('Advanced options');
+  });
+
+  test('UPN is defined at first use', () => {
+    expect(guidesSource).toContain('User Principal Name');
+  });
+
+  test("Entra's post-Save test popup is preempted", () => {
+    expect(guidesSource).toContain('Test single sign-on with Kortix?');
+  });
+
+  test('every Entra SSO console step carries a breadcrumb', () => {
+    const entra = getProviderGuide('entra')!;
+    for (const step of entra.steps) {
+      if (step.kind === undefined) {
+        // instructions steps happen in the IdP console — they need the
+        // "you are here" path the wizard renders from menuPath.
+        expect(step.menuPath, `step ${step.id} missing menuPath`).toBeTruthy();
+      }
+    }
+  });
+});

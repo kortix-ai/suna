@@ -27,7 +27,7 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,7 @@ import {
   type CreatedScimToken,
   createScimToken,
   getSsoProvider,
+  listScimTokens,
   importSsoProviderFromMetadata,
   listGroups,
 } from '@/lib/iam-client';
@@ -662,10 +663,16 @@ function ImportForm({
 
   if (alreadyConnected) {
     return (
-      <InfoBanner tone="info" title="Already connected">
-        This account already has an SSO provider. Manage it from the SAML SSO card in account
-        settings — remove it there first to run a fresh import.
-      </InfoBanner>
+      <div className="space-y-3">
+        <InfoBanner tone="info" title="Already connected">
+          This account already has an SSO provider. Manage it from the SAML SSO card in account
+          settings — remove it there first to run a fresh import.
+        </InfoBanner>
+        <Button onClick={onDone} className="gap-1.5">
+          Continue to testing
+          <ArrowRight className="size-3.5 shrink-0" />
+        </Button>
+      </div>
     );
   }
 
@@ -871,6 +878,17 @@ function ScimTokenStep({
 }) {
   const [name, setName] = useState(`${providerName} provisioning`);
 
+  // Resume case: a token was minted on a previous visit, so its secret is gone
+  // from this session (shown once, by design). Detect it and explain the path
+  // forward instead of presenting a silently empty mint form.
+  const priorTokensQuery = useQuery({
+    queryKey: ['scim-tokens', accountId],
+    queryFn: () => listScimTokens(accountId),
+    enabled: !minted,
+    staleTime: 30_000,
+  });
+  const priorTokens = priorTokensQuery.data ?? [];
+
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
     onSuccess: (token) => {
@@ -924,7 +942,16 @@ function ScimTokenStep({
           <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
         </Button>
       ) : (
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-3">
+          {priorTokens.length > 0 && (
+            <InfoBanner tone="info" title="You already minted a token on a previous visit">
+              Its secret ({priorTokens[0].public_prefix}…) was only shown at mint time. If it's
+              already pasted into your IdP and Test Connection passed, skip ahead with Continue
+              below. If not, mint a fresh token now, update the IdP with it, then revoke the old
+              one from the SCIM card in account settings.
+            </InfoBanner>
+          )}
+          <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-56 space-y-1.5">
             <Label>Token name</Label>
             <Input
@@ -945,6 +972,12 @@ function ScimTokenStep({
             )}
             Mint token
           </Button>
+          {priorTokens.length > 0 && (
+            <Button variant="ghost" onClick={onDone}>
+              Continue without minting
+            </Button>
+          )}
+          </div>
         </div>
       )}
     </div>
@@ -994,6 +1027,77 @@ function ScimValuesPanel({
  * reported for the whole account (framed honestly below) while the
  * SCIM-group figures are exact.
  */
+/**
+ * Live verification for the SSO test step — the SAML counterpart of the SCIM
+ * flow's ProvisionedStatusPanel. Snapshots the member list when the step
+ * opens, then polls: anyone who arrives AFTER the snapshot is the test user
+ * signing in, surfaced as an explicit success ("they're in") instead of the
+ * admin eyeballing a second browser window.
+ */
+function SsoTestStatusPanel({ accountId }: { accountId: string }) {
+  const membersQuery = useQuery({
+    queryKey: ['sso-verify-members', accountId],
+    queryFn: () => listAccountMembers(accountId),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
+
+  // Baseline = whoever was already a member when the step opened. Stored once
+  // on the first successful fetch; never updated, so every later arrival stays
+  // highlighted for the rest of the visit.
+  const baselineRef = useRef<Set<string> | null>(null);
+  const members = membersQuery.data ?? null;
+  if (members && baselineRef.current === null) {
+    baselineRef.current = new Set(members.map((m) => m.user_id));
+  }
+  const arrived = (members ?? []).filter(
+    (m) => baselineRef.current && !baselineRef.current.has(m.user_id),
+  );
+
+  return (
+    <div className="border-border/70 bg-popover space-y-3 rounded-md border p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+          <span className="bg-kortix-green relative flex size-1.5 shrink-0 rounded-full">
+            <span className="bg-kortix-green absolute inline-flex size-full animate-ping rounded-full opacity-75" />
+          </span>
+          Watching for the test sign-in
+        </p>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
+          aria-label="Refresh now"
+          onClick={() => membersQuery.refetch()}
+        >
+          <RefreshCw className={cn('size-3.5', membersQuery.isFetching && 'animate-spin')} />
+        </Button>
+      </div>
+      {membersQuery.isLoading ? (
+        <Skeleton className="h-10 w-full rounded-md" />
+      ) : arrived.length > 0 ? (
+        <div className="border-kortix-green/30 bg-kortix-green/10 flex items-start gap-2.5 rounded-md border p-3">
+          <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0 text-sm">
+            <p className="text-foreground font-medium">
+              {arrived.length === 1 ? 'Your test user just arrived' : `${arrived.length} users arrived`}
+            </p>
+            <p className="text-muted-foreground truncate text-xs">
+              {arrived.map((m) => m.email ?? m.user_id).join(', ')} — signed in via SSO and
+              auto-provisioned. The round-trip works.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          {members?.length ?? '—'} members now. Complete the test sign-in in your private window —
+          the moment the user is provisioned, they appear here (checks every few seconds).
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
@@ -1207,6 +1311,7 @@ function StepBody({
       ) : step.kind === 'test' ? (
         <div className="space-y-4">
           {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
+          {flow === 'sso' && <SsoTestStatusPanel accountId={accountId} />}
           <div className="flex flex-wrap items-center gap-3">
             {flow === 'sso' && (
               <>
