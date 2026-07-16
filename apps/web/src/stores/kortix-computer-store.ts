@@ -114,7 +114,7 @@ interface KortixComputerState {
    *  `command-palette.tsx`'s handler comment. Also opens the panel the same
    *  way `focusToolCall` does: `isSidePanelOpen` true, the per-session map
    *  updated, and this session's own ready chip cleared. */
-  requestQuickView: (view: 'terminal' | 'audit') => void;
+  requestQuickView: (view: 'terminal' | 'audit', explicitSessionId?: string) => void;
   /** One-shot, session-scoped consume — mirrors `consumePrimaryOpen`. Returns
    *  the requested view when it belonged to `sessionId`, else null. */
   consumeQuickView: (sessionId: string) => 'terminal' | 'audit' | null;
@@ -307,8 +307,15 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         return true;
       },
 
-      requestQuickView: (view: 'terminal' | 'audit') => {
-        const sessionId = get()._activeSessionId;
+      requestQuickView: (view: 'terminal' | 'audit', explicitSessionId?: string) => {
+        // `_activeSessionId` is only maintained for TAB-system sessions
+        // (session-layout gates `setActiveSession` on `isActiveTab`) — on the
+        // standalone /projects/:id/sessions/:id route it stays null, which
+        // silently dropped the pending view (panel opened, terminal never
+        // came). Callers that can resolve the active panel session (via
+        // session-browser-store's `getActivePanelSessionId`, which IS
+        // maintained on every route) pass it explicitly.
+        const sessionId = explicitSessionId ?? get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
         // Only clear THIS session's own announcement — same rule every other
         // panel-opening action follows (see `focusToolCall`/`openSidePanel`).

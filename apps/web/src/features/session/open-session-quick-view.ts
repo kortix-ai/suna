@@ -28,14 +28,22 @@ export function openSessionQuickView(
   const panelMode =
     useUserPreferencesStore.getState().preferences.panelMode ?? 'easy';
 
+  // Resolved here for BOTH modes: session-browser-store's active panel
+  // session is maintained on every route (tab dashboard AND the standalone
+  // session page), unlike kortix-computer-store's `_activeSessionId`, which
+  // is tab-gated — relying on the latter silently dropped the terminal open
+  // on /projects/:id/sessions/:id.
+  const activePanelSessionId = getActivePanelSessionId();
+
   if (panelMode === 'advanced') {
-    const activePanelSessionId = getActivePanelSessionId();
     if (activePanelSessionId) {
       useSessionBrowserStore.getState().setView(activePanelSessionId, view);
     }
     useKortixComputerStore.getState().openSidePanel();
   } else {
-    useKortixComputerStore.getState().requestQuickView(view);
+    useKortixComputerStore
+      .getState()
+      .requestQuickView(view, activePanelSessionId ?? undefined);
   }
 
   if (!wasOpen) track('panel_opened', { source });

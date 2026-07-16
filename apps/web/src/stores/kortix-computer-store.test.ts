@@ -39,6 +39,17 @@ describe('ready chip state (W1)', () => {
     expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBeNull();
   });
 
+  test('an explicit session id works when no active session is set — the standalone-route case', () => {
+    // On /projects/:id/sessions/:id the session is not in the tab system, so
+    // `_activeSessionId` stays null; without the explicit id the pending view
+    // was silently dropped (panel opened, terminal never came).
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession(null);
+    s.requestQuickView('terminal', 's1');
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(true);
+    expect(useKortixComputerStore.getState().consumeQuickView('s1')).toBe('terminal');
+  });
+
   test('quick-view request opens the panel and updates the per-session map', () => {
     const s = useKortixComputerStore.getState();
     s.setActiveSession('s1');
