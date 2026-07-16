@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { UpstreamDescriptor } from '../../domain';
+import { type FetchImpl, callUpstream } from '../../http';
 import { buildBedrockRequest } from './request';
 
 const descriptor: UpstreamDescriptor = {
@@ -23,7 +24,10 @@ describe('buildBedrockRequest', () => {
   });
 
   test('uses the streaming action when stream is set', () => {
-    const req = buildBedrockRequest({ stream: true, messages: [{ role: 'user', content: 'hi' }] }, descriptor);
+    const req = buildBedrockRequest(
+      { stream: true, messages: [{ role: 'user', content: 'hi' }] },
+      descriptor,
+    );
     expect(req.url).toEndWith('/invoke-with-response-stream');
   });
 
@@ -110,5 +114,75 @@ describe('buildBedrockRequest — tool_choice (SAFETY: inherits the anthropic co
       descriptor,
     );
     expect((req.payload as any).tool_choice).toEqual({ type: 'tool', name: 'search' });
+  });
+});
+
+// End-to-end through the gateway's own dispatch path (callUpstream →
+// transportFor('bedrock') → buildBedrockRequest → translateBedrockResponse),
+// against a mock Bedrock runtime endpoint. Proves a BYOK-Bedrock descriptor
+// (its own bearer key + regional endpoint, e.g. from resolveCandidates for a
+// project that connected AWS_BEARER_TOKEN_BEDROCK) makes a well-formed
+// InvokeModel call and gets a clean OpenAI chat.completion back — the whole
+// standalone-provider round trip, no managed/credits path involved.
+describe('BYOK Bedrock end-to-end via callUpstream', () => {
+  const byok: UpstreamDescriptor = {
+    provider: 'amazon-bedrock',
+    kind: 'bedrock',
+    baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
+    apiKey: 'byok-bearer-token',
+    billingMode: 'none',
+    markup: 0,
+    resolvedModel: 'us.anthropic.claude-opus-4-8',
+  };
+
+  test('signs with the project bearer key, targets /model/<id>/invoke, and returns a translated completion', async () => {
+    let seenUrl = '';
+    let seenHeaders: Record<string, string> = {};
+    let seenBody: any = {};
+    const fetchImpl: FetchImpl = async (url, init) => {
+      seenUrl = url;
+      seenHeaders = init.headers as Record<string, string>;
+      seenBody = JSON.parse(String(init.body));
+      // The InvokeModel (non-streaming) response body IS an Anthropic Messages JSON.
+      return new Response(
+        JSON.stringify({
+          id: 'msg_1',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Bedrock reply' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 11, output_tokens: 4 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    };
+
+    const res = await callUpstream(
+      {
+        model: 'amazon-bedrock/us.anthropic.claude-opus-4-8',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+      },
+      byok,
+      {
+        fetchImpl,
+        retry: { sleep: async () => {}, rand: () => 0.5, baseDelayMs: 1, maxAttempts: 3 },
+      },
+    );
+
+    expect(seenUrl).toBe(
+      'https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-opus-4-8/invoke',
+    );
+    expect(seenHeaders.authorization).toBe('Bearer byok-bearer-token');
+    expect(seenBody.anthropic_version).toBe('bedrock-2023-05-31');
+    // Anthropic core payload: role preserved, content normalized to blocks
+    // (with prompt-cache control on the last turn — not asserted here).
+    expect(seenBody.messages[0].role).toBe('user');
+    expect(seenBody.messages[0].content[0]).toMatchObject({ type: 'text', text: 'hi' });
+
+    const chat = (await res.json()) as any;
+    expect(chat.choices[0].message.content).toBe('Bedrock reply');
+    expect(chat.choices[0].finish_reason).toBe('stop');
+    expect(chat.usage).toMatchObject({ prompt_tokens: 11, completion_tokens: 4 });
   });
 });

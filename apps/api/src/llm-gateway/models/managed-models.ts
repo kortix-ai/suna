@@ -1,7 +1,4 @@
-import {
-  MANAGED_MODELS as BUNDLED_MANAGED_MODELS,
-  type ManagedModel,
-} from '@kortix/llm-catalog';
+import { MANAGED_MODELS as BUNDLED_MANAGED_MODELS, type ManagedModel } from '@kortix/llm-catalog';
 import { z } from 'zod';
 import { config } from '../../config';
 
@@ -53,6 +50,19 @@ export function parseManagedModels(
  * This is the single choke point: every consumer (the served model catalog,
  * the picker, and request-time routing) reads through here or getRuntimeManagedModel()
  * below, so gating it here alone keeps the managed lineup off everywhere.
+ *
+ * IMPORTANT — what the "managed provider" IS and IS NOT (a recurring
+ * misconception): KORTIX_MANAGED_PROVIDER_ENABLED is a CLOUD-ONLY CONVENIENCE
+ * so cloud users can spend their KORTIX CREDITS for a zero-config experience —
+ * it routes to Kortix's OWN shared Bedrock/OpenRouter credentials, billed as
+ * credits. It is NOT the mechanism by which "Bedrock" (or OpenRouter, or any
+ * provider) is available. Bedrock is a STANDALONE provider in its own right —
+ * exactly like OpenRouter/OpenAI/Anthropic — that a project uses by connecting
+ * its OWN credentials (BYOK). To give a self-host Bedrock you connect Bedrock
+ * as a standalone BYOK provider (project secret AWS_BEARER_TOKEN_BEDROCK →
+ * resolveCatalogUpstream('amazon-bedrock') builds a kind:'bedrock' descriptor
+ * via the normal BYOK path); you do NOT turn this flag on. This managed overlay
+ * stays purely the cloud credits convenience.
  */
 export const RUNTIME_MANAGED_MODELS: readonly ManagedModel[] =
   config.KORTIX_MANAGED_PROVIDER_ENABLED

@@ -31,6 +31,23 @@ describe('runtime catalog provider resolution', () => {
     });
   });
 
+  // Bedrock is a STANDALONE BYOK provider (not the cloud-only managed/credits
+  // path): the bearer-token API key secret, resolved here so the normal BYOK
+  // flow can build a kind:'bedrock' descriptor from a project's own key.
+  // models.dev gives amazon-bedrock no `api` base and an env[0] of
+  // AWS_ACCESS_KEY_ID — both wrong for this transport — so envVar is resolved
+  // explicitly, not via the generic single-key fallback. Deliberately NO
+  // baseUrl here: the runtime endpoint is region-scoped and the region is the
+  // PROJECT's own AWS_REGION secret, not deployment config — this function has
+  // no project context, so resolve-candidates.ts resolves the region-aware
+  // endpoint per-request instead (see its `byok.kind === 'bedrock'` branch).
+  test('resolves Amazon Bedrock as a standalone BYOK provider (bearer-token env var, no static baseUrl)', () => {
+    expect(resolveCatalogUpstream('amazon-bedrock')).toEqual({
+      kind: 'bedrock',
+      envVar: 'AWS_BEARER_TOKEN_BEDROCK',
+    });
+  });
+
   test('returns null for an unknown provider', () => {
     expect(resolveCatalogUpstream('definitely-not-a-provider')).toBeNull();
   });
