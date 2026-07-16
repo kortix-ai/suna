@@ -38,6 +38,7 @@ import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefil
 import type { MessageWithParts } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { FileText, Terminal as TerminalIcon } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { pendingInputCount } from '../shared/deliverable-readiness';
@@ -49,7 +50,13 @@ import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
 import { AppsCard } from './apps-card';
 import { ContextCard } from './context-card';
-import { CloseButton, type Detail, DetailLayer, ToolParts } from './detail-view';
+import {
+  CloseButton,
+  type Detail,
+  DetailLayer,
+  terminalLayerMotion,
+  ToolParts,
+} from './detail-view';
 import {
   deriveIsRunning,
   isWideDeliverable,
@@ -166,19 +173,20 @@ export const EasyPanel = memo(function EasyPanel({
   // Paging between siblings goes through `setDetail` directly and KEEPS
   // fullscreen — only the exits route through here.
   const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
-  // Wide split (Marko's feedback): a presentation deliverable grows the panel
-  // to its widest split (70/30) instead of the default 35/65 — see
-  // `isWideDeliverable`/`handleOpenOutput` below. `panelWide` mirrors
-  // `isExpanded`'s shape exactly (same store, same `animate` opt, same
-  // `skipNextExpandAnimation` flag) — see the store's doc comment.
-  const setPanelWide = useKortixComputerStore((s) => s.setPanelWide);
+  // Split override: a presentation deliverable grows the panel to its widest
+  // split (70/30, Marko's feedback) and the terminal layer to an even 50/50,
+  // instead of the default 35/65 — see `isWideDeliverable`/`handleOpenOutput`/
+  // `openTerminal` below. `panelSplit` mirrors `isExpanded`'s shape exactly
+  // (same store, same `animate` opt, same `skipNextExpandAnimation` flag) —
+  // see the store's doc comment.
+  const setPanelSplit = useKortixComputerStore((s) => s.setPanelSplit);
   const closeDetail = useCallback(() => {
     setDetail(null);
     // `animate: false` — the detail slides out on its own; snapping the panel
     // width back in the same instant avoids a second, competing motion.
     setIsExpanded(false, { animate: false });
-    setPanelWide(false, { animate: false });
-  }, [setIsExpanded, setPanelWide]);
+    setPanelSplit(null, { animate: false });
+  }, [setIsExpanded, setPanelSplit]);
 
   /**
    * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
@@ -188,8 +196,13 @@ export const EasyPanel = memo(function EasyPanel({
    * for a live shell: the connection drops and scrollback replays on reopen).
    * So it gets its own `open` flag plus a once-true `activated` latch — the
    * exact pattern `session-layout.tsx`'s Advanced-mode terminal uses — and is
-   * rendered as a sibling of `DetailLayer` below, hidden (not unmounted) via a
-   * plain `hidden` class rather than an exit animation.
+   * rendered as a sibling of `DetailLayer` below, animated (never unmounted)
+   * between the same resting states a detail moves between: it slides in/out
+   * against the home cards and crossfades against a detail card, staying
+   * mounted throughout with `inert` + zero opacity while closed. See
+   * `terminalLayerMotion` for the choreography; `terminalSwap` below records
+   * which of the two edges (home or detail) the current toggle crossed, since
+   * at render time an open terminal with a null detail can't tell them apart.
    *
    * Because it isn't a `detail`, `DetailLayer`'s Escape/Tab/arrow-key hooks
    * stay inert while it's open (`useDetailKeyboard` only listens when
@@ -199,34 +212,61 @@ export const EasyPanel = memo(function EasyPanel({
    * is the only way to close it.
    */
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalSwap, setTerminalSwap] = useState(false);
   const [terminalActivated, setTerminalActivated] = useState(false);
   useEffect(() => {
     if (terminalOpen) setTerminalActivated(true);
   }, [terminalOpen]);
 
+  // Publish "a detail is showing" (a detail OR the terminal layer) to the
+  // store — `session-layout` shows the resize grip only then; the card home
+  // is a fixed-width column with nothing to resize. Panel close and session
+  // switch reset the flag store-side, mirroring `panelSplit`.
+  const setDetailOpen = useKortixComputerStore((s) => s.setDetailOpen);
+  useEffect(() => {
+    setDetailOpen(detail !== null || terminalOpen);
+  }, [detail, terminalOpen, setDetailOpen]);
+
   // Mutual exclusion: the terminal layer and a `detail` never show at once —
-  // opening one closes the other. `closeDetail()` also exits fullscreen, so
-  // opening the terminal from a maximized detail snaps the panel back first.
+  // opening one closes the other, and the toggle records HOW (`terminalSwap`):
+  // over a detail it's a crossfade, from home it's the arrival slide.
+  // `closeDetail()` also exits fullscreen, so opening the terminal from a
+  // maximized detail snaps the panel back first. The terminal earns an even
+  // 50/50 split (a shell at the default 35 is a squeezed ribbon of wrapped
+  // lines) — the width glides on open alongside the layer's own motion (the
+  // same pairing a presentation's 70/30 open plays) and snaps on close, the
+  // rule every detail exit already follows: the layer plays its own slide-out,
+  // and a width animation under it would be a second, competing motion.
   const openTerminal = useCallback(() => {
+    setTerminalSwap(detail !== null);
     closeDetail();
     setTerminalOpen(true);
-  }, [closeDetail]);
-  const closeTerminal = useCallback(() => setTerminalOpen(false), []);
+    setPanelSplit(50);
+  }, [detail, closeDetail, setPanelSplit]);
+  const closeTerminal = useCallback(() => {
+    setTerminalSwap(false);
+    setTerminalOpen(false);
+    setPanelSplit(null, { animate: false });
+  }, [setPanelSplit]);
 
   // Every `detail` open funnels through here (instead of raw `setDetail`) so
   // opening a file/app/step/Audit always closes the terminal — the other half
-  // of the mutual exclusion above. Also the generic wide-split default: steps,
-  // Context rows, and Audit are never wide, so this resets it on every open.
+  // of the mutual exclusion above, with the same choreography note: replacing
+  // an open terminal is a swap (the detail appears instantly UNDER it, the
+  // terminal fades out above — see `Detail.swapIn`), arriving from home is
+  // the slide. Also the generic split default: steps, Context rows, and Audit
+  // never widen the panel, so this resets it on every open.
   // `handleOpenOutput` is the one caller that knows better — it calls
-  // `setPanelWide` again right after `openDetail`, so its explicit value (true
-  // for a presentation, false otherwise) wins over this default.
+  // `setPanelSplit` again right after `openDetail`, so its explicit value (70
+  // for a presentation, null otherwise) wins over this default.
   const openDetail = useCallback(
     (next: Detail) => {
+      setTerminalSwap(terminalOpen);
       setTerminalOpen(false);
-      setDetail(next);
-      setPanelWide(false);
+      setDetail({ ...next, swapIn: terminalOpen });
+      setPanelSplit(null);
     },
-    [setPanelWide],
+    [terminalOpen, setPanelSplit],
   );
 
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/
@@ -280,8 +320,8 @@ export const EasyPanel = memo(function EasyPanel({
       // Wide split (Marko's feedback): a presentation deliverable grows the
       // panel to its widest split with the glide — see `isWideDeliverable`.
       // Set AFTER `openDetail` below, whose own generic default
-      // (`setPanelWide(false)`, for steps/context/audit) would otherwise win.
-      const wide = isWideDeliverable(output);
+      // (`setPanelSplit(null)`, for steps/context/audit) would otherwise win.
+      const split = isWideDeliverable(output) ? 70 : null;
 
       // "Ask for changes" (W12): hand the composer a starter line naming this
       // deliverable and step out of the way. The path hint only earns its
@@ -344,7 +384,7 @@ export const EasyPanel = memo(function EasyPanel({
             />
           ),
         });
-        setPanelWide(wide);
+        setPanelSplit(split);
         return;
       }
 
@@ -368,9 +408,9 @@ export const EasyPanel = memo(function EasyPanel({
           />
         ),
       });
-      setPanelWide(wide);
+      setPanelSplit(split);
     },
-    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelWide],
+    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit],
   );
 
   const outcome = useMemo(
@@ -541,9 +581,14 @@ export const EasyPanel = memo(function EasyPanel({
 
   const goHome = closeDetail;
 
+  // Desktop terminal layer choreography — see `terminalLayerMotion`. Reduced
+  // motion trades the slides for the comprehension fade.
+  const reduceMotion = useReducedMotion();
+  const terminalMotion = terminalLayerMotion(terminalOpen, terminalSwap, !!reduceMotion);
+
   return (
     <div className="relative h-full w-full">
-      <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
+      <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile} terminalOpen={terminalOpen}>
         <div className="flex h-full flex-col gap-3 overflow-auto p-3">
           <ProgressCard
             steps={latestSteps}
@@ -599,19 +644,24 @@ export const EasyPanel = memo(function EasyPanel({
           // (same inset/rounding/border/shadow) so swapping between them
           // reads as one continuous surface. Rendered as a LATER sibling of
           // `DetailLayer` in this shared `relative` wrapper — with no
-          // explicit z-index, that DOM order alone is what paints it above
-          // the detail card whenever both would otherwise overlap (they
-          // never do in practice, since opening either closes the other).
-          // `hidden` (not an unmount) is what keeps `SessionTerminalPanel`'s
-          // PTY WebSocket alive while the layer is closed — see the
-          // `terminalOpen` state comment above for why this can't be a
-          // `detail`. No enter/exit animation: a `hidden`-class toggle has
-          // nothing to transition between (display:none has no intermediate
-          // frame), so this plays no motion at all rather than fake one.
-          <div
+          // explicit z-index, that DOM order alone paints it above the detail
+          // card, which is what lets it carry BOTH swap crossfades: it fades
+          // in over an exiting detail and fades out over an arriving one (see
+          // `terminalLayerMotion`/`detailCardVariants`). Kept mounted (never
+          // unmounted, `inert` + opacity 0 while closed) so
+          // `SessionTerminalPanel`'s PTY WebSocket survives every close — see
+          // the `terminalOpen` state comment above for why this can't be a
+          // `detail`. `initial` is the closed resting state, so the first-ever
+          // activation plays the same arrival every later open does.
+          <motion.div
+            initial={{ x: '100%', opacity: 0 }}
+            animate={terminalMotion.target}
+            transition={terminalMotion.transition}
+            aria-hidden={!terminalOpen}
+            inert={!terminalOpen || undefined}
             className={cn(
               'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow',
-              !terminalOpen && 'hidden',
+              !terminalOpen && 'pointer-events-none',
             )}
           >
             <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
@@ -628,7 +678,7 @@ export const EasyPanel = memo(function EasyPanel({
                 hidden={!terminalOpen}
               />
             </div>
-          </div>
+          </motion.div>
         )
       )}
     </div>

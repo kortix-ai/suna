@@ -43,6 +43,7 @@ export function ProgressCard({
   elapsedMs,
   outcome,
   waitingOnUser,
+  defaultExpanded = false,
 }: {
   /** The latest run's grouped steps — `easy-panel.tsx`'s `latestSteps` memo, reused as-is. */
   steps: Step[];
@@ -52,6 +53,9 @@ export function ProgressCard({
   outcome: RunOutcome;
   /** The agent is blocked on a pending question/approval — the chat holds the controls; this card redirects attention (W9). */
   waitingOnUser: boolean;
+  /** Tests only, in practice: the product never auto-opens this card — see
+   *  the comment on `PanelCard`'s `defaultExpanded` below. */
+  defaultExpanded?: boolean;
 }) {
   const duration = elapsedMs ? formatDuration(elapsedMs) : '';
 
@@ -125,10 +129,12 @@ export function ProgressCard({
     <PanelCard
       title="Progress"
       isEmpty={false}
-      // Open while it's working — watching the story unfold IS the point. Once
-      // it's done, the header's outcome line says everything, and the user's
-      // attention belongs on Outputs.
-      defaultExpanded={isRunning}
+      // Closed unless the USER opens it (owner direction, supersedes the
+      // open-while-running round): a run starting must not fling the card
+      // open on every message send. The collapsed header already narrates
+      // the live story — the shimmering current-step subtitle — so nothing
+      // is lost; the step-by-step list is there for whoever asks for it.
+      defaultExpanded={defaultExpanded}
       subtitle={
         waitingOnUser ? (
           <span className="text-kortix-orange block truncate text-sm">{subtitle}</span>

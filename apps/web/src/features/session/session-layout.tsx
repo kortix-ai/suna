@@ -19,12 +19,12 @@ import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
   SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
@@ -67,9 +67,13 @@ export const SessionLayout = memo(function SessionLayout({
   const clearShouldOpenPanel = useKortixComputerStore((s) => s.clearShouldOpenPanel);
   const isExpanded = useKortixComputerStore((s) => s.isExpanded);
   const toggleExpanded = useKortixComputerStore((s) => s.toggleExpanded);
-  // Easy mode only — grows the split to 70/30 when a presentation deliverable
-  // is open. See the store's `panelWide` doc comment; Advanced ignores it.
-  const panelWide = useKortixComputerStore((s) => s.panelWide);
+  // Easy mode only — the side panel's requested share of the split (70 for a
+  // presentation deliverable, 50 for the terminal layer, null for the default
+  // card column). See the store's doc comment; Advanced ignores it.
+  const panelSplit = useKortixComputerStore((s) => s.panelSplit);
+  // Easy mode only — whether a detail (or the terminal layer) is showing.
+  // Gates the resize grip: the card home is fixed-width. Published by EasyPanel.
+  const detailOpen = useKortixComputerStore((s) => s.detailOpen);
 
   const handleTogglePanel = useCallback(() => {
     setIsSidePanelOpen(!isSidePanelOpen);
@@ -143,11 +147,21 @@ export const SessionLayout = memo(function SessionLayout({
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const panelGroupRef = useRef<HTMLDivElement>(null);
   const prevExpandedRef = useRef(isExpanded);
-  const prevWideRef = useRef(panelWide);
+  const prevSplitRef = useRef(panelSplit);
 
   const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
 
   const shouldShowPanel = isSidePanelOpen;
+
+  // The resize handle, split into two states. FUNCTIONAL whenever there's a
+  // split to drag — panel open, not fullscreen — in both modes: even Easy
+  // mode's card home resizes by grabbing the (invisible) seam. VISIBLE is
+  // stricter: the grip pill only shows itself once a detail (or the terminal
+  // layer) is up in Easy mode — the card home stays chrome-free — while
+  // Advanced shows it whenever the panel is open. Hovering or dragging the
+  // invisible seam still reveals the pill (see the handle's className).
+  const handleEnabled = shouldShowPanel && !isExpanded;
+  const handleVisible = handleEnabled && (!isEasy || detailOpen);
 
   const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
   const shouldHandleHotkey = isInTabSystem ? isActiveTab : true;
@@ -199,18 +213,18 @@ export const SessionLayout = memo(function SessionLayout({
   // Easy mode opens at the panel's MINIMUM width (35/65): the cards are a
   // narrow column and the chat is where the user lives — a 50/50 split steals
   // half the screen for whitespace. Advanced keeps 50/50 (its
-  // stepper/terminal/browser views earn the room). A presentation deliverable
-  // (`panelWide`) grows Easy mode to its MAXIMUM width (70/30) instead — the
-  // deck needs real width, not a card column's worth. The drag handle still
-  // lets either mode go wider/narrower by hand.
-  const sideSize = isExpanded ? 100 : panelWide && isEasy ? 70 : isEasy ? 35 : 50;
+  // stepper/terminal/browser views earn the room). A layer that needs more
+  // room requests it through `panelSplit` — 70/30 for a presentation
+  // deliverable (the deck needs real width), 50/50 for the terminal. The drag
+  // handle still lets either mode go wider/narrower by hand.
+  const sideSize = isExpanded ? 100 : !isEasy ? 50 : (panelSplit ?? 35);
   const mainSize = 100 - sideSize;
 
   useEffect(() => {
     const expandChanged = prevExpandedRef.current !== isExpanded;
-    const wideChanged = prevWideRef.current !== panelWide;
+    const splitChanged = prevSplitRef.current !== panelSplit;
     prevExpandedRef.current = isExpanded;
-    prevWideRef.current = panelWide;
+    prevSplitRef.current = panelSplit;
 
     // A detail-close collapse rides in with this flag set: snap the width, don't
     // glide it (the detail plays its own slide-out — a width animation under it
@@ -219,7 +233,7 @@ export const SessionLayout = memo(function SessionLayout({
     const skipAnimation = useKortixComputerStore.getState().skipNextExpandAnimation;
     if (skipAnimation) useKortixComputerStore.setState({ skipNextExpandAnimation: false });
 
-    const changed = expandChanged || wideChanged;
+    const changed = expandChanged || splitChanged;
     const shouldAnimate = changed && shouldShowPanel && !skipAnimation;
 
     if (shouldAnimate) {
@@ -245,7 +259,16 @@ export const SessionLayout = memo(function SessionLayout({
       }, 320);
       return () => clearTimeout(timer);
     }
-  }, [shouldShowPanel, isExpanded, sessionId, disablePanelTransition, isEasy, panelWide, sideSize, mainSize]);
+  }, [
+    shouldShowPanel,
+    isExpanded,
+    sessionId,
+    disablePanelTransition,
+    isEasy,
+    panelSplit,
+    sideSize,
+    mainSize,
+  ]);
 
   useEffect(() => {
     if (!isAnimating) return;
@@ -385,7 +408,7 @@ export const SessionLayout = memo(function SessionLayout({
         >
           <ResizablePanelGroup
             direction="horizontal"
-            className="h-full bg-transparent"
+            className="h-full gap-0 bg-transparent"
             style={{ transition: 'none' }}
           >
             <ResizablePanel
@@ -402,14 +425,23 @@ export const SessionLayout = memo(function SessionLayout({
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
             </ResizablePanel>
 
+            {/* Draggable whenever the panel is open (`handleEnabled`); the
+                grip pill only SHOWS on Easy mode's card home once a detail or
+                the terminal is up (`handleVisible`, published by EasyPanel) —
+                but the seam itself stays live there, with an invisible
+                12px-wide hit strip (the `after:` element; the handle element
+                itself is w-0 so the panels stay flush) and a hover/drag
+                reveal so the affordance is discoverable. */}
             <ResizableHandle
-              withHandle={shouldShowPanel && !isExpanded}
-              disabled={!shouldShowPanel || isExpanded}
+              withHandle={handleEnabled}
+              disabled={!handleEnabled}
               className={cn(
-                'z-20 transition-opacity duration-300',
-                shouldShowPanel && !isExpanded
-                  ? 'w-0 opacity-100'
-                  : 'pointer-events-none w-0 opacity-0',
+                'z-20 w-0 transition-opacity duration-300',
+                'after:absolute after:inset-y-0 after:-left-1.5 after:w-3',
+                handleEnabled ? '-right-3' : 'pointer-events-none',
+                handleVisible
+                  ? 'opacity-100'
+                  : 'opacity-0 hover:opacity-100 data-[resize-handle-active]:opacity-100',
               )}
             />
 

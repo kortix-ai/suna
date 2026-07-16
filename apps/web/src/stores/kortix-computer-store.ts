@@ -28,12 +28,20 @@ interface KortixComputerState {
   _panelOpenBySession: Record<string, boolean>;
   _activeSessionId: string | null;
   isExpanded: boolean;
-  // Easy mode only — grows the resizable split to its widest (70/30) when a
-  // presentation deliverable is open, so the deck gets real width instead of
-  // the default 35/65 card column. Ignored in Advanced (its 50/50 story is
-  // untouched) and outranked by `isExpanded` (fullscreen wins over wide).
-  panelWide: boolean;
-  // Transient: rides along with the NEXT `isExpanded`/`panelWide` change to
+  // Easy mode only — the side panel's requested share of the split, as a
+  // percentage, when a layer wants more than the default 35/65 card column:
+  // 70 while a presentation deliverable is open (the deck needs real width),
+  // 50 while the terminal layer is open (a shell earns an even split), null
+  // for the default. Ignored in Advanced (its 50/50 story is untouched) and
+  // outranked by `isExpanded` (fullscreen wins over any split).
+  panelSplit: number | null;
+  // Whether the Easy panel is showing a DETAIL (a file/app/step/audit detail
+  // or the terminal layer) rather than the card home. Synced by `EasyPanel`;
+  // `session-layout` reads it to show the resize grip only while a detail is
+  // open — the card home is a fixed-width column with nothing to resize.
+  // Ignored in Advanced mode.
+  detailOpen: boolean;
+  // Transient: rides along with the NEXT `isExpanded`/`panelSplit` change to
   // tell the panel layout to snap instead of animate. Set only when a
   // detail-close collapses fullscreen or drops out of wide (the detail plays
   // its own slide-out — animating the panel width underneath it reads as a
@@ -100,8 +108,9 @@ interface KortixComputerState {
    *  no transition — same contract as `setIsExpanded`'s `opts.animate`, and
    *  it shares the very same `skipNextExpandAnimation` flag: the layout only
    *  needs to know THAT the next width change should snap, not which of the
-   *  two booleans caused it. */
-  setPanelWide: (wide: boolean, opts?: { animate?: boolean }) => void;
+   *  two states caused it. */
+  setPanelSplit: (split: number | null, opts?: { animate?: boolean }) => void;
+  setDetailOpen: (open: boolean) => void;
 
   // Ready chip state management
   setReadyChip: (chip: ReadyChipState) => void;
@@ -131,7 +140,8 @@ const initialState = {
   _panelOpenBySession: {} as Record<string, boolean>,
   _activeSessionId: null as string | null,
   isExpanded: false,
-  panelWide: false,
+  panelSplit: null as number | null,
+  detailOpen: false,
   skipNextExpandAnimation: false,
   pendingToolNavIndex: null as number | null,
   focusedToolCallId: null as string | null,
@@ -216,14 +226,15 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
         // Every REAL close path routes through here (chat header toggle, ⌘I,
         // mobile drawer dismiss) — reset the width states or a stale
-        // `panelWide`/`isExpanded` survives into the next open. Snap, not
+        // `panelSplit`/`isExpanded` survives into the next open. Snap, not
         // glide: the panel is disappearing; animating widths under a hidden
         // panel is pointless, and the next open's resize effect must read
         // clean state. `closeSidePanel`/`handleSidePanelClose` stay harmless
         // and idempotent on top of this.
         if (!open) {
-          update.panelWide = false;
+          update.panelSplit = null;
           update.isExpanded = false;
+          update.detailOpen = false;
           update.skipNextExpandAnimation = true;
         }
         if (sessionId) {
@@ -246,9 +257,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           _activeSessionId: sessionId,
           _panelOpenBySession: panelMap,
           isSidePanelOpen: restored,
-          // Reset expanded/wide state when switching sessions
+          // Reset expanded/split/detail state when switching sessions
           isExpanded: false,
-          panelWide: false,
+          panelSplit: null,
+          detailOpen: false,
         });
       },
 
@@ -269,7 +281,8 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const update: Partial<KortixComputerState> = {
           isSidePanelOpen: false,
           isExpanded: false,
-          panelWide: false,
+          panelSplit: null,
+          detailOpen: false,
         };
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: false };
@@ -286,8 +299,12 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         set((state) => ({ isExpanded: !state.isExpanded, skipNextExpandAnimation: false }));
       },
 
-      setPanelWide: (wide: boolean, opts?: { animate?: boolean }) => {
-        set({ panelWide: wide, skipNextExpandAnimation: opts?.animate === false });
+      setPanelSplit: (split: number | null, opts?: { animate?: boolean }) => {
+        set({ panelSplit: split, skipNextExpandAnimation: opts?.animate === false });
+      },
+
+      setDetailOpen: (open: boolean) => {
+        if (get().detailOpen !== open) set({ detailOpen: open });
       },
 
       setReadyChip: (chip: ReadyChipState) => {

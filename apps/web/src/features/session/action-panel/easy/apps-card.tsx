@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * `AppsCard` — the things the agent has running, and one row each.
+ * `AppsCard` — the "Preview" card: the things the agent has running, one row
+ * each.
  *
  * A running app used to be row 13 of 13 inside Outputs, buried under twelve
  * `.tsx` files nobody asked for. But the fix isn't a hero banner either: a real
@@ -63,7 +64,7 @@ export function AppsCard({
 
   return (
     <PanelCard
-      title="Apps"
+      title="Preview"
       count={apps.length}
       isEmpty={apps.length === 0}
       // The payoff: if the agent got something running, that is the single most

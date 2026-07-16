@@ -216,11 +216,11 @@ export function FileViewer({
             // Only HTML earns the toggle — and it sits at the far left, before
             // the name, because it changes what the name is showing you.
             <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-              <TabsList type="secondary" size="sm" className="h-7 border-b-0 p-0">
+              <TabsList type="default" size="sm" className="h-7 border-b-0 p-0">
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  variant="secondary"
+                  variant="a_accent-i_transparent"
                   aria-label="Preview"
                   className="h-7 w-7 px-0"
                 >
@@ -229,7 +229,7 @@ export function FileViewer({
                 <TabsTrigger
                   size="xs"
                   value="source"
-                  variant="secondary"
+                  variant="a_accent-i_transparent"
                   aria-label="Source"
                   className="h-7 w-7 px-0"
                 >
@@ -363,7 +363,7 @@ function FileBody({
     <CodeBlockCode
       code={content}
       language={languageFor(fileName)}
-      className="[&_pre]:!bg-accent [&_pre]:rounded-none [&_pre]:!px-4 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
+      className="[&_pre]:!bg-transparent [&_pre]:rounded-none [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
     />
   );
 }

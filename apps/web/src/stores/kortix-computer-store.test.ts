@@ -134,65 +134,67 @@ describe('ready chip state (W1)', () => {
   });
 });
 
-describe('panelWide (wide split for presentation details)', () => {
+describe('panelSplit (width override for presentation/terminal layers)', () => {
   beforeEach(() => {
     useKortixComputerStore.getState().reset();
   });
 
-  test('defaults to false and can be set and cleared', () => {
-    expect(useKortixComputerStore.getState().panelWide).toBe(false);
-    useKortixComputerStore.getState().setPanelWide(true);
-    expect(useKortixComputerStore.getState().panelWide).toBe(true);
-    useKortixComputerStore.getState().setPanelWide(false);
-    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+  test('defaults to null and can be set and cleared', () => {
+    expect(useKortixComputerStore.getState().panelSplit).toBeNull();
+    useKortixComputerStore.getState().setPanelSplit(70);
+    expect(useKortixComputerStore.getState().panelSplit).toBe(70);
+    useKortixComputerStore.getState().setPanelSplit(50);
+    expect(useKortixComputerStore.getState().panelSplit).toBe(50);
+    useKortixComputerStore.getState().setPanelSplit(null);
+    expect(useKortixComputerStore.getState().panelSplit).toBeNull();
   });
 
   test('animate: false sets the same skipNextExpandAnimation flag setIsExpanded uses', () => {
     const s = useKortixComputerStore.getState();
-    s.setPanelWide(true);
+    s.setPanelSplit(70);
     expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
-    s.setPanelWide(false, { animate: false });
-    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+    s.setPanelSplit(null, { animate: false });
+    expect(useKortixComputerStore.getState().panelSplit).toBeNull();
     expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(true);
   });
 
   test('omitting opts (or animate: true) glides — flag stays false', () => {
     const s = useKortixComputerStore.getState();
-    s.setPanelWide(false, { animate: false });
+    s.setPanelSplit(null, { animate: false });
     expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(true);
-    s.setPanelWide(true);
+    s.setPanelSplit(50);
     expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
   });
 
-  test('setActiveSession resets panelWide, mirroring isExpanded', () => {
+  test('setActiveSession resets panelSplit, mirroring isExpanded', () => {
     const s = useKortixComputerStore.getState();
     s.setActiveSession('s1');
-    s.setPanelWide(true);
-    expect(useKortixComputerStore.getState().panelWide).toBe(true);
+    s.setPanelSplit(70);
+    expect(useKortixComputerStore.getState().panelSplit).toBe(70);
     s.setActiveSession('s2');
-    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+    expect(useKortixComputerStore.getState().panelSplit).toBeNull();
   });
 
-  test('closeSidePanel resets panelWide', () => {
+  test('closeSidePanel resets panelSplit', () => {
     const s = useKortixComputerStore.getState();
     s.setActiveSession('s1');
-    s.setPanelWide(true);
+    s.setPanelSplit(50);
     s.closeSidePanel();
-    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+    expect(useKortixComputerStore.getState().panelSplit).toBeNull();
   });
 
   // ─── the REAL close path: the chat header toggle / ⌘I / mobile drawer all
   // call setIsSidePanelOpen(false) directly, never closeSidePanel — a stale
-  // panelWide/isExpanded must not survive a real close into the next open. ──
-  test('setIsSidePanelOpen(false) resets panelWide and isExpanded, snapping (not gliding)', () => {
+  // panelSplit/isExpanded must not survive a real close into the next open. ──
+  test('setIsSidePanelOpen(false) resets panelSplit and isExpanded, snapping (not gliding)', () => {
     const s = useKortixComputerStore.getState();
     s.setActiveSession('s1');
     s.setIsSidePanelOpen(true);
-    s.setPanelWide(true);
+    s.setPanelSplit(70);
     s.setIsExpanded(true);
     s.setIsSidePanelOpen(false);
     const after = useKortixComputerStore.getState();
-    expect(after.panelWide).toBe(false);
+    expect(after.panelSplit).toBeNull();
     expect(after.isExpanded).toBe(false);
     expect(after.skipNextExpandAnimation).toBe(true);
   });
@@ -200,9 +202,9 @@ describe('panelWide (wide split for presentation details)', () => {
   test('setIsSidePanelOpen(true) leaves the width states alone', () => {
     const s = useKortixComputerStore.getState();
     s.setActiveSession('s1');
-    s.setPanelWide(true);
+    s.setPanelSplit(50);
     s.setIsSidePanelOpen(true);
-    expect(useKortixComputerStore.getState().panelWide).toBe(true);
+    expect(useKortixComputerStore.getState().panelSplit).toBe(50);
     expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
   });
 });

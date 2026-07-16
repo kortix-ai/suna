@@ -115,11 +115,17 @@ describe('ProgressCard — expanded rows', () => {
       step({ id: 's1', label: 'Read the brief', status: 'done', durationMs: 500 }),
       step({ id: 's2', label: 'The sandbox connection failed', status: 'error', durationMs: 300 }),
     ];
-    // `isRunning` forces `defaultExpanded` so the body actually renders — a
-    // settled card defaults to collapsed and the row markup wouldn't be in
-    // the static HTML at all otherwise.
+    // `defaultExpanded` (a tests-only prop — the product never auto-opens
+    // this card) renders the body — the card defaults to collapsed and the
+    // row markup wouldn't be in the static HTML at all otherwise.
     const html = renderToStaticMarkup(
-      <ProgressCard steps={errorSteps} isRunning outcome="failed" waitingOnUser={false} />,
+      <ProgressCard
+        steps={errorSteps}
+        isRunning
+        outcome="failed"
+        waitingOnUser={false}
+        defaultExpanded
+      />,
     );
     expect(html).toContain('Read the brief');
     expect(html).toContain('The sandbox connection failed');
@@ -132,10 +138,25 @@ describe('ProgressCard — expanded rows', () => {
 
   test('a running row has no duration next to it', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard steps={steps} isRunning outcome="succeeded" waitingOnUser={false} />,
+      <ProgressCard
+        steps={steps}
+        isRunning
+        outcome="succeeded"
+        waitingOnUser={false}
+        defaultExpanded
+      />,
     );
     // The done row's duration (1200ms -> "1s") should render, the running row's should not.
     expect(html).toContain('1s');
+  });
+
+  test('a run starting does NOT auto-open the card — the body stays out of the markup', () => {
+    // The collapsed header narrates the current step; the step LIST only
+    // appears when the user opens the card themselves.
+    const html = renderToStaticMarkup(
+      <ProgressCard steps={steps} isRunning outcome="succeeded" waitingOnUser={false} />,
+    );
+    expect(html).not.toContain('<ul');
   });
 });
 

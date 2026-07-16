@@ -2,17 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  ZoomIn,
-  ZoomOut,
-  RotateCw,
-  Maximize2,
-  Minimize2,
-  Info,
-} from 'lucide-react';
+import { ButtonGroup } from '@/components/ui/button-group';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
+import { cn } from '@/lib/utils';
+import { ImageOff, Maximize2, Minimize2, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 interface ImageRendererProps {
   url: string;
@@ -23,6 +19,9 @@ interface ImageRendererProps {
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [500, 1500, 3000]; // ms — escalating backoff
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 10;
 
 export function ImageRenderer({ url, className, fileName }: ImageRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -39,7 +38,6 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
     height: number;
     type: string;
   } | null>(null);
-  const [showControls, setShowControls] = useState(false);
 
   // ── Retry state ──────────────────────────────────────────────────────
   const [retryCount, setRetryCount] = useState(0);
@@ -50,8 +48,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
   const imageRef = useRef<HTMLImageElement>(null);
 
   // Check if the url is an SVG
-  const isSvg =
-    url?.toLowerCase().endsWith('.svg') || url?.includes('image/svg');
+  const isSvg = url?.toLowerCase().endsWith('.svg') || url?.includes('image/svg');
 
   // Derive the display file type for the info panel
   const displayFileType = (() => {
@@ -107,19 +104,22 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
     }
   }, [displayFileType]);
 
+  // Force the browser to re-attempt by toggling the src. For blob: URLs a
+  // cache-bust param doesn't help, so we briefly clear and re-set the src.
+  const reloadImage = useCallback(() => {
+    setImgSrc('');
+    // Use rAF to ensure the empty src is committed before re-setting
+    requestAnimationFrame(() => {
+      setImgSrc(url);
+    });
+  }, [url]);
+
   // Handle image load error — auto-retry with backoff
   const handleImageError = useCallback(() => {
     if (retryCount < MAX_RETRIES) {
       const delay = RETRY_DELAYS[retryCount] ?? 3000;
       retryTimerRef.current = setTimeout(() => {
-        // Force the browser to re-attempt by toggling the src.
-        // For blob: URLs a cache-bust param doesn't help, so we
-        // briefly clear and re-set the src.
-        setImgSrc('');
-        // Use rAF to ensure the empty src is committed before re-setting
-        requestAnimationFrame(() => {
-          setImgSrc(url);
-        });
+        reloadImage();
         setRetryCount((c) => c + 1);
       }, delay);
     } else {
@@ -127,7 +127,14 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
       setImgLoaded(false);
       setImgError(true);
     }
-  }, [retryCount, url]);
+  }, [retryCount, reloadImage]);
+
+  // Manual retry from the error state — restart the whole backoff cycle
+  const handleRetry = useCallback(() => {
+    setImgError(false);
+    setRetryCount(0);
+    reloadImage();
+  }, [reloadImage]);
 
   // Functions for zooming — adaptive step: 0.25 up to 2x, 0.5 up to 5x, 1.0 above
   const getZoomStep = (currentZoom: number) => {
@@ -137,17 +144,25 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
   };
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + getZoomStep(prev), 10));
+    setZoom((prev) => Math.min(prev + getZoomStep(prev), MAX_ZOOM));
     setIsFitToScreen(false);
   };
 
   const handleZoomOut = () => {
     setZoom((prev) => {
       const step = getZoomStep(prev - 0.01); // step based on where we're going
-      const newZoom = Math.max(prev - step, 0.25);
+      const newZoom = Math.max(prev - step, MIN_ZOOM);
       if (newZoom <= 0.5) setIsFitToScreen(true);
       return newZoom;
     });
+  };
+
+  // Back to the fitted default — the % readout doubles as the reset control
+  const handleResetZoom = () => {
+    setZoom(1);
+    setRotation(0);
+    setPosition({ x: 0, y: 0 });
+    setIsFitToScreen(true);
   };
 
   // Scroll wheel zoom
@@ -156,7 +171,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
     const delta = e.deltaY > 0 ? -1 : 1;
     setZoom((prev) => {
       const step = getZoomStep(prev) * 0.5;
-      const next = Math.max(0.25, Math.min(prev + delta * step, 10));
+      const next = Math.max(MIN_ZOOM, Math.min(prev + delta * step, MAX_ZOOM));
       if (next <= 0.5) setIsFitToScreen(true);
       else setIsFitToScreen(false);
       return next;
@@ -215,165 +230,172 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
   // Show image info
   const [showInfo, setShowInfo] = useState(false);
 
-  return (
-    <div 
-      className={cn('relative w-full h-full group', className)}
-      onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(false)}
-    >
-      {/* Floating Controls - Only visible on hover */}
-      <div 
-        className={cn(
-          "absolute top-4 left-1/2 -translate-x-1/2 z-10 transition-colors duration-200",
-          showControls || showInfo ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
-        )}
-      >
-        <div className="flex items-center gap-1 bg-card border border-border rounded-2xl px-2 py-1.5 shadow-lg">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 hover:bg-muted"
-            onClick={handleZoomOut}
-            title={tHardcodedUi.raw('componentsFileRenderersImageRenderer.line234JsxAttrTitleZoomOut')}
-            disabled={imgError}
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <span className="text-xs font-medium px-2 min-w-[48px] text-center text-muted-foreground">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 hover:bg-muted"
-            onClick={handleZoomIn}
-            title={tHardcodedUi.raw('componentsFileRenderersImageRenderer.line247JsxAttrTitleZoomIn')}
-            disabled={imgError}
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-          
-          <div className="w-px h-4 bg-border mx-1" />
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 hover:bg-muted"
-            onClick={handleRotate}
-            title="Rotate"
-            disabled={imgError}
-          >
-            <RotateCw className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 hover:bg-muted"
-            onClick={toggleFitToScreen}
-            title={isFitToScreen ? 'Actual size' : 'Fit to screen'}
-            disabled={imgError}
-          >
-            {isFitToScreen ? (
-              <Maximize2 className="h-4 w-4" />
-            ) : (
-              <Minimize2 className="h-4 w-4" />
-            )}
-          </Button>
-          
-          <div className="w-px h-4 bg-border mx-1" />
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 hover:bg-muted"
-            onClick={() => setShowInfo(!showInfo)}
-            title={tHardcodedUi.raw('componentsFileRenderersImageRenderer.line287JsxAttrTitleImageInformation')}
-          >
-            <Info className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+  const isLoading = !imgLoaded && !imgError;
 
-      {/* Image info overlay */}
-      {showInfo && imgInfo && (
-        <div className="absolute top-16 right-4 z-10 bg-card p-4 rounded-2xl shadow-lg border border-border text-sm min-w-[180px]">
-          <div className="space-y-2">
-            <div className="flex justify-between gap-6">
-              <span className="text-muted-foreground">Type</span>
-              <span className="font-medium">{imgInfo.type}</span>
-            </div>
-            <div className="flex justify-between gap-6">
-              <span className="text-muted-foreground">Size</span>
-              <span className="font-medium">{imgInfo.width} × {imgInfo.height}</span>
-            </div>
-            <div className="flex justify-between gap-6">
-              <span className="text-muted-foreground">Zoom</span>
-              <span className="font-medium">{Math.round(zoom * 100)}%</span>
-            </div>
-          </div>
+  const zoomOutLabel = tHardcodedUi.raw(
+    'componentsFileRenderersImageRenderer.line234JsxAttrTitleZoomOut',
+  );
+  const zoomInLabel = tHardcodedUi.raw(
+    'componentsFileRenderersImageRenderer.line247JsxAttrTitleZoomIn',
+  );
+  const infoLabel = tHardcodedUi.raw(
+    'componentsFileRenderersImageRenderer.line287JsxAttrTitleImageInformation',
+  );
+  const fitLabel = isFitToScreen ? 'Actual size' : 'Fit to screen';
+
+  return (
+    <div className={cn('group relative h-full w-full', className)}>
+      {/* Floating controls — reveal on hover or keyboard focus; pinned open
+          while the info panel is. Opacity-only (no movement) so rapid
+          hover-in/out retargets cleanly. */}
+      {!imgError && (
+        <div
+          className={cn(
+            'absolute top-3 left-1/2 z-10 -translate-x-1/2',
+            'opacity-0 transition-opacity duration-200 ease-out',
+            'group-hover:opacity-100 focus-within:opacity-100',
+            showInfo && 'opacity-100',
+          )}
+        >
+          <ButtonGroup className="bg-background rounded-md border shadow-sm">
+            <Hint label={zoomOutLabel} side="bottom">
+              <Button
+                variant="accent"
+                size="icon"
+                className="text-foreground"
+                onClick={handleZoomOut}
+                disabled={zoom <= MIN_ZOOM}
+                aria-label={zoomOutLabel}
+              >
+                <ZoomOut className="size-4" />
+              </Button>
+            </Hint>
+            <Hint label="Reset view" side="bottom">
+              <Button
+                variant="accent"
+                size="toolbar"
+                className="text-foreground min-w-14 tabular-nums"
+                onClick={handleResetZoom}
+                aria-label="Reset view"
+              >
+                {Math.round(zoom * 100)}%
+              </Button>
+            </Hint>
+            <Hint label={zoomInLabel} side="bottom">
+              <Button
+                variant="accent"
+                size="icon"
+                className="text-foreground"
+                onClick={handleZoomIn}
+                disabled={zoom >= MAX_ZOOM}
+                aria-label={zoomInLabel}
+              >
+                <ZoomIn className="size-4" />
+              </Button>
+            </Hint>
+            <Hint label="Rotate" side="bottom">
+              <Button
+                variant="accent"
+                size="icon"
+                className="text-foreground"
+                onClick={handleRotate}
+                aria-label="Rotate image"
+              >
+                <RotateCw className="size-4" />
+              </Button>
+            </Hint>
+            <Hint label={fitLabel} side="bottom">
+              <Button
+                variant="accent"
+                size="icon"
+                className="text-foreground"
+                onClick={toggleFitToScreen}
+                aria-label={fitLabel}
+              >
+                {isFitToScreen ? (
+                  <Maximize2 className="size-4" />
+                ) : (
+                  <Minimize2 className="size-4" />
+                )}
+              </Button>
+            </Hint>
+          </ButtonGroup>
         </div>
       )}
 
       {/* Image container - Clean background */}
       <div
         ref={containerRef}
-        className="w-full h-full overflow-hidden relative bg-background"
+        className="bg-background relative h-full w-full overflow-hidden select-none"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
+        onDoubleClick={imgError ? undefined : toggleFitToScreen}
         style={{
           cursor: isPanning ? 'grabbing' : !isFitToScreen ? 'grab' : 'default',
         }}
       >
         {imgError ? (
-          <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-            <p className="text-muted-foreground font-medium mb-2">{tHardcodedUi.raw('componentsFileRenderersImageRenderer.line330JsxTextFailedToLoadImage')}</p>
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersImageRenderer.line333JsxTextTheImageCouldNotBeDisplayed')}</p>
+          <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+            <span className="bg-muted/60 flex size-9 items-center justify-center rounded-sm">
+              <ImageOff className="text-muted-foreground size-5" />
+            </span>
+            <div className="space-y-1">
+              <p className="text-foreground text-sm font-medium">
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersImageRenderer.line330JsxTextFailedToLoadImage',
+                )}
+              </p>
+              <p className="text-muted-foreground text-xs">
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersImageRenderer.line333JsxTextTheImageCouldNotBeDisplayed',
+                )}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRetry}>
+              <RotateCw className="size-4" />
+              Try again
+            </Button>
           </div>
         ) : (
-          <div
-            className="absolute inset-0 flex items-center justify-center p-8"
-            style={{
-              transform: isFitToScreen ? 'none' : translateTransform,
-              transition: isPanning ? 'none' : 'transform 0.1s ease',
-            }}
-          >
-            {isSvg ? (
-              // For SVGs, just use img tag - object tag has issues with blob URLs
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                ref={imageRef}
-                src={imgSrc}
-                alt="SVG preview"
-                className="max-w-full max-h-full object-contain"
-                style={{
-                  transform: imageTransform,
-                  transition: 'transform 0.2s ease',
-                }}
-                draggable={false}
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                ref={imageRef}
-                src={imgSrc}
-                alt="Image preview"
-                className="max-w-full max-h-full object-contain"
-                style={{
-                  transform: imageTransform,
-                  transition: 'transform 0.2s ease',
-                  boxShadow: imgLoaded ? '0 8px 32px -4px rgba(0, 0, 0, 0.15)' : 'none',
-                }}
-                draggable={false}
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-              />
+          <>
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loading className="size-5" />
+              </div>
             )}
-          </div>
+            <div
+              className="absolute inset-0 flex items-center justify-center p-8"
+              style={{
+                transform: isFitToScreen ? 'none' : translateTransform,
+                transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={imageRef}
+                src={imgSrc}
+                alt={fileName ?? (isSvg ? 'SVG preview' : 'Image preview')}
+                className={cn(
+                  'max-h-full max-w-full object-contain',
+                  // Fade in on load instead of popping; opacity and transform
+                  // enumerated — never `transition: all`.
+                  'transition-[opacity,transform] duration-200 ease-out',
+                  imgLoaded ? 'opacity-100' : 'opacity-0',
+                  // A soft lift so the image reads as content over the canvas.
+                  // SVGs are usually transparent artwork — a shadow under them
+                  // draws a box that isn't there.
+                  imgLoaded && !isSvg && 'shadow-md',
+                )}
+                style={{ transform: imageTransform }}
+                draggable={false}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

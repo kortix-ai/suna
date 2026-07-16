@@ -193,7 +193,7 @@ function TabsTrigger({
   value,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
-  variant?: 'default' | 'large' | 'transparent' | 'underline' | 'secondary' | 'a_accent-i_outline';
+  variant?: 'default' | 'large' | 'transparent' | 'underline' | 'secondary' | 'a_accent-i_outline' | 'a_accent-i_transparent';
   size?: TabsTriggerSize;
 }) {
   const listType = React.useContext(TabsListTypeContext);
@@ -256,6 +256,8 @@ function TabsTrigger({
           ),
         variant === 'a_accent-i_outline' &&
           'data-[state=inactive]:border-border data-[state=active]:bg-foreground/5 data-[state=active]:text-accent-foreground data-[state=inactive]:text-foreground data-[state=active]:hover:bg-foreground/10 data-[state=inactive]:hover:bg-foreground/5 data-[state=inactive]:hover:text-foreground dark:data-[state=active]:bg-foreground/5 dark:data-[state=active]:text-accent-foreground dark:data-[state=inactive]:text-foreground px-2 data-[state=active]:border-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent dark:data-[state=active]:border-transparent',
+        variant === 'a_accent-i_transparent' &&
+          'data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=active]:text-accent-foreground data-[state=inactive]:text-foreground data-[state=active]:hover:bg-foreground/10 data-[state=inactive]:hover:bg-foreground/5 data-[state=inactive]:hover:text-foreground dark:data-[state=active]:bg-secondary dark:data-[state=active]:text-accent-foreground dark:data-[state=inactive]:text-foreground px-2 data-[state=inactive]:border-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent dark:data-[state=active]:border-transparent',
           className
       )}
       {...props}

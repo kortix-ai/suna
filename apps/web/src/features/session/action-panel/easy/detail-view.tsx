@@ -26,7 +26,13 @@ import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { ToolPart } from '@/ui';
 import { ChevronLeft, ChevronRight, PanelLeft, X } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  AnimatePresence,
+  motion,
+  type TargetAndTransition,
+  type Transition,
+  useReducedMotion,
+} from 'motion/react';
 import { type ReactNode, type RefObject, useEffect, useRef, useSyncExternalStore } from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
@@ -138,6 +144,15 @@ export interface Detail {
   /** Move between sibling deliverables without going home (W10). Only set
    *  when 2+ openable siblings exist — a lone file gets no nav row. */
   nav?: { prev: (() => void) | null; next: (() => void) | null; position: string };
+  /**
+   * This detail arrived by REPLACING the open terminal layer, not by arriving
+   * from home — a sibling swap inside the same visual frame, so the card must
+   * not replay the arrival slide. It appears instantly UNDER the terminal,
+   * whose own fade-out above it carries the whole crossfade (see
+   * `detailCardVariants`/`terminalLayerMotion`). Stamped by `EasyPanel`'s
+   * `openDetail`, the one funnel that knows whether the terminal was up.
+   */
+  swapIn?: boolean;
 }
 
 /**
@@ -264,6 +279,7 @@ function useDetailKeyboard(
  */
 const EASE = [0.22, 1, 0.36, 1] as const;
 const DURATION = 0.26;
+export const SLIDE_TRANSITION = { duration: DURATION, ease: EASE } as const;
 
 /**
  * Motion: paging to a sibling deliverable is not a re-arrival — the card
@@ -272,23 +288,116 @@ const DURATION = 0.26;
  * rather than a transition (130ms, ease-out — quicker than the 260ms open/
  * close slide, per the doctrine that exits/swaps stay subtler than entrances).
  */
-const CROSSFADE_TRANSITION = { duration: 0.13, ease: 'easeOut' } as const;
+export const CROSSFADE_TRANSITION = { duration: 0.13, ease: 'easeOut' } as const;
+
+/**
+ * The detail card's enter/exit targets, as dynamic variants over one custom
+ * boolean: `swap` — the terminal layer is on the OTHER side of this edge
+ * (the card is replacing it, or being replaced by it).
+ *
+ * A swap is a sibling exchange inside the same visual frame, so it borrows
+ * the nav-crossfade language, not the arrival slide. And because both layers
+ * are fully opaque cards, only ONE of them may fade or the home bleeds
+ * through the midpoint: the terminal — painted above the card by DOM order —
+ * owns the whole 130ms fade (see `terminalLayerMotion`), while the card just
+ * appears/disappears at full opacity underneath at the right moment: enter
+ * lands instantly under the fading-out terminal; exit holds until the
+ * fading-in terminal fully covers it, then leaves.
+ *
+ * `swap` reaches the variants two ways: the element's own `custom` (stamped
+ * from `Detail.swapIn`, read at mount for the enter) and `AnimatePresence`'s
+ * `custom` (the live `terminalOpen`, which motion swaps in for the exit —
+ * the element's last-rendered props predate the state flip that removed it).
+ *
+ * Exported for tests; pure so the choreography is checkable without a DOM.
+ */
+export function detailCardVariants(reduce: boolean) {
+  const slide = reduce ? ({ duration: 0 } as const) : SLIDE_TRANSITION;
+  return {
+    hidden: (swap: boolean): TargetAndTransition =>
+      swap
+        ? {
+            opacity: 0,
+            transition: { duration: 0, delay: reduce ? 0 : CROSSFADE_TRANSITION.duration },
+          }
+        : reduce
+          ? { opacity: 0, transition: { duration: 0 } }
+          : { x: '100%', transition: slide },
+    visible: (swap: boolean): TargetAndTransition => ({
+      x: 0,
+      opacity: 1,
+      transition: swap ? { duration: 0 } : slide,
+    }),
+  };
+}
+
+/**
+ * The terminal layer's animate target + transition for its four edges. The
+ * layer is keep-alive (never unmounted — it owns a live PTY WebSocket), so
+ * instead of `AnimatePresence` it converges on one of two resting states —
+ * open `{x: 0, opacity: 1}` / closed `{x: '100%', opacity: 0}` — and the
+ * `swap` flag picks which property carries the motion between them:
+ *
+ * - home ↔ terminal (`swap` false): the same 260ms slide the detail card
+ *   plays — going one level deeper is one motion language, whatever the
+ *   layer. Opacity snaps while the layer is off-panel (clipped, invisible
+ *   anyway): instantly to 1 before a slide-in, to 0 only AFTER a slide-out.
+ * - detail ↔ terminal (`swap` true): the 130ms crossfade, which this layer
+ *   carries alone (see `detailCardVariants`). x teleports while invisible —
+ *   instantly into place before a fade-in, off-panel only after a fade-out.
+ *
+ * Reduced motion keeps the comprehension fade on swaps but snaps the slides
+ * (movement is what reduced motion asks to lose, not state changes).
+ *
+ * Exported for tests; pure for the same reason as `detailCardVariants`.
+ */
+export function terminalLayerMotion(
+  open: boolean,
+  swap: boolean,
+  reduce: boolean,
+): { target: TargetAndTransition; transition: Transition } {
+  const target: TargetAndTransition = open ? { x: 0, opacity: 1 } : { x: '100%', opacity: 0 };
+  if (swap || reduce) {
+    const fade = reduce ? ({ duration: 0 } as const) : CROSSFADE_TRANSITION;
+    return {
+      target,
+      transition: open
+        ? { ...fade, x: { duration: 0 } }
+        : { ...fade, x: { duration: 0, delay: reduce ? 0 : CROSSFADE_TRANSITION.duration } },
+    };
+  }
+  return {
+    target,
+    transition: open
+      ? { ...SLIDE_TRANSITION, opacity: { duration: 0 } }
+      : { ...SLIDE_TRANSITION, opacity: { duration: 0, delay: DURATION } },
+  };
+}
 
 export function DetailLayer({
   detail,
   onBack,
   isMobile,
+  terminalOpen = false,
   children,
 }: {
   detail: Detail | null;
   onBack: () => void;
   isMobile: boolean;
+  /** The keep-alive terminal layer (a desktop sibling of this component in
+   *  `EasyPanel`) is showing. The home must slide/dim/inert for it exactly as
+   *  it does for a detail — it's the same "one level down" — and a detail
+   *  card exiting while this is true fades under the incoming terminal
+   *  instead of sliding home (see `detailCardVariants`). Mobile ignores it:
+   *  there the terminal is its own drawer. */
+  terminalOpen?: boolean;
   /** The home view — the three cards. */
   children: ReactNode;
 }) {
   const reduce = useReducedMotion();
-  const transition = reduce ? { duration: 0 } : { duration: DURATION, ease: EASE };
+  const transition = reduce ? { duration: 0 } : SLIDE_TRANSITION;
   const crossfadeTransition = reduce ? { duration: 0 } : CROSSFADE_TRANSITION;
+  const cardVariants = detailCardVariants(!!reduce);
   const detailRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
@@ -376,6 +485,10 @@ export function DetailLayer({
   }
 
   const open = detail !== null;
+  // The home is "one level up" from a detail AND from the terminal layer —
+  // it hides for either, with the same motion, so the two layers read as
+  // siblings in one place rather than two unrelated overlays.
+  const covered = open || terminalOpen;
 
   return (
     <div className="relative h-full w-full shrink-0">
@@ -386,16 +499,16 @@ export function DetailLayer({
           blocks the mouse; neither stops Shift+Tab walking backward into it
           from the freshly-focused detail. */}
       <motion.div
-        animate={open ? { x: '-12%', opacity: 0 } : { x: 0, opacity: 1 }}
+        animate={covered ? { x: '-12%', opacity: 0 } : { x: 0, opacity: 1 }}
         transition={transition}
-        className={cn('h-full w-full', open && 'pointer-events-none')}
-        aria-hidden={open}
-        inert={open || undefined}
+        className={cn('h-full w-full', covered && 'pointer-events-none')}
+        aria-hidden={covered}
+        inert={covered || undefined}
       >
         {children}
       </motion.div>
 
-      <AnimatePresence>
+      <AnimatePresence custom={terminalOpen}>
         {detail && (
           <motion.div
             // Constant key: this is the CARD, and paging between siblings
@@ -412,10 +525,17 @@ export function DetailLayer({
             aria-label={detail.title}
             tabIndex={-1}
             ref={detailRef}
-            initial={reduce ? { opacity: 0 } : { x: '100%' }}
-            animate={reduce ? { opacity: 1 } : { x: 0 }}
-            exit={reduce ? { opacity: 0 } : { x: '100%' }}
-            transition={transition}
+            // Enter/exit via `detailCardVariants`: slide against home,
+            // opacity-timed swap against the terminal layer. The element
+            // custom carries the arrival's swap flag (stamped on the Detail);
+            // AnimatePresence's own `custom` above overrides it with the live
+            // `terminalOpen` for the exit, since the exiting card's last
+            // rendered props predate the state flip that removed it.
+            custom={!!detail.swapIn}
+            variants={cardVariants}
+            initial="hidden"
+            animate="visible"
+            exit="hidden"
             // Inset from the top, left and bottom — the detail is a card
             // sitting IN the panel, not a sheet nailed over it, and the gap is
             // what says so. It stays flush to the right edge (and rounds only
