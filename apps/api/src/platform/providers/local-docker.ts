@@ -20,6 +20,7 @@ import Docker from 'dockerode';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { config, SANDBOX_VERSION } from '../../config';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import type {
@@ -206,6 +207,17 @@ export class LocalDockerProvider implements SandboxProvider {
     ],
   };
 
+  /**
+   * See the interface doc: this is the ONE provider that overrides it. A
+   * local-docker sandbox shares a private Docker network with kortix-api
+   * (never the public internet), so anything built from "the API's public
+   * origin" — e.g. the LLM-gateway base URL — must be rebuilt on this address
+   * instead, exactly like KORTIX_API_URL already is in create() below.
+   */
+  sandboxFacingApiOrigin(): string {
+    return sandboxInternalApiBase();
+  }
+
   async getProvisioningStatus(): Promise<ProvisioningStatus | null> {
     return null;
   }
@@ -247,6 +259,21 @@ export class LocalDockerProvider implements SandboxProvider {
       KORTIX_API_URL: `${sandboxInternalApiBase()}/v1`,
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
     };
+    // Same fix, same reason, for OpenCode's own LLM-gateway base URL: session-
+    // sandbox.ts's provisionSessionSandbox() already asks
+    // `provider.sandboxFacingApiOrigin()` for this (see that file), so by the
+    // time we get here KORTIX_LLM_BASE_URL in opts.envVars should already be
+    // Docker-network-correct — but recompute+override unconditionally anyway,
+    // matching KORTIX_API_URL's belt-and-suspenders posture above, so this
+    // provider is correct even if a future caller reintroduces the generic
+    // public origin (e.g. session-sandbox.ts's provider var got reassigned by
+    // a mid-provision failover to/from another provider before this ran).
+    // `KORTIX_LLM_BASE_URL` is present at all only when the LLM gateway is
+    // enabled + entitled for this session (see session-sandbox.ts) — absent
+    // otherwise, so OpenCode falls back to its native provider behavior.
+    if (envVars.KORTIX_LLM_BASE_URL) {
+      envVars.KORTIX_LLM_BASE_URL = resolveLlmGatewayBaseUrl(sandboxInternalApiBase());
+    }
     const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
 
     const container = await docker.createContainer({
