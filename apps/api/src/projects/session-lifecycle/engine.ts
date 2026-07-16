@@ -5,6 +5,7 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
+import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
@@ -677,19 +678,11 @@ async function postAcpPrompt(input: {
       const created = await call('session/new', { cwd: WORKSPACE, mcpServers: [] });
       acpSessionId = typeof created?.sessionId === 'string' ? created.sessionId : null;
       if (!acpSessionId) throw new Error('ACP session/new returned no sessionId');
-      const [current] = await db.select({ metadata: projectSessions.metadata })
-        .from(projectSessions)
-        .where(eq(projectSessions.sessionId, input.sessionId))
-        .limit(1);
-      await db.update(projectSessions).set({
-        metadata: {
-          ...((current?.metadata as Record<string, unknown> | null) ?? {}),
-          runtime_protocol: 'acp',
-          runtime_id: input.runtimeId,
-          acp_session_id: acpSessionId,
-        },
-        updatedAt: new Date(),
-      }).where(eq(projectSessions.sessionId, input.sessionId));
+      await persistAcpSessionIdentity({ db }, {
+        projectSessionId: input.sessionId,
+        runtimeId: input.runtimeId,
+        acpSessionId,
+      });
     }
     const stream = await forwardToSandbox(
       input.externalId,
