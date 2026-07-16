@@ -54,6 +54,15 @@ mechanism to keep in sync with the updater, on purpose.
   notifying an SNS topic (`var.alarm_sns_topic_arn` to reuse an existing one,
   or the module creates its own, optionally with `var.alarm_email`
   subscribed). See "Monitoring" below.
+- **Auto-recovery + auto-reboot** (`var.enable_auto_recovery` /
+  `var.enable_auto_reboot`, both default on, both independent of
+  `var.enable_alarms`): automatically recovers the instance onto new host
+  hardware on a system status-check failure, or reboots it on an instance
+  status-check failure. See "Scaling" below for why this box leans on
+  recovery instead of horizontal redundancy.
+- **A data-volume filesystem auto-grow timer**: when you increase
+  `data_volume_size_gb`, a small systemd timer on the box notices the bigger
+  block device and runs `resize2fs` itself — see "Scaling" below.
 
 ## What it deliberately does NOT do
 
@@ -116,6 +125,8 @@ output "next_steps" {
   address to the module-created topic), `disk_usage_alarm_threshold_percent`
   (default 85), `memory_usage_alarm_threshold_percent` (default 90),
   `alarm_evaluation_periods` (default 3 × 5-minute periods).
+- `enable_auto_recovery` (default `true`), `enable_auto_reboot` (default
+  `true`) — see "Scaling" below.
 
 ## Outputs
 
@@ -251,6 +262,143 @@ short spikes (a build, a backup). All three notify `alarm_sns_topic_arn`: an
 existing topic if you pass `var.alarm_sns_topic_arn`, otherwise a topic this
 module creates (optionally subscribing `var.alarm_email`). Kept deliberately
 minimal — this is one box, not a fleet; add more if you need them.
+
+Two more alarms are independent of `var.enable_alarms` (no CloudWatch agent
+needed — both key off native `AWS/EC2` status-check metrics) and are covered
+in "Scaling" below: `enable_auto_recovery` (`StatusCheckFailed_System` ->
+`ec2:recover`) and `enable_auto_reboot` (`StatusCheckFailed_Instance` ->
+`ec2:reboot`), both default on. Same SNS topic, when `enable_alarms` is also
+on.
+
+## Scaling
+
+**Philosophy: one stateful box, scaled up and kept healthy — never scaled
+out.** This module intentionally has **no** horizontal/ASG scaling and **no**
+container-level autoscaling. Everything durable (Postgres, Supabase Storage,
+Docker/containerd state) lives on a single EBS data volume attached to a
+single instance — there is no multi-writer story for that data, so adding a
+second box wouldn't be "scaling," it would be a different, harder deployment
+shape (shared/replicated storage, a load balancer, session affinity, a
+migration path for existing self-host users) that this module doesn't
+attempt. Within that constraint, "scaling" here means exactly two things:
+**resize the box vertically**, and **recover automatically** when something
+goes wrong, rather than relying on redundancy to paper over it.
+
+### Auto-recovery and auto-reboot
+
+- **`enable_auto_recovery`** (default on): alarms on `StatusCheckFailed_System`
+  and takes the `ec2:recover` action — AWS migrates the instance to different
+  host hardware. This only fires for a genuine **host**-level fault (network
+  loss, power loss, a physical-host software issue) — nothing the guest OS
+  does can trigger it, so it's unconditionally safe to leave on for a single
+  box. A recovered instance keeps its instance ID, all IPs (including the
+  Elastic IP), and both EBS volumes re-attach automatically — Terraform state
+  and the data volume are untouched. Verified against AWS's current
+  "CloudWatch action based recovery" instance-type support list: the General
+  Purpose family list explicitly includes T3/T3a/T4g (this module's default
+  `instance_type` family), and the only extra constraint in that list
+  ("instance store volumes added at launch") doesn't apply here — this module
+  never attaches instance-store volumes, only the root EBS volume and the
+  separate EBS data volume (an EBS-only setup, which is unconditionally
+  eligible). Evaluated over 2 consecutive 1-minute periods, per AWS's own
+  documented recommendation for this alarm.
+- **`enable_auto_reboot`** (default on): alarms on `StatusCheckFailed_Instance`
+  and takes the `ec2:reboot` action — an OS-level reboot, which is AWS's own
+  recommended response to an *instance* (as opposed to system) status-check
+  failure. This one does touch the guest OS, which is why it's a separate
+  variable from `enable_auto_recovery` — but it's safe as a default here
+  specifically because of this module's bootstrap design: Docker and
+  containerd are `systemctl enable`d, and `kortix-selfhost-bootstrap.service`
+  is `enable`d with `WantedBy=multi-user.target` (see "Bootstrap resilience"
+  above) — so the entire stack self-starts again after any reboot, unattended.
+  That mechanism was originally built to survive a slow-cold-start
+  health-check race, but it equally makes an *unplanned* reboot safe to
+  recover from. Evaluated over 3 consecutive 1-minute periods (deliberately
+  different from recovery's 2, per AWS's guidance, to avoid a race between the
+  two actions firing on the same failure). Set this to `false` if you'd
+  rather SSM in and look at an instance-check failure by hand before the box
+  reboots out from under an in-flight session.
+
+Both alarms use `treat_missing_data = "missing"` (not "breaching"), per AWS's
+specific guidance for alarms wired to stop/terminate/reboot/recover actions —
+a metric-reporting gap must never itself trigger a destructive action.
+
+### Resize runbook
+
+**Instance type** (CPU/RAM) — bump `var.instance_type`, `terraform apply`:
+- In the common case this is an **in-place resize**, not a replace: the AWS
+  provider stops the instance, calls `ModifyInstanceAttribute`, and starts it
+  again — same instance ID, same EBS volumes, same Elastic IP, typically
+  ~2-3 minutes of downtime. Terraform only falls back to a destroy/recreate
+  if the new `instance_type` is incompatible with the current AMI/config
+  (this module's own `precondition` on `aws_instance.this` already catches
+  the most common cause of that — an architecture mismatch — at `plan` time,
+  before it can happen).
+- Either way, the data volume is unaffected: `local.availability_zone`
+  (storage.tf) is derived from the subnet, never from the instance, so it
+  never becomes "known after apply" when the instance changes — plus
+  `lifecycle.prevent_destroy` on `aws_ebs_volume.data` refuses any
+  destroy/replace of it outright. `scripts/check-data-volume-safe.sh` is a
+  cause-agnostic plan-guard: it flags *any* plan that would replace or delete
+  `aws_ebs_volume.data`, regardless of what triggered it, so an
+  `instance_type`-driven replace is already covered without any changes to
+  the script itself. Run it against a saved plan before applying an
+  `instance_type` change if you want the belt-and-suspenders check:
+  ```sh
+  terraform plan -out=tf.plan
+  ../../terraform/modules/selfhost-ec2/scripts/check-data-volume-safe.sh tf.plan
+  ```
+
+**Data volume size** (disk) — bump `var.data_volume_size_gb`,
+`terraform apply`:
+- This is a **live, in-place gp3 resize** — no downtime, no detach, no
+  reboot required at the AWS layer; the running instance's kernel sees the
+  larger block device within seconds.
+- On the box, `templates/user-data.sh.tftpl` installs
+  `kortix-data-volume-growfs.timer` (runs 2 minutes after boot, then every 10
+  minutes) which notices the bigger device and runs `resize2fs` on the data
+  volume's whole-disk ext4 filesystem (no `growpart` needed — the data volume
+  was `mkfs`'d directly against the raw device, not a partition). So growing
+  the data volume is genuinely: **change the tfvar, `terraform apply`, done**
+  — no SSM session, no manual `resize2fs`, just a ≤10-minute lag for the timer
+  to notice.
+- Root volume (`var.root_volume_size_gb`) resizes the same way at the AWS
+  layer, but the guest filesystem is on a *partition* (not a whole disk), and
+  this module doesn't install its own auto-grow timer for it — Ubuntu
+  24.04's stock cloud-init `growpart`/`resizefs` modules already run on every
+  boot by default, so a plain reboot after the EBS-side resize is enough.
+  The root volume only holds the OS + kortix CLI (Docker/Postgres/Storage all
+  live on the data volume), so this should rarely need resizing at all.
+
+### Threshold guidance
+
+Tied to this module's own alarms and metrics — treat these as "time to bump
+a tfvar," not as an emergency:
+
+- **Sustained CPU > 70%** (the standard `AWS/EC2` `CPUUtilization` metric —
+  emitted for free, no CloudWatch agent required) **or** the memory-usage
+  alarm (`memory_usage_alarm_threshold_percent`, default 90%) firing → size
+  up: bump `var.instance_type` (see the resize runbook above).
+- **Disk usage trending above ~75%** on either volume → grow the data volume
+  (`var.data_volume_size_gb`) before the disk-usage alarm's own default
+  threshold (`disk_usage_alarm_threshold_percent`, default 85%) actually
+  fires — treat the alarm firing as the hard deadline, not the trigger to
+  start.
+- **The system/instance status-check alarms firing repeatedly** for the same
+  box (as opposed to a one-off recovery/reboot) is a signal to look at the
+  underlying instance family/generation, not just retry harder.
+
+### Non-goal: multi-node
+
+If you need more than one node — for horizontal capacity, for multi-region,
+for zero-downtime deploys, or because a single box's blast radius is no
+longer acceptable — that is a **different deployment shape**, not a bigger
+version of this module. This module's entire design (one instance, one data
+volume, bind-mounted Postgres, no replication) assumes a single writer to a
+single disk; making that horizontal means solving shared/replicated storage,
+load balancing, and session affinity, which is out of scope here on purpose.
+Reach for a managed Postgres + stateless app-tier architecture instead if you
+get to that point.
 
 ## Restoring from a snapshot
 

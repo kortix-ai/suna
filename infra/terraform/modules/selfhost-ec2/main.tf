@@ -59,6 +59,12 @@ data "aws_ami" "selected" {
   }
 }
 
+# Used to build the `arn:aws:automate:<region>:ec2:{recover,reboot}` alarm
+# actions (see monitoring.tf) — these EC2 "automate" ARNs are region-scoped
+# but account-agnostic, so the region is the only thing that needs resolving
+# at plan time.
+data "aws_region" "current" {}
+
 # ── AMI (Ubuntu 24.04 LTS via Canonical's public SSM parameter) ────────────
 data "aws_ssm_parameter" "ubuntu" {
   count = var.ami_id == "" ? 1 : 0
