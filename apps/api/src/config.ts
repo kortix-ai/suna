@@ -512,19 +512,27 @@ function validateEnv(): z.infer<typeof envSchema> {
   // Use raw values for conditional checks (schema may have failed)
   const raw = result.success ? result.data : (process.env as Record<string, string | undefined>);
 
-  // ── Conditional: Daytona provider enabled → need Daytona keys ──────────
+  // ── Conditional: sandbox provider credentials ───────────────────────────
+  // On the managed cloud (billing on) a missing provider key is a hard error —
+  // sessions are the product. On self-host it is a WARNING: the operator sets
+  // the key after first boot (dashboard-first onboarding); the server must
+  // start so they can reach that dashboard at all. Sandbox creation fails with
+  // a clear error until the key lands.
   const providers = parseAllowedProviders((raw as any).ALLOWED_SANDBOX_PROVIDERS || '');
+  const billingOn = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true;
+  const providerKeyLevel: 'error' | 'warn' = billingOn ? 'error' : 'warn';
+  const providerKeySuffix = billingOn ? '' : ' — agent sessions will fail until it is set (kortix self-host env set ...)';
   if (providers.includes('daytona')) {
-    if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
-    if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
-    if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
+    if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`, level: providerKeyLevel });
+    if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`, level: providerKeyLevel });
+    if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"${providerKeySuffix}`, level: providerKeyLevel });
   }
   if (providers.includes('platinum')) {
-    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
-    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"${providerKeySuffix}`, level: providerKeyLevel });
+    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"${providerKeySuffix}`, level: providerKeyLevel });
   }
   if (providers.includes('e2b') && !raw.E2B_API_KEY) {
-    issues.push({ var: 'E2B_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"', level: 'error' });
+    issues.push({ var: 'E2B_API_KEY', message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"${providerKeySuffix}`, level: providerKeyLevel });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
