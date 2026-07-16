@@ -1705,8 +1705,10 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
 
 // 'local-docker' is EXPERIMENTAL: runs sandboxes as containers on THIS same
 // machine via the local Docker socket — no cloud account, not horizontally
-// scalable. See apps/api/src/platform/providers/local-docker.ts.
-const SANDBOX_PROVIDER_CHOICES = ['daytona', 'e2b', 'platinum', 'local-docker'] as const;
+// scalable, and noticeably slower (it builds sandbox images locally on this
+// machine). Not recommended for production — listed last and non-default in
+// the wizard below. See apps/api/src/platform/providers/local-docker.ts.
+const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
 type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 
 /**
@@ -1737,9 +1739,9 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     // an instance runs on exactly one sandbox provider.
     process.stdout.write(
       `  ${C.cyan}daytona${C.reset}      ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
-        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev${C.reset}\n` +
-        `  ${C.cyan}platinum${C.reset}     ${C.dim}Kortix's own microVM sandbox provider${C.reset}\n` +
-        `  ${C.cyan}local-docker${C.reset} ${C.dim}[experimental] runs sandboxes as containers on this same machine — no extra provider account needed${C.reset}\n`,
+        `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (recommended) — Kortix's own microVM sandbox provider${C.reset}\n` +
+        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n` +
+        `  ${C.cyan}local-docker${C.reset} ${C.dim}[experimental] runs sandboxes as containers on this same machine — slower (builds sandbox images locally on this machine), not recommended for production${C.reset}\n`,
     );
     provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
   }

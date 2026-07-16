@@ -50,16 +50,21 @@ box.
   domain is set.
 - **Required for agent sessions to actually run:** a sandbox provider and
   managed-git access (a GitHub PAT or GitHub App) so the platform can create
-  project repos. The default provider is [Daytona](https://app.daytona.io)
-  (an API key). Both can be set after first boot with `kortix self-host
+  project repos. Recommended, standard choices: [Daytona](https://www.daytona.io/)
+  (the default) or [Platinum](https://www.platinum.dev/), Kortix's own microVM
+  sandbox provider. [E2B](https://e2b.dev/) is also supported. Any of these
+  need just an API key, settable after first boot with `kortix self-host
   configure`.
-  - **Alternative: `local-docker` (EXPERIMENTAL).** Runs sandboxes as plain
-    Docker containers on THIS SAME machine — no cloud provider account
+  - **Alternative: `local-docker` (EXPERIMENTAL — not recommended for
+    production).** Listed last in the provider picker. Runs sandboxes as
+    plain Docker containers on THIS SAME machine — no cloud provider account
     needed, just the host's own Docker socket (mounted into `kortix-api`
     automatically when you pick it). It is same-machine only: not
     horizontally scalable, no multi-node scheduling, no per-container disk
-    quotas yet. Good for evaluation or a single-box deployment; pick Daytona
-    or Platinum for anything that needs to scale beyond one host.
+    quotas yet, and noticeably slower than the other providers because it
+    builds sandbox images locally on this machine. Good for evaluation only;
+    pick Daytona or Platinum for anything that needs to scale beyond one
+    host or run in production.
 - **Not required to get started:** SMTP. A fresh install auto-confirms email
   signups and leads with password auth, so the first account works with zero
   email configuration. Configure SMTP later to enable magic-link sign-in.
