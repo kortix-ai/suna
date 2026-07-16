@@ -88,6 +88,36 @@ export interface KortixToolchainLayerOpts {
    */
   opencodeConfigPath?: string;
   /**
+   * True iff this image is the platform's SHARED default (no user Dockerfile —
+   * `PLATFORM_DEFAULT_USER_DOCKERFILE`). Gates the post-warm-up /workspace WIPE.
+   *
+   * The wipe exists to clear the starter opencode config the warm-up stages into
+   * /workspace, and for the shared default that is ALL /workspace holds, so
+   * "delete everything" is exact. On a CUSTOM template it is not: the user's
+   * Dockerfile ran FIRST and `WORKDIR /workspace` is a documented convention, so
+   * any image that seeds data/caches/a toolchain there had it silently deleted by
+   * a step it never asked for (and one wrapped in `set +e … true`, so it couldn't
+   * even fail loudly). Custom templates therefore get a TARGETED cleanup of only
+   * what the warm-up itself staged.
+   *
+   * KNOWN GAP (narrow, deliberately not closed here). A surviving /workspace is
+   * safe for the daemon's boot clone: materializeRepo (agent-server/src/git.ts)
+   * clones into a temp dir and `rm -rf`s + renames over the target, so a non-empty
+   * /workspace is replaced wholesale rather than cloned INTO — no dirty-target
+   * failure. The one exception is a custom image that bakes a `.git` at the
+   * /workspace ROOT (not a subdir): materializeRepo keys its "using baked repo
+   * checkout (warm)" fast path purely on `${target}/.git` existing. A FRESH session
+   * still re-materializes correctly (the baked HEAD != the session's baseSha →
+   * `mismatched`), but a restart/resume has no baseSha to compare and would reuse
+   * the user's unrelated repo as the project checkout. Previously the wipe hid this
+   * by deleting that .git. The safe close is in the DAEMON, not here: have the fast
+   * path require a platform-written marker (the warmRepo bake / seed paths are the
+   * only things that legitimately bake a /workspace/.git) instead of inferring
+   * ownership from a bare .git. Tracked rather than fixed in this change because it
+   * alters boot semantics for the warm-seed paths too and wants its own rollout.
+   */
+  isSharedDefault?: boolean;
+  /**
    * Per-project COLD warm: bake the project's repo checkout into /workspace at
    * build time so a session booted from this (capture:'none') image skips the
    * boot-time git clone entirely — the daemon's git.ts fast-paths a baked
@@ -188,6 +218,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     opencodeVersion,
     agentBrowserVersion = DEFAULT_AGENT_BROWSER_VERSION,
     opencodeConfigPath,
+    isSharedDefault,
     warmRepo,
   } = opts;
 
@@ -242,7 +273,20 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // inside the guest. Without these the IP never changes → the guest stays on
     // the baked IP while the edge routes to the allocated IP → every request
     // 502s. (Harmless on Daytona, which doesn't memory-restore.)
-    'RUN apt-get update \\',
+    // apt is non-interactive by construction here (no TTY), but a package with a
+    // debconf prompt (tzdata, libreoffice's font EULAs) can still stall or fail
+    // the build. This ENV used to be supplied only by whatever the USER's base
+    // image happened to leak in — ubuntu:24.04 doesn't set it, so the floor was
+    // relying on luck. Set it ourselves. It persists to runtime deliberately:
+    // the agent's own `apt-get install` in a session has no TTY either, and a
+    // debconf prompt there is an unrecoverable hang, not a question anyone answers.
+    'ENV DEBIAN_FRONTEND=noninteractive',
+    // `base_py` MUST be resolved BEFORE the apt floor runs — see the venv step at
+    // the end of this RUN for why. It is a shell var, so it cannot cross a RUN
+    // boundary; that is the only reason the venv is created here rather than in
+    // its own step.
+    'RUN base_py="$(command -v python3 || true)" \\',
+    '    && apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
     '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
@@ -250,10 +294,77 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '        python3 python3-dev python3-pip python3-venv \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
-    '    && rm -rf /var/lib/apt/lists/*',
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    // ─── The Python floor lives in a venv, NOT in the system interpreter ───────
+    // History: the floor used to be `pip install --break-system-packages` straight
+    // into the system interpreter. That made it fight dpkg for ownership of any
+    // package the USER's Dockerfile had pulled in via apt. Real incident: a project
+    // apt-installed `gdal-bin` → `python3-gdal` → `python3-numpy` (dpkg-owned
+    // 1.26.4); our floor's `numpy>=1.26` resolved to 2.x, pip tried to UNINSTALL the
+    // dpkg-owned copy and hard-failed the whole snapshot build with "Cannot
+    // uninstall numpy 1.26.4, RECORD file not found. Hint: The package was installed
+    // by debian." The user's image was correct — our layer broke it. numpy was just
+    // the member that got hit: numpy/scipy/pandas/scikit-learn/lxml/pillow/
+    // matplotlib/requests ALL have dpkg counterparts, so ANY dpkg-owned package in
+    // the floor's dependency closure was the same landmine.
+    //
+    // A venv kills the whole class: pip inside it can NEVER uninstall a dpkg-owned
+    // package (worst case it installs a newer copy INTO the venv, shadowing it), and
+    // `--system-site-packages` keeps the user's OWN installs (apt python3-* AND
+    // their `pip install` into dist-packages, e.g. geopandas/fiona next to that
+    // gdal) importable from the floor's interpreter.
+    //
+    // WHICH interpreter the venv is built from is load-bearing. `/opt/kortix/pyfloor
+    // /bin` goes on the front of PATH below, so the venv's python3 SHADOWS whatever
+    // python3 the user's image shipped. That is intended on a bare Debian base (the
+    // interpreter is ours either way) — but on e.g. `python:3.12-slim` the apt floor
+    // above ALSO drops Debian's own python3 at /usr/bin/python3 (whatever the base's
+    // suite pins — 3.13.5 as of writing), and building the venv from THAT would
+    // shadow the image's 3.12 with a different minor: today's harmless bloat becomes
+    // tomorrow's breakage. So we build from `base_py` — the python3 that was
+    // on PATH BEFORE our apt ran. If the user's image had one, the floor IS their
+    // interpreter (+ our packages) and the shadow is semantically a no-op; if it had
+    // none, `base_py` is empty and we fall back to the python3 our apt just
+    // installed. Note this is strictly better than "skip apt python3 when one
+    // exists": a base that apt-installed a bare `python3` with no `python3-venv`
+    // would then have no venv module at all — here our apt supplies it for that very
+    // interpreter.
+    '    && "${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\',
+    `    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'`,
+    '',
+    // Put the floor ahead of the system interpreter for every later build step AND
+    // for the agent at runtime. `$PATH` expansion in ENV is REQUIRED to work under
+    // BOTH builders — BuildKit (Daytona) and buildah's classic imagebuilder
+    // (Platinum, which ignores `# syntax` and rejects RUN heredocs; see the
+    // portability guard in build-context.ts). Verified empirically against
+    // buildah bud (isolation=oci AND =chroot) and BuildKit: both expand it from the
+    // base image's config env, yielding
+    // `/opt/kortix/pyfloor/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`.
+    // Do NOT "simplify" this to a hardcoded absolute PATH: that would stomp any PATH
+    // the user's Dockerfile set (cargo, nvm, conda) — the exact bug class this
+    // change is here to remove.
+    //
+    // CAVEAT 1: anything that spells `/usr/bin/python3` (or `/usr/local/bin/python3`)
+    // explicitly bypasses the floor and sees only the system site-packages. PATH is
+    // the contract; absolute interpreter paths opt out of it.
+    //
+    // CAVEAT 2 (the flip side, and a real one): the venv's site-packages precedes
+    // the system's, so where the floor and the user's apt packages disagree on a
+    // version, the FLOOR wins for `python3`. Verified on the gdal image above: the
+    // floor's python gets numpy 2.x, so `from osgeo import gdal` works but
+    // `osgeo.gdal_array` — a dpkg C extension compiled against numpy 1.x — raises
+    // "numpy.core.multiarray failed to import" under it. `/usr/bin/python3` keeps
+    // the user's coherent numpy-1.x stack and runs that workload fine, so the
+    // escape hatch is real and one line. This is strictly better than the status
+    // quo it replaces, which was: the build hard-fails and there is NO image at
+    // all. We are trading "nothing works" for "both interpreters work, each for
+    // its own stack".
+    'ENV PATH=/opt/kortix/pyfloor/bin:$PATH',
     '',
     '# Starter skill Python package floor (document/data/PDF/presentation helpers).',
-    'RUN python3 -m pip install --break-system-packages --no-cache-dir \\',
+    '# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned',
+    '# package no matter what the resolver picks.',
+    'RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\',
     '        "beautifulsoup4>=4.12" \\',
     '        "lxml>=5" \\',
     '        "markdownify>=0.13" \\',
@@ -287,7 +398,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
     // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
     // equivalent (still fails the layer if any module is missing) and portable.
-    '    && python3 -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
+    '    && /opt/kortix/pyfloor/bin/python -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
@@ -394,7 +505,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // boot. For the SHARED default image we then wipe /workspace (the session
     // clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
     // already baked at /workspace and we KEEP it — the daemon boots off the baked
-    // checkout with NO clone. Either way the warmed caches under /opt/kortix/home
+    // checkout with NO clone. For a CUSTOM template we remove only the config we
+    // staged: /workspace is the user's. Either way the warmed caches under /opt/kortix/home
     // persist in the image layer. Measured: cold first-instance 6–60s → ~2–4s
     // after this bake. Requires opencode + bun + the
     // baked config deps above, so it must come after them. Best effort: a build
@@ -433,7 +545,11 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
           // repo may already ship its own .kortix/opencode — keep it (its config
           // is what the session actually resolves at runtime) and only fall back
           // to the staged starter when the repo has none.
-          '    [ -d /workspace/.kortix/opencode ] || cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
+          // `staged_starter_config` records whether the starter config in
+          // /workspace is OURS (we copied it) or the image's own — it decides what
+          // the non-shared cleanup below is allowed to delete.
+          '    staged_starter_config=0; \\',
+          '    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\',
           '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
           '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
           '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
@@ -448,12 +564,22 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
           '    done; \\',
           '    echo "=== instance-warm: ready=$ready ==="; \\',
           '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
-          // Shared default: wipe /workspace (the session clones into it at boot).
-          // Per-project COLD warm (warmRepo): KEEP the baked repo checkout so the
-          // daemon boots off it with no clone.
+          // Three cases, and only one of them may delete indiscriminately:
+          //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
+          //    the daemon boots off it with no clone.
+          //  • SHARED default: /workspace contains only what this warm-up put
+          //    there (the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a
+          //    WORKDIR), so wiping it is exact, and it also clears anything opencode
+          //    itself dropped while serving. The session clones into it at boot.
+          //  • CUSTOM template: the user's Dockerfile owns /workspace. Remove ONLY
+          //    the starter config we staged (and the .kortix dir if that leaves it
+          //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
+          //    purpose; a user's own /workspace/.kortix survives untouched.
           warmRepo
             ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
-            : '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
+            : isSharedDefault
+              ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
+              : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\',
           '    rm -rf /opt/kortix/warm-config; \\',
           '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
           '    rm -f /tmp/oc-warm.log; true',
