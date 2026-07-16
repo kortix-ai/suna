@@ -48,10 +48,18 @@ box.
   the reachability mode agent sandboxes need to work reliably. Ports **80**
   and **443** must be reachable from the internet for ACME HTTP-01 once a
   domain is set.
-- **Required for agent sessions to actually run:** a [Daytona](https://app.daytona.io)
-  API key (the sandbox provider) and managed-git access (a GitHub PAT or GitHub
-  App) so the platform can create project repos. Both can be set after first
-  boot with `kortix self-host configure`.
+- **Required for agent sessions to actually run:** a sandbox provider and
+  managed-git access (a GitHub PAT or GitHub App) so the platform can create
+  project repos. The default provider is [Daytona](https://app.daytona.io)
+  (an API key). Both can be set after first boot with `kortix self-host
+  configure`.
+  - **Alternative: `local-docker` (EXPERIMENTAL).** Runs sandboxes as plain
+    Docker containers on THIS SAME machine — no cloud provider account
+    needed, just the host's own Docker socket (mounted into `kortix-api`
+    automatically when you pick it). It is same-machine only: not
+    horizontally scalable, no multi-node scheduling, no per-container disk
+    quotas yet. Good for evaluation or a single-box deployment; pick Daytona
+    or Platinum for anything that needs to scale beyond one host.
 - **Not required to get started:** SMTP. A fresh install auto-confirms email
   signups and leads with password auth, so the first account works with zero
   email configuration. Configure SMTP later to enable magic-link sign-in.
