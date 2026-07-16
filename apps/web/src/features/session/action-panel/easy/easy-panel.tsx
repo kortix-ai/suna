@@ -53,6 +53,7 @@ import { ContextCard } from './context-card';
 import { CloseButton, type Detail, DetailLayer, ToolParts } from './detail-view';
 import {
   deriveIsRunning,
+  isWideDeliverable,
   neighborOutputs,
   outputKey,
   shouldAutoExpandOutputs,
@@ -166,12 +167,19 @@ export const EasyPanel = memo(function EasyPanel({
   // Paging between siblings goes through `setDetail` directly and KEEPS
   // fullscreen — only the exits route through here.
   const setIsExpanded = useKortixComputerStore((s) => s.setIsExpanded);
+  // Wide split (Marko's feedback): a presentation deliverable grows the panel
+  // to its widest split (70/30) instead of the default 35/65 — see
+  // `isWideDeliverable`/`handleOpenOutput` below. `panelWide` mirrors
+  // `isExpanded`'s shape exactly (same store, same `animate` opt, same
+  // `skipNextExpandAnimation` flag) — see the store's doc comment.
+  const setPanelWide = useKortixComputerStore((s) => s.setPanelWide);
   const closeDetail = useCallback(() => {
     setDetail(null);
     // `animate: false` — the detail slides out on its own; snapping the panel
     // width back in the same instant avoids a second, competing motion.
     setIsExpanded(false, { animate: false });
-  }, [setIsExpanded]);
+    setPanelWide(false, { animate: false });
+  }, [setIsExpanded, setPanelWide]);
 
   /**
    * The terminal is a PERSISTENT layer, never a `detail` — `SessionTerminalPanel`
@@ -208,11 +216,19 @@ export const EasyPanel = memo(function EasyPanel({
 
   // Every `detail` open funnels through here (instead of raw `setDetail`) so
   // opening a file/app/step/Audit always closes the terminal — the other half
-  // of the mutual exclusion above.
-  const openDetail = useCallback((next: Detail) => {
-    setTerminalOpen(false);
-    setDetail(next);
-  }, []);
+  // of the mutual exclusion above. Also the generic wide-split default: steps,
+  // Context rows, and Audit are never wide, so this resets it on every open.
+  // `handleOpenOutput` is the one caller that knows better — it calls
+  // `setPanelWide` again right after `openDetail`, so its explicit value (true
+  // for a presentation, false otherwise) wins over this default.
+  const openDetail = useCallback(
+    (next: Detail) => {
+      setTerminalOpen(false);
+      setDetail(next);
+      setPanelWide(false);
+    },
+    [setPanelWide],
+  );
 
   // Present mode (W14): the fullscreen deck viewer fetches its own slide/
   // metadata URLs (it calls useSandboxProxy() itself — see
@@ -260,6 +276,12 @@ export const EasyPanel = memo(function EasyPanel({
       // The human title, when the output carries one (W3) — never the raw
       // filename in a spot the user reads as the thing's name.
       const displayName = output.title ?? output.name;
+
+      // Wide split (Marko's feedback): a presentation deliverable grows the
+      // panel to its widest split with the glide — see `isWideDeliverable`.
+      // Set AFTER `openDetail` below, whose own generic default
+      // (`setPanelWide(false)`, for steps/context/audit) would otherwise win.
+      const wide = isWideDeliverable(output);
 
       // "Ask for changes" (W12): hand the composer a starter line naming this
       // deliverable and step out of the way. The path hint only earns its
@@ -322,6 +344,7 @@ export const EasyPanel = memo(function EasyPanel({
             />
           ),
         });
+        setPanelWide(wide);
         return;
       }
 
@@ -345,8 +368,9 @@ export const EasyPanel = memo(function EasyPanel({
           />
         ),
       });
+      setPanelWide(wide);
     },
-    [sessionId, getServiceUrl, closeDetail, openDetail],
+    [sessionId, getServiceUrl, closeDetail, openDetail, setPanelWide],
   );
 
   const outcome = useMemo(

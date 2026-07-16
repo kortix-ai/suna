@@ -28,11 +28,17 @@ interface KortixComputerState {
   _panelOpenBySession: Record<string, boolean>;
   _activeSessionId: string | null;
   isExpanded: boolean;
-  // Transient: rides along with the NEXT `isExpanded` change to tell the panel
-  // layout to snap instead of animate. Set only when a detail-close collapses
-  // fullscreen (the detail plays its own slide-out — animating the panel width
-  // underneath it reads as a second, competing motion). Consumed and cleared by
-  // the layout effect that performs the resize.
+  // Easy mode only — grows the resizable split to its widest (70/30) when a
+  // presentation deliverable is open, so the deck gets real width instead of
+  // the default 35/65 card column. Ignored in Advanced (its 50/50 story is
+  // untouched) and outranked by `isExpanded` (fullscreen wins over wide).
+  panelWide: boolean;
+  // Transient: rides along with the NEXT `isExpanded`/`panelWide` change to
+  // tell the panel layout to snap instead of animate. Set only when a
+  // detail-close collapses fullscreen or drops out of wide (the detail plays
+  // its own slide-out — animating the panel width underneath it reads as a
+  // second, competing motion). Consumed and cleared by the layout effect that
+  // performs the resize.
   skipNextExpandAnimation: boolean;
 
   // Tool navigation state (for external tool click triggers)
@@ -89,6 +95,12 @@ interface KortixComputerState {
    *  (the deliberate fullscreen/minimize toggles). */
   setIsExpanded: (expanded: boolean, opts?: { animate?: boolean }) => void;
   toggleExpanded: () => void;
+  /** Easy mode only. `animate: false` snaps the panel to its new width with
+   *  no transition — same contract as `setIsExpanded`'s `opts.animate`, and
+   *  it shares the very same `skipNextExpandAnimation` flag: the layout only
+   *  needs to know THAT the next width change should snap, not which of the
+   *  two booleans caused it. */
+  setPanelWide: (wide: boolean, opts?: { animate?: boolean }) => void;
 
   // Ready chip state management
   setReadyChip: (chip: ReadyChipState) => void;
@@ -118,6 +130,7 @@ const initialState = {
   _panelOpenBySession: {} as Record<string, boolean>,
   _activeSessionId: null as string | null,
   isExpanded: false,
+  panelWide: false,
   skipNextExpandAnimation: false,
   pendingToolNavIndex: null as number | null,
   focusedToolCallId: null as string | null,
@@ -220,8 +233,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           _activeSessionId: sessionId,
           _panelOpenBySession: panelMap,
           isSidePanelOpen: restored,
-          // Reset expanded state when switching sessions
+          // Reset expanded/wide state when switching sessions
           isExpanded: false,
+          panelWide: false,
         });
       },
 
@@ -239,7 +253,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       closeSidePanel: () => {
         const sessionId = get()._activeSessionId;
-        const update: Partial<KortixComputerState> = { isSidePanelOpen: false, isExpanded: false };
+        const update: Partial<KortixComputerState> = {
+          isSidePanelOpen: false,
+          isExpanded: false,
+          panelWide: false,
+        };
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: false };
         }
@@ -253,6 +271,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       toggleExpanded: () => {
         // The deliberate fullscreen/minimize button — always glides.
         set((state) => ({ isExpanded: !state.isExpanded, skipNextExpandAnimation: false }));
+      },
+
+      setPanelWide: (wide: boolean, opts?: { animate?: boolean }) => {
+        set({ panelWide: wide, skipNextExpandAnimation: opts?.animate === false });
       },
 
       setReadyChip: (chip: ReadyChipState) => {

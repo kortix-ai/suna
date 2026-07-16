@@ -67,6 +67,9 @@ export const SessionLayout = memo(function SessionLayout({
   const clearShouldOpenPanel = useKortixComputerStore((s) => s.clearShouldOpenPanel);
   const isExpanded = useKortixComputerStore((s) => s.isExpanded);
   const toggleExpanded = useKortixComputerStore((s) => s.toggleExpanded);
+  // Easy mode only — grows the split to 70/30 when a presentation deliverable
+  // is open. See the store's `panelWide` doc comment; Advanced ignores it.
+  const panelWide = useKortixComputerStore((s) => s.panelWide);
 
   const handleTogglePanel = useCallback(() => {
     setIsSidePanelOpen(!isSidePanelOpen);
@@ -140,6 +143,7 @@ export const SessionLayout = memo(function SessionLayout({
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const panelGroupRef = useRef<HTMLDivElement>(null);
   const prevExpandedRef = useRef(isExpanded);
+  const prevWideRef = useRef(panelWide);
 
   const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
 
@@ -192,40 +196,43 @@ export const SessionLayout = memo(function SessionLayout({
     });
   }, []);
 
+  // Easy mode opens at the panel's MINIMUM width (35/65): the cards are a
+  // narrow column and the chat is where the user lives — a 50/50 split steals
+  // half the screen for whitespace. Advanced keeps 50/50 (its
+  // stepper/terminal/browser views earn the room). A presentation deliverable
+  // (`panelWide`) grows Easy mode to its MAXIMUM width (70/30) instead — the
+  // deck needs real width, not a card column's worth. The drag handle still
+  // lets either mode go wider/narrower by hand.
+  const sideSize = isExpanded ? 100 : panelWide && isEasy ? 70 : isEasy ? 35 : 50;
+  const mainSize = 100 - sideSize;
+
   useEffect(() => {
     const expandChanged = prevExpandedRef.current !== isExpanded;
+    const wideChanged = prevWideRef.current !== panelWide;
     prevExpandedRef.current = isExpanded;
+    prevWideRef.current = panelWide;
 
     // A detail-close collapse rides in with this flag set: snap the width, don't
     // glide it (the detail plays its own slide-out — a width animation under it
     // is a second, competing motion). Consume it here so the next deliberate
-    // fullscreen/minimize toggle animates as usual.
+    // fullscreen/minimize toggle (or wide-open) animates as usual.
     const skipAnimation = useKortixComputerStore.getState().skipNextExpandAnimation;
     if (skipAnimation) useKortixComputerStore.setState({ skipNextExpandAnimation: false });
 
-    const shouldAnimate = expandChanged && shouldShowPanel && !skipAnimation;
+    const changed = expandChanged || wideChanged;
+    const shouldAnimate = changed && shouldShowPanel && !skipAnimation;
 
     if (shouldAnimate) {
       setIsAnimating(true);
-    } else if (expandChanged) {
+    } else if (changed) {
       // Instant path: clear any transition left on the panels so the resize
       // below snaps rather than inheriting a prior glide.
       disablePanelTransition();
     }
 
     if (shouldShowPanel) {
-      if (isExpanded) {
-        sidePanelRef.current?.resize(100);
-        mainPanelRef.current?.resize(0);
-      } else {
-        // Easy mode opens at the panel's MINIMUM width (35/65): the cards are a
-        // narrow column and the chat is where the user lives — a 50/50 split
-        // steals half the screen for whitespace. Advanced keeps 50/50 (its
-        // stepper/terminal/browser views earn the room). The drag handle still
-        // lets either mode go wider.
-        sidePanelRef.current?.resize(isEasy ? 35 : 50);
-        mainPanelRef.current?.resize(isEasy ? 65 : 50);
-      }
+      sidePanelRef.current?.resize(sideSize);
+      mainPanelRef.current?.resize(mainSize);
     } else {
       sidePanelRef.current?.resize(0);
       mainPanelRef.current?.resize(100);
@@ -238,22 +245,17 @@ export const SessionLayout = memo(function SessionLayout({
       }, 320);
       return () => clearTimeout(timer);
     }
-  }, [shouldShowPanel, isExpanded, sessionId, disablePanelTransition, isEasy]);
+  }, [shouldShowPanel, isExpanded, sessionId, disablePanelTransition, isEasy, panelWide, sideSize, mainSize]);
 
   useEffect(() => {
     if (!isAnimating) return;
     const raf = requestAnimationFrame(() => {
       enablePanelTransition();
-      if (isExpanded) {
-        sidePanelRef.current?.resize(100);
-        mainPanelRef.current?.resize(0);
-      } else {
-        sidePanelRef.current?.resize(isEasy ? 35 : 50);
-        mainPanelRef.current?.resize(isEasy ? 65 : 50);
-      }
+      sidePanelRef.current?.resize(sideSize);
+      mainPanelRef.current?.resize(mainSize);
     });
     return () => cancelAnimationFrame(raf);
-  }, [isAnimating, enablePanelTransition, isExpanded, isEasy]);
+  }, [isAnimating, enablePanelTransition, sideSize, mainSize]);
 
   const panelHeader = (
     <PanelHeaderSwitcher

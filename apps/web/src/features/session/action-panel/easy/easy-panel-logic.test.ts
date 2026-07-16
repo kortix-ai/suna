@@ -3,6 +3,7 @@ import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
   deriveIsRunning,
+  isWideDeliverable,
   neighborOutputs,
   outputKey,
   shouldAutoExpandOutputs,
@@ -45,6 +46,24 @@ describe('outputKey', () => {
     const a = output({ callID: 'call-a', path: '/a/report.md' });
     const b = output({ callID: 'call-b', path: '/a/report.md' });
     expect(outputKey(a)).not.toBe(outputKey(b));
+  });
+});
+
+describe('isWideDeliverable (wide split for presentation details)', () => {
+  it('is wide for a real presentation_gen artifact', () => {
+    expect(isWideDeliverable({ kind: 'presentation', name: 'deck' })).toBe(true);
+  });
+
+  it('is wide for a raw .pptx/.ppt/.key file even though its kind stays "file"', () => {
+    expect(isWideDeliverable({ kind: 'file', name: 'Q3 Review.pptx' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'legacy.ppt' })).toBe(true);
+    expect(isWideDeliverable({ kind: 'file', name: 'Keynote.key' })).toBe(true);
+  });
+
+  it('is not wide for a non-deck output', () => {
+    expect(isWideDeliverable({ kind: 'file', name: 'report.md' })).toBe(false);
+    expect(isWideDeliverable({ kind: 'image', name: 'chart.png' })).toBe(false);
+    expect(isWideDeliverable({ kind: 'app', name: 'my-app' })).toBe(false);
   });
 });
 

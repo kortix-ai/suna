@@ -113,3 +113,51 @@ describe('ready chip state (W1)', () => {
     });
   });
 });
+
+describe('panelWide (wide split for presentation details)', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('defaults to false and can be set and cleared', () => {
+    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+    useKortixComputerStore.getState().setPanelWide(true);
+    expect(useKortixComputerStore.getState().panelWide).toBe(true);
+    useKortixComputerStore.getState().setPanelWide(false);
+    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+  });
+
+  test('animate: false sets the same skipNextExpandAnimation flag setIsExpanded uses', () => {
+    const s = useKortixComputerStore.getState();
+    s.setPanelWide(true);
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
+    s.setPanelWide(false, { animate: false });
+    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(true);
+  });
+
+  test('omitting opts (or animate: true) glides — flag stays false', () => {
+    const s = useKortixComputerStore.getState();
+    s.setPanelWide(false, { animate: false });
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(true);
+    s.setPanelWide(true);
+    expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
+  });
+
+  test('setActiveSession resets panelWide, mirroring isExpanded', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setPanelWide(true);
+    expect(useKortixComputerStore.getState().panelWide).toBe(true);
+    s.setActiveSession('s2');
+    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+  });
+
+  test('closeSidePanel resets panelWide', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    s.setPanelWide(true);
+    s.closeSidePanel();
+    expect(useKortixComputerStore.getState().panelWide).toBe(false);
+  });
+});
