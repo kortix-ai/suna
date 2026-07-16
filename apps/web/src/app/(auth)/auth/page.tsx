@@ -32,6 +32,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
   type EmailFlowMode,
@@ -823,10 +824,21 @@ function AuthCardForm({
 
 /* ─── Page shell ───────────────────────────────────────────────────────── */
 
+// How long the "signed in, redirecting" placeholder is allowed to sit on
+// screen before we stop trusting it. A legitimate redirect (the overwhelming
+// common case) leaves this page well within this window — router.replace is a
+// same-tab client transition, not a network round trip. This is a safety net
+// for the case the client's cached `user` is stale (e.g. a revoked/rotated
+// refresh token that hasn't hit its own `exp` yet, so the cheaper local
+// expiry check below doesn't catch it) and the redirect it kicks off keeps
+// bouncing back here instead of leaving — without this, the placeholder is a
+// dead end with no form, spinner, or escape hatch.
+const STALE_SESSION_FALLBACK_MS = 2500;
+
 function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, session, isLoading } = useAuth();
+  const { user, session, isLoading, signOut } = useAuth();
   const returnUrl = sanitizeAuthReturnUrl(
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
@@ -834,11 +846,35 @@ function AuthContent() {
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const hasStartedMobileHandoff = useRef(false);
 
+  // `useAuth()`'s `user` can be stale: it's seeded from whatever session the
+  // client already had cached, and only gets corrected once something
+  // (an ambient refresh timer, another API call) happens to notice it died.
+  // Landing on /auth with a `redirect`/`returnUrl` param is itself a strong
+  // signal the session just failed server-side validation — so the moment we
+  // can locally prove the cached session is dead (its own `expires_at` is
+  // already in the past), stop trusting it immediately instead of waiting for
+  // that ambient correction, which can take seconds in production and leaves
+  // this component committed to the placeholder below with nothing on screen.
+  const sessionExpired = isSessionExpired(session);
+
+  const [forceForm, setForceForm] = useState(false);
+  const trustedUser = !!user && !sessionExpired && !forceForm;
+
   // A web session may already exist when the mobile user returns to this page.
   // Preserve the native handoff instead of routing that browser session to the
   // web dashboard and stranding the mobile app on its auth screen.
   useEffect(() => {
-    if (isLoading || !user) return;
+    if (isLoading) return;
+
+    if (user && sessionExpired) {
+      // Dead session, proven locally — clear it now and fall through to the
+      // real form on this same render pass rather than the placeholder.
+      setForceForm(true);
+      void signOut();
+      return;
+    }
+
+    if (!trustedUser) return;
 
     if (mobileCallbackState) {
       // Strict Mode re-runs effects after the deep-link navigation begins.
@@ -861,12 +897,33 @@ function AuthContent() {
     }
 
     router.replace(returnUrl);
-  }, [isLoading, mobileCallbackState, returnUrl, router, session, user]);
+  }, [
+    isLoading,
+    mobileCallbackState,
+    returnUrl,
+    router,
+    session,
+    sessionExpired,
+    signOut,
+    trustedUser,
+    user,
+  ]);
+
+  // Safety net for staleness the local expiry check can't see (a refresh
+  // token invalidated server-side while the access token's own `exp` is still
+  // in the future): if we're still showing the placeholder after a beat, stop
+  // trusting the cached session and render the form instead of leaving the
+  // visitor on a dead screen.
+  useEffect(() => {
+    if (!trustedUser) return;
+    const timer = setTimeout(() => setForceForm(true), STALE_SESSION_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [trustedUser]);
 
   // A session is already established — the effect above is redirecting (or
   // handing off to mobile). Keep the quiet branded frame up instead of a
   // spinner, a blank screen, or a dead form.
-  if (user) {
+  if (trustedUser) {
     return (
       <AuthFrame footerVariant="default">
         <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
@@ -877,6 +934,8 @@ function AuthContent() {
   // Render the form immediately — even while the session check is still in
   // flight. Signed-out visitors (the common case) get an instantly usable
   // page; a signed-in visitor sees the form for a beat before the redirect.
+  // A stale/invalidated session (sessionExpired, or forceForm from the
+  // safety-net timeout) also lands here — never a dead shell.
   return (
     <AuthFrame footerVariant="continue">
       <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />
