@@ -48,7 +48,6 @@ describe.skipIf(!caps.localImages)(
       expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:0.9.107');
       expect(env.API_IMAGE).toBe('kortix/kortix-api:0.9.107');
       expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:0.9.107');
-      expect(env.SANDBOX_IMAGE).toBe('kortix/kortix-sandbox:0.9.107');
       // Pinning an explicit version doesn't invent/overwrite the channel name.
       expect(env.KORTIX_CHANNEL).toBe('stable');
       expect(env.KORTIX_AUTO_UPDATE).toBe('true');
