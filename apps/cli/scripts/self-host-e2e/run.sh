@@ -17,8 +17,6 @@ TAG=${TAG:-latest}
 FRONTEND_IMAGE=${FRONTEND_IMAGE:-}
 API_IMAGE=${API_IMAGE:-}
 GATEWAY_IMAGE=${GATEWAY_IMAGE:-}
-SANDBOX_IMAGE=${SANDBOX_IMAGE:-}
-KORTIX_LOCAL_IMAGES=${KORTIX_LOCAL_IMAGES:-false}
 KEEP_ON_FAIL=${KEEP_ON_FAIL:-false}
 KEEP_ON_SUCCESS=${KEEP_ON_SUCCESS:-false}
 EMAIL=${EMAIL:-owner-$INSTANCE@kortix.local}
@@ -211,8 +209,7 @@ $CLI self-host env set --instance "$INSTANCE" \
   "API_PORT=$API_PORT" \
   "SUPABASE_PORT=$SUPABASE_PORT" \
   "POSTGRES_PORT=$POSTGRES_PORT" \
-  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
-  "KORTIX_LOCAL_IMAGES=$KORTIX_LOCAL_IMAGES" >/dev/null
+  "ALLOWED_SANDBOX_PROVIDERS=daytona" >/dev/null
 # This self-host e2e uses Daytona and therefore needs Daytona credentials in the
 # environment to provision a sandbox — it is no longer hermetic. If those aren't
 # available in CI, this golden path must be reworked or retired.
@@ -224,9 +221,6 @@ if [ -n "$API_IMAGE" ]; then
 fi
 if [ -n "$GATEWAY_IMAGE" ]; then
   $CLI self-host env set --instance "$INSTANCE" "GATEWAY_IMAGE=$GATEWAY_IMAGE" >/dev/null
-fi
-if [ -n "$SANDBOX_IMAGE" ]; then
-  $CLI self-host env set --instance "$INSTANCE" "SANDBOX_IMAGE=$SANDBOX_IMAGE" >/dev/null
 fi
 ok "Config initialized without prompts"
 

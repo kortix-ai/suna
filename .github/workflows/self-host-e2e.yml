@@ -105,11 +105,9 @@ jobs:
       - name: Full self-host e2e (schema + session + update)
         run: bash tests/e2e/self-hosted-e2e.sh
         env:
-          KORTIX_LOCAL_IMAGES: 'true'
           FRONTEND_IMAGE: kortix/kortix-frontend:selfhost-local
           API_IMAGE: kortix/kortix-api:selfhost-local
           GATEWAY_IMAGE: kortix/kortix-gateway:selfhost-local
-          SANDBOX_IMAGE: kortix/kortix-sandbox:selfhost-local
 
   # Tier 3 — opt-in live checks: tests/self-host-e2e/live/**. Each script
   # no-ops unless RUN_SELFHOST_LIVE=1 (belt-and-suspenders with the `if:`

@@ -143,13 +143,8 @@ docker build --no-cache -f "$REPO_ROOT/apps/web/Dockerfile" -t "kortix/kortix-fr
 printf "[build-local-images] Building kortix/kortix-api:%s...\n" "$TAG"
 docker build --build-arg SERVICE=apps/api -f "$REPO_ROOT/apps/api/Dockerfile" -t "kortix/kortix-api:${TAG}" "$REPO_ROOT"
 
-printf "[build-local-images] Building kortix/kortix-sandbox:%s...\n" "$TAG"
-docker build -f "$REPO_ROOT/apps/sandbox/Dockerfile" -t "kortix/kortix-sandbox:${TAG}" "$REPO_ROOT"
-
 printf "[build-local-images] Building kortix/kortix-gateway:%s...\n" "$TAG"
 docker build -f "$REPO_ROOT/apps/llm-gateway/Dockerfile" -t "kortix/kortix-gateway:${TAG}" "$REPO_ROOT"
-
-printf "[build-local-images] Local project sessions use the sandbox image.\n"
 
 if [ "$INCLUDE_POSTGRES" = "1" ]; then
   printf "[build-local-images] Building kortix/postgres:%s...\n" "$TAG"
