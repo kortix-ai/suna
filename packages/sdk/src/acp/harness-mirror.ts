@@ -16,3 +16,18 @@
 export const SDK_HARNESS_IDS = ['claude', 'codex', 'opencode', 'pi'] as const;
 
 export type SdkHarnessId = (typeof SDK_HARNESS_IDS)[number];
+
+/**
+ * Mirrors `HARNESSES[id].stability` from `@kortix/shared` (`packages/shared/src/harnesses.ts`).
+ * Keep in sync — see drift test. `ComposerCapabilities` (the server response
+ * consumed by `react/use-model-picker.ts`) does not thread stability through
+ * today, so this hand-maintained mirror is the only source the SDK has for
+ * "is this harness experimental" without importing `@kortix/shared` at
+ * runtime.
+ */
+export const SDK_HARNESS_STABILITY: Record<SdkHarnessId, 'stable' | 'experimental'> = {
+  claude: 'experimental',
+  codex: 'experimental',
+  opencode: 'stable',
+  pi: 'experimental',
+};

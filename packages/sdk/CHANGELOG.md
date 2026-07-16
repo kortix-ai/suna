@@ -7,6 +7,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `useModelPicker` (`@kortix/sdk/react`) — the unified model-first picker
+  view-model. Folds the catalog-vs-harness fork (`agentModelPolicy`) into one
+  shape (`ModelPickerViewModel`/`ModelPickerGroup`/`ModelPickerItem`) so a
+  consuming component never branches on harness; pure derivation over the
+  existing `useComposerCapabilities`/`useComposerModelCatalog`/
+  `useHarnessConnections` hooks, plus a live ACP session's own advertised
+  config options when present. `buildModelPickerViewModel` is exported
+  alongside it as the pure, fixture-testable projection.
 - `clearOpenPrompts` (`@kortix/sdk/acp`) — supersedes every open ACP prompt in
   reducer state the same way a `session/cancel` would, without touching
   `envelopes`/`chatItems`/`dedupeKeys`. Backs `AcpSession`'s persisted-busy
