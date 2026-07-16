@@ -19,12 +19,18 @@ const TIER_CACHE_TTL_MS = 30_000;
 
 const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
 
-async function resolveCachedAccountTier(accountId: string): Promise<string> {
+// `now` is injectable (defaults to Date.now()) purely so the 30s TTL boundary
+// is unit-testable without a real wall-clock sleep — every production call
+// site leaves it unset and gets the real clock.
+export async function resolveCachedAccountTier(
+  accountId: string,
+  now: number = Date.now(),
+): Promise<string> {
   const cached = accountTierCache.get(accountId);
-  if (cached && cached.expiresAt > Date.now()) return cached.tier;
+  if (cached && cached.expiresAt > now) return cached.tier;
 
   const tier = await getAccountTier(accountId);
-  accountTierCache.set(accountId, { tier, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
+  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
   return tier;
 }
 
