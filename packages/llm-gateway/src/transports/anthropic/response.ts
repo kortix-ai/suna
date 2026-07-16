@@ -45,8 +45,8 @@ async function translateNonStreaming(response: Response): Promise<Response> {
   if (toolCalls.length) message.tool_calls = toolCalls;
 
   const cachedTokens = data.usage?.cache_read_input_tokens ?? 0;
-  const inputTokens =
-    (data.usage?.input_tokens ?? 0) + cachedTokens + (data.usage?.cache_creation_input_tokens ?? 0);
+  const cacheWriteTokens = data.usage?.cache_creation_input_tokens ?? 0;
+  const inputTokens = (data.usage?.input_tokens ?? 0) + cachedTokens + cacheWriteTokens;
   const outputTokens = data.usage?.output_tokens ?? 0;
   const out = {
     id: data.id ?? chunkId(),
@@ -58,7 +58,14 @@ async function translateNonStreaming(response: Response): Promise<Response> {
       prompt_tokens: inputTokens,
       completion_tokens: outputTokens,
       total_tokens: inputTokens + outputTokens,
-      ...(cachedTokens ? { prompt_tokens_details: { cached_tokens: cachedTokens } } : {}),
+      ...(cachedTokens || cacheWriteTokens
+        ? {
+            prompt_tokens_details: {
+              ...(cachedTokens ? { cached_tokens: cachedTokens } : {}),
+              ...(cacheWriteTokens ? { cache_write_tokens: cacheWriteTokens } : {}),
+            },
+          }
+        : {}),
     },
   };
   return new Response(JSON.stringify(out), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -74,6 +81,7 @@ function translateStreaming(response: Response): Response {
   const blockToTool = new Map<number, number>();
   const usage = { prompt_tokens: 0, completion_tokens: 0 };
   let cachedTokens = 0;
+  let cacheWriteTokens = 0;
   let finishReason: string | null = null;
 
   const encoder = new TextEncoder();
@@ -126,8 +134,8 @@ function translateStreaming(response: Response): Response {
               model = evt.message?.model ?? model;
               const mu = evt.message?.usage ?? {};
               cachedTokens = mu.cache_read_input_tokens ?? 0;
-              usage.prompt_tokens =
-                (mu.input_tokens ?? 0) + cachedTokens + (mu.cache_creation_input_tokens ?? 0);
+              cacheWriteTokens = mu.cache_creation_input_tokens ?? 0;
+              usage.prompt_tokens = (mu.input_tokens ?? 0) + cachedTokens + cacheWriteTokens;
               emit(controller, { role: 'assistant', content: '' }, null);
             } else if (t === 'content_block_start') {
               const block = evt.content_block;
@@ -176,7 +184,14 @@ function translateStreaming(response: Response): Response {
                 usage: {
                   ...usage,
                   total_tokens: usage.prompt_tokens + usage.completion_tokens,
-                  ...(cachedTokens ? { prompt_tokens_details: { cached_tokens: cachedTokens } } : {}),
+                  ...(cachedTokens || cacheWriteTokens
+                    ? {
+                        prompt_tokens_details: {
+                          ...(cachedTokens ? { cached_tokens: cachedTokens } : {}),
+                          ...(cacheWriteTokens ? { cache_write_tokens: cacheWriteTokens } : {}),
+                        },
+                      }
+                    : {}),
                 },
               };
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalChunk)}\n\n`));

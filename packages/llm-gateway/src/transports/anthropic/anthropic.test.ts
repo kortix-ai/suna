@@ -245,6 +245,56 @@ describe('translateAnthropicResponse (non-streaming)', () => {
     expect(body.usage).toEqual({ prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 });
   });
 
+  test('surfaces cache_creation_input_tokens (cache WRITE) and cache_read_input_tokens (cache READ) separately, not folded into a plain rate', async () => {
+    const anthropic = new Response(
+      JSON.stringify({
+        id: 'msg_cache',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-sonnet-4-6',
+        content: [{ type: 'text', text: 'hi' }],
+        stop_reason: 'end_turn',
+        // A real Anthropic prompt-cache usage payload: a fresh cache write plus
+        // a read of a previously-cached block, alongside regular input.
+        usage: {
+          input_tokens: 50,
+          cache_creation_input_tokens: 1200,
+          cache_read_input_tokens: 300,
+          output_tokens: 20,
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    const out = await translateAnthropicResponse(anthropic, { streaming: false });
+    const body = (await out.json()) as any;
+    // Total input still folds everything in for total_tokens back-compat...
+    expect(body.usage.prompt_tokens).toBe(50 + 1200 + 300);
+    expect(body.usage.completion_tokens).toBe(20);
+    expect(body.usage.total_tokens).toBe(50 + 1200 + 300 + 20);
+    // ...but the cache read/write breakdown is surfaced separately so pricing
+    // can apply the cache-write premium instead of the plain input rate.
+    expect(body.usage.prompt_tokens_details).toEqual({
+      cached_tokens: 300,
+      cache_write_tokens: 1200,
+    });
+  });
+
+  test('a response with no cache activity omits prompt_tokens_details entirely (unchanged shape)', async () => {
+    const anthropic = new Response(
+      JSON.stringify({
+        id: 'msg_no_cache',
+        model: 'claude-sonnet-4-6',
+        content: [{ type: 'text', text: 'hi' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 10, output_tokens: 2 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    const out = await translateAnthropicResponse(anthropic, { streaming: false });
+    const body = (await out.json()) as any;
+    expect('prompt_tokens_details' in body.usage).toBe(false);
+  });
+
   test('maps a tool_use block to OpenAI tool_calls', async () => {
     const anthropic = new Response(
       JSON.stringify({
@@ -351,5 +401,29 @@ describe('translateAnthropicResponse (streaming)', () => {
     expect(parsed.error.message).toContain('upstream socket reset');
     expect(parsed.error.code).toBe('upstream_stream_error');
     expect(text.trim().endsWith('data: [DONE]')).toBe(true);
+  });
+
+  test('a streamed prompt-cache write is surfaced in the final usage chunk, not folded into a plain rate', async () => {
+    const upstream = anthropicSse(
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":50,"cache_creation_input_tokens":1200,"cache_read_input_tokens":300}}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    );
+    const out = await translateAnthropicResponse(upstream, { streaming: true });
+    const text = await new Response(out.body).text();
+    const usageFrame = text
+      .split('\n\n')
+      .map((f) => f.replace(/^data:\s*/, '').trim())
+      .filter((f) => f && f !== '[DONE]')
+      .map((f) => JSON.parse(f))
+      .find((f) => f.usage);
+    expect(usageFrame).toBeTruthy();
+    expect(usageFrame.usage.prompt_tokens).toBe(50 + 1200 + 300);
+    expect(usageFrame.usage.completion_tokens).toBe(5);
+    expect(usageFrame.usage.prompt_tokens_details).toEqual({
+      cached_tokens: 300,
+      cache_write_tokens: 1200,
+    });
   });
 });

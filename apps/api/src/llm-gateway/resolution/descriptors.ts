@@ -21,6 +21,7 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
     inputPerMillion: p.inputPer1M,
     outputPerMillion: p.outputPer1M,
     cachedInputPerMillion: p.cacheReadPer1M,
+    cacheWritePerMillion: p.cacheWritePer1M,
   };
 }
 
