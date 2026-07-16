@@ -34,7 +34,14 @@ data "aws_iam_policy_document" "ci_assume" {
 resource "aws_iam_role" "ci_deploy" {
   name               = var.ci_deploy_role_name
   assume_role_policy = data.aws_iam_policy_document.ci_assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = var.ci_deploy_role_name
+    Environment = lookup(local.tags, "Environment", "dev")
+    Project     = lookup(local.tags, "Project", "kortix")
+    Service     = lookup(local.tags, "Service", local.name)
+    Platform    = lookup(local.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy" "ci_describe_cluster" {

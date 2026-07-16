@@ -107,7 +107,9 @@ output "next_steps" {
   empty (default) to derive it from the subnet, which is almost always
   correct; see "Replacing the instance without losing data" for why this is
   never derived from the instance itself.
-- `allowed_cidrs` (80/443 ingress), `ssh_ingress_cidrs` (opt-in only).
+- `allowed_cidrs` (HTTPS ingress), `http_ingress_cidrs` (optional port 80
+  override; set `[]` to use TLS-ALPN-01 on 443 only), and
+  `ssh_ingress_cidrs` (opt-in only).
 - `data_volume_size_gb` (default 100), `data_volume_kms_key_id` (optional CMK).
 - `backup_interval_hours` (default 24 — 1/2/3/4/6/8/12/24 are the valid DLM
   intervals), `backup_retention_count` (default 7), `snapshot_time` (only

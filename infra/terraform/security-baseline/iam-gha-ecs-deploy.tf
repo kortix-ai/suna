@@ -48,6 +48,12 @@ resource "aws_iam_role" "gha_ecs_deploy" {
       }
     }]
   })
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "kortix-gha-ecs-deploy"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_iam_role_policy" "gha_ecs_deploy" {
