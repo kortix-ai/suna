@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  ACP_HARNESS_IDS,
   applyAcpSessionDefaults,
   createAcpHarnessRegistry,
   isolateHarnessAuthEnv,
@@ -378,5 +379,100 @@ describe('ACP harness registry', () => {
     expect(registry.get('pi')?.launch.env).toEqual({
       PI_CODING_AGENT_DIR: '/workspace/.config/agent',
     });
+  });
+});
+
+// Pins the grounding-doc packaging law's test/rollout escape hatch verbatim:
+// "Test/rollout overrides: KORTIX_ACP_{CLAUDE,CODEX,OPENCODE,PI}_{PATH,ARGS}
+// — ARGS are JSON string arrays (no shell parsing/injection)."
+//
+// The image installs pinned adapters at fixed, image-stable paths (DEFAULTS
+// in harness-registry.ts) — these overrides exist so a test harness or a
+// rollout can point a harness at an alternate binary/wrapper without an image
+// rebuild. Never touches a shell: ARGS is parsed as JSON and handed to Bun's
+// spawn as a real array, so there is nothing for a malicious string to
+// tokenize or inject into.
+describe('KORTIX_ACP_* overrides (test/rollout escape hatch)', () => {
+  test('every harness id has a distinct, correctly-cased env prefix', () => {
+    for (const id of ACP_HARNESS_IDS) {
+      const prefix = `KORTIX_ACP_${id.toUpperCase()}`;
+      const registry = createAcpHarnessRegistry({ [`${prefix}_PATH`]: `/opt/override/${id}` });
+      expect(registry.get(id)?.launch.command).toBe(`/opt/override/${id}`);
+      // Every OTHER harness stays on its image-baked default path.
+      for (const other of ACP_HARNESS_IDS) {
+        if (other === id) continue;
+        expect(registry.get(other)?.launch.command).not.toBe(`/opt/override/${id}`);
+      }
+    }
+  });
+
+  test('PATH override swaps the binary and drops the stale image-path args (no ARGS override supplied)', () => {
+    const registry = createAcpHarnessRegistry({
+      KORTIX_ACP_CLAUDE_PATH: '/opt/test/claude-agent-acp-wrapper',
+    });
+    expect(registry.get('claude')?.launch).toEqual({
+      command: '/opt/test/claude-agent-acp-wrapper',
+      args: [],
+      env: undefined,
+    });
+    // Unrelated harnesses are untouched.
+    expect(registry.get('codex')?.launch.command).toBe('/usr/local/bin/node');
+  });
+
+  test('PATH + ARGS overrides compose: the custom binary launches with the custom args', () => {
+    const registry = createAcpHarnessRegistry({
+      KORTIX_ACP_CODEX_PATH: '/opt/test/codex-acp-debug',
+      KORTIX_ACP_CODEX_ARGS: '["--verbose","--port","9999"]',
+    });
+    expect(registry.get('codex')?.launch.command).toBe('/opt/test/codex-acp-debug');
+    expect(registry.get('codex')?.launch.args).toEqual(['--verbose', '--port', '9999']);
+  });
+
+  test('ARGS override alone (no PATH) keeps the image-baked binary but replaces its args', () => {
+    const registry = createAcpHarnessRegistry({
+      KORTIX_ACP_PI_ARGS: '["--flag"]',
+    });
+    expect(registry.get('pi')?.launch).toMatchObject({
+      command: '/usr/local/bin/node',
+      args: ['--flag'],
+    });
+  });
+
+  test('a JSON string array ARGS override reaches the launch descriptor as a real array, never a joined string', () => {
+    // A value containing shell metacharacters must survive as ONE array
+    // element — proof there is no shell tokenization anywhere on this path.
+    const dangerous = '; rm -rf / #';
+    const registry = createAcpHarnessRegistry({
+      KORTIX_ACP_OPENCODE_ARGS: JSON.stringify(['--session-arg', dangerous]),
+    });
+    const args = registry.get('opencode')?.launch.args;
+    expect(Array.isArray(args)).toBe(true);
+    expect(args).toEqual(['--session-arg', dangerous]);
+    // Exactly one element carries the dangerous payload — it was never split
+    // on whitespace/semicolons the way a shell would tokenize it.
+    expect(args?.filter((a) => a === dangerous)).toHaveLength(1);
+  });
+
+  for (const badArgs of ['--flag', '--flag --other', 'not json at all)']) {
+    test(`malformed (non-JSON) ARGS "${badArgs}" is rejected with a clear error, not silently accepted or shell-parsed`, () => {
+      expect(() => createAcpHarnessRegistry({ KORTIX_ACP_CLAUDE_ARGS: badArgs })).toThrow(
+        /KORTIX_ACP_CLAUDE_ARGS must be a JSON string array/,
+      );
+    });
+  }
+
+  for (const nonArrayJson of ['"--flag"', '{"flag":true}', '42', 'null', '["ok", 1]']) {
+    test(`JSON ARGS that is not a string array ("${nonArrayJson}") is rejected with a clear error`, () => {
+      expect(() => createAcpHarnessRegistry({ KORTIX_ACP_CODEX_ARGS: nonArrayJson })).toThrow(
+        /KORTIX_ACP_CODEX_ARGS must be a JSON string array/,
+      );
+    });
+  }
+
+  test('an empty-string ARGS override is treated as unset (falls back to the default/PATH-cleared args)', () => {
+    const registry = createAcpHarnessRegistry({ KORTIX_ACP_PI_ARGS: '   ' });
+    expect(registry.get('pi')?.launch.args).toEqual(
+      createAcpHarnessRegistry({}).get('pi')?.launch.args,
+    );
   });
 });

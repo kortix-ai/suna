@@ -230,7 +230,19 @@ function customProvider(env: NodeJS.ProcessEnv): {
 function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEnv): string[] {
   const raw = env[`${envPrefix(id)}_ARGS`]?.trim()
   if (!raw) return fallback
-  const parsed: unknown = JSON.parse(raw)
+  // ARGS is parsed as JSON only — never handed to a shell for tokenization —
+  // so a malformed value can only fail closed with a clear, actionable error,
+  // never partially/ambiguously "parse" into something a shell would have
+  // split differently.
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    throw new Error(
+      `${envPrefix(id)}_ARGS must be a JSON string array (e.g. '["--flag"]'); ` +
+        `got invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
   if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== 'string')) {
     throw new Error(`${envPrefix(id)}_ARGS must be a JSON string array`)
   }
