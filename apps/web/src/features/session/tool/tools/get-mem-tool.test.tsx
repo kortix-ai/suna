@@ -78,6 +78,11 @@ describe('GetMemTool joins the shared BasicTool shell', () => {
     expect(html).not.toContain('bg-gradient');
     expect(html).not.toContain('sky-');
 
+    // Grammar: the report renders in a flat muted card, and the freeform
+    // prose flows through OutputBlock (capped + scrollable), not a bare <p>.
+    expect(html).toContain('bg-muted/20');
+    expect(html).toContain('max-h-96');
+
     // Content preserved: title, narrative, facts, concepts, tool/session, files.
     expect(html).toContain('Refactored auth flow');
     expect(html).toContain('Simplified the login flow');

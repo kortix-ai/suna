@@ -9,7 +9,7 @@ import {
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import { ToolField, ToolSection } from '@/features/session/tool/shared/output-block';
+import { OutputBlock, ToolField, ToolSection } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { parseMemorySearchOutput } from '@/lib/utils/memory-search-output';
@@ -61,6 +61,7 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
               const sourceLabel =
                 hit.source === 'ltm' ? 'LTM' : hit.source === 'obs' ? 'Observation' : 'Memory';
               return (
+                // Card wrapper, not OutputBlock — holds composed fields, not output text.
                 <div
                   key={`${hit.source}-${hit.id}-${hit.type}`}
                   className="bg-muted/20 rounded-sm px-3 py-2 text-xs"
@@ -77,7 +78,7 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
                       </span>
                     )}
                   </div>
-                  <p className="text-foreground/90 text-xs leading-relaxed">{hit.content}</p>
+                  <OutputBlock text={hit.content} markdown />
                   {hit.files.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {hit.files.map((file) => (

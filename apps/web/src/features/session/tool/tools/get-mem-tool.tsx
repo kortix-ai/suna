@@ -10,7 +10,7 @@ import {
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import { ToolField, ToolSection } from '@/features/session/tool/shared/output-block';
+import { OutputBlock, ToolField, ToolSection } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
@@ -52,6 +52,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
         )}
 
         {report ? (
+          // Card wrapper, not OutputBlock — holds composed fields, not output text.
           <div className="bg-muted/20 space-y-2.5 rounded-sm px-3 py-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground text-xs">
@@ -79,9 +80,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                 )}
                 {report.narrative && (
                   <ToolSection label="Narrative">
-                    <p className="text-foreground/85 text-xs leading-relaxed">
-                      {report.narrative}
-                    </p>
+                    <OutputBlock text={report.narrative} markdown />
                   </ToolSection>
                 )}
                 {report.facts.length > 0 && (
@@ -157,12 +156,12 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
               <>
                 {report.caption && (
                   <ToolSection label="Caption">
-                    <p className="text-foreground/85 text-xs leading-relaxed">{report.caption}</p>
+                    <OutputBlock text={report.caption} markdown />
                   </ToolSection>
                 )}
                 {report.content && (
                   <ToolSection label="Content">
-                    <p className="text-foreground/90 text-xs leading-relaxed">{report.content}</p>
+                    <OutputBlock text={report.content} markdown />
                   </ToolSection>
                 )}
                 {report.tags.length > 0 && (
