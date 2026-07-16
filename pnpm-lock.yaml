@@ -193,6 +193,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter
