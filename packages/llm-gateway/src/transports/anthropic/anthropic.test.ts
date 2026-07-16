@@ -64,6 +64,49 @@ describe('buildAnthropicRequest', () => {
   });
 });
 
+describe('buildAnthropicRequest — tool_choice (SAFETY: none must not become auto)', () => {
+  const withTools = (tool_choice: unknown) => ({
+    messages: [{ role: 'user', content: 'go' }],
+    tools: [
+      { type: 'function', function: { name: 'search', description: 'd', parameters: { type: 'object' } } },
+    ],
+    tool_choice,
+  });
+
+  test("'none' maps to the explicit Anthropic {type:'none'} value, not omitted", () => {
+    const req = buildAnthropicRequest(withTools('none'), descriptor);
+    // Omitting tool_choice while `tools` is present defaults to Anthropic's own
+    // 'auto' — so 'none' must be sent explicitly or Claude could call a
+    // forbidden tool.
+    expect(req.payload.tool_choice).toEqual({ type: 'none' });
+  });
+
+  test("'auto' omits tool_choice (Anthropic's own default when tools are present)", () => {
+    const req = buildAnthropicRequest(withTools('auto'), descriptor);
+    expect(req.payload.tool_choice).toBeUndefined();
+  });
+
+  test('omitted/null tool_choice also omits it from the payload', () => {
+    const req = buildAnthropicRequest(withTools(undefined), descriptor);
+    expect(req.payload.tool_choice).toBeUndefined();
+    const req2 = buildAnthropicRequest(withTools(null), descriptor);
+    expect(req2.payload.tool_choice).toBeUndefined();
+  });
+
+  test("'required' maps to {type:'any'}", () => {
+    const req = buildAnthropicRequest(withTools('required'), descriptor);
+    expect(req.payload.tool_choice).toEqual({ type: 'any' });
+  });
+
+  test('a named function tool_choice maps to {type:"tool", name}', () => {
+    const req = buildAnthropicRequest(
+      withTools({ type: 'function', function: { name: 'search' } }),
+      descriptor,
+    );
+    expect(req.payload.tool_choice).toEqual({ type: 'tool', name: 'search' });
+  });
+});
+
 describe('buildAnthropicRequest — prompt caching', () => {
   test('marks system, the last tool, and the conversation tail as cacheable', () => {
     const req = buildAnthropicRequest(
@@ -114,6 +157,69 @@ describe('buildAnthropicRequest — prompt caching', () => {
     const tail = (req.payload as any).messages.at(-1).content;
     expect(tail[0].cache_control).toBeUndefined();
     expect(tail[1].cache_control).toEqual({ type: 'ephemeral' });
+  });
+});
+
+describe('buildAnthropicRequest — reasoning/thinking passthrough', () => {
+  test('reasoning_effort maps to a thinking.budget_tokens block instead of being dropped', () => {
+    const req = buildAnthropicRequest(
+      { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' },
+      descriptor,
+    );
+    expect(req.payload.thinking).toEqual({ type: 'enabled', budget_tokens: 16000 });
+  });
+
+  test('an OpenAI-shaped reasoning object with an effort level translates too', () => {
+    const req = buildAnthropicRequest(
+      { messages: [{ role: 'user', content: 'hi' }], reasoning: { effort: 'medium' } },
+      descriptor,
+    );
+    expect(req.payload.thinking).toEqual({ type: 'enabled', budget_tokens: 8192 });
+  });
+
+  test('an explicit budget_tokens on reasoning wins over the effort table', () => {
+    const req = buildAnthropicRequest(
+      { messages: [{ role: 'user', content: 'hi' }], reasoning: { budget_tokens: 5000 } },
+      descriptor,
+    );
+    expect(req.payload.thinking).toEqual({ type: 'enabled', budget_tokens: 5000 });
+  });
+
+  test('a raw Anthropic-shaped thinking block passes through verbatim', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [{ role: 'user', content: 'hi' }],
+        thinking: { type: 'enabled', budget_tokens: 10000 },
+      },
+      descriptor,
+    );
+    expect(req.payload.thinking).toEqual({ type: 'enabled', budget_tokens: 10000 });
+  });
+
+  test('no reasoning field at all omits thinking entirely (default behavior unchanged)', () => {
+    const req = buildAnthropicRequest({ messages: [{ role: 'user', content: 'hi' }] }, descriptor);
+    expect(req.payload.thinking).toBeUndefined();
+  });
+
+  test('bumps the default max_tokens ceiling so the thinking budget has room when the client set neither', () => {
+    const req = buildAnthropicRequest(
+      { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'max' },
+      descriptor,
+    );
+    expect(req.payload.max_tokens).toBeGreaterThan((req.payload.thinking as any).budget_tokens);
+  });
+
+  test('clamps budget_tokens below an explicit, smaller client max_tokens rather than 400ing upstream', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning_effort: 'max',
+        max_tokens: 2000,
+      },
+      descriptor,
+    );
+    expect(req.payload.max_tokens).toBe(2000);
+    expect((req.payload.thinking as any).budget_tokens).toBeLessThan(2000);
   });
 });
 
