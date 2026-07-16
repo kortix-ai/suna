@@ -57,6 +57,10 @@ mock.module('../../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'operators-own-anthropic-key',
+  // resolveCandidates' BYOK path now calls this (shared-vs-private fallback —
+  // see projects/secrets.ts pickResolvedSecretRow); stub it the same as
+  // getProjectSecretValue since this file isn't exercising that distinction.
+  getResolvedProjectSecretValue: async () => 'operators-own-anthropic-key',
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),

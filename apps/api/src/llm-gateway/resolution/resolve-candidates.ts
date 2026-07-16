@@ -5,7 +5,7 @@ import {
 import { getAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
-import { getProjectSecretValue } from '../../projects/secrets';
+import { getResolvedProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 import { resolveCatalogUpstream } from '../models/provider-registry';
@@ -68,7 +68,11 @@ export async function resolveCandidates(
   const byok = resolveCatalogUpstream(provider);
 
   if (byok && principal.projectId) {
-    const key = await getProjectSecretValue(principal.projectId, byok.envVar);
+    // SHARED key wins when configured; falls back to the CALLING user's own
+    // PRIVATE key (never another member's) so a member who saved a personal
+    // provider key isn't left with a "connected" provider that silently
+    // routes nothing — see pickResolvedSecretRow's doc comment.
+    const key = await getResolvedProjectSecretValue(principal.projectId, byok.envVar, principal.userId);
     if (key) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
