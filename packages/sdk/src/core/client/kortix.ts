@@ -330,6 +330,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) =>
           P.setPersonalProjectSecret(projectId, ...a),
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
+        /** Copy the caller's own private override to the shared row (the "make shared" fix). */
+        promoteToShared: (name: string) => P.promoteProjectSecretToShared(projectId, name),
         setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
           P.upsertProjectGitCredential(projectId, input),
         /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */

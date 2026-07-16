@@ -188,3 +188,17 @@ export async function deletePersonalProjectSecret(projectId: string, name: strin
     ),
   );
 }
+
+/**
+ * Copy the caller's own private override to the SHARED project row so every
+ * member's sessions can use it, not just theirs. The one-click fix for a
+ * provider that's only configured as someone's personal key.
+ */
+export async function promoteProjectSecretToShared(projectId: string, name: string) {
+  return unwrap(
+    await backendApi.post<ProjectSecret>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/promote-to-shared`,
+      {},
+    ),
+  );
+}
