@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import fixtureRows from './__fixtures__/acp-session-mixed.json';
-import { emptyReducerState, pendingFromState, reduceEnvelope } from './reduce';
+import { clearOpenPrompts, emptyReducerState, pendingFromState, reduceEnvelope } from './reduce';
 import {
   projectAcpChatItems,
   projectAcpPendingPrompts,
@@ -304,5 +304,149 @@ describe('reduceEnvelope', () => {
       state = reduceEnvelope(state, userPrompt(3, 'fresh', 'local-99', 's1'));
       expect(state.turnState).toEqual({ busy: false, pendingPromptIds: [] });
     });
+  });
+
+  // WS3-P2-b, part 1: `clearOpenPrompts` — the wedge-guard's primitive,
+  // shared by `reduceEnvelope`'s busy-staleness policy in spirit (same end
+  // state) but driven by `AcpSession` directly off a connection-lifecycle
+  // signal instead of a transcript row.
+  describe('clearOpenPrompts (wedge-guard primitive)', () => {
+    test('a no-op (reference-equal) when nothing is open', () => {
+      const state = emptyReducerState();
+      expect(clearOpenPrompts(state)).toBe(state);
+
+      let withClosedTurn = reduceEnvelope(state, userPrompt(1, 'go', 'req-1', 's1'));
+      withClosedTurn = reduceEnvelope(withClosedTurn, stored(2, 'agent_to_client', {
+        jsonrpc: '2.0', id: 'req-1', result: { stopReason: 'end_turn' },
+      }));
+      expect(withClosedTurn.turnState.busy).toBe(false);
+      expect(clearOpenPrompts(withClosedTurn)).toBe(withClosedTurn);
+    });
+
+    test('clears every open prompt to the same end state a session/cancel row would reach', () => {
+      let state = emptyReducerState();
+      state = reduceEnvelope(state, userPrompt(1, 'first', 'req-1', 's1'));
+      state = reduceEnvelope(state, userPrompt(3, 'second (different session)', 'req-2', 's2'));
+      expect(state.turnState.busy).toBe(true);
+      expect(state.turnState.pendingPromptIds).toEqual(['req-1', 'req-2']);
+
+      const cleared = clearOpenPrompts(state);
+
+      expect(cleared.turnState).toEqual({ busy: false, pendingPromptIds: [] });
+      expect(pendingFromState(cleared)).toEqual({ permissions: [], questions: [] });
+      // Deliberately does NOT touch the transcript log or its projections —
+      // this is a connection-lifecycle signal, not a transcript row.
+      expect(cleared.envelopes).toBe(state.envelopes);
+      expect(cleared.chatItems).toBe(state.chatItems);
+      expect(cleared.dedupeKeys).toBe(state.dedupeKeys);
+    });
+  });
+});
+
+// WS3-P2-b, part 2: bounded `dedupeKeys`.
+describe('dedupeKeys bound', () => {
+  // Each row gets its own `toolCallId` (derived from `streamEventId`), so —
+  // unlike consecutive `agent_message_chunk` rows, which the reducer
+  // deliberately coalesces into one chat item (see `reduceEnvelope`'s
+  // message-merge branch) — every ACCEPTED row here always produces its own
+  // distinct `chatItems` entry. That keeps `chatItems.length` a direct,
+  // uncomplicated proxy for "how many DISTINCT rows did the dedupe check let
+  // through", which is exactly what these tests need to inspect; the
+  // dedupe check itself (top of `reduceEnvelope`) doesn't care what kind of
+  // `agent_to_client` row it's guarding, so this is a faithful stand-in for
+  // any live/history update.
+  function agentUpdate(ordinal: number, streamEventId: number, title: string): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { update: { sessionUpdate: 'tool_call', toolCallId: `call-${streamEventId}`, title } },
+    }, streamEventId);
+  }
+
+  // Keep in sync with reduce.ts's private `DEDUPE_WINDOW` — not exported
+  // (an implementation constant, not part of the documented contract; see
+  // `AcpReducerState.dedupeKeys`'s doc), so the bound is pinned here as a
+  // literal instead.
+  const DEDUPE_WINDOW = 256;
+
+  test('growth: folding far more rows than the window keeps dedupeKeys bounded, not O(rows)', () => {
+    const rowCount = DEDUPE_WINDOW * 10;
+    let state = emptyReducerState();
+    for (let i = 1; i <= rowCount; i += 1) {
+      state = reduceEnvelope(state, agentUpdate(i, i, `chunk-${i}`));
+    }
+
+    expect(state.envelopes).toHaveLength(rowCount);
+    expect(state.dedupeKeys.size).toBeLessThanOrEqual(DEDUPE_WINDOW);
+  });
+
+  test('a duplicate WITHIN the window is still dropped, exactly like the unbounded Set did', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentUpdate(1, 7, 'hi'));
+    const afterFirst = state;
+
+    // A handful of unrelated events land in between — well within the window.
+    for (let i = 2; i <= 10; i += 1) state = reduceEnvelope(state, agentUpdate(i, i + 100, `noise-${i}`));
+
+    const duplicate = agentUpdate(20, 7, 'again');
+    const afterDuplicate = reduceEnvelope(state, duplicate);
+
+    // The duplicate is rejected before ever reaching the accept path, so the
+    // interleaving noise since the first `streamEventId: 7` row changes
+    // nothing about whether it's still recognized.
+    const firstTool = afterFirst.chatItems.find((item) => item.kind === 'tool');
+    expect((firstTool as { title: string }).title).toBe('hi');
+    expect(afterDuplicate.chatItems.filter((item) => item.kind === 'tool')).toHaveLength(10);
+    expect(afterDuplicate).toBe(state); // duplicate row: reference-equal no-op
+  });
+
+  test('replay overlap: a Last-Event-ID reconnect re-delivering a small recent tail dedupes every row in that tail', () => {
+    // Simulates 50 live events already folded, then a reconnect re-sends
+    // the last 5 (a realistic Last-Event-ID replay tail) before continuing
+    // with genuinely new ones — every re-sent row must be dropped, and the
+    // genuinely new ones after it must still land.
+    let state = emptyReducerState();
+    for (let i = 1; i <= 50; i += 1) state = reduceEnvelope(state, agentUpdate(i, i, `chunk-${i}`));
+    const beforeReplay = state;
+
+    for (let i = 46; i <= 50; i += 1) state = reduceEnvelope(state, agentUpdate(1000 + i, i, `REPLAYED-${i}`));
+    expect(state.chatItems).toEqual(beforeReplay.chatItems);
+    expect(state.envelopes).toHaveLength(50); // no replayed row appended
+
+    state = reduceEnvelope(state, agentUpdate(200, 51, 'chunk-51'));
+    expect(state.envelopes).toHaveLength(51);
+  });
+
+  test('out-of-order-within-window: a genuinely NEW row with a SMALLER streamEventId than one already folded is still accepted (never silently mistaken for a duplicate)', () => {
+    // Correctness bar from the WS3-P2-b brief: unlike `AcpSession`'s
+    // `historyOrdinals` bound (which can safely collapse to a bare
+    // high-water mark because `enqueueHistory`'s full-refetch contract rules
+    // this case out), `dedupeKeys` backs a PUBLIC function any caller can
+    // feed an arbitrarily-ordered `rows` array — so it must keep matching by
+    // EXACT key, never by a "smaller than something already seen" shortcut.
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentUpdate(1, 20, 'seen-first'));
+    state = reduceEnvelope(state, agentUpdate(2, 3, 'genuinely new, smaller id'));
+
+    expect(state.envelopes).toHaveLength(2);
+    const titles = state.chatItems.filter((item) => item.kind === 'tool').map((item) => (item as { title: string }).title);
+    expect(titles).toEqual(['seen-first', 'genuinely new, smaller id']);
+  });
+
+  test('eviction boundary: a genuine duplicate re-arriving after aging out of the window is (honestly) no longer recognized', () => {
+    // Documents the correctness trade `dedupeKeys`'s bound makes (see its
+    // doc comment) rather than hiding it — this is NOT a bug to fix, it is
+    // the accepted cost of O(window) memory instead of O(session length),
+    // justified by Last-Event-ID replay never re-delivering more than a
+    // small bounded tail in practice.
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentUpdate(1, 1, 'original'));
+    for (let i = 2; i <= DEDUPE_WINDOW + 5; i += 1) state = reduceEnvelope(state, agentUpdate(i, i, `chunk-${i}`));
+
+    const beforeStaleDuplicate = state;
+    const staleDuplicate = agentUpdate(9999, 1, 'stale-duplicate');
+    state = reduceEnvelope(state, staleDuplicate);
+
+    // Aged out of the window: treated as new, not as a duplicate.
+    expect(state.envelopes).toHaveLength(beforeStaleDuplicate.envelopes.length + 1);
   });
 });

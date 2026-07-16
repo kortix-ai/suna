@@ -1,5 +1,5 @@
 import { createAcpClient, type AcpClient } from './client';
-import { emptyReducerState, pendingFromState, reduceEnvelope, type AcpReducerState } from './reduce';
+import { clearOpenPrompts, emptyReducerState, pendingFromState, reduceEnvelope, type AcpReducerState } from './reduce';
 import {
   type AcpChatItem,
   type AcpPendingPrompts,
@@ -190,16 +190,40 @@ export class AcpSession {
   private bootstrap: Promise<void> | null = null;
   private createdSessionId: string | null = null;
   private requestBusy = false;
-  /** Every `ordinal` ever accepted from `enqueueHistory` — a bootstrap retry
-   *  (or any future re-sync) re-fetches the FULL persisted transcript from
-   *  scratch, and this makes that idempotent: a row whose ordinal is already
-   *  here is skipped instead of folded a second time. Scoped to history rows
-   *  only (never populated by a live/local `enqueue()` call) since server
-   *  ordinals are authoritative and unique per transcript, while synthetic
-   *  local/live ordinals (`localOrdinal`/`syntheticOrdinal`, both
-   *  `Date.now()`-based) live in a disjoint numeric range and would be
-   *  meaningless to dedupe against. See `enqueueHistory`. */
-  private historyOrdinals = new Set<number>();
+  /** High-water mark for `enqueueHistory`'s idempotency check — the largest
+   *  `ordinal` ever accepted from history. Replaces the old `Set<number>` of
+   *  every ordinal ever accepted (one entry retained for the life of the
+   *  session per history row — O(session length) memory) with a single
+   *  number: O(1).
+   *
+   *  This is sound (not merely an optimization with a correctness cost)
+   *  because of two things holding together: ordinals are a
+   *  `GENERATED ALWAYS AS IDENTITY` column (P1-b pinned this — strictly
+   *  increasing, never reused, never reassigned), and `enqueueHistory` is
+   *  ONLY ever called with the FULL persisted transcript (`runBootstrap`'s
+   *  `client.transcript()` call passes no `after` cursor — see `client.ts`).
+   *  Given that, any ordinal smaller than one already accepted must already
+   *  have existed — and therefore already have been returned — at the
+   *  moment the larger one was first accepted, since a full-transcript fetch
+   *  is exhaustive up to its own point in time. A later re-delivery of that
+   *  smaller ordinal (a bootstrap retry re-fetching the SAME full
+   *  transcript, e.g. after a transient `initialize` failure) can therefore
+   *  only ever be a genuine duplicate, never a row seen for the first time —
+   *  remembering the single largest ordinal accepted is exactly as correct
+   *  as remembering every individual one.
+   *
+   *  `enqueueHistory` computes each call's duplicate threshold from this
+   *  mark's value from BEFORE that call's loop starts (not updated
+   *  mid-loop), so a single call's own row array never needs to already be
+   *  ordinal-sorted for this to stay correct — see `enqueueHistory`.
+   *
+   *  Scoped to history rows only (never advanced by a live/local `enqueue()`
+   *  call) since server ordinals are authoritative and unique per
+   *  transcript, while synthetic local/live ordinals
+   *  (`localOrdinal`/`syntheticOrdinal`, both `Date.now()`-based) live in a
+   *  disjoint (much larger) numeric range and would be meaningless to
+   *  compare against this mark. */
+  private historyHighWaterMark = -Infinity;
   /** Memoizes `pendingFromState` against the `openRequests` Map reference it
    *  was last derived from — `pendingFromState` itself always rebuilds fresh
    *  `permissions`/`questions` arrays (it has no way to know whether its
@@ -292,9 +316,21 @@ export class AcpSession {
     return this.snapshot;
   }
 
-  /** Returns `false` without sending when there's no live session, or a
-   *  request is already in flight. (Persisted-busy override — treating a
-   *  reload-recovered in-flight prompt the same way — is a later task.) */
+  /**
+   * Returns `false` without sending when there's no live session, or a
+   * request is already live-in-flight (`requestBusy`) FROM THIS CLIENT.
+   *
+   * Deliberately does NOT also gate on `snapshot.busy`/`turnState.busy` when
+   * that's true purely from a reload-recovered persisted prompt (see
+   * `openPromptIds` in `./reduce` and `clearStalePersistedBusy` below) — a
+   * prompt orphaned by a page reload has no live request this client is
+   * tracking, so there's nothing here for a NEW `send()` to collide with.
+   * Sending proceeds, and the new prompt supersedes the stale orphan via the
+   * busy-staleness policy (`reduce.ts`'s `session/prompt` branch) the same
+   * way a `session/cancel` would. See `clearStalePersistedBusy` for the
+   * complementary liveness guard: what happens when NEITHER a response nor a
+   * new prompt/cancel ever arrives for that orphaned turn.
+   */
   async send(prompt: AcpContentBlock[]): Promise<boolean> {
     const sessionId = this.snapshot.acpSessionId;
     if (!sessionId || this.requestBusy) return false;
@@ -411,7 +447,16 @@ export class AcpSession {
         authMethods: initialized.authMethods ?? [],
       });
     } catch (error) {
-      this.patch({ error: toSessionError('bootstrap', error), connection: 'failed' });
+      const sessionError = toSessionError('bootstrap', error);
+      this.patch({ error: sessionError, connection: 'failed' });
+      // Wedge guard (see `clearStalePersistedBusy`'s doc): only a TERMINAL
+      // bootstrap failure clears a reload-recovered persisted-busy prompt —
+      // a transient one (e.g. a 500 on `initialize` that a retried
+      // `connect()` will succeed past, `terminal: false` per
+      // `toSessionError`) must NOT clear it, or a still-genuinely-pending
+      // turn would flash "not busy" for the retry window even though
+      // nothing about its liveness actually changed.
+      if (sessionError.terminal) this.clearStalePersistedBusy();
       // Allow a subsequent connect() to retry bootstrap from scratch.
       this.bootstrap = null;
     }
@@ -453,11 +498,80 @@ export class AcpSession {
     if (state === 'failed' || state === 'closed') {
       this.stream = null;
     }
+    // Wedge guard (see `clearStalePersistedBusy`'s doc): `'failed'` is only
+    // ever reported when the client's own retry loop has permanently given
+    // up on a TERMINAL transport error (see `client.ts`'s `run()` —
+    // `AcpTransportError && error.terminal`), never for an ordinary
+    // reconnect hiccup, so it's always safe to treat as "this connection
+    // will never again tell us what happened to an orphaned turn".
+    // Deliberately excludes plain `'closed'`: that also fires for THIS
+    // session's own `close()` (a deliberate, benign disconnect — e.g. a
+    // consumer unmounting — that says nothing about the turn's liveness and
+    // must not zero out state a later `connect()` on the SAME session would
+    // still need to see as busy).
+    if (state === 'failed') {
+      this.clearStalePersistedBusy();
+    }
     if (state === 'open' && this.snapshot.error?.kind === 'transport') {
       this.patch({ connection: state, error: null });
       return;
     }
     this.setConnection(state);
+  }
+
+  /**
+   * The wedge guard promised by `send()`'s doc comment: a reload-recovered
+   * persisted-busy prompt (`turnState.busy` true purely from `openPromptIds`
+   * populated by bootstrap history — see `reduce.ts`) is cleared here when a
+   * DEAD turn is detected, so it never wedges the UI busy indicator forever
+   * when neither a response, a cancel, nor a new prompt is ever coming.
+   *
+   * Chosen guard: two connection-lifecycle SIGNALS, not a wall-clock
+   * timeout — this store has no clock anywhere in its state-transition logic
+   * today (`Date.now()` is used only to mint disjoint, always-increasing
+   * ordinals/ids — `syntheticOrdinal`/`localOrdinal`/`send()`'s `localId` —
+   * never compared against elapsed time to make a decision), and a
+   * wall-clock bound would be the first such use, sacrificing this file's
+   * deterministic-fixture testability for a benefit that's marginal here
+   * (see the residual case below):
+   *
+   *   (a) A TERMINAL bootstrap failure (`runBootstrap`'s catch, gated on
+   *       `sessionError.terminal`) — `session/load` (or `initialize`)
+   *       itself failing unrecoverably (e.g. a 404/410: the harness/sandbox
+   *       backing this session is gone) is the harness's own report that it
+   *       cannot even confirm the session's current state, let alone that
+   *       turn's outcome.
+   *   (b) A live stream reaching connection-state `'failed'` (`onStreamState`
+   *       above) — the ONE terminal, no-more-retries transport signal this
+   *       client ever receives after bootstrap has already succeeded.
+   *
+   * RESIDUAL CASE, stated honestly: a harness that crashes WITHOUT the
+   * bridge ever surfacing either signal — bootstrap succeeds, the live
+   * stream reaches `'open'` and just stays there, idle, forever, because
+   * nothing upstream detects the dead process — is not covered. `busy`
+   * stays wedged true until the user manually intervenes (a new `send()` or
+   * `cancel()`, both of which already supersede it unconditionally via the
+   * busy-staleness policy — see `send()`'s doc comment). This residual is
+   * accepted, not fixed, because: (1) no protocol-level signal exists today
+   * for "the harness silently died" short of a heartbeat/timeout, which
+   * would require the clock this store deliberately avoids; (2) the wedge
+   * is a soft UI signal, not a functional lock — `send()` already proceeds
+   * regardless of persisted-only busy (see its doc comment and
+   * `session.test.ts`'s "send() proceeds when busy comes only from
+   * persisted state" test), so a stuck spinner is the full extent of the
+   * damage, always escapable by the user's own next action.
+   *
+   * Deliberately does NOT touch `requestBusy` — a LIVE `send()` await in
+   * progress is tracked independently and has its own resolution path (the
+   * `finally` in `send()`); `openPromptIds` (what `clearOpenPrompts` clears)
+   * is populated ONLY by `enqueueHistory`'s one-time bootstrap replay, never
+   * by a live/local echo — see `openPromptSessionIds`'s doc in `reduce.ts`.
+   */
+  private clearStalePersistedBusy(): void {
+    if (this.reducerState.turnState.pendingPromptIds.length === 0) return;
+    this.reducerState = clearOpenPrompts(this.reducerState);
+    this.applyReducerState();
+    this.emit();
   }
 
   private async respondWithEcho(id: AcpJsonRpcId, result: unknown): Promise<void> {
@@ -509,11 +623,21 @@ export class AcpSession {
    * `streamEventId`.
    */
   private enqueueHistory(rows: readonly AcpStoredEnvelope[]): void {
+    // The duplicate threshold is fixed to the mark's value from BEFORE this
+    // call (not re-read from `this.historyHighWaterMark` on every
+    // iteration) and the mark itself is only advanced once, at the end —
+    // see `historyHighWaterMark`'s doc for why this keeps a within-call
+    // out-of-order row array (never observed in practice, not contractually
+    // promised either) from having an earlier row in the SAME call
+    // incorrectly raise the bar for a later, genuinely-new-but-smaller one.
+    const dedupeThreshold = this.historyHighWaterMark;
+    let newHighWaterMark = dedupeThreshold;
     for (const row of rows) {
-      if (this.historyOrdinals.has(row.ordinal)) continue;
-      this.historyOrdinals.add(row.ordinal);
+      if (row.ordinal <= dedupeThreshold) continue;
+      newHighWaterMark = Math.max(newHighWaterMark, row.ordinal);
       this.enqueue(row);
     }
+    this.historyHighWaterMark = newHighWaterMark;
   }
 
   private enqueue(row: AcpStoredEnvelope): void {

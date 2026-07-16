@@ -77,8 +77,26 @@ export type AcpReducerState = {
   // a fold never re-scans `envelopes` to answer a dedup / usage / pending
   // prompt question — that scan is exactly the O(n) cost this reducer
   // exists to remove.
-  /** `${direction}:${streamEventId}` of every row already folded, for O(1)
-   *  duplicate detection. */
+  /** `${direction}:${streamEventId}` of the most RECENT `DEDUPE_WINDOW` rows
+   *  folded (across both directions combined), for O(1) duplicate detection
+   *  — a fixed-size recency window, not an unboundedly-growing record of
+   *  every row ever folded (see `boundedDedupeKeys`'s doc for why a window,
+   *  rather than a high-water mark alone, is the right shape here: unlike
+   *  `AcpSession`'s `historyOrdinals`/`historyHighWaterMark`, this backs a
+   *  PUBLIC function — `reduceEnvelope`, and every `project*` wrapper over
+   *  it — that any external caller can feed an arbitrarily-ordered `rows`
+   *  array, so a bare "ordinal <= mark" test could silently misclassify a
+   *  genuinely-new-but-out-of-order row as a duplicate). The correctness
+   *  trade this makes: a genuine duplicate re-arriving after aging out of
+   *  the window (more than `DEDUPE_WINDOW` distinct keys newer have since
+   *  been folded) is no longer recognized as one — accepted because
+   *  Last-Event-ID SSE replay only ever re-delivers a small, bounded tail of
+   *  recent events (see `AcpClient.connect`'s `Last-Event-ID` header and its
+   *  own `event.id <= lastEventId` filter in `client.ts`, which already
+   *  screens out same-connection duplicates before they ever reach here),
+   *  never a session's full history — `DEDUPE_WINDOW` only needs to be
+   *  generous relative to that realistic reconnect/bootstrap-race overlap,
+   *  not to the session's total length. */
   dedupeKeys: Set<string>;
   usageContext: Omit<AcpUsageProjection, 'tokens'> | null;
   usageTokens: AcpTokenUsage | null;
@@ -459,7 +477,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   // reference-equality of the whole state.
 
   const dedupeKeys = row.streamEventId != null
-    ? new Set(state.dedupeKeys).add(`${row.direction}:${row.streamEventId}`)
+    ? boundedDedupeKeys(state.dedupeKeys, `${row.direction}:${row.streamEventId}`)
     : state.dedupeKeys;
 
   return {
@@ -478,6 +496,58 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     openPromptIds,
     openPromptOrdinals,
     openPromptSessionIds,
+  };
+}
+
+/** Bound for `dedupeKeys`' recency window (see the field's doc comment on
+ *  `AcpReducerState` for the full justification). Arbitrary but generous —
+ *  no specific server-side replay-buffer size is documented for this
+ *  protocol to derive an exact number from, and picking one far larger than
+ *  any realistic reconnect/bootstrap-race overlap costs nothing but a few
+ *  hundred strings of retained memory. Not exported: it is an
+ *  implementation constant, not part of the documented contract (see
+ *  `dedupeKeys`'s own doc). */
+const DEDUPE_WINDOW = 256;
+
+/** Adds `key` to a copy of `keys`, evicting the single oldest entry (`Set`
+ *  iterates in insertion order, so `.values().next().value` is always the
+ *  least-recently-added key) if that copy would exceed `DEDUPE_WINDOW` —
+ *  bounds `dedupeKeys` to O(window) instead of O(session length). Only ever
+ *  called with a genuinely new (not-yet-duplicate) key — the caller
+ *  (`reduceEnvelope`) already early-returns on a duplicate before reaching
+ *  this, so this never needs to check membership itself. */
+function boundedDedupeKeys(keys: Set<string>, key: string): Set<string> {
+  const next = new Set(keys).add(key);
+  if (next.size > DEDUPE_WINDOW) {
+    const oldest = next.values().next().value;
+    if (oldest !== undefined) next.delete(oldest);
+  }
+  return next;
+}
+
+/**
+ * Liveness-guard clear for `AcpSession`'s reload-recovery wedge guard (see
+ * `session.ts`'s `clearStalePersistedBusy`): unconditionally supersedes
+ * every still-open `session/prompt` the exact same way a NEW `session/prompt`
+ * or `session/cancel` row already does via the busy-staleness policy above
+ * (`openPromptIds`/`openPromptOrdinals`/`openPromptSessionIds` all clear,
+ * `turnState` collapses to `{ busy: false, pendingPromptIds: [] }`) — except
+ * triggered by a CONNECTION-lifecycle signal (a live stream permanently
+ * failing, or bootstrap itself never reaching the harness) instead of by an
+ * actual transcript row, so unlike every other branch in this file it
+ * deliberately does NOT touch `envelopes`/`chatItems`/`dedupeKeys` — there is
+ * no row to append or dedupe against. A no-op (returns `state` itself,
+ * reference-equal) when nothing is currently open, so a caller can call this
+ * unconditionally without needing its own "is anything open" guard.
+ */
+export function clearOpenPrompts(state: AcpReducerState): AcpReducerState {
+  if (state.openPromptIds.size === 0) return state;
+  return {
+    ...state,
+    openPromptIds: new Map(),
+    openPromptOrdinals: new Map(),
+    openPromptSessionIds: new Map(),
+    turnState: { busy: false, pendingPromptIds: [] },
   };
 }
 

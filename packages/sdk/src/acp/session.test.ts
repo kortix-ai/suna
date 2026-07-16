@@ -737,4 +737,253 @@ describe('AcpSession', () => {
       expect(responseRows[0].createdAt).toBeDefined();
     });
   });
+
+  // ── WS3-P2-b, part 1: persisted-busy reload recovery + wedge guard ──
+  describe('reload-recovery wedge guard', () => {
+    function orphanedPromptRow(ordinal = 1) {
+      return {
+        ordinal,
+        direction: 'client_to_agent',
+        streamEventId: null,
+        envelope: {
+          jsonrpc: '2.0', id: `orphan-${ordinal}`, method: 'session/prompt',
+          params: { sessionId: 'acp-new-1', prompt: [{ type: 'text', text: 'stuck mid-turn' }] },
+        },
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    /** Same shape as the module-level `makeMidSessionTerminalFetchMock`
+     *  (SSE succeeds once, then a terminal 403 on reconnect), but seeded
+     *  with a `transcript` so a reload-mid-turn fixture can be combined with
+     *  a dead-turn (terminal stream failure) fixture in one mock. */
+    function makeMidSessionTerminalFetchMockWithHistory(transcript: unknown[]) {
+      const base = makeSessionFetchMock({ transcript });
+      let sseAttempts = 0;
+      const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        if (method === 'GET' && !url.endsWith('/transcript')) {
+          sseAttempts += 1;
+          if (sseAttempts === 2) return new Response('token expired', { status: 403 });
+        }
+        return base.fetch(input, init);
+      };
+      return {
+        fetch: fetchImpl as unknown as typeof fetch,
+        calls: base.calls,
+        emitSse: base.emitSse,
+        endSse: base.endSse,
+      };
+    }
+
+    test('bootstrap-from-history sets busy true for an unanswered prompt, with the correct pendingPromptIds', async () => {
+      const fetchMock = makeSessionFetchMock({ transcript: [orphanedPromptRow()] });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      expect(session.getSnapshot().busy).toBe(true);
+      expect(session.getSnapshot().turnState.pendingPromptIds).toEqual(['orphan-1']);
+    });
+
+    test('a dead turn (terminal live-stream failure) clears persisted busy instead of wedging it forever', async () => {
+      const transcript: unknown[] = [orphanedPromptRow()];
+      const fetchMock = makeMidSessionTerminalFetchMockWithHistory(transcript);
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().connection === 'open');
+
+      // Busy purely from the persisted transcript — no live request in flight.
+      expect(session.getSnapshot().busy).toBe(true);
+
+      // The client's own reconnect loop fires a second GET, which the mock
+      // answers with a terminal 403 — the harness that owned the orphaned
+      // turn is unreachable for good, not merely between retries.
+      fetchMock.endSse();
+      await waitUntil(() => session.getSnapshot().connection === 'failed');
+
+      expect(session.getSnapshot().busy).toBe(false);
+      expect(session.getSnapshot().turnState.pendingPromptIds).toEqual([]);
+    });
+
+    test('a terminal bootstrap failure (session/load unrecoverable) clears persisted busy', async () => {
+      const transcript: unknown[] = [orphanedPromptRow()];
+      const base = makeSessionFetchMock({ transcript });
+      // `session/load` itself fails with a terminal 404 — e.g. the sandbox
+      // backing this session is gone. Bootstrap has already run
+      // `enqueueHistory` (busy=true, proven by the standalone bootstrap-only
+      // test above) by the time this throws — the whole
+      // transcript-fetch-then-fail chain resolves within the SAME
+      // microtask cascade under these near-instant mocked responses, so
+      // there is no reliable macrotask-level window in which to poll for
+      // the transient `busy: true` in between; only the settled end state
+      // is asserted here.
+      const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (init?.method === 'POST') {
+          const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+          if (body.method === 'session/load') return new Response('session not found', { status: 404 });
+        }
+        return base.fetch(input, init);
+      };
+      const session = createAcpSession({
+        endpoint: 'https://api.test/acp/s1',
+        acpSessionId: 'acp-existing-1',
+        fetch: fetchImpl as unknown as typeof fetch,
+        scheduleFlush: (f) => f(),
+      });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error?.kind === 'bootstrap');
+      expect(session.getSnapshot().error?.terminal).toBe(true);
+      expect(session.getSnapshot().busy).toBe(false);
+      expect(session.getSnapshot().turnState.pendingPromptIds).toEqual([]);
+    });
+
+    test('a TRANSIENT bootstrap failure (retryable 500) does NOT clear persisted busy', async () => {
+      // Companion/regression guard for the terminal case above: a bootstrap
+      // hiccup that a retried connect() will succeed past must not flash
+      // "not busy" for a turn whose liveness hasn't actually been resolved.
+      const transcript: unknown[] = [orphanedPromptRow()];
+      const fetchMock = makeFlakyInitializeFetchMock({ transcript });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error?.kind === 'bootstrap');
+
+      expect(session.getSnapshot().error?.terminal).toBe(false);
+      expect(session.getSnapshot().busy).toBe(true);
+      expect(session.getSnapshot().turnState.pendingPromptIds).toEqual(['orphan-1']);
+
+      // The retry succeeds; the orphan is still there because nothing has
+      // resolved it yet — unaffected by the earlier transient failure.
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+      expect(session.getSnapshot().busy).toBe(true);
+    });
+
+    test('closing the session (not a transport failure) does not clear persisted busy', async () => {
+      // Deliberate exclusion documented on `onStreamState`: a benign,
+      // consumer-initiated close() also reports connection 'closed', but
+      // says nothing about the orphaned turn's liveness — clearing busy here
+      // would incorrectly forget it across a later reconnect to the SAME
+      // session (e.g. a tab regaining focus, not a fresh page load).
+      const fetchMock = makeSessionFetchMock({ transcript: [orphanedPromptRow()] });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+      expect(session.getSnapshot().busy).toBe(true);
+
+      session.close();
+      expect(session.getSnapshot().connection).toBe('closed');
+      expect(session.getSnapshot().busy).toBe(true);
+      expect(session.getSnapshot().turnState.pendingPromptIds).toEqual(['orphan-1']);
+    });
+
+    test('a response arriving for the orphaned prompt clears busy (existing resolution path, unaffected by the guard)', async () => {
+      const transcript: unknown[] = [orphanedPromptRow()];
+      const fetchMock = makeSessionFetchMock({ transcript });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+      expect(session.getSnapshot().busy).toBe(true);
+
+      await fetchMock.emitSse([{
+        id: 1,
+        envelope: { jsonrpc: '2.0', id: 'orphan-1', result: { stopReason: 'end_turn' } },
+      }]);
+
+      expect(session.getSnapshot().busy).toBe(false);
+      expect(session.getSnapshot().turnState.pendingPromptIds).toEqual([]);
+    });
+  });
+
+  // ── WS3-P2-b, part 2: bounded historyOrdinals ──
+  describe('bounded history-ordinal dedupe (historyHighWaterMark)', () => {
+    function persistedRow(ordinal: number, id: string) {
+      return {
+        ordinal,
+        direction: 'client_to_agent',
+        streamEventId: null,
+        envelope: {
+          jsonrpc: '2.0', id, method: 'session/prompt',
+          params: { sessionId: 'acp-new-1', prompt: [{ type: 'text', text: `msg-${ordinal}` }] },
+        },
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    test('growth: folding thousands of history rows keeps the dedupe bookkeeping at O(1), not O(rows)', async () => {
+      const rowCount = 5_000;
+      const transcript: unknown[] = Array.from({ length: rowCount }, (_, i) => persistedRow(i + 1, `id-${i + 1}`));
+      const fetchMock = makeSessionFetchMock({ transcript });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      expect(session.getSnapshot().envelopes).toHaveLength(rowCount);
+      expect(session.getSnapshot().chatItems.filter((item) => item.kind === 'message')).toHaveLength(rowCount);
+
+      // Internal-bookkeeping check: the old design retained one `Set` entry
+      // per row ever accepted (O(rows) memory) — this replaces it with a
+      // single high-water-mark number (see `historyHighWaterMark`'s doc in
+      // session.ts). Casting to inspect it is the only way to prove the
+      // bound is O(1) without adding a public accessor purely for a test.
+      const internals = session as unknown as { historyHighWaterMark: number };
+      expect(typeof internals.historyHighWaterMark).toBe('number');
+      expect(internals.historyHighWaterMark).toBe(rowCount);
+    });
+
+    test('eviction-boundary: a duplicate arriving AFTER its ordinal was compacted into the high-water mark still dedupes', async () => {
+      const transcript: unknown[] = [persistedRow(1, 'id-1'), persistedRow(2, 'id-2'), persistedRow(3, 'id-3')];
+      // A bootstrap retry re-fetches the FULL transcript from ordinal 0 —
+      // `makeFlakyInitializeFetchMock` fails the first `initialize` so the
+      // second `connect()` re-runs `enqueueHistory` over the SAME rows,
+      // by which point `historyHighWaterMark` has already advanced to 3.
+      const fetchMock = makeFlakyInitializeFetchMock({ transcript });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error?.kind === 'bootstrap');
+      expect(session.getSnapshot().envelopes).toHaveLength(3);
+
+      // Retry: re-presents ordinals 1-3 again (all `<= historyHighWaterMark`
+      // by now) plus nothing new.
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      expect(session.getSnapshot().envelopes).toHaveLength(3);
+      expect(session.getSnapshot().chatItems.filter((item) => item.kind === 'message')).toHaveLength(3);
+
+      const internals = session as unknown as { historyHighWaterMark: number };
+      expect(internals.historyHighWaterMark).toBe(3);
+    });
+
+    test('a genuinely new row folds in normally alongside an already-advanced high-water mark', async () => {
+      // Same retry shape as the eviction-boundary test above, but the
+      // SECOND fetch's transcript has grown by one row (a real bootstrap
+      // retry re-serving the full, now-longer transcript) — proving the
+      // mark-based dedupe doesn't just reject everything after it advances.
+      const transcript: unknown[] = [persistedRow(1, 'id-1'), persistedRow(2, 'id-2'), persistedRow(3, 'id-3')];
+      const fetchMock = makeFlakyInitializeFetchMock({ transcript });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error?.kind === 'bootstrap');
+
+      transcript.push(persistedRow(4, 'id-4'));
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      expect(session.getSnapshot().envelopes).toHaveLength(4);
+      expect(session.getSnapshot().chatItems.filter((item) => item.kind === 'message')).toHaveLength(4);
+      const internals = session as unknown as { historyHighWaterMark: number };
+      expect(internals.historyHighWaterMark).toBe(4);
+    });
+  });
 });

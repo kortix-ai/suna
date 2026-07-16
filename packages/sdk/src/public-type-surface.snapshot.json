@@ -1410,6 +1410,7 @@
     "acpTranscriptJsonl",
     "acpTranscriptMarkdown",
     "classifyAcpMethod",
+    "clearOpenPrompts",
     "coerceElicitationAnswers",
     "createAcpClient",
     "createAcpSession",
