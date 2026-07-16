@@ -204,6 +204,15 @@ const nextConfig = (): NextConfig => ({
         source: '/v1/:path*',
         destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/v1/:path*`,
       },
+      // SCIM mounts at the API ROOT (no /v1 prefix) and identity providers call
+      // it server-to-server at whatever origin the admin was shown. In
+      // same-origin deployments that shown origin is the web origin, so /scim
+      // must forward to the API too — without this, the Tenant URL a
+      // self-hosted admin pastes into Entra/Okta would 404.
+      {
+        source: '/scim/:path*',
+        destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/scim/:path*`,
+      },
       // Same-origin Supabase proxy for the sandbox preview. ENV-GATED: only
       // active when KORTIX_SUPABASE_PROXY_TARGET is set (scripts/dev-local.sh
       // run_sandbox_dev), so prod/normal deployments are untouched. The browser

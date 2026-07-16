@@ -172,6 +172,28 @@ kortix self-host init --version 0.10.1             # pin an exact released versi
 kortix self-host init --version dev-a1b2c3d        # pin a published dev build (e.g. from a branch's CI)
 ```
 
+### Tracking dev/staging/prod
+
+CI keeps `kortix/kortix-{api,gateway,frontend}:dev` / `:staging` / `:prod`
+pointed at whatever's actually deployed to that live environment right now
+(re-tagged after each environment's deploy succeeds — never a rebuild).
+`--version`/`--tag` already accepts any published tag, so tracking one is the
+same recipe as any other moving tag:
+
+```sh
+kortix self-host init --tag dev --auto-update on     # track dev.kortix.com's current build, nightly
+kortix self-host init --tag staging --auto-update on # track staging.kortix.com
+kortix self-host init --tag prod --auto-update on    # track api.kortix.com's current release
+```
+
+These may break at any time — `dev` especially — and are for testing against
+a specific live environment, not production self-hosting. `stable` (the
+default) is the only curated, promoted channel.
+
+`kortix/kortix-sandbox` isn't published by any of these pipelines yet, so the
+sandbox image doesn't move with `dev`/`staging`/`prod` — a box keeps whatever
+`SANDBOX_IMAGE` it already has.
+
 Testing a locally-built image (never pushed to any registry):
 
 ```sh

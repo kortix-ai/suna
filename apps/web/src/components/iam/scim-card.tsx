@@ -171,7 +171,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   // which calls it directly — so show the absolute API origin when we know it.
   // Falls back to a relative path (+ the "prepend your origin" hint below) when
   // the backend is configured as a same-origin proxy path.
-  const scimBaseUrl = buildScimBaseUrl(accountId, getEnv().BACKEND_URL);
+  const scimBaseUrl = buildScimBaseUrl(
+    accountId,
+    getEnv().BACKEND_URL,
+    typeof window === 'undefined' ? null : window.location.origin,
+  );
   const scimBaseIsAbsolute = isAbsoluteHttpUrl(scimBaseUrl);
 
   return (
@@ -376,7 +380,11 @@ function CreateScimTokenDialog({
   const [created, setCreated] = useState<CreatedScimToken | null>(null);
   // Same absolute-when-known base URL the card shows, so the post-mint view
   // matches (the API returns a relative path in created.scim_base_url).
-  const scimBaseUrl = buildScimBaseUrl(accountId, getEnv().BACKEND_URL);
+  const scimBaseUrl = buildScimBaseUrl(
+    accountId,
+    getEnv().BACKEND_URL,
+    typeof window === 'undefined' ? null : window.location.origin,
+  );
 
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),

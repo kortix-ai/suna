@@ -426,9 +426,6 @@ const envSchema = z.object({
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
-  SANDBOX_IMAGE:               optStr,
-  KORTIX_LOCAL_IMAGES:         optBoolFalse,
-  SANDBOX_NETWORK:             optStr,
 
   // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
   // Set as SDK create() params so a box self-manages even if the API/tunnel
@@ -846,9 +843,6 @@ export const config = {
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
-  SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
-  KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
-  SANDBOX_NETWORK: env.SANDBOX_NETWORK,
 
   /**
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.

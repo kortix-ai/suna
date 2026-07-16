@@ -55,7 +55,6 @@ const DEFAULT_API_URL = 'http://localhost:13738';
 const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
 const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
-const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
 // Shown whenever an instance is (or is being configured) NOT reachable via a
 // public domain — self-host is VPS-first, and the Cloudflare tunnel is an
 // evaluation convenience, not the recommended production setup.
@@ -73,7 +72,8 @@ Subcommands:
   update | reconcile      Pull + apply the configured channel/version now.
   version                 Show the running version and image tags.
   stop | restart          Stop / restart the stack.
-  status                  Show container status.
+  status                  Container status + last update outcome, drift, next window.
+  ps                      Raw \`docker compose ps\` container status only.
   doctor                  Validate Docker tooling and the Compose config.
   logs [service]          Tail logs.
   open                    Open the dashboard in a browser.
@@ -88,6 +88,7 @@ Options:
   --domain <domain>       Public domain reachability (recommended, production).
   --tunnel cloudflare     Cloudflare-tunnel reachability (no public domain; evaluation).
   --version <ref>         Pin a release/channel/dev build. Alias: --tag/--release.
+                          dev/staging/prod track those live environments (may break any time); stable is the promoted default.
   --channel <name>        stable|latest to track (default: stable).
   --auto-update <on|off>  Override the default (ON everywhere except --local-images).
   --update-time <HH:MM> / --update-tz <tz>   Auto-updater schedule.
@@ -176,7 +177,6 @@ interface SelfHostEnv {
   FRONTEND_IMAGE: string;
   API_IMAGE: string;
   GATEWAY_IMAGE: string;
-  SANDBOX_IMAGE: string;
   // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
   // DAYTONA_TARGET, KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
   // KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_PUBLIC_BILLING_ENABLED, and
@@ -270,6 +270,7 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     case 'restart':
       return selfHostRestart(flags);
     case 'status':
+      return selfHostStatus(flags);
     case 'ps':
       return composeCommand(flags, ['ps']);
     case 'doctor':
@@ -424,7 +425,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}Dashboard ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}API       ${C.reset}${env.API_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
-  process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
   if (reachabilityMode(env) !== 'domain') {
@@ -684,7 +685,25 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   if (base !== 0) return base;
 
   const rollout = compose(flags.instance, ['run', '--rm', '--no-deps', 'kortix-updater', 'once']);
-  if (rollout !== 0) return rollout;
+  // 75 (EX_TEMPFAIL, see updater.sh's run_locked()) means this run never
+  // actually started: the nightly scheduler (or another concurrent `update`)
+  // already held the single-flight lock. That is NOT the same as a failed
+  // update — say so explicitly instead of reporting a bare nonzero exit, and
+  // point at `status` for what the in-flight run's outcome ends up being.
+  if (rollout === 75) {
+    process.stderr.write(
+      `${status.err('Another update is already in progress (nightly scheduler or a concurrent `update`) — this run was skipped, not failed.')}\n`
+      + `${C.dim}Check the outcome once it finishes: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}\n`,
+    );
+    return rollout;
+  }
+  if (rollout !== 0) {
+    process.stderr.write(
+      `${status.err('The update did not complete cleanly.')}\n`
+      + `${C.dim}Details: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}${C.dim} (per-service outcome, drift, last error)${C.reset}\n`,
+    );
+    return rollout;
+  }
 
   // Tunnel reachability mode only, and deliberately AFTER the zero-downtime
   // rollout above (not before): recreating kortix-api early to pick up a
@@ -947,7 +966,6 @@ function applyImagesForTag(env: SelfHostEnv, tag: string): void {
   env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${tag}`;
   env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${tag}`;
   env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${tag}`;
-  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${tag}`;
 }
 
 function isSemverTag(s: string): boolean {
@@ -1023,8 +1041,7 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`\n  ${C.dim}images${C.reset}\n`);
   process.stdout.write(`  ${C.dim}  api      ${C.reset}${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}  sandbox  ${C.reset}${env.SANDBOX_IMAGE}\n\n`);
+  process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n\n`);
   process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (current channel) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
   return 0;
 }
@@ -1035,6 +1052,137 @@ function composeCommand(flags: GlobalFlags, args: string[]): number {
     return 1;
   }
   return compose(flags.instance, args);
+}
+
+interface UpdaterServiceReport {
+  outcome: string;
+  started_at?: string;
+  finished_at?: string;
+  from_version?: string;
+  to_version?: string;
+  stage?: string;
+  detail?: string;
+  services?: string;
+}
+
+interface UpdaterDriftEntry {
+  service: string;
+  expected_image: string;
+  state: string;
+  drift: boolean;
+}
+
+interface UpdaterReport {
+  status: UpdaterServiceReport;
+  drift: UpdaterDriftEntry[];
+  lock: { locked: boolean; holder: string };
+}
+
+/**
+ * Ask the (already-running or freshly-spawned) `kortix-updater` service for
+ * its last recorded run outcome plus a live drift check — see the `report`
+ * subcommand in assets/updater.sh. Read-only, no lock taken: safe to run
+ * anytime, including while a real update is in flight. Returns null (not a
+ * fatal error) if the stack isn't up yet or the service can't be reached —
+ * `status` still shows container state in that case, just not update history.
+ */
+function readUpdaterReport(instance: string): UpdaterReport | null {
+  const result = spawnSync(
+    'docker',
+    [
+      'compose', '--project-name', composeProject(instance),
+      '--env-file', envPath(instance), '-f', composePath(instance),
+      'run', '--rm', '--no-deps', '-T', 'kortix-updater', 'report',
+    ],
+    { cwd: instanceDir(instance), encoding: 'utf8' },
+  );
+  if (result.error || result.status !== 0) return null;
+  const lines = (result.stdout ?? '').trim().split(/\r?\n/);
+  const jsonLine = lines[lines.length - 1] ?? '';
+  try {
+    return JSON.parse(jsonLine) as UpdaterReport;
+  } catch {
+    return null;
+  }
+}
+
+const OUTCOME_LABEL: Record<string, (text: string) => string> = {
+  ok: (t) => `${C.green}${t}${C.reset}`,
+  degraded: (t) => `${C.yellow}${t}${C.reset}`,
+  failed: (t) => `${C.red}${t}${C.reset}`,
+  skipped: (t) => `${C.yellow}${t}${C.reset}`,
+  'never-run': (t) => `${C.dim}${t}${C.reset}`,
+};
+
+/**
+ * `kortix self-host status`: container state PLUS the update mechanism's own
+ * visibility — last run outcome (ok/degraded/failed/skipped/never-run),
+ * from->to version, per-service breakdown, the auto-update schedule, and an
+ * explicit drift check (declared image vs. what's actually running). This is
+ * the fix for "update outcomes are invisible" and "drift is undetectable by
+ * design" — both previously required shelling into the container and reading
+ * `docker inspect` by hand. `ps` still exists separately for a bare
+ * container-list passthrough.
+ */
+function selfHostStatus(flags: GlobalFlags): number {
+  if (!existsSync(composePath(flags.instance)) || !existsSync(envPath(flags.instance))) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  const env = loadEnvWithDefaults(flags)!;
+  const report = readUpdaterReport(flags.instance);
+
+  if (flags.json) {
+    process.stdout.write(`${JSON.stringify({
+      instance: flags.instance,
+      auto_update: env.KORTIX_AUTO_UPDATE === 'true',
+      update_time: env.KORTIX_UPDATE_TIME,
+      update_tz: env.KORTIX_UPDATE_TZ,
+      update: report?.status ?? null,
+      drift: report?.drift ?? null,
+      lock: report?.lock ?? null,
+    }, null, 2)}\n`);
+    compose(flags.instance, ['ps']);
+    return 0;
+  }
+
+  process.stdout.write(`\n  ${C.bold}kortix self-host status${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n\n`);
+  compose(flags.instance, ['ps']);
+  process.stdout.write('\n');
+
+  if (!report) {
+    process.stdout.write(`  ${status.err('update status unavailable')}${C.dim} (kortix-updater not reachable — is the stack running?)${C.reset}\n\n`);
+    return 0;
+  }
+
+  const outcome = report.status.outcome;
+  const label = (OUTCOME_LABEL[outcome] ?? ((t: string) => t))(outcome);
+  const schedule = `${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ}`;
+
+  // One terse line, as specified: last update, outcome, next window.
+  process.stdout.write(`  ${C.dim}last update  ${C.reset}${label}${report.status.finished_at ? `${C.dim} (${report.status.finished_at})${C.reset}` : ''}${C.dim} — auto-update ${schedule}${C.reset}\n`);
+  if (report.status.from_version || report.status.to_version) {
+    process.stdout.write(`  ${C.dim}version      ${C.reset}${report.status.from_version || '?'} ${C.dim}→${C.reset} ${report.status.to_version || '?'}\n`);
+  }
+  if (report.status.detail) {
+    process.stdout.write(`  ${C.dim}detail       ${C.reset}${report.status.detail}\n`);
+  }
+  if (report.lock?.locked) {
+    process.stdout.write(`  ${C.yellow}update currently running${C.reset}${C.dim} (${report.lock.holder || 'unknown holder'})${C.reset}\n`);
+  }
+
+  const drifted = (report.drift ?? []).filter((entry) => entry.drift);
+  if (drifted.length > 0) {
+    process.stdout.write(`\n  ${status.err('drift detected')}${C.dim} — running image doesn't match the rendered config:${C.reset}\n`);
+    for (const entry of drifted) {
+      process.stdout.write(`    ${C.red}✗${C.reset} ${entry.service} ${C.dim}(expected ${entry.expected_image})${C.reset}\n`);
+    }
+  } else if (report.drift) {
+    process.stdout.write(`\n  ${status.ok('no drift')}${C.dim} — running images match the rendered config${C.reset}\n`);
+  }
+  process.stdout.write('\n');
+  return 0;
 }
 
 function selfHostOpen(flags: GlobalFlags): number {
@@ -2041,7 +2189,6 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     FRONTEND_IMAGE: `${DEFAULT_FRONTEND_IMAGE_REPO}:${tag}`,
     API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${tag}`,
     GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${tag}`,
-    SANDBOX_IMAGE: `${DEFAULT_SANDBOX_IMAGE_REPO}:${tag}`,
     GATEWAY_INTERNAL_TOKEN: token(32),
     OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: token(32),

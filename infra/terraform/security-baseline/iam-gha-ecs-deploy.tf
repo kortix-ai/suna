@@ -51,6 +51,9 @@ resource "aws_iam_role" "gha_ecs_deploy" {
 }
 
 resource "aws_iam_role_policy" "gha_ecs_deploy" {
+  # checkov:skip=CKV_AWS_355: the TaskDefinitionLifecycle statement's "*" is
+  # required — RegisterTaskDefinition/DescribeTaskDefinition do not support
+  # resource-level permissions; every other statement is ARN-scoped.
   name = "ecs-deploy"
   role = aws_iam_role.gha_ecs_deploy.id
   policy = jsonencode({
@@ -65,16 +68,37 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
       },
       {
-        Sid    = "DescribeAndRegister"
+        Sid      = "DescribeKortixServices"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeServices"]
+        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
+      },
+      {
+        Sid    = "DescribeKortixTasks"
+        Effect = "Allow"
+        Action = ["ecs:DescribeTasks", "ecs:ListTasks"]
+        # Tasks/list are scoped by cluster through the task/container-instance
+        # ARN path; kortix clusters all match kortix-*.
+        Resource = [
+          "arn:aws:ecs:*:${local.account_id}:task/kortix-*/*",
+          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-*/*",
+        ]
+        Condition = {
+          ArnLike = {
+            "ecs:cluster" = "arn:aws:ecs:*:${local.account_id}:cluster/kortix-*"
+          }
+        }
+      },
+      {
+        # RegisterTaskDefinition/DescribeTaskDefinition do not support
+        # resource-level permissions (AWS SAR table) — "*" is the only valid
+        # resource for them; see the checkov skip on this resource.
+        Sid    = "TaskDefinitionLifecycle"
         Effect = "Allow"
         Action = [
-          "ecs:DescribeServices",
-          "ecs:DescribeTasks",
-          "ecs:ListTasks",
           "ecs:DescribeTaskDefinition",
           "ecs:RegisterTaskDefinition",
         ]
-        # These ECS actions don't support resource-level scoping.
         Resource = "*"
       },
       {
