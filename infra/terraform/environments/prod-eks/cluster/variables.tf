@@ -73,6 +73,12 @@ variable "api_domain" {
   default     = "api-eks.kortix.com"
 }
 
+variable "gateway_domain" {
+  description = "Origin FQDN for the EKS LLM gateway behind the Cloudflare router."
+  type        = string
+  default     = "gateway-eks.kortix.com"
+}
+
 variable "argocd_domain" {
   description = "Public FQDN for the Argo CD admin UI (gated by Cloudflare Access)."
   type        = string
