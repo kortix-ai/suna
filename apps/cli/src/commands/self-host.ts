@@ -88,6 +88,7 @@ Options:
   --domain <domain>       Public domain reachability (recommended, production).
   --tunnel cloudflare     Cloudflare-tunnel reachability (no public domain; evaluation).
   --version <ref>         Pin a release/channel/dev build. Alias: --tag/--release.
+                          dev/staging/prod track those live environments (may break any time); stable is the promoted default.
   --channel <name>        stable|latest to track (default: stable).
   --auto-update <on|off>  Override the default (ON everywhere except --local-images).
   --update-time <HH:MM> / --update-tz <tz>   Auto-updater schedule.
