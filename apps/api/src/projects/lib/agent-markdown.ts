@@ -47,6 +47,26 @@ export function parseAgentMarkdown(content: string): ParsedAgentMarkdown {
 }
 
 /**
+ * Returns the YAML error message if `content`'s frontmatter fence fails to
+ * parse, or `null` if there's no fence at all (body-only is valid) or the
+ * fence parses cleanly. `parseAgentMarkdown` itself never throws — by design
+ * it degrades a malformed fence to an empty frontmatter object rather than
+ * rejecting it (see above) — so callers that need to surface a malformed
+ * fence as an actionable issue (e.g. config validators) call this instead of
+ * re-deriving the fence regex themselves.
+ */
+export function frontmatterParseError(content: string): string | null {
+  const match = FRONTMATTER_RE.exec(content);
+  if (!match) return null;
+  try {
+    parseYaml(match[1]);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/**
  * Inverse of `parseAgentMarkdown`. Omits the frontmatter fence entirely when
  * there are no fields to write, so a pure body-only file stays body-only
  * (no empty `---\n---\n` noise) — matches how a hand-authored OpenCode agent
