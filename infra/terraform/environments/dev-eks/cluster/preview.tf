@@ -66,10 +66,10 @@ resource "aws_iam_role" "preview_app" {
   tags = {
     ManagedBy   = "terraform"
     Name        = "${local.name}-preview-app"
-    Environment = "preview"
+    Environment = lookup(local.tags, "Environment", "managed")
     Project     = lookup(local.tags, "Project", "kortix")
-    Service     = "application"
-    Platform    = "eks"
+    Service     = lookup(local.tags, "Service", "application")
+    Platform    = lookup(local.tags, "Platform", "eks")
   }
 }
 

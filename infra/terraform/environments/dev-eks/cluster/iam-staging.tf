@@ -47,10 +47,10 @@ resource "aws_iam_role" "staging_ci_deploy" {
   tags = {
     ManagedBy   = "terraform"
     Name        = "kortix-gha-eks-deploy-staging"
-    Environment = "staging"
+    Environment = lookup(local.tags, "Environment", "managed")
     Project     = lookup(local.tags, "Project", "kortix")
-    Service     = "deployment"
-    Platform    = "eks"
+    Service     = lookup(local.tags, "Service", "deployment")
+    Platform    = lookup(local.tags, "Platform", "eks")
   }
 }
 
@@ -139,10 +139,10 @@ resource "aws_iam_role" "staging_app" {
   tags = {
     ManagedBy   = "terraform"
     Name        = "kortix-staging-eks-app"
-    Environment = "staging"
+    Environment = lookup(local.tags, "Environment", "managed")
     Project     = lookup(local.tags, "Project", "kortix")
-    Service     = "application"
-    Platform    = "eks"
+    Service     = lookup(local.tags, "Service", "application")
+    Platform    = lookup(local.tags, "Platform", "eks")
   }
 }
 

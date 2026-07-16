@@ -104,7 +104,14 @@ resource "aws_eks_node_group" "this" {
   }
 
   labels = merge({ "workload" = "kortix-api" }, var.node_labels)
-  tags   = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-ng"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "eks")
+  }
 
   # Replacing the launch config (instance types, disk) recreates nodes; let the
   # new group come up before the old is torn down.

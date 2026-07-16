@@ -30,6 +30,7 @@ resource "aws_acm_certificate" "this" {
     Environment = lookup(var.tags, "Environment", "managed")
     Project     = lookup(var.tags, "Project", "kortix")
     Service     = lookup(var.tags, "Service", "certificate")
+    Platform    = lookup(var.tags, "Platform", "managed")
   }
 }
 
