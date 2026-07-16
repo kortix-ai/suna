@@ -389,3 +389,23 @@ describe('setup polish stays fixed', () => {
     }
   });
 });
+
+// Adversarial-review pins: the resume/verify logic can't regress.
+describe('review fixes stay fixed', () => {
+  test('only ACTIVE prior tokens drive the resume banner', () => {
+    expect(wizardSource).toContain("filter((t) => t.status === 'active')");
+  });
+
+  test('minting refreshes the shared token-list cache', () => {
+    expect(wizardSource).toContain("invalidateQueries({ queryKey: ['scim-tokens', accountId] })");
+  });
+
+  test('the arrival baseline is owned by WizardCore, not the panel', () => {
+    expect(wizardSource).toContain('ssoBaselineRef = useRef');
+    expect(wizardSource).toContain('baselineRef={ssoBaselineRef}');
+  });
+
+  test('connect instructions render on resume too (skip is informed, not blind)', () => {
+    expect(wizardSource).toContain('(minted || priorTokens.length > 0) && connectContent');
+  });
+});

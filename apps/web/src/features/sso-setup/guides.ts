@@ -140,6 +140,7 @@ const importStep = (claimHint: string): GuideStep => ({
   id: 'connect',
   title: 'Connect to Kortix',
   kind: 'import',
+  where: 'kortix',
   intro:
     'Paste the federation metadata from the previous step. Kortix registers your IdP and routes sign-ins for your email domain through it.',
   note: `Group claim is prefilled with ${claimHint} — it must match the claim name your IdP emits, or group sync silently finds nothing.`,
@@ -149,6 +150,7 @@ const testStep = (extra?: string): GuideStep => ({
   id: 'test',
   title: 'Test single sign-on',
   kind: 'test',
+  where: 'kortix',
   intro:
     'Copy the sign-in URL below and open it in a PRIVATE / incognito window (so your own logged-in session doesn’t auto-complete the test), enter a test user’s work email, and complete the sign-in at your identity provider.',
   bullets: [
@@ -160,7 +162,8 @@ const testStep = (extra?: string): GuideStep => ({
   ],
   warning:
     'If the sign-in fails: “not assigned” → assign the user to the app (assign-users step). An attribute/email error → recheck the email claim maps to the IdP’s login attribute (attributes step). Signed in but no groups → recheck the group claim NAME matches what you set at connect.',
-  success: 'The test user shows up under Members on the Identity page — that’s a confirmed round-trip.',
+  success:
+    'The test user shows up under Members on the Identity page — that’s a confirmed round-trip.',
 });
 
 export const PROVIDER_GUIDES: ProviderGuide[] = [

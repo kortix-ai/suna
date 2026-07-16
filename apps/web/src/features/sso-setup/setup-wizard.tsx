@@ -44,9 +44,9 @@ import {
   type CreatedScimToken,
   createScimToken,
   getSsoProvider,
-  listScimTokens,
   importSsoProviderFromMetadata,
   listGroups,
+  listScimTokens,
 } from '@/lib/iam-client';
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 import { buildScimBaseUrl } from '@/lib/scim-url';
@@ -887,12 +887,18 @@ function ScimTokenStep({
     enabled: !minted,
     staleTime: 30_000,
   });
-  const priorTokens = priorTokensQuery.data ?? [];
+  // Only ACTIVE tokens count — a revoked/expired one can't authenticate the
+  // IdP, so it must not invite the admin to skip minting.
+  const priorTokens = (priorTokensQuery.data ?? []).filter((t) => t.status === 'active');
 
+  const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
     onSuccess: (token) => {
       onMinted(token);
+      // Keep the settings SCIM card and this step's own resume detection in
+      // sync — both read ['scim-tokens', accountId] with a 30s staleTime.
+      queryClient.invalidateQueries({ queryKey: ['scim-tokens', accountId] });
       successToast('SCIM token minted — both values stay visible for the rest of this setup');
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to mint the token'),
@@ -918,67 +924,73 @@ function ScimTokenStep({
         </div>
       ) : null}
 
-      {minted && connectContent && connectContent.length > 0 && (
+      {!minted && (
+        <div className="space-y-3">
+          {priorTokens.length > 0 && (
+            <InfoBanner tone="info" title="You minted a token on a previous visit">
+              Its secret ({priorTokens[0].public_prefix}…) was only shown at mint time. If it's
+              already pasted into your IdP and every IdP-side step below is done, you can continue
+              without minting. If anything is unfinished, mint a fresh token, update the IdP with
+              it, then revoke the old one from the SCIM card in account settings.
+            </InfoBanner>
+          )}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-56 space-y-1.5">
+              <Label>Token name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={mutation.isPending}
+              />
+            </div>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={name.trim().length === 0 || mutation.isPending}
+              className="gap-1.5"
+            >
+              {mutation.isPending ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <KeyRound className="size-3.5 shrink-0" />
+              )}
+              Mint token
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {(minted || priorTokens.length > 0) && connectContent && connectContent.length > 0 && (
         <div className="space-y-4">
           <div className="border-border/60 border-t pt-4">
             <h4 className="text-foreground text-sm font-semibold">
               Now paste these into {providerName}
             </h4>
             <p className="text-muted-foreground mt-1 text-xs">
-              Both values above stay on this page — copy each one straight into the fields below.
+              {minted
+                ? 'Both values above stay on this page — copy each one straight into the fields below.'
+                : 'Same steps as your previous visit — check each one is actually done before continuing. The Tenant URL above is unchanged; the secret is the one you pasted last time (or mint a fresh one).'}
             </p>
           </div>
           <StepBlocks blocks={connectContent} spUrls={spUrls} />
-          <Button onClick={onDone}>
-            Continue
-            <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
-          </Button>
+          {minted ? (
+            <Button onClick={onDone}>
+              Continue
+              <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={onDone}>
+              Continue without minting
+              <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
+            </Button>
+          )}
         </div>
       )}
 
-      {minted && (!connectContent || connectContent.length === 0) ? (
+      {minted && (!connectContent || connectContent.length === 0) && (
         <Button onClick={onDone}>
           Continue
           <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
         </Button>
-      ) : (
-        <div className="space-y-3">
-          {priorTokens.length > 0 && (
-            <InfoBanner tone="info" title="You already minted a token on a previous visit">
-              Its secret ({priorTokens[0].public_prefix}…) was only shown at mint time. If it's
-              already pasted into your IdP and Test Connection passed, skip ahead with Continue
-              below. If not, mint a fresh token now, update the IdP with it, then revoke the old
-              one from the SCIM card in account settings.
-            </InfoBanner>
-          )}
-          <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-56 space-y-1.5">
-            <Label>Token name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={mutation.isPending}
-            />
-          </div>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={name.trim().length === 0 || mutation.isPending}
-            className="gap-1.5"
-          >
-            {mutation.isPending ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <KeyRound className="size-3.5 shrink-0" />
-            )}
-            Mint token
-          </Button>
-          {priorTokens.length > 0 && (
-            <Button variant="ghost" onClick={onDone}>
-              Continue without minting
-            </Button>
-          )}
-          </div>
-        </div>
       )}
     </div>
   );
@@ -1034,7 +1046,17 @@ function ScimValuesPanel({
  * signing in, surfaced as an explicit success ("they're in") instead of the
  * admin eyeballing a second browser window.
  */
-function SsoTestStatusPanel({ accountId }: { accountId: string }) {
+function SsoTestStatusPanel({
+  accountId,
+  baselineRef,
+}: {
+  accountId: string;
+  /** Owned by WizardCore (which outlives step navigation) so the baseline —
+   *  and therefore the "your test user arrived" confirmation — survives the
+   *  admin flipping to another step and back. A panel-local ref would be
+   *  re-seeded from the query cache that already contains the arrival. */
+  baselineRef: React.MutableRefObject<Set<string> | null>;
+}) {
   const membersQuery = useQuery({
     queryKey: ['sso-verify-members', accountId],
     queryFn: () => listAccountMembers(accountId),
@@ -1042,10 +1064,9 @@ function SsoTestStatusPanel({ accountId }: { accountId: string }) {
     staleTime: 4_000,
   });
 
-  // Baseline = whoever was already a member when the step opened. Stored once
-  // on the first successful fetch; never updated, so every later arrival stays
-  // highlighted for the rest of the visit.
-  const baselineRef = useRef<Set<string> | null>(null);
+  // Baseline = whoever was already a member when the TEST STEP was first
+  // reached this visit. Stored once; never updated, so every later arrival
+  // stays highlighted for the rest of the visit.
   const members = membersQuery.data ?? null;
   if (members && baselineRef.current === null) {
     baselineRef.current = new Set(members.map((m) => m.user_id));
@@ -1080,7 +1101,9 @@ function SsoTestStatusPanel({ accountId }: { accountId: string }) {
           <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
           <div className="min-w-0 text-sm">
             <p className="text-foreground font-medium">
-              {arrived.length === 1 ? 'Your test user just arrived' : `${arrived.length} users arrived`}
+              {arrived.length === 1
+                ? 'Your test user just arrived'
+                : `${arrived.length} users arrived`}
             </p>
             <p className="text-muted-foreground truncate text-xs">
               {arrived.map((m) => m.email ?? m.user_id).join(', ')} — signed in via SSO and
@@ -1188,6 +1211,7 @@ function StepBody({
   scimTenantUrl,
   scimMinted,
   onScimMinted,
+  ssoBaselineRef,
   onCompleteStep,
   onFinish,
 }: {
@@ -1203,6 +1227,8 @@ function StepBody({
   scimTenantUrl: string;
   scimMinted: CreatedScimToken | null;
   onScimMinted: (token: CreatedScimToken) => void;
+  /** SSO-only: arrival baseline owned by WizardCore (survives step nav). */
+  ssoBaselineRef: React.MutableRefObject<Set<string> | null>;
   onCompleteStep: () => void;
   onFinish: () => void;
 }) {
@@ -1311,7 +1337,9 @@ function StepBody({
       ) : step.kind === 'test' ? (
         <div className="space-y-4">
           {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
-          {flow === 'sso' && <SsoTestStatusPanel accountId={accountId} />}
+          {flow === 'sso' && (
+            <SsoTestStatusPanel accountId={accountId} baselineRef={ssoBaselineRef} />
+          )}
           <div className="flex flex-wrap items-center gap-3">
             {flow === 'sso' && (
               <>
@@ -1393,6 +1421,9 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     [accountId],
   );
   const [scimMinted, setScimMinted] = useState<CreatedScimToken | null>(null);
+  // SSO test-step arrival baseline — lives here (not in the panel) so step
+  // navigation within one visit can't erase a confirmed test sign-in.
+  const ssoBaselineRef = useRef<Set<string> | null>(null);
 
   const [activeStep, setActiveStep] = useState(0);
   const [completed, setCompleted] = useState<string[]>([]);
@@ -1534,6 +1565,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               scimTenantUrl={scimTenantUrl}
               scimMinted={scimMinted}
               onScimMinted={setScimMinted}
+              ssoBaselineRef={ssoBaselineRef}
               onCompleteStep={() => markDone(step.id)}
               onFinish={finish}
             />
