@@ -4,6 +4,8 @@ import { db } from '../shared/db';
 import { accessRequests } from '@kortix/db';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
 import { config } from '../config';
+import { getSsoProviderByDomain } from '../repositories/sso';
+import { createCheckEmailRateLimitMiddleware } from '../shared/rate-limit';
 import { makeOpenApiApp, json, errors } from '../openapi';
 
 export const accessControlApp = makeOpenApiApp();
@@ -38,25 +40,42 @@ accessControlApp.openapi(
   (c) => c.json({ signupsEnabled: areSignupsEnabled() }),
 );
 
+// `mode` drives the unified auth flow: 'signin' when the address already has
+// an account, 'signup' when it may register, 'closed' when signups are off and
+// the address isn't allowlisted, 'sso' when the domain's org enforces SSO-only
+// sign-in (the password/email-code paths must refuse). This is deliberately a
+// flow directive, not a raw "exists" boolean — and the per-IP rate limit above
+// it is what keeps the endpoint useless for bulk account enumeration
+// (`allowed` already implied existence whenever signups were closed, so this
+// widens nothing new).
 accessControlApp.openapi(
   createRoute({
     method: 'post',
     path: '/check-email',
     tags: ['access'],
-    summary: 'Check whether an email is allowed to sign up',
+    summary: 'Resolve how an email should proceed through the auth flow',
+    middleware: [createCheckEmailRateLimitMiddleware()] as const,
     request: {
       body: { content: { 'application/json': { schema: z.object({ email: z.string().email() }) } } },
     },
     responses: {
-      200: json(z.object({ allowed: z.boolean() }), 'Whether the email may sign up'),
-      ...errors(400),
+      200: json(
+        z.object({ allowed: z.boolean(), mode: z.enum(['signin', 'signup', 'closed', 'sso']) }),
+        'Whether the email may sign up, and which auth-flow mode applies',
+      ),
+      ...errors(400, 429),
     },
   }),
   async (c) => {
     const { email } = c.req.valid('json');
-    if (canSignUp(email)) return c.json({ allowed: true });
-    if (await userExistsInAuth(email)) return c.json({ allowed: true });
-    return c.json({ allowed: false });
+    const domain = email.trim().toLowerCase().split('@')[1] || '';
+    if (domain) {
+      const ssoProvider = await getSsoProviderByDomain(domain).catch(() => null);
+      if (ssoProvider?.enforceSso) return c.json({ allowed: true, mode: 'sso' as const });
+    }
+    if (await userExistsInAuth(email)) return c.json({ allowed: true, mode: 'signin' as const });
+    if (canSignUp(email)) return c.json({ allowed: true, mode: 'signup' as const });
+    return c.json({ allowed: false, mode: 'closed' as const });
   },
 );
 
