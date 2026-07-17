@@ -1,7 +1,22 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { OutputItem } from '../shared/derive-panels';
 import { OutputRows, OutputsCard } from './outputs-card';
+
+/** A minimal file output — defaults to a plausible scaffolding-free file so
+ * callers only need to override what the test cares about. */
+function out(overrides: Partial<OutputItem> & Pick<OutputItem, 'name'>): OutputItem {
+  return { callID: `c-${overrides.name}`, kind: 'file', path: overrides.name, ...overrides } as OutputItem;
+}
+
+function renderOutputRows(outputs: OutputItem[]): string {
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <OutputRows outputs={outputs} onOpenOutput={() => {}} />
+    </TooltipProvider>,
+  );
+}
 
 describe('OutputRows display (W3/W11)', () => {
   test('title wins over filename; kind label rides right; fresh mark shows', () => {
@@ -67,6 +82,25 @@ describe('OutputIcon image thumbnails (W13)', () => {
     );
     expect(html).not.toContain('<img');
     expect(html).toContain('Generated image');
+  });
+});
+
+describe('OutputRows folds scaffolding behind "more files" (W16)', () => {
+  test('scaffolding folds behind "more files" when real deliverables exist', () => {
+    const html = renderOutputRows([
+      out({ name: 'report.pdf' }),
+      out({ name: 'helper.json' }),
+      out({ name: 'notes.json' }),
+    ]);
+    expect(html).toContain('report.pdf');
+    expect(html).not.toContain('helper.json');
+    expect(html).toContain('2 more files');
+  });
+
+  test('scaffolding-only runs still show their files', () => {
+    const html = renderOutputRows([out({ name: 'a.json' }), out({ name: 'b.json' })]);
+    expect(html).toContain('a.json');
+    expect(html).toContain('b.json');
   });
 });
 

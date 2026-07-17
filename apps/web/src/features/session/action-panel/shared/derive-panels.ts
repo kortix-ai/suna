@@ -31,6 +31,9 @@ interface OutputItemBase {
   description?: string;
   /** Set only for latest-run items: first appearance vs a re-produced path (W11). */
   fresh?: 'new' | 'updated';
+  /** The agent explicitly `show`ed this — a hand-over, so it ranks as a
+   *  deliverable regardless of extension. Set by `showOutputsOf`. */
+  shown?: boolean;
 }
 
 type ArtifactOutputItem = OutputItemBase & {
@@ -300,7 +303,7 @@ interface ShowPayload {
 function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
   if (url && /^https?:\/\//i.test(url)) {
-    return appOutput(url, payload.title, payload.description, callID);
+    return { ...appOutput(url, payload.title, payload.description, callID), shown: true };
   }
 
   const path = typeof payload.path === 'string' ? payload.path.trim() : '';
@@ -325,7 +328,7 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
         ? 'presentation'
         : 'file';
 
-  return { callID, name, title, description, path, kind };
+  return { callID, name, title, description, path, kind, shown: true };
 }
 
 /**
