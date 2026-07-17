@@ -587,7 +587,8 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
         const verb = normalizeName(parts[0].tool) === 'write' ? 'Wrote' : 'Updated';
         return arg ? `${verb} ${arg}` : `${verb} a file`;
       }
-      return `Updated ${n} files`;
+      const writes = parts.filter((p) => normalizeName(p.tool) === 'write').length;
+      return writes === n ? `Wrote ${n} files` : `Updated ${n} files`;
     }
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;

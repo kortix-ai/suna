@@ -72,6 +72,15 @@ describe('narrateStep', () => {
     ).toBe('Updated 2 files');
   });
 
+  it('an all-write edit group says Wrote, not Updated', () => {
+    const parts = [part('write'), part('write'), part('write')];
+    expect(narrateStep('edit', parts)).toBe('Wrote 3 files');
+  });
+
+  it('a mixed write+edit group stays Updated', () => {
+    expect(narrateStep('edit', [part('write'), part('edit')])).toBe('Updated 2 files');
+  });
+
   it('counts reads', () => {
     expect(narrateStep('explore', [part('read'), part('read'), part('read')])).toBe('Read 3 files');
   });
