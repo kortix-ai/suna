@@ -4,7 +4,7 @@ export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-respons
 export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
-export type { CallUpstreamOptions, FetchImpl } from './http';
+export type { CallUpstreamOptions, FetchImpl, TransportEngine } from './http';
 
 export {
   CircuitBreaker,

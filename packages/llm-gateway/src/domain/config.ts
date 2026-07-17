@@ -36,4 +36,12 @@ export interface GatewayConfig {
    * behavior — required for old self-host boxes and a gradual rollout.
    */
   translationSidecar?: TranslationSidecarConfig;
+  // Which transport engine executes upstream calls. 'native' (default) uses the
+  // hand-written per-provider transports (optionally fronted by the translation
+  // sidecar above). 'ai-sdk' routes replaceable providers (openai-compat /
+  // anthropic / bedrock) through the Vercel AI SDK provider packages, which own
+  // the provider quirks, adapting the result back to the same OpenAI-compatible
+  // /v1/llm contract. Codex (openai-responses) always stays native. Flag-gated
+  // for a proven, staged rollout and, ultimately, retiring the LiteLLM sidecar.
+  transportEngine?: 'native' | 'ai-sdk';
 }

@@ -28,6 +28,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
             authToken: config.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN || undefined,
           }
         : undefined,
+      transportEngine: config.LLM_TRANSPORT_ENGINE === 'ai-sdk' ? 'ai-sdk' : 'native',
     });
     const llm = new Hono();
     llm.get('/health', (c) =>
