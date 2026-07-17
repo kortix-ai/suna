@@ -431,7 +431,8 @@ describe('Google SAML guide is novice-complete', () => {
     const cf = getProviderGuide('cloudflare')!;
     const text = JSON.stringify(cf.steps);
     expect(cf.name).toContain('Cloudflare');
-    expect(text).toContain('JSONata'); // groups transform
+    expect(text).toContain('groups'); // group attribute
+    expect(text).toContain('OVERRIDES'); // the JSONata-breaks-attributes caution
     const policy = cf.steps.find((st) => st.id === 'policy')!;
     expect(policy.warning?.toLowerCase()).toContain('denies everyone'); // no-policy gotcha
     // Cloudflare IS the SAML IdP to Kortix — every console step is on the IdP side.
