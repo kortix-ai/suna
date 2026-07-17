@@ -66,9 +66,21 @@ locals {
 
 data "aws_iam_policy_document" "drata_sns_inspection" {
   statement {
-    sid       = "ReadAlertTopicSubscriptions"
-    actions   = ["sns:GetTopicAttributes", "sns:ListSubscriptionsByTopic"]
+    sid = "ReadAlertTopicSubscriptions"
+    actions = [
+      "sns:GetTopicAttributes",
+      "sns:GetSubscriptionAttributes",
+      "sns:ListSubscriptions",
+      "sns:ListSubscriptionsByTopic",
+      "sns:ListTopics",
+    ]
     resources = [data.aws_sns_topic.usw2_alerts.arn, data.aws_sns_topic.euw2_alerts.arn]
+  }
+
+  statement {
+    sid       = "ListTopicsForInspection"
+    actions   = ["sns:ListSubscriptions", "sns:ListTopics"]
+    resources = ["*"]
   }
 }
 
