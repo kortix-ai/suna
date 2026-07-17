@@ -330,6 +330,49 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6'),
     ).rejects.toMatchObject({ code: 'provider_not_connected' });
   });
+
+  // Regression coverage (2026-07-17 live defect report): a BYOK OpenRouter
+  // call to a model NOT individually catalogued by models.dev — e.g.
+  // OpenRouter's dynamic/no-catalog-price auto-router, `openrouter/
+  // openrouter/fusion` — 502ed with an "Invalid URL" upstream error,
+  // consistent with the resolved descriptor's `baseUrl` ending up empty for
+  // that call. Root-caused: it does NOT (provider-registry.ts's
+  // `resolveCatalogUpstream` resolves `baseUrl` from the PROVIDER, keyed by
+  // `providerId` only — its signature carries no model parameter at all, so
+  // it structurally cannot special-case "is this exact model individually
+  // catalogued" — see provider-registry.test.ts's sibling regression test).
+  // This test pins the OTHER half of that claim from resolveCandidates' own
+  // side: for a model id that is CLEARLY not any real catalog entry, under a
+  // connected BYOK provider, the resulting descriptor still carries the
+  // provider's real (non-empty) baseUrl — resolveCandidates never drops,
+  // nulls, or otherwise special-cases baseUrl based on the requested model
+  // id. Live re-verified against dev (2026-07-17): both the in-process
+  // gateway and the standalone gateway pod reach OpenRouter and bill
+  // non-zero upstream cost for the exact real-world case
+  // (`openrouter/openrouter/fusion`), streaming and non-streaming alike.
+  test("BYOK OpenRouter: a model id models.dev has never heard of still resolves the connected provider's real baseUrl", async () => {
+    catalogUpstream = {
+      baseUrl: 'https://openrouter.ai/api/v1',
+      envVar: 'OPENROUTER_API_KEY',
+      kind: 'openai-compat',
+    };
+    resolvedSecret = 'sk-or-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(
+      p,
+      'openrouter/definitely-not-a-real-catalog-model-xyz-123',
+    );
+
+    expect(candidates[0]).toMatchObject({
+      provider: 'openrouter',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-or-user-key',
+      resolvedModel: 'definitely-not-a-real-catalog-model-xyz-123',
+    });
+    expect(candidates[0].baseUrl).toBeTruthy();
+  });
 });
 
 describe('resolveCandidates — managed model tier gating', () => {

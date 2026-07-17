@@ -4,6 +4,7 @@ import {
   NetworkError,
   TimeoutError,
   UpstreamHttpError,
+  UpstreamMisconfiguredError,
   defaultIsRetryable,
   indicatesUpstreamDown,
   looksLikeTerminalAuthFailure,
@@ -74,6 +75,30 @@ describe('defaultIsRetryable — terminal client-auth errors', () => {
   test('timeouts and genuine network errors stay retryable', () => {
     expect(defaultIsRetryable(new TimeoutError())).toBe(true);
     expect(defaultIsRetryable(new NetworkError('ECONNRESET'))).toBe(true);
+  });
+});
+
+// A resolved descriptor with no usable baseUrl (see call-upstream.test.ts for
+// the end-to-end callUpstream coverage) — a resolution-time configuration
+// defect, never a transient/host-health signal, so it must be classified the
+// opposite of a generic NetworkError on both axes.
+describe('UpstreamMisconfiguredError — a bad descriptor is never retryable and never upstream-down', () => {
+  test('is never retryable', () => {
+    expect(
+      defaultIsRetryable(new UpstreamMisconfiguredError('openrouter', 'missing baseUrl')),
+    ).toBe(false);
+  });
+
+  test('does not count as upstream-down (must never trip the shared per-provider breaker)', () => {
+    expect(
+      indicatesUpstreamDown(new UpstreamMisconfiguredError('openrouter', 'missing baseUrl')),
+    ).toBe(false);
+  });
+
+  test('message names the provider and reason', () => {
+    expect(new UpstreamMisconfiguredError('openrouter', 'missing baseUrl').message).toBe(
+      'upstream misconfigured for provider "openrouter": missing baseUrl',
+    );
   });
 });
 
