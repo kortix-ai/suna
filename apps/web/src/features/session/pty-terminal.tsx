@@ -391,7 +391,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       ref={terminalRef}
       className={cn(
         'overflow-hidden',
-        'bg-[#0f0f14]',
+        // Terminal chrome is always dark regardless of app theme (matches
+        // terminalTheme.background above, and the xterm ANSI palette which
+        // assumes a dark canvas) — the fixed `black` scale, not a raw hex.
+        'bg-black',
         'p-2 px-3',
         hidden && 'invisible pointer-events-none',
         className,

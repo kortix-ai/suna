@@ -21,7 +21,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
   const installCmd = 'npm i -g @kortix/cli';
 
   return (
-    <div className="shrink-0 border-b border-white/10 bg-[#15151d] text-[13px]">
+    <div className="shrink-0 border-b border-white/10 bg-white/5 text-[13px]">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}

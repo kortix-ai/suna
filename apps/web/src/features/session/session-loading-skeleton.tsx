@@ -60,18 +60,18 @@ export function SessionLoadingSkeleton() {
               {/* LEFT: Attach (real-looking, disabled) + Agent + Model placeholders */}
               <div className="flex items-center gap-1 min-w-0">
                 <div
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground/40"
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-full text-muted-foreground/40"
                   aria-hidden
                 >
                   <Paperclip className="h-4 w-4" strokeWidth={2} />
                 </div>
-                <Skeleton className="h-7 w-20 rounded-xl" />
-                <Skeleton className="h-7 w-28 rounded-xl" />
+                <Skeleton className="h-7 w-20 rounded-full" />
+                <Skeleton className="h-7 w-28 rounded-full" />
               </div>
 
               {/* RIGHT: TokenProgress placeholder + Submit button (disabled-looking) */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <Skeleton className="h-7 w-10 rounded-xl" />
+                <Skeleton className="h-7 w-10 rounded-full" />
                 <div
                   className="flex-shrink-0 h-8 w-8 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground/40"
                   aria-hidden

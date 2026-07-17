@@ -135,7 +135,7 @@ export function SessionTerminalPanel({
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0f0f14]">
+    <div className="flex h-full w-full flex-col bg-black">
       {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>

@@ -118,10 +118,10 @@ interface BreakdownSegment {
 }
 
 const BREAKDOWN_COLORS: Record<BreakdownKey, string> = {
-  system: 'var(--color-blue-400)',      // blue
-  user: 'var(--color-emerald-400)',     // green
-  assistant: 'var(--color-violet-400)', // purple
-  tool: 'var(--color-amber-400)',       // yellow
+  system: 'var(--kortix-blue)',
+  user: 'var(--kortix-green)',
+  assistant: 'var(--kortix-purple)',
+  tool: 'var(--kortix-yellow)',
   other: 'var(--color-muted-foreground)', // gray
 };
 
@@ -271,7 +271,7 @@ function RawMessage({ message, parts, formatTime }: {
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-3 pb-2">
-        <pre className="p-3 rounded-2xl bg-muted/40 overflow-x-auto text-xs font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
+        <pre className="p-3 rounded-md bg-muted/40 overflow-x-auto text-xs font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
           {JSON.stringify({ message, parts }, null, 2)}
         </pre>
       </AccordionContent>
@@ -575,7 +575,7 @@ export function SessionContextModal({
         <div className="flex-1 overflow-y-auto -mx-6 px-6 pb-4 space-y-8">
           {/* Aggregate totals — shown when sub-sessions exist */}
           {hasSubSessions && aggregateTotals && (
-            <div className="flex flex-col gap-3 p-4 rounded-2xl border border-primary/20 bg-primary/5">
+            <div className="flex flex-col gap-3 p-4 rounded-md border border-primary/20 bg-primary/5">
               <div className="flex items-center gap-2">
                 <Network className="size-4 text-primary" />
                 <div className="text-sm font-semibold text-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line558JsxTextAggregateTotals')}<span className="ml-2 text-xs font-normal text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line560JsxTextThisSession')}{descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
@@ -636,7 +636,7 @@ export function SessionContextModal({
           {hasSubSessions && subSessionTree && subSessionTree.children.length > 0 && (
             <div className="flex flex-col gap-2">
               <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown')}</div>
-              <div className="border rounded-2xl p-3 bg-muted/20">
+              <div className="border rounded-md p-3 bg-muted/20">
                 {subSessionTree.children.map((child) => (
                   <SubSessionTreeNode key={child.id} node={child} />
                 ))}
@@ -648,7 +648,7 @@ export function SessionContextModal({
           <div className="flex flex-col gap-2">
             <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line631JsxTextRawMessages')}{counts.all})
             </div>
-            <Accordion type="multiple" className="border rounded-2xl overflow-hidden">
+            <Accordion type="multiple" className="border rounded-md overflow-hidden">
               {(messages ?? []).map((msg) => (
                 <RawMessage
                   key={msg.info.id}

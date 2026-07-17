@@ -113,7 +113,7 @@ export function ModelConnectionBar({
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-foreground/10 dark:bg-accent mx-3 -mt-3 rounded-b-xl border"
+              className="border-border bg-foreground/10 dark:bg-accent mx-3 -mt-3 rounded-b-md border"
             >
               <div className="flex items-center justify-between gap-3 pt-[18px] pr-2 pb-1.5 pl-4">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
@@ -125,32 +125,36 @@ export function ModelConnectionBar({
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {action ? (
-                    <button
+                    <Button
                       type="button"
+                      size="toolbar"
+                      className="rounded-full active:scale-[0.96]"
                       onClick={() =>
                         openConnectProvider('providers', connectKind ? { connectKind } : undefined)
                       }
-                      className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
                     >
                       {action}
-                    </button>
+                    </Button>
                   ) : (
                     <>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="toolbar"
+                        className="text-muted-foreground hover:text-foreground rounded-full active:scale-[0.96]"
                         onClick={openUpgrade}
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
                       >
                         <CreditCard className="size-3.5" />
                         Upgrade
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        size="toolbar"
+                        className="rounded-full active:scale-[0.96]"
                         onClick={() => openConnectProvider('providers')}
-                        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
                       >
                         Connect model
-                      </button>
+                      </Button>
                     </>
                   )}
                 </div>

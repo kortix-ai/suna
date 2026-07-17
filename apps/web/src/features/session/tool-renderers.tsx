@@ -832,7 +832,7 @@ function JsonFailureOutputCard({
         {failure.hint && (
           <div
             className={cn(
-              'rounded-2xl border px-2 py-1.5',
+              'rounded-md border px-2 py-1.5',
               STATUS_BORDER.success,
               STATUS_BG.success,
             )}
@@ -1470,7 +1470,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
               <div
                 key={i}
                 className={cn(
-                  'flex items-start gap-2 rounded-2xl border px-2.5 py-1.5',
+                  'flex items-start gap-2 rounded-md border px-2.5 py-1.5',
                   STATUS_BORDER.warning,
                   STATUS_BG.warning,
                 )}
@@ -1491,7 +1491,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="bg-muted/40 border-border/60 flex items-start gap-2 rounded-2xl border px-2.5 py-1.5"
+                className="bg-muted/40 border-border/60 flex items-start gap-2 rounded-md border px-2.5 py-1.5"
               >
                 <Ban className="text-muted-foreground/70 mt-0.5 size-3 flex-shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -1558,7 +1558,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
               <div
                 key={i}
                 className={cn(
-                  'flex items-center gap-2 rounded-2xl border px-2.5 py-1.5',
+                  'flex items-center gap-2 rounded-md border px-2.5 py-1.5',
                   STATUS_BORDER.success,
                   STATUS_BG.success,
                 )}
@@ -1645,8 +1645,8 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
         {report ? (
           report.kind === 'observation' ? (
-            <div className="border-border/60 from-background via-background overflow-hidden rounded-2xl border bg-gradient-to-b to-amber-50/20 shadow-sm dark:to-amber-950/10">
-              <div className="border-border/50 to-background border-b bg-gradient-to-r from-amber-50/70 px-3 py-2.5 dark:from-amber-950/20">
+            <div className="border-border/60 from-background via-background overflow-hidden rounded-md border bg-gradient-to-b to-kortix-yellow/10 shadow-sm">
+              <div className="border-border/50 to-background border-b bg-gradient-to-r from-kortix-yellow/10 px-3 py-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-muted-foreground text-xs">
                     <Fingerprint className="size-3" />
@@ -1751,7 +1751,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                           {report.filesRead.map((file) => (
                             <span
                               key={file}
-                              className="bg-background border-border/70 text-foreground/75 inline-flex h-6 items-center rounded-2xl border px-2 font-mono text-xs break-all"
+                              className="bg-background border-border/70 text-foreground/75 inline-flex h-6 items-center rounded-full border px-2 font-mono text-xs break-all"
                             >
                               {file}
                             </span>
@@ -1764,8 +1764,8 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               </div>
             </div>
           ) : (
-            <div className="border-border/60 from-background via-background overflow-hidden rounded-2xl border bg-gradient-to-b to-amber-50/20 shadow-sm dark:to-amber-950/10">
-              <div className="border-border/50 to-background border-b bg-gradient-to-r from-amber-50/70 px-3 py-2.5 dark:from-amber-950/20">
+            <div className="border-border/60 from-background via-background overflow-hidden rounded-md border bg-gradient-to-b to-kortix-yellow/10 shadow-sm">
+              <div className="border-border/50 to-background border-b bg-gradient-to-r from-kortix-yellow/10 px-3 py-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-muted-foreground text-xs">
                     <Fingerprint className="size-3" />
@@ -2417,7 +2417,7 @@ function InlineSessionMessagesList({ messages }: { messages: ParsedSessionMessag
         <div
           key={msg.index}
           className={cn(
-            'overflow-hidden rounded-2xl border',
+            'overflow-hidden rounded-md border',
             msg.role === 'user' ? 'border-border/60' : 'border-border/40',
           )}
         >
@@ -4002,7 +4002,7 @@ function ToolFailureCard({ heading, failure }: { heading: string; failure: Embed
   return (
     <div
       className={cn(
-        'mx-3 mb-2.5 flex items-start gap-2 rounded-2xl border px-3 py-2.5',
+        'mx-3 mb-2.5 flex items-start gap-2 rounded-md border px-3 py-2.5',
         STATUS_BORDER.destructive,
         STATUS_BG.destructive,
       )}
@@ -5152,7 +5152,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
       <div
         className={cn(
           'bg-card overflow-hidden',
-          fill ? 'flex h-full items-center justify-center' : 'border-border/50 rounded-2xl border',
+          fill ? 'flex h-full items-center justify-center' : 'border-border/50 rounded-md border',
         )}
       >
         <div className="flex items-center gap-3 px-5 py-4">
@@ -5194,7 +5194,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
         'bg-card overflow-hidden',
         // Panel: fill the height as a seamless column (the side-panel frame
         // already provides the rounded card chrome). Inline: themed card.
-        fill ? 'flex h-full flex-col' : cn('rounded-2xl border', borderStyle),
+        fill ? 'flex h-full flex-col' : cn('rounded-md border', borderStyle),
       )}
     >
       {/* ── Header — always neutral colors, never themed ── */}
@@ -6761,7 +6761,7 @@ function AgentMessageTool({ part }: ToolProps) {
             {(hasSession || isLong) && (
               <ChevronRight
                 className={cn(
-                  'text-muted-foreground/20 group-hover:text-muted-foreground/50 size-3 flex-shrink-0 transition-all',
+                  'text-muted-foreground/20 group-hover:text-muted-foreground/50 size-3 flex-shrink-0 transition-transform',
                   expanded && !hasSession && 'rotate-90',
                 )}
               />
@@ -7884,7 +7884,7 @@ function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
           <div className="bg-muted mb-2.5 h-1 w-full overflow-hidden rounded-full">
             <div
-              className="bg-foreground/60 h-full rounded-full transition-all duration-500"
+              className="bg-foreground/60 h-full rounded-full transition-[width] duration-500"
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -8043,7 +8043,7 @@ function QuestionTool({ part, defaultOpen, forceOpen, locked, hasActiveQuestion 
                         <div
                           key={j}
                           className={cn(
-                            'flex items-start gap-2 rounded-2xl border px-2 py-1.5 text-xs transition-colors',
+                            'flex items-start gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors',
                             picked
                               ? 'border-primary/30 bg-primary/5'
                               : 'border-transparent opacity-50',
@@ -8080,7 +8080,7 @@ function QuestionTool({ part, defaultOpen, forceOpen, locked, hasActiveQuestion 
                     {customAnswers.map((a, k) => (
                       <div
                         key={`custom-${k}`}
-                        className="border-primary/30 bg-primary/5 flex items-start gap-2 rounded-2xl border px-2 py-1.5 text-xs"
+                        className="border-primary/30 bg-primary/5 flex items-start gap-2 rounded-md border px-2 py-1.5 text-xs"
                       >
                         <span className={cn('mt-px flex-shrink-0', STATUS_TEXT.success)}>
                           <Check className="size-3.5" />
@@ -8090,7 +8090,7 @@ function QuestionTool({ part, defaultOpen, forceOpen, locked, hasActiveQuestion 
                     ))}
                   </div>
                 ) : (
-                  <div className="border-primary/30 bg-primary/5 text-foreground rounded-2xl border px-2 py-1.5 text-sm font-medium">
+                  <div className="border-primary/30 bg-primary/5 text-foreground rounded-md border px-2 py-1.5 text-sm font-medium">
                     {ans.length > 0 ? ans.join(', ') : '—'}
                   </div>
                 )}
@@ -8243,10 +8243,10 @@ function ExecutorRiskBadge({ risk }: { risk?: unknown }) {
   if (typeof risk !== 'string' || !risk) return null;
   const tint =
     risk === 'read'
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'text-kortix-green'
       : risk === 'destructive'
         ? 'text-destructive'
-        : 'text-amber-600 dark:text-amber-400';
+        : 'text-kortix-yellow';
   return (
     <span className={cn('flex-shrink-0 text-[10px] font-semibold tracking-wide uppercase', tint)}>
       {risk}
@@ -8260,7 +8260,7 @@ function ExecutorJson({ value }: { value: unknown }) {
   }
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return (
-    <pre className="border-border/50 bg-muted/40 text-foreground/90 max-h-72 overflow-auto rounded-2xl border p-2.5 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+    <pre className="border-border/50 bg-muted/40 text-foreground/90 max-h-72 overflow-auto rounded-md border p-2.5 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
       {text}
     </pre>
   );
@@ -8315,7 +8315,7 @@ function ExecutorConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPr
                   className={cn(
                     'text-[10px] font-semibold uppercase',
                     c.status === 'active'
-                      ? 'text-emerald-600 dark:text-emerald-400'
+                      ? 'text-kortix-green'
                       : 'text-muted-foreground/60',
                   )}
                 >
@@ -8471,11 +8471,11 @@ function ExecutorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           : '';
   const outcome =
     callStatus === 'pending_approval'
-      ? { label: 'Needs approval', tint: 'text-amber-600 dark:text-amber-400' }
+      ? { label: 'Needs approval', tint: 'text-kortix-yellow' }
       : callStatus === 'denied'
         ? { label: 'Denied', tint: 'text-destructive' }
         : ok
-          ? { label: 'OK', tint: 'text-emerald-600 dark:text-emerald-400' }
+          ? { label: 'OK', tint: 'text-kortix-green' }
           : parsed
             ? { label: 'Error', tint: 'text-destructive' }
             : null;

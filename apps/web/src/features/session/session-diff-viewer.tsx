@@ -70,7 +70,7 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
   const directory = diff.file?.includes('/') ? diff.file?.substring(0, diff.file?.lastIndexOf('/')) : '';
 
   return (
-    <div className="rounded-2xl border border-border/50 overflow-hidden bg-card">
+    <div className="rounded-md border border-border/50 overflow-hidden bg-card">
       {/* File header */}
       <button
         onClick={() => hasDiffContent && setExpanded(!expanded)}

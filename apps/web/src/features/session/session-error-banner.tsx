@@ -206,7 +206,7 @@ export function TurnErrorDisplay({ errorText, error, className }: TurnErrorDispl
   return (
     <div
       className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
+        'flex items-start gap-2 px-3 py-2 rounded-md border',
         'bg-muted/40 dark:bg-muted/30',
         'border-border/60',
         className,
@@ -240,7 +240,7 @@ export function SessionRetryDisplay({
   return (
     <div
       className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
+        'flex items-start gap-2 px-3 py-2 rounded-md border',
         'bg-muted/40 dark:bg-muted/30',
         'border-border/60',
         className,

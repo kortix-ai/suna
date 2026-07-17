@@ -789,7 +789,7 @@ function AttachmentPreview({
           <div key={i} className="group relative">
             <div
               className={cn(
-                'border-border/50 flex flex-col overflow-hidden rounded-2xl border',
+                'border-border/50 flex flex-col overflow-hidden rounded-md border',
                 'w-[120px] cursor-default select-none',
                 'bg-card hover:bg-muted/30 hover:border-border transition-colors duration-150',
               )}
@@ -872,7 +872,7 @@ function SlashCommandPopover({
 
   return (
     <div
-      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
+      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-md border"
       style={{
         bottom: window.innerHeight - r.top + 4,
         left: r.left,
@@ -888,7 +888,7 @@ function SlashCommandPopover({
               onSelect(cmd);
             }}
             className={cn(
-              '-mx-1 flex w-full cursor-pointer flex-col gap-0.5 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors',
+              '-mx-1 flex w-full cursor-pointer flex-col gap-0.5 rounded-md border border-transparent px-3 py-2 text-left transition-colors',
               i === selectedIndex ? 'bg-muted border-border/50' : 'hover:bg-muted/50',
             )}
           >
@@ -961,7 +961,7 @@ function MentionPopover({
 
   return (
     <div
-      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
+      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-md border"
       style={{
         bottom: window.innerHeight - r.top + 4,
         left: r.left,
@@ -1117,7 +1117,7 @@ function TodoChip({ todos }: { todos?: Array<any> }) {
   });
 
   return (
-    <div className="bg-muted/50 overflow-hidden rounded-2xl">
+    <div className="bg-muted/50 overflow-hidden rounded-md">
       {/* Header row */}
       <button
         type="button"
@@ -1340,7 +1340,7 @@ export interface SessionChatInputProps {
   toolbarSlot?: React.ReactNode;
 
   /** Extra classes for the input card — e.g. a radius override for the
-   *  project-home hero composer (`rounded-xl`). The drag overlay follows. */
+   *  project-home hero composer. The drag overlay follows. */
   cardClassName?: string;
 
   /** Reply context — shows a banner in the input indicating what's being replied to */
@@ -2287,7 +2287,7 @@ export function SessionChatInput({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 2 }}
                     transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-2xl border px-3 py-1.5"
+                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-1.5"
                   >
                     <Clock className="text-muted-foreground/70 size-3 flex-shrink-0" />
                     <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
@@ -2307,7 +2307,7 @@ export function SessionChatInput({
                 ))}
               </AnimatePresence>
               {replyTo && (
-                <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-md border px-3 py-1.5">
                   <Reply className="text-primary/60 size-3 flex-shrink-0" />
                   <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                     {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
@@ -2353,7 +2353,7 @@ export function SessionChatInput({
           {/* Staged command badge */}
           {stagedCommand && (
             <div className="flex min-w-0 items-center gap-2 px-4 pt-3 pb-0">
-              <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1">
+              <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1">
                 <Terminal className="text-muted-foreground size-3" />
                 <span className="text-foreground max-w-[220px] truncate font-mono text-xs font-medium whitespace-nowrap sm:max-w-[320px]">
                   /{stagedCommand.name}
@@ -2391,7 +2391,7 @@ export function SessionChatInput({
                   className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
                   {lockForApproval ? (
-                    <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
+                    <div className="absolute inset-0 text-kortix-yellow">
                       Approve or deny the action above to continue…
                     </div>
                   ) : lockForQuestion ? (
@@ -2571,10 +2571,10 @@ export function SessionChatInput({
               )}
               {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
-                  {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
+                  {/* ESC hint — matches the real Tooltip component's styling (bg-primary rounded-sm) */}
                   {escCount > 0 && (
                     <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
+                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs whitespace-nowrap">
                         <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
                           ESC
                         </kbd>

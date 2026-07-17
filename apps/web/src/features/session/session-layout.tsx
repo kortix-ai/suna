@@ -568,7 +568,7 @@ function PanelTabButton({
       {badgeCount > 0 && (
         <span
           aria-label={`${badgeCount} pending`}
-          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-semibold leading-none text-white"
+          className="bg-kortix-yellow/80 text-background inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none"
         >
           {badgeCount}
         </span>

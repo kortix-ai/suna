@@ -132,7 +132,7 @@ function InlineIframePreview({
   return (
     <div
       className={cn(
-        'mt-2 rounded-2xl border border-border/50 overflow-hidden transition-colors duration-200',
+        'mt-2 rounded-md border border-border/50 overflow-hidden transition-colors duration-200',
         expanded ? 'h-[480px]' : 'h-[280px]',
       )}
     >
@@ -269,41 +269,41 @@ function SandboxPreviewCard({
 
   return (
     <div className="my-3">
-      <div className="group/card relative rounded-2xl border border-border/50 bg-muted/20 overflow-hidden transition-colors duration-200 hover:border-border/80 hover:bg-muted/30">
+      <div className="group/card relative rounded-md border border-border/50 bg-muted/20 overflow-hidden transition-colors duration-200 hover:border-border/80 hover:bg-muted/30">
         {/* Top accent gradient — color reflects reachability */}
         <div className={cn(
           'absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent to-transparent',
-          isReachable ? 'via-emerald-500/50' : isChecking ? 'via-amber-500/40' : 'via-red-500/40',
+          isReachable ? 'via-kortix-green/50' : isChecking ? 'via-kortix-orange/40' : 'via-kortix-red/40',
         )} />
 
         <div className="flex items-center gap-3 px-3.5 py-2.5">
-          {/* Status icon */}
+          {/* Status icon — kortix tinted tile (green/orange/red for reachable/checking/unreachable) */}
           <div className="relative flex-shrink-0">
             <div className={cn(
-              'w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
+              'w-8 h-8 rounded-sm border flex items-center justify-center transition-colors',
               isReachable
-                ? 'bg-emerald-500/8 border-emerald-500/15 group-hover/card:bg-emerald-500/12'
+                ? 'bg-kortix-green/8 border-kortix-green/15 group-hover/card:bg-kortix-green/12'
                 : isChecking
-                  ? 'bg-amber-500/8 border-amber-500/15'
-                  : 'bg-red-500/8 border-red-500/15',
+                  ? 'bg-kortix-orange/8 border-kortix-orange/15'
+                  : 'bg-kortix-red/8 border-kortix-red/15',
             )}>
               <Globe className={cn(
                 'w-4 h-4',
                 isReachable
-                  ? 'text-emerald-600 dark:text-emerald-400'
+                  ? 'text-kortix-green'
                   : isChecking
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-red-600 dark:text-red-400',
+                    ? 'text-kortix-orange'
+                    : 'text-kortix-red',
               )} />
             </div>
             {/* Status dot */}
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               {isReachable && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/50" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-kortix-green/50" />
               )}
               <span className={cn(
                 'relative inline-flex rounded-full h-2.5 w-2.5 ring-[1.5px] ring-background',
-                isReachable ? 'bg-emerald-500' : isChecking ? 'bg-amber-500 animate-pulse' : 'bg-red-500',
+                isReachable ? 'bg-kortix-green' : isChecking ? 'bg-kortix-orange animate-pulse' : 'bg-kortix-red',
               )} />
             </span>
           </div>
@@ -364,7 +364,7 @@ function SandboxPreviewCard({
                   onClick={handleCopyUrl}
                 >
                   {copied ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    <Check className="h-3.5 w-3.5 text-kortix-green" />
                   ) : (
                     <Copy className="h-3.5 w-3.5" />
                   )}
@@ -466,7 +466,7 @@ function SandboxUrlChip({
   const displayPath = detected.path !== '/' ? detected.path : '';
 
   return (
-    <div className="group/chip flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border/40 bg-muted/15 hover:border-border/60 hover:bg-muted/25 transition-colors">
+    <div className="group/chip flex items-center gap-2 px-3 py-1.5 rounded-full border border-border/40 bg-muted/15 hover:border-border/60 hover:bg-muted/25 transition-colors">
       {/* Globe icon */}
       <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
 
@@ -494,7 +494,7 @@ function SandboxUrlChip({
               className="p-1 rounded hover:bg-muted/60 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
             >
               {copied ? (
-                <Check className="h-3 w-3 text-emerald-500" />
+                <Check className="h-3 w-3 text-kortix-green" />
               ) : (
                 <Copy className="h-3 w-3" />
               )}

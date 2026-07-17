@@ -212,7 +212,7 @@ function AcpUserMessage({
       <div className="flex justify-end">
         <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
           {replyContext && (
-            <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+            <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-md border px-3 py-1.5">
               <Reply className="text-primary/60 size-3 flex-shrink-0" />
               <span className="text-muted-foreground truncate text-xs">
                 {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
