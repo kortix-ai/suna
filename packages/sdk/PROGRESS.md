@@ -809,3 +809,19 @@ The exact self-host fast E2E also reported **24 pass / 0 fail**.
 snapshot-locked, install-verified, and the self-host CLI contract is green.
 
 - 2026-07-17 — additive: `PtyMutationOptions` + `ptyMutationOverrides`, `useCreatePty`/`useUpdatePty` accept optional `onError` so hosts can keep pty errors out of global toasts (web terminal UX). Surface snapshot re-recorded (adds only).
+
+---
+
+### 2026-07-17 — session `postman-connectors` (claim)
+
+Claimed the additive Postman connector surface within the user-directed
+end-to-end Postman ingestion rollout. The SDK scope is deliberately narrow: add
+`postman` to existing connector provider unions and preserve the current
+`ConnectorDraftInput` API. No exported name is renamed or removed. Design and
+execution plan: `docs/specs/2026-07-17-postman-connectors.md` and
+`docs/plans/2026-07-17-postman-connectors.md`.
+
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
