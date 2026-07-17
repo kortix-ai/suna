@@ -69,6 +69,7 @@ export type SessionFilterValue =
   | 'mine'
   | 'shared'
   | 'slack'
+  | 'telegram'
   | 'email'
   | 'schedule'
   | 'webhook';
@@ -78,6 +79,7 @@ export const SESSION_FILTER_OPTIONS: Array<{ value: SessionFilterValue; label: s
   { value: 'mine', label: 'My Chats' },
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
+  { value: 'telegram', label: 'Telegram' },
   { value: 'email', label: 'Email' },
   { value: 'schedule', label: 'Scheduled' },
   { value: 'webhook', label: 'Webhook' },

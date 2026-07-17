@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   ConnectionProfileSchema,
@@ -27,14 +28,19 @@ import {
   deleteAgentMailInstall,
   deleteSlackInstall,
   deleteTeamsInstall,
+  deleteTelegramInstall,
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsAppIdForProject,
   loadTeamsInstall,
+  loadTelegramInstall,
+  loadTelegramTokenForProject,
   normalizeSenderPolicy,
   saveAgentMailInstall,
   saveSlackInstall,
   saveTeamsInstall,
+  saveTelegramInstall,
+  saveTelegramPairing,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
 import { previewVoiceB64, speakInMeeting } from '../../channels/meet-tts';
@@ -50,15 +56,49 @@ import {
 import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { type QuestionInfo } from '../../channels/slack-webhook';
+import type { QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { teamsChannelEnabled } from '../../channels/teams-auth';
+import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
-import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
-import { relayTurnAnswer, relayTurnEnd, relayTurnQuestion, relayTurnStep } from '../../channels/turn-relay';
+import {
+  type TelegramUserCard,
+  buildTelegramWebhookUrl,
+  isValidTelegramBotToken,
+  telegramBotIdFromToken,
+  telegramDeleteWebhook,
+  telegramFetchUserCard,
+  telegramGetMe,
+  telegramSetMyCommands,
+  telegramSetWebhook,
+} from '../../channels/telegram-api';
+import { telegramRequireUserIdentityForTest } from '../../channels/telegram-webhook';
+import { downloadTelegramFile, uploadTelegramFile } from '../../channels/telegram/file-proxy';
+import { TELEGRAM_BOT_COMMANDS } from '../../channels/telegram/inbound';
+import {
+  TELEGRAM_PAIRING_TTL_MS,
+  addTelegramAllowedUser,
+  generateTelegramPairingCode,
+  removeTelegramAllowedUser,
+  telegramAllowedUserIds,
+  telegramAllowedUsers,
+} from '../../channels/telegram/pairing';
+import { postTelegramQuestion } from '../../channels/telegram/questions';
+import {
+  relayTelegramTurnAnswer,
+  relayTelegramTurnEnd,
+  relayTelegramTurnStep,
+  telegramTurnExists,
+} from '../../channels/telegram/turn';
+import {
+  relayTurnAnswer,
+  relayTurnEnd,
+  relayTurnQuestion,
+  relayTurnStep,
+} from '../../channels/turn-relay';
 import { config } from '../../config';
 import { upsertProfileCredential } from '../../executor/credentials';
 import { reconcileChannelConnectors } from '../../executor/sync';
@@ -80,7 +120,6 @@ import {
 } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
-import { listProjectSecretsSnapshot } from '../secrets';
 import {
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
@@ -109,6 +148,7 @@ import {
   upsertTriggerInManifest,
   withTriggersPaused,
 } from '../lib/triggers';
+import { listProjectSecretsSnapshot } from '../secrets';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
@@ -913,6 +953,320 @@ projectsApp.openapi(
   },
 );
 
+// ─── Telegram install — BYO bot (BotFather), secrets live in project_secrets ─
+//
+// Telegram has no shared-app OAuth: every install is a user-minted bot token.
+// Connect validates the token with getMe, mints a random webhook secret, and
+// points the bot's webhook at /v1/webhooks/telegram/:projectId SERVER-SIDE —
+// the token itself never leaves the API (not in the response, not in a sandbox).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/telegram/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/telegram/installation',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const install = await loadTelegramInstall(projectId);
+    if (!install) return c.json(null);
+    // Live capability probe: with BotFather privacy mode ON, Telegram never
+    // delivers plain group @mentions to the bot — the dashboard warns and
+    // shows the fix. Best-effort (null = unknown) so a Telegram hiccup never
+    // breaks the installation read.
+    const token = await loadTelegramTokenForProject(projectId);
+    const me = token ? await telegramGetMe(token).catch(() => null) : null;
+    // The paired-users list, enriched so the dashboard shows a name/@username
+    // (and an avatar when ?photos=true) instead of a bare id. Names captured at
+    // pairing time need no fetch; legacy ids are backfilled via getChat and the
+    // result persisted (a one-time cache warm). Photos are fetched on demand
+    // only — they're never stored (base64 in a hot metadata row would bloat it).
+    const wantPhotos = c.req.query('photos') === 'true';
+    const stored = telegramAllowedUsers(loaded.row.metadata);
+    const cards =
+      token && stored.length > 0
+        ? await Promise.all(
+            stored.map(async (u) => {
+              const missingName = !u.firstName && !u.username;
+              if (!missingName && !wantPhotos) return { u, card: null as TelegramUserCard | null };
+              const card = await telegramFetchUserCard(token, u.id, {
+                withPhoto: wantPhotos,
+              }).catch(() => null);
+              return { u, card };
+            }),
+          )
+        : stored.map((u) => ({ u, card: null as TelegramUserCard | null }));
+    let backfilled = loaded.row.metadata;
+    const allowedUsers = cards.map(({ u, card }) => {
+      if (card && !u.firstName && !u.username && (card.firstName || card.username)) {
+        backfilled = addTelegramAllowedUser(backfilled, u.id, {
+          firstName: card.firstName,
+          lastName: card.lastName,
+          username: card.username,
+        });
+      }
+      return {
+        id: u.id,
+        firstName: u.firstName ?? card?.firstName,
+        lastName: u.lastName ?? card?.lastName,
+        username: u.username ?? card?.username,
+        pairedAt: u.pairedAt,
+        ...(wantPhotos ? { photo: card?.photo ?? null } : {}),
+      };
+    });
+    if (backfilled !== loaded.row.metadata) {
+      await db
+        .update(projects)
+        .set({ metadata: backfilled })
+        .where(eq(projects.projectId, projectId))
+        .catch(() => {});
+    }
+    return c.json({
+      ...install,
+      groupMentionsEnabled: me?.ok ? (me.bot.can_read_all_group_messages ?? false) : null,
+      // Who may drive the agent from Telegram (see telegram/pairing.ts) and
+      // whether the identity gate is enforcing — the dashboard's pairing UI.
+      allowedUserIds: telegramAllowedUserIds(loaded.row.metadata),
+      allowedUsers,
+      pairingRequired: telegramRequireUserIdentityForTest(),
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/telegram/connect
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/telegram/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/telegram/connect',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Connecting a Telegram bot is a connector-write capability — same gate as
+    // Slack: a custom role can withhold it and a scoped agent must hold it.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+
+    let body: { bot_token?: string };
+    try {
+      body = (await c.req.json()) as { bot_token?: string };
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const botToken = body.bot_token?.trim() ?? '';
+    if (!botToken || !isValidTelegramBotToken(botToken)) {
+      return c.json(
+        {
+          error: 'bot_token is required and must look like <bot_id>:<secret> (from @BotFather)',
+        },
+        400,
+      );
+    }
+
+    const me = await telegramGetMe(botToken);
+    if (!me.ok) {
+      // Distinguish "Telegram said no" (bad token → 400) from "couldn't reach
+      // Telegram" (transport → 502), mirroring the Slack connect split.
+      const transport = me.error === 'network_error' || me.error === 'timeout';
+      return c.json({ error: `Telegram rejected the token: ${me.error}` }, transport ? 502 : 400);
+    }
+
+    // 64 base64url chars — comfortably inside Telegram's 1-256 [A-Za-z0-9_-]
+    // secret_token contract, unguessable, and unique per connect (a reconnect
+    // rotates it, invalidating any stale webhook config).
+    const webhookSecret = randomBytes(48).toString('base64url');
+    const webhookUrl = buildTelegramWebhookUrl(
+      config.KORTIX_URL || new URL(c.req.url).origin,
+      projectId,
+    );
+    const hook = await telegramSetWebhook(botToken, webhookUrl, webhookSecret);
+    if (!hook.ok) {
+      return c.json({ error: `Telegram refused the webhook: ${hook.error}` }, 502);
+    }
+
+    // Register the `/` command menu (start/help/new) — best-effort: a failure
+    // here degrades discoverability, not function, so it never fails connect.
+    await telegramSetMyCommands(botToken, TELEGRAM_BOT_COMMANDS).catch(() => {});
+
+    const summary = await saveTelegramInstall({
+      projectId,
+      botToken,
+      webhookSecret,
+      botId: telegramBotIdFromToken(botToken) ?? String(me.bot.id),
+      botUsername: me.bot.username ?? null,
+    });
+    await reconcileChannelConnectors(projectId);
+    // Mint the first pairing code with the install so the connect modal can
+    // walk the user straight onto the sender allowlist (see telegram/pairing.ts).
+    const pairing = await mintTelegramPairing(projectId);
+    return c.json({
+      ...summary,
+      // Free from the validating getMe above: whether Telegram will deliver
+      // group @mentions to this bot (false = BotFather privacy mode is on).
+      groupMentionsEnabled: me.bot.can_read_all_group_messages ?? false,
+      pairing,
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/telegram/pairing-code
+// Mint a fresh single-use pairing code (replaces any outstanding one). The
+// user completes the handshake by sending `/start <code>` to the bot, which
+// allowlists their Telegram user id for this project.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/telegram/pairing-code',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/telegram/pairing-code',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Pairing hands a stranger's Telegram id the power to drive this project's
+    // agent — same connector-write gate as connect/disconnect.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    const install = await loadTelegramInstall(projectId);
+    if (!install) return c.json({ error: 'Telegram is not connected' }, 404);
+    return c.json(await mintTelegramPairing(projectId));
+  },
+);
+
+// DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:userId
+// Un-pair a Telegram sender. Metadata-only, so it works even after a
+// disconnect (the allowlist survives reconnects on purpose).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/telegram/allowed-users/{userId}',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/telegram/allowed-users/:userId',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), userId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    const { metadata, removed } = removeTelegramAllowedUser(
+      loaded.row.metadata,
+      c.req.param('userId'),
+    );
+    if (removed) {
+      await db.update(projects).set({ metadata }).where(eq(projects.projectId, projectId));
+    }
+    return c.json({ removed });
+  },
+);
+
+async function mintTelegramPairing(projectId: string) {
+  const pairing = {
+    code: generateTelegramPairingCode(randomBytes(8)),
+    expiresAt: new Date(Date.now() + TELEGRAM_PAIRING_TTL_MS).toISOString(),
+  };
+  await saveTelegramPairing(projectId, pairing);
+  return pairing;
+}
+
+// DELETE /v1/projects/:projectId/channels/telegram/installation
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/telegram/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/telegram/installation',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    // Best-effort webhook teardown BEFORE the token is purged — a failure here
+    // must not block the disconnect (once the secret is deleted, any updates a
+    // still-configured webhook posts are rejected 404 "Not configured" at our
+    // edge, so nothing leaks either way).
+    const token = await loadTelegramTokenForProject(projectId);
+    if (token) await telegramDeleteWebhook(token).catch(() => {});
+    await deleteTelegramInstall(projectId);
+    await reconcileChannelConnectors(projectId);
+    return c.json({ status: 'disconnected' });
+  },
+);
+
 function teamsPublicBaseUrl(): string | undefined {
   return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
 }
@@ -984,7 +1338,14 @@ projectsApp.openapi(
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
-    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl, appName: config.TEAMS_APP_NAME, botName: config.TEAMS_APP_NAME }));
+    return c.json(
+      buildTeamsManifest({
+        appId: mode.appId,
+        baseUrl,
+        appName: config.TEAMS_APP_NAME,
+        botName: config.TEAMS_APP_NAME,
+      }),
+    );
   },
 );
 
@@ -1014,16 +1375,23 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const tenantId = body.tenant_id?.trim();
-    const isGuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    const isGuid = (v: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
     if (!tenantId || (!isGuid(tenantId) && !isDomain(tenantId))) {
-      return c.json({ error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' }, 400);
+      return c.json(
+        { error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' },
+        400,
+      );
     }
 
     const appId = body.app_id?.trim() || null;
     const appPassword = body.app_password?.trim() || null;
     if ((appId && !appPassword) || (!appId && appPassword)) {
-      return c.json({ error: 'app_id and app_password must be provided together for a bring-your-own bot' }, 400);
+      return c.json(
+        { error: 'app_id and app_password must be provided together for a bring-your-own bot' },
+        400,
+      );
     }
     if (appId && !isGuid(appId)) {
       return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
@@ -1073,7 +1441,10 @@ projectsApp.openapi(
       query: z.object({ url: z.string() }),
     },
     responses: {
-      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      200: {
+        description: 'File bytes',
+        content: { 'application/octet-stream': { schema: z.any() } },
+      },
       ...errors(400, 404),
     },
   }),
@@ -1100,7 +1471,10 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(), 'Consent card sent'),
+      200: json(
+        z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
+        'Consent card sent',
+      ),
       ...errors(400, 404),
     },
   }),
@@ -1697,7 +2071,9 @@ projectsApp.openapi(
               providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
             }
           : undefined;
-      const ok = await relayTurnEnd(sessionId, status, errorInfo);
+      const ok = (await telegramTurnExists(sessionId))
+        ? await relayTelegramTurnEnd(sessionId, status, errorInfo)
+        : await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }
 
@@ -1734,6 +2110,17 @@ projectsApp.openapi(
           .map((s) => ({ url: s.url, text: s.text }))
       : undefined;
     const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
+
+    // The turn-stream is platform-agnostic transport; the turn row itself says
+    // which channel opened it (Slack stays the default for missing rows so its
+    // warn-path diagnostics keep working).
+    if (await telegramTurnExists(sessionId)) {
+      const ok =
+        body.kind === 'answer'
+          ? await relayTelegramTurnAnswer(sessionId, text)
+          : await relayTelegramTurnStep(sessionId, text);
+      return c.json({ ok });
+    }
 
     const ok =
       body.kind === 'answer'
@@ -1834,6 +2221,92 @@ projectsApp.openapi(
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/channels/telegram/file?file_id=...
+// Server-side download proxy: resolve the file_id + fetch the bytes with the
+// bot token (URL constructed server-side; file_path validated) so the sandbox
+// never holds the token. Backs `telegram download`.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/telegram/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/telegram/file (download proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ file_id: z.string() }),
+    },
+    responses: {
+      200: {
+        description: 'File bytes',
+        content: { 'application/octet-stream': { schema: z.any() } },
+      },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadTelegramFile(projectId, c.req.query('file_id') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return new Response(result.body, {
+      status: 200,
+      headers: {
+        'content-type': result.contentType,
+        ...(result.fileName ? { 'x-telegram-file-name': encodeURIComponent(result.fileName) } : {}),
+      },
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/telegram/file/upload
+// Server-side upload proxy: multipart sendDocument, bot token server-side.
+// Backs `telegram send --file`.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/telegram/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/telegram/file/upload (upload proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), message_id: z.any() }).passthrough(), 'Uploaded'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A SEND primitive (posts into the chat with the project's bot token) — the
+    // same connector-write capability that gates Slack's upload proxy, connect/
+    // disconnect, and the bindings route.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    const body = await readBody(c);
+    const result = await uploadTelegramFile(projectId, {
+      chatId: String(body.chat_id ?? body.chatId ?? ''),
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      caption: typeof body.caption === 'string' ? body.caption : undefined,
+      replyToMessageId:
+        typeof body.reply_to_message_id === 'number' ? body.reply_to_message_id : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, message_id: result.messageId });
   },
 );
 
@@ -2287,8 +2760,8 @@ projectsApp.openapi(
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId);
     const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-        : false;
+      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
+      : false;
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
     // authoritative per-request resolution still happens in the gateway.
@@ -2588,7 +3061,12 @@ projectsApp.openapi(
     // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
     // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
     // image (resumes opencode from them) unblocked.
-    const result = await relayTurnQuestion(sessionId, questions);
+    // Telegram is dispatched off the turn row (same as /turn-stream) — the shared
+    // relayTurnQuestion only knows Slack/Teams, so a telegram session would
+    // otherwise fall through to Slack and fail.
+    const result = (await telegramTurnExists(sessionId))
+      ? await postTelegramQuestion(sessionId, questions)
+      : await relayTurnQuestion(sessionId, questions);
     if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
     return c.json({ ok: true, answers: result.answers });
   },

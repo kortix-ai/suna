@@ -410,7 +410,8 @@
                     "slack",
                     "teams",
                     "email",
-                    "meet"
+                    "meet",
+                    "telegram"
                   ]
                 },
                 "credential": {},
@@ -1362,7 +1363,8 @@
                     "slack",
                     "teams",
                     "email",
-                    "meet"
+                    "meet",
+                    "telegram"
                   ]
                 },
                 "credential": {

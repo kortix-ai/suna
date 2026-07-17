@@ -23,12 +23,24 @@ const ENV_KEYS = [
   'SLACK_SIGNING_SECRET',
 ] as const;
 
-const INSTALL_URL = 'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
+const INSTALL_URL =
+  'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
 const INSTALLATION = {
   workspaceId: 'T012AB3CD',
   workspaceName: 'Acme',
   botUserId: 'U0BOT',
   installedAt: '2026-07-08T00:00:00.000Z',
+};
+
+const TELEGRAM_INSTALLATION = {
+  botId: '1234567890',
+  botUsername: 'AcmeKortixBot',
+  installedAt: '2026-07-08T00:00:00.000Z',
+};
+
+const TELEGRAM_PAIRING = {
+  code: 'ABCD-EFGH',
+  expiresAt: '2026-07-08T00:15:00.000Z',
 };
 
 let saved: Record<string, string | undefined>;
@@ -41,6 +53,7 @@ let requests: Array<{ url: string; method: string; body: any }> = [];
 interface MockState {
   oauthAvailable: boolean;
   installation: typeof INSTALLATION | null;
+  telegramInstallation?: typeof TELEGRAM_INSTALLATION | null;
   /** Return `installation` from the Nth GET /installation onwards (0-based). */
   installedAfterPolls?: number;
 }
@@ -78,7 +91,10 @@ function captureOutput() {
 }
 
 function json(data: unknown): Response {
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 function mockApi() {
@@ -88,7 +104,11 @@ function mockApi() {
     const method = (init?.method ?? 'GET').toUpperCase();
     let body: any = undefined;
     if (typeof init?.body === 'string') {
-      try { body = JSON.parse(init.body); } catch { body = init.body; }
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
     }
     requests.push({ url, method, body });
 
@@ -111,13 +131,27 @@ function mockApi() {
     if (url.includes('/channels/slack/connect') && method === 'POST') {
       return json(INSTALLATION);
     }
+    if (url.includes('/channels/telegram/pairing-code') && method === 'POST') {
+      if (!state.telegramInstallation) {
+        return new Response(JSON.stringify({ error: 'Telegram is not connected' }), {
+          status: 404,
+        });
+      }
+      return json(TELEGRAM_PAIRING);
+    }
+    if (url.includes('/channels/telegram/installation') && method === 'GET') {
+      return json(state.telegramInstallation ?? null);
+    }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
   }) as typeof fetch;
 }
 
 beforeEach(() => {
   saved = {};
-  for (const key of ENV_KEYS) { saved[key] = process.env[key]; delete process.env[key]; }
+  for (const key of ENV_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
   process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
   process.env.KORTIX_PROJECT_ID = 'proj_1';
   originalCwd = process.cwd();
@@ -126,7 +160,7 @@ beforeEach(() => {
   writeConfig();
   captureOutput();
   requests = [];
-  state = { oauthAvailable: true, installation: null };
+  state = { oauthAvailable: true, installation: null, telegramInstallation: null };
   mockApi();
 });
 
@@ -199,14 +233,22 @@ describe('kortix channels connect — manual (self-host)', () => {
     process.env.SLACK_SIGNING_SECRET = 'sig-abc';
     const code = await runChannels(['connect']);
     expect(code).toBe(0);
-    const post = requests.find((r) => r.method === 'POST' && r.url.includes('/channels/slack/connect'));
+    const post = requests.find(
+      (r) => r.method === 'POST' && r.url.includes('/channels/slack/connect'),
+    );
     expect(post).toBeDefined();
     expect(post!.body).toMatchObject({ bot_token: 'xoxb-123', signing_secret: 'sig-abc' });
     expect(stripAnsi(stdout)).toContain('Connected to Acme');
   });
 
   test('explicit --bot-token/--signing-secret skips the /mode lookup entirely', async () => {
-    const code = await runChannels(['connect', '--bot-token', 'xoxb-456', '--signing-secret', 'sig-def']);
+    const code = await runChannels([
+      'connect',
+      '--bot-token',
+      'xoxb-456',
+      '--signing-secret',
+      'sig-def',
+    ]);
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/mode'))).toBe(false);
     const post = requests.find((r) => r.method === 'POST');
@@ -221,7 +263,13 @@ describe('kortix channels connect — manual (self-host)', () => {
   });
 
   test('bad bot token prefix is rejected client-side', async () => {
-    const code = await runChannels(['connect', '--bot-token', 'xoxp-oops', '--signing-secret', 's']);
+    const code = await runChannels([
+      'connect',
+      '--bot-token',
+      'xoxp-oops',
+      '--signing-secret',
+      's',
+    ]);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('xoxb-');
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
@@ -244,5 +292,41 @@ describe('kortix channels status', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.connected).toBe(true);
     expect(parsed.installation.workspaceId).toBe('T012AB3CD');
+  });
+});
+
+describe('kortix channels pair — telegram sender pairing', () => {
+  test('mints a code and prints the /start handshake + deep link', async () => {
+    state.telegramInstallation = TELEGRAM_INSTALLATION;
+    const code = await runChannels(['pair', '--platform', 'telegram']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('/start ABCD-EFGH');
+    expect(out).toContain('https://t.me/AcmeKortixBot?start=ABCD-EFGH');
+    expect(
+      requests.some(
+        (r) => r.url.includes('/channels/telegram/pairing-code') && r.method === 'POST',
+      ),
+    ).toBe(true);
+  });
+
+  test('--json emits the pairing payload', async () => {
+    state.telegramInstallation = TELEGRAM_INSTALLATION;
+    const code = await runChannels(['pair', '--platform', 'telegram', '--json']);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.pairing).toEqual(TELEGRAM_PAIRING);
+    expect(parsed.botUsername).toBe('AcmeKortixBot');
+  });
+
+  test('not connected → surfaces the 404 instead of a code', async () => {
+    state.telegramInstallation = null;
+    const code = await runChannels(['pair', '--platform', 'telegram']);
+    expect(code).not.toBe(0);
+  });
+
+  test('pair without --platform telegram is rejected', async () => {
+    const code = await runChannels(['pair']);
+    expect(code).toBe(2);
   });
 });

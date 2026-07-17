@@ -14,6 +14,7 @@ import {
   ModalBody,
   ModalContent,
   ModalDescription,
+  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
@@ -49,14 +50,23 @@ import {
 import {
   type EmailInstallation,
   type SlackInstallation,
+  type TelegramInstallation,
+  type TelegramPairing,
   useConnectSlack,
+  useConnectTelegram,
+  useCreateTelegramPairingCode,
   useDisconnectEmail,
   useDisconnectSlack,
+  useDisconnectTelegram,
   useEmailInstall,
+  useRemoveTelegramAllowedUser,
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
+  useTelegramInstall,
+  useTelegramPairedUsers,
 } from '@/hooks/channels/use-channels-installations';
+import type { TelegramAllowedUser } from '@kortix/sdk/projects-client';
 import {
   useDisconnectTeams,
   useTeamsInstall,
@@ -75,6 +85,7 @@ import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -99,6 +110,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const { data: telegramInstall, isLoading: loadingTelegram } = useTelegramInstall(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -106,6 +118,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const loading =
     loadingInstall ||
     loadingMode ||
+    loadingTelegram ||
     projectQuery.isLoading ||
     (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
@@ -156,6 +169,27 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               )}
             />
             <BringYourOwnPanel projectId={projectId} inline />
+            {/* Telegram stays reachable regardless of the Slack install state —
+                it's an optional channel with its own BYO-bot connect flow. */}
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Platform</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Bot</TableHead>
+                  <TableHead className="w-[1%] whitespace-nowrap text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TelegramChannelRow
+                  projectId={projectId}
+                  installation={telegramInstall ?? null}
+                  canWrite={canWrite}
+                />
+              </TableBody>
+            </Table>
           </div>
         ) : (
           <>
@@ -186,6 +220,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   projectId={projectId}
                   installation={install ?? null}
                   oauthInstallUrl={oauthInstallUrl}
+                  canWrite={canWrite}
+                />
+                <TelegramChannelRow
+                  projectId={projectId}
+                  installation={telegramInstall ?? null}
                   canWrite={canWrite}
                 />
                 {emailChannelEnabled ? (
@@ -525,7 +564,11 @@ function SlackChannelRow({
       <TableCell className="text-muted-foreground text-sm">
         <span
           className="block max-w-[240px] truncate"
-          title={connected ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined) : undefined}
+          title={
+            connected
+              ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined)
+              : undefined
+          }
         >
           {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
         </span>
@@ -573,6 +616,518 @@ function SlackChannelRow({
         ) : null}
       </TableCell>
     </TableRow>
+  );
+}
+
+function TelegramChannelRow({
+  projectId,
+  installation,
+  canWrite,
+}: {
+  projectId: string;
+  installation: TelegramInstallation | null;
+  canWrite: boolean;
+}) {
+  const disconnect = useDisconnectTelegram();
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [pairOpen, setPairOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const connected = Boolean(installation);
+
+  return (
+    <>
+      <TableRow className="hover:bg-transparent">
+        <TableCell>
+          <div className="flex items-center gap-2.5">
+            <Icon.Telegram className="size-5 shrink-0" />
+            <span className="text-sm font-medium">Telegram</span>
+            <Badge variant="muted" size="xs">
+              Optional
+            </Badge>
+          </div>
+        </TableCell>
+        <TableCell>
+          {connected ? (
+            <Badge variant="success" size="sm">
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" size="sm" className="text-muted-foreground">
+              Not connected
+            </Badge>
+          )}
+        </TableCell>
+        <TableCell className="text-muted-foreground text-sm">
+          {connected ? (
+            <div className="flex items-center gap-2">
+              <code className="text-foreground font-mono text-xs">
+                {installation?.botUsername ? `@${installation.botUsername}` : installation?.botId}
+              </code>
+              {installation?.groupMentionsEnabled === false ? (
+                <Hint label="Telegram privacy mode hides group @mentions from this bot — it only sees commands and replies in groups. Fix: message @BotFather → /setprivacy → Disable, then remove & re-add the bot to each group.">
+                  <Badge variant="warning" size="xs">
+                    Group mentions off
+                  </Badge>
+                </Hint>
+              ) : null}
+            </div>
+          ) : (
+            '—'
+          )}
+        </TableCell>
+        <TableCell>
+          {!canWrite ? null : connected ? (
+            confirming ? (
+              <div className="flex items-center justify-end gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={disconnect.isPending}
+                  onClick={() =>
+                    disconnect.mutate(projectId, {
+                      onSuccess: () => {
+                        setConfirming(false);
+                        successToast('Telegram disconnected');
+                      },
+                      onError: (err) =>
+                        errorToast(err instanceof Error ? err.message : 'Failed to disconnect'),
+                    })
+                  }
+                >
+                  {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-end gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setPairOpen(true)}
+                >
+                  Pair
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setConfirming(true)}
+                >
+                  <X className="size-3.5 shrink-0" />
+                  Disconnect
+                </Button>
+              </div>
+            )
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
+              Connect
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+      <TelegramConnectModal
+        projectId={projectId}
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+      />
+      {installation ? (
+        <TelegramPairingModal
+          projectId={projectId}
+          installation={installation}
+          open={pairOpen}
+          onOpenChange={setPairOpen}
+        />
+      ) : null}
+    </>
+  );
+}
+
+// Buttery copy control (make-interfaces-feel-better: blur+scale+opacity swap).
+function TelegramCopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={copied ? 'Copied' : label}
+      className={cn(
+        'inline-flex size-7 items-center justify-center rounded-md',
+        'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
+        'cursor-pointer transition-colors active:scale-[0.97]',
+      )}
+    >
+      <span className="relative inline-flex size-3.5 items-center justify-center">
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            key={copied ? 'check' : 'copy'}
+            initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+            animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+            exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+            className="absolute inset-0 inline-flex items-center justify-center"
+          >
+            {copied ? (
+              <Check className="text-kortix-green size-3.5" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+          </motion.span>
+        </AnimatePresence>
+      </span>
+    </button>
+  );
+}
+
+// The pairing handshake block — shared by the connect modal's success step and
+// the standalone Pair modal.
+function TelegramPairingContent({
+  pairing,
+  botUsername,
+}: {
+  pairing: TelegramPairing;
+  botUsername: string | null;
+}) {
+  const startCommand = `/start ${pairing.code}`;
+  const deepLink = botUsername
+    ? `https://t.me/${botUsername}?start=${encodeURIComponent(pairing.code)}`
+    : null;
+  return (
+    <div className="space-y-3">
+      <div className="bg-popover rounded-md border px-4 py-5">
+        <div className="flex items-center justify-between gap-3">
+          <code className="text-foreground font-mono text-2xl font-semibold tracking-widest">
+            {pairing.code}
+          </code>
+          <TelegramCopyButton value={pairing.code} label="Copy pairing code" />
+        </div>
+        <div className="text-muted-foreground mt-3 flex items-center justify-between gap-3 text-sm">
+          <span>
+            Send <code className="text-foreground font-mono text-xs">{startCommand}</code> to your
+            bot
+          </span>
+          <TelegramCopyButton value={startCommand} label="Copy /start command" />
+        </div>
+      </div>
+      {deepLink ? (
+        <Button asChild variant="secondary" size="sm" className="gap-1.5">
+          <a href={deepLink} target="_blank" rel="noopener noreferrer">
+            <ExternalLinkSolid className="size-3.5 shrink-0" />
+            Open @{botUsername} in Telegram
+          </a>
+        </Button>
+      ) : null}
+      <p className="text-muted-foreground text-xs">
+        Single use, valid for 15 minutes. Pairing adds the sender&apos;s Telegram account to this
+        project&apos;s allowlist — mint a new code for each person.
+      </p>
+    </div>
+  );
+}
+
+/** Best display label for a paired sender: full name, else @username, else a
+ *  generic fallback (a legacy id whose profile was never captured). */
+function telegramUserDisplayName(user: TelegramAllowedUser): string {
+  const name = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+  if (name) return name;
+  if (user.username) return `@${user.username}`;
+  return 'Telegram user';
+}
+
+function telegramUserInitials(user: TelegramAllowedUser): string {
+  const base =
+    [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.username || user.id;
+  const words = base.split(/\s+/).filter(Boolean);
+  const letters = words.length >= 2 ? `${words[0][0]}${words[1][0]}` : base.slice(0, 2);
+  return letters.toUpperCase();
+}
+
+/** Round avatar: the Telegram profile photo (inlined data URI) when available,
+ *  otherwise initials — the pairing list only fetches photos while it's open. */
+function TelegramUserAvatar({ user }: { user: TelegramAllowedUser }) {
+  if (user.photo) {
+    return (
+      // biome-ignore lint/performance/noImgElement: a self-contained data: URI, not a remote asset next/image could optimize.
+      <img src={user.photo} alt="" className="size-8 shrink-0 rounded-full object-cover" />
+    );
+  }
+  return (
+    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+      {telegramUserInitials(user)}
+    </span>
+  );
+}
+
+function TelegramPairingModal({
+  projectId,
+  installation,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  installation: TelegramInstallation;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const mint = useCreateTelegramPairingCode();
+  const removeUser = useRemoveTelegramAllowedUser();
+  const [pairing, setPairing] = useState<TelegramPairing | null>(null);
+
+  // Names come with the installation (captured at pairing); avatars are a
+  // second, opt-in fetch that only runs while the modal is open. Merge the two
+  // by id so a name shows instantly and its photo fills in when it arrives.
+  const withPhotos = useTelegramPairedUsers(projectId, open);
+  const photoById = new Map(
+    (withPhotos.data?.allowedUsers ?? []).map((u) => [u.id, u.photo ?? null]),
+  );
+  const basePaired: TelegramAllowedUser[] =
+    installation.allowedUsers ?? (installation.allowedUserIds ?? []).map((id) => ({ id }));
+  const pairedUsers: TelegramAllowedUser[] = basePaired.map((u) => ({
+    ...u,
+    photo: photoById.get(u.id) ?? u.photo,
+  }));
+  const gateOff = installation.pairingRequired === false;
+
+  const mintCode = () => {
+    mint.mutate(projectId, {
+      onSuccess: setPairing,
+      onError: (err) =>
+        errorToast(err instanceof Error ? err.message : 'Failed to create pairing code'),
+    });
+  };
+
+  const close = (next: boolean) => {
+    if (!next) setPairing(null);
+    onOpenChange(next);
+  };
+
+  return (
+    <Modal open={open} onOpenChange={close}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Pair a Telegram user</ModalTitle>
+          <ModalDescription>
+            The bot only runs the agent for paired senders. Mint a code, have them send it to the
+            bot with <code className="font-mono text-xs">/start</code>, and they&apos;re in.
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+          {gateOff ? (
+            <InfoBanner tone="neutral" icon={CheckCircleSolid}>
+              Sender pairing is currently not enforced on this server
+              (TELEGRAM_REQUIRE_USER_IDENTITY=false) — anyone who can message the bot may use it.
+              Pairing still records the allowlist for when enforcement is on.
+            </InfoBanner>
+          ) : null}
+          {pairing ? (
+            <TelegramPairingContent pairing={pairing} botUsername={installation.botUsername} />
+          ) : (
+            <Button variant="secondary" size="sm" disabled={mint.isPending} onClick={mintCode}>
+              {mint.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+              Generate pairing code
+            </Button>
+          )}
+          <div className="space-y-2">
+            <Label>Paired users</Label>
+            {pairedUsers.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                Nobody is paired yet — the bot ignores every message until someone pairs.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {pairedUsers.map((user) => (
+                  <li
+                    key={user.id}
+                    className="bg-popover flex items-center gap-3 rounded-md border px-3 py-2"
+                  >
+                    <TelegramUserAvatar user={user} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {telegramUserDisplayName(user)}
+                      </span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {(user.firstName || user.lastName) && user.username
+                          ? `@${user.username} · `
+                          : ''}
+                        <code className="font-mono">{user.id}</code>
+                      </span>
+                    </span>
+                    <Hint label="Remove from allowlist">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={removeUser.isPending}
+                        onClick={() =>
+                          removeUser.mutate(
+                            { projectId, userId: user.id },
+                            {
+                              onSuccess: () => successToast('Removed from allowlist'),
+                              onError: (err) =>
+                                errorToast(err instanceof Error ? err.message : 'Failed to remove'),
+                            },
+                          )
+                        }
+                      >
+                        <X className="size-3.5 shrink-0" />
+                      </Button>
+                    </Hint>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button type="button" variant="outline-ghost" onClick={() => close(false)}>
+            Done
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function TelegramConnectModal({
+  projectId,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const connect = useConnectTelegram();
+  const [token, setToken] = useState('');
+  const [connected, setConnected] = useState<{
+    botUsername: string | null;
+    pairing: TelegramPairing | null;
+  } | null>(null);
+
+  const close = (next: boolean) => {
+    if (connect.isPending) return; // don't lose the in-flight connect
+    if (!next) {
+      setToken('');
+      setConnected(null);
+    }
+    onOpenChange(next);
+  };
+
+  const submit = () => {
+    const bot_token = token.trim();
+    if (!bot_token) return;
+    connect.mutate(
+      { projectId, bot_token },
+      {
+        onSuccess: (result) => {
+          successToast(
+            `Telegram connected${result.botUsername ? ` — @${result.botUsername}` : ''}`,
+          );
+          setToken('');
+          // Straight into the pairing step — until someone pairs, the bot
+          // ignores every message (the sender allowlist fails closed).
+          setConnected({ botUsername: result.botUsername, pairing: result.pairing ?? null });
+        },
+        onError: (err) =>
+          errorToast(err instanceof Error ? err.message : 'Failed to connect Telegram'),
+      },
+    );
+  };
+
+  return (
+    <Modal open={open} onOpenChange={close}>
+      <ModalContent className="lg:max-w-lg">
+        {connected ? (
+          <>
+            <ModalHeader>
+              <ModalTitle>Pair yourself with the bot</ModalTitle>
+              <ModalDescription>
+                Connected{connected.botUsername ? <> to @{connected.botUsername}</> : null}. One
+                step left: the bot only answers paired senders, so send it this code to put yourself
+                on the allowlist.
+              </ModalDescription>
+            </ModalHeader>
+            <ModalBody>
+              {connected.pairing ? (
+                <TelegramPairingContent
+                  pairing={connected.pairing}
+                  botUsername={connected.botUsername}
+                />
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Use the Pair action on the Telegram row to generate a pairing code.
+                </p>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button type="button" onClick={() => close(false)}>
+                Done
+              </Button>
+            </ModalFooter>
+          </>
+        ) : (
+          <>
+            <ModalHeader>
+              <ModalTitle>Connect Telegram</ModalTitle>
+              <ModalDescription>
+                Paste a bot token from{' '}
+                <a
+                  href="https://t.me/BotFather"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-foreground underline underline-offset-2"
+                >
+                  @BotFather
+                </a>{' '}
+                (<code className="font-mono text-xs">/newbot</code>). Kortix validates it, points
+                the bot&apos;s webhook at this project, and keeps the token server-side — it never
+                reaches a sandbox.
+              </ModalDescription>
+            </ModalHeader>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submit();
+              }}
+            >
+              <ModalBody className="space-y-2">
+                <Label htmlFor="telegram-bot-token">Bot token</Label>
+                <Input
+                  id="telegram-bot-token"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="1234567890:AA…"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={connect.isPending}
+                />
+                <p className="text-muted-foreground text-xs">
+                  Optional channel — you can disconnect at any time; disconnecting removes the
+                  webhook and deletes the stored token.
+                </p>
+              </ModalBody>
+              <ModalFooter className="sm:justify-between">
+                <Button type="button" variant="outline-ghost" onClick={() => close(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={connect.isPending || !token.trim()}>
+                  {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                  Connect
+                </Button>
+              </ModalFooter>
+            </form>
+          </>
+        )}
+      </ModalContent>
+    </Modal>
   );
 }
 

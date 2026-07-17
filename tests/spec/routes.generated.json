@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 490,
+  "count": 497,
   "routes": [
     {
       "method": "GET",
@@ -295,20 +295,20 @@
       "path": "/v1/accounts/:accountId/iam/policies"
     },
     {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
     },
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
     },
     {
       "method": "GET",
@@ -1161,6 +1161,34 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/mode"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/installation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/pairing-code"
     },
     {
       "method": "GET",

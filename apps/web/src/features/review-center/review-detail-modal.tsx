@@ -37,7 +37,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChangeFilesModal } from './change-files';
-import { formatItemAgeLong } from './review-actions';
+import { formatItemAgeLong, permReviewId } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -488,7 +488,10 @@ function ApprovalBody({
                   pending={busy && !wholeItem ? (actions.pendingDecision ?? 'approve') : null}
                   onOpenSession={openSession}
                   onApprove={() => {
-                    if (actions.connected) {
+                    // A sandbox permission approves through the native /act
+                    // endpoint (→ replies to the sandbox), never the executor
+                    // decideAction path — so route it via resolve in both modes.
+                    if (actions.connected || permReviewId(item.id)) {
                       actions.resolve(item.id, 'approved', `Approved · ${a.title}`);
                       return;
                     }
@@ -496,7 +499,7 @@ function ApprovalBody({
                     successToast(`Approved · ${a.title}`);
                   }}
                   onDeny={() => {
-                    if (actions.connected) {
+                    if (actions.connected || permReviewId(item.id)) {
                       actions.resolve(item.id, 'rejected', `Denied · ${a.title}`);
                       return;
                     }

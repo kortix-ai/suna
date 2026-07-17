@@ -1,5 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { chatTurnStreams } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { TurnErrorInfo } from './slack/errors';
 import * as slackQuestions from './slack/questions';
@@ -10,6 +10,8 @@ import type { QuestionInfo } from './slack/types';
 import * as teamsQuestions from './teams/questions';
 import * as teamsReview from './teams/review';
 import * as teams from './teams/turn';
+import * as telegramReview from './telegram/review';
+import { telegramTurnExists } from './telegram/turn';
 
 interface StepOpts {
   detail?: string;
@@ -27,13 +29,21 @@ async function platformFor(sessionId: string): Promise<'slack' | 'teams'> {
   return platform === 'teams' ? 'teams' : 'slack';
 }
 
-export async function relayTurnStep(sessionId: string, title: string, opts: StepOpts = {}): Promise<boolean> {
+export async function relayTurnStep(
+  sessionId: string,
+  title: string,
+  opts: StepOpts = {},
+): Promise<boolean> {
   return (await platformFor(sessionId)) === 'teams'
     ? teams.relayTurnStep(sessionId, title, opts)
     : slack.relayTurnStep(sessionId, title, opts);
 }
 
-export async function relayTurnAnswer(sessionId: string, text: string, blocks?: unknown[]): Promise<boolean> {
+export async function relayTurnAnswer(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<boolean> {
   return (await platformFor(sessionId)) === 'teams'
     ? teams.relayTurnAnswer(sessionId, text)
     : slack.relayTurnAnswer(sessionId, text, blocks);
@@ -62,6 +72,11 @@ export async function relayReviewCard(
   sessionId: string,
   item: ReviewCardItem,
 ): Promise<{ ok: boolean; error?: string }> {
+  // Telegram self-identifies off the turn row (like step/answer/end/question);
+  // platformFor only distinguishes Slack vs Teams.
+  if (await telegramTurnExists(sessionId)) {
+    return telegramReview.postTelegramReviewCard(sessionId, item);
+  }
   return (await platformFor(sessionId)) === 'teams'
     ? teamsReview.postTeamsReviewCard(sessionId, item)
     : slackReview.postReviewCard(sessionId, item);

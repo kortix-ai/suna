@@ -38,6 +38,120 @@ export async function connectSlack(
   );
 }
 
+// ─── Telegram (optional channel — BYO bot from @BotFather) ──────────────────
+
+/** A paired Telegram sender as shown in the dashboard: the numeric id plus any
+ *  captured name/@username and, when photos were requested, an avatar data URI. */
+export interface TelegramAllowedUser {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  pairedAt?: string;
+  /** Avatar `data:` URI when requested and available; null = none; absent =
+   *  not requested (call getTelegramInstallation with `{ photos: true }`). */
+  photo?: string | null;
+}
+
+export interface TelegramInstallation {
+  botId: string;
+  botUsername: string | null;
+  installedAt: string;
+  /** Telegram user ids allowed to drive the agent (the pairing allowlist). */
+  allowedUserIds?: string[];
+  /** The same allowlist enriched for display (name/@username/avatar). */
+  allowedUsers?: TelegramAllowedUser[];
+  /** Whether the server enforces the sender allowlist (TELEGRAM_REQUIRE_USER_IDENTITY). */
+  pairingRequired?: boolean;
+  /** Whether Telegram delivers group @mentions to this bot. `false` = BotFather
+   *  privacy mode is ON (mentions never arrive — the bot only sees commands,
+   *  replies and service messages in groups); `null`/absent = unknown. */
+  groupMentionsEnabled?: boolean | null;
+}
+
+/** Single-use sender-pairing code — the user sends `/start <code>` to the bot. */
+export interface TelegramPairing {
+  code: string;
+  expiresAt: string;
+}
+
+export async function getTelegramInstallation(
+  projectId: string,
+  opts: { photos?: boolean } = {},
+): Promise<TelegramInstallation | null> {
+  // `photos` inlines each paired user's avatar as a data URI — an extra
+  // Telegram round-trip per user, so it's opt-in (the modal, not the base load).
+  const qs = opts.photos ? '?photos=true' : '';
+  const res = await backendApi.get<TelegramInstallation | null>(
+    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation${qs}`,
+    { showErrors: false },
+  );
+  if (!res.success) return null;
+  return res.data ?? null;
+}
+
+export interface ConnectTelegramInput {
+  bot_token: string;
+}
+
+export interface ConnectTelegramResult extends TelegramInstallation {
+  /** First pairing code, minted with the install so the connect flow can walk
+   *  the user straight onto the sender allowlist. */
+  pairing?: TelegramPairing;
+}
+
+/** Validates the token with Telegram and registers the webhook server-side —
+ *  the token never comes back in the response. */
+export async function connectTelegram(
+  projectId: string,
+  input: ConnectTelegramInput,
+): Promise<ConnectTelegramResult> {
+  return unwrap(
+    await backendApi.post<ConnectTelegramResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/connect`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to connect',
+  );
+}
+
+/** Mint a fresh single-use pairing code (replaces any outstanding one). */
+export async function createTelegramPairingCode(projectId: string): Promise<TelegramPairing> {
+  return unwrap(
+    await backendApi.post<TelegramPairing>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/pairing-code`,
+      {},
+      { showErrors: false },
+    ),
+    'Failed to create pairing code',
+  );
+}
+
+/** Remove a paired Telegram sender from the project allowlist. */
+export async function removeTelegramAllowedUser(
+  projectId: string,
+  userId: string,
+): Promise<{ removed: boolean }> {
+  return unwrap(
+    await backendApi.delete<{ removed: boolean }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/allowed-users/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    'Failed to remove paired user',
+  );
+}
+
+export async function disconnectTelegram(projectId: string): Promise<void> {
+  await unwrap(
+    await backendApi.delete<{ status: string }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+      { showErrors: false },
+    ),
+    'Failed to disconnect',
+  );
+}
+
 export interface SlackMode {
   oauth_available: boolean;
   install_url: string | null;

@@ -74,6 +74,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
   mine: MessagesSquare,
   shared: UsersSolid,
   slack: Icon.Slack,
+  telegram: Icon.Telegram,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { ApiError } from '../api/client.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -6,34 +7,42 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { ApiError } from '../api/client.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix channels <subcommand> [options]
 
-Connect this project to Slack.
+Connect this project to chat platforms — Slack, and optionally Telegram.
 
 Subcommands:
-  status                  Show the current Slack connection.
+  status                  Show the current channel connections (Slack + Telegram).
   connect                 Connect Slack. On Kortix Cloud (or any host with the
                           shared Slack app configured) this prints a one-click
                           "Add to Slack" install link — open it, pick the
                           workspace, Allow. Done: no app to create, no tokens.
                           Manual token mode (self-host without the shared app)
                           kicks in automatically, or force it with --manual.
-  disconnect              Drop the project's Slack connection.
+                          With --platform telegram: connect a Telegram bot
+                          (BYO token from @BotFather; Kortix registers the
+                          webhook and keeps the token server-side).
+  disconnect              Drop a channel connection (--platform picks which).
+  pair                    Telegram only: mint a single-use pairing code (15 min).
+                          The bot only answers allowlisted senders — send it
+                          /start <code> (or open the printed t.me link) to put
+                          yourself on the list. Repeat per person.
   manifest                Print the Slack app manifest JSON — MANUAL/self-host
                           setup only (paste into api.slack.com/apps → "From a
                           manifest"). The one-click install never needs this.
 
 Global options:
+  --platform <name>       slack (default) or telegram — Telegram is an
+                          OPTIONAL channel; nothing requires it.
   --project <id>          Operate on this project id (default: linked or
                           \$KORTIX_PROJECT_ID).
   --host <name>           Use this host instead of the linked / active one.
   --json                  Machine-readable output (status/connect).
   -h, --help              Show this help.
 
-Connect options:
+Connect options (slack):
   --wait                  After printing the install link, poll until the
                           workspace is connected (Ctrl+C to stop).
   --timeout <sec>         Give up --wait after this many seconds (default 300).
@@ -43,6 +52,10 @@ Connect options:
                           SLACK_BOT_TOKEN. Or \`-\` for stdin.
   --signing-secret <…>    Signing secret (implies --manual). Or env
                           SLACK_SIGNING_SECRET. Or \`-\` for stdin.
+
+Connect options (telegram):
+  --bot-token <id:secret> Bot token from @BotFather (/newbot). Or env
+                          TELEGRAM_BOT_TOKEN. Or \`-\` for stdin.
 `;
 
 interface SlackInstallation {
@@ -55,6 +68,20 @@ interface SlackInstallation {
 interface SlackMode {
   oauth_available: boolean;
   install_url: string | null;
+}
+
+interface TelegramPairing {
+  code: string;
+  expiresAt: string;
+}
+
+interface TelegramInstallation {
+  botId: string;
+  botUsername: string | null;
+  installedAt: string;
+  allowedUserIds?: string[];
+  pairingRequired?: boolean;
+  pairing?: TelegramPairing;
 }
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
@@ -76,22 +103,32 @@ export async function runChannels(argv: string[]): Promise<number> {
   let botTokenFlag: string | undefined;
   let signingSecretFlag: string | undefined;
   let timeoutFlag: string | undefined;
+  let platformFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     botTokenFlag = takeFlagValue(rest, ['--bot-token']);
     signingSecretFlag = takeFlagValue(rest, ['--signing-secret']);
     timeoutFlag = takeFlagValue(rest, ['--timeout']);
+    platformFlag = takeFlagValue(rest, ['--platform']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const platform = (platformFlag ?? 'slack').toLowerCase();
+  if (platform !== 'slack' && platform !== 'telegram') {
+    process.stderr.write(`${status.err(`unknown platform "${platform}" — slack or telegram`)}\n`);
     return 2;
   }
   const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'status':
-      return channelsStatus(ctxOpts, json);
+      return channelsStatus(ctxOpts, json, platform);
     case 'connect':
+      if (platform === 'telegram') {
+        return telegramConnect(ctxOpts, { json, botTokenFlag });
+      }
       return channelsConnect(ctxOpts, {
         json,
         manual,
@@ -103,8 +140,24 @@ export async function runChannels(argv: string[]): Promise<number> {
     case 'disconnect':
     case 'remove':
     case 'rm':
+      if (platform === 'telegram') return telegramDisconnect(ctxOpts);
       return channelsDisconnect(ctxOpts);
+    case 'pair':
+      if (platform !== 'telegram') {
+        process.stderr.write(
+          `${status.err('pairing is a Telegram concept — use --platform telegram')}\n`,
+        );
+        return 2;
+      }
+      return telegramPair(ctxOpts, json);
     case 'manifest':
+      if (platform === 'telegram') {
+        process.stderr.write(
+          `${status.err('Telegram needs no manifest')} — mint a bot with @BotFather (/newbot), then\n` +
+            `${C.cyan}kortix channels connect --platform telegram --bot-token <id:secret>${C.reset}\n`,
+        );
+        return 2;
+      }
       return channelsManifest(ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
@@ -115,29 +168,172 @@ export async function runChannels(argv: string[]): Promise<number> {
 async function channelsStatus(
   ctxOpts: { projectArg?: string; hostArg?: string },
   json: boolean,
+  platform: 'slack' | 'telegram',
 ): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
+    if (platform === 'telegram') {
+      const install = await ctx.client.get<TelegramInstallation | null>(
+        `/projects/${ctx.projectId}/channels/telegram/installation`,
+      );
+      if (json) {
+        emitJson({ connected: Boolean(install), installation: install ?? null });
+        return 0;
+      }
+      writeTelegramStatusLine(install);
+      return 0;
+    }
+
     const install = await ctx.client.get<SlackInstallation | null>(
       `/projects/${ctx.projectId}/channels/slack/installation`,
     );
+    // Telegram is optional — its status rides along informationally; a failure
+    // to read it must never break the Slack status.
+    const telegram = await ctx.client
+      .get<TelegramInstallation | null>(`/projects/${ctx.projectId}/channels/telegram/installation`)
+      .catch(() => null);
     if (json) {
-      emitJson({ connected: Boolean(install), installation: install ?? null });
+      // Slack-shaped for compat; `telegram` is additive.
+      emitJson({
+        connected: Boolean(install),
+        installation: install ?? null,
+        telegram: { connected: Boolean(telegram), installation: telegram ?? null },
+      });
       return 0;
     }
     if (!install) {
       process.stdout.write(
-        `${C.dim}slack${C.reset}  not connected\n` +
-          `       Run ${C.cyan}kortix channels connect${C.reset} — it prints a one-click "Add to Slack" link.\n`,
+        `${C.dim}slack${C.reset}     not connected\n` +
+          `          Run ${C.cyan}kortix channels connect${C.reset} — it prints a one-click "Add to Slack" link.\n`,
       );
-      return 0;
+    } else {
+      printInstall(ctx, install, status.ok('Slack'));
     }
-    printInstall(ctx, install, status.ok('Slack'));
+    writeTelegramStatusLine(telegram);
     return 0;
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+function writeTelegramStatusLine(install: TelegramInstallation | null): void {
+  if (!install) {
+    process.stdout.write(
+      `${C.dim}telegram${C.reset}  not connected ${C.dim}(optional)${C.reset}\n` +
+        `          Run ${C.cyan}kortix channels connect --platform telegram --bot-token <id:secret>${C.reset} (token from @BotFather).\n`,
+    );
+    return;
+  }
+  const name = install.botUsername ? `@${install.botUsername}` : install.botId;
+  process.stdout.write(
+    `${status.ok('Telegram')}  ${C.bold}${name}${C.reset}\n` +
+      `          bot id     ${C.dim}${install.botId}${C.reset}\n`,
+  );
+}
+
+async function telegramConnect(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  opts: { json: boolean; botTokenFlag: string | undefined },
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  const botToken = resolveSecret('bot token', opts.botTokenFlag, 'TELEGRAM_BOT_TOKEN');
+  if (botToken === null) {
+    process.stderr.write(
+      `\nMint one with ${C.cyan}@BotFather${C.reset} (/newbot), then re-run\n` +
+        `${C.cyan}kortix channels connect --platform telegram --bot-token <id:secret>${C.reset}\n`,
+    );
+    return 2;
+  }
+  if (!/^\d+:/.test(botToken)) {
+    process.stderr.write(
+      `${status.err('Bot token must look like <bot_id>:<secret> (from @BotFather).')}\n`,
+    );
+    return 2;
+  }
+
+  let install: TelegramInstallation;
+  try {
+    install = await ctx.client.post<TelegramInstallation>(
+      `/projects/${ctx.projectId}/channels/telegram/connect`,
+      { bot_token: botToken },
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (opts.json) {
+    emitJson({ connected: true, installation: install });
+    return 0;
+  }
+  const name = install.botUsername ? `@${install.botUsername}` : install.botId;
+  process.stdout.write(
+    `${status.ok(`Connected ${name}`)} ${C.dim}— webhook registered, token stays server-side${C.reset}\n`,
+  );
+  if (install.pairing) {
+    writePairingBlock(install.pairing, install.botUsername);
+  } else {
+    process.stdout.write(
+      `          Message the bot to start a session; replies land in the chat.\n`,
+    );
+  }
+  return 0;
+}
+
+function writePairingBlock(pairing: TelegramPairing, botUsername: string | null): void {
+  const link = botUsername
+    ? `https://t.me/${botUsername}?start=${encodeURIComponent(pairing.code)}`
+    : null;
+  process.stdout.write(
+    `\n${C.bold}Pair yourself${C.reset} ${C.dim}— the bot only answers allowlisted senders${C.reset}\n` +
+      `  Send the bot:  ${C.cyan}/start ${pairing.code}${C.reset}\n` +
+      (link ? `  Or open:       ${C.cyan}${link}${C.reset}\n` : '') +
+      `  ${C.dim}Single use, expires ${pairing.expiresAt}. Re-run \`kortix channels pair\` per person.${C.reset}\n`,
+  );
+}
+
+async function telegramPair(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  json: boolean,
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  let pairing: TelegramPairing;
+  try {
+    pairing = await ctx.client.post<TelegramPairing>(
+      `/projects/${ctx.projectId}/channels/telegram/pairing-code`,
+      {},
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  const install = await ctx.client
+    .get<TelegramInstallation | null>(`/projects/${ctx.projectId}/channels/telegram/installation`)
+    .catch(() => null);
+  if (json) {
+    emitJson({ pairing, botUsername: install?.botUsername ?? null });
+    return 0;
+  }
+  writePairingBlock(pairing, install?.botUsername ?? null);
+  return 0;
+}
+
+async function telegramDisconnect(ctxOpts: {
+  projectArg?: string;
+  hostArg?: string;
+}): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  try {
+    await ctx.client.delete(`/projects/${ctx.projectId}/channels/telegram/installation`);
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  process.stdout.write(
+    `${status.ok('Disconnected')} ${C.dim}— webhook removed, token deleted${C.reset}\n`,
+  );
+  return 0;
 }
 
 interface ConnectOpts {
@@ -309,9 +505,10 @@ function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: str
   );
 }
 
-async function channelsDisconnect(
-  ctxOpts: { projectArg?: string; hostArg?: string },
-): Promise<number> {
+async function channelsDisconnect(ctxOpts: {
+  projectArg?: string;
+  hostArg?: string;
+}): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
@@ -323,9 +520,10 @@ async function channelsDisconnect(
   return 0;
 }
 
-async function channelsManifest(
-  ctxOpts: { projectArg?: string; hostArg?: string },
-): Promise<number> {
+async function channelsManifest(ctxOpts: {
+  projectArg?: string;
+  hostArg?: string;
+}): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
@@ -387,7 +585,11 @@ async function channelsManifest(
   return 0;
 }
 
-function resolveSecret(label: string, flagValue: string | undefined, envName: string): string | null {
+function resolveSecret(
+  label: string,
+  flagValue: string | undefined,
+  envName: string,
+): string | null {
   let value = flagValue?.trim() ?? '';
   if (value === '-') {
     value = readFileSync(0, 'utf-8').trim();

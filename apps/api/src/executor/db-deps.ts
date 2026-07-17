@@ -31,6 +31,8 @@ import {
   loadTeamsBotCredentials,
   loadTeamsInstall,
   loadTeamsTenantForProject,
+  loadTelegramInstall,
+  loadTelegramTokenForProject,
 } from '../channels/install-store';
 import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
@@ -320,6 +322,7 @@ async function channelToken(
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
   if (platform === 'meet') return loadMeetTokenForProject(projectId);
+  if (platform === 'telegram') return loadTelegramTokenForProject(projectId);
   return null;
 }
 
@@ -334,6 +337,7 @@ async function channelInstalled(
   if (platform === 'email')
     return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
   if (platform === 'meet') return (await loadMeetInstall(projectId).catch(() => null)) != null;
+  if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
   return false;
 }
 

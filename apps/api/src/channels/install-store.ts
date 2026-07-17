@@ -16,11 +16,145 @@ export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
 
 export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
+export const TELEGRAM_BOT_ID = 'TELEGRAM_BOT_ID';
+export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
+export const TELEGRAM_PAIRING_CODE = 'TELEGRAM_PAIRING_CODE';
+
+const TELEGRAM_KEYS = [
+  TELEGRAM_BOT_TOKEN,
+  TELEGRAM_WEBHOOK_SECRET,
+  TELEGRAM_BOT_ID,
+  TELEGRAM_BOT_USERNAME,
+  TELEGRAM_PAIRING_CODE,
+] as const;
 
 export async function loadTelegramWebhookSecretForProject(
   projectId: string,
 ): Promise<string | null> {
   return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
+
+export interface TelegramInstallSummary {
+  /** Numeric bot id (the part before the token's colon). */
+  botId: string;
+  /** Bot @username (no leading @) — shown in the dashboard, used for group
+   *  mention detection. */
+  botUsername: string | null;
+  installedAt: string;
+}
+
+export interface TelegramInstallInput {
+  projectId: string;
+  botToken: string;
+  webhookSecret: string;
+  botId: string;
+  botUsername: string | null;
+}
+
+/**
+ * Persist a Telegram bot install: encrypted secrets + a chat_installs row
+ * (workspaceId = numeric bot id — Telegram has no workspace concept; the bot
+ * IS the integration boundary). Reconnecting with a DIFFERENT bot replaces the
+ * old install row so a stale (platform, workspaceId) mapping can't linger.
+ */
+export async function saveTelegramInstall(
+  input: TelegramInstallInput,
+): Promise<TelegramInstallSummary> {
+  const { projectId } = input;
+  await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
+  await db
+    .insert(chatInstalls)
+    .values({ platform: 'telegram', workspaceId: input.botId, projectId })
+    .onConflictDoNothing();
+  await upsertSecret(projectId, TELEGRAM_BOT_TOKEN, input.botToken);
+  await upsertSecret(projectId, TELEGRAM_WEBHOOK_SECRET, input.webhookSecret);
+  await upsertSecret(projectId, TELEGRAM_BOT_ID, input.botId);
+  await upsertSecret(projectId, TELEGRAM_BOT_USERNAME, input.botUsername ?? '');
+  return {
+    botId: input.botId,
+    botUsername: input.botUsername,
+    installedAt: new Date().toISOString(),
+  };
+}
+
+export async function deleteTelegramInstall(projectId: string): Promise<void> {
+  for (const name of TELEGRAM_KEYS) {
+    await db
+      .delete(projectSecrets)
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+  }
+  await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
+}
+
+export async function loadTelegramInstall(
+  projectId: string,
+): Promise<TelegramInstallSummary | null> {
+  const botId = await readSecret(projectId, TELEGRAM_BOT_ID);
+  if (!botId) return null;
+  const [username, [row]] = await Promise.all([
+    readSecret(projectId, TELEGRAM_BOT_USERNAME),
+    db
+      .select({ updatedAt: projectSecrets.updatedAt })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, TELEGRAM_BOT_ID),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      )
+      .limit(1),
+  ]);
+  return {
+    botId,
+    botUsername: username || null,
+    installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
+  };
+}
+
+/** SERVER-SIDE ONLY — feeds telegram-api.ts and the executor gateway's
+ *  credential resolution. Never returned to a sandbox or the dashboard. */
+export async function loadTelegramTokenForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_BOT_TOKEN);
+}
+
+// Active sender-pairing code (see telegram/pairing.ts). Single-use: minting
+// replaces any previous code, a successful `/start <code>` clears it.
+export async function saveTelegramPairing(
+  projectId: string,
+  pairing: { code: string; expiresAt: string },
+): Promise<void> {
+  await upsertSecret(projectId, TELEGRAM_PAIRING_CODE, JSON.stringify(pairing));
+}
+
+export async function loadTelegramPairing(
+  projectId: string,
+): Promise<{ code: string; expiresAt: string } | null> {
+  const raw = await readSecret(projectId, TELEGRAM_PAIRING_CODE);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { code?: unknown; expiresAt?: unknown };
+    if (typeof parsed.code !== 'string' || typeof parsed.expiresAt !== 'string') return null;
+    return { code: parsed.code, expiresAt: parsed.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+export async function clearTelegramPairing(projectId: string): Promise<void> {
+  await db
+    .delete(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, TELEGRAM_PAIRING_CODE),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
 }
 
 export const AGENTMAIL_API_KEY = 'AGENTMAIL_API_KEY';
@@ -357,12 +491,12 @@ export async function loadAgentMailInstall(
 ): Promise<AgentMailInstallSummary | null> {
   const keys = agentMailKeys(profileSlug);
   const [inboxId, email, displayName, webhookId, senderPolicyRaw] = await Promise.all([
-      readSecret(projectId, keys.inboxId),
-      readSecret(projectId, keys.email),
-      readSecret(projectId, keys.displayName),
-      readSecret(projectId, keys.webhookId),
-      readSecret(projectId, keys.senderPolicy),
-    ]);
+    readSecret(projectId, keys.inboxId),
+    readSecret(projectId, keys.email),
+    readSecret(projectId, keys.displayName),
+    readSecret(projectId, keys.webhookId),
+    readSecret(projectId, keys.senderPolicy),
+  ]);
   if (!inboxId || !email) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
@@ -635,9 +769,11 @@ export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsI
   if (input.teamId != null) await upsertSecret(projectId, MS_TEAMS_TEAM_ID, input.teamId);
   if (input.teamName != null) await upsertSecret(projectId, MS_TEAMS_TEAM_NAME, input.teamName);
   if (input.botId != null) await upsertSecret(projectId, MS_TEAMS_BOT_ID, input.botId);
-  if (input.serviceUrl != null) await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
+  if (input.serviceUrl != null)
+    await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
   if (input.appId != null) await upsertSecret(projectId, MS_TEAMS_APP_ID, input.appId);
-  if (input.appPassword != null) await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
+  if (input.appPassword != null)
+    await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
 
   return {
     tenantId,
@@ -660,7 +796,9 @@ export async function setTeamsCatalogAppId(projectId: string, catalogAppId: stri
   await upsertSecret(projectId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
 }
 
-export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
+export async function loadTeamsBotCredentials(
+  projectId: string,
+): Promise<TeamsBotCredentials | null> {
   const secrets = await readTeamsSecrets(projectId);
   const appId = secrets[MS_TEAMS_APP_ID];
   const appPassword = secrets[MS_TEAMS_APP_PASSWORD];
@@ -685,7 +823,9 @@ export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallS
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
     .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)))
+    .where(
+      and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)),
+    )
     .limit(1);
   return {
     tenantId,
@@ -786,8 +926,7 @@ async function readTeamsSecrets(projectId: string): Promise<Record<string, strin
     if (!row.valueEnc) continue;
     try {
       out[row.name] = decryptProjectSecret(projectId, row.valueEnc);
-    } catch {
-    }
+    } catch {}
   }
   return out;
 }

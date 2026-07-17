@@ -151,7 +151,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'channels',
             args: '<subcommand>',
-            blurb: 'Connect Slack to this project — `connect` prints a one-click install link',
+            blurb: 'Connect Slack (one-click link) or, optionally, a Telegram bot to this project',
           },
           {
             name: 'sandboxes',

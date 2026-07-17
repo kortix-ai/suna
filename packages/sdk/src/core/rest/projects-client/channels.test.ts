@@ -3,6 +3,7 @@ import { configureKortix } from '../../http/config';
 import {
   connectEmail,
   connectSlack,
+  createTelegramPairingCode,
   disconnectEmail,
   disconnectSlack,
   getEmailInstallation,
@@ -18,6 +19,7 @@ import {
   setMeetVoice,
   speakInMeeting,
   updateChannelBinding,
+  removeTelegramAllowedUser,
   updateEmailPolicy,
   uploadSlackChannelFile,
 } from './channels';
@@ -287,4 +289,20 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
   await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow(
     'not found',
   );
+});
+
+test('createTelegramPairingCode posts to the pairing-code endpoint', async () => {
+  nextResponse = { status: 200, body: { code: 'ABCD-EFGH', expiresAt: '2026-01-01T00:15:00.000Z' } };
+  const result = await createTelegramPairingCode('P1');
+  expect(last().url).toContain('/projects/P1/channels/telegram/pairing-code');
+  expect(last().method).toBe('POST');
+  expect(result).toEqual({ code: 'ABCD-EFGH', expiresAt: '2026-01-01T00:15:00.000Z' });
+});
+
+test('removeTelegramAllowedUser deletes the allowlist entry and reports removal', async () => {
+  nextResponse = { status: 200, body: { removed: true } };
+  const result = await removeTelegramAllowedUser('P1', '777');
+  expect(last().url).toContain('/projects/P1/channels/telegram/allowed-users/777');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ removed: true });
 });

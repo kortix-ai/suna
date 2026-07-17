@@ -1,25 +1,40 @@
 'use client';
 
 import {
-  connectEmail,
-  connectSlack,
-  disconnectEmail,
-  disconnectSlack,
-  getEmailInstallation,
-  getEmailMode,
-  getSlackInstallation,
-  getSlackManifest,
-  getSlackMode,
-  updateEmailPolicy,
   type EmailInstallation,
   type EmailMode,
   type EmailSenderPolicy,
   type SlackInstallation,
   type SlackMode,
+  type TelegramInstallation,
+  type TelegramPairing,
+  connectEmail,
+  connectSlack,
+  connectTelegram,
+  createTelegramPairingCode,
+  disconnectEmail,
+  disconnectSlack,
+  disconnectTelegram,
+  getEmailInstallation,
+  getEmailMode,
+  getSlackInstallation,
+  getSlackManifest,
+  getSlackMode,
+  getTelegramInstallation,
+  removeTelegramAllowedUser,
+  updateEmailPolicy,
 } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-export type { EmailInstallation, EmailMode, EmailSenderPolicy, SlackInstallation, SlackMode };
+export type {
+  EmailInstallation,
+  EmailMode,
+  EmailSenderPolicy,
+  SlackInstallation,
+  SlackMode,
+  TelegramInstallation,
+  TelegramPairing,
+};
 
 const key = (projectId: string | null) =>
   ['channels', 'slack-install', projectId ?? 'none'] as const;
@@ -59,7 +74,9 @@ export function useSlackMode(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 60_000,
     queryFn: () =>
-      projectId ? getSlackMode(projectId) : ({ oauth_available: false, install_url: null } satisfies SlackMode),
+      projectId
+        ? getSlackMode(projectId)
+        : ({ oauth_available: false, install_url: null } satisfies SlackMode),
   });
 }
 
@@ -85,6 +102,72 @@ export function useDisconnectSlack() {
     mutationFn: (projectId: string) => disconnectSlack(projectId),
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: key(projectId) });
+      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    },
+  });
+}
+
+// ─── Telegram (optional channel) ─────────────────────────────────────────────
+
+const telegramKey = (projectId: string | null) =>
+  ['channels', 'telegram-install', projectId ?? 'none'] as const;
+
+export function useTelegramInstall(projectId: string | null) {
+  return useQuery({
+    queryKey: telegramKey(projectId),
+    enabled: !!projectId,
+    staleTime: 30_000,
+    queryFn: () => (projectId ? getTelegramInstallation(projectId) : null),
+  });
+}
+
+/** Paired users WITH avatars — an extra Telegram round-trip per user, so it's a
+ *  separate query gated on `enabled` (fetched only when the pairing modal is
+ *  open, not on every channels-view load). */
+export function useTelegramPairedUsers(projectId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['channels', 'telegram-install-photos', projectId ?? 'none'] as const,
+    enabled: !!projectId && enabled,
+    staleTime: 60_000,
+    queryFn: () => (projectId ? getTelegramInstallation(projectId, { photos: true }) : null),
+  });
+}
+
+export function useConnectTelegram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, bot_token }: { projectId: string; bot_token: string }) =>
+      connectTelegram(projectId, { bot_token }),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    },
+  });
+}
+
+export function useCreateTelegramPairingCode() {
+  return useMutation({
+    mutationFn: (projectId: string) => createTelegramPairingCode(projectId),
+  });
+}
+
+export function useRemoveTelegramAllowedUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, userId }: { projectId: string; userId: string }) =>
+      removeTelegramAllowedUser(projectId, userId),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+    },
+  });
+}
+
+export function useDisconnectTelegram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => disconnectTelegram(projectId),
+    onSuccess: (_data, projectId) => {
+      qc.invalidateQueries({ queryKey: telegramKey(projectId) });
       qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
     },
   });
