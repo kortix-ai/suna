@@ -1265,9 +1265,9 @@ export function BasicTool({
           {headerInner}
           <ChevronRight
             className={cn(
-              'text-muted-foreground/30 size-3 flex-shrink-0 transition-all',
-              children && !locked ? 'opacity-40 group-hover:opacity-80' : 'opacity-0',
-              open && children && 'rotate-90 !opacity-100',
+              'text-muted-foreground/50 size-3 flex-shrink-0 transition-transform',
+              !(children && !locked) && 'opacity-0',
+              open && children && 'rotate-90',
             )}
           />
         </div>
