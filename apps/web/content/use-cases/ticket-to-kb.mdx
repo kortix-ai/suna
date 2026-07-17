@@ -1,0 +1,153 @@
+---
+title: "How we turn resolved tickets into KB articles"
+description: The ticket-to-KB agent we run on Kortix — clusters resolved Plain support tickets for recurring questions with no matching help-center article, drafts the top gaps as real articles from the actual resolutions, and opens a PR for a human to review and publish.
+date: "2026-04-12"
+author: team
+tags:
+  - Support
+  - Case Study
+  - Enterprise
+template: ticket-to-kb
+---
+
+Every support team answers the same question more than once before anyone
+writes it down. An agent resolves a ticket, the customer is happy, and the
+answer disappears back into the support queue instead of becoming a help
+article. Weeks later the same question comes in again, gets solved the same
+way, and disappears again. The knowledge was generated a dozen times over; it
+was never captured once.
+
+We run a ticket-to-KB agent on Kortix that reads our resolved Plain tickets
+every week, finds the questions that keep recurring with no article to answer
+them, and drafts the highest-value gaps as real articles pulled from how we
+actually solved them — then opens one PR. This is how new KB coverage gets
+written from what our support queue already knows.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron · reusable session</Fact>
+  <Fact label="Connected systems">Plain · GitHub (docs/KB repo)</Fact>
+  <Fact label="Mode">Draft-only · one PR per run</Fact>
+</KeyFacts>
+
+## The problem
+
+The knowledge exists — it's sitting in hundreds of resolved Plain threads —
+but nobody has time to mine it. A support lead reviewing tickets for KB gaps
+manually has to remember which topics were already covered, which recurring
+questions are worth an article versus a one-off, and then actually write the
+draft from scratch. That review happens rarely, if at all, and by the time it
+does, the backlog of recurring-but-undocumented questions is large enough that
+picking where to start is its own project.
+
+A generic AI writer pointed at "write some help articles" doesn't fix this
+either — it has no memory of what's already covered and nothing grounding its
+drafts in how the team actually resolves the issue, so it either duplicates
+existing articles or writes generic copy that doesn't match a real resolution.
+
+## What we built
+
+On Kortix, a weekly cron re-prompts the same persistent session — a cloud
+sandbox that resumes its own ledger rather than starting cold. Each run it
+reads recently resolved threads from Plain, clusters them into recurring
+topics, checks each topic against both the KB repo's existing articles and its
+own ledger of topics already drafted, and picks the top gaps: recurring
+questions with real ticket volume and no article. It drafts each one from the
+actual resolutions used in those tickets, then opens a single PR against the
+docs repo. Nothing publishes without a human merge.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly reusable session">
+
+A **cron trigger** fires once a week and resumes the same persistent
+**session** rather than starting fresh. The session reads its own ledger first
+— which topics already have an article, which are mid-review in an open PR,
+and which clusters were seen before but didn't yet have enough volume to
+justify a draft — so a topic already covered or already in flight never gets
+redrafted.
+
+</Step>
+<Step title="Give the agent the clustering and drafting rules">
+
+How we group tickets into a topic, how we decide a topic is a real KB gap
+rather than noise, and the article structure we want live as **skills** and
+**memory** that travel with the agent. When a draft gets merged as-is versus
+reworked heavily in review, we feed that back so the next batch of drafts gets
+closer to publishable.
+
+</Step>
+<Step title="Connect the ticket source and the KB repo">
+
+Through a scoped connection, the agent works with:
+
+- **Resolved tickets from Plain** — read-only, via a raw API key injected at
+  runtime, never shown to the model.
+- **The docs/KB repo on GitHub** — read to see which topics already have an
+  article, and write only as a pull request on an isolated branch, via a
+  scoped GitHub token used by the `gh` CLI.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent never publishes an article and never merges its own PR. It can only
+open a pull request against an isolated branch; a human reviews the drafts,
+edits them, and decides what actually ships to the help center. Both
+credentials are encrypted in the Secrets Manager and injected at runtime,
+never exposed to the model or written to logs.
+
+</Step>
+<Step title="Open one PR of drafted articles">
+
+With that in place, each week brings one PR: a small batch of KB article
+drafts, each one built from the real resolutions of the tickets that raised
+the question, with the ticket volume and the topic's history noted for the
+reviewer. The support lead reads the PR, edits what needs editing, and merges
+what's ready. The ledger advances either way, so next week starts from what's
+still uncovered.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** resumes one persistent **session** that reads a durable
+  **ledger** of covered topics, clusters resolved Plain tickets read-only, and
+  opens a single GitHub **pull request** of drafted articles — never publishing
+  and never merging on its own.
+</Callout>
+
+## Guardrails
+
+Turning support history into published documentation is a one-way trust
+question — from tickets to drafts is safe, from drafts to a live article is
+not something the agent decides — so the guardrails are built around that
+line:
+
+- **Isolation.** Every run resumes in its own microVM sandbox. The session can
+  reach only Plain and the KB repo, and only the pull request leaves the
+  sandbox.
+- **Scoped secrets.** The Plain API key and the GitHub token are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed
+  to the model or the logs.
+- **Draft-only.** The agent opens a PR against an isolated branch and stops.
+  It never pushes to the live docs branch and never merges its own work — a
+  human reviews and publishes.
+- **Read-only tickets.** Plain access is read-only; the agent cannot edit,
+  close, or reply to a ticket while mining it for KB content.
+- **Everything is code.** The agent's clustering rules, drafting standard, and
+  per-system permissions are files in the repo, versioned and changed through
+  a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every week" label="Resolved tickets reclustered against the current KB gap set" />
+  <Stat value="Draft-only" label="Every article ships as a PR a human reviews and merges" />
+  <Stat value="1 ledger" label="Tracks which topics are covered so nothing is redrafted" />
+</StatGrid>
+
+The backlog of "we keep answering this but never wrote it down" questions now
+arrives as a small, reviewable PR each week, with every draft traceable back to
+the real tickets that produced it. The agent only clusters and drafts; the
+support team decides what gets published.

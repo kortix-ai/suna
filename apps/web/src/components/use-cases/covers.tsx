@@ -1,22 +1,36 @@
 /* eslint-disable @next/next/no-img-element */
 import {
   Activity,
+  AlarmClock,
+  AtSign,
   BarChart3,
+  Bug,
+  Calculator,
   CalendarClock,
+  CalendarPlus,
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
   ClipboardList,
+  Cloud,
   Coffee,
   CreditCard,
   Database,
+  FileLock2,
+  FileSearch,
   FileSignature,
   Files,
   FileText,
   Filter,
+  Flag,
+  FlaskConical,
+  Gauge,
   GitMerge,
   GitPullRequest,
+  Handshake,
+  HelpCircle,
   KeyRound,
+  LineChart,
   Mail,
   MessagesSquare,
   PhoneCall,
@@ -26,14 +40,20 @@ import {
   RefreshCw,
   Repeat,
   Rocket,
+  Route,
+  Scale,
   ScrollText,
   Send,
+  Share2,
+  ShieldAlert,
   ShieldCheck,
   Siren,
   Tag,
   Target,
+  Ticket,
   TrendingDown,
   TrendingUp,
+  TriangleAlert,
   UserMinus,
   UserPlus,
   UserRoundSearch,
@@ -531,5 +551,126 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
     <FeatureCover glow="bg-violet-500/15">
       <UserRoundSearch className={cn(big, 'text-violet-500')} />
     </FeatureCover>
+  ),
+  // ── use-case-max batch ─────────────────────────────────────────────────────
+  'pr-review-nudge': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <AlarmClock className={cn(ic, 'text-amber-500')} />
+        </IconTile>
+      }
+      b={<GitHub />}
+    />
+  ),
+  'error-triage': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <Bug className={cn(ic, 'text-red-500')} />
+        </IconTile>
+      }
+      b={<GitHub />}
+    />
+  ),
+  'flaky-test-triage': () => (
+    <FeatureCover glow="bg-yellow-500/15">
+      <FlaskConical className={cn(big, 'text-yellow-500')} />
+    </FeatureCover>
+  ),
+  'cloud-cost-anomaly': () => (
+    <FeatureCover glow="bg-amber-500/15">
+      <Cloud className={cn(big, 'text-amber-500')} />
+    </FeatureCover>
+  ),
+  'feature-flag-cleanup': () => (
+    <FeatureCover glow="bg-orange-500/15">
+      <Flag className={cn(big, 'text-orange-500')} />
+    </FeatureCover>
+  ),
+  'lead-routing': () => (
+    <FeatureCover glow="bg-blue-500/15">
+      <Route className={cn(big, 'text-blue-500')} />
+    </FeatureCover>
+  ),
+  'sales-forecast': () => (
+    <FeatureCover glow="bg-emerald-500/15">
+      <LineChart className={cn(big, 'text-emerald-500')} />
+    </FeatureCover>
+  ),
+  'win-loss-analysis': () => (
+    <FeatureCover glow="bg-violet-500/15">
+      <Scale className={cn(big, 'text-violet-500')} />
+    </FeatureCover>
+  ),
+  'social-scheduler': () => (
+    <FeatureCover glow="bg-pink-500/15">
+      <Share2 className={cn(big, 'text-pink-500')} />
+    </FeatureCover>
+  ),
+  'brand-monitor': () => (
+    <FeatureCover glow="bg-fuchsia-500/15">
+      <AtSign className={cn(big, 'text-fuchsia-500')} />
+    </FeatureCover>
+  ),
+  'nps-analysis': () => (
+    <FeatureCover glow="bg-cyan-500/15">
+      <Gauge className={cn(big, 'text-cyan-500')} />
+    </FeatureCover>
+  ),
+  'ticket-to-kb': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <Ticket className={cn(ic, 'text-sky-500')} />
+        </IconTile>
+      }
+      b={<GitHub />}
+    />
+  ),
+  'escalation-manager': () => (
+    <FeatureCover glow="bg-rose-500/15">
+      <TriangleAlert className={cn(big, 'text-rose-500')} />
+    </FeatureCover>
+  ),
+  'month-end-close': () => (
+    <FeatureCover glow="bg-teal-500/15">
+      <Calculator className={cn(big, 'text-teal-500')} />
+    </FeatureCover>
+  ),
+  'vendor-onboarding': () => (
+    <FeatureCover glow="bg-indigo-500/15">
+      <Handshake className={cn(big, 'text-indigo-500')} />
+    </FeatureCover>
+  ),
+  'interview-scheduler': () => (
+    <FeatureCover glow="bg-purple-500/15">
+      <CalendarPlus className={cn(big, 'text-purple-500')} />
+    </FeatureCover>
+  ),
+  'hr-policy-qa': () => (
+    <FeatureCover glow="bg-sky-500/15">
+      <HelpCircle className={cn(big, 'text-sky-500')} />
+    </FeatureCover>
+  ),
+  'nda-turnaround': () => (
+    <FeatureCover glow="bg-green-500/15">
+      <FileLock2 className={cn(big, 'text-green-600')} />
+    </FeatureCover>
+  ),
+  'gdpr-dsar': () => (
+    <FeatureCover glow="bg-blue-500/15">
+      <FileSearch className={cn(big, 'text-blue-500')} />
+    </FeatureCover>
+  ),
+  'phishing-triage': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <ShieldAlert className={cn(ic, 'text-red-500')} />
+        </IconTile>
+      }
+      b={<Slack />}
+    />
   ),
 };
