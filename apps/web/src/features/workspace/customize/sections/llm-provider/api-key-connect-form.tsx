@@ -1,6 +1,8 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
@@ -8,10 +10,9 @@ import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { cn } from '@/lib/utils';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, ExternalLink, Info } from 'lucide-react';
+import { ChevronLeft, ExternalLink, Info, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 
@@ -62,23 +63,20 @@ export function ApiKeyConnectForm({
 
   const allFilled = provider.envVars.every((envVar) => values[envVar]?.trim());
   const helpHostname = useMemo(() => helpHostnameFromUrl(provider.helpUrl), [provider.helpUrl]);
+  const fieldCount = provider.envVars.length;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     if (!allFilled) {
-      setError(
-        provider.envVars.length === 1
-          ? 'API key is required'
-          : `All ${provider.envVars.length} fields are required`,
-      );
+      setError(fieldCount === 1 ? 'API key is required' : `All ${fieldCount} fields are required`);
       return;
     }
     upsert.mutate();
   }
 
   return (
-    <div className="space-y-3 px-5 pt-3 pb-5">
+    <div className="space-y-4 px-5 pt-3 pb-5">
       <Button
         type="button"
         variant="ghost"
@@ -86,21 +84,24 @@ export function ApiKeyConnectForm({
         className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
+        <ChevronLeft className="size-3.5 shrink-0" />
         {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line767JsxTextBackToProviders')}
       </Button>
 
-      <div className="border-border/50 bg-muted/20 flex items-center gap-3 rounded-2xl border px-3.5 py-3">
+      {/* Provider identity — logo, name, and exactly what gets stored. */}
+      <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
         <div className="min-w-0 flex-1">
           <div className="text-foreground truncate text-sm font-medium">{provider.label}</div>
-          <div className="text-muted-foreground mt-0.5 truncate text-xs">
-            Stored as{' '}
-            {provider.envVars.map((envVar, index) => (
-              <span key={envVar}>
-                {index > 0 && ' · '}
-                <code className="bg-background rounded px-1 py-0.5 font-mono">{envVar}</code>
-              </span>
+          <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-xs">
+            <span>Stored as</span>
+            {provider.envVars.map((envVar) => (
+              <code
+                key={envVar}
+                className="bg-muted text-foreground/80 rounded px-1 py-0.5 font-mono text-[11px]"
+              >
+                {envVar}
+              </code>
             ))}
           </div>
         </div>
@@ -110,76 +111,93 @@ export function ApiKeyConnectForm({
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 
-      <form
-        onSubmit={handleSubmit}
-        className={cn('border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4')}
-      >
-        {provider.envVars.map((envVar, index) => (
-          <div key={envVar}>
-            <label
-              htmlFor={`provider-${provider.id}-${envVar}`}
-              className="text-muted-foreground mb-1.5 block text-xs font-medium"
-            >
-              {prettyFieldLabel(envVar)}
-            </label>
-            <Input
-              id={`provider-${provider.id}-${envVar}`}
-              type="text"
-              value={values[envVar] ?? ''}
-              onChange={(e) => setValues((current) => ({ ...current, [envVar]: e.target.value }))}
-              placeholder={envVarPlaceholder(provider, envVar)}
-              className="h-9 text-sm"
-              autoFocus={index === 0}
-              autoComplete="off"
-            />
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-foreground text-sm font-medium">
+              {fieldCount === 1 ? 'Credential' : 'Credentials'}
+            </span>
+            {fieldCount > 1 && (
+              <Badge variant="outline" size="sm">
+                {fieldCount} fields
+              </Badge>
+            )}
           </div>
-        ))}
 
-        <p className="text-muted-foreground text-xs">
-          Project-wide — every member of this project can use this provider.
-        </p>
+          <FieldGroup className="gap-5">
+            {provider.envVars.map((envVar, index) => (
+              <Field key={envVar}>
+                <FieldLabel htmlFor={`provider-${provider.id}-${envVar}`}>
+                  {prettyFieldLabel(envVar)}
+                </FieldLabel>
+                <Input
+                  id={`provider-${provider.id}-${envVar}`}
+                  type="text"
+                  value={values[envVar] ?? ''}
+                  onChange={(e) =>
+                    setValues((current) => ({ ...current, [envVar]: e.target.value }))
+                  }
+                  placeholder={envVarPlaceholder(provider, envVar)}
+                  autoFocus={index === 0}
+                  autoComplete="off"
+                />
+              </Field>
+            ))}
+          </FieldGroup>
 
-        {provider.helpUrl && helpHostname && (
-          <a
-            href={provider.helpUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs"
+          <FieldDescription className="text-xs">
+            Project-wide — every member of this project can use this provider.
+          </FieldDescription>
+
+          {provider.helpUrl && helpHostname && (
+            <a
+              href={provider.helpUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1.5 text-xs transition-colors"
+            >
+              <ExternalLink className="size-3 shrink-0" />
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom',
+              )}{' '}
+              {helpHostname}
+            </a>
+          )}
+
+          <Button
+            type="submit"
+            size="sm"
+            className="w-full"
+            disabled={upsert.isPending || !allFilled}
           >
-            <ExternalLink className="h-3 w-3" />
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom',
-            )}{' '}
-            {helpHostname}
-          </a>
-        )}
+            {upsert.isPending ? (
+              <>
+                <Loading className="size-3.5 shrink-0" />
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectProviderModal.line847JsxTextConnecting',
+                )}
+              </>
+            ) : (
+              'Connect'
+            )}
+          </Button>
+        </div>
 
         {error && (
-          <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
+          <InfoBanner tone="destructive" icon={TriangleAlert} title="Couldn't connect">
+            {error}
+          </InfoBanner>
         )}
 
-        <InfoBanner tone="warning" icon={Info} className="rounded-2xl">
+        <InfoBanner tone="warning" icon={Info}>
           {tHardcodedUi.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
           )}
         </InfoBanner>
-
-        <Button type="submit" size="sm" className="px-4" disabled={upsert.isPending || !allFilled}>
-          {upsert.isPending ? (
-            <>
-              <Loading className="mr-1.5 size-3.5 shrink-0" />
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line847JsxTextConnecting')}
-            </>
-          ) : (
-            'Connect'
-          )}
-        </Button>
       </form>
 
-      <p className="text-muted-foreground px-1 text-xs">
+      <p className="text-muted-foreground flex items-center gap-1.5 px-1 text-xs">
+        <ShieldCheck className="size-3.5 shrink-0" />
         {tHardcodedUi.raw(
           'componentsProjectsProjectProviderModal.line856JsxTextValuesAreEncryptedAtRestAes256Gcm',
         )}

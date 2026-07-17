@@ -358,7 +358,7 @@ async function ensureProjectEnv(
 interface ShipConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   authSecret: string | null;
   secretSet: boolean;

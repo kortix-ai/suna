@@ -9,6 +9,9 @@ It manages:
 - WAF association for every current ALB in us-west-2 and eu-west-2.
 - Target response time, ELB 5xx, and unhealthy-host CloudWatch alarms for every
   current ALB, with regional SNS actions (Drata DCF-86 / DCF-88).
+- CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
+  and production regions, discovered on every plan so replacement EKS workers
+  remain covered (Drata DCF-86).
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).

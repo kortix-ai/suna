@@ -19,11 +19,15 @@ const flatGuidesSource = guidesSource.replace(/\s+/g, ' ');
 describe('provider guides', () => {
   test('cover Entra, Okta, Google, Cloudflare, and Custom SAML', () => {
     expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'auth0',
       'cloudflare',
       'custom',
       'entra',
       'google',
+      'jumpcloud',
       'okta',
+      'onelogin',
+      'pingone',
     ]);
   });
 
@@ -119,8 +123,15 @@ describe('sso card entry point', () => {
 });
 
 describe('directory sync (SCIM) guides', () => {
-  test('cover Entra, Okta, and Custom SCIM', () => {
-    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'okta']);
+  test('cover Entra, Okta, OneLogin, JumpCloud, PingOne, and Custom SCIM', () => {
+    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'custom',
+      'entra',
+      'jumpcloud',
+      'okta',
+      'onelogin',
+      'pingone',
+    ]);
   });
 
   test('every guide mints + connects on ONE page, and ends with verify', () => {
@@ -258,6 +269,27 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
 
   test('Google Workspace has no SCIM guide — there is no first-party directory to sync', () => {
     expect(getScimGuide('google')).toBeNull();
+  });
+
+  // Providers that appear in the SAML picker but genuinely CANNOT do outbound
+  // SCIM 2.0 to a generic endpoint (fact-checked against the live consoles) get
+  // NO Directory Sync guide — shipping one would point admins at a screen that
+  // doesn't exist. Google: catalog-only. Cloudflare Access: broker (outbound
+  // SCIM is closed-beta API-only). Auth0: inbound-only (its SCIM URL points INTO
+  // Auth0). SAML JIT + group auto-provision is the path for all three.
+  test('no SCIM guide for providers without generic outbound SCIM (cloudflare, auth0)', () => {
+    expect(getScimGuide('cloudflare')).toBeNull();
+    expect(getScimGuide('auth0')).toBeNull();
+  });
+
+  test('the added SCIM guides (OneLogin, JumpCloud, PingOne) paste our base URL + token', () => {
+    for (const id of ['onelogin', 'jumpcloud', 'pingone']) {
+      const text = JSON.stringify(getScimGuide(id)!.steps);
+      // Each connects by pointing the IdP at the minted Tenant URL + secret.
+      expect(text).toContain('Tenant URL');
+      // And each pins userName to the email Kortix correlates on.
+      expect(text.toLowerCase()).toContain('email');
+    }
   });
 });
 
@@ -453,5 +485,23 @@ describe('Google SAML guide is novice-complete', () => {
 
   test('the import step no longer says "from the previous step"', () => {
     expect(guidesSource).not.toContain('metadata from the previous step');
+  });
+});
+
+// One SSO provider per account → switching mid-setup must confirm + reset
+// (Vercel parity: "your configuration with X will be reset").
+describe('change-provider guard', () => {
+  test('Change provider confirms and clears in-progress state', () => {
+    expect(wizardSource).toContain("setConfirmAction('change')");
+    expect(wizardSource).toContain('Change provider?');
+    expect(wizardSource).toContain('only one identity provider per account');
+    // the confirm actually resets the current provider's progress + stash + token
+    expect(wizardSource).toContain('clearCurrentProgress');
+    expect(flatWizardSource).toContain('window.localStorage.removeItem(metadataStashKey(');
+  });
+
+  test('Start over confirms when there is progress', () => {
+    expect(wizardSource).toContain("setConfirmAction('reset')");
+    expect(wizardSource).toContain('Start over?');
   });
 });

@@ -32,6 +32,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -73,6 +74,10 @@ const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {
   okta: '/provider-icons/okta.svg',
   google: '/provider-icons/google-workspace.svg',
   cloudflare: '/provider-icons/cloudflare.svg',
+  onelogin: '/provider-icons/onelogin.svg',
+  jumpcloud: '/provider-icons/jumpcloud.svg',
+  pingone: '/provider-icons/pingone.svg',
+  auth0: '/provider-icons/auth0.svg',
   custom: '/provider-icons/generic-provider.svg',
 };
 
@@ -853,6 +858,10 @@ function StepBlocks({
         ) : block.kind === 'claims-table' ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <ClaimsTable key={i} rows={block.rows} />
+        ) : block.kind === 'schematic' ? (
+          // Standalone schematic — no backing screenshot (SCIM provider guides).
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <SchematicPanel key={i} schematic={block.schematic} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
@@ -1434,6 +1443,11 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
 
   const [activeStep, setActiveStep] = useState(0);
   const [completed, setCompleted] = useState<string[]>([]);
+  // Change-provider / start-over confirmation (Kortix allows ONE SSO provider
+  // per account, so switching mid-setup abandons the current one). Declared
+  // with the other hooks — above the early returns — so it can never be called
+  // conditionally (react-hooks/rules-of-hooks).
+  const [confirmAction, setConfirmAction] = useState<'change' | 'reset' | null>(null);
 
   // Restore progress when a guide opens; jump to the first incomplete step.
   useEffect(() => {
@@ -1474,10 +1488,39 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     if (idx >= 0 && idx < guide.steps.length - 1) setActiveStep(idx + 1);
   };
 
-  const startOver = () => {
+  // In-progress state = anything that would be lost by switching away or
+  // resetting. Kortix allows ONE SSO provider per account, so changing
+  // provider mid-setup abandons the current one — mirror Vercel and confirm
+  // + actually reset it, rather than leaking stale half-configured state.
+  // (confirmAction is declared with the hooks above — never after a return.)
+  const metadataStashed =
+    typeof window !== 'undefined' && guide
+      ? loadMetadataStash(accountId, guide.id) !== null
+      : false;
+  const hasProgress = completed.length > 0 || metadataStashed || scimMinted !== null;
+
+  const clearCurrentProgress = () => {
+    if (!guide) return;
     setCompleted([]);
     saveCompleted(flow, accountId, guide.id, []);
+    setScimMinted(null);
+    ssoBaselineRef.current = null;
+    try {
+      window.localStorage.removeItem(metadataStashKey(accountId, guide.id));
+    } catch {
+      /* non-critical */
+    }
+  };
+
+  const startOver = () => {
+    clearCurrentProgress();
     setActiveStep(0);
+  };
+
+  const changeProviderRoute = `/accounts/${accountId}/${config.route}`;
+  const goChangeProvider = () => {
+    clearCurrentProgress();
+    router.push(changeProviderRoute);
   };
 
   const finish = () => {
@@ -1499,15 +1542,23 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={startOver} className="gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => (hasProgress ? setConfirmAction('reset') : startOver())}
+            className="gap-1.5"
+          >
             <RotateCcw className="size-3.5 shrink-0" />
             Start over
           </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link href={`/accounts/${accountId}/${config.route}`}>
-              <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
-              Change provider
-            </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => (hasProgress ? setConfirmAction('change') : goChangeProvider())}
+            className="gap-1.5"
+          >
+            <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
+            Change provider
           </Button>
         </div>
       </div>
@@ -1599,6 +1650,32 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmAction === 'change' ? 'Change provider?' : 'Start over?'}
+        description={
+          confirmAction === 'change' ? (
+            <span>
+              You can connect only one identity provider per account. Your in-progress{' '}
+              <strong>{guide.name}</strong> setup will be reset.
+            </span>
+          ) : (
+            <span>
+              This clears your progress for <strong>{guide.name}</strong> and returns to the first
+              step.
+            </span>
+          )
+        }
+        confirmLabel={confirmAction === 'change' ? 'Change provider' : 'Start over'}
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (confirmAction === 'change') goChangeProvider();
+          else startOver();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

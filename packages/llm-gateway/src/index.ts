@@ -4,7 +4,7 @@ export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-respons
 export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
-export type { CallUpstreamOptions, FetchImpl } from './http';
+export type { CallUpstreamOptions, FetchImpl, TransportEngine } from './http';
 
 export {
   CircuitBreaker,
@@ -40,6 +40,18 @@ export type { ExtractedUsage } from './usage';
 
 export { buildUpstreamRequest } from './transports';
 export type { UpstreamRequest } from './transports';
+
+export {
+  anthropicMessagesToChat,
+  chatJsonToAnthropicMessage,
+  chatSseToAnthropicSse,
+} from './ingress/anthropic-messages';
+export type {
+  AnthropicContentBlock,
+  AnthropicMessage,
+  AnthropicMessagesRequest,
+  AnthropicTool,
+} from './ingress/anthropic-messages';
 
 export { createModelFallbackPolicyEngine } from './routing';
 export type { ModelFallbackPolicyEngine } from './routing';

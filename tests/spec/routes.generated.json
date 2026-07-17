@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 490,
+  "count": 492,
   "routes": [
     {
       "method": "GET",
@@ -787,6 +787,10 @@
       "path": "/v1/executor/webhook/pipedream"
     },
     {
+      "method": "GET",
+      "path": "/v1/generation"
+    },
+    {
       "method": "POST",
       "path": "/v1/git/:project/git-receive-pack"
     },
@@ -815,8 +819,16 @@
       "path": "/v1/llm/health"
     },
     {
+      "method": "POST",
+      "path": "/v1/llm/messages"
+    },
+    {
       "method": "GET",
       "path": "/v1/llm/models"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/v1/messages"
     },
     {
       "method": "GET",
@@ -1885,6 +1897,10 @@
     {
       "method": "POST",
       "path": "/v1/tunnel/rpc/:tunnelId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage"
     },
     {
       "method": "GET",

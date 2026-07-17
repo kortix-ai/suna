@@ -47,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -119,6 +119,7 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
   mcp: Boxes,
   openapi: Globe,
+  postman: Globe,
   graphql: Globe,
   http: Globe,
   channel: MessageSquare,
@@ -139,6 +140,7 @@ function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
+  if (p === 'postman') return 'Postman';
   return p.toUpperCase();
 }
 
@@ -3256,6 +3258,7 @@ function ConnectorConfigFields({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="openapi">OpenAPI</SelectItem>
+              <SelectItem value="postman">Postman</SelectItem>
               <SelectItem value="graphql">GraphQL</SelectItem>
               <SelectItem value="mcp">MCP</SelectItem>
               <SelectItem value="http">HTTP</SelectItem>
@@ -3286,22 +3289,29 @@ function ConnectorConfigFields({
           </Select>
         </div>
       )}
-      {p === 'openapi' && (
+      {(p === 'openapi' || p === 'postman') && (
         <Field>
           <FieldLabel htmlFor="connector-spec">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
-            )}
+            {p === 'postman'
+              ? 'Collection, repository, or workspace'
+              : tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
+                )}
           </FieldLabel>
           <Input
             id="connector-spec"
             value={draft.spec ?? ''}
             onChange={(e) => set({ spec: e.target.value })}
-            placeholder="https://…/openapi.json"
+            placeholder={p === 'postman' ? 'https://github.com/… or collection.json' : 'https://…/openapi.json'}
             variant="popover"
             disabled={readOnly}
             required
           />
+          {p === 'postman' ? (
+            <FieldDescription>
+              Supports Collection v2 JSON, Postman-managed Git repositories, and configured public workspaces.
+            </FieldDescription>
+          ) : null}
         </Field>
       )}
       {p === 'graphql' && (
@@ -3454,6 +3464,7 @@ function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): bo
   if (d.auth?.type === 'custom' && !d.auth.name?.trim()) return false;
   if (d.provider === 'mcp') return !!d.url?.trim();
   if (d.provider === 'openapi') return !!d.spec?.trim();
+  if (d.provider === 'postman') return !!d.spec?.trim();
   if (d.provider === 'graphql') return !!d.endpoint?.trim();
   if (d.provider === 'http') return !!d.baseUrl?.trim();
   if (d.provider === 'channel') {

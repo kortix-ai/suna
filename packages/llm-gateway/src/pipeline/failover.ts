@@ -162,6 +162,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         binding: { provider: descriptor.provider, breaker },
         fetchImpl,
         translationSidecar: config.translationSidecar,
+        engine: config.transportEngine ?? 'native',
         signal,
         requestId,
       });

@@ -8,7 +8,7 @@ service — Slack, Gmail, a database, any HTTP/GraphQL API. Connections are
 per-project, and the agent can only use what you connect.
 
 - **Declared as `connectors` in the manifest** — provider is one of
-  **Pipedream, MCP, OpenAPI, GraphQL, HTTP, Channel** (chat platforms like
+  **Pipedream, MCP, OpenAPI, Postman, GraphQL, HTTP, Channel** (chat platforms like
   Slack and Microsoft Teams), or **Computer** (a connected machine). The definition lives in git; the
   **credentials live in the platform, never in the repo**.
 - **Channel + Computer connectors auto-materialize.** Connecting Slack or
@@ -33,7 +33,10 @@ per-project, and the agent can only use what you connect.
 - **Per-call policies** — each tool can be set to run, require approval, or be
   blocked.
 - **Set up in the dashboard** — the project's Connectors page offers Pipedream
-  one-click connect plus a custom path for OpenAPI/GraphQL/MCP/HTTP. See
+  one-click connect plus a custom path for OpenAPI/Postman/GraphQL/MCP/HTTP. A
+  Postman connector turns a Collection v2 document, `.postman/api` repository,
+  synchronized public GitHub repository, or public workspace into namespaced
+  Executor actions. See
   [Connecting your tools](/docs/guides/connecting-tools).
 - **Which agent may use which connector** is a separate, per-agent grant —
   each agent's `connectors` field in the manifest (`all`, `none`, or a list of

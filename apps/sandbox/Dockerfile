@@ -63,6 +63,7 @@ ARG TARGETARCH
 WORKDIR /cli
 COPY apps/cli ./apps/cli
 COPY packages/executor-sdk ./packages/executor-sdk
+COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/shared ./packages/shared

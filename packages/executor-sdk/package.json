@@ -1,7 +1,7 @@
 {
   "name": "@kortix/executor-sdk",
   "version": "0.9.66",
-  "description": "TypeScript SDK for the Kortix Executor — one typed client for every connector (Pipedream / MCP / OpenAPI / GraphQL / HTTP). Calls run server-side through the Kortix Executor gateway; no third-party secret ever touches your code.",
+  "description": "TypeScript SDK for the Kortix Executor — one typed client for every connector (Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP). Calls run server-side through the Kortix Executor gateway; no third-party secret ever touches your code.",
   "type": "module",
   "license": "Elastic-2.0",
   "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/executor-sdk",

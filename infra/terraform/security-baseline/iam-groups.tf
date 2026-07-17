@@ -37,7 +37,9 @@ locals {
     }
     bedrock-full = {
       policies = ["arn:aws:iam::aws:policy/AmazonBedrockFullAccess"]
-      members  = ["saumya-bedrock"]
+      # No current member. The historical saumya-bedrock IAM user does not
+      # exist, so declaring it here would make an otherwise safe plan fail.
+      members = []
     }
     bedrock-count-tokens = {
       policies = [aws_iam_policy.bedrock_count_tokens.arn]
@@ -48,7 +50,14 @@ locals {
       members  = ["kortix-cloudwatch-logs"]
     }
   }
-  group_attachments = merge([for g, cfg in local.groups : { for p in cfg.policies : "${g}|${p}" => { group = g, policy = p } }]...)
+  # Use the policy index in the instance key. Two customer-managed policy ARNs
+  # are created in this stack, so deriving a key from the ARN makes the
+  # for_each collection unknown during planning and prevents imports/plans.
+  group_attachments = merge([for g, cfg in local.groups : { for index, policy in cfg.policies : "${g}|${index}" => { group = g, policy = policy } }]...)
+  user_groups = {
+    for user in distinct(flatten([for cfg in values(local.groups) : cfg.members])) :
+    user => sort([for group, cfg in local.groups : group if contains(cfg.members, user)])
+  }
 }
 
 resource "aws_iam_group" "this" {
@@ -62,9 +71,8 @@ resource "aws_iam_group_policy_attachment" "this" {
   policy_arn = each.value.policy
 }
 
-resource "aws_iam_group_membership" "this" {
-  for_each = local.groups
-  name     = "${each.key}-membership"
-  group    = aws_iam_group.this[each.key].name
-  users    = each.value.members
+resource "aws_iam_user_group_membership" "this" {
+  for_each = local.user_groups
+  user     = each.key
+  groups   = each.value
 }

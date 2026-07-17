@@ -45,6 +45,9 @@ describe('runtime catalog provider resolution', () => {
     expect(resolveCatalogUpstream('amazon-bedrock')).toEqual({
       kind: 'bedrock',
       envVar: 'AWS_BEARER_TOKEN_BEDROCK',
+      // models.dev `npm` (for the ai-sdk engine's provider selection); still NO
+      // static baseUrl — the region-scoped endpoint is resolved per-request.
+      npm: '@ai-sdk/amazon-bedrock',
     });
   });
 

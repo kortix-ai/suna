@@ -129,7 +129,7 @@ export function ProviderList({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-foreground/85 text-sm font-medium">
-                      {PROVIDER_LABELS[p.id] || p.name || p.id}
+                      {p.name || PROVIDER_LABELS[p.id] || p.id}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-xs font-medium text-emerald-600 dark:text-emerald-400">
                       <span className="h-1 w-1 rounded-full bg-emerald-500" />

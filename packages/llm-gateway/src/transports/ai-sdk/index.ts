@@ -1,0 +1,155 @@
+import { generateText, streamText } from 'ai';
+import { NetworkError, UpstreamHttpError } from '../../errors';
+import type { UpstreamDescriptor } from '../../domain';
+import { clampMaxOutputTokensForBedrock, resolveAiModel, aiSdkFamilyFor } from './model';
+import { buildAiSdkArgs } from './request';
+import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
+
+export { aiSdkFamilyFor, isAiSdkServable, resolveAiModel } from './model';
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function sseResponse(stream: ReadableStream<Uint8Array>): Response {
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    },
+  });
+}
+
+// Map an AI SDK error into the gateway's transport error taxonomy so failover,
+// retry, and the circuit breaker behave identically to the native path.
+function toTransportError(err: unknown, provider: string): Error {
+  const e = err as { statusCode?: number; responseBody?: string; message?: string; url?: string };
+  if (typeof e?.statusCode === 'number') {
+    return new UpstreamHttpError(e.statusCode, e.responseBody ?? e.message ?? '', provider);
+  }
+  return new NetworkError(`ai-sdk call to ${provider} failed`, err);
+}
+
+// `streamText`'s result exposes several lazily-computed promises (usage, text,
+// finishReason, steps, toolCalls, ...) that resolve/reject as the SAME
+// underlying stream `fullStream` drives progresses (ai's `DelayedPromise`:
+// resolve/reject always update its internal status, and ALSO forward onto the
+// real native Promise the instant one has been created by any earlier access
+// — including one made internally by the SDK's own onFinish/telemetry
+// plumbing, not just by our code). This transport only ever consumes
+// `fullStream` (below) — nothing here ever awaits `result.usage` etc. — so if
+// the upstream call fails mid-stream and something upstream of us ends up
+// materializing one of these promises, its rejection has no attached handler:
+// an unhandled promise rejection, which crashes the whole Bun worker process,
+// dropping the connection as a bare Cloudflare 502 BEFORE the `error` part
+// `openAiSseFromFullStream` (sse.ts) turns into a clean SSE error frame ever
+// gets a chance to run, and before any settle/logging path in the pipeline
+// runs — the real upstream error is lost, not surfaced. Attaching a no-op
+// catch to every one of them makes a rejection here inert; the actual error
+// the caller sees is still the `error` part sse.ts already handles correctly.
+// Applies to every provider's streaming call, not just Anthropic's.
+export function guardAgainstUnhandledResultRejections(result: {
+  usage: PromiseLike<unknown>;
+  text: PromiseLike<unknown>;
+  finishReason: PromiseLike<unknown>;
+  steps: PromiseLike<unknown>;
+  toolCalls: PromiseLike<unknown>;
+  finalStep: PromiseLike<unknown>;
+  providerMetadata: PromiseLike<unknown>;
+}): void {
+  for (const p of [
+    result.usage,
+    result.text,
+    result.finishReason,
+    result.steps,
+    result.toolCalls,
+    result.finalStep,
+    result.providerMetadata,
+  ]) {
+    void Promise.resolve(p).catch(() => {});
+  }
+}
+
+// The AI-SDK transport engine. Given the same OpenAI chat.completions body and
+// descriptor the native path receives, drive the AI SDK provider package and
+// return a Response in the SAME OpenAI-compatible shape (SSE for stream, JSON
+// otherwise) — so the pipeline, billing, and opencode see no difference.
+//
+// Streaming returns immediately (matching native): errors then surface as an
+// in-stream OpenAI error frame the pipeline probe already handles. Non-streaming
+// awaits the call so a 4xx/5xx throws here and drives the same failover.
+export async function callUpstreamViaAiSdk(
+  body: Record<string, unknown>,
+  descriptor: UpstreamDescriptor,
+  opts: { signal?: AbortSignal } = {},
+): Promise<Response> {
+  const family = aiSdkFamilyFor(descriptor);
+  const model = resolveAiModel(descriptor);
+  const args = buildAiSdkArgs(body, family);
+  const streaming = body.stream === true;
+  const ctx = { model: descriptor.resolvedModel || String(body.model ?? ''), provider: descriptor.provider };
+
+  const shared = {
+    model,
+    system: args.system,
+    messages: args.messages,
+    tools: args.tools,
+    toolChoice: args.toolChoice,
+    temperature: args.temperature,
+    topP: args.topP,
+    // Clamped for small Bedrock models (Nova) whose Converse API hard-rejects
+    // an over-large ceiling instead of silently capping it — see model.ts's
+    // clampMaxOutputTokensForBedrock. A no-op for every other family/model.
+    maxOutputTokens: clampMaxOutputTokensForBedrock(
+      args.maxOutputTokens,
+      family,
+      descriptor.resolvedModel,
+    ),
+    stopSequences: args.stopSequences,
+    providerOptions: args.providerOptions,
+    // The gateway owns retry/failover/circuit-breaking; keep the SDK from adding a
+    // second, opaque retry layer on top.
+    maxRetries: 0,
+    abortSignal: opts.signal,
+  } as const;
+
+  if (streaming) {
+    const result = streamText({
+      ...shared,
+      onError: () => {
+        /* error is surfaced through fullStream as an `error` part; swallow the
+           unhandled-rejection path here. */
+      },
+    });
+    guardAgainstUnhandledResultRejections(result);
+    return sseResponse(openAiSseFromFullStream(result.fullStream, ctx));
+  }
+
+  try {
+    const result = await generateText(shared);
+    return jsonResponse(
+      openAiJsonFromResult(
+        {
+          text: result.text,
+          reasoningText: result.reasoningText,
+          toolCalls: result.toolCalls?.map((tc) => ({
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            input: (tc as { input?: unknown }).input,
+          })),
+          finishReason: result.finishReason,
+          usage: result.usage,
+          providerMetadata: result.providerMetadata,
+        },
+        ctx,
+      ),
+    );
+  } catch (err) {
+    throw toTransportError(err, descriptor.provider);
+  }
+}

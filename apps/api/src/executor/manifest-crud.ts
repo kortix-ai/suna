@@ -28,7 +28,7 @@ import { resolveExperimentalFeature } from '../experimental/features';
 export interface ConnectorDraft {
   slug: string;
   name?: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel';
   platform?: 'slack' | 'email';
   app?: string;
   account?: string;
@@ -64,7 +64,7 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   } else if (d.provider === 'http') {
     if (d.baseUrl) entry.base_url = d.baseUrl;
     if (d.spec) entry.spec = d.spec;
-  } else if (d.provider === 'openapi') {
+  } else if (d.provider === 'openapi' || d.provider === 'postman') {
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'channel') {
     if (d.platform) entry.platform = d.platform;
