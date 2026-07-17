@@ -100,6 +100,37 @@ describe('callUpstream', () => {
     expect('max_completion_tokens' in toOpenRouter).toBe(false);
   });
 
+  // P0 regression (req_mro97uigg6rnflvf): a real `openai/gpt-5.6-sol` BYOK
+  // session 400ed on the wire with the max_tokens error even though the
+  // resolved descriptor's baseUrl WAS genuinely api.openai.com — the fix
+  // widens the openai-compat translation to key off `descriptor.provider ===
+  // 'openai'` (set once in resolveCandidates.ts from the requested model id)
+  // rather than the resolved host, so it survives ANY future routing shape
+  // that resolves an `openai/`-labeled model to a non-`api.openai.com` host
+  // (operator proxy, managed/Azure-fronted route, ...). End-to-end through
+  // callUpstream (not just buildUpstreamRequest) to pin the real wire bytes.
+  test('sends max_completion_tokens on the wire for an openai-labeled descriptor even when its baseUrl is NOT api.openai.com', async () => {
+    const bodies: string[] = [];
+    const capturingFetch: FetchImpl = async (_input, init) => {
+      bodies.push(String(init.body));
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    await callUpstream(
+      { model: 'openai/gpt-5.6-sol', messages: [{ role: 'user', content: 'hi' }], stream: false, max_tokens: 32000 },
+      {
+        ...descriptor,
+        provider: 'openai',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        resolvedModel: 'gpt-5.6-sol',
+      },
+      { retry: fastRetry, fetchImpl: capturingFetch },
+    );
+
+    const wire = JSON.parse(bodies[0]!);
+    expect(wire.max_completion_tokens).toBe(32000);
+    expect('max_tokens' in wire).toBe(false);
+  });
+
   test('retries a 503 then returns the ok response', async () => {
     const fetchMock = makeFetch([
       { status: 503, body: 'down' },
