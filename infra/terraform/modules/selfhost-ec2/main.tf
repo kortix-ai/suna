@@ -226,14 +226,11 @@ resource "aws_instance" "this" {
   })
   user_data_replace_on_change = false
 
-  tags = {
-    ManagedBy      = "terraform"
-    Name           = local.name
-    Module         = "selfhost-ec2"
-    Environment    = lookup(var.tags, "Environment", "managed")
-    Project        = lookup(var.tags, "Project", "kortix")
-    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
-  }
+  # Preserve every caller-supplied tag on the instance itself. Other module
+  # resources already use local.tags; keeping a reduced hand-written subset
+  # here silently dropped ownership and compliance tags from the primary EC2
+  # resource.
+  tags = local.tags
 
   # The data volume is attached out-of-band (aws_volume_attachment below) and
   # deliberately NOT recreated when the instance is (delete_on_termination =

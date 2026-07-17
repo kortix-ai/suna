@@ -10,6 +10,8 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
   Runtime Monitoring agents in all 17 opted-in commercial regions (DCF-87)
 - Regional GuardDuty EventBridge rules forwarding every finding to the existing
   central operations alert topic (DCF-87)
+- Cross-region EventBridge alerting for every successful AWS root-account
+  console login, delivered to the confirmed operations topic (DCF-90)
 - EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
