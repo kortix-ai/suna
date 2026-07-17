@@ -23,6 +23,7 @@ import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
+import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { ToolPart } from '@/ui';
 import { ChevronLeft, ChevronRight, PanelLeft, X } from 'lucide-react';
@@ -418,6 +419,11 @@ export function DetailLayer({
   // `document.activeElement` then would overwrite the invoking row with
   // whatever the nav button itself was, losing the way home. Harmless on
   // mobile: the desktop `detailRef` never mounts there, so `.focus()` no-ops.
+  // Both focuses go through `focusWithoutScroll`: they land while a layer is
+  // still translated by the slide (card entering at x:100%, home returning
+  // from -12%), and a bare focus() scrolls the panel's overflow-hidden
+  // ancestors sideways to "reveal" it — permanently, once the keep-alive
+  // terminal layer's parked x:100% keeps the overflow from shrinking back.
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = detail !== null;
@@ -425,9 +431,9 @@ export function DetailLayer({
       if (!wasOpen) {
         restoreFocusRef.current = document.activeElement as HTMLElement | null;
       }
-      requestAnimationFrame(() => detailRef.current?.focus());
+      requestAnimationFrame(() => focusWithoutScroll(detailRef.current));
     } else if (wasOpen) {
-      restoreFocusRef.current?.focus?.();
+      focusWithoutScroll(restoreFocusRef.current);
       restoreFocusRef.current = null;
     }
   }, [detail?.key]);

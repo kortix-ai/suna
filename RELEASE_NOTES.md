@@ -1,8 +1,5 @@
-Self-host SSO sign-in fix and a Cloudflare Access setup guide
+Session panel layout fix and inline file previews in chat
 
 **Fixed**
-- Self-hosted sign-in via SSO/OAuth no longer lands you on an unreachable `0.0.0.0:3000` address after authenticating. The post-login redirect now uses your instance's public URL, so SSO and social logins complete cleanly behind a reverse proxy.
-- The LLM gateway now deploys reliably again on Kubernetes — a missing configuration value that could stall the gateway rollout is set, so releases roll the gateway forward without manual intervention.
-
-**Added**
-- A step-by-step guide for setting up SSO with Cloudflare Access (SAML), matching how Cloudflare Access actually behaves.
+- The workspace could get stuck shifted sideways — chat and panel cards clipped at the left edge, dead space on the right — after opening the browser or terminal in the session panel. Opening those views no longer nudges the layout, and the layout can no longer be scrolled out of place.
+- When the agent shares files or images in the chat, the carousel and file previews render inline again instead of collapsing to a bare one-line row. Clicking the row still opens the full viewer in the side panel.

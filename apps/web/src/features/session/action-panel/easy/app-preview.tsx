@@ -30,6 +30,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
+import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
@@ -163,9 +164,12 @@ export function AppPreview({
   }, [isLoading, refreshKey, clearLoadTimeout, noApp]);
 
   // Nothing to load, so land the cursor on the address bar — the fastest way
-  // in once you know the port.
+  // in once you know the port. `focusWithoutScroll`: this fires while the
+  // detail card is still sliding in from x:100%, and a bare focus() would
+  // scroll the panel's overflow-hidden ancestors sideways to reveal it —
+  // the stuck-shifted-layout bug.
   useEffect(() => {
-    if (noApp) addressRef.current?.focus();
+    if (noApp) focusWithoutScroll(addressRef.current);
   }, [noApp]);
 
   const reload = useCallback(() => {
