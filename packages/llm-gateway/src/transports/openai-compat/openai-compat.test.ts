@@ -93,6 +93,34 @@ describe('openai-compat max_tokens -> max_completion_tokens translation', () => 
     expect('max_completion_tokens' in req.payload).toBe(false);
   });
 
+  // P0 regression (req_mro97uigg6rnflvf): resolveCandidates built a descriptor
+  // for `openai/gpt-5.6-sol` whose baseUrl WAS genuinely api.openai.com and the
+  // request STILL 400ed with the max_tokens error in production — proving the
+  // hostname-only gate was too fragile to trust as the ONLY signal. The
+  // durable fix scopes on `descriptor.provider === 'openai'` (set once, from
+  // the caller's requested id, in resolveCandidates.ts) so the rename fires no
+  // matter which literal host that provider happens to resolve behind —
+  // covering an operator-configured proxy, a managed/Azure-fronted route, or
+  // any other non-`api.openai.com` OpenAI-compatible endpoint that still
+  // speaks OpenAI's own chat/completions wire format.
+  test('an OpenAI-labeled descriptor on a non-api.openai.com OpenAI-compatible host (managed/proxy/OpenRouter-fronted) still renames max_tokens', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openai/gpt-5.6-sol', messages: [], max_tokens: 32000 },
+      { ...openaiDescriptor, baseUrl: 'https://openrouter.ai/api/v1' },
+    );
+    expect(req.payload.max_completion_tokens).toBe(32000);
+    expect('max_tokens' in req.payload).toBe(false);
+  });
+
+  test('a non-OpenAI model reached via the same non-genuine host is NOT translated (OpenRouter still wants max_tokens)', () => {
+    const req = buildUpstreamRequest(
+      { model: 'openrouter/anthropic/claude-x', messages: [], max_tokens: 4096 },
+      { ...descriptor, provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', resolvedModel: 'anthropic/claude-x' },
+    );
+    expect(req.payload.max_tokens).toBe(4096);
+    expect('max_completion_tokens' in req.payload).toBe(false);
+  });
+
   test('other openai-compat upstreams (Groq, x.ai, self-hosted/custom) keep max_tokens as-is', () => {
     const req = buildUpstreamRequest({ model: 'xai/grok-4.3', messages: [], max_tokens: 512 }, descriptor);
     expect(req.payload.max_tokens).toBe(512);

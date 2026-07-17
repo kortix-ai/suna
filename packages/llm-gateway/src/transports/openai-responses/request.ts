@@ -78,6 +78,23 @@ function reasoningFromBody(body: Json): Json | undefined {
   return undefined;
 }
 
+// The Responses API's token-budget field is `max_output_tokens` — neither of
+// the chat/completions names (`max_tokens`, the legacy field; or
+// `max_completion_tokens`, what the openai-compat transport's
+// translateMaxTokensForGenuineOpenAi hotfix already renames it to before a
+// request ever reaches here — see route-kind.ts, which reroutes genuine
+// reasoning+tools OpenAI traffic to THIS transport). Previously neither field
+// was translated at all: chatToResponses silently dropped whichever one the
+// caller sent, so a rerouted request carried NO output-token cap to OpenAI —
+// not a wire-level rejection, but a real, silent product/cost bug (unbounded
+// generation) discovered while investigating the max_tokens P0 above. Prefers
+// `max_completion_tokens` when both are present, matching openai-compat's own
+// "explicit max_completion_tokens wins" precedent.
+function maxOutputTokensFromBody(body: Json): number | undefined {
+  const value = body.max_completion_tokens ?? body.max_tokens;
+  return typeof value === 'number' ? value : undefined;
+}
+
 function messagesToInput(messages: unknown[]): { instructions: string; input: unknown[] } {
   const instructions: string[] = [];
   const input: unknown[] = [];
@@ -143,6 +160,8 @@ export function chatToResponses(body: Json, descriptor: UpstreamDescriptor): Jso
   const tools = toolsToResponses(body.tools);
   if (tools) payload.tools = tools;
   if (body.tool_choice !== undefined) payload.tool_choice = toolChoiceToResponses(body.tool_choice);
+  const maxOutputTokens = maxOutputTokensFromBody(body);
+  if (maxOutputTokens !== undefined) payload.max_output_tokens = maxOutputTokens;
   const reasoning =
     reasoningFromBody(body) ??
     (descriptor.provider === 'openai-codex' ? { effort: 'low' } : undefined);
