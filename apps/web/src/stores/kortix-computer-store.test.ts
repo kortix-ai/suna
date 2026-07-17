@@ -248,4 +248,12 @@ describe('pendingQuickView staleness', () => {
     s.setActiveSession('session-a');
     expect(useKortixComputerStore.getState().pendingQuickView?.sessionId).toBe('session-a');
   });
+
+  test('re-activating the already-active session still clears another session request', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('session-b');
+    s.requestQuickView('terminal', 'session-a');
+    s.setActiveSession('session-b'); // no-op re-activation
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
 });

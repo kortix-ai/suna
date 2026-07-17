@@ -260,6 +260,14 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
 
       setActiveSession: (sessionId: string | null) => {
+        // A quick-view is an intent about the session it was made in — it must
+        // not replay when some other session mounts later. Cleared even on the
+        // no-op re-activation path below, or a request planted for another
+        // session (explicitSessionId) would survive it.
+        const pendingQuickView = get().pendingQuickView;
+        if (pendingQuickView && pendingQuickView.sessionId !== sessionId) {
+          set({ pendingQuickView: null });
+        }
         const prev = get()._activeSessionId;
         if (prev === sessionId) return;
         // Save current panel state for the previous session
@@ -277,11 +285,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           isExpanded: false,
           panelSplit: null,
           detailOpen: false,
-          // A quick-view is an intent about the session it was made in — it
-          // must not replay when some other session mounts later.
-          ...(get().pendingQuickView && get().pendingQuickView!.sessionId !== sessionId
-            ? { pendingQuickView: null }
-            : {}),
         });
       },
 
