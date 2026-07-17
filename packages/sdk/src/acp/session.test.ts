@@ -9,12 +9,13 @@ import { createAcpSession } from './session';
 // assertions can target exactly the RPC(s) they care about.
 type RecordedCall = { method: string; url: string; body?: Record<string, unknown> };
 
-function makeSessionFetchMock({ transcript = [] as unknown[], failPrompt = false } = {}) {
+function makeSessionFetchMock({ transcript = [] as unknown[], failPrompt = false, failRespondTimes = 0 } = {}) {
   const callsByMethod = new Map<string, RecordedCall[]>();
   const encoder = new TextEncoder();
   let sseConnections = 0;
   let currentController: ReadableStreamDefaultController<Uint8Array> | null = null;
   let lastSseAborted = false;
+  let respondFailuresRemaining = failRespondTimes;
 
   function record(method: string, call: RecordedCall) {
     const list = callsByMethod.get(method) ?? [];
@@ -53,6 +54,10 @@ function makeSessionFetchMock({ transcript = [] as unknown[], failPrompt = false
       // A bare JSON-RPC response envelope with no `method` — this is
       // `AcpClient.respond()`. The real bridge persists it and answers 202.
       record('respond', { method, url, body });
+      if (respondFailuresRemaining > 0) {
+        respondFailuresRemaining -= 1;
+        return new Response('boom', { status: 500 });
+      }
       return new Response(null, { status: 202 });
     }
 
@@ -294,6 +299,82 @@ describe('AcpSession', () => {
     expect(echoed).toBeDefined();
     expect((echoed!.envelope as Record<string, unknown>).result).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow' },
+    });
+  });
+
+  describe('respond dedupe (single choke point for respondPermission/respondQuestion/rejectQuestion)', () => {
+    // Multiple auto-answer mechanisms in `apps/web` (the session-level
+    // `autoApprovePermissions` toggle, the project-policy auto-answer
+    // effect, and the "allow everything" bulk path) each keep their own
+    // local dedupe ref and can independently call `respondPermission` for
+    // the SAME request id before any round-trip resolves. Nothing outside
+    // `AcpSession` can see across those call sites, so the dedupe has to
+    // live here — the one place every respond path actually funnels
+    // through (`respondWithEcho`).
+    test('two concurrent respondPermission calls for the same id produce exactly one network respond', async () => {
+      const fetchMock = makeSessionFetchMock();
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      // Synchronous double-invoke, same shape as a React StrictMode
+      // double-invoke or two independent auto-answer effects racing on the
+      // same render tick: neither call has awaited anything yet when the
+      // second one fires.
+      const [a, b] = await Promise.all([session.respondPermission(9, 'allow'), session.respondPermission(9, 'allow')]);
+
+      expect(fetchMock.calls('respond')).toHaveLength(1);
+      expect(a).toBeUndefined();
+      expect(b).toBeUndefined();
+    });
+
+    test('a call for an id that already succeeded is a no-op, not a second network respond', async () => {
+      const fetchMock = makeSessionFetchMock();
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      await session.respondPermission(9, 'allow');
+      expect(fetchMock.calls('respond')).toHaveLength(1);
+
+      // A later, sequential call for the SAME id (e.g. a second auto-answer
+      // mechanism reacting to a snapshot that hasn't caught up yet) must
+      // stay a no-op forever — success leaves the id permanently marked
+      // answered; the store's own reconciliation is what removes it from
+      // `pendingPrompts`, not this dedupe.
+      await session.respondPermission(9, 'allow');
+      expect(fetchMock.calls('respond')).toHaveLength(1);
+    });
+
+    test('a failed respond clears the in-flight mark, so a genuine retry sends again', async () => {
+      const fetchMock = makeSessionFetchMock({ failRespondTimes: 1 });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      await expect(session.respondPermission(9, 'allow')).rejects.toThrow();
+      expect(fetchMock.calls('respond')).toHaveLength(1);
+
+      // Retry after failure must NOT be swallowed by the dedupe — the mark
+      // was cleared on failure specifically so this succeeds.
+      await session.respondPermission(9, 'allow');
+      expect(fetchMock.calls('respond')).toHaveLength(2);
+
+      const echoed = session.getSnapshot().envelopes.find(
+        (row) => row.direction === 'client_to_agent' && (row.envelope as Record<string, unknown>).id === 9,
+      );
+      expect(echoed).toBeDefined();
+    });
+
+    test('dedupe is per-id: two different ids each get their own network respond', async () => {
+      const fetchMock = makeSessionFetchMock();
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      await Promise.all([session.respondPermission(9, 'allow'), session.respondPermission(10, 'allow')]);
+
+      expect(fetchMock.calls('respond')).toHaveLength(2);
     });
   });
 

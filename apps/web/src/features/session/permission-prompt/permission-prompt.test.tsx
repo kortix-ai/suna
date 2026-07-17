@@ -103,6 +103,19 @@ const READ_PERMISSION: AcpPendingPermission = {
   params: {},
 };
 
+const WEBFETCH_PERMISSION: AcpPendingPermission = {
+  id: 'p-webfetch',
+  method: 'session/request_permission',
+  sessionId: 's1',
+  permission: 'webfetch',
+  patterns: ['https://example.com'],
+  options: [
+    { optionId: 'allow_once', kind: 'allow_once', label: 'Allow once', value: 'allow_once' },
+    { optionId: 'reject_once', kind: 'reject_once', label: 'Reject', value: 'reject_once' },
+  ],
+  params: {},
+};
+
 function renderPrompt(over: {
   permissions?: AcpPendingPermission[];
   autoApprove?: boolean;
@@ -167,6 +180,19 @@ describe('PermissionPrompt — allow everything is behind ConfirmDialog', () => 
 
     expect(onReply).toHaveBeenCalledWith('p-bash', 'allow_once');
   });
+
+  it('records each bulk-replied row after its own reply resolves', async () => {
+    renderPrompt({ permissions: [BASH_PERMISSION] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow everything' }));
+    await flush();
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, allow everything' }));
+    await flush();
+
+    expect(screen.getByTestId('permission-record-row')).toBeTruthy();
+    expect(screen.getByText(/Allowed — Bash/)).toBeTruthy();
+  });
 });
 
 describe('PermissionPrompt — persistent policy auto-answer', () => {
@@ -186,6 +212,19 @@ describe('PermissionPrompt — persistent policy auto-answer', () => {
     expect(onReply).not.toHaveBeenCalled();
   });
 
+  // WS5-P1-c review, Important #2: `webfetch` is network egress (an
+  // SSRF/exfiltration axis), not a local read — `autoApprove: 'reads'` must
+  // never wave it through, even though the ACP wire protocol groups it near
+  // the other read-ish tool kinds. See the rationale + "Open decisions"
+  // pointer on `READ_ONLY_PERMISSION_KINDS` in `permission-prompt.tsx`.
+  it('does NOT auto-answer webfetch under autoApprove: "reads"', async () => {
+    currentPolicy = { autoApprove: 'reads', toolDecisions: {} };
+    const { onReply } = renderPrompt({ permissions: [WEBFETCH_PERMISSION] });
+    await flush();
+
+    expect(onReply).not.toHaveBeenCalled();
+  });
+
   it('a remembered toolDecisions[tool] === "allow" auto-answers regardless of kind', async () => {
     currentPolicy = { autoApprove: 'none', toolDecisions: { Bash: 'allow' } };
     const { onReply } = renderPrompt({ permissions: [BASH_PERMISSION] });
@@ -200,6 +239,25 @@ describe('PermissionPrompt — persistent policy auto-answer', () => {
     await flush();
 
     expect(onReply).toHaveBeenCalledWith('p-bash', 'reject_once');
+  });
+
+  // WS5-P1-c review, Important #3: the auto-answer effect must not record
+  // "Allowed"/"Denied" before `onReply` actually resolves — a transient
+  // failure would otherwise show a false-positive record for a request the
+  // agent never actually got an answer to.
+  it('a failed auto-answer records nothing, leaves the row pending, and shows an error toast', async () => {
+    currentPolicy = { autoApprove: 'reads', toolDecisions: {} };
+    const onReply = mock(async (_id: unknown, _optionId?: string) => {
+      throw new Error('network blip');
+    });
+    renderPrompt({ permissions: [READ_PERMISSION], onReply });
+    await flush();
+
+    expect(onReply).toHaveBeenCalledWith('p-read', 'allow_once');
+    expect(screen.queryByTestId('permission-record-row')).toBeNull();
+    // Still pending: the row's manual "Allow once" button is still there,
+    // not swapped for a record.
+    expect(screen.getByTestId('acp-permission-allow-once')).toBeTruthy();
   });
 });
 

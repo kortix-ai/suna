@@ -238,6 +238,34 @@ export class AcpSession {
    *  signal: unrelated updates reuse the previous `AcpPendingPrompts` object,
    *  matching `chatItems`'s reference-stability contract. */
   private pendingPromptsCache: { openRequests: AcpReducerState['openRequests']; result: AcpPendingPrompts } | null = null;
+  /**
+   * The single choke point for the race this guards against: `apps/web` has
+   * (at least) three independent auto-answer mechanisms that can each call
+   * `respondPermission`/`respondQuestion`/`rejectQuestion` for the SAME
+   * request id before any of their round-trips resolve — the session-level
+   * `autoApprovePermissions` toggle (`useAcpSession`), the project-policy
+   * auto-answer effect, and the "allow everything" bulk path
+   * (`PermissionPrompt`). Each of those keeps its OWN local dedupe ref, so
+   * none of them can see the others firing — only `AcpSession` sees every
+   * respond call, which is why the dedupe lives here and not in any one
+   * caller.
+   *
+   * Keyed by `String(id)` (`AcpJsonRpcId` is `string | number`, and a `Set`
+   * needs value equality, not the `===` a raw union would give inconsistent
+   * results for). Marked SYNCHRONOUSLY at the top of `respondWithEcho`,
+   * before the `await this.client.respond(...)` call — a second call
+   * arriving on the same microtask (the exact StrictMode-double-invoke /
+   * racing-effects shape this guards against) sees the mark before its own
+   * network call would ever fire.
+   *
+   * Cleared ONLY on failure (see `respondWithEcho`'s catch) so a genuine
+   * retry after a transient failure still sends. Never cleared on success —
+   * a JSON-RPC id in this session is answered at most once; the *pending*
+   * side of that (removing it from `pendingPrompts`) is already handled by
+   * the reducer once the respond echo/history reconciles, which is an
+   * orthogonal concern from "should a second respond call hit the network".
+   */
+  private respondingOrAnsweredIds = new Set<string>();
 
   constructor(private readonly options: AcpSessionOptions) {
     this.client = createAcpClient({
@@ -380,6 +408,14 @@ export class AcpSession {
     });
   }
 
+  /**
+   * De-duped at `respondWithEcho` (see its doc comment) — a second call for
+   * an id already in flight or already answered is a documented no-op that
+   * resolves `undefined`, same as a fresh success. Callers that already
+   * `await`/`.catch()` this (`useAcpSession`'s `autoApprovePermissions`
+   * effect, `PermissionPrompt`'s policy auto-answer effect, its "allow
+   * everything" bulk path) see no behavior change on the happy path.
+   */
   respondPermission(id: AcpJsonRpcId, optionId?: string): Promise<void> {
     return this.respondWithEcho(id, optionId ? { outcome: { outcome: 'selected', optionId } } : { outcome: { outcome: 'cancelled' } });
   }
@@ -574,8 +610,26 @@ export class AcpSession {
     this.emit();
   }
 
+  /**
+   * See `respondingOrAnsweredIds`'s doc comment for why this dedupe exists
+   * and lives here. A second call for an id already in flight or already
+   * answered resolves immediately as a no-op — it never reaches
+   * `this.client.respond`, and never enqueues a second echo row.
+   */
   private async respondWithEcho(id: AcpJsonRpcId, result: unknown): Promise<void> {
-    await this.client.respond(id, result);
+    const key = String(id);
+    if (this.respondingOrAnsweredIds.has(key)) return;
+    this.respondingOrAnsweredIds.add(key);
+    try {
+      await this.client.respond(id, result);
+    } catch (error) {
+      // Only a FAILURE clears the mark — a genuine retry (e.g. the caller's
+      // own `.catch()` re-driving its auto-answer effect) must be able to
+      // send again. Success leaves the id marked forever; see the doc
+      // comment on `respondingOrAnsweredIds`.
+      this.respondingOrAnsweredIds.delete(key);
+      throw error;
+    }
     // The bridge only replays `agent_to_client` events over the ACP SSE
     // stream — a `client_to_agent` response row never comes back on its
     // own, so without this local echo the pending permission/question card

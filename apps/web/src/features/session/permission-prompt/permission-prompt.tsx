@@ -71,8 +71,20 @@ import {
  *  project policy's `autoApprove: 'reads'` is allowed to wave through.
  *  Deliberately excludes `mcp` (arbitrary third-party tool, no way to know
  *  its side effects) and `doom_loop` (a repeat-detection warning, never a
- *  routine read). */
-const READ_ONLY_PERMISSION_KINDS = new Set(['read', 'webfetch']);
+ *  routine read).
+ *
+ *  Deliberately excludes `webfetch` too (WS5-P1-c review, Important #2):
+ *  network egress is an SSRF/exfiltration axis, not a local read — a
+ *  "reads-only" auto-approve should not silently let a session make
+ *  outbound requests on the user's behalf. The repo's own tool taxonomy
+ *  (`apps/web/src/ui/types.ts`'s `PERMISSION_LABELS`, `packages/sdk`'s
+ *  `turns/tool-registry.ts`) already keeps `webfetch` as its own category,
+ *  separate from `read`/`list`/`glob`/`grep`. Widening this set back to
+ *  include `webfetch` is a deliberate PRODUCT decision, not a bug fix — see
+ *  "Open decisions" #-1 in `docs/superpowers/plans/2026-07-15-cortex-cycle-progress.md`
+ *  (Jay: keep narrow vs. widen with UI copy disclosure). Do not re-add it
+ *  here without that decision being made explicitly. */
+const READ_ONLY_PERMISSION_KINDS = new Set(['read']);
 
 /** How long an answered row stays visible as a compact record before the
  *  container quietly drops it — long enough to register as feedback, short
@@ -252,6 +264,15 @@ export function PermissionPrompt({
     for (const permission of permissions) {
       const idKey = JSON.stringify(permission.id);
       if (autoAnsweredRef.current.has(idKey)) continue;
+      // `permission.permission` is itself a fallback chain (`projectPermission`
+      // in `@kortix/sdk`'s `acp/reduce.ts`: `params.permission ?? params.title
+      // ?? params.name ?? toolCall.title ?? toolCall.kind ?? params.kind ??
+      // method`) — this component assumes whichever field wins is a STABLE
+      // tool identifier worth persisting a `toolDecisions[tool]` policy
+      // against, not a one-off human-readable title. Holds for every harness
+      // observed so far; if a future harness's wire shape ever makes a
+      // free-text `title` win over a stable `kind`/`name`, remembered
+      // decisions would key on that text instead.
       const tool = permission.permission;
       const remembered = policy.toolDecisions[tool];
       const shouldAllow =
@@ -263,15 +284,28 @@ export function PermissionPrompt({
       autoAnsweredRef.current.add(idKey);
       const { allowOnce, deny } = resolvePermissionActionOptions(permission.options);
       const option = shouldDeny ? deny : allowOnce;
-      addRecord(
-        idKey,
-        `${shouldDeny ? 'Denied' : 'Allowed'} — ${permissionLabel(permission)} (project policy)`,
-        shouldDeny ? 'negative' : 'positive',
-      );
-      void Promise.resolve(onReply(permission.id, option ? optionValue(option) : undefined)).catch((e) => {
-        autoAnsweredRef.current.delete(idKey);
-        errorToast(e instanceof Error ? e.message : 'Failed to auto-answer the permission request');
-      });
+      // Record only AFTER `onReply` actually resolves — matching the manual
+      // path (`replyAcp`, below). Recording before the round-trip completes
+      // would show "Allowed"/"Denied" for a request that never actually got
+      // answered on a transient `onReply` failure (WS5-P1-c review,
+      // Important #3): the row would look resolved while the real request
+      // was still sitting open server-side. On failure, `addRecord` is
+      // skipped entirely, `autoAnsweredRef` is un-marked so a later render
+      // can retry, and the row stays visible in the pending list —
+      // `visiblePermissions` only filters out ids already IN `records`, so
+      // never adding the record here is exactly what keeps it visible.
+      void Promise.resolve(onReply(permission.id, option ? optionValue(option) : undefined))
+        .then(() => {
+          addRecord(
+            idKey,
+            `${shouldDeny ? 'Denied' : 'Allowed'} — ${permissionLabel(permission)} (project policy)`,
+            shouldDeny ? 'negative' : 'positive',
+          );
+        })
+        .catch((e) => {
+          autoAnsweredRef.current.delete(idKey);
+          errorToast(e instanceof Error ? e.message : 'Failed to auto-answer the permission request');
+        });
     }
   }, [permissions, policy, onReply, addRecord]);
 
@@ -333,15 +367,20 @@ export function PermissionPrompt({
   // session-autoApprove backstop on and answers every currently-pending ACP
   // permission through the SAME `onReply`; resolves every pending connector
   // action (the first with the wildcard `session_all` scope, matching the
-  // server's per-connector grant semantics, the rest `once`).
+  // server's per-connector grant semantics, the rest `once`). Each bulk-
+  // replied row gets its own `addRecord` after ITS OWN reply resolves
+  // (consistency with every other answer path — manual clicks, the policy
+  // auto-answer effect — none of which show a bare vanish; a bulk action
+  // shouldn't either).
   const confirmAllowEverything = useCallback(async () => {
     setBusy('all');
     try {
       onAutoApproveChange(true);
       await Promise.all(
-        permissions.map((permission) => {
+        permissions.map(async (permission) => {
           const { allowOnce } = resolvePermissionActionOptions(permission.options);
-          return onReply(permission.id, allowOnce ? optionValue(allowOnce) : undefined);
+          await onReply(permission.id, allowOnce ? optionValue(allowOnce) : undefined);
+          addRecord(JSON.stringify(permission.id), `Allowed — ${permissionLabel(permission)}`, 'positive');
         }),
       );
       if (pendingConnectorActions.length) {
@@ -349,7 +388,13 @@ export function PermissionPrompt({
         await new Promise<void>((resolve, reject) => {
           resolveConnector.mutate(
             { executionId: first!.execution_id, decision: 'approve', scope: 'session_all' },
-            { onSuccess: () => resolve(), onError: reject },
+            {
+              onSuccess: () => {
+                addRecord(first!.execution_id, 'Allowed — this session', 'positive');
+                resolve();
+              },
+              onError: reject,
+            },
           );
         });
         await Promise.all(
@@ -358,7 +403,13 @@ export function PermissionPrompt({
               new Promise<void>((resolve, reject) => {
                 resolveConnector.mutate(
                   { executionId: a.execution_id, decision: 'approve', scope: 'once' },
-                  { onSuccess: () => resolve(), onError: reject },
+                  {
+                    onSuccess: () => {
+                      addRecord(a.execution_id, 'Allowed', 'positive');
+                      resolve();
+                    },
+                    onError: reject,
+                  },
                 );
               }),
           ),
@@ -370,7 +421,7 @@ export function PermissionPrompt({
       setBusy(null);
       setConfirmAllOpen(false);
     }
-  }, [permissions, pendingConnectorActions, onReply, onAutoApproveChange, resolveConnector]);
+  }, [permissions, pendingConnectorActions, onReply, onAutoApproveChange, resolveConnector, addRecord]);
 
   const qualifiedConnectorActions = [
     ...new Set(pendingConnectorActions.map(qualifiedConnectorAction).filter((q): q is string => !!q)),
