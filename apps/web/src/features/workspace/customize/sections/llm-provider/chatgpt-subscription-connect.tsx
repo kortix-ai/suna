@@ -1,16 +1,14 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
-import {
-  pollProjectProviderOAuth,
-  startProjectProviderOAuth,
-} from '@kortix/sdk/projects-client';
+import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk/projects-client';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ExternalLink } from 'lucide-react';
+import { CheckCircle2, ExternalLink, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -109,7 +107,7 @@ export function ChatGptSubscriptionConnect({
   const waiting = phase === 'waiting';
 
   return (
-    <div className="border-border/50 bg-muted/20 rounded-2xl border p-4">
+    <div className="bg-popover rounded-md border px-4 py-4">
       <div className="flex items-start gap-3">
         <ProviderLogo providerID="openai" name="OpenAI" size="default" />
         <div className="min-w-0 flex-1">
@@ -127,7 +125,7 @@ export function ChatGptSubscriptionConnect({
       </div>
 
       {waiting && (
-        <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
+        <div className="border-border bg-muted/30 mt-3 rounded-md border p-3">
           {challenge ? (
             <>
               <div className="text-foreground text-xs font-medium">
@@ -156,7 +154,7 @@ export function ChatGptSubscriptionConnect({
                       'autoComponentsProjectsProjectProviderModalJsxTextEnterThisCodee346992b',
                     )}
                   </div>
-                  <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
+                  <div className="border-border bg-muted text-foreground mt-1 w-fit rounded-md border px-3 py-2 font-mono text-lg font-semibold tracking-widest tabular-nums">
                     {challenge.code}
                   </div>
                 </div>
@@ -177,18 +175,17 @@ export function ChatGptSubscriptionConnect({
       )}
 
       {phase === 'done' && (
-        <div className="text-foreground/80 border-kortix-green/20 bg-kortix-green/[0.06] mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-xs">
+        <InfoBanner tone="success" icon={CheckCircle2} className="mt-3 text-xs">
           {tHardcodedUi.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
           )}
-        </div>
+        </InfoBanner>
       )}
 
       {error && (
-        <div className="bg-destructive/5 text-destructive mt-3 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
+        <InfoBanner tone="destructive" icon={TriangleAlert} className="mt-3 text-xs">
+          {error}
+        </InfoBanner>
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
