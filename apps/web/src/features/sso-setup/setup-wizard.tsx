@@ -858,6 +858,10 @@ function StepBlocks({
         ) : block.kind === 'claims-table' ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <ClaimsTable key={i} rows={block.rows} />
+        ) : block.kind === 'schematic' ? (
+          // Standalone schematic — no backing screenshot (SCIM provider guides).
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <SchematicPanel key={i} schematic={block.schematic} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
