@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { UpstreamDescriptor } from '../domain';
-import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
+import {
+  CircuitOpenError,
+  ClientAbortError,
+  UpstreamHttpError,
+  UpstreamMisconfiguredError,
+  defaultIsRetryable,
+  indicatesUpstreamDown,
+} from '../errors';
 import { CircuitBreaker } from '../resilience';
 import { buildUpstreamRequest } from '../transports';
 import { type FetchImpl, callUpstream } from './call-upstream';
@@ -655,5 +662,135 @@ describe('callUpstream client abort propagation', () => {
       binding,
     }).catch(() => {});
     expect(breaker.current).toBe('closed');
+  });
+});
+
+// Regression coverage for a defect class this codebase has repeatedly hit
+// (2026-07-17): a BYOK call to a model NOT individually catalogued by
+// models.dev (e.g. OpenRouter's dynamic/no-catalog-price auto-router,
+// `openrouter/openrouter/fusion`) failing with a 502 whose message is a raw
+// "Invalid URL" — the AI-SDK engine's `createOpenAICompatible({baseURL:
+// baseURL || ''})` (transports/ai-sdk/model.ts) and the native transport's
+// `${descriptor.baseUrl}/chat/completions` string concat (openai-compat/
+// index.ts) both build an unparseable request straight from an empty
+// `descriptor.baseUrl`, deep inside a provider SDK/fetch call, with no clear
+// diagnostic. Live re-verification against dev (both the in-process gateway
+// and the standalone gateway pod, streaming and non-streaming) confirms
+// apps/api's resolveCandidates — which resolves `baseUrl` from the PROVIDER
+// (resolveCatalogUpstream, keyed by provider id, never by individual model —
+// see provider-registry.ts) — already gets this right for a non-catalog BYOK
+// model today (see apps/api's resolve-candidates.test.ts for the pinned
+// regression). This suite guards the OTHER half: `callUpstream` itself must
+// never let a descriptor with a missing/blank/unparseable baseUrl reach
+// either transport engine at all — a fail-fast backstop against any FUTURE
+// resolution regression (a different host's resolveUpstream hook, a new
+// provider kind, ...), for both engines identically, instead of surfacing as
+// an opaque "Invalid URL" 502 (non-streaming) or — worse — a 200-status SSE
+// stream carrying an in-band error frame that looks like success at the HTTP
+// layer (streaming, ai-sdk engine only).
+describe('callUpstream — descriptor with no usable baseUrl fails fast (shared, both engines)', () => {
+  const noBaseUrlDescriptor: UpstreamDescriptor = {
+    provider: 'openrouter',
+    kind: 'openai-compat',
+    npm: '@openrouter/ai-sdk-provider',
+    baseUrl: '',
+    apiKey: 'sk-test',
+    billingMode: 'none',
+    markup: 0,
+    resolvedModel: 'openrouter/fusion',
+  };
+
+  for (const engine of ['native', 'ai-sdk'] as const) {
+    test(`${engine} engine: an empty baseUrl throws UpstreamMisconfiguredError before any fetch`, async () => {
+      let fetchCalls = 0;
+      const fetchImpl: FetchImpl = async () => {
+        fetchCalls += 1;
+        return new Response('{}', { status: 200 });
+      };
+      await expect(
+        callUpstream(
+          { model: 'openrouter/openrouter/fusion', messages: [], stream: false },
+          noBaseUrlDescriptor,
+          { retry: fastRetry, fetchImpl, engine },
+        ),
+      ).rejects.toBeInstanceOf(UpstreamMisconfiguredError);
+      // Never dispatched — the ai-sdk engine's own fetch (undici, not our
+      // fetchImpl) would otherwise be the one to throw the opaque error deep
+      // inside the SDK; this assertion is only meaningful for the native
+      // engine's fetchImpl, but is harmless (and still 0) for ai-sdk too,
+      // since we never even reach `callUpstreamViaAiSdk`.
+      expect(fetchCalls).toBe(0);
+    });
+
+    test(`${engine} engine: same fail-fast for a streaming request (never returns a 200 with an in-band error frame)`, async () => {
+      const fetchImpl: FetchImpl = async () => new Response('{}', { status: 200 });
+      await expect(
+        callUpstream(
+          { model: 'openrouter/openrouter/fusion', messages: [], stream: true },
+          noBaseUrlDescriptor,
+          { retry: fastRetry, fetchImpl, engine },
+        ),
+      ).rejects.toBeInstanceOf(UpstreamMisconfiguredError);
+    });
+  }
+
+  test('a whitespace-only baseUrl is treated the same as empty', async () => {
+    await expect(
+      callUpstream(
+        { model: 'x' },
+        { ...noBaseUrlDescriptor, baseUrl: '   ' },
+        { retry: fastRetry, fetchImpl: async () => new Response('{}', { status: 200 }) },
+      ),
+    ).rejects.toBeInstanceOf(UpstreamMisconfiguredError);
+  });
+
+  test('an unparseable baseUrl is rejected with the same error, not a raw URL-parse crash', async () => {
+    await expect(
+      callUpstream(
+        { model: 'x' },
+        { ...noBaseUrlDescriptor, baseUrl: 'not-a-url' },
+        { retry: fastRetry, fetchImpl: async () => new Response('{}', { status: 200 }) },
+      ),
+    ).rejects.toBeInstanceOf(UpstreamMisconfiguredError);
+  });
+
+  test('a non-http(s) scheme is rejected (defense against a future non-URL descriptor shape)', async () => {
+    await expect(
+      callUpstream(
+        { model: 'x' },
+        { ...noBaseUrlDescriptor, baseUrl: 'ftp://example.com' },
+        { retry: fastRetry, fetchImpl: async () => new Response('{}', { status: 200 }) },
+      ),
+    ).rejects.toBeInstanceOf(UpstreamMisconfiguredError);
+  });
+
+  test('a valid baseUrl is unaffected (no false positives)', async () => {
+    const res = await callUpstream({ model: 'x' }, descriptor, {
+      retry: fastRetry,
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('never retried and never trips the shared circuit breaker for the provider', async () => {
+    const breaker = new CircuitBreaker({ failureThreshold: 1, cooldownMs: 10_000 });
+    let fetchCalls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      return new Response('{}', { status: 200 });
+    };
+    await callUpstream({ model: 'x' }, noBaseUrlDescriptor, {
+      retry: fastRetry,
+      fetchImpl,
+      binding: { provider: noBaseUrlDescriptor.provider, breaker },
+    }).catch(() => {});
+    expect(fetchCalls).toBe(0);
+    expect(breaker.current).toBe('closed');
+  });
+
+  test('classified as non-retryable and not upstream-down, unlike a genuine network error', () => {
+    const err = new UpstreamMisconfiguredError('openrouter', 'missing baseUrl');
+    expect(defaultIsRetryable(err)).toBe(false);
+    expect(indicatesUpstreamDown(err)).toBe(false);
   });
 });

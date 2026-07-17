@@ -1,5 +1,10 @@
 import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
-import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
+import {
+  ClientAbortError,
+  NetworkError,
+  UpstreamHttpError,
+  UpstreamMisconfiguredError,
+} from '../errors';
 import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
 import { transportFor } from '../transports';
 import { callUpstreamViaAiSdk, isAiSdkServable } from '../transports/ai-sdk';
@@ -33,11 +38,46 @@ export interface CallUpstreamOptions {
   requestId?: string;
 }
 
+// Every transport (native and ai-sdk alike) builds its outgoing request from
+// `descriptor.baseUrl` — a required `string` on the type, but TypeScript
+// can't stop that string from being empty or unparseable at runtime. Left
+// unchecked, a blank baseUrl reaches deep inside a provider SDK/fetch call
+// before failing with an opaque "Invalid URL" — and for the ai-sdk engine's
+// STREAMING path specifically, that failure never even throws: it surfaces
+// as a 200-status SSE stream carrying an in-band `error` frame (see
+// UpstreamMisconfiguredError's doc comment in errors.ts). Every descriptor
+// this gateway resolves today (apps/api's resolveCandidates, which is
+// provider-keyed — see provider-registry.ts's resolveCatalogUpstream — never
+// per-model) already carries a real baseUrl, so this never fires in practice;
+// it exists purely as a fail-fast, correctly-classified backstop against a
+// FUTURE resolution regression (a different host's resolveUpstream hook, a
+// new provider kind, ...) instead of letting a bad descriptor reach either
+// transport at all.
+function assertUsableBaseUrl(descriptor: UpstreamDescriptor): void {
+  const baseUrl = descriptor.baseUrl?.trim();
+  if (!baseUrl) {
+    throw new UpstreamMisconfiguredError(descriptor.provider || 'unknown', 'missing baseUrl');
+  }
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('not http(s)');
+    }
+  } catch {
+    throw new UpstreamMisconfiguredError(
+      descriptor.provider || 'unknown',
+      `invalid baseUrl "${descriptor.baseUrl}"`,
+    );
+  }
+}
+
 export async function callUpstream(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
   opts: CallUpstreamOptions = {},
 ): Promise<Response> {
+  assertUsableBaseUrl(descriptor);
+
   // AI-SDK engine: the SDK provider package owns the request build, HTTP, and
   // response decoding; the adapter maps its output back to the same OpenAI-
   // compatible shape the native path produces (so the pipeline, billing, and
