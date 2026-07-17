@@ -16,6 +16,7 @@ import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-ur
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
+import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import {
   buildWebProxyUrl,
   isExternalUrl,
@@ -112,6 +113,17 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   );
   const [isAddressEditing, setIsAddressEditing] = useState(false);
   const addressInputRef = useRef<HTMLInputElement>(null);
+
+  // Empty landing gets the cursor, like `autoFocus` did — but through
+  // `focusWithoutScroll`, because React's `autoFocus` is a bare focus() at
+  // mount, and mount can happen while the panel is mid enter-animation: the
+  // reveal scroll shoves a permanent sideways offset onto the panel's
+  // overflow-hidden ancestors. Mount-only on purpose (`autoFocus` semantics —
+  // a later navigation clearing the URL must not steal the cursor).
+  const autoFocusAddressRef = useRef(!rawPreviewUrl);
+  useEffect(() => {
+    if (autoFocusAddressRef.current) focusWithoutScroll(addressInputRef.current);
+  }, []);
 
   const isExternalBrowsing = useMemo(() => {
     return (
@@ -549,7 +561,6 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
                 // isAddressEditing && !!addressValue && 'font-mono',
                 urlParts && 'text-transparent',
               )}
-              autoFocus={!rawPreviewUrl}
             />
             {urlParts && (
               <span
