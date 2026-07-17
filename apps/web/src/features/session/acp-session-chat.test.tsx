@@ -5,7 +5,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { projectAcpChatItems as projectAcpEnvelopes, type AcpChatItem } from '@kortix/sdk';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Check } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import type { AcpSessionChat as AcpSessionChatType } from './acp-session-chat';
 import { AcpPlanCard } from './acp-tool-call-card';
 
@@ -182,6 +182,10 @@ function userMsg(id: string, text: string): AcpChatItem {
 
 function assistantMsg(id: string, text: string): AcpChatItem {
   return { kind: 'message', id, role: 'assistant', text };
+}
+
+function thoughtMsg(id: string, text: string): AcpChatItem {
+  return { kind: 'message', id, role: 'thought', text };
 }
 
 function rawItem(method: string, data: unknown): AcpChatItem {
@@ -514,6 +518,45 @@ describe('AcpSessionChat — raw protocol frame rendering', () => {
       const text = textOf(renderer.root);
       const headerCount = text.split('Edit · 2x').length - 1;
       expect(headerCount).toBe(1);
+
+      // Rest-visible disclosure affordance (Task WS5-P3-a): the group's
+      // chevron must never carry `opacity-0` at rest — it's visible from the
+      // start, only its rotation animates on open.
+      const chevrons = renderer.root.findAllByType(ChevronRight);
+      expect(chevrons.length).toBeGreaterThan(0);
+      for (const chevron of chevrons) {
+        const className = (chevron.props as { className?: string }).className ?? '';
+        expect(className).not.toContain('opacity-0');
+      }
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('a folded reasoning group also shows a rest-visible chevron (same disclosure idiom as the same-tool group)', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const items: AcpChatItem[] = [
+      userMsg('u1', 'think it through'),
+      thoughtMsg('r1', 'First, consider the options.'),
+      thoughtMsg('r2', 'Second, weigh the tradeoffs.'),
+    ];
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat acp={baseAcp({ ready: true, chatItems: items })} sessionId="s1" sessionTitle="Session" projectId="p1" />,
+      );
+    });
+
+    try {
+      const chevrons = renderer.root.findAllByType(ChevronRight);
+      expect(chevrons.length).toBeGreaterThan(0);
+      for (const chevron of chevrons) {
+        const className = (chevron.props as { className?: string }).className ?? '';
+        expect(className).not.toContain('opacity-0');
+      }
     } finally {
       act(() => {
         renderer.unmount();

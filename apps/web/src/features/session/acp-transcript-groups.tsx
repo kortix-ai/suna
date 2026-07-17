@@ -1,11 +1,12 @@
 'use client';
 
 import { memo, useMemo, useState, type ReactNode } from 'react';
-import { Brain, ChevronRight, Globe, Loader2, Search, Terminal } from 'lucide-react';
+import { Brain, ChevronRight, CircleHelp, Globe, Loader2, Search, Terminal } from 'lucide-react';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { cn } from '@/lib/utils';
 import { AcpToolCallCard, acpToolName } from './acp-tool-call-card';
-import { BasicTool } from './tool-renderers';
 import {
   acpContextGroupSummary,
   type AcpMessageItem,
@@ -13,16 +14,25 @@ import {
 } from './acp-turn-grouping';
 
 /**
- * Lightweight collapsed-by-default disclosure for the transcript's grouped
- * "piles" (reasoning runs, same-tool runs). Deliberately NOT built on Radix
- * `Collapsible`: Radix schedules a mount-time `requestAnimationFrame` setState
- * (its mount-animation guard) that lands as an extra React commit per mounted
- * group. With one grouped pile per turn, that overflowed the transcript's
- * commit budget in the replay perf test (30 turns → 30 extra commits). A plain
- * `useState` toggle that renders the body only while open costs zero extra
- * commits and keeps the identical chevron affordance; the body appears
- * instantly rather than animating its height, which for a collapsed summary
- * pile reads as snappier, not worse.
+ * Collapsed-by-default disclosure for the transcript's grouped "piles"
+ * (reasoning runs, same-tool runs) — now built on the design-system's
+ * `Collapsible` (Radix), the SAME primitive `BasicTool`'s inline tool-card
+ * disclosure (`tool-renderers.tsx`) already uses, so both idioms share one
+ * mechanism and one chevron feel.
+ *
+ * Deliberately still WITHOUT Radix's `CollapsibleContent`: that piece (not
+ * `Collapsible`/`CollapsibleTrigger` themselves) is what schedules the
+ * mount-time `requestAnimationFrame` setState (its exit-animation Presence
+ * guard) that overflowed the transcript's commit budget in the replay perf
+ * test when this disclosure was first built (WS3-era). `Collapsible`'s root
+ * and `CollapsibleTrigger` are plain context/`Primitive.button` wrappers with
+ * no RAF of their own — proven zero-cost already, since `BasicTool` mounts
+ * one per rendered tool call in this same perf fixture. So: adopt the
+ * design-system primitive for real (shared `data-state`/`aria-expanded`
+ * semantics, one chevron rotation feel), keep rendering the body with a
+ * plain `{open ? children : null}` conditional instead of the animated
+ * `CollapsibleContent` — same zero-extra-commit mechanics as before, proven
+ * again by `acp-session-perf.test.tsx`.
  */
 function GroupDisclosure({
   triggerClassName,
@@ -34,25 +44,25 @@ function GroupDisclosure({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const toggle = () => setOpen((value) => !value);
   return (
-    <div>
-      <div
-        role="button"
-        tabIndex={0}
-        className={triggerClassName}
-        onClick={toggle}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            toggle();
-          }
-        }}
-      >
-        {renderTrigger(open)}
-      </div>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <div
+          role="button"
+          tabIndex={0}
+          className={triggerClassName}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setOpen((value) => !value);
+            }
+          }}
+        >
+          {renderTrigger(open)}
+        </div>
+      </CollapsibleTrigger>
       {open ? children : null}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -90,7 +100,7 @@ export const AcpGroupedReasoningCard = memo(function AcpGroupedReasoningCard({
         'flex items-center gap-1.5 py-0.5',
         'cursor-pointer text-xs select-none',
         'text-muted-foreground/70',
-        'group/reasoning max-w-full transition-colors',
+        'max-w-full transition-colors',
       )}
       renderTrigger={(open) => (
         <>
@@ -104,11 +114,14 @@ export const AcpGroupedReasoningCard = memo(function AcpGroupedReasoningCard({
           {isStreaming && (
             <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
           )}
+          {/* Rest-visible chevron affordance (never `opacity-0` until hover):
+              always `text-muted-foreground`, the only animated property is
+              its rotation on open — one expand/collapse feel shared with the
+              tool-card disclosure (`BasicTool`, `tool-renderers.tsx`). */}
           <ChevronRight
             className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/reasoning:opacity-100',
-              open && 'rotate-90 opacity-100',
+              'text-muted-foreground/50 size-3 flex-shrink-0 transition-transform',
+              open && 'rotate-90',
             )}
           />
         </>
@@ -169,7 +182,7 @@ export const AcpSameToolGroup = memo(function AcpSameToolGroup({
         'flex items-center gap-1.5 py-0.5',
         'cursor-pointer text-xs select-none',
         'text-muted-foreground/70',
-        'group/grp max-w-full transition-colors',
+        'max-w-full transition-colors',
       )}
       renderTrigger={(open) => (
         <>
@@ -182,11 +195,11 @@ export const AcpSameToolGroup = memo(function AcpSameToolGroup({
           )}
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {anyRunning && <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />}
+          {/* Same rest-visible chevron idiom as `AcpGroupedReasoningCard`. */}
           <ChevronRight
             className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/grp:opacity-100',
-              open && 'rotate-90 opacity-100',
+              'text-muted-foreground/50 size-3 flex-shrink-0 transition-transform',
+              open && 'rotate-90',
             )}
           />
         </>
@@ -222,17 +235,49 @@ export const AcpSameToolGroup = memo(function AcpSameToolGroup({
 });
 
 /** Unknown ACP `session/update` methods (or anything the projection couldn't
- *  classify) — rendered with the same tool-card chrome as every other tool
- *  instead of a raw `<details><pre>` dump. This is the ONLY renderer for a
- *  `raw` chat item now (the old per-turn "Protocol events (n)" Disclosure is
- *  gone): every raw frame surfaces inline in transcript order as its own
- *  card, mirroring how the grouping pipeline delegates a `raw` render item. */
+ *  classify) — a graceful card, not a raw `JSON.stringify` dump. This is the
+ *  ONLY renderer for a `raw` chat item now (the old per-turn "Protocol
+ *  events (n)" Disclosure is gone): every raw frame surfaces inline in
+ *  transcript order as its own card, mirroring how the grouping pipeline
+ *  delegates a `raw` render item.
+ *
+ *  Friendly content up front (icon tile + "Unrecognized agent event" +
+ *  the method name), the wire payload one click away behind an "Advanced"
+ *  disclosure — same row/tile/Advanced-disclosure language as
+ *  `review-detail-modal.tsx`'s `Panel`/`AdvancedDisclosure`. Unknown frames
+ *  never appear in the perf fixture (it only replays known methods), and
+ *  `DisclosureContent` renders nothing until opened (`AnimatePresence`
+ *  mounts no `motion.div` while closed), so this costs nothing on the hot
+ *  path either way. */
 export const AcpUnknownMethodCard = memo(function AcpUnknownMethodCard({ method, data }: { method: string; data: unknown }) {
+  const [rawOpen, setRawOpen] = useState(false);
   return (
-    <BasicTool icon={<Terminal />} trigger={{ title: method }}>
-      <pre className="text-muted-foreground overflow-x-auto px-3 py-2 text-xs">
-        {JSON.stringify(data, null, 2)}
-      </pre>
-    </BasicTool>
+    <div className="bg-popover flex flex-col gap-2 rounded-md border px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-sm">
+          <CircleHelp className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">Unrecognized agent event</div>
+          <div className="text-muted-foreground truncate font-mono text-xs">{method}</div>
+        </div>
+      </div>
+      <Disclosure open={rawOpen} onOpenChange={setRawOpen}>
+        <DisclosureTrigger>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground -mx-1 flex w-fit items-center gap-1 rounded px-1 py-0.5 text-xs transition-colors"
+          >
+            <ChevronRight className={cn('size-3 transition-transform', rawOpen && 'rotate-90')} />
+            <span>Advanced</span>
+          </button>
+        </DisclosureTrigger>
+        <DisclosureContent>
+          <pre className="text-muted-foreground overflow-x-auto py-1 text-xs">
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </DisclosureContent>
+      </Disclosure>
+    </div>
   );
 });
