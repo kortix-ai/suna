@@ -14,7 +14,7 @@
 import type { AcpHarness, RuntimeProfile } from '@kortix/sdk/projects-client';
 import { connectionDisplayName, harnessPresentation, type KortixHarness, type ModelsPageConnection } from '@kortix/sdk/react';
 
-import { METHOD_COMPATIBLE_HARNESSES } from '../llm-provider/connect-model-modal';
+import { METHOD_COMPATIBLE_HARNESSES } from '../llm-provider/harness-method-compat';
 import { ACP_HARNESS_STABILITY } from './runtime-profile-options';
 
 export interface RuntimeRowViewModel {
@@ -48,9 +48,10 @@ export interface RuntimeRowViewModel {
  * derivation is used instead (WS5-P2-a review, Important finding).
  *
  * Compatibility is read off `METHOD_COMPATIBLE_HARNESSES` (the
- * `@kortix/shared` harness-descriptor inversion `connect-model-modal.tsx`
- * already derives for the Models page connect flow) rather than
- * re-deriving auth-kind -> harness membership here. */
+ * `@kortix/shared` harness-descriptor inversion `harness-method-compat.ts`
+ * derives, also consumed by the Models page connect flow in
+ * `connect-model-modal.tsx`) rather than re-deriving auth-kind -> harness
+ * membership here. */
 export function connectedHarnessesFromModelsPage(
   connections: readonly ModelsPageConnection[],
 ): Partial<Record<AcpHarness, ModelsPageConnection>> {

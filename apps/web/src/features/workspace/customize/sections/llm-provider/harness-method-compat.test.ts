@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { HARNESS_IDS, HARNESSES } from '@kortix/shared/harnesses';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 
-import { METHOD_COMPATIBLE_HARNESSES } from './connect-model-modal';
+import { METHOD_COMPATIBLE_HARNESSES } from './harness-method-compat';
 
 // Every auth kind the web UI knows about (ConnectMethod + the native-config /
 // managed-gateway rows). This enumeration is the SDK's `HarnessAuthKind`
@@ -42,4 +42,15 @@ describe('METHOD_COMPATIBLE_HARNESSES pins the @kortix/shared harness descriptor
       expect(METHOD_COMPATIBLE_HARNESSES[kind], `kind: ${kind}`).toEqual(derived[kind]);
     }
   });
+});
+
+// DISC-08: this map now lives in a framework-free module
+// (`harness-method-compat.ts`) so `runtime-view-model.ts` (a pure view-model,
+// no React) can depend on it without transitively importing the
+// `connect-model-modal.tsx` component. Guard the exported key set directly —
+// a regression here means the extraction dropped or renamed a key.
+test('exports the full auth-kind key set, unchanged by the DISC-08 extraction', () => {
+  expect(Object.keys(METHOD_COMPATIBLE_HARNESSES).sort()).toEqual(
+    [...AUTH_KINDS].sort(),
+  );
 });

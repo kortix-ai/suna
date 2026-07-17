@@ -12,7 +12,6 @@ import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTit
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
-import { HARNESS_IDS, HARNESSES } from '@kortix/shared/harnesses';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 import type { ModelsPageConnection, ModelsPageRuntime } from '@kortix/sdk/react';
 import { Plus, Search } from 'lucide-react';
@@ -22,6 +21,7 @@ import { ApiKeyForm } from './forms/api-key-form';
 import { ChatGptSubscriptionForm } from './forms/chatgpt-subscription-form';
 import { ClaudeSubscriptionForm } from './forms/claude-subscription-form';
 import { CustomEndpointForm } from './forms/custom-endpoint-form';
+import { METHOD_COMPATIBLE_HARNESSES } from './harness-method-compat';
 
 type ConnectMethod =
   | { kind: 'claude_subscription' }
@@ -31,38 +31,6 @@ type ConnectMethod =
   | { kind: 'other_provider'; providerId: string }
   | { kind: 'openai_compatible' }
   | { kind: 'anthropic_compatible' };
-
-// Every auth kind the connect flow knows about. This enumeration is the auth
-// method surface (ConnectMethod above + the native-config / managed-gateway
-// rows), not harness identity — only the harness-id membership per kind is
-// derived from the canonical descriptor below.
-const AUTH_KINDS: readonly HarnessAuthKind[] = [
-  'managed_gateway',
-  'claude_subscription',
-  'codex_subscription',
-  'anthropic_api_key',
-  'openai_api_key',
-  'openai_compatible',
-  'anthropic_compatible',
-  'native_config',
-];
-
-// 2026-07-15 simplification: Claude Code and Codex are harness-only (their
-// subscription, their own provider API key, or the repo's native config) —
-// never the Kortix managed gateway, never a custom endpoint. OpenCode and Pi
-// keep the full gateway story. Derived from the canonical `@kortix/shared`
-// harness descriptor's `authKinds` (inverted: kind -> compatible harnesses,
-// in `HARNESS_IDS` order) — do not re-hardcode this mapping, it must stay in
-// sync with the server's source of truth
-// (apps/api/src/projects/lib/composer-capabilities.ts CONNECTIONS table),
-// which derives from the same descriptor. Kinds no harness declares (e.g.
-// the parked anthropic_compatible endpoint — a custom Anthropic-protocol
-// endpoint whose only consumer was Claude Code custom routing, cut by the
-// harness-only simplification) resolve to an empty array; the method row
-// below is hidden accordingly, but the form code stays intact.
-export const METHOD_COMPATIBLE_HARNESSES: Record<HarnessAuthKind, HarnessId[]> = Object.fromEntries(
-  AUTH_KINDS.map((kind) => [kind, HARNESS_IDS.filter((id) => HARNESSES[id].authKinds.includes(kind))]),
-) as Record<HarnessAuthKind, HarnessId[]>;
 
 const ROW =
   'group bg-popover hover:bg-muted/40 flex min-h-10 w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-[color,background-color,transform] active:scale-[0.96]';
@@ -159,7 +127,7 @@ export function ConnectModelModal({
   const showOpenaiCompatible = compatibleWithFilter('openai_compatible', harnessFilter);
   // Anthropic-compatible custom endpoints are parked (2026-07-15): no harness
   // is compatible with this kind, so it is never offered in the method list —
-  // see METHOD_COMPATIBLE_HARNESSES.anthropic_compatible above.
+  // see METHOD_COMPATIBLE_HARNESSES.anthropic_compatible in ./harness-method-compat.
 
   let body: ReactNode;
   if (!method) {
