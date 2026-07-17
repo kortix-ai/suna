@@ -252,6 +252,42 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
   });
 });
 
+// ─── WS5-P5-a: first-run guidance ───────────────────────────────────────────
+
+describe('RuntimeView — first-run EmptyState (WS5-P5-a)', () => {
+  test('an editable project with zero declared runtime profiles shows the first-run EmptyState, not a silent empty list', () => {
+    setRuntimes({});
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.getByText('Pick a runtime, connect it, go')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Add a runtime' })).toBeDefined();
+    // Not the not-yet-editable upsell — that's a different first-run state.
+    expect(screen.queryByText('Turn on every harness')).toBeNull();
+  });
+
+  test('the EmptyState CTA opens the Advanced disclosure — the one guided action available with no rows to act on', () => {
+    setRuntimes({});
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    // Collapsed by default — the Advanced editor's content isn't in the DOM yet.
+    expect(screen.queryByText('Runtime profiles')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a runtime' }));
+
+    expect(screen.getByText('Runtime profiles')).toBeDefined();
+  });
+
+  test('a read-only viewer (canWrite false) sees the EmptyState with no CTA', () => {
+    canWriteMock = false;
+    setRuntimes({});
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.getByText('Pick a runtime, connect it, go')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Add a runtime' })).toBeNull();
+  });
+});
+
 // ─── WS5-P2-b: guided runtime -> connect -> model flow ─────────────────────
 
 describe('RuntimeView — guided connect -> model flow (WS5-P2-b)', () => {

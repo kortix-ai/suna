@@ -29,79 +29,20 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
+import { ArrowLeft } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ArrowUpCircle,
-  AudioLines,
-  Bot,
-  Boxes,
-  Container,
-  Cpu,
-  History,
-  Inbox,
-  KeyRound,
-  Monitor,
-  Plug,
-  Store,
-  Terminal,
-  Webhook,
-} from 'lucide-react';
+import { ArrowUpCircle, AudioLines, Boxes, Inbox, Monitor, Store } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
-import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
+import { GROUPS } from './rail-groups';
 import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailGroup, RailItem } from './type';
-
-const GROUPS: readonly RailGroup[] = [
-  {
-    label: 'Build',
-    items: [
-      { section: 'agents', label: 'Agents', icon: Bot },
-      // Provisional slot — final rail ordering across every group is P5-a's
-      // scope (WS5-P2-a only registers the section).
-      { section: 'runtime', label: 'Runtime', icon: Cpu },
-      { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
-    ],
-  },
-  {
-    label: 'Connect',
-    items: [
-      { section: 'connectors', label: 'Connectors', icon: Plug },
-      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
-      { section: 'channels', label: 'Channels', icon: ChatMessages },
-    ],
-  },
-  {
-    label: 'Automate',
-    items: [
-      { section: 'schedules', label: 'Schedules', icon: AlarmClock },
-      { section: 'webhooks', label: 'Webhooks', icon: Webhook },
-    ],
-  },
-  {
-    label: 'Workspace',
-    items: [
-      { section: 'changes', label: 'Changes', icon: History },
-      { section: 'sandbox', label: 'Sandbox', icon: Container },
-      { section: 'dev', label: 'Dev', icon: Terminal },
-    ],
-  },
-  {
-    label: 'Manage',
-    items: [
-      { section: 'members', label: 'Members', icon: LuUsersRound },
-      { section: 'settings', label: 'Settings', icon: LuSettings },
-    ],
-  },
-];
 
 const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
 

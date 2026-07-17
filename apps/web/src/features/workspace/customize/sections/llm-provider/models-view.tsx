@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { useCustomizeStore } from '@/stores/customize-store';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 import { invalidateComposerCapabilityQueries, useModelsPage } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -66,6 +67,14 @@ export function ModelsView({
   const manageConnection = state.connections.find((c) => c.id === manageConnectionId) ?? null;
   const initialLoad = state.isLoading && state.runtimes.length === 0 && state.connections.length === 0;
 
+  // DISC-09: the deferred half of WS5-P2-b's guided runtime -> connect ->
+  // model flow — a back-link from here to the Runtime section, where
+  // profiles are declared/renamed (this list only shows what's already
+  // declared). Same `setSection` action `agent-editor.tsx`'s "Manage
+  // runtimes ->" cross-link uses, not a new navigation primitive; this is an
+  // in-overlay switch, not a close, so there's nothing to close first.
+  const manageRuntimes = () => useCustomizeStore.getState().setSection('runtime');
+
   return (
     <CustomizeSectionWrapper
       title="Models"
@@ -114,7 +123,18 @@ export function ModelsView({
         <div className="space-y-5">
           {state.runtimes.length > 0 && (
             <section className="space-y-2">
-              <Label>Agent runtimes</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Agent runtimes</Label>
+                <Button
+                  type="button"
+                  variant="text"
+                  size="xs"
+                  className="-mr-2.5 active:scale-[0.96] transition-transform"
+                  onClick={manageRuntimes}
+                >
+                  Manage runtimes →
+                </Button>
+              </div>
               <ul className="space-y-2">
                 {state.runtimes.map((runtime) => (
                   <RuntimeRow

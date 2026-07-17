@@ -40,6 +40,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Modal,
   ModalBody,
@@ -136,6 +137,25 @@ export function RuntimeView({ projectId }: { projectId: string }) {
           </div>
         ) : !profilesQuery.data?.editable ? (
           <EnableHarnessesCard projectId={projectId} canWrite={canWrite} />
+        ) : rows.length === 0 ? (
+          // First-run guidance (WS5-P5-a): a project editable on schema v3 with
+          // zero declared runtime profiles has nothing for the row list above
+          // to show — send the user straight into the one guided action that
+          // gets it un-stuck (the Advanced disclosure's "Add custom profile" /
+          // "Enable all harnesses"), instead of rendering a silent empty `<ul>`.
+          <EmptyState
+            size="sm"
+            icon={Cpu}
+            title="Pick a runtime, connect it, go"
+            description="Add a runtime profile, then connect the model service it runs on."
+            action={
+              canWrite ? (
+                <Button variant="outline" size="sm" onClick={() => setAdvancedOpen(true)}>
+                  Add a runtime
+                </Button>
+              ) : undefined
+            }
+          />
         ) : (
           <ul className="space-y-2">
             {rows.map((row, index) => (
