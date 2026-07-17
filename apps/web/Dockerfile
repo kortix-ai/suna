@@ -34,6 +34,19 @@ LABEL org.opencontainers.image.title="kortix-frontend" \
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
+# This image only ever runs the pre-built Next.js standalone server
+# (`node apps/web/server.js` — see the ENTRYPOINT below and
+# docker-entrypoint.sh, which shells out to node/sed/grep/find, never npm).
+# The node:22-slim base bundles a global npm CLI whose OWN vendored
+# dependencies periodically carry CVEs (sigstore, picomatch, tar,
+# @sigstore/core, ip-address, brace-expansion — see CVE-2026-48815,
+# CVE-2026-33671/33672, CVE-2026-48758, CVE-2026-53655, CVE-2026-42338,
+# CVE-2026-33750). Since npm/npx/corepack are never invoked at build or
+# runtime in this stage, drop them entirely: real remediation instead of
+# an ignore-list entry, and it shrinks the image.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
 # License
 COPY LICENSE /LICENSE
 
