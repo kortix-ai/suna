@@ -45,7 +45,9 @@ export function SearchListHeader({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,
-        paddingTop: 8,
+        // No top padding — PageHeader (12) + PageContent (4) already provide
+        // the uniform 16pt gap below the title row.
+        paddingTop: 0,
         paddingBottom: 8,
         gap: 10,
       }}

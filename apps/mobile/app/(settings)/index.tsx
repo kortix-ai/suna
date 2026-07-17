@@ -51,10 +51,13 @@ export default function SettingsScreen() {
 
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !isGuest });
 
-  const go = React.useCallback((path: string) => {
-    haptics.tap();
-    router.push(path as any);
-  }, [router]);
+  const go = React.useCallback(
+    (path: string) => {
+      haptics.tap();
+      router.push(path as any);
+    },
+    [router]
+  );
 
   const handlePlan = React.useCallback(async () => {
     haptics.tap();
@@ -89,7 +92,7 @@ export default function SettingsScreen() {
           },
         },
       ],
-      { cancelable: true },
+      { cancelable: true }
     );
   }, [isSigningOut, router, signOut, t]);
 
@@ -166,26 +169,11 @@ export default function SettingsScreen() {
     <ScrollView
       className="flex-1 bg-background"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
-    >
-      <View className="px-5 pt-1 pb-2" style={{ gap: 18 }}>
+      contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}>
+      <View className="px-5 pb-2 pt-1" style={{ gap: 18 }}>
         <SettingsGroup title="Preferences" rows={preferenceRows} />
         {accountRows.length > 0 && <SettingsGroup title="Account" rows={accountRows} />}
         <SettingsGroup title="Advanced" rows={advancedRows} />
-
-        {!isGuest && (
-          <View className="px-1 pt-1">
-            <View className="flex-row items-center">
-              <Icon as={Globe} size={14} className="text-muted-foreground/70" strokeWidth={2} />
-              <Text className="ml-2 text-xs font-roobert-medium text-muted-foreground/80">
-                Logged in as {user?.email || 'user'}
-              </Text>
-            </View>
-            <Text className="mt-1 text-[11px] font-roobert text-muted-foreground/60" style={{ color: subtitleColor }}>
-              Mobile settings mirror frontend sections where features are available.
-            </Text>
-          </View>
-        )}
       </View>
     </ScrollView>
   );
@@ -197,19 +185,13 @@ function SettingsGroup({ title, rows }: { title: string; rows: SettingsRow[] }) 
 
   return (
     <View className="px-1">
-      <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+      <Text className="mb-2 font-roobert-medium text-[11px] uppercase tracking-wider text-muted-foreground/80">
         {title}
       </Text>
       <View>
         {visibleRows.map((row, idx) => {
           const { key, ...rowProps } = row;
-          return (
-            <SettingsItem
-              key={key}
-              {...rowProps}
-              isLast={idx === visibleRows.length - 1}
-            />
-          );
+          return <SettingsItem key={key} {...rowProps} isLast={idx === visibleRows.length - 1} />;
         })}
       </View>
     </View>
@@ -248,8 +230,7 @@ function SettingsItem({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="active:opacity-90"
-    >
+      className="active:opacity-90">
       <View className="py-3.5">
         <View className="flex-row items-center">
           <Icon as={icon} size={18} className={iconTint} strokeWidth={2.2} />
@@ -259,14 +240,19 @@ function SettingsItem({
               <Text className={`font-roobert-medium text-[15px] ${titleTint}`}>{label}</Text>
               {!!badge && (
                 <View className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5">
-                  <Text className="text-[10px] font-roobert-medium text-destructive">{badge}</Text>
+                  <Text className="font-roobert-medium text-[10px] text-destructive">{badge}</Text>
                 </View>
               )}
             </View>
             <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{description}</Text>
           </View>
 
-          <Icon as={ChevronRight} size={16} className="text-muted-foreground/50" strokeWidth={2.2} />
+          <Icon
+            as={ChevronRight}
+            size={16}
+            className="text-muted-foreground/50"
+            strokeWidth={2.2}
+          />
         </View>
       </View>
 

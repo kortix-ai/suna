@@ -23,7 +23,7 @@ interface UsageDrawerProps {
 export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }: UsageDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
-  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();

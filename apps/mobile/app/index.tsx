@@ -1,7 +1,7 @@
 /**
  * Splash/Decision Screen
  *
- * For self-hosted Computer: simply checks auth and routes to /auth or /home.
+ * For self-hosted Computer: simply checks auth and routes to /auth or /projects.
  * No billing, no onboarding, no subscription checks.
  */
 

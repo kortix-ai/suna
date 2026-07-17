@@ -19,6 +19,7 @@ import {
 // Import the API functions we need
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { log } from '@/lib/logger';
+import { APP_SCHEME, buildSuccessUrl, buildCancelUrl } from './return-link';
 
 // ============================================================================
 // API Helper
@@ -84,25 +85,7 @@ const checkoutApi = {
   },
 };
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-// Deep link scheme for the app (for return URLs after checkout)
-const APP_SCHEME = 'agentpress://';
-const BILLING_PATH = 'billing';
-
-// ============================================================================
-// URL Builders
-// ============================================================================
-
-function buildSuccessUrl(context: string = 'checkout'): string {
-  return `${APP_SCHEME}${BILLING_PATH}/success?context=${context}`;
-}
-
-function buildCancelUrl(): string {
-  return `${APP_SCHEME}${BILLING_PATH}/cancel`;
-}
+// APP_SCHEME + buildSuccessUrl/buildCancelUrl now live in ./return-link (tested).
 
 // ============================================================================
 // Browser Functions

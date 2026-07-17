@@ -104,44 +104,51 @@ function formatArgs(args: unknown[]): unknown[] {
 export const log = {
   /** Standard log (level: info) */
   log: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.log(buildPrefix('info'), ...formatArgs(args));
   },
-  
+
   /** Info level */
   info: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.info(buildPrefix('info'), ...formatArgs(args));
   },
-  
+
   /** Debug level */
   debug: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.debug(buildPrefix('debug'), ...formatArgs(args));
   },
-  
+
   /** Warning level */
   warn: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.warn(buildPrefix('warn'), ...formatArgs(args));
   },
-  
+
   /** Error level */
   error: (...args: unknown[]) => {
     console.error(buildPrefix('error'), ...formatArgs(args));
   },
-  
+
   /** RevenueCat-specific logs (level: info) */
   rc: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.log(buildPrefix('info', 'RC'), ...formatArgs(args));
   },
-  
+
   /** RevenueCat debug */
   rcDebug: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.debug(buildPrefix('debug', 'RC'), ...formatArgs(args));
   },
-  
+
   /** RevenueCat warning */
   rcWarn: (...args: unknown[]) => {
+    if (!__DEV__) return;
     console.warn(buildPrefix('warn', 'RC'), ...formatArgs(args));
   },
-  
+
   /** RevenueCat error */
   rcError: (...args: unknown[]) => {
     console.error(buildPrefix('error', 'RC'), ...formatArgs(args));

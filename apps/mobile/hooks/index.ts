@@ -7,7 +7,6 @@
 
 // High-level composite hooks
 export { useAuth } from './useAuth';
-export { useOnboarding } from './useOnboarding';
 // Advanced Features now provided by context
 export { useAdvancedFeatures } from '@/contexts';
 
@@ -43,10 +42,6 @@ export {
   type AnimatedKeyboardResult,
   type KeyboardBottomOffsetResult,
 } from './useKeyboard';
-
-// Account setup hooks
-export { useAccountInitialization } from './useAccountInitialization';
-export { useAccountSetup } from './useAccountSetup';
 
 // System status hooks
 export { useSystemStatus, useMaintenanceNotice, useTechnicalIssue } from './useSystemStatus';

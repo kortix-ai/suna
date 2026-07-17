@@ -1627,7 +1627,7 @@ PODS:
     - ReactNativeDependencies
   - react-native-context-menu-view (1.21.0):
     - React
-  - react-native-keyboard-controller (1.21.11):
+  - react-native-keyboard-controller (1.21.13):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -1639,7 +1639,7 @@ PODS:
     - React-graphics
     - React-ImageManager
     - React-jsi
-    - react-native-keyboard-controller/common (= 1.21.11)
+    - react-native-keyboard-controller/common (= 1.21.13)
     - React-NativeModulesApple
     - React-RCTFabric
     - React-renderercss
@@ -1650,7 +1650,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-keyboard-controller/common (1.21.11):
+  - react-native-keyboard-controller/common (1.21.13):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -1731,6 +1731,30 @@ PODS:
     - React-ImageManager
     - React-jsi
     - react-native-safe-area-context/common
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - react-native-skia (2.2.12):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
     - React-NativeModulesApple
     - React-RCTFabric
     - React-renderercss
@@ -2582,7 +2606,7 @@ DEPENDENCIES:
   - "expo-dev-menu-interface (from `../../../node_modules/.pnpm/expo-dev-menu-interface@2.0.0_expo@54.0.35/node_modules/expo-dev-menu-interface/ios`)"
   - "ExpoAppleAuthentication (from `../../../node_modules/.pnpm/expo-apple-authentication@8.0.8_expo@54.0.35_react-native@0.81.5/node_modules/expo-apple-authentication/ios`)"
   - "ExpoAsset (from `../../../node_modules/.pnpm/expo-asset@12.0.13_expo@54.0.35_react-native@0.81.5_react@19.1.0_typescript@5.9.3/node_modules/expo-asset/ios`)"
-  - "ExpoAudio (from `../../../node_modules/.pnpm/expo-audio@1.1.1_expo-asset@56.0.17_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-audio/ios`)"
+  - "ExpoAudio (from `../../../node_modules/.pnpm/expo-audio@1.1.1_expo-asset@57.0.3_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-audio/ios`)"
   - "ExpoBlur (from `../../../node_modules/.pnpm/expo-blur@15.0.8_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-blur/ios`)"
   - "ExpoClipboard (from `../../../node_modules/.pnpm/expo-clipboard@8.0.8_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-clipboard/ios`)"
   - "ExpoCrypto (from `../../../node_modules/.pnpm/expo-crypto@15.0.9_expo@54.0.35/node_modules/expo-crypto/ios`)"
@@ -2644,8 +2668,9 @@ DEPENDENCIES:
   - "React-Mapbuffer (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon`)"
   - "React-microtasksnativemodule (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)"
   - "react-native-context-menu-view (from `../../../node_modules/.pnpm/react-native-context-menu-view@1.21.0_react-native@0.81.5_react@19.1.0/node_modules/react-native-context-menu-view`)"
-  - "react-native-keyboard-controller (from `../../../node_modules/.pnpm/react-native-keyboard-controller@1.21.11_react-native-reanimated@4.1.7_react-native@0.81.5_react@19.1.0/node_modules/react-native-keyboard-controller`)"
+  - "react-native-keyboard-controller (from `../../../node_modules/.pnpm/react-native-keyboard-controller@1.21.13_react-native-reanimated@4.1.7_react-native@0.81.5_react@19.1.0/node_modules/react-native-keyboard-controller`)"
   - "react-native-safe-area-context (from `../../../node_modules/.pnpm/react-native-safe-area-context@5.6.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-safe-area-context`)"
+  - "react-native-skia (from `../../../node_modules/.pnpm/@shopify+react-native-skia@2.2.12_react-native-reanimated@4.1.7_react-native@0.81.5_react@19.1.0/node_modules/@shopify/react-native-skia`)"
   - "react-native-slider (from `../../../node_modules/.pnpm/@react-native-community+slider@5.2.0/node_modules/@react-native-community/slider`)"
   - "react-native-view-shot (from `../../../node_modules/.pnpm/react-native-view-shot@4.0.3_react-native@0.81.5_react@19.1.0/node_modules/react-native-view-shot`)"
   - "react-native-webview (from `../../../node_modules/.pnpm/react-native-webview@13.17.0_react-native@0.81.5_react@19.1.0/node_modules/react-native-webview`)"
@@ -2684,7 +2709,7 @@ DEPENDENCIES:
   - "RNCMaskedView (from `../../../node_modules/.pnpm/@react-native-masked-view+masked-view@0.3.2_react-native@0.81.5_react@19.1.0/node_modules/@react-native-masked-view/masked-view`)"
   - "RNCPicker (from `../../../node_modules/.pnpm/@react-native-picker+picker@2.11.1_react-native@0.81.5_react@19.1.0/node_modules/@react-native-picker/picker`)"
   - "RNGestureHandler (from `../../../node_modules/.pnpm/react-native-gesture-handler@2.28.0_react-native@0.81.5_react@19.1.0/node_modules/react-native-gesture-handler`)"
-  - "RNLiveMarkdown (from `../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_expensify-common@2.0.185_react-native-worklets@_5tpogxmgxau7v3lgqtmozrofsu/node_modules/@expensify/react-native-live-markdown`)"
+  - "RNLiveMarkdown (from `../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_expensify-common@2.0.189_react-native-worklets@_5kpidfhx77dai6dmc5wjjvshey/node_modules/@expensify/react-native-live-markdown`)"
   - "RNPaywalls (from `../../../node_modules/.pnpm/react-native-purchases-ui@9.15.2_react-native-purchases@9.15.2_react-native-web@0.21.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-purchases-ui`)"
   - "RNPurchases (from `../../../node_modules/.pnpm/react-native-purchases@9.15.2_react-native-web@0.21.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-purchases`)"
   - "RNReanimated (from `../../../node_modules/.pnpm/react-native-reanimated@4.1.7_react-native-worklets@0.5.1_react-native@0.81.5_react@19.1.0/node_modules/react-native-reanimated`)"
@@ -2736,7 +2761,7 @@ EXTERNAL SOURCES:
   ExpoAsset:
     :path: "../../../node_modules/.pnpm/expo-asset@12.0.13_expo@54.0.35_react-native@0.81.5_react@19.1.0_typescript@5.9.3/node_modules/expo-asset/ios"
   ExpoAudio:
-    :path: "../../../node_modules/.pnpm/expo-audio@1.1.1_expo-asset@56.0.17_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-audio/ios"
+    :path: "../../../node_modules/.pnpm/expo-audio@1.1.1_expo-asset@57.0.3_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-audio/ios"
   ExpoBlur:
     :path: "../../../node_modules/.pnpm/expo-blur@15.0.8_expo@54.0.35_react-native@0.81.5_react@19.1.0/node_modules/expo-blur/ios"
   ExpoClipboard:
@@ -2859,9 +2884,11 @@ EXTERNAL SOURCES:
   react-native-context-menu-view:
     :path: "../../../node_modules/.pnpm/react-native-context-menu-view@1.21.0_react-native@0.81.5_react@19.1.0/node_modules/react-native-context-menu-view"
   react-native-keyboard-controller:
-    :path: "../../../node_modules/.pnpm/react-native-keyboard-controller@1.21.11_react-native-reanimated@4.1.7_react-native@0.81.5_react@19.1.0/node_modules/react-native-keyboard-controller"
+    :path: "../../../node_modules/.pnpm/react-native-keyboard-controller@1.21.13_react-native-reanimated@4.1.7_react-native@0.81.5_react@19.1.0/node_modules/react-native-keyboard-controller"
   react-native-safe-area-context:
     :path: "../../../node_modules/.pnpm/react-native-safe-area-context@5.6.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-safe-area-context"
+  react-native-skia:
+    :path: "../../../node_modules/.pnpm/@shopify+react-native-skia@2.2.12_react-native-reanimated@4.1.7_react-native@0.81.5_react@19.1.0/node_modules/@shopify/react-native-skia"
   react-native-slider:
     :path: "../../../node_modules/.pnpm/@react-native-community+slider@5.2.0/node_modules/@react-native-community/slider"
   react-native-view-shot:
@@ -2939,7 +2966,7 @@ EXTERNAL SOURCES:
   RNGestureHandler:
     :path: "../../../node_modules/.pnpm/react-native-gesture-handler@2.28.0_react-native@0.81.5_react@19.1.0/node_modules/react-native-gesture-handler"
   RNLiveMarkdown:
-    :path: "../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_expensify-common@2.0.185_react-native-worklets@_5tpogxmgxau7v3lgqtmozrofsu/node_modules/@expensify/react-native-live-markdown"
+    :path: "../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_expensify-common@2.0.189_react-native-worklets@_5kpidfhx77dai6dmc5wjjvshey/node_modules/@expensify/react-native-live-markdown"
   RNPaywalls:
     :path: "../../../node_modules/.pnpm/react-native-purchases-ui@9.15.2_react-native-purchases@9.15.2_react-native-web@0.21.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-purchases-ui"
   RNPurchases:
@@ -3040,8 +3067,9 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 0164bc6ba0866e6314d86851620e6f1f95a1b4fb
   React-microtasksnativemodule: f5972fb404f7c363ff34b2292e72a716956c590c
   react-native-context-menu-view: da39a4612c1294d651907162529cfba8421e9b89
-  react-native-keyboard-controller: 0531ddefbd03a0afbc4451f30db36678d7956192
+  react-native-keyboard-controller: cc1561d50ca9a2de093d70571211e577a8ac92ab
   react-native-safe-area-context: c5d42c4294aa175415947e23c2ac956253abfc7d
+  react-native-skia: 5d024324ef7b19f8fd70868458b0d7b2cb6644b5
   react-native-slider: 18a19901b3bda943d7dc74e79abe6acdd979c101
   react-native-view-shot: 8853a6bacbf77899d550773a84986f251f509ffc
   react-native-webview: 9273d3194c6b86483b0ec970d6944fe70bffde2a

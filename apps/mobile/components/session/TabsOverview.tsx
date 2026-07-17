@@ -4,8 +4,8 @@
  * Shows all open session tabs as stacked cards. User can tap to switch,
  * swipe/tap X to close, or create a new tab.
  *
- * Tab cards show screenshots when available (captured by ViewShot when
- * opening the overview), falling back to text previews or icons.
+ * Tab cards show screenshots from the tab-screenshot store when present,
+ * falling back to text previews or icons.
  */
 
 import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
@@ -216,7 +216,7 @@ export function TabsOverview({
   const activeId = activePageId || activeSessionId;
 
   // Entry animation — rises from the bottom to continue the peek's motion
-  // when it hands off from the BottomBar swipe-up gesture.
+  // from the dock's swipe-up gesture.
   const entry = useSharedValue(screenHeight);
   useEffect(() => {
     entry.value = withTiming(0, {

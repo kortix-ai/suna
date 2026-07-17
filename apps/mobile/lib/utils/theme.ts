@@ -53,23 +53,23 @@ export const NAV_THEME: Record<'light' | 'dark', Theme> = {
   light: {
     ...DefaultTheme,
     colors: {
-      background: THEME.light.background,
-      border: THEME.light.border,
-      card: THEME.light.card,
+      background: '#FFFFFF',
+      border: '#E5E5E5',
+      card: '#F4F4F4',
       notification: THEME.light.destructive,
-      primary: THEME.light.primary,
-      text: THEME.light.foreground,
+      primary: '#2E90FA',
+      text: '#0A0A0A',
     },
   },
   dark: {
     ...DarkTheme,
     colors: {
-      background: THEME.dark.background,
-      border: THEME.dark.border,
-      card: THEME.dark.card,
+      background: '#0A0A0A',
+      border: '#262626',
+      card: '#1A1A1A',
       notification: THEME.dark.destructive,
-      primary: THEME.dark.primary,
-      text: THEME.dark.foreground,
+      primary: '#2E90FA',
+      text: '#FAFAFA',
     },
   },
 };

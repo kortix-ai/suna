@@ -109,3 +109,34 @@
     --kortix-red: 360 85.3% 62%; /* oklch(0.648 0.202 24.745) */
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Font weights → Roobert files.
+ * React Native can't synthesize weights from one font file, so each Tailwind
+ * weight utility is mapped to the matching Roobert family. Use the standard
+ * classes everywhere: font-light / font-normal / font-medium / font-semibold /
+ * font-bold / font-extrabold. (No need for font-roobert-* anymore.)
+ * ──────────────────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .font-thin,
+  .font-extralight,
+  .font-light {
+    font-family: 'Roobert-Light';
+  }
+  .font-normal {
+    font-family: 'Roobert-Regular';
+  }
+  .font-medium {
+    font-family: 'Roobert-Medium';
+  }
+  .font-semibold {
+    font-family: 'Roobert-SemiBold';
+  }
+  .font-bold {
+    font-family: 'Roobert-Bold';
+  }
+  .font-extrabold,
+  .font-black {
+    font-family: 'Roobert-Heavy';
+  }
+}
