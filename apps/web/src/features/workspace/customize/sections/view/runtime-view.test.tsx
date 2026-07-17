@@ -62,8 +62,12 @@ mock.module('@kortix/sdk/react', () => ({
   useModelsPage: () => modelsPageState,
 }));
 
+// Mutable like `runtimeProfiles`/`modelsPageState` above (not a fixed
+// factory) so the WS5-P2-b read-only test can flip it per-test instead of
+// re-mocking a module that's already been imported.
+let canWriteMock = true;
 mock.module('@/lib/use-project-can', () => ({
-  useProjectCan: () => ({ allowed: true, reason: null, isLoading: false, isError: false }),
+  useProjectCan: () => ({ allowed: canWriteMock, reason: null, isLoading: false, isError: false }),
 }));
 
 // `ProviderLogo` (the harness mark on each row) renders `next/image`, whose
@@ -81,6 +85,7 @@ mock.module('next/image', () => ({
 }));
 
 const { RuntimeView } = await import('./runtime-view');
+const { useCustomizeStore } = await import('@/stores/customize-store');
 
 const PROJECT_ID = 'proj_1';
 
@@ -88,6 +93,8 @@ afterEach(() => {
   cleanup();
   runtimeProfiles = { schema_version: 3, editable: true, runtimes: {} };
   modelsPageState = { runtimes: [], connections: [], canWrite: false, isLoading: false, isError: false };
+  canWriteMock = true;
+  useCustomizeStore.setState({ open: true, section: 'runtime' });
 });
 
 afterAll(() => {
@@ -242,5 +249,105 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(screen.getByText('Turn on every harness')).toBeDefined();
     expect(screen.queryByText('Advanced')).toBeNull();
+  });
+});
+
+// ─── WS5-P2-b: guided runtime -> connect -> model flow ─────────────────────
+
+describe('RuntimeView — guided connect -> model flow (WS5-P2-b)', () => {
+  test('a Not-connected row\'s Connect opens ConnectModelModal pre-filtered to that harness\'s authKinds', () => {
+    setRuntimes({ 'runtime-1': { harness: 'claude' } });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    const claudeRow = screen.getAllByRole('listitem').find((row) => within(row).queryByText('Claude Code'));
+    fireEvent.click(within(claudeRow!).getByRole('button', { name: 'Connect' }));
+
+    // The modal opened, on the method list (no initialKind was passed).
+    expect(screen.getByText('Connect a model service')).toBeDefined();
+
+    // claude's authKinds are claude_subscription + anthropic_api_key +
+    // native_config (see @kortix/shared/harnesses) — only those method rows
+    // are offered.
+    expect(screen.getByText('Claude Pro, Max, Team, or Enterprise')).toBeDefined();
+    expect(screen.getByText('Claude via your own API key')).toBeDefined();
+
+    // codex's methods (codex_subscription, openai_api_key) are NOT
+    // compatible with claude and must not appear.
+    expect(screen.queryByText('ChatGPT Plus, Pro, Business, Edu, or Enterprise')).toBeNull();
+    expect(screen.queryByText('GPT models via your own API key')).toBeNull();
+  });
+
+  test('a Connected row shows "Choose model" instead of "Connect"', () => {
+    setRuntimes({ 'runtime-1': { harness: 'claude' } });
+    modelsPageState = {
+      ...modelsPageState,
+      connections: [
+        {
+          id: 'claude_subscription',
+          name: 'Claude subscription',
+          kind: 'claude_subscription',
+          status: 'ready',
+          usedBy: [],
+          catalogState: 'not-exposed',
+          modelCount: null,
+          statusReason: null,
+        },
+      ],
+    };
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    const claudeRow = screen.getAllByRole('listitem').find((row) => within(row).queryByText('Claude Code'));
+    expect(within(claudeRow!).getByRole('button', { name: 'Choose model' })).toBeDefined();
+    expect(within(claudeRow!).queryByRole('button', { name: 'Connect' })).toBeNull();
+  });
+
+  test('"Choose model" closes the Customize overlay — the composer\'s model picker lives on the project page behind it', () => {
+    setRuntimes({ 'runtime-1': { harness: 'claude' } });
+    modelsPageState = {
+      ...modelsPageState,
+      connections: [
+        {
+          id: 'claude_subscription',
+          name: 'Claude subscription',
+          kind: 'claude_subscription',
+          status: 'ready',
+          usedBy: [],
+          catalogState: 'not-exposed',
+          modelCount: null,
+          statusReason: null,
+        },
+      ],
+    };
+    useCustomizeStore.setState({ open: true, section: 'runtime' });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    const claudeRow = screen.getAllByRole('listitem').find((row) => within(row).queryByText('Claude Code'));
+    fireEvent.click(within(claudeRow!).getByRole('button', { name: 'Choose model' }));
+
+    expect(useCustomizeStore.getState().open).toBe(false);
+  });
+
+  test('a read-only viewer (canWrite false) sees neither Connect nor Choose model', () => {
+    canWriteMock = false;
+    setRuntimes({ 'runtime-1': { harness: 'claude' }, 'runtime-2': { harness: 'codex' } });
+    modelsPageState = {
+      ...modelsPageState,
+      connections: [
+        {
+          id: 'claude_subscription',
+          name: 'Claude subscription',
+          kind: 'claude_subscription',
+          status: 'ready',
+          usedBy: [],
+          catalogState: 'not-exposed',
+          modelCount: null,
+          statusReason: null,
+        },
+      ],
+    };
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Choose model' })).toBeNull();
   });
 });

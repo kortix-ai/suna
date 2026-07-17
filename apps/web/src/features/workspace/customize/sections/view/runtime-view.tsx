@@ -18,6 +18,19 @@
  * The old "`<harness>` owns behavior" dead-end banner is reframed into a
  * path: it now links to the standalone Files view instead of just naming a
  * directory nobody can click.
+ *
+ * WS5-P2-b wires the guided runtime -> connect -> model flow on top of this:
+ * a Not-connected row's "Connect" opens `ConnectModelModal` pre-filtered to
+ * that row's harness (reusing the exact modal + `harnessFilter` the Models
+ * page's own runtime rows use — see `models-view.tsx`'s `connectFromRuntime`,
+ * not re-invented here). Once `useModelsPage(...).connections` reports a
+ * ready compatible connection, the same row's affordance flips to "Choose
+ * model", which closes the Customize overlay (`useCustomizeStore.close()` —
+ * the same action ESC/backdrop already use) and drops the viewer on the
+ * project page behind it, where the composer's model picker (unified or
+ * legacy, whichever `unified_model_picker` resolves to) is one click away.
+ * Total hops from landing on this section to a picked model: Connect (open
+ * modal) + Choose model (close overlay) = 2.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +60,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { ConnectModelModal } from '@/features/workspace/customize/sections/llm-provider/connect-model-modal';
 import {
   ACP_HARNESSES,
   ACP_HARNESS_CONFIG_DIRS,
@@ -62,7 +76,9 @@ import {
 } from '@/features/workspace/customize/sections/view/runtime-view-model';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
+  type AcpHarness,
   enableAcpRuntimeProfiles,
   getRuntimeProfiles,
   type RuntimeProfile,
@@ -79,6 +95,9 @@ const RUNTIME_PROFILES_QUERY_KEY = (projectId: string) => ['runtime-profiles', p
 export function RuntimeView({ projectId }: { projectId: string }) {
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // The one connect-modal instance the whole row list shares — `null` means
+  // closed, a harness id means open and pre-filtered to that row (WS5-P2-b).
+  const [connectHarness, setConnectHarness] = useState<AcpHarness | null>(null);
 
   const profilesQuery = useQuery({
     queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId),
@@ -98,6 +117,12 @@ export function RuntimeView({ projectId }: { projectId: string }) {
     [profilesQuery.data, connectedHarnesses],
   );
 
+  // "Choose model" closes the overlay (same action ESC/backdrop already
+  // trigger) — the composer's model picker lives on the project page behind
+  // it, not inside Customize; there is nothing to open remotely, only
+  // somewhere to return to. See the file header for the full hop count.
+  const chooseModel = () => useCustomizeStore.getState().close();
+
   return (
     <CustomizeSectionWrapper
       title="Runtime"
@@ -114,7 +139,14 @@ export function RuntimeView({ projectId }: { projectId: string }) {
         ) : (
           <ul className="space-y-2">
             {rows.map((row, index) => (
-              <RuntimeEntityRow key={row.profileName} row={row} index={index} />
+              <RuntimeEntityRow
+                key={row.profileName}
+                row={row}
+                index={index}
+                canWrite={canWrite}
+                onConnect={() => setConnectHarness(row.harness)}
+                onChooseModel={chooseModel}
+              />
             ))}
           </ul>
         )}
@@ -153,11 +185,39 @@ export function RuntimeView({ projectId }: { projectId: string }) {
           </Disclosure>
         ) : null}
       </div>
+
+      {/* Deep-linked to the row's harness — the same `ConnectModelModal` +
+          `harnessFilter` the Models page's own runtime rows already use
+          (`models-view.tsx`), so the method list only ever offers the auth
+          kinds this harness declares (`METHOD_COMPATIBLE_HARNESSES`). */}
+      <ConnectModelModal
+        projectId={projectId}
+        open={connectHarness !== null}
+        onOpenChange={(open) => {
+          if (!open) setConnectHarness(null);
+        }}
+        runtimes={modelsPage.runtimes}
+        connections={modelsPage.connections}
+        harnessFilter={connectHarness}
+        onConnected={() => setConnectHarness(null)}
+      />
     </CustomizeSectionWrapper>
   );
 }
 
-function RuntimeEntityRow({ row, index }: { row: RuntimeRowViewModel; index: number }) {
+function RuntimeEntityRow({
+  row,
+  index,
+  canWrite,
+  onConnect,
+  onChooseModel,
+}: {
+  row: RuntimeRowViewModel;
+  index: number;
+  canWrite: boolean;
+  onConnect: () => void;
+  onChooseModel: () => void;
+}) {
   return (
     <li
       className="bg-popover animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both flex items-center gap-3 rounded-md border px-4 py-2"
@@ -183,6 +243,29 @@ function RuntimeEntityRow({ row, index }: { row: RuntimeRowViewModel; index: num
         <Badge variant={row.connected ? 'success' : 'outline'} size="xs">
           {row.connected ? 'Connected' : 'Not connected'}
         </Badge>
+        {/* The guided flow's one step per state: connect it, or go pick what
+            it runs — never both at once, so there is exactly one next action
+            per row (WS5-P2-b). */}
+        {canWrite && row.connected ? (
+          <Button
+            size="sm"
+            variant="transparent"
+            className="min-h-10 active:scale-[0.96] transition-transform"
+            onClick={onChooseModel}
+          >
+            Choose model
+          </Button>
+        ) : null}
+        {canWrite && !row.connected ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="min-h-10 active:scale-[0.96] transition-transform"
+            onClick={onConnect}
+          >
+            Connect
+          </Button>
+        ) : null}
       </div>
     </li>
   );

@@ -50,6 +50,7 @@ import {
   useUpdateAgentConfig,
 } from '@/hooks/projects/use-agent-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type AgentConfigBlock,
   type AgentConfigResponse,
@@ -165,6 +166,17 @@ function AgentEditorModal({
       return next;
     });
 
+  // "Manage runtimes ->" cross-link (WS5-P2-b) — the runtime `Select` here
+  // only offers profiles the project already declared; the Runtime section
+  // is where they're declared/connected/renamed. Closes this modal and
+  // switches the still-open Customize overlay to that section — the same
+  // `setSection` action `marketplace-section-button.tsx` uses, not a new
+  // navigation primitive.
+  const manageRuntimes = () => {
+    onOpenChange(false);
+    useCustomizeStore.getState().setSection('runtime');
+  };
+
   const onSave = async () => {
     try {
       await update.mutateAsync(draft);
@@ -217,23 +229,34 @@ function AgentEditorModal({
               <section className="space-y-4">
                 <SectionHeader icon={Cpu} title="Routing" />
                 <FieldRow label="Runtime profile">
-                  <Select value={draft.runtime} onValueChange={(value) => setDraft((current) => {
-                    const next = { ...current, runtime: value };
-                    if (runtimes[value]?.harness !== 'opencode') delete next.agent;
-                    return next;
-                  })}>
-                    <SelectTrigger variant="popover" className="w-full">
-                      <SelectValue placeholder="Choose a runtime" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(runtimes).map(([name, profile]) => (
-                        <SelectItem key={name} value={name}>
-                          {ACP_HARNESS_LABELS[profile.harness]}
-                          {name !== profile.harness ? ` · ${name}` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1.5">
+                    <Select value={draft.runtime} onValueChange={(value) => setDraft((current) => {
+                      const next = { ...current, runtime: value };
+                      if (runtimes[value]?.harness !== 'opencode') delete next.agent;
+                      return next;
+                    })}>
+                      <SelectTrigger variant="popover" className="w-full">
+                        <SelectValue placeholder="Choose a runtime" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(runtimes).map(([name, profile]) => (
+                          <SelectItem key={name} value={name}>
+                            {ACP_HARNESS_LABELS[profile.harness]}
+                            {name !== profile.harness ? ` · ${name}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="text"
+                      size="xs"
+                      className="-ml-2.5 active:scale-[0.96] transition-transform"
+                      onClick={manageRuntimes}
+                    >
+                      Manage runtimes →
+                    </Button>
+                  </div>
                 </FieldRow>
                 {draft.runtime && runtimes[draft.runtime]?.harness === 'opencode' ? (
                   <FieldRow label="OpenCode agent" hint="optional">
