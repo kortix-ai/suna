@@ -64,4 +64,21 @@ describe('WebSearchTool', () => {
     // The old per-domain accordion rendered a "N results" count — gone.
     expect(html).not.toContain('results');
   });
+
+  test('two sources on the same domain render as two flat rows, never a "N results" domain group', () => {
+    const html = render(
+      <WebSearchTool
+        part={completedSearchPart([
+          { title: 'Kortix SDK repo', url: 'https://github.com/kortix-ai/sdk' },
+          { title: 'Suna repo', url: 'https://github.com/kortix-ai/suna' },
+        ])}
+        defaultOpen
+      />,
+    );
+    expect(html).toContain('Kortix SDK repo');
+    expect(html).toContain('Suna repo');
+    // The old per-domain accordion collapsed these into one github.com group
+    // labeled "2 results" — the flat list must never render that string.
+    expect(html).not.toContain('results');
+  });
 });
