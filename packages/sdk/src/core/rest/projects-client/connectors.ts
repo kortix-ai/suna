@@ -305,6 +305,8 @@ export interface PipedreamApp {
   name: string;
   description: string | null;
   imgSrc: string | null;
+  /** Pipedream is surfaced only as an explicit managed-OAuth alternative. */
+  authType: 'oauth';
   categories: string[];
 }
 
@@ -316,6 +318,82 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   return unwrap(
     await backendApi.get<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }>(
       `/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export type DiscoverIntegrationKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+
+export interface DiscoverIntegration {
+  id: string;
+  kind: DiscoverIntegrationKind;
+  slug: string;
+  name: string;
+  description: string | null;
+  url: string | null;
+  icon: string | null;
+  domain: string;
+  categories: string[];
+  feeds: string[];
+  popularity: number | null;
+}
+
+export interface DiscoverConnectorTemplate {
+  provider: 'openapi' | 'postman' | 'mcp' | 'graphql';
+  spec?: string;
+  url?: string;
+  transport?: 'http' | 'sse';
+  endpoint?: string;
+  auth?: {
+    type: 'none' | 'bearer' | 'basic' | 'custom';
+    in: 'header' | 'query';
+    name: string | null;
+    prefix: string | null;
+  };
+}
+
+export interface DiscoverIntegrationVariant {
+  id: string;
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli';
+  name: string;
+  url: string | null;
+  docs: string | null;
+  description: string | null;
+  transports: string[];
+  requiresAuth: boolean;
+  command: string | null;
+  connector: DiscoverConnectorTemplate | null;
+}
+
+export interface DiscoverIntegrationsPage {
+  items: DiscoverIntegration[];
+  total: number;
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export interface DiscoverIntegrationDetail {
+  item: DiscoverIntegration;
+  variants: DiscoverIntegrationVariant[];
+}
+
+export async function listDiscoverIntegrations(projectId: string, q?: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<DiscoverIntegrationsPage>(
+      `/executor/projects/${projectId}/discover/integrations${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function getDiscoverIntegration(projectId: string, id: string) {
+  const params = new URLSearchParams({ id });
+  return unwrap(
+    await backendApi.get<DiscoverIntegrationDetail>(
+      `/executor/projects/${projectId}/discover/integrations/detail?${params.toString()}`,
     ),
   );
 }

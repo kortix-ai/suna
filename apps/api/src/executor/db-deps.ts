@@ -80,6 +80,7 @@ import {
   verifyWebhookSig,
 } from './pipedream';
 import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
+import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import type {
   AdminConnectorView,
   CatalogConnector,
@@ -1016,6 +1017,8 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
     : undefined,
+  listDiscoverIntegrations: (input) => listIntegrationCatalog(input),
+  getDiscoverIntegration: (id) => getIntegrationCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

@@ -32,7 +32,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
-import { isConnectorsEnabled } from '@/lib/config';
+import { DiscoverCatalogue } from './discover-catalogue';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
@@ -102,7 +102,6 @@ import {
   createConnector,
   discoverConnectorAuth,
   deleteConnector,
-  getConnectStatus,
   getConnectorConfig,
   getConnectorPolicies,
   getProject,
@@ -134,7 +133,6 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
-const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
 
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
@@ -2772,18 +2770,6 @@ function AddAppPanel({
   onAdded: (slug?: string) => void;
   canWrite?: boolean;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
-  // false) — hide the "Easy connect" tab outright instead of round-tripping
-  // to /connect-status just to disable it. Custom (OpenAPI/GraphQL/MCP/HTTP)
-  // and Channels don't depend on Pipedream, so they're unaffected.
-  const connectorsEnabled = isConnectorsEnabled();
-  const connectStatus = useQuery({
-    queryKey: ['connect-status'],
-    queryFn: getConnectStatus,
-    staleTime: 5 * 60_000,
-    enabled: connectorsEnabled,
-  });
   if (!canWrite) {
     return (
       <div className="mx-auto w-full max-w-2xl px-6 py-10">
@@ -2795,41 +2781,20 @@ function AddAppPanel({
       </div>
     );
   }
-  const easyConnectHidden = !connectorsEnabled;
-  // Live-configured flag lagging the deploy-time env flag (rare) still gets
-  // the softer disabled-with-hint treatment instead of vanishing outright.
-  const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
-  const easyConnectLabel = tI18nHardcoded.raw(
-    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
-  );
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
       </header>
-      <Tabs defaultValue={easyConnectDisabled ? 'channels' : 'apps'}>
+      <Tabs defaultValue="discover">
         <TabsList type="underline">
-          {easyConnectHidden ? null : easyConnectDisabled ? (
-            <Hint
-              label={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
-              )}
-            >
-              <TabsTrigger value="apps" disabled>
-                {easyConnectLabel}
-              </TabsTrigger>
-            </Hint>
-          ) : (
-            <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
-          )}
+          <TabsTrigger value="discover">Discover</TabsTrigger>
           <TabsTrigger value="channels">Channels</TabsTrigger>
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
-        {!easyConnectDisabled && (
-          <TabsContent value="apps" className="mt-4">
-            <AppCatalogue projectId={projectId} onAdded={onAdded} />
-          </TabsContent>
-        )}
+        <TabsContent value="discover" className="mt-4">
+          <DiscoverCatalogue projectId={projectId} onAdded={onAdded} />
+        </TabsContent>
         <TabsContent value="channels" className="mt-4">
           <ChannelCatalogue
             projectId={projectId}
@@ -3048,153 +3013,6 @@ function AddSlackProfileCard({
         </ModalContent>
       </Modal>
     </>
-  );
-}
-
-/** Easy-connect app catalogue — searchable card grid with "Load more". */
-function AppCatalogue({
-  projectId,
-  onAdded,
-}: {
-  projectId: string;
-  onAdded: (slug?: string) => void;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [q, setQ] = useState('');
-  const appsQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, q],
-    queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, q || undefined, pageParam as string | undefined),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
-    staleTime: 60_000,
-  });
-  const apps = (appsQuery.data?.pages ?? []).flatMap((p) => p.apps);
-  const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));
-  const notConfigured =
-    appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
-  const addApp = useMutation({
-    mutationFn: (app: { slug: string; name: string }) =>
-      createConnector(projectId, {
-        slug: app.slug,
-        provider: 'pipedream',
-        app: app.slug,
-        account: 'default',
-      }).then(() => app),
-    onSuccess: (app) => {
-      successToast(`Added ${app.name} — click Connect to authorize`);
-      onAdded(app.slug);
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add'),
-  });
-
-  return (
-    <div>
-      <div className="relative">
-        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch9d26aaaa',
-          )}
-          variant="popover"
-          className="pl-9"
-        />
-      </div>
-      <div className="overflow-y-auto py-4">
-        {notConfigured ? (
-          <InfoBanner
-            tone="neutral"
-            title={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleEasy58e9c7b1',
-            )}
-          >
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
-            )}
-          </InfoBanner>
-        ) : appsQuery.isLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-[104px] w-full rounded-md" />
-            ))}
-          </div>
-        ) : visibleApps.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNof8067eda',
-            )}
-            description={q ? `Nothing matches "${q}".` : 'Try a search.'}
-          />
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {visibleApps.map((app) => (
-                <button
-                  key={app.slug}
-                  type="button"
-                  disabled={addApp.isPending}
-                  onClick={() => addApp.mutate({ slug: app.slug, name: app.name })}
-                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60"
-                >
-                  <div className="flex items-center gap-3">
-                    {app.imgSrc ? (
-                      <Image
-                        src={app.imgSrc}
-                        alt=""
-                        width={36}
-                        height={36}
-                        className="size-8 shrink-0 rounded-md object-contain"
-                        referrerPolicy="no-referrer"
-                        unoptimized
-                      />
-                    ) : (
-                      <EntityAvatar icon={Zap} size="sm" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-foreground truncate text-sm font-medium">{app.name}</div>
-                      {app.categories?.[0] && (
-                        <div className="text-muted-foreground truncate text-xs">
-                          {app.categories[0]}
-                        </div>
-                      )}
-                    </div>
-                    <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
-                  </div>
-                  <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-                    {app.description ?? ' '}
-                  </p>
-                </button>
-              ))}
-            </div>
-            {appsQuery.hasNextPage && (
-              <div className="flex justify-center pt-5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => appsQuery.fetchNextPage()}
-                  disabled={appsQuery.isFetchingNextPage}
-                  className="h-9 px-8"
-                >
-                  {appsQuery.isFetchingNextPage ? (
-                    <>
-                      <Loading className="size-4 shrink-0" />
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextLoading7131cc18',
-                      )}
-                    </>
-                  ) : (
-                    'Load more'
-                  )}
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
   );
 }
 
