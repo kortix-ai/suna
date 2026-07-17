@@ -155,8 +155,33 @@ export function ShowTool({ part, sessionId, forceOpen, locked }: ToolProps) {
       previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
     })
   ) {
-    // Nothing to show on either surface — no row, no card.
-    return null;
+    // The artifact didn't load (renamed/deleted file, dead preview). Never
+    // vanish — an invisible `show` reads as "the tool never ran". A quiet
+    // one-line note keeps the action in the transcript without resurrecting
+    // the big "File not found" card this gate was built to avoid (#3966).
+    const fallbackHref = safeHttpUrl(activeUrl);
+    body = (
+      <div
+        className={cn(
+          'text-muted-foreground flex items-center gap-2 px-4 py-3 text-xs',
+          fill && 'h-full items-center justify-center',
+        )}
+      >
+        <span className="truncate">
+          Preview unavailable{displayTitle ? ` — ${displayTitle}` : ''}
+        </span>
+        {fallbackHref && (
+          <a
+            href={fallbackHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-foreground/70 hover:text-foreground shrink-0 underline underline-offset-2"
+          >
+            Open link
+          </a>
+        )}
+      </div>
+    );
   } else {
     body = (
       <div
