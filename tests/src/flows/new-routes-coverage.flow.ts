@@ -294,9 +294,65 @@ flow(
       slack.status(401);
     });
 
-    await ctx.step('internal gateway authorization rejects missing internal credentials', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/authorize', {});
-      r.status([401, 503]);
+    await ctx.step(
+      'internal gateway authorization rejects missing internal credentials',
+      async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/authorize', {});
+        r.status([401, 503]);
+      },
+    );
+  },
+);
+
+flow(
+  'COV-9',
+  {
+    domain: 'coverage',
+    routes: ['GET /v1/generation', 'GET /v1/usage'],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+
+    await ctx.step('ANON cannot read generation forensics', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/generation', { query: { id: ZERO_UUID } });
+      r.status(401);
+    });
+    await ctx.step('missing id query param is a 400 boundary', async () => {
+      const r = await owner.get('/v1/generation');
+      r.status(400);
+    });
+    await ctx.step('unknown request id is a 404 boundary', async () => {
+      const r = await owner.get('/v1/generation', { query: { id: ZERO_UUID } });
+      r.status(404);
+    });
+
+    await ctx.step('ANON cannot read the usage rollup', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/usage');
+      r.status(401);
+    });
+    await ctx.step('account usage rollup returns the totals envelope', async () => {
+      const r = await owner.get('/v1/usage');
+      r.status(200).body().exists('$.data.total_input_tokens').exists('$.data.count');
+    });
+    await ctx.step('grouped usage rollup adds a breakdown array', async () => {
+      const r = await owner.get('/v1/usage', { query: { group_by: 'model' } });
+      r.status(200).body().exists('$.data').exists('$.breakdown');
+    });
+    await ctx.step('a bounded window is accepted', async () => {
+      const r = await owner.get('/v1/usage', {
+        query: { start: '2020-01-01T00:00:00Z', end: '2020-01-02T00:00:00Z' },
+      });
+      r.status(200).body().exists('$.data.total_cost');
+    });
+    await ctx.step('an invalid group_by is a 400 boundary', async () => {
+      const r = await owner.get('/v1/usage', { query: { group_by: 'bogus' } });
+      r.status(400);
+    });
+    await ctx.step('start after end is a 400 boundary', async () => {
+      const r = await owner.get('/v1/usage', {
+        query: { start: '2026-01-02T00:00:00Z', end: '2026-01-01T00:00:00Z' },
+      });
+      r.status(400);
     });
   },
 );
