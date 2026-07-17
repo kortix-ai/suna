@@ -2249,13 +2249,14 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
               rows: [
                 { label: 'SCIM Base URL', value: '(the Tenant URL above)', as: 'field' },
                 { label: 'SCIM Bearer Token', value: '(the secret above)', as: 'field' },
-                { label: 'API Status', value: 'Enabled', as: 'field' },
+                { label: 'Enable', as: 'button' },
+                { label: 'API Status', value: 'Enabled (read-only)', as: 'badge' },
               ],
             },
           },
           {
             kind: 'text',
-            text: 'Under "API Connection": paste the Tenant URL into "SCIM Base URL" and the secret into "SCIM Bearer Token", then set "API Status" to Enabled. OneLogin validates immediately — a green Enabled state is success.',
+            text: 'Under "API Connection": paste the Tenant URL into "SCIM Base URL" and the secret into "SCIM Bearer Token", then click the "Enable" button (save the app first if prompted). OneLogin validates the endpoint and "API Status" then shows a green "Enabled" — that field is a read-only indicator, not a control you set.',
           },
           {
             kind: 'text',
@@ -2282,7 +2283,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
         ],
         success:
-          'API Status shows Enabled, the "SCIM Username" parameter maps to Email, and provisioning is enabled without the admin-approval hold.',
+          'API Status shows a green "Enabled", the "SCIM Username" parameter maps to Email, and provisioning is enabled without the admin-approval hold.',
         warning:
           '#1 OneLogin gotcha: users seem to sync but nothing lands in Kortix — the actions are stuck in the Provisioning "pending" queue because "Require admin approval" is still checked. Uncheck it for Create/Update/Delete (or approve the queue).',
         doneLabel: 'I’ve connected and enabled provisioning',
@@ -2301,7 +2302,11 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Push groups: on the app’s "Rules" tab, click "Refresh" in Entitlements first so Kortix’s groups load, then add a Rule — a condition (e.g. member of a OneLogin Role) with the action "Set Groups in Kortix" → the group. Membership then syncs on every change.',
+            text: 'Push groups: on the app’s "Provisioning" tab, under "Entitlements", click "Refresh" so Kortix’s groups load. Then on the "Rules" tab add a Rule — a condition (e.g. member of a OneLogin Role) with the action "Set Groups in Kortix" → the group.',
+          },
+          {
+            kind: 'text',
+            text: 'After saving the rule, click "Reapply entitlement mappings" (app → Users → More Actions) to push groups to users who are ALREADY assigned — otherwise existing members’ groups only sync on their next change.',
           },
         ],
         note: 'Only assigned users are provisioned; users created directly in Kortix are not linked back to OneLogin.',
@@ -2365,7 +2370,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Under "Attribute Mappings", map the SCIM "userName" (and email) attribute to the JumpCloud user’s email so the created SCIM userName equals the email Kortix correlates on.',
+            text: 'Under "Export Attribute Mapping", confirm the user’s email flows into SCIM "userName" — JumpCloud sets this by default, so there’s usually nothing to change. Kortix correlates on that email.',
           },
         ],
         success:
@@ -2378,13 +2383,13 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'assign',
         title: 'Bind groups to provision users',
         where: 'idp',
-        menuPath: 'Your app → User Groups / Identity Management → Group Management',
+        menuPath: 'Your app → Identity Management (enable the checkbox) + User Groups tab',
         intro:
           'JumpCloud provisions the members of the user groups BOUND to this app — binding a group both scopes who is pushed and syncs the group itself.',
         content: [
           {
             kind: 'text',
-            text: 'In "Identity Management" → "Group Management", check "Enable management of User Groups and Group Membership in this application" so bound groups (and their members) are pushed to Kortix.',
+            text: 'On the "Identity Management" tab itself (once Test Connection has succeeded), check "Enable management of User Groups and Group Membership in this application" so bound groups (and their members) are pushed to Kortix.',
           },
           {
             kind: 'text',
@@ -2444,6 +2449,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
                 { label: 'Authentication Method', value: 'OAuth 2 Bearer Token', as: 'field' },
                 { label: 'OAuth Access Token', value: '(the secret above)', as: 'field' },
                 { label: 'Test connection', as: 'button' },
+                { label: 'Enable connection (toggle)', value: 'on / blue', as: 'field' },
               ],
             },
           },
@@ -2453,14 +2459,18 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Set userName to the email Kortix correlates on: in the PingOne Directory column expand the "Username" mapping and select "Email Address", and set the user filter expression to `userName eq "%s"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.',
+            text: 'ENABLE the connection itself: click the toggle at the top of the connection’s details panel so it turns blue. A saved-but-disabled connection provisions NOTHING even with an Active rule — this is the easiest step to miss.',
+          },
+          {
+            kind: 'text',
+            text: 'Set userName to the email Kortix correlates on: open the "Attribute Mapping" section (separate from the auth screen), in the "PingOne Directory" column expand "Username" and select "Email Address". Then in the connection’s preferences/actions set "User Identifier" = userName and "User Filter Expression" = `userName eq "%s"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.',
           },
         ],
         success:
-          'Test connection passes, and the Username attribute maps to Email Address with a `userName eq "%s"` filter.',
+          'Test connection passes, the connection toggle is enabled (blue), and the Username attribute maps to Email Address with a `userName eq "%s"` filter.',
         warning:
-          '#1 PingOne gotcha: users provision under the wrong identity (or duplicate) because PingOne sends its internal username, not the email. Map "Username" → "Email Address" and set the filter `userName eq "%s"` so it matches by email.',
-        doneLabel: 'I’ve created and tested the SCIM connection',
+          '#1 PingOne gotcha: everything looks configured but zero users sync — the CONNECTION toggle is still off (it defaults off), or PingOne is sending its internal username instead of the email. Enable the connection toggle, map "Username" → "Email Address", and set the filter `userName eq "%s"`.',
+        doneLabel: 'I’ve created, enabled, and tested the SCIM connection',
       }),
       {
         id: 'assign',
@@ -2471,7 +2481,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'text',
-            text: 'Open the connection’s "Rules" tab → add/open a rule → "Directory" tab. Scope which people are provisioned with a User Filter ("Add Condition" on a population or user attribute) and/or by selecting Populations.',
+            text: 'Go to Integrations → Provisioning → "Rules" tab → open (or add) the rule for this connection → its "Directory" tab. Scope which people are provisioned with a User Filter ("Add Condition" on a population or user attribute) and/or by selecting Populations.',
           },
           {
             kind: 'text',
