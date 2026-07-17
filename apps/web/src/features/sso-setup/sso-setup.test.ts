@@ -123,8 +123,15 @@ describe('sso card entry point', () => {
 });
 
 describe('directory sync (SCIM) guides', () => {
-  test('cover Entra, Okta, and Custom SCIM', () => {
-    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'okta']);
+  test('cover Entra, Okta, OneLogin, JumpCloud, PingOne, and Custom SCIM', () => {
+    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'custom',
+      'entra',
+      'jumpcloud',
+      'okta',
+      'onelogin',
+      'pingone',
+    ]);
   });
 
   test('every guide mints + connects on ONE page, and ends with verify', () => {
@@ -262,6 +269,27 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
 
   test('Google Workspace has no SCIM guide — there is no first-party directory to sync', () => {
     expect(getScimGuide('google')).toBeNull();
+  });
+
+  // Providers that appear in the SAML picker but genuinely CANNOT do outbound
+  // SCIM 2.0 to a generic endpoint (fact-checked against the live consoles) get
+  // NO Directory Sync guide — shipping one would point admins at a screen that
+  // doesn't exist. Google: catalog-only. Cloudflare Access: broker (outbound
+  // SCIM is closed-beta API-only). Auth0: inbound-only (its SCIM URL points INTO
+  // Auth0). SAML JIT + group auto-provision is the path for all three.
+  test('no SCIM guide for providers without generic outbound SCIM (cloudflare, auth0)', () => {
+    expect(getScimGuide('cloudflare')).toBeNull();
+    expect(getScimGuide('auth0')).toBeNull();
+  });
+
+  test('the added SCIM guides (OneLogin, JumpCloud, PingOne) paste our base URL + token', () => {
+    for (const id of ['onelogin', 'jumpcloud', 'pingone']) {
+      const text = JSON.stringify(getScimGuide(id)!.steps);
+      // Each connects by pointing the IdP at the minted Tenant URL + secret.
+      expect(text).toContain('Tenant URL');
+      // And each pins userName to the email Kortix correlates on.
+      expect(text.toLowerCase()).toContain('email');
+    }
   });
 });
 

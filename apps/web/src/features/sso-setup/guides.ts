@@ -45,6 +45,12 @@ export interface StepSchematic {
 export type StepBlock =
   | { kind: 'text'; text: string }
   | { kind: 'image'; src: string; alt: string; schematic?: StepSchematic }
+  /** A standalone schematic panel — OUR OWN rendering of a console screen, with
+   *  no backing screenshot file. Use when there is no captured PNG yet (e.g. the
+   *  SCIM provider guides): unlike an `image` block with a `schematic` fallback,
+   *  this references no asset, so it renders the panel directly and never trips
+   *  the "every referenced screenshot must ship" guard. */
+  | { kind: 'schematic'; schematic: StepSchematic }
   /** The copyable SP values (Entity ID + ACS), positioned inline. Labels are
    *  per-IdP: Entra says "Identifier (Entity ID)" / "Reply URL (ACS)", Okta
    *  says "Audience URI (SP Entity ID)" / "Single sign-on URL" — show the
@@ -1915,7 +1921,9 @@ const scimConnectStep = (step: {
   kind: 'scim-token',
 });
 
-const scimTestStep = (opts: { extra?: string; content?: StepBlock[] } = {}): GuideStep => ({
+const scimTestStep = (
+  opts: { extra?: string; content?: StepBlock[]; success?: string } = {},
+): GuideStep => ({
   id: 'test',
   title: 'Verify provisioning',
   kind: 'test',
@@ -1931,7 +1939,8 @@ const scimTestStep = (opts: { extra?: string; content?: StepBlock[] } = {}): Gui
     ...(opts.extra ? [opts.extra] : []),
   ],
   success:
-    'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
+    opts.success ??
+    'The member/group counts below tick up, and your IdP’s provisioning log shows the sync succeeded.',
 });
 
 export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
@@ -2063,6 +2072,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         doneLabel: 'I’ve configured, mapped, assigned, and started provisioning',
       }),
       scimTestStep({
+        success:
+          'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
         extra:
           'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again — or run "Provision on demand" to apply it immediately.',
         content: [
@@ -2198,6 +2209,286 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         doneLabel: 'I’ve assigned people and pushed groups',
       },
       scimTestStep(),
+    ],
+  },
+  {
+    id: 'onelogin',
+    name: 'OneLogin',
+    blurb: 'Automatic provisioning from OneLogin',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Groups pushed from OneLogin Rules are created in Kortix under their OneLogin names.',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        where: 'idp',
+        intro:
+          'OneLogin pushes users and groups to Kortix with its "SCIM Provisioner with SAML" connector — a SEPARATE app from the SAML-only connector. Outbound provisioning is a paid OneLogin tier; the Provisioning tab only appears when your plan includes it.',
+        bullets: [
+          'Connect SAML SSO first — provisioning creates accounts, but users still need SSO to sign in.',
+          'You will add a new SCIM connector app below; the SAML Custom Connector used for SSO does not push users.',
+        ],
+      },
+      scimConnectStep({
+        title: 'Mint a token & connect the SCIM connector',
+        where: 'idp',
+        menuPath: 'OneLogin admin → Applications → Add App',
+        intro: 'Add a OneLogin SCIM connector and point it at the two values shown above.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Applications → Applications → "Add App" → search "SCIM" → pick "SCIM Provisioner with SAML (SCIM v2 Core)" → name it "Kortix" → Save. Then open the app’s "Configuration" tab.',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'Configuration → API Connection',
+              rows: [
+                { label: 'SCIM Base URL', value: '(the Tenant URL above)', as: 'field' },
+                { label: 'SCIM Bearer Token', value: '(the secret above)', as: 'field' },
+                { label: 'API Status', value: 'Enabled', as: 'field' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Under "API Connection": paste the Tenant URL into "SCIM Base URL" and the secret into "SCIM Bearer Token", then set "API Status" to Enabled. OneLogin validates immediately — a green Enabled state is success.',
+          },
+          {
+            kind: 'text',
+            text: 'On the "Parameters" tab, set the "SCIM Username" parameter’s value to the user’s Email — that makes SCIM userName the email Kortix correlates on. Leave the default externalId mapping as-is.',
+          },
+          {
+            kind: 'text',
+            text: 'On the "Provisioning" tab, tick "Enable provisioning". Then UNCHECK "Require admin approval before this action is performed" for Create, Update, and Delete — otherwise every change waits in a pending queue and nothing reaches Kortix until you approve it by hand.',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'Provisioning → Workflow',
+              rows: [
+                { label: 'Enable provisioning', value: 'checked', as: 'field' },
+                { label: 'Require admin approval — Create', value: 'unchecked', as: 'field' },
+                {
+                  label: 'Require admin approval — Update / Delete',
+                  value: 'unchecked',
+                  as: 'field',
+                },
+              ],
+            },
+          },
+        ],
+        success:
+          'API Status shows Enabled, the "SCIM Username" parameter maps to Email, and provisioning is enabled without the admin-approval hold.',
+        warning:
+          '#1 OneLogin gotcha: users seem to sync but nothing lands in Kortix — the actions are stuck in the Provisioning "pending" queue because "Require admin approval" is still checked. Uncheck it for Create/Update/Delete (or approve the queue).',
+        doneLabel: 'I’ve connected and enabled provisioning',
+      }),
+      {
+        id: 'assign',
+        title: 'Assign users and push groups',
+        where: 'idp',
+        menuPath: 'Your app → Users / Rules',
+        intro:
+          'A user is provisioned only once this SCIM app is assigned to them; group membership is pushed with a Rule.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Assign the app: Users → open a user → "Applications" → "+" → add "Kortix" (or assign the app to a Role so everyone in that Role is provisioned).',
+          },
+          {
+            kind: 'text',
+            text: 'Push groups: on the app’s "Rules" tab, click "Refresh" in Entitlements first so Kortix’s groups load, then add a Rule — a condition (e.g. member of a OneLogin Role) with the action "Set Groups in Kortix" → the group. Membership then syncs on every change.',
+          },
+        ],
+        note: 'Only assigned users are provisioned; users created directly in Kortix are not linked back to OneLogin.',
+        doneLabel: 'I’ve assigned users and pushed groups',
+      },
+      scimTestStep({
+        success:
+          'The member/group counts below tick up, and OneLogin’s Provisioning log shows each user/group actioned (not left "pending").',
+      }),
+    ],
+  },
+  {
+    id: 'jumpcloud',
+    name: 'JumpCloud',
+    blurb: 'Automatic provisioning from JumpCloud',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'The JumpCloud user groups you bind to the app are created in Kortix under their JumpCloud names.',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        where: 'idp',
+        intro:
+          'JumpCloud pushes users and groups to Kortix from a "Custom Application" using its Identity Management (SCIM) tab. Provisioning needs the JumpCloud SSO entitlement.',
+        bullets: [
+          'Connect SAML SSO first so provisioned users can sign in.',
+          'You can reuse the same Custom Application you made for SAML SSO — SCIM lives on its "Identity Management" tab.',
+        ],
+      },
+      scimConnectStep({
+        title: 'Mint a token & connect Identity Management',
+        where: 'idp',
+        menuPath: 'JumpCloud admin → Access → SSO Applications → your app → Identity Management',
+        intro:
+          'On the app’s "Identity Management" tab, turn on SCIM and point it at the two values shown above.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Open the app → "Identity Management" tab. In its Configuration set "API Type" = "SCIM API" and "SCIM Version" = "SCIM 2.0".',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'Identity Management → Configuration',
+              rows: [
+                { label: 'API Type', value: 'SCIM API', as: 'field' },
+                { label: 'SCIM Version', value: 'SCIM 2.0', as: 'field' },
+                { label: 'Base URL', value: '(the Tenant URL above)', as: 'field' },
+                { label: 'Token Key', value: '(the secret above)', as: 'field' },
+                { label: 'Test Connection', as: 'button' },
+                { label: 'Activate', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Paste the Tenant URL into "Base URL" and the secret into "Token Key" (auth is HTTP Header → Authorization: Bearer). Enter a FRESH test-user email that does NOT already exist in Kortix, click "Test Connection", then click "Activate" — do NOT click Save during the test-user step or you lose the configuration.',
+          },
+          {
+            kind: 'text',
+            text: 'Under "Attribute Mappings", map the SCIM "userName" (and email) attribute to the JumpCloud user’s email so the created SCIM userName equals the email Kortix correlates on.',
+          },
+        ],
+        success:
+          'Test Connection passes with a fresh test email, and the app’s Identity Management shows Activated.',
+        warning:
+          '#1 JumpCloud gotcha: Test Connection fails because the test-user email already exists in Kortix — it must be a brand-new address. (And click "Activate", not "Save", during that step.)',
+        doneLabel: 'I’ve connected and activated Identity Management',
+      }),
+      {
+        id: 'assign',
+        title: 'Bind groups to provision users',
+        where: 'idp',
+        menuPath: 'Your app → User Groups / Identity Management → Group Management',
+        intro:
+          'JumpCloud provisions the members of the user groups BOUND to this app — binding a group both scopes who is pushed and syncs the group itself.',
+        content: [
+          {
+            kind: 'text',
+            text: 'In "Identity Management" → "Group Management", check "Enable management of User Groups and Group Membership in this application" so bound groups (and their members) are pushed to Kortix.',
+          },
+          {
+            kind: 'text',
+            text: 'On the app’s "User Groups" tab, tick the JumpCloud user group(s) whose members should be provisioned, then Save. Bind at least one group — with none bound, no users are pushed.',
+          },
+        ],
+        note: 'Scope is group-based: membership of the bound groups defines who is provisioned. Unbinding a group deprovisions its members.',
+        doneLabel: 'I’ve bound the groups to provision',
+      },
+      scimTestStep({
+        success:
+          'The member/group counts below tick up as JumpCloud pushes the bound groups and their members.',
+      }),
+    ],
+  },
+  {
+    id: 'pingone',
+    name: 'PingOne',
+    blurb: 'Automatic provisioning from PingOne',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'The internal PingOne groups you select on the provisioning rule are created in Kortix under their PingOne names.',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        where: 'idp',
+        intro:
+          'PingOne pushes users and groups to Kortix through a generic "SCIM Outbound" connection under Integrations → Provisioning. Use the modern PingOne cloud console (Workforce) — the legacy "PingOne for Enterprise" product does not have this.',
+        bullets: [
+          'Connect SAML SSO first so provisioned users can sign in.',
+          'Your PingOne environment needs the Provisioning service enabled (standard on PingOne cloud, no separate SCIM SKU).',
+        ],
+      },
+      scimConnectStep({
+        title: 'Mint a token & create the SCIM Outbound connection',
+        where: 'idp',
+        menuPath: 'PingOne → Integrations → Provisioning → New Connection',
+        intro:
+          'Create a "SCIM Outbound" provisioning connection and point it at the two values shown above.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Integrations → Provisioning → "+ New Connection" → on the "Identity Store" line click "Select" → choose the "SCIM Outbound" tile → "Select". Name it "Kortix", then "Configure Authentication".',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'SCIM Outbound → Configuration',
+              rows: [
+                { label: 'SCIM Base URL', value: '(the Tenant URL above)', as: 'field' },
+                { label: 'Users Resource', value: '/Users', as: 'field' },
+                { label: 'Groups Resource', value: '/Groups', as: 'field' },
+                { label: 'SCIM Version', value: '2.0', as: 'field' },
+                { label: 'Authentication Method', value: 'OAuth 2 Bearer Token', as: 'field' },
+                { label: 'OAuth Access Token', value: '(the secret above)', as: 'field' },
+                { label: 'Test connection', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Paste the Tenant URL into "SCIM Base URL", set "Users Resource" = /Users, "Groups Resource" = /Groups, "SCIM Version" = 2.0. Set "Authentication Method" = "OAuth 2 Bearer Token" and paste the secret into "OAuth Access Token". Click "Test connection", then Save.',
+          },
+          {
+            kind: 'text',
+            text: 'Set userName to the email Kortix correlates on: in the PingOne Directory column expand the "Username" mapping and select "Email Address", and set the user filter expression to `userName eq "%s"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.',
+          },
+        ],
+        success:
+          'Test connection passes, and the Username attribute maps to Email Address with a `userName eq "%s"` filter.',
+        warning:
+          '#1 PingOne gotcha: users provision under the wrong identity (or duplicate) because PingOne sends its internal username, not the email. Map "Username" → "Email Address" and set the filter `userName eq "%s"` so it matches by email.',
+        doneLabel: 'I’ve created and tested the SCIM connection',
+      }),
+      {
+        id: 'assign',
+        title: 'Scope users and select groups',
+        where: 'idp',
+        menuPath: 'PingOne → Integrations → Provisioning → Rules',
+        intro: 'A provisioning Rule decides which users and groups this connection pushes.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Open the connection’s "Rules" tab → add/open a rule → "Directory" tab. Scope which people are provisioned with a User Filter ("Add Condition" on a population or user attribute) and/or by selecting Populations.',
+          },
+          {
+            kind: 'text',
+            text: 'Push groups: still in the rule’s "Directory" tab, click the pencil next to "Groups" → "Search Group Name" → pick the internal groups → review under "Selected Groups" → Save. PingOne pushes those groups and their memberships to /Groups.',
+          },
+          {
+            kind: 'text',
+            text: 'Set the rule to Active/enabled — PingOne then runs an initial full sync and incremental syncs on directory changes.',
+          },
+        ],
+        note: 'Only internal PingOne groups can be pushed; membership scope follows the rule’s User Filter and Populations.',
+        doneLabel: 'I’ve scoped users, selected groups, and activated the rule',
+      },
+      scimTestStep({
+        success:
+          'The member/group counts below tick up once the rule is Active and PingOne runs its first sync.',
+      }),
     ],
   },
   {
