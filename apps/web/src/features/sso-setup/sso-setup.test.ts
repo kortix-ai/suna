@@ -410,3 +410,27 @@ describe('review fixes stay fixed', () => {
     expect(wizardSource).toContain('(minted || priorTokens.length > 0) && connectContent');
   });
 });
+
+// Google SAML novice-walkthrough pins.
+describe('Google SAML guide is novice-complete', () => {
+  test('every Google IdP step has a where badge + breadcrumb', () => {
+    const google = getProviderGuide('google')!;
+    for (const step of google.steps) {
+      if (step.kind === 'import' || step.kind === 'test') continue; // Kortix-side
+      expect(step.menuPath, `google step ${step.id} missing menuPath`).toBeTruthy();
+    }
+  });
+
+  test('the metadata step tells the admin to click Google’s own Continue', () => {
+    const meta = getProviderGuide('google')!.steps.find((s) => s.id === 'metadata')!;
+    expect(meta.intro).toContain('Continue');
+  });
+
+  test('the xml-only metadata picker drops the dead URL card', () => {
+    expect(wizardSource).toContain("config.preferredMetadata === 'xml'");
+  });
+
+  test('the import step no longer says "from the previous step"', () => {
+    expect(guidesSource).not.toContain('metadata from the previous step');
+  });
+});
