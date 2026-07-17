@@ -75,14 +75,64 @@ export class GatewayResolutionError extends Error {
   }
 }
 
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return typeof err === 'string' ? err : '';
+}
+
+// Substrings that reliably indicate a TERMINAL, permanent client-auth failure
+// across every provider shape this gateway talks to — OpenAI/Anthropic-style
+// JSON error codes, AWS SigV4/STS credential exceptions (Bedrock), and generic
+// "Unauthorized" wording. Matched case-insensitively against an error's
+// `.message`.
+//
+// Exists because not every upstream failure carries a clean numeric HTTP
+// status by the time it reaches `defaultIsRetryable`/`indicatesUpstreamDown`:
+// an AWS credential/SigV4 resolution error can throw before any HTTP response
+// ever exists, and some AI-SDK error classes don't expose `.statusCode` at
+// all (see transports/ai-sdk/index.ts's `toTransportError`). Without this
+// fallback those errors collapse to a generic retryable NetworkError, and a
+// dead credential gets retried into a permanently empty, hung turn instead of
+// failing fast (2026-07-17 incident: invalid upstream key retried 11+ times
+// over 2+ minutes with no error ever surfaced to the session).
+const TERMINAL_AUTH_FAILURE_MARKERS = [
+  'invalid_api_key',
+  'invalid x-api-key',
+  'incorrect api key',
+  'authentication_error',
+  'invalid api key',
+  'unrecognizedclientexception',
+  'invalidsignatureexception',
+  'accessdeniedexception',
+  'security token included in the request is invalid',
+];
+
+export function looksLikeTerminalAuthFailure(message: string | undefined | null): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  return TERMINAL_AUTH_FAILURE_MARKERS.some((marker) => lower.includes(marker));
+}
+
 export function defaultIsRetryable(err: unknown): boolean {
   if (err instanceof CircuitOpenError) return false;
   if (err instanceof ClientAbortError) return false;
-  if (err instanceof TimeoutError) return true;
-  if (err instanceof NetworkError) return true;
   if (err instanceof UpstreamHttpError) {
+    // 401/403 are a dead credential or a permission the caller doesn't have —
+    // never a transient host issue, so never worth retrying. Called out
+    // explicitly (rather than left to fall through to `false` below it) so
+    // the intent is documented and independently testable — see
+    // TERMINAL_AUTH_FAILURE_MARKERS above for the same rule applied when no
+    // clean status is available at all.
+    if (err.status === 401 || err.status === 403) return false;
     return err.status === 429 || (err.status >= 500 && err.status <= 599);
   }
+  // A generic/NetworkError-shaped error can still be a terminal auth failure in
+  // disguise (see TERMINAL_AUTH_FAILURE_MARKERS) — check before the
+  // TimeoutError/NetworkError defaults below ever get a chance to call it
+  // retryable.
+  if (looksLikeTerminalAuthFailure(errorText(err))) return false;
+  if (err instanceof TimeoutError) return true;
+  if (err instanceof NetworkError) return true;
   return true;
 }
 
@@ -96,6 +146,11 @@ export function defaultIsRetryable(err: unknown): boolean {
 // failed-over, but it never trips the breaker.
 export function indicatesUpstreamDown(err: unknown): boolean {
   if (err instanceof ClientAbortError) return false;
+  // A dead credential is this caller's problem, not the host's — same
+  // reasoning as the 429/402/403 carve-out above, extended to the
+  // statusCode-less shape (see TERMINAL_AUTH_FAILURE_MARKERS): must never trip
+  // the shared breaker for every other tenant on this provider.
+  if (looksLikeTerminalAuthFailure(errorText(err))) return false;
   if (err instanceof TimeoutError) return true;
   if (err instanceof NetworkError) return true;
   if (err instanceof UpstreamHttpError) return err.status >= 500 && err.status <= 599;

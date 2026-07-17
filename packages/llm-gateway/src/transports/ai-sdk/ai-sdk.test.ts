@@ -4,7 +4,8 @@ import { jsonSchema, streamText, tool } from 'ai';
 import { calculateCost, extractUsageFromSseBuffer } from '../../usage';
 import { sseErrorFrame, sseHasContent } from '../../usage/completion-guard';
 import type { UpstreamDescriptor } from '../../domain';
-import { guardAgainstUnhandledResultRejections, mapToolCalls } from './index';
+import { guardAgainstUnhandledResultRejections, mapToolCalls, toTransportError } from './index';
+import { NetworkError, UpstreamHttpError, defaultIsRetryable } from '../../errors';
 import {
   aiSdkFamilyFor,
   clampMaxOutputTokensForBedrock,
@@ -779,4 +780,129 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
   // native openai-responses transport's own existing Codex test coverage
   // (openai-responses/request.test.ts, response.test.ts), which is unchanged
   // by this piece.
+});
+
+// Defect 4 (2026-07-17, live-confirmed): an invalid upstream key was retried
+// 11+ times over 2+ minutes and the session turn stayed permanently empty —
+// no clean error was ever surfaced. Root cause: toTransportError only ever
+// inspected `.statusCode`; provider errors that never populate one (an AWS
+// credential/SigV4 resolution failure thrown before any HTTP response exists,
+// or an AI-SDK error class without `.statusCode`) fell through to a generic
+// NetworkError, which `defaultIsRetryable` treats as retryable — so a dead
+// credential got retried instead of failing fast. Fixed by classifying a
+// statusCode-less error's MESSAGE via `looksLikeTerminalAuthFailure` (errors.ts)
+// as a terminal 401 UpstreamHttpError.
+describe('toTransportError — terminal auth classification (defect 4: 401 retried into a hang)', () => {
+  it('maps a clean statusCode straight through as an UpstreamHttpError with that status', () => {
+    const err = Object.assign(new Error('Incorrect API key provided'), {
+      statusCode: 401,
+      responseBody: '{"error":{"code":"invalid_api_key"}}',
+    });
+    const mapped = toTransportError(err, 'openai');
+    expect(mapped).toBeInstanceOf(UpstreamHttpError);
+    expect((mapped as UpstreamHttpError).status).toBe(401);
+    expect(defaultIsRetryable(mapped)).toBe(false);
+  });
+
+  it('reads a statusCode nested under `.cause` when the top-level error lacks one', () => {
+    const err = Object.assign(new Error('wrapped'), { cause: { statusCode: 403 } });
+    const mapped = toTransportError(err, 'anthropic');
+    expect(mapped).toBeInstanceOf(UpstreamHttpError);
+    expect((mapped as UpstreamHttpError).status).toBe(403);
+  });
+
+  it('classifies a statusCode-less AWS credential failure as a terminal 401, not a retryable NetworkError', () => {
+    const err = new Error(
+      'UnrecognizedClientException: The security token included in the request is invalid',
+    );
+    const mapped = toTransportError(err, 'bedrock');
+    expect(mapped).toBeInstanceOf(UpstreamHttpError);
+    expect((mapped as UpstreamHttpError).status).toBe(401);
+    expect(defaultIsRetryable(mapped)).toBe(false);
+  });
+
+  it('still falls back to a retryable NetworkError for a genuine statusCode-less transient failure', () => {
+    const err = new Error('socket hang up');
+    const mapped = toTransportError(err, 'openai');
+    expect(mapped).toBeInstanceOf(NetworkError);
+    expect(defaultIsRetryable(mapped)).toBe(true);
+  });
+
+  it('a 500-shaped error still maps to a retryable UpstreamHttpError (contrast with the 401 case above)', () => {
+    const err = Object.assign(new Error('internal error'), { statusCode: 500 });
+    const mapped = toTransportError(err, 'openai');
+    expect(mapped).toBeInstanceOf(UpstreamHttpError);
+    expect(defaultIsRetryable(mapped)).toBe(true);
+  });
+});
+
+describe('ai-sdk streaming error frame — defect 4 (401 surfaces cleanly, no hang)', () => {
+  it('a statusCode-carrying auth error surfaces its real code in the SSE error frame', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts({
+          type: 'error',
+          error: Object.assign(new Error('Incorrect API key provided'), { statusCode: 401 }),
+        }),
+        CTX,
+      ),
+    );
+    const frame = sseErrorFrame(sse);
+    expect(frame?.message).toBe('Incorrect API key provided');
+    expect(frame?.code).toBe(401);
+    // No content was ever produced — a same-candidate empty-completion retry
+    // would otherwise be indistinguishable from this terminal failure.
+    expect(sseHasContent(sse)).toBe(false);
+  });
+
+  it('a statusCode-less terminal auth error message is still classified as a 401 error frame', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts({
+          type: 'error',
+          error: new Error('AccessDeniedException: not authorized to invoke model'),
+        }),
+        CTX,
+      ),
+    );
+    const frame = sseErrorFrame(sse);
+    expect(frame?.code).toBe(401);
+  });
+
+  it('drives a real streamText() through a mock model whose doStream rejects with a 401 — exactly one call, one clean error frame, no retry storm', async () => {
+    let calls = 0;
+    const mock = new MockLanguageModelV4({
+      doStream: async () => {
+        calls++;
+        throw Object.assign(new Error('Incorrect API key provided'), {
+          statusCode: 401,
+          responseBody: '{"error":{"code":"invalid_api_key"}}',
+        });
+      },
+    });
+
+    const result = streamText({
+      model: mock,
+      prompt: 'hello',
+      maxRetries: 0,
+      onError: () => {
+        /* mirrors index.ts's swallow — the real error surfaces via fullStream */
+      },
+    });
+    guardAgainstUnhandledResultRejections(result);
+
+    const sse = await readAll(openAiSseFromFullStream(result.fullStream, CTX));
+    const frame = sseErrorFrame(sse);
+    expect(frame?.code).toBe(401);
+    expect(sseHasContent(sse)).toBe(false);
+    // The mock model's doStream is called once by streamText itself — the
+    // gateway's own resilience layer (withResilience wrapping
+    // callUpstreamViaAiSdk) never gets a chance to retry a streaming call in
+    // the first place, since it resolves as soon as the SSE Response is built
+    // (see index.ts's callUpstreamViaAiSdk); the terminal classification that
+    // matters for streaming lives in the pipeline's probeStream/errorFrame
+    // handling, verified above. This still confirms doStream itself is
+    // invoked exactly once, not retried internally.
+    expect(calls).toBe(1);
+  });
 });

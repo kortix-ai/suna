@@ -1,5 +1,5 @@
 import { generateText, streamText } from 'ai';
-import { NetworkError, UpstreamHttpError } from '../../errors';
+import { NetworkError, UpstreamHttpError, looksLikeTerminalAuthFailure } from '../../errors';
 import type { UpstreamDescriptor } from '../../domain';
 import {
   clampMaxOutputTokensForBedrock,
@@ -38,10 +38,37 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
 
 // Map an AI SDK error into the gateway's transport error taxonomy so failover,
 // retry, and the circuit breaker behave identically to the native path.
-function toTransportError(err: unknown, provider: string): Error {
-  const e = err as { statusCode?: number; responseBody?: string; message?: string; url?: string };
-  if (typeof e?.statusCode === 'number') {
-    return new UpstreamHttpError(e.statusCode, e.responseBody ?? e.message ?? '', provider);
+//
+// Defect (2026-07-17, live-confirmed): not every AI-SDK provider error carries
+// a numeric `.statusCode` — an AWS credential/SigV4 resolution failure
+// (Bedrock) can throw before any HTTP response ever exists, and some AI-SDK
+// error classes don't expose one at all. Without the message-based fallback
+// below, those errors always fell through to a generic NetworkError — which
+// `defaultIsRetryable` treats as retryable — so an invalid/dead upstream key
+// got retried into a permanently empty, hung session turn (11+ attempts over
+// 2+ minutes, no error ever surfaced) instead of failing fast on attempt one.
+export function toTransportError(err: unknown, provider: string): Error {
+  const e = err as {
+    statusCode?: number;
+    responseBody?: string;
+    message?: string;
+    url?: string;
+    cause?: { statusCode?: number };
+  };
+  // A `cause`-wrapped statusCode (some AI-SDK error classes nest the original
+  // API-call error there) counts the same as a top-level one.
+  const statusCode =
+    typeof e?.statusCode === 'number'
+      ? e.statusCode
+      : typeof e?.cause?.statusCode === 'number'
+        ? e.cause.statusCode
+        : undefined;
+  if (typeof statusCode === 'number') {
+    return new UpstreamHttpError(statusCode, e.responseBody ?? e.message ?? '', provider);
+  }
+  const message = e?.message ?? (err instanceof Error ? err.message : String(err));
+  if (looksLikeTerminalAuthFailure(message)) {
+    return new UpstreamHttpError(401, message, provider);
   }
   return new NetworkError(`ai-sdk call to ${provider} failed`, err);
 }

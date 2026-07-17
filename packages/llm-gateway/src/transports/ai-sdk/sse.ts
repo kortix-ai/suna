@@ -1,4 +1,5 @@
 import type { FinishReason, LanguageModelUsage, ProviderMetadata } from 'ai';
+import { looksLikeTerminalAuthFailure } from '../../errors';
 
 // Adapts the AI SDK's provider-neutral stream/result back into the OpenAI
 // chat.completions SSE + JSON shapes the gateway pipeline (probe, relay, usage
@@ -222,8 +223,15 @@ export function openAiSseFromFullStream(
               const err = part.error;
               const message =
                 err instanceof Error ? err.message : typeof err === 'string' ? err : 'Upstream error';
-              const code = (err as { statusCode?: number; code?: string })?.statusCode ??
-                (err as { code?: string })?.code;
+              // Some provider errors (AWS credential/SigV4 failures, an AI-SDK
+              // error class without a `.statusCode`) never carry a numeric code —
+              // fall back to classifying the message itself so a terminal auth
+              // failure is still recognizable as one downstream, same as
+              // toTransportError (index.ts) does for the non-streaming path.
+              const code =
+                (err as { statusCode?: number; code?: string })?.statusCode ??
+                (err as { code?: string })?.code ??
+                (looksLikeTerminalAuthFailure(message) ? 401 : undefined);
               emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
               break;
             }
@@ -233,7 +241,9 @@ export function openAiSseFromFullStream(
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        const code = (err as { statusCode?: number })?.statusCode;
+        const code =
+          (err as { statusCode?: number })?.statusCode ??
+          (looksLikeTerminalAuthFailure(message) ? 401 : undefined);
         emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
       }
 
