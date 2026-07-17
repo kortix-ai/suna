@@ -1,4 +1,5 @@
 import { jsonSchema, tool, type ModelMessage, type ToolChoice, type ToolSet } from 'ai';
+import { reasoningEffort as reasoningEffortFromBody } from '../route-kind';
 import type { AiSdkFamily } from './model';
 
 // Everything the AI-SDK engine needs to drive `streamText`/`generateText`,
@@ -171,6 +172,14 @@ const REASONING_FAMILY_KEY: Record<AiSdkFamily, string> = {
 export function buildAiSdkArgs(
   body: Record<string, unknown>,
   family: AiSdkFamily,
+  opts: {
+    // Applied only when the request carries no explicit reasoning effort of
+    // its own (flat `reasoning_effort` or nested `reasoning.effort`) — Codex
+    // always sends a reasoning effort (native transport's `chatToResponses`
+    // defaults to 'low'; see openai-responses/request.ts), so callUpstreamViaAiSdk
+    // passes this for Codex descriptors instead of duplicating that default here.
+    defaultReasoningEffort?: string;
+  } = {},
 ): AiSdkCallArgs {
   const { system, messages } = toModelMessages(body.messages);
   const tools = toToolSet(body.tools);
@@ -186,7 +195,11 @@ export function buildAiSdkArgs(
     typeof stop === 'string' ? [stop] : Array.isArray(stop) ? (stop as string[]) : undefined;
 
   const providerOptions: Record<string, Record<string, string>> = {};
-  const reasoningEffort = body.reasoning_effort;
+  // Accepts both the chat/completions field (`reasoning_effort: string`) and
+  // the Responses-style nested shape (`reasoning: { effort: string }`) some
+  // callers (opencode) send directly — same helper route-kind.ts uses to make
+  // the identical decision for the native transport.
+  const reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
   if (typeof reasoningEffort === 'string') {
     // The AI SDK's OpenAI provider strips temperature and other unsupported params
     // for reasoning models on its own — we only forward the effort. openai-compatible

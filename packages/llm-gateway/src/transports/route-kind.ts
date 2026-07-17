@@ -12,7 +12,7 @@ function hasFunctionTools(body: Json): boolean {
 // the Responses-style nested object (`reasoning: { effort: string }`), which
 // opencode/callers occasionally send directly. Mirrors
 // openai-responses/request.ts's `reasoningFromBody`.
-function reasoningEffort(body: Json): string | undefined {
+export function reasoningEffort(body: Json): string | undefined {
   if (typeof body.reasoning_effort === 'string') return body.reasoning_effort;
   const reasoning = body.reasoning;
   if (reasoning && typeof reasoning === 'object') {
@@ -71,6 +71,13 @@ function reasoningEffort(body: Json): string | undefined {
  * resolution in apps/api's resolveCandidates happens before the body's
  * tools/reasoning_effort are known to that layer) — cheap enough to run on
  * every dispatch, including each failover retry.
+ *
+ * Also reused verbatim by the ai-sdk engine (ai-sdk/model.ts's
+ * `needsResponsesApi`) to decide when to build a `.responses()` LanguageModel
+ * instead of `.chat()` — the exact same broken combination, just served by
+ * the AI SDK's own OpenAI Responses model instead of the native transport in
+ * ./openai-responses. Both engines therefore route the same request the same
+ * way; only the transport code speaking the wire protocol differs.
  */
 export function resolveTransportKind(body: Json, descriptor: UpstreamDescriptor): ProviderKind {
   if (

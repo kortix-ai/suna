@@ -1,11 +1,22 @@
 import { generateText, streamText } from 'ai';
 import { NetworkError, UpstreamHttpError } from '../../errors';
 import type { UpstreamDescriptor } from '../../domain';
-import { clampMaxOutputTokensForBedrock, resolveAiModel, aiSdkFamilyFor } from './model';
+import {
+  clampMaxOutputTokensForBedrock,
+  resolveAiModel,
+  aiSdkFamilyFor,
+  isCodexDescriptor,
+} from './model';
 import { buildAiSdkArgs } from './request';
 import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
-export { aiSdkFamilyFor, isAiSdkServable, resolveAiModel } from './model';
+export {
+  aiSdkFamilyFor,
+  isAiSdkServable,
+  isCodexDescriptor,
+  needsResponsesApi,
+  resolveAiModel,
+} from './model';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -75,6 +86,19 @@ export function guardAgainstUnhandledResultRejections(result: {
   }
 }
 
+// Both `generateText`'s and `streamText`'s settled results expose tool calls
+// as an array of `{toolCallId, toolName, input}` (plus provider-specific
+// fields we don't need) — normalize either into what openAiJsonFromResult
+// wants, once, instead of duplicating the `.map` at both call sites below.
+// Exported so ai-sdk.test.ts can drive the exact same collapse sequence
+// callUpstreamViaAiSdk's Codex/non-streaming branch runs, against a real
+// `streamText()` result from a mock model, without needing network access.
+export function mapToolCalls(
+  toolCalls: ReadonlyArray<{ toolCallId: string; toolName: string; input?: unknown }> | undefined,
+): Array<{ toolCallId: string; toolName: string; input: unknown }> | undefined {
+  return toolCalls?.map((tc) => ({ toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.input }));
+}
+
 // The AI-SDK transport engine. Given the same OpenAI chat.completions body and
 // descriptor the native path receives, drive the AI SDK provider package and
 // return a Response in the SAME OpenAI-compatible shape (SSE for stream, JSON
@@ -89,9 +113,20 @@ export async function callUpstreamViaAiSdk(
   opts: { signal?: AbortSignal } = {},
 ): Promise<Response> {
   const family = aiSdkFamilyFor(descriptor);
-  const model = resolveAiModel(descriptor);
-  const args = buildAiSdkArgs(body, family);
-  const streaming = body.stream === true;
+  const isCodex = isCodexDescriptor(descriptor);
+  // `body` decides chat.completions vs Responses for the 'openai' family (see
+  // model.ts's needsResponsesApi) — Codex/genuine-OpenAI-reasoning-with-tools
+  // only, everything else keeps using .chat().
+  const model = resolveAiModel(descriptor, body);
+  const args = buildAiSdkArgs(body, family, {
+    // The ChatGPT Codex backend always expects a reasoning effort; the native
+    // transport defaults to 'low' when the caller sends none (see
+    // openai-responses/request.ts's `chatToResponses`) — mirrored here via
+    // buildAiSdkArgs's opt-in default rather than in buildAiSdkArgs itself, so
+    // every non-Codex caller's "no default effort" behavior is untouched.
+    defaultReasoningEffort: isCodex ? 'low' : undefined,
+  });
+  const clientWantsStream = body.stream === true;
   const ctx = { model: descriptor.resolvedModel || String(body.model ?? ''), provider: descriptor.provider };
 
   const shared = {
@@ -118,7 +153,19 @@ export async function callUpstreamViaAiSdk(
     abortSignal: opts.signal,
   } as const;
 
-  if (streaming) {
+  // Codex's backend is stream-only — a non-streaming Responses call
+  // (`stream:false`, what `generateText`'s `doGenerate` always sends) 400s
+  // there (same constraint the native transport works around by forcing
+  // `stream: true` in chatToResponses regardless of what the client asked
+  // for — see its comment). The AI SDK has no equivalent per-call override:
+  // the only way to get `stream:true` on the wire is to drive the model
+  // through `streamText` (`doStream`). So a Codex call ALWAYS goes through
+  // streamText below, even when the client itself asked for a non-streaming
+  // completion — that settled result is then collapsed into one JSON response
+  // instead of relayed as SSE, matching openai-responses/response.ts's
+  // `collectStreamAsChat` for the identical client-non-streaming/
+  // upstream-stream-only combination.
+  if (clientWantsStream || isCodex) {
     const result = streamText({
       ...shared,
       onError: () => {
@@ -127,7 +174,32 @@ export async function callUpstreamViaAiSdk(
       },
     });
     guardAgainstUnhandledResultRejections(result);
-    return sseResponse(openAiSseFromFullStream(result.fullStream, ctx));
+
+    if (clientWantsStream) {
+      return sseResponse(openAiSseFromFullStream(result.fullStream, ctx));
+    }
+
+    // Codex + a client that wants JSON: await the same settled-result promises
+    // `guardAgainstUnhandledResultRejections` already made safe to await, and
+    // build the identical JSON shape `generateText`'s branch below produces.
+    try {
+      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] = await Promise.all([
+        result.text,
+        result.reasoningText,
+        result.toolCalls,
+        result.finishReason,
+        result.usage,
+        result.providerMetadata,
+      ]);
+      return jsonResponse(
+        openAiJsonFromResult(
+          { text, reasoningText, toolCalls: mapToolCalls(toolCalls), finishReason, usage, providerMetadata },
+          ctx,
+        ),
+      );
+    } catch (err) {
+      throw toTransportError(err, descriptor.provider);
+    }
   }
 
   try {
@@ -137,11 +209,7 @@ export async function callUpstreamViaAiSdk(
         {
           text: result.text,
           reasoningText: result.reasoningText,
-          toolCalls: result.toolCalls?.map((tc) => ({
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            input: (tc as { input?: unknown }).input,
-          })),
+          toolCalls: mapToolCalls(result.toolCalls),
           finishReason: result.finishReason,
           usage: result.usage,
           providerMetadata: result.providerMetadata,
