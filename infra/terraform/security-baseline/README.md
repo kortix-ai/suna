@@ -8,6 +8,8 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 - CloudTrail KMS CMK + multi-region trail + log-file validation + S3 data events (DCF-54 / DCF-478 / DCF-406)
 - GuardDuty detectors with 15-minute finding publication and managed EC2/EKS/ECS
   Runtime Monitoring agents in all 17 opted-in commercial regions (DCF-87)
+- Regional GuardDuty EventBridge rules forwarding every finding to the existing
+  central operations alert topic (DCF-87)
 - EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
