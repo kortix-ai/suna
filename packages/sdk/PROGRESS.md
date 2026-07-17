@@ -807,3 +807,5 @@ The exact self-host fast E2E also reported **24 pass / 0 fail**.
 
 **Shippable to production: YES** — the public additions are deliberate,
 snapshot-locked, install-verified, and the self-host CLI contract is green.
+
+- 2026-07-17 — additive: `PtyMutationOptions` + `ptyMutationOverrides`, `useCreatePty`/`useUpdatePty` accept optional `onError` so hosts can keep pty errors out of global toasts (web terminal UX). Surface snapshot re-recorded (adds only).

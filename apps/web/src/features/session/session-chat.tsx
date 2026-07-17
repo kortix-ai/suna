@@ -45,7 +45,9 @@ import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
   isShellActivityTool,
+  normalizeActivityToolName,
   shellActivityGroupLabel,
+  writeActivityGroupLabel,
 } from '@/features/session/session-activity-groups';
 import {
   type AttachedFile,
@@ -2020,6 +2022,10 @@ function SameToolGroup({
   const isShell = useMemo(() => {
     return isShellActivityTool(entries[0]?.part.tool);
   }, [entries]);
+  const isWrite = useMemo(
+    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
+    [entries],
+  );
 
   const headerLabel = useMemo(() => {
     if (isContext) {
@@ -2056,9 +2062,13 @@ function SameToolGroup({
       return shellActivityGroupLabel(entries.length, anyRunning);
     }
 
+    if (isWrite) {
+      return writeActivityGroupLabel(entries.length, anyRunning);
+    }
+
     const t = contextToolTrigger(entries[0].part);
     return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, isShell, entries, anyRunning]);
+  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>

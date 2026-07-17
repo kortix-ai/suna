@@ -31,6 +31,7 @@ import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbo
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
+import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import {
@@ -38,6 +39,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Globe,
   Link as LinkIcon,
   Maximize2,
   MessageSquarePlus,
@@ -50,6 +52,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { GrRefresh } from 'react-icons/gr';
 import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
+import { sandboxRecents } from './easy-panel-logic';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -99,6 +102,14 @@ export function AppPreview({
   const [history, setHistory] = useState<string[]>([url]);
   const [index, setIndex] = useState(0);
   const current = history[index] ?? url;
+  // The quick-view "Open Browser" with no running app hands over url: '' —
+  // no port to load, nothing to spin on. Land on the address bar instead.
+  const noApp = !current;
+
+  // The landing's "Recents" — the shared history BrowserPanel also shows,
+  // filtered to sandbox ports (the only URLs this address bar will open).
+  const recents = useBrowserRecentsStore((s) => s.recents);
+  const localhostRecents = useMemo(() => sandboxRecents(recents), [recents]);
   const port = useMemo(() => parseLocalhostUrl(current)?.port ?? 0, [current]);
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
@@ -142,14 +153,20 @@ export function AppPreview({
   // of silence, assume the worst and say so — a blank frame reads as "your app
   // is broken" with no explanation, which is worse than an honest error (W8).
   useEffect(() => {
-    if (!isLoading) return;
+    if (!isLoading || noApp) return;
     clearLoadTimeout();
     loadTimeout.current = setTimeout(() => {
       setIsLoading(false);
       setHasError(true);
     }, 5000);
     return clearLoadTimeout;
-  }, [isLoading, refreshKey, clearLoadTimeout]);
+  }, [isLoading, refreshKey, clearLoadTimeout, noApp]);
+
+  // Nothing to load, so land the cursor on the address bar — the fastest way
+  // in once you know the port.
+  useEffect(() => {
+    if (noApp) addressRef.current?.focus();
+  }, [noApp]);
 
   const reload = useCallback(() => {
     setIsLoading(true);
@@ -159,6 +176,9 @@ export function AppPreview({
 
   const navigateTo = useCallback(
     (next: string) => {
+      // Feed the shared recents (the same list BrowserPanel's landing shows)
+      // so the port map builds up from either surface.
+      useBrowserRecentsStore.getState().addRecent(next);
       setHistory((prev) => [...prev.slice(0, index + 1), next]);
       setIndex((i) => i + 1);
       reload();
@@ -384,7 +404,7 @@ export function AppPreview({
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        {isLoading && hasPreview && (
+        {isLoading && hasPreview && !noApp && (
           <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
             <div className="text-muted-foreground flex flex-col items-center gap-2">
               <Loading className="size-4" />
@@ -393,7 +413,7 @@ export function AppPreview({
           </div>
         )}
 
-        {hasError && (
+        {hasError && !noApp && (
           <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
             <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
               <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
@@ -419,7 +439,47 @@ export function AppPreview({
           </div>
         )}
 
-        {hasPreview ? (
+        {noApp ? (
+          /* Landing — recent ports when we have them (the same list
+             BrowserPanel's landing shows), a quiet search hint otherwise. */
+          localhostRecents.length > 0 ? (
+            <div className="h-full overflow-y-auto">
+              <div className="mx-auto w-full max-w-md px-6 py-12">
+                <section className="space-y-3">
+                  <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
+                  <ul className="space-y-1">
+                    {localhostRecents.map((recent) => (
+                      <li key={recent.url}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const parsed = parseLocalhostUrl(recent.url);
+                            if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
+                          }}
+                          className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
+                        >
+                          <span className="flex size-5 shrink-0 items-center justify-center">
+                            <Globe className="text-muted-foreground/60 size-4" />
+                          </span>
+                          <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
+                            {recentDisplayLabel(recent.url)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
+                <Globe className="size-12 opacity-20" />
+                <p className="text-sm">Search a URL or port</p>
+              </div>
+            </div>
+          )
+        ) : hasPreview ? (
           <iframe
             key={refreshKey}
             src={previewUrl}

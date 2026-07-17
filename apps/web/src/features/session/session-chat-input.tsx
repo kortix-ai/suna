@@ -44,12 +44,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
-import { resolveComposerResetOnSend } from './composer-reset';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
+import { resolveComposerResetOnSend } from './composer-reset';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
@@ -271,7 +271,7 @@ export function AgentSelector({
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px] ">
+        <TooltipContent side="top" className="max-w-[240px]">
           {disabled ? (
             <p>
               {
@@ -1343,9 +1343,7 @@ export function SessionChatInput({
   useEffect(() => {
     if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
     setText((current) =>
-      prefillMode === 'merge'
-        ? mergeFailedSubmissionText(current, prefillText)
-        : prefillText,
+      prefillMode === 'merge' ? mergeFailedSubmissionText(current, prefillText) : prefillText,
     );
     if (prefillFiles?.length) {
       setAttachedFiles((current) =>
@@ -1824,12 +1822,8 @@ export function SessionChatInput({
       // overwriting newer work.
       if (clearOnSend) {
         setText((current) => mergeFailedSubmissionText(current, trimmed));
-        setAttachedFiles((current) =>
-          mergeFailedSubmissionFiles(current, filesToSend ?? []),
-        );
-        setMentions((current) =>
-          mergeFailedSubmissionMentions(current, mentionsToSend ?? []),
-        );
+        setAttachedFiles((current) => mergeFailedSubmissionFiles(current, filesToSend ?? []));
+        setMentions((current) => mergeFailedSubmissionMentions(current, mentionsToSend ?? []));
       }
     }
   }, [
@@ -2058,7 +2052,7 @@ export function SessionChatInput({
   }, [text, mentions]);
 
   return (
-    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-6 sm:px-4">
+    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 sm:px-4">
       {/* Todo panel removed — now inline inside the card as TodoChip */}
       <div
         ref={cardRef}
@@ -2067,7 +2061,7 @@ export function SessionChatInput({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border transition-colors',
+          'bg-card border-border relative z-10 w-full overflow-visible rounded-xl border shadow transition-colors',
           cardClassName,
           isDragOver && 'border-primary',
         )}

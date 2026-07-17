@@ -31,6 +31,9 @@ interface OutputItemBase {
   description?: string;
   /** Set only for latest-run items: first appearance vs a re-produced path (W11). */
   fresh?: 'new' | 'updated';
+  /** The agent explicitly `show`ed this — a hand-over, so it ranks as a
+   *  deliverable regardless of extension. Set by `showOutputsOf`. */
+  shown?: boolean;
 }
 
 type ArtifactOutputItem = OutputItemBase & {
@@ -300,7 +303,7 @@ interface ShowPayload {
 function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
   if (url && /^https?:\/\//i.test(url)) {
-    return appOutput(url, payload.title, payload.description, callID);
+    return { ...appOutput(url, payload.title, payload.description, callID), shown: true };
   }
 
   const path = typeof payload.path === 'string' ? payload.path.trim() : '';
@@ -325,7 +328,7 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
         ? 'presentation'
         : 'file';
 
-  return { callID, name, title, description, path, kind };
+  return { callID, name, title, description, path, kind, shown: true };
 }
 
 /**
@@ -446,39 +449,38 @@ function titleFromFetchOutput(part: ToolPart): string | undefined {
 }
 
 /**
- * The one real-world page a `web`-family call is "about", if any — the
- * identity `deriveContext` dedups on and the truthful label it shows.
+ * The real-world pages a `web`-family call is "about" — the identities
+ * `deriveContext` dedups on and the truthful labels it shows.
  *
- * - `web_fetch`/`scrape_webpage`-style calls target a URL directly (`input.url`).
- * - `web_search`-style calls have no URL of their own, but their OUTPUT is a
- *   search-results payload (see `parseWebSearchOutput`) — its first result is
- *   the page the search actually surfaced. Using it (rather than the raw
- *   query text) is what lets a search-then-fetch of the same page collapse
- *   to one entry: if the agent later fetches that exact URL, both calls
- *   resolve to the same normalized key.
- * - A search with no parseable result (or a call with no `url` at all) falls
- *   back to the query text, its own distinct entry — there is nothing more
- *   concrete to show, but it is still a fallback, never a bare identifier.
+ * - `web_fetch`/`scrape_webpage`-style calls target one URL (`input.url`).
+ * - `web_search`-style calls have no URL of their own; their OUTPUT is the
+ *   search-results payload, and EVERY parsed result is a page the search
+ *   surfaced — returning only the first is how "searched 10 sources" used to
+ *   collapse to one context entry. A search whose exact result the agent
+ *   later fetches still dedups: both resolve to the same normalized key.
+ * - A search with no parseable result falls back to its query text.
  */
-function webSourceOf(part: ToolPart): { url: string; label: string } | null {
+function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
   const t = normalizeName(part.tool);
   const input = (part.state?.input ?? {}) as Record<string, unknown>;
 
   if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
-    const firstResult = parseWebSearchOutput(rawOutputOf(part)).flatMap((r) => r.sources)[0];
-    if (firstResult?.url) {
-      return { url: firstResult.url, label: firstResult.title || wsDomain(firstResult.url) };
+    const results = parseWebSearchOutput(rawOutputOf(part))
+      .flatMap((r) => r.sources)
+      .filter((r) => !!r.url);
+    if (results.length > 0) {
+      return results.map((r) => ({ url: r.url, label: r.title || wsDomain(r.url) }));
     }
     const query = typeof input.query === 'string' ? input.query : '';
-    return query ? { url: '', label: query } : null;
+    return query ? [{ url: '', label: query }] : [];
   }
 
   // web_fetch / webfetch / scrape_webpage / scrapewebpage — identified by
   // the page it targeted. The label is the real page title when the fetch's
   // own output is parseable HTML; otherwise the domain — never the raw URL.
   const url = typeof input.url === 'string' ? input.url : '';
-  if (!url) return null;
-  return { url, label: titleFromFetchOutput(part) || wsDomain(url) };
+  if (!url) return [];
+  return [{ url, label: titleFromFetchOutput(part) || wsDomain(url) }];
 }
 
 export function deriveContext(parts: ToolPart[]): {
@@ -521,20 +523,20 @@ export function deriveContext(parts: ToolPart[]): {
     if (family === 'edit' || family === 'create') continue;
 
     if (family === 'web') {
-      const source = webSourceOf(part);
-      if (!source) continue;
-      // Dedup by the normalized URL when one is known (a search that
-      // surfaced the exact page a later fetch visited collapses here);
-      // otherwise fall back to the label itself (a bare query has no URL).
-      const key = source.url ? normalizeUrl(source.url) : `q:${source.label}`;
-      if (seenWeb.has(key)) continue;
-      seenWeb.add(key);
-      web.push({
-        callID: part.callID,
-        label: source.label,
-        kind: 'web',
-        url: source.url || undefined,
-      });
+      for (const source of webSourcesOf(part)) {
+        // Dedup by the normalized URL when one is known (a search that
+        // surfaced the exact page a later fetch visited collapses here);
+        // otherwise fall back to the label itself (a bare query has no URL).
+        const key = source.url ? normalizeUrl(source.url) : `q:${source.label}`;
+        if (seenWeb.has(key)) continue;
+        seenWeb.add(key);
+        web.push({
+          callID: part.callID,
+          label: source.label,
+          kind: 'web',
+          url: source.url || undefined,
+        });
+      }
       continue;
     }
 

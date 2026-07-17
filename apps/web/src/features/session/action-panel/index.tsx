@@ -16,7 +16,7 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { type PanelMode, useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { MessageWithParts } from '@/ui';
 import { useEffect } from 'react';
-import { AdvancedPanel } from './advanced/advanced-panel';
+// import { AdvancedPanel } from './advanced/advanced-panel'; // ADVANCED PANEL TEMPORARILY DISABLED
 import { EasyPanel } from './easy/easy-panel';
 
 /**
@@ -77,9 +77,15 @@ export function ActionPanel({
     useKortixComputerStore.getState().consumeQuickView(sessionId);
   }, [mode, pendingQuickView, sessionId]);
 
-  return mode === 'advanced' ? (
-    <AdvancedPanel sessionId={sessionId} messages={messages} />
-  ) : (
+  // ADVANCED PANEL TEMPORARILY DISABLED — Easy is the one panel presentation
+  // (Easy Panel v2 spec, 2026-07-17). Everything advanced-mode is kept intact
+  // (advanced/advanced-panel.tsx, the panelMode preference, the discard
+  // effects above) so uncommenting this branch restores it wholesale.
+  //
+  // return mode === 'advanced' ? (
+  //   <AdvancedPanel sessionId={sessionId} messages={messages} />
+  // ) : (
+  return (
     <EasyPanel
       sessionId={sessionId}
       messages={messages}

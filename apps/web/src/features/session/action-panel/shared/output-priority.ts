@@ -49,7 +49,10 @@ function extensionOf(name: string): string {
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-export function outputRank(output: Pick<OutputItem, 'name' | 'kind'>): number {
+export function outputRank(output: Pick<OutputItem, 'name' | 'kind' | 'shown'>): number {
+  // A hand-over IS the deliverable — the agent said "look at this".
+  if (output.shown) return 0;
+
   const ext = extensionOf(output.name);
 
   const byExt = RANK_BY_EXT[ext];
@@ -61,6 +64,14 @@ export function outputRank(output: Pick<OutputItem, 'name' | 'kind'>): number {
   if (output.kind === 'presentation') return RANK_BY_EXT.pptx;
 
   return RANK_OTHER;
+}
+
+/** Scaffolding: the making-of, not the thing — ranks in the last bucket and
+ *  folds behind "N more files" whenever a real deliverable exists. */
+export function isScaffoldingOutput(
+  output: Pick<OutputItem, 'name' | 'kind' | 'shown'>,
+): boolean {
+  return outputRank(output) === RANK_OTHER;
 }
 
 /** The kind a person recognizes — the row's right-hand whisper. Never an

@@ -139,7 +139,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   const suppressReportsUntilRef = useRef(0);
 
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
-  const updatePty = useUpdatePty();
+  const updatePty = useUpdatePty({ onError: () => {} });
 
   const updateStatus = useCallback((s: ConnectionStatus) => {
     setStatus(s);

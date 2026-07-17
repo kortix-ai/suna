@@ -6,6 +6,7 @@ import {
   isShellActivityTool,
   normalizeActivityToolName,
   shellActivityGroupLabel,
+  writeActivityGroupLabel,
 } from './session-activity-groups';
 
 describe('session activity groups', () => {
@@ -28,8 +29,12 @@ describe('session activity groups', () => {
     expect(shellActivityGroupLabel(3, true)).toBe('Running 3 commands');
   });
 
-  test('never groups write or show tools', () => {
-    expect(isNoGroupActivityTool('write')).toBe(true);
+  test('write is groupable — N JSON writes must fold into one step, not six rows', () => {
+    expect(isNoGroupActivityTool('write')).toBe(false);
+    expect(isNoGroupActivityTool('oc-write')).toBe(false);
+  });
+
+  test('never groups show tools — a rendered deliverable must never hide in a fold', () => {
     expect(isNoGroupActivityTool('show')).toBe(true);
     expect(isNoGroupActivityTool('show-user')).toBe(true);
     expect(isNoGroupActivityTool('oc-show')).toBe(true);
@@ -37,6 +42,12 @@ describe('session activity groups', () => {
     expect(isNoGroupActivityTool('bash')).toBe(false);
     expect(isNoGroupActivityTool('web-search')).toBe(false);
     expect(isNoGroupActivityTool(undefined)).toBe(false);
+  });
+
+  test('writeActivityGroupLabel formats completed and running groups', () => {
+    expect(writeActivityGroupLabel(6, false)).toBe('Wrote 6 files');
+    expect(writeActivityGroupLabel(1, false)).toBe('Wrote 1 file');
+    expect(writeActivityGroupLabel(3, true)).toBe('Writing 3 files');
   });
 
   test('treats blank text and snapshot/patch bookkeeping as invisible', () => {
