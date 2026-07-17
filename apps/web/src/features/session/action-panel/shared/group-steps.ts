@@ -1,11 +1,11 @@
 /**
  * Collapse an ordered ToolPart[] into the story Easy mode tells.
  *
- * Consecutive calls in the same family become one step ("Read 6 files"), which
- * is what turns a 60-call run into an ~8-line narrative. Three tools are exempt:
- * write / show / show_user are distinct artifacts the user has to actually see,
- * so folding them would hide output. That rule already exists in
- * `session-activity-groups.ts` — we reuse it rather than restate it.
+ * Consecutive calls in the same family become one step ("Read 6 files", "Wrote 6 files"),
+ * which is what turns a 60-call run into an ~8-line narrative. Two tools are exempt:
+ * show / show_user are distinct artifacts the user has to actually see, so folding them
+ * would hide output. That rule already exists in `session-activity-groups.ts` — we reuse
+ * it rather than restate it.
  */
 
 import type { ToolPart } from '@/ui';
@@ -79,7 +79,7 @@ export function groupSteps(parts: ToolPart[]): Step[] {
     const f = familyForTool(part.tool);
     if (f === 'hidden') continue; // dropped, and must not split a run
 
-    // write / show / show_user each stand alone.
+    // show / show_user each stand alone.
     if (isNoGroupActivityTool(part.tool)) {
       flush();
       steps.push(finalize(f, [part]));

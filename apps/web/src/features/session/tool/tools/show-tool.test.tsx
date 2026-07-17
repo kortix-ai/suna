@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -10,6 +10,22 @@ import {
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ShowTool } from './show-tool';
+
+// Task 6: `isShowContentUnavailable`'s true verdict is driven by `contentStatus`
+// (set via a `useEffect` inside `ShowContentRenderer`) and `preview.hasError`
+// (set via a `useEffect`/timeout/iframe `onError` inside `useServicePreview`) —
+// both only flip after mount. `renderToStaticMarkup` is a synchronous,
+// effect-free render (see the header comment below), so neither state is
+// reachable through the real component tree in this harness. Mocking the
+// whole module — rather than importing the real export and wrapping it —
+// mirrors `mode-gate.test.tsx`'s `useUserPreferencesStore` mock for the same
+// reason: `mock.module` replaces the module for every import in this file, so
+// a wrapper around the real export would recurse into the mock itself.
+let forceShowContentUnavailable = false;
+
+mock.module('@/features/session/show-availability', () => ({
+  isShowContentUnavailable: () => forceShowContentUnavailable,
+}));
 
 // ShowTool calls `useTranslations('hardcodedUi')` unconditionally (for its
 // loading-state copy), so it needs a NextIntlClientProvider ancestor even
@@ -162,5 +178,20 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
     expect(rowHtml).toContain('title="Link"');
     expect(rowHtml).not.toContain('token=secret123');
     expect(rowHtml).not.toContain('/internal/session/abc');
+  });
+
+  test('a show whose content failed to load still renders a fallback row (never disappears)', () => {
+    forceShowContentUnavailable = true;
+    try {
+      const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
+      const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+      expect(html).toContain('Preview unavailable');
+      // Pre-Task-6 behavior returned null here (empty markup) — this is the
+      // exact regression this task fixes: a completed `show` never vanishes.
+      expect(html).not.toBe('');
+    } finally {
+      forceShowContentUnavailable = false;
+    }
   });
 });

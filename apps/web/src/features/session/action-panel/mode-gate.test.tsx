@@ -80,15 +80,18 @@ describe('panel mode gate', () => {
     expect(html).toContain('Context');
   });
 
-  test("panelMode: 'advanced' renders the stepper through ActionPanel, not the Easy card home", () => {
+  test("panelMode: 'advanced' renders the Easy card home too (Advanced panel disabled)", () => {
     mockPanelMode = 'advanced';
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         {withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />)}
       </NextIntlClientProvider>,
     );
-    expect(html).not.toContain('Outputs');
-    expect(html).not.toContain('Context');
+    // ADVANCED PANEL TEMPORARILY DISABLED (Easy Panel v2): ActionPanel renders
+    // EasyPanel for every mode. Restore the old assertion when the advanced
+    // branch in index.tsx is uncommented.
+    expect(html).toContain('Outputs');
+    expect(html).toContain('Context');
   });
 
   test('EasyPanel renders the card home — Progress/Outputs/Context promises, no stepper', () => {
