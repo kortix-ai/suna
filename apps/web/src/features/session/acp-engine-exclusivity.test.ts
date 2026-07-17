@@ -32,7 +32,6 @@ const ACP_LIVE_SURFACE_FILES = [
   'acp-session-chat.tsx',
   'acp-chat-item-row.tsx',
   'acp-composer-adapters.ts',
-  'acp-config-controls.tsx',
   'acp-request-cards.tsx',
   'acp-session-permission-prompt.tsx',
   'acp-tool-call-card.tsx',
