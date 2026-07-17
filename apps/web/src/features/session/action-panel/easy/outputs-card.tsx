@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
-import { deliverableKindLabel } from '../shared/output-priority';
+import { deliverableKindLabel, isScaffoldingOutput } from '../shared/output-priority';
 import { outputKey } from './easy-panel-logic';
 import { PanelCard } from './panel-card';
 
@@ -152,8 +152,12 @@ export function OutputRows({
   onOpenOutput: (output: OutputItem) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const hidden = Math.max(0, outputs.length - VISIBLE_LIMIT);
-  const visible = showAll ? outputs : outputs.slice(0, VISIBLE_LIMIT);
+  // Scaffolding (data/config/source) never occupies a visible row while a
+  // real deliverable exists — it lives behind the fold with the overflow.
+  const deliverables = outputs.filter((o) => !isScaffoldingOutput(o));
+  const base = deliverables.length > 0 ? deliverables : outputs;
+  const visible = showAll ? outputs : base.slice(0, VISIBLE_LIMIT);
+  const hidden = Math.max(0, outputs.length - visible.length);
 
   return (
     <>
