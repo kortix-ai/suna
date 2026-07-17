@@ -1,11 +1,11 @@
-import { describe, expect, it, afterEach } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { generateText, jsonSchema, streamText, tool } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
-import { jsonSchema, streamText, tool } from 'ai';
+import type { UpstreamDescriptor } from '../../domain';
+import { NetworkError, UpstreamHttpError, defaultIsRetryable } from '../../errors';
 import { calculateCost, extractUsageFromSseBuffer } from '../../usage';
 import { sseErrorFrame, sseHasContent } from '../../usage/completion-guard';
-import type { UpstreamDescriptor } from '../../domain';
 import { guardAgainstUnhandledResultRejections, mapToolCalls, toTransportError } from './index';
-import { NetworkError, UpstreamHttpError, defaultIsRetryable } from '../../errors';
 import {
   aiSdkFamilyFor,
   clampMaxOutputTokensForBedrock,
@@ -78,9 +78,7 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     const f = frames(sse);
     // First delta carries the assistant role.
     expect((f[0] as any).choices[0].delta.role).toBe('assistant');
-    const text = f
-      .map((c: any) => c.choices?.[0]?.delta?.content ?? '')
-      .join('');
+    const text = f.map((c: any) => c.choices?.[0]?.delta?.content ?? '').join('');
     expect(text).toBe('Hello world');
     // Every chunk is a chat.completion.chunk on the right model.
     expect(f.every((c: any) => c.object === 'chat.completion.chunk' || c.usage)).toBe(true);
@@ -100,7 +98,12 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
           { type: 'tool-input-start', id: 'call_1', toolName: 'get_weather' },
           { type: 'tool-input-delta', id: 'call_1', delta: '{"city":' },
           { type: 'tool-input-delta', id: 'call_1', delta: '"Paris"}' },
-          { type: 'tool-call', toolCallId: 'call_1', toolName: 'get_weather', input: { city: 'Paris' } },
+          {
+            type: 'tool-call',
+            toolCallId: 'call_1',
+            toolName: 'get_weather',
+            input: { city: 'Paris' },
+          },
           { type: 'finish', finishReason: 'tool-calls', totalUsage: usage() },
         ),
         CTX,
@@ -108,8 +111,7 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     );
     expect(sseHasContent(sse)).toBe(true);
     const f = frames(sse);
-    const toolDeltas = f
-      .flatMap((c: any) => c.choices?.[0]?.delta?.tool_calls ?? []);
+    const toolDeltas = f.flatMap((c: any) => c.choices?.[0]?.delta?.tool_calls ?? []);
     // One opening delta (index 0, id, name) + two argument deltas; the terminal
     // `tool-call` for the same id is NOT re-emitted (already streamed).
     expect(toolDeltas[0]).toMatchObject({
@@ -145,7 +147,10 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
   it('surfaces an upstream error as an OpenAI error frame the probe detects', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(
-        parts({ type: 'error', error: Object.assign(new Error('overloaded'), { statusCode: 529 }) }),
+        parts({
+          type: 'error',
+          error: Object.assign(new Error('overloaded'), { statusCode: 529 }),
+        }),
         CTX,
       ),
     );
@@ -185,7 +190,16 @@ describe('ai-sdk billing parity vs native openai-compat', () => {
       openAiSseFromFullStream(
         parts(
           { type: 'text-delta', id: '1', text: 'hi' },
-          { type: 'finish', finishReason: 'stop', totalUsage: usage({ inputTokens: 1000, outputTokens: 400, totalTokens: 1400, inputTokenDetails: { cacheReadTokens: 250 } }) },
+          {
+            type: 'finish',
+            finishReason: 'stop',
+            totalUsage: usage({
+              inputTokens: 1000,
+              outputTokens: 400,
+              totalTokens: 1400,
+              inputTokenDetails: { cacheReadTokens: 250 },
+            }),
+          },
         ),
         CTX,
       ),
@@ -209,7 +223,13 @@ describe('ai-sdk billing parity vs native openai-compat', () => {
       cachedTokens: u.cachedTokens,
     });
     const aiCost = calculateCost('gpt', counts(aiUsage), 1.1, aiUsage!.upstreamCostHint, pricing);
-    const nativeCost = calculateCost('gpt', counts(nativeUsage), 1.1, nativeUsage!.upstreamCostHint, pricing);
+    const nativeCost = calculateCost(
+      'gpt',
+      counts(nativeUsage),
+      1.1,
+      nativeUsage!.upstreamCostHint,
+      pricing,
+    );
     expect(aiCost.upstreamCost).toBe(nativeCost.upstreamCost);
     expect(aiCost.finalCost).toBe(nativeCost.finalCost);
     expect(aiCost.upstreamCost).toBeGreaterThan(0);
@@ -219,7 +239,13 @@ describe('ai-sdk billing parity vs native openai-compat', () => {
 describe('ai-sdk request conversion', () => {
   it('resolves the provider family from npm then kind', () => {
     const d = (over: Partial<UpstreamDescriptor>): UpstreamDescriptor => ({
-      provider: 'p', kind: 'openai-compat', baseUrl: '', apiKey: '', billingMode: 'none', markup: 0, ...over,
+      provider: 'p',
+      kind: 'openai-compat',
+      baseUrl: '',
+      apiKey: '',
+      billingMode: 'none',
+      markup: 0,
+      ...over,
     });
     expect(aiSdkFamilyFor(d({ npm: '@ai-sdk/openai' }))).toBe('openai');
     expect(aiSdkFamilyFor(d({ npm: '@ai-sdk/anthropic' }))).toBe('anthropic');
@@ -235,7 +261,11 @@ describe('ai-sdk request conversion', () => {
     const { system, messages } = toModelMessages([
       { role: 'system', content: 'be brief' },
       { role: 'user', content: 'weather?' },
-      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', function: { name: 'wx', arguments: '{"city":"Paris"}' } }] },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'c1', function: { name: 'wx', arguments: '{"city":"Paris"}' } }],
+      },
       { role: 'tool', tool_call_id: 'c1', name: 'wx', content: 'sunny' },
     ]);
     expect(system).toBe('be brief');
@@ -246,13 +276,21 @@ describe('ai-sdk request conversion', () => {
     });
     expect(messages[2]).toMatchObject({
       role: 'tool',
-      content: [{ type: 'tool-result', toolCallId: 'c1', output: { type: 'text', value: 'sunny' } }],
+      content: [
+        { type: 'tool-result', toolCallId: 'c1', output: { type: 'text', value: 'sunny' } },
+      ],
     });
   });
 
   it('translates image_url user parts', () => {
     const { messages } = toModelMessages([
-      { role: 'user', content: [{ type: 'text', text: 'what is this' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+        ],
+      },
     ]);
     expect(messages[0]).toMatchObject({
       role: 'user',
@@ -264,12 +302,23 @@ describe('ai-sdk request conversion', () => {
   });
 
   it('defaults maxOutputTokens for anthropic/bedrock, maps reasoning_effort + tool_choice', () => {
-    const anthropic = buildAiSdkArgs({ messages: [], reasoning_effort: 'high', tools: [{ function: { name: 't', parameters: {} } }], tool_choice: 'required' }, 'anthropic');
+    const anthropic = buildAiSdkArgs(
+      {
+        messages: [],
+        reasoning_effort: 'high',
+        tools: [{ function: { name: 't', parameters: {} } }],
+        tool_choice: 'required',
+      },
+      'anthropic',
+    );
     expect(anthropic.maxOutputTokens).toBe(4096);
     expect(anthropic.toolChoice).toBe('required');
     expect(anthropic.tools).toBeTruthy();
 
-    const openai = buildAiSdkArgs({ messages: [], reasoning_effort: 'high', max_tokens: 2000 }, 'openai');
+    const openai = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'high', max_tokens: 2000 },
+      'openai',
+    );
     expect(openai.maxOutputTokens).toBe(2000);
     expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
   });
@@ -280,7 +329,8 @@ describe('ai-sdk end-to-end via streamText + mock model', () => {
     const mock = new MockLanguageModelV4({
       doStream: async () => ({
         stream: simulateReadableStream({
-          chunks: [ /* LanguageModelV4StreamPart[]; cast to skip union narrowing */
+          chunks: [
+            /* LanguageModelV4StreamPart[]; cast to skip union narrowing */
             { type: 'stream-start', warnings: [] },
             { type: 'text-start', id: '0' },
             { type: 'text-delta', id: '0', delta: 'Hi ' },
@@ -302,10 +352,14 @@ describe('ai-sdk end-to-end via streamText + mock model', () => {
     });
 
     const result = streamText({ model: mock, prompt: 'hello', maxRetries: 0 });
-    const sse = await readAll(openAiSseFromFullStream(result.fullStream, { model: 'mock/x', provider: 'mock' }));
+    const sse = await readAll(
+      openAiSseFromFullStream(result.fullStream, { model: 'mock/x', provider: 'mock' }),
+    );
 
     expect(sseHasContent(sse)).toBe(true);
-    const text = frames(sse).map((c: any) => c.choices?.[0]?.delta?.content ?? '').join('');
+    const text = frames(sse)
+      .map((c: any) => c.choices?.[0]?.delta?.content ?? '')
+      .join('');
     expect(text).toBe('Hi there');
     const u = extractUsageFromSseBuffer(sse);
     expect(u!.promptTokens).toBe(12);
@@ -391,7 +445,9 @@ describe('guardAgainstUnhandledResultRejections — defect 1 (streaming crash sa
             controller.enqueue({ type: 'stream-start', warnings: [] });
             controller.enqueue({ type: 'text-start', id: '0' });
             controller.enqueue({ type: 'text-delta', id: '0', delta: 'partial' });
-            controller.error(Object.assign(new Error('upstream socket reset'), { statusCode: undefined }));
+            controller.error(
+              Object.assign(new Error('upstream socket reset'), { statusCode: undefined }),
+            );
           },
         }),
       }),
@@ -426,7 +482,9 @@ describe('guardAgainstUnhandledResultRejections — defect 1 (streaming crash sa
 // completes a single round trip.
 describe('clampMaxOutputTokensForBedrock — defect 2 (Nova max-tokens ceiling)', () => {
   it('clamps an oversized request for a Nova model on the bedrock family', () => {
-    expect(clampMaxOutputTokensForBedrock(32_000, 'bedrock', 'us.amazon.nova-micro-v1:0')).toBe(10_000);
+    expect(clampMaxOutputTokensForBedrock(32_000, 'bedrock', 'us.amazon.nova-micro-v1:0')).toBe(
+      10_000,
+    );
     expect(clampMaxOutputTokensForBedrock(64_000, 'bedrock', 'amazon.nova-lite-v1:0')).toBe(10_000);
   });
 
@@ -445,7 +503,9 @@ describe('clampMaxOutputTokensForBedrock — defect 2 (Nova max-tokens ceiling)'
   });
 
   it('passes through undefined unchanged', () => {
-    expect(clampMaxOutputTokensForBedrock(undefined, 'bedrock', 'us.amazon.nova-micro-v1:0')).toBeUndefined();
+    expect(
+      clampMaxOutputTokensForBedrock(undefined, 'bedrock', 'us.amazon.nova-micro-v1:0'),
+    ).toBeUndefined();
   });
 });
 
@@ -490,7 +550,12 @@ describe('cost-hint threading — defect 3 (OpenRouter usage.cost parity)', () =
     expect(extracted).not.toBeNull();
     expect(extracted!.upstreamCostHint).toBe(0.00042);
 
-    const cost = calculateCost('some/no-catalog-model', extracted!, 1.1, extracted!.upstreamCostHint);
+    const cost = calculateCost(
+      'some/no-catalog-model',
+      extracted!,
+      1.1,
+      extracted!.upstreamCostHint,
+    );
     expect(cost.upstreamCost).toBe(0.00042);
     expect(cost.finalCost).toBeGreaterThan(0);
   });
@@ -504,7 +569,9 @@ describe('cost-hint threading — defect 3 (OpenRouter usage.cost parity)', () =
 
     const streamExtractor = extractor.createStreamExtractor();
     streamExtractor.processChunk({ choices: [{ delta: { content: 'hi' } }] });
-    streamExtractor.processChunk({ usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0011 } });
+    streamExtractor.processChunk({
+      usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0011 },
+    });
     expect(streamExtractor.buildMetadata()).toEqual({ openrouterCost: { cost: 0.0011 } });
   });
 });
@@ -602,7 +669,10 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     });
 
     it('keeps using .chat() for a plain non-reasoning-blocked openai request (no tools)', () => {
-      const model = resolveAiModel(genuineOpenAiReasoning, { messages: [], reasoning_effort: 'medium' });
+      const model = resolveAiModel(genuineOpenAiReasoning, {
+        messages: [],
+        reasoning_effort: 'medium',
+      });
       expect(providerOf(model)).toBe('openai.chat');
     });
 
@@ -612,7 +682,9 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
 
     it('always builds a .responses() model for Codex, regardless of what the body says', () => {
       expect(providerOf(resolveAiModel(codex, { messages: [] }))).toBe('openai.responses');
-      expect(providerOf(resolveAiModel(codex, { messages: [], stream: false }))).toBe('openai.responses');
+      expect(providerOf(resolveAiModel(codex, { messages: [], stream: false }))).toBe(
+        'openai.responses',
+      );
     });
   });
 
@@ -623,14 +695,14 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     });
 
     it("applies defaultReasoningEffort (Codex's 'low') only when the body carries none of its own", () => {
-      const defaulted = buildAiSdkArgs({ messages: [] }, 'openai', { defaultReasoningEffort: 'low' });
+      const defaulted = buildAiSdkArgs({ messages: [] }, 'openai', {
+        defaultReasoningEffort: 'low',
+      });
       expect(defaulted.providerOptions).toEqual({ openai: { reasoningEffort: 'low' } });
 
-      const explicitWins = buildAiSdkArgs(
-        { messages: [], reasoning_effort: 'high' },
-        'openai',
-        { defaultReasoningEffort: 'low' },
-      );
+      const explicitWins = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+        defaultReasoningEffort: 'low',
+      });
       expect(explicitWins.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
 
       const noDefaultNoEffort = buildAiSdkArgs({ messages: [] }, 'openai');
@@ -698,14 +770,15 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       });
       guardAgainstUnhandledResultRejections(result);
 
-      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] = await Promise.all([
-        result.text,
-        result.reasoningText,
-        result.toolCalls,
-        result.finishReason,
-        result.usage,
-        result.providerMetadata,
-      ]);
+      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] =
+        await Promise.all([
+          result.text,
+          result.reasoningText,
+          result.toolCalls,
+          result.finishReason,
+          result.usage,
+          result.providerMetadata,
+        ]);
       const json = openAiJsonFromResult(
         {
           text,
@@ -753,16 +826,24 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
 
       const result = streamText({ model: mock, prompt: 'hi', maxRetries: 0 });
       guardAgainstUnhandledResultRejections(result);
-      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] = await Promise.all([
-        result.text,
-        result.reasoningText,
-        result.toolCalls,
-        result.finishReason,
-        result.usage,
-        result.providerMetadata,
-      ]);
+      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] =
+        await Promise.all([
+          result.text,
+          result.reasoningText,
+          result.toolCalls,
+          result.finishReason,
+          result.usage,
+          result.providerMetadata,
+        ]);
       const json = openAiJsonFromResult(
-        { text, reasoningText, toolCalls: mapToolCalls(toolCalls as any), finishReason, usage, providerMetadata },
+        {
+          text,
+          reasoningText,
+          toolCalls: mapToolCalls(toolCalls as any),
+          finishReason,
+          usage,
+          providerMetadata,
+        },
         { model: 'codex/gpt-5-codex', provider: 'openai-codex' },
       ) as any;
 
@@ -904,5 +985,313 @@ describe('ai-sdk streaming error frame — defect 4 (401 surfaces cleanly, no ha
     // handling, verified above. This still confirms doStream itself is
     // invoked exactly once, not retried internally.
     expect(calls).toBe(1);
+  });
+});
+
+// Piece B (2026-07-17): AI-SDK ⇄ native request PARITY AUDIT + fix.
+//
+// CONFIRMED DEFECT: buildAiSdkArgs never read `body.response_format` at all
+// — JSON mode / structured output was silently dropped on the ai-sdk
+// engine (plain prose back instead of JSON) even though native
+// (openai-compat) forwards the whole body, response_format included,
+// verbatim to the upstream. Fixed in request.ts by
+// responseFormatFromBody + buildResponseFormatOutput, threaded through as
+// streamText/generateText's `output` param (the ONLY hook that drives
+// LanguageModelV4CallOptions.responseFormat — see request.ts's big comment
+// on buildResponseFormatOutput, which cites the exact ai/dist/index.js call
+// sites where `output.responseFormat` is awaited).
+describe('Piece B — response_format parity (CONFIRMED DEFECT fix)', () => {
+  it('maps response_format:{type:"json_object"} to a plain JSON output (no schema) for the openai family', async () => {
+    const args = buildAiSdkArgs(
+      { messages: [], response_format: { type: 'json_object' } },
+      'openai',
+    );
+    expect(args.output).toBeDefined();
+    await expect(args.output!.responseFormat).resolves.toEqual({ type: 'json' });
+  });
+
+  it('maps response_format:{type:"json_schema",...} to a JSON output carrying the schema/name/description verbatim', async () => {
+    const schema = { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] };
+    const args = buildAiSdkArgs(
+      {
+        messages: [],
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'thing', description: 'd', schema },
+        },
+      },
+      'openai',
+    );
+    await expect(args.output!.responseFormat).resolves.toEqual({
+      type: 'json',
+      schema,
+      name: 'thing',
+      description: 'd',
+    });
+  });
+
+  it('maps response_format for the openai-compatible family too (OpenRouter etc.) — native forwards it there identically', async () => {
+    const args = buildAiSdkArgs(
+      { messages: [], response_format: { type: 'json_object' } },
+      'openai-compatible',
+      { providerName: 'openrouter' },
+    );
+    await expect(args.output!.responseFormat).resolves.toEqual({ type: 'json' });
+  });
+
+  it('honors an explicit strict:true from the client via providerOptions.openai.strictJsonSchema', () => {
+    const args = buildAiSdkArgs(
+      {
+        messages: [],
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'x', schema: {}, strict: true },
+        },
+      },
+      'openai',
+    );
+    expect(args.providerOptions).toMatchObject({ openai: { strictJsonSchema: true } });
+  });
+
+  // @ai-sdk/openai and @ai-sdk/openai-compatible both default
+  // strictJsonSchema to `true` (OpenAI's Structured Outputs mode) when the
+  // key is absent from providerOptions — but native forwards the client's
+  // body verbatim, so an omitted `strict` field reaches OpenAI as OpenAI's
+  // OWN default for chat/completions json_schema mode (`false`), not the AI
+  // SDK provider package's default. Only an EXPLICIT `strict:true` may ever
+  // escalate this — see the previous test.
+  it("defaults strictJsonSchema to false when the client omits strict (native's implicit behavior), NOT the AI-SDK package's own default of true", () => {
+    const args = buildAiSdkArgs(
+      {
+        messages: [],
+        response_format: { type: 'json_schema', json_schema: { name: 'x', schema: {} } },
+      },
+      'openai',
+    );
+    expect(args.providerOptions).toMatchObject({ openai: { strictJsonSchema: false } });
+  });
+
+  it('drops response_format for anthropic/bedrock — matches native, whose anthropic/request.ts (shared by bedrock) never reads body.response_format either', () => {
+    const anthropic = buildAiSdkArgs(
+      { messages: [], response_format: { type: 'json_object' } },
+      'anthropic',
+    );
+    expect(anthropic.output).toBeUndefined();
+    const bedrock = buildAiSdkArgs(
+      { messages: [], response_format: { type: 'json_object' } },
+      'bedrock',
+    );
+    expect(bedrock.output).toBeUndefined();
+  });
+
+  it('ignores an unrecognized/empty response_format (no output built, no throw)', () => {
+    expect(buildAiSdkArgs({ messages: [], response_format: {} }, 'openai').output).toBeUndefined();
+    expect(buildAiSdkArgs({ messages: [] }, 'openai').output).toBeUndefined();
+  });
+});
+
+// Live-observed regression this whole piece exists to fix: a
+// response_format:{type:'json_object'} request got plain prose back on the
+// ai-sdk engine. These two tests drive the EXACT sequence
+// callUpstreamViaAiSdk runs (buildAiSdkArgs → generateText with the built
+// `output`) against a mock model that records what LanguageModelV4CallOptions
+// it actually received — proving the fix reaches the wire-level call, not
+// just buildAiSdkArgs's own return value.
+describe('response_format end-to-end — the built model call actually receives the structured-output arg', () => {
+  const usage = {
+    inputTokens: { total: 5, noCache: 5, cacheRead: 0, cacheWrite: 0 },
+    outputTokens: { total: 5, text: 5, reasoning: 0 },
+    totalTokens: 10,
+  };
+
+  it('a json_object request reaches doGenerate as responseFormat:{type:"json"} (no schema) and the model text is valid JSON', async () => {
+    let seenResponseFormat: unknown;
+    const mock = new MockLanguageModelV4({
+      doGenerate: async (options) => {
+        seenResponseFormat = options.responseFormat;
+        return {
+          content: [{ type: 'text', text: '{"ok":true}' }],
+          finishReason: { unified: 'stop', raw: undefined },
+          usage,
+          warnings: [],
+        };
+      },
+    });
+
+    const args = buildAiSdkArgs(
+      {
+        messages: [{ role: 'user', content: 'give me json' }],
+        response_format: { type: 'json_object' },
+      },
+      'openai',
+    );
+    const result = await generateText({
+      model: mock,
+      system: args.system,
+      messages: args.messages,
+      output: args.output,
+      maxRetries: 0,
+    });
+
+    expect(seenResponseFormat).toEqual({ type: 'json' });
+    expect(result.text).toBe('{"ok":true}');
+    expect(() => JSON.parse(result.text)).not.toThrow();
+  });
+
+  it('a json_schema request reaches doGenerate carrying the schema verbatim', async () => {
+    let seenResponseFormat: unknown;
+    const schema = { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] };
+    const mock = new MockLanguageModelV4({
+      doGenerate: async (options) => {
+        seenResponseFormat = options.responseFormat;
+        return {
+          content: [{ type: 'text', text: '{"name":"kortix"}' }],
+          finishReason: { unified: 'stop', raw: undefined },
+          usage,
+          warnings: [],
+        };
+      },
+    });
+
+    const args = buildAiSdkArgs(
+      {
+        messages: [{ role: 'user', content: 'x' }],
+        response_format: { type: 'json_schema', json_schema: { name: 'person', schema } },
+      },
+      'openai',
+    );
+    await generateText({
+      model: mock,
+      system: args.system,
+      messages: args.messages,
+      output: args.output,
+      providerOptions: args.providerOptions,
+      maxRetries: 0,
+    });
+
+    expect(seenResponseFormat).toEqual({
+      type: 'json',
+      schema,
+      name: 'person',
+      description: undefined,
+    });
+  });
+});
+
+describe('buildAiSdkArgs — sampling/penalty parity (seed, stop, frequency/presence penalty)', () => {
+  it('maps seed, frequency_penalty, presence_penalty to CallSettings top-level fields', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], seed: 42, frequency_penalty: 0.4, presence_penalty: -0.2 },
+      'openai',
+    );
+    expect(args.seed).toBe(42);
+    expect(args.frequencyPenalty).toBe(0.4);
+    expect(args.presencePenalty).toBe(-0.2);
+  });
+
+  it('maps a single stop string and an array of stop sequences the same way native does', () => {
+    expect(buildAiSdkArgs({ messages: [], stop: 'STOP' }, 'openai').stopSequences).toEqual([
+      'STOP',
+    ]);
+    expect(buildAiSdkArgs({ messages: [], stop: ['A', 'B'] }, 'openai').stopSequences).toEqual([
+      'A',
+      'B',
+    ]);
+  });
+
+  it('leaves seed/penalties undefined when absent from the body (never invents a value)', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'openai');
+    expect(args.seed).toBeUndefined();
+    expect(args.frequencyPenalty).toBeUndefined();
+    expect(args.presencePenalty).toBeUndefined();
+  });
+});
+
+describe('buildAiSdkArgs — extra OpenAI-only fields via providerOptions (logit_bias, logprobs, parallel_tool_calls, user, service_tier, metadata, prediction)', () => {
+  const body = {
+    messages: [],
+    logit_bias: { '123': -100 },
+    logprobs: true,
+    top_logprobs: 3,
+    parallel_tool_calls: false,
+    user: 'user-1',
+    service_tier: 'flex',
+    metadata: { k: 'v' },
+    prediction: { type: 'content', content: 'hi' },
+  };
+
+  it("maps to camelCase keys under providerOptions.openai for the openai family (matches @ai-sdk/openai's own schema)", () => {
+    const args = buildAiSdkArgs(body, 'openai');
+    expect(args.providerOptions).toEqual({
+      openai: {
+        logitBias: { '123': -100 },
+        // top_logprobs count wins over the bare `logprobs:true` boolean —
+        // @ai-sdk/openai encodes both OpenAI wire fields as one option.
+        logprobs: 3,
+        parallelToolCalls: false,
+        user: 'user-1',
+        serviceTier: 'flex',
+        metadata: { k: 'v' },
+        prediction: { type: 'content', content: 'hi' },
+      },
+    });
+  });
+
+  it('maps to raw wire (snake_case) keys under providerOptions[<configured provider name>] for openai-compatible, since that package spreads any key outside its own small schema verbatim onto the wire request', () => {
+    const args = buildAiSdkArgs(body, 'openai-compatible', { providerName: 'openrouter' });
+    expect(args.providerOptions).toEqual({
+      openrouter: {
+        logit_bias: { '123': -100 },
+        logprobs: true,
+        top_logprobs: 3,
+        parallel_tool_calls: false,
+        user: 'user-1',
+        service_tier: 'flex',
+        metadata: { k: 'v' },
+        prediction: { type: 'content', content: 'hi' },
+      },
+    });
+  });
+
+  it('never maps these OpenAI-only fields for anthropic/bedrock — matches native, which has no equivalent for either transport', () => {
+    expect(buildAiSdkArgs(body, 'anthropic').providerOptions).toBeUndefined();
+    expect(buildAiSdkArgs(body, 'bedrock').providerOptions).toBeUndefined();
+  });
+
+  it('omits every key that the body did not set (no false/0/empty invented values)', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'openai');
+    expect(args.providerOptions).toBeUndefined();
+  });
+});
+
+// Defect 5 (2026-07-17, found auditing this parity piece): buildAiSdkArgs
+// previously keyed reasoning_effort's providerOptions entry as
+// `providerOptions.openai` for EVERY family including 'openai-compatible' —
+// but @ai-sdk/openai-compatible's chat model never reads a bare 'openai'
+// key back out (its `providerOptionsName` getter resolves to whatever
+// `name` model.ts passed to `createOpenAICompatible`, i.e.
+// `descriptor.provider`, e.g. 'openrouter' — confirmed by reading
+// @ai-sdk/openai-compatible's chat-language-model.js getArgs, which parses
+// only `providerOptions['openai-compatible']`, `['openaiCompatible']`,
+// `[this.providerOptionsName]`, and the camelCase of the last one — never a
+// literal `'openai'`). reasoning_effort was therefore silently dropped for
+// every OpenRouter-class request that set one — undetected because the only
+// prior reasoning_effort test drove family:'openai'.
+describe("buildAiSdkArgs — defect 5 (reasoning_effort keyed under the wrong providerOptions entry for 'openai-compatible')", () => {
+  it('keys reasoningEffort under providerOptions[<configured provider name>], not the literal "openai"', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai-compatible', {
+      providerName: 'openrouter',
+    });
+    expect(args.providerOptions).toEqual({ openrouter: { reasoningEffort: 'high' } });
+  });
+
+  it('falls back to the literal "openai-compatible" key when no providerName is supplied, matching model.ts\'s own createOpenAICompatible default', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai-compatible');
+    expect(args.providerOptions).toEqual({ 'openai-compatible': { reasoningEffort: 'high' } });
+  });
+
+  it('still keys genuine openai family calls under providerOptions.openai (unchanged behavior)', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai');
+    expect(args.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
   });
 });
