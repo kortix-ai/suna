@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,7 +24,9 @@ import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/r
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
+import { useReadyChip } from '@/stores/kortix-computer-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -31,7 +34,16 @@ import {
 } from '@kortix/sdk/projects-client';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw, Square } from 'lucide-react';
+import {
+  FileDown,
+  Globe,
+  Layers,
+  MoreHorizontal,
+  PanelRight,
+  RotateCcw,
+  Square,
+  SquareTerminal,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -117,18 +129,24 @@ export function SessionSiteHeader({
   });
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
+  const readyChip = useReadyChip();
+
   return (
     <>
-      <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
+      {/* No divider line. The row itself stays transparent (the welcome
+          wallpaper reads through it), and the fade lives in the strip below:
+          it overlays the top of the message list, so content scrolling up
+          dissolves into the page instead of hitting a hard rule. Gradient has
+          to sit over the content — painting it inside the row would just fade
+          background into the identical background behind it, i.e. invisible. */}
+      <div className="after:from-background relative z-50 w-full after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:to-transparent">
         {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
             line (children h-[28px] → center y≈26, matching the traffic lights
             and the shell's Open-sidebar toggle), and indent the leading side
             past the lights + toggle. px values on purpose — the lights are
             OS-positioned; rem sizes drift with the root font. Both groups stay
             in flow so justify-between keeps the trailing cluster on the right. */}
-        <div
-          className={cn('flex items-center justify-between p-2 pb-0', sidebarHidden && 'pt-[12px]')}
-        >
+        <div className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}>
           <div
             className={cn(
               'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
@@ -171,7 +189,7 @@ export function SessionSiteHeader({
                       'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
                     )}
                   >
-                    <MoreHorizontal className="size-4" />
+                    <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
@@ -247,9 +265,41 @@ export function SessionSiteHeader({
               </DropdownMenuContent>
             </DropdownMenu>
 
+
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {/* Terminal, one tap from the header (product owner's placement —
+                it used to be a labeled row under the Easy cards). Icon-only
+                like every trailing-cluster control; the Hint carries the name. */}
+            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Terminal">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open terminal"
+                onClick={() => openSessionQuickView('terminal', 'header')}
+                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
+              >
+                <SquareTerminal className="h-4 w-4" />
+              </Button>
+            </Hint>
+
+            {/* Browser, same one-tap placement as Terminal above — opens the
+                in-panel port browser (AppPreview) on the first running app,
+                or localhost:3000 as a starting point when nothing's running
+                yet. */}
+            <Hint side="bottom" sideOffset={4} delayDuration={300} label="Browser">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open browser"
+                onClick={() => openSessionQuickView('browser', 'header')}
+                className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors"
+              >
+                <Globe className="h-4 w-4" />
+              </Button>
+            </Hint>
 
             <Hint
               side="bottom"
@@ -269,15 +319,21 @@ export function SessionSiteHeader({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={onToggleSidePanel}
-                className={cn(
-                  'h-8 w-8 cursor-pointer transition-colors',
-                  isSidePanelOpen
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
+                onClick={() => {
+                  if (!isSidePanelOpen) track('panel_opened', { source: 'toggle' });
+                  onToggleSidePanel();
+                }}
+                className={cn('text-foreground cursor-pointer transition-colors')}
               >
-                <PanelRight className="h-4 w-4" />
+                <span className="relative inline-flex">
+                  <PanelRight className="h-4 w-4" />
+                  {readyChip?.sessionId === sessionId && !isSidePanelOpen && (
+                    <span
+                      className="bg-kortix-green ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
+                      aria-hidden
+                    />
+                  )}
+                </span>
               </Button>
             </Hint>
           </div>

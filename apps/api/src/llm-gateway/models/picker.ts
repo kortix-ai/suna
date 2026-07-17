@@ -37,9 +37,15 @@ export async function listPickerModels(params: {
   const models: PickerModel[] = params.freeManagedOnly ? [] : managedPickerModels();
 
   // CONNECTED BYOK providers: a provider whose first env var is a saved
-  // project-wide secret. We match against the project-wide snapshot because that
-  // is exactly what request-time resolution (resolveCandidates → project-wide
-  // getProjectSecretValue) keys off — so the picker and servability agree.
+  // project-wide (SHARED) secret. Deliberately shared-only, not per-`params.userId`:
+  // this compact picker (Slack) is a workspace-wide surface, not a per-user
+  // session — it should offer what ANY member's session can route with, not
+  // one member's private fallback key. Request-time resolution
+  // (resolveCandidates → getResolvedProjectSecretValue) additionally falls
+  // back to the CALLING session's own private key when no shared key exists
+  // (see pickResolvedSecretRow) — a gap between "picker shows it" and "my own
+  // session can actually use it" that's a deliberate, narrower miss than the
+  // reverse (picker offering a model nobody's session can serve).
   try {
     const snapshot = await listProjectSecretsSnapshot(params.projectId);
     const connected = new Set(snapshot.names.map((n) => n.toUpperCase()));

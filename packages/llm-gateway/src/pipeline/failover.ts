@@ -4,7 +4,7 @@ import type {
   ModelFallbackCondition,
   UpstreamDescriptor,
 } from '../domain';
-import { CircuitOpenError, UpstreamHttpError } from '../errors';
+import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
@@ -77,6 +77,9 @@ export interface FailoverContext {
   trace: Partial<TraceFields>;
   capturedRequest: unknown;
   fallbackOn: ModelFallbackCondition;
+  /** Inbound client's abort signal — aborts an in-flight candidate attempt
+   *  immediately if the caller disconnects before any upstream is chosen. */
+  signal?: AbortSignal;
 }
 
 export interface RoutedUpstreamCandidate {
@@ -92,12 +95,24 @@ export interface FailoverSuccess {
   attempts: number;
 }
 
-export type FailoverResult = { kind: 'response'; response: Response } | { kind: 'success'; value: FailoverSuccess };
+export type FailoverResult =
+  | { kind: 'response'; response: Response }
+  | { kind: 'success'; value: FailoverSuccess };
 
 export async function runFailover(ctx: FailoverContext): Promise<FailoverResult> {
   const {
-    candidates, payload, config, fetchImpl, breakerFor, emit, logger,
-    requestId, trace, capturedRequest, fallbackOn,
+    candidates,
+    payload,
+    config,
+    fetchImpl,
+    breakerFor,
+    emit,
+    logger,
+    requestId,
+    trace,
+    capturedRequest,
+    fallbackOn,
+    signal,
   } = ctx;
   const tried: string[] = [];
   const modelsTried: string[] = [];
@@ -113,9 +128,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const candidate = candidates[i];
     const { descriptor, routeModel } = candidate;
     const hasFallback = i < candidates.length - 1;
-    const hasModelFallback = candidates
-      .slice(i + 1)
-      .some((next) => next.routeModel !== routeModel);
+    const hasModelFallback = candidates.slice(i + 1).some((next) => next.routeModel !== routeModel);
     tried.push(descriptor.provider);
     if (modelsTried.at(-1) !== routeModel) modelsTried.push(routeModel);
     attempts += 1;
@@ -148,6 +161,9 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         },
         binding: { provider: descriptor.provider, breaker },
         fetchImpl,
+        translationSidecar: config.translationSidecar,
+        signal,
+        requestId,
       });
       chosen = candidate;
       debug('upstream_attempt_ok', {
@@ -165,6 +181,43 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         error: errorMessage(err),
         breakerState: breaker.current,
       });
+      if (err instanceof ClientAbortError) {
+        // The caller is gone — trying the next candidate would only spend more
+        // upstream tokens/money for a response no one will ever receive. Stop
+        // the whole dispatch loop immediately instead of failing over.
+        debug('client_aborted', { provider: descriptor.provider });
+        emit({
+          ...trace,
+          resolvedModel: descriptor.resolvedModel,
+          provider: descriptor.provider,
+          billingMode: descriptor.billingMode,
+          status: 499,
+          ok: false,
+          errorCode: 'client_disconnected',
+          errorMessage: 'Client disconnected before a response was ready',
+          attempts,
+          candidatesTried: tried,
+          request: capturedRequest,
+        });
+        return {
+          kind: 'response',
+          // 499 (nginx's "client closed request") — there's no real HTTP
+          // client left to observe this status, but it keeps the trace/logs
+          // honest about why the dispatch loop stopped.
+          response: json(
+            gatewayErrorBody({
+              message: 'Client disconnected before a response was ready',
+              code: 'client_disconnected',
+              provider: descriptor.provider,
+              requestedModel: trace.requestedModel ?? '',
+              resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
+              requestId,
+              suggestion: 'No action needed — the client already disconnected.',
+            }),
+            499,
+          ),
+        };
+      }
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
         // A rate-limit / quota / billing error (429/402/403) on a candidate that
         // has a fallback behind it — e.g. a user's BYOK key out of quota, with a
@@ -181,33 +234,44 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
             fromModel: routeModel,
             status: err.status,
             reason:
-              fallbackOn === 'any-error' && hasModelFallback
-                ? 'model_policy'
-                : 'provider_limit',
+              fallbackOn === 'any-error' && hasModelFallback ? 'model_policy' : 'provider_limit',
           });
           continue;
         }
-        debug('upstream_client_error_return', { provider: descriptor.provider, status: err.status });
+        debug('upstream_client_error_return', {
+          provider: descriptor.provider,
+          status: err.status,
+        });
         const upstreamError = parseUpstreamBody(err.body);
         emit({
-          ...trace, resolvedModel: descriptor.resolvedModel, provider: descriptor.provider,
-          billingMode: descriptor.billingMode, status: err.status, ok: false,
-          errorCode: 'upstream_client_error', errorMessage: upstreamError.message, attempts, candidatesTried: tried,
+          ...trace,
+          resolvedModel: descriptor.resolvedModel,
+          provider: descriptor.provider,
+          billingMode: descriptor.billingMode,
+          status: err.status,
+          ok: false,
+          errorCode: 'upstream_client_error',
+          errorMessage: upstreamError.message,
+          attempts,
+          candidatesTried: tried,
           request: capturedRequest,
         });
         return {
           kind: 'response',
-          response: json(gatewayErrorBody({
-            message: upstreamError.message,
-            code: 'upstream_client_error',
-            upstreamCode: upstreamError.code,
-            upstreamStatus: err.status,
-            provider: descriptor.provider,
-            requestedModel: trace.requestedModel ?? '',
-            resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
-            requestId,
-            suggestion: suggestionFor(err.status),
-          }), err.status),
+          response: json(
+            gatewayErrorBody({
+              message: upstreamError.message,
+              code: 'upstream_client_error',
+              upstreamCode: upstreamError.code,
+              upstreamStatus: err.status,
+              provider: descriptor.provider,
+              requestedModel: trace.requestedModel ?? '',
+              resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
+              requestId,
+              suggestion: suggestionFor(err.status),
+            }),
+            err.status,
+          ),
         };
       }
     }
@@ -217,33 +281,51 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const open = lastError instanceof CircuitOpenError;
     const status = open ? 503 : 502;
     const errorCode = open ? 'upstream_unavailable' : 'upstream_unreachable';
-    const lastCandidate = [...candidates].reverse().find(
-      (candidate) => candidate.descriptor.provider === tried.at(-1),
-    );
+    const lastCandidate = [...candidates]
+      .reverse()
+      .find((candidate) => candidate.descriptor.provider === tried.at(-1));
     const lastDescriptor = lastCandidate?.descriptor;
-    const upstreamError = lastError instanceof UpstreamHttpError
-      ? parseUpstreamBody(lastError.body)
-      : { message: errorMessage(lastError) };
-    debug('all_upstreams_exhausted', { circuitOpen: open, status, tried, attempts, error: upstreamError.message });
+    const upstreamError =
+      lastError instanceof UpstreamHttpError
+        ? parseUpstreamBody(lastError.body)
+        : { message: errorMessage(lastError) };
+    debug('all_upstreams_exhausted', {
+      circuitOpen: open,
+      status,
+      tried,
+      attempts,
+      error: upstreamError.message,
+    });
     emit({
-      ...trace, provider: tried[tried.length - 1] ?? '', status, ok: false,
+      ...trace,
+      provider: tried[tried.length - 1] ?? '',
+      status,
+      ok: false,
       resolvedModel: lastDescriptor?.resolvedModel,
-      errorCode, errorMessage: upstreamError.message, attempts, candidatesTried: tried,
+      errorCode,
+      errorMessage: upstreamError.message,
+      attempts,
+      candidatesTried: tried,
       request: capturedRequest,
     });
     return {
       kind: 'response',
-      response: json(gatewayErrorBody({
-        message: upstreamError.message || 'All upstreams unavailable',
-        code: errorCode,
-        upstreamCode: upstreamError.code,
-        upstreamStatus: lastError instanceof UpstreamHttpError ? lastError.status : undefined,
-        provider: lastDescriptor?.provider ?? tried.at(-1) ?? '',
-        requestedModel: trace.requestedModel ?? '',
-        resolvedModel: lastDescriptor?.resolvedModel ?? trace.requestedModel ?? '',
-        requestId,
-        suggestion: suggestionFor(lastError instanceof UpstreamHttpError ? lastError.status : status),
-      }), status),
+      response: json(
+        gatewayErrorBody({
+          message: upstreamError.message || 'All upstreams unavailable',
+          code: errorCode,
+          upstreamCode: upstreamError.code,
+          upstreamStatus: lastError instanceof UpstreamHttpError ? lastError.status : undefined,
+          provider: lastDescriptor?.provider ?? tried.at(-1) ?? '',
+          requestedModel: trace.requestedModel ?? '',
+          resolvedModel: lastDescriptor?.resolvedModel ?? trace.requestedModel ?? '',
+          requestId,
+          suggestion: suggestionFor(
+            lastError instanceof UpstreamHttpError ? lastError.status : status,
+          ),
+        }),
+        status,
+      ),
     };
   }
 

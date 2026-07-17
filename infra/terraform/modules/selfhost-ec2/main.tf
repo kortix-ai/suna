@@ -59,6 +59,12 @@ data "aws_ami" "selected" {
   }
 }
 
+# Used to build the `arn:aws:automate:<region>:ec2:{recover,reboot}` alarm
+# actions (see monitoring.tf) — these EC2 "automate" ARNs are region-scoped
+# but account-agnostic, so the region is the only thing that needs resolving
+# at plan time.
+data "aws_region" "current" {}
+
 # ── AMI (Ubuntu 24.04 LTS via Canonical's public SSM parameter) ────────────
 data "aws_ssm_parameter" "ubuntu" {
   count = var.ami_id == "" ? 1 : 0
@@ -92,12 +98,15 @@ resource "aws_security_group" "this" {
   description = "kortix self-host box: 80/443 in, all out"
   vpc_id      = local.vpc_id
 
-  ingress {
-    description = "HTTP (ACME HTTP-01)"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_cidrs
+  dynamic "ingress" {
+    for_each = length(var.http_ingress_cidrs == null ? var.allowed_cidrs : var.http_ingress_cidrs) > 0 ? [1] : []
+    content {
+      description = "HTTP (ACME HTTP-01)"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = var.http_ingress_cidrs == null ? var.allowed_cidrs : var.http_ingress_cidrs
+    }
   }
 
   ingress {
@@ -128,7 +137,14 @@ resource "aws_security_group" "this" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = "${local.name}-sg"
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 }
 
 # ── IAM: SSM Session Manager only — no SSH key required to administer ─────
@@ -145,7 +161,14 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "this" {
   name               = "${local.name}-role"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = "${local.name}-role"
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "ssm" {
@@ -203,7 +226,14 @@ resource "aws_instance" "this" {
   })
   user_data_replace_on_change = false
 
-  tags = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = local.name
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 
   # The data volume is attached out-of-band (aws_volume_attachment below) and
   # deliberately NOT recreated when the instance is (delete_on_termination =

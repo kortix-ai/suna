@@ -29,6 +29,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
 } from './index';
+import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
 
 const AGENT_PORT = 8000;
@@ -299,7 +300,8 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   routeIngress(request: SandboxIngressRequest) {
-    const ptyWebsocket = request.transport === 'websocket' && request.path?.startsWith('/pty/');
+    const ptyWebsocket =
+      request.transport === 'websocket' && classifyPtyWebSocketPath(request.path) !== null;
     return {
       effectivePort: request.port === 4096 || ptyWebsocket ? AGENT_PORT : request.port,
       websocket: ptyWebsocket

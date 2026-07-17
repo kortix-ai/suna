@@ -10,6 +10,7 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { Icon } from '@/features/icon/icon';
 import { useCopy } from '@/hooks/use-copy';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
   ArrowRight,
@@ -28,13 +29,12 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { AiOutlineCheck } from 'react-icons/ai';
 import { HiArrowRight } from 'react-icons/hi';
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DOCS_URL = '/docs';
-const DEFAULT_INSTALL_HOST = 'kortix.com';
 const fav = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
 const C = {
@@ -290,8 +290,6 @@ function Step({
   flip?: boolean;
 }) {
   const { copied, copy } = useCopy();
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
 
   const badgeClass =
     'border-border bg-card text-foreground flex size-9 shrink-0 items-center justify-center rounded border font-mono text-sm font-medium ';
@@ -315,9 +313,15 @@ function Step({
             <div className="bg-card mt-5 flex items-center justify-between gap-4 rounded-sm border p-3 px-5">
               <div className="flex gap-3">
                 <span className="text-foreground font-mono text-sm">$ </span>
-                <span className="text-foreground font-mono text-sm select-all">{installCmd}</span>
+                <span className="text-foreground font-mono text-sm select-all">
+                  {KORTIX_CLI_INSTALL_COMMAND}
+                </span>
               </div>
-              <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}
+              >
                 {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
@@ -541,18 +545,11 @@ function HeroWorkspace() {
 export default function DevelopersPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { copied, copy } = useCopy();
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tHome = useCallback(
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
     [tHardcodedUi],
   );
-
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
-
-  useEffect(() => {
-    setInstallHost(window.location.host);
-  }, []);
 
   return (
     <div className="bg-background relative w-full">
@@ -585,9 +582,15 @@ export default function DevelopersPage() {
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
                 <div className="flex gap-3">
                   <span className="text-foreground font-mono text-sm">$ </span>
-                  <span className="text-foreground font-mono text-sm select-all">{installCmd}</span>
+                  <span className="text-foreground font-mono text-sm select-all">
+                    {KORTIX_CLI_INSTALL_COMMAND}
+                  </span>
                 </div>
-                <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}
+                >
                   {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
                 </Button>
               </div>

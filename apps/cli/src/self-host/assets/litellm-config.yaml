@@ -1,0 +1,61 @@
+# LiteLLM proxy config for Kortix's stateless translation sidecar.
+#
+# This is deliberately NOT a normal LiteLLM deployment: there is no database,
+# no virtual keys, no budgets, and no stored provider credentials anywhere in
+# this file. The sidecar's only job is provider param-quirk translation (e.g.
+# OpenAI's max_tokens -> max_completion_tokens) via LiteLLM's own
+# community-maintained tables — every actual credential/model decision still
+# belongs to Kortix's llm-gateway control plane (packages/llm-gateway), which
+# calls this proxy per-request with the resolved upstream's api_key/api_base
+# already attached to the request body (see
+# packages/llm-gateway/src/transports/sidecar.ts).
+#
+# Verified live against the real ghcr.io/berriai/litellm:main-stable
+# container (2026-07): BOTH of the two settings below are required together
+# for per-request api_key/api_base to be honored at all —
+#   - Without `allow_client_side_credentials: true`, the proxy 401s with
+#     "api_base is not allowed in request body" (a security hardening LiteLLM
+#     shipped after a huntr.com-reported credential-injection bounty — see
+#     general_settings in https://docs.litellm.ai/docs/proxy/config_settings).
+#   - Without a `model_list` entry the request matches, the proxy 400s with
+#     "no healthy deployments for this model" even with the above set. The
+#     wildcard entry below matches ANY model name (its own api_key/api_base
+#     are placeholders — never actually used; the real, resolved upstream
+#     credentials sent per-request always win).
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: "openai/*"
+      api_key: "unused-placeholder-always-overridden-per-request"
+      api_base: "http://127.0.0.1:1/unused-placeholder"
+
+litellm_settings:
+  # No hidden param-dropping surprises beyond what the quirk tables do on
+  # purpose; this is not a retry/fallback knob.
+  drop_params: true
+  # Belt-and-suspenders with router_settings.num_retries below — verified live
+  # that setting both (not just one) is what actually gets a synthetic
+  # always-500 upstream hit exactly once, with no retry delay.
+  num_retries: 0
+
+router_settings:
+  # Retries/fallbacks are Kortix's llm-gateway job (failover.ts +
+  # resilience/circuit-breaker.ts) end to end — this sidecar must never retry
+  # on its own, or a transient upstream blip gets retried twice at two
+  # different layers with two different backoff policies.
+  num_retries: 0
+
+general_settings:
+  # The sidecar's OWN auth gate — never the upstream provider key, which
+  # travels per-request in the body instead (see the header comment above).
+  # Self-host always sets LITELLM_MASTER_KEY (auto-generated at init, see
+  # secrets-registry.ts); an unauthenticated proxy would accept ANY request
+  # from anything that can reach it on the Compose network.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Required for the per-request api_key/api_base override this whole
+  # architecture depends on — see the header comment. Safe here specifically
+  # BECAUSE this proxy is unreachable from outside the Compose network (no
+  # published port — see the `litellm` service in kortix-compose.yml) and
+  # gated by master_key above: only kortix-api/llm-gateway, already holding
+  # the real per-account resolved credentials, can ever reach this endpoint.
+  allow_client_side_credentials: true

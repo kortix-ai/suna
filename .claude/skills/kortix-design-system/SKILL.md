@@ -7,7 +7,7 @@ description: "Kortix brand + design system: the rules, tokens, and component lib
 
 **Track this file:** `.claude/skills/kortix-design-system/SKILL.md` (mirror: `.cursor/skills/kortix-design-system/SKILL.md`)
 
-**If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished customize-panel reference implementations — older guidance is stale and superseded.
+**If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished customize-panel reference implementations — older guidance is stale and superseded. (July 2026: `Card` codified as the system panel; elevation ladder added — `shadow-*` now renders the Kortix four-sided soft shadows, not Tailwind's stock bottom-only ones.)
 
 ## Companion skill — always load both
 
@@ -33,7 +33,7 @@ Load both before writing or reviewing UI. When Kortix rules and polish rules ove
 
 | Banned | Use instead |
 | --- | --- |
-| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `settings-view.tsx` |
+| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Card` (`card.tsx`), `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `settings-view.tsx` |
 | **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `changes-view.tsx`, `members-view.tsx` |
 | **`Dialog` / `DialogContent`** in feature code | **`Modal`** from `apps/web/src/components/ui/modal.tsx` — see `secrets-view.tsx`, `channels-view.tsx` |
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
@@ -123,7 +123,32 @@ Rules:
 
 ## Card & panel patterns (no SectionCard)
 
-Panels are **hand-composed** `bg-popover rounded-md border` surfaces — not `SectionCard`, not raw `Card` with padding on the outer element.
+Every panel is a `bg-popover rounded-md border` surface. Two sanctioned ways to build one — never `SectionCard`:
+
+- **`Card`** (`apps/web/src/components/ui/card.tsx`) — the codified panel. Use it when the surface has a title/description/action header, distinct content, or a footer. Slots carry the spacing (`px-4`, `pt-5`/`pb-5`, `gap-5` between slots — the panel `px-4 py-5` rhythm); the bordered element itself has **no padding**, so flush children (tables, lists, images) sit edge-to-edge.
+- **Hand-composed `div`** — for a one-off padded block inside a section, the one-div shorthand `bg-popover rounded-md border px-4 py-5` is fine (the `settings-view.tsx` pattern). The moment the panel needs a flush child or an internal seam, move the padding onto inner sections.
+
+Panels are **flat**: border, no shadow — elevation is for overlays (see *Elevation* under Tokens).
+
+### Card (component)
+
+```tsx
+<Card>
+  <CardHeader>
+    <CardTitle>Repository</CardTitle>
+    <CardDescription>Where builds are pushed.</CardDescription>
+    <CardAction>
+      <Button size="sm" variant="secondary">Edit</Button>
+    </CardAction>
+  </CardHeader>
+  <CardContent>{/* fields, rows — or a flush table as a direct Card child */}</CardContent>
+  <CardFooter className="border-t">{/* meta or trailing actions */}</CardFooter>
+</Card>
+```
+
+- `CardTitle` is `text-sm font-medium` — panel-label scale, same as `Label`. Don't scale it up; a Card is a panel, not a hero.
+- Divided header: `<CardHeader className="border-b">` (it compacts to `pb-4`); divided footer: `className="border-t"`.
+- `variant="glass"` (`bg-card/40 border-border/40 shadow-sm`) is the only elevated variant — translucent surfaces over wallpaper/media.
 
 ### Settings / form panel
 
@@ -252,8 +277,9 @@ Rules: both icons share one fixed-size box (`relative size-3.5` parent, each chi
 | Row internal gap | `gap-3` (row), `gap-1.5` (title/meta), `gap-2` (button groups) |
 | Detail content below title | `mt-8` |
 | No-match empty search | `px-3 py-6 text-center text-xs` |
+| `Card` slot rhythm | `px-4` all slots; `pt-5` header / `pb-5` last slot; `gap-5` between slots |
 
-**No direct padding on the outer bordered panel** — padding lives on inner content (`px-4 py-5`).
+**Padding never sits on a bordered element that hosts flush children** (tables, lists, seams) — put it on the slots/inner sections. A single padded block may use the one-div shorthand `bg-popover rounded-md border px-4 py-5`.
 
 ## Tokens — `globals.css` is law
 
@@ -284,6 +310,26 @@ Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind pa
 | Pills (buttons, badges) | `rounded-full` |
 
 **Never:** `rounded-xl` / `rounded-2xl` on app containers, nested rounding (parent + child both rounded).
+
+### Elevation (shadows)
+
+The ladder lives in `@theme` in `globals.css`. Each step layers a tight contact shadow, a directional depth layer with negative spread, and a 0-offset ambient halo — so every shadow reads **softly on all four sides**, hugging the surface, never a hard bottom-only smear. Colors are `light-dark()`: dark mode switches automatically — **never** write `dark:shadow-*`.
+
+| Step | Use |
+| --- | --- |
+| *(none — border only)* | Panels, rows, tables: anything sitting in the page flow is flat |
+| `shadow-2xs` | Hairline lift: inputs, thumbnails |
+| `shadow-xs` | Chips, slider thumbs, glass panels |
+| `shadow-sm` | Sticky bars, segmented controls, hover lift |
+| `shadow-md` | Dropdowns, selects, popovers, hover cards |
+| `shadow-lg` | Modals, sheets, toasts |
+| `shadow-xl` | Command palette, floating windows |
+| `shadow-2xl` | Marketing surfaces, large previews |
+
+- **Elevation = floats above the page.** In-flow surfaces get a border, not a shadow.
+- Overlays pair shadow **with** a hairline border (`bg-popover border shadow-md`) — the shadow adds depth, the border still draws the edge.
+- Tinting is allowed where a glow carries meaning: `shadow-md shadow-kortix-base/20`. Neutral elevation never needs a tint.
+- Don't hand-roll `shadow-[…]` when a ladder step fits.
 
 ### Typography
 
@@ -393,7 +439,8 @@ Standard content block (`agents-view.tsx` pattern):
 ## Dos & Don'ts
 
 - ✅ Section shell → `CustomizeSectionWrapper`. ❌ hand-rolled outer flex + header.
-- ✅ Panels → `bg-popover rounded-md border` + inner `px-4 py-5`. ❌ `SectionCard`, ❌ padding on the border element itself.
+- ✅ Panels → `Card` (`card.tsx`) or `bg-popover rounded-md border` with `px-4 py-5`. ❌ `SectionCard`, ❌ padding on a bordered element that hosts flush children.
+- ✅ Elevation → ladder step (`shadow-md` popovers, `shadow-lg` modals); in-flow panels stay flat with a border. ❌ `dark:shadow-*`, ❌ `shadow-[…]` when a step fits.
 - ✅ Lists → `<ul className="space-y-2">` + entity row classes. ❌ `List` / `ListRow`, ❌ `divide-y` Card lists.
 - ✅ Expandable config → `Disclosure` + `Button variant="popover"`. ❌ custom accordion, ❌ nested `rounded-md` inside rounded parent.
 - ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
@@ -414,6 +461,6 @@ Standard content block (`agents-view.tsx` pattern):
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
 4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `Loader2`.
-5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger).
+5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → ladder step for overlays only; flat border for in-flow panels.
 6. New primitive? Tokens only, tiny API, add to `/design-system`.
 7. Verify: no banned imports, no raw palette colors, no nested rounding, light + dark, `tsc` clean, polish checklist from `make-interfaces-feel-better`.

@@ -72,21 +72,21 @@ describe('sessions pending/approve/answer', () => {
         if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`) {
           return Response.json(sessionRow());
         }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/4096/permission`) {
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/permission`) {
           return Response.json(pendingPermissions);
         }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/4096/question`) {
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/question`) {
           return Response.json(pendingQuestions);
         }
         const permReply = url.pathname.match(
-          new RegExp(`^/v1/p/${PROXY_ID}/4096/permission/([^/]+)/reply$`),
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/permission/([^/]+)/reply$`),
         );
         if (req.method === 'POST' && permReply) {
           permissionReplies.push({ id: permReply[1], body: await req.json() });
           return Response.json(true);
         }
         const qReply = url.pathname.match(
-          new RegExp(`^/v1/p/${PROXY_ID}/4096/question/([^/]+)/(reply|reject)$`),
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/question/([^/]+)/(reply|reject)$`),
         );
         if (req.method === 'POST' && qReply) {
           questionReplies.push({

@@ -409,18 +409,25 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   {filteredNavLinks.map((item) => {
                     const handleDrawerNavClick =
                       (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-                        if (!href.startsWith('#')) {
+                        const anchor = href.startsWith('#')
+                          ? href.slice(1)
+                          : href.startsWith('/#')
+                            ? href.slice(2)
+                            : null;
+
+                        if (!anchor) {
                           setIsDrawerOpen(false);
                           return;
                         }
                         e.preventDefault();
                         if (pathname !== '/') {
-                          router.push(`/${href}`);
+                          router.push(`/#${anchor}`);
                           setIsDrawerOpen(false);
                           return;
                         }
-                        const element = document.getElementById(href.substring(1));
+                        const element = document.getElementById(anchor);
                         element?.scrollIntoView({ behavior: 'smooth' });
+                        window.history.replaceState(null, '', `/#${anchor}`);
                         setIsDrawerOpen(false);
                       };
 

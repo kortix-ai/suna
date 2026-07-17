@@ -84,7 +84,14 @@ data "aws_iam_policy_document" "dlm_assume" {
 resource "aws_iam_role" "dlm" {
   name               = "${local.name}-dlm"
   assume_role_policy = data.aws_iam_policy_document.dlm_assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy      = "terraform"
+    Name           = "${local.name}-dlm"
+    Module         = "selfhost-ec2"
+    Environment    = lookup(var.tags, "Environment", "managed")
+    Project        = lookup(var.tags, "Project", "kortix")
+    KortixInstance = lookup(var.tags, "KortixInstance", local.name)
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "dlm" {

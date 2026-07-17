@@ -18,6 +18,98 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
+type HeaderValue = string | number | boolean | Uint8Array;
+
+// Minimal parser for AWS event-stream headers (vnd.amazon.event-stream), used
+// by Bedrock's InvokeModelWithResponseStream. Each header is
+// [name-len:1][name][type:1][value...], repeated until `length` bytes are
+// consumed. We only need enough of this to read `:message-type` /
+// `:exception-type` (both type 7 / string), but the other AWS-defined value
+// types are decoded too so an unexpected-but-valid header never desyncs the
+// parse of the headers that follow it.
+function parseHeaders(buf: Uint8Array, offset: number, length: number): Record<string, HeaderValue> {
+  const headers: Record<string, HeaderValue> = {};
+  const decoder = new TextDecoder();
+  const end = offset + length;
+  let p = offset;
+  while (p < end) {
+    if (p + 2 > end) break;
+    const nameLen = buf[p];
+    p += 1;
+    if (p + nameLen + 1 > end) break;
+    const name = decoder.decode(buf.subarray(p, p + nameLen));
+    p += nameLen;
+    const type = buf[p];
+    p += 1;
+    switch (type) {
+      case 0: // bool true
+        headers[name] = true;
+        break;
+      case 1: // bool false
+        headers[name] = false;
+        break;
+      case 2: // byte
+        headers[name] = buf[p];
+        p += 1;
+        break;
+      case 3: // short (int16)
+        headers[name] = (buf[p] << 8) | buf[p + 1];
+        p += 2;
+        break;
+      case 4: // int32
+        headers[name] = readU32(buf, p) | 0;
+        p += 4;
+        break;
+      case 5: {
+        // int64 — best-effort as a JS number; large enough for anything
+        // Bedrock actually sends in a header value.
+        let value = 0;
+        for (let i = 0; i < 8; i += 1) value = value * 256 + buf[p + i];
+        headers[name] = value;
+        p += 8;
+        break;
+      }
+      case 6: {
+        // byte array: 2-byte length prefix + bytes.
+        const len = (buf[p] << 8) | buf[p + 1];
+        p += 2;
+        headers[name] = buf.subarray(p, p + len);
+        p += len;
+        break;
+      }
+      case 7: {
+        // string: 2-byte length prefix + utf8 bytes.
+        const len = (buf[p] << 8) | buf[p + 1];
+        p += 2;
+        headers[name] = decoder.decode(buf.subarray(p, p + len));
+        p += len;
+        break;
+      }
+      case 8: // timestamp (int64 ms) — unused here, skip the bytes.
+        p += 8;
+        break;
+      case 9: // uuid (16 bytes)
+        headers[name] = buf.subarray(p, p + 16);
+        p += 16;
+        break;
+      default:
+        // Unknown/unsupported value type: can't know its width, so stop
+        // reading headers rather than risk misinterpreting subsequent bytes.
+        return headers;
+    }
+  }
+  return headers;
+}
+
+function isExceptionFrame(headers: Record<string, HeaderValue>, frame: { bytes?: string }): boolean {
+  const messageType = headers[':message-type'];
+  if (messageType === 'exception' || messageType === 'error') return true;
+  // Fall back to the shape heuristic (a normal chunk frame always carries
+  // `bytes`) for older/self-hosted Bedrock-compatible endpoints that don't
+  // set `:message-type`.
+  return typeof frame.bytes !== 'string';
+}
+
 function bedrockEventStreamToSse(response: Response): Response {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -47,28 +139,55 @@ function bedrockEventStreamToSse(response: Response): Response {
             if (total < 16) break outer;
             if (buf.length - pos < total) break;
             const headersLen = readU32(buf, pos + 4);
+            const headers = parseHeaders(buf, pos + 12, headersLen);
             const payload = buf.subarray(pos + 12 + headersLen, pos + total - 4);
             pos += total;
 
-            let frame: { bytes?: string; message?: string };
+            let frame: { bytes?: string; message?: string; Message?: string } = {};
+            let payloadParsed = true;
             try {
               frame = JSON.parse(decoder.decode(payload));
             } catch {
+              payloadParsed = false;
+            }
+
+            if (isExceptionFrame(headers, frame)) {
+              // Exception/error frame (throttling, model stream error, etc.) —
+              // surface it to the client as a canonical error SSE event
+              // instead of only logging it server-side and silently
+              // truncating the stream to a clean-looking 200.
+              const exceptionType =
+                typeof headers[':exception-type'] === 'string'
+                  ? (headers[':exception-type'] as string)
+                  : 'bedrock_stream_exception';
+              const message =
+                (payloadParsed && (frame.message ?? frame.Message)) ||
+                (payloadParsed ? JSON.stringify(frame) : decoder.decode(payload)) ||
+                'bedrock event-stream error frame';
+              console.warn('[bedrock] event-stream error frame:', exceptionType, message);
+              const errorEvent = { type: 'error', error: { type: exceptionType, message } };
+              controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify(errorEvent)}\n\n`));
               continue;
             }
+
             if (typeof frame.bytes === 'string') {
               const eventJson = decoder.decode(base64ToBytes(frame.bytes));
               controller.enqueue(encoder.encode(`data: ${eventJson}\n\n`));
-            } else {
-              // Exception/error frame (throttling, model stream error) — no
-              // payload bytes. Surface it instead of silently truncating to a
-              // 200, so the failure is visible upstream.
-              console.warn('[bedrock] event-stream error frame:', frame.message ?? JSON.stringify(frame));
             }
           }
         }
-      } catch {
-        // upstream stream broke; close with what was relayed
+      } catch (err) {
+        // A network-level failure while reading the raw event-stream body
+        // (dropped connection, socket reset) is not an AWS exception FRAME —
+        // it never reaches `isExceptionFrame` above — but must not be
+        // laundered into a clean close either. Surface it the same way,
+        // matching the `event: error` shape used for a genuine exception frame.
+        const message = err instanceof Error ? err.message : String(err);
+        const errorEvent = {
+          type: 'error',
+          error: { type: 'upstream_stream_error', message: message || 'bedrock upstream stream failed' },
+        };
+        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify(errorEvent)}\n\n`));
       } finally {
         controller.close();
       }
@@ -91,3 +210,5 @@ export function translateBedrockResponse(
   }
   return translateAnthropicResponse(response, { streaming: false });
 }
+
+export { bedrockEventStreamToSse };

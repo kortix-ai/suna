@@ -4,13 +4,19 @@
 # Build from repo root: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile .
 
 ARG BUN_VERSION=1.2
+# Bun 1.2 silently accepts `Bun.spawn({ terminal: ... })` but closes the child
+# shell's stdin immediately in the compiled sandbox agent. The REST create then
+# returns a pid while the shell exits 0 before its WebSocket can attach, surfacing
+# as `pty not found`. Keep this exact pin synchronized with the agent package's
+# `engines.bun`; that package metadata is also part of the snapshot fingerprint.
+ARG SANDBOX_AGENT_BUN_VERSION=1.3.11
 FROM oven/bun:${BUN_VERSION}-slim AS base
 
 # ---- Sandbox Agent Stage ----
 # The API builds Daytona layered snapshots at runtime. Those snapshots bake the
 # sandbox-side daemon from this repo, so the deployable API image must carry the
 # latest compiled Linux binary even though we no longer publish a sandbox image.
-FROM oven/bun:${BUN_VERSION}-slim AS sandbox-agent
+FROM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS sandbox-agent
 
 WORKDIR /agent
 
@@ -40,6 +46,7 @@ COPY apps/cli ./apps/cli
 COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && bun install --no-save \

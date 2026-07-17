@@ -24,7 +24,7 @@ export function CopyButton({ code }: { code: string }) {
       aria-label={copied ? 'Copied' : 'Copy code'}
       className={cn(
         'inline-flex size-7 items-center justify-center rounded-md',
-        'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
+        'text-foreground hover:text-foreground hover:bg-muted-foreground/10',
         'cursor-pointer transition-colors active:scale-[0.97]',
         'outline-none focus-visible:outline-none',
       )}

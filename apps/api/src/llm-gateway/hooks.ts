@@ -5,12 +5,14 @@ import type {
   GatewayTrace,
   UsageEvent,
 } from '@kortix/llm-gateway';
-import { assertBillingActive } from '../billing/services/billing-gate';
-import { deductForLlmUsage } from '../billing/services/credits';
+import { assertBillingActive, BillingGateError } from '../billing/services/billing-gate';
+import { deductForLlmUsage, grantCredits } from '../billing/services/credits';
 import { getCachedAccountTier } from '../billing/services/entitlements';
 import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
+import { logger } from '../lib/logger';
+import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
@@ -93,9 +95,29 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
   return defaultModel ? { ...tiered, defaultModel } : tiered;
 }
 
+/**
+ * A 'warn' gateway budget is a soft cap: it must never block a request, but it
+ * must not be a silent no-op either (it previously wasn't even queried). This
+ * is the one place both call sites below surface it — a structured, alertable
+ * log line, so a team lead who configured a 'warn' budget gets SOME signal
+ * instead of nothing. (A UI notification / email digest is a larger product
+ * surface left for a follow-up; see PR description.)
+ */
+function logGatewayBudgetWarnings(principal: AuthedPrincipal, warnings: string[] | undefined): void {
+  if (!warnings?.length) return;
+  for (const message of warnings) {
+    logger.warn(`[gateway] budget warn threshold reached: ${message}`, {
+      accountId: principal.accountId,
+      projectId: principal.projectId,
+      userId: principal.userId,
+    });
+  }
+}
+
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
-  const { exceeded, message } = await checkBudget(principal);
+  const { exceeded, message, warnings } = await checkBudget(principal);
+  logGatewayBudgetWarnings(principal, warnings);
   if (exceeded) throw new Error(message ?? 'Budget exceeded');
 }
 
@@ -105,23 +127,34 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
  * sequential round-trips into one. Returns a principal or a typed 401/402 denial.
  */
 export async function authorizeRequest(token: string): Promise<AuthorizeResult> {
-  const principal = await authenticatePrincipal(token);
+  let principal = await authenticatePrincipal(token);
   if (!principal) {
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
   try {
-    await assertBillingActive(principal.accountId);
+    const billing = await assertBillingActive(principal.accountId);
+    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
   } catch (err) {
     return {
       ok: false,
       status: 402,
-      errorCode: 'subscription_required',
+      // The real reason (subscription_required / insufficient_credits /
+      // no_account) — not a hardcoded constant. See BillingGateError's doc
+      // comment: without this, every billing denial reported the same code
+      // regardless of cause, masking the true failure-mode breakdown in
+      // gateway_request_logs and in any programmatic caller that trusts `code`
+      // over regexing `message`.
+      errorCode: err instanceof BillingGateError ? err.reason : 'subscription_required',
       message: err instanceof Error ? err.message : 'Billing inactive',
       principal,
     };
   }
-  const { exceeded, message } = await checkBudget(principal);
+  const { exceeded, message, warnings } = await checkBudget(principal);
+  logGatewayBudgetWarnings(principal, warnings);
   if (exceeded) {
+    // A hold was taken above but the budget gate denies dispatch — the caller
+    // (handler.ts's admit()) refunds it via refundBillingHold when it sees
+    // this denial's `principal`.
     return {
       ok: false,
       status: 402,
@@ -134,32 +167,80 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
 }
 
 /**
- * Record a usage event (always, for observability) and debit the wallet when
- * internal billing is on and the route is billable (billingMode !== 'none').
+ * Record a usage event (always, for observability, unless it's a pure hold
+ * refund with nothing to observe) and settle the wallet.
+ *
+ * When `event.billingHoldUsd` is set, an atomic admission hold was already
+ * taken at the pre-dispatch billing gate (see billing-gate.ts checkBillingActive)
+ * — this reconciles it to the real `finalCost` instead of a flat deduct: tops
+ * up the remainder if the real cost exceeds the hold, refunds the unused
+ * portion otherwise (always the case for a pure hold-refund, where finalCost
+ * is 0). Otherwise (no hold — billing disabled, self-host, or an active
+ * per-seat subscription that bypasses the wallet floor) falls back to the
+ * original flat deduct, skipped entirely when the route isn't billable
+ * (billingMode === 'none').
  */
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
-  const usageEventId = await recordUsageEvent({
-    accountId: event.accountId,
-    actorUserId: event.actorUserId,
-    projectId: event.projectId ?? null,
-    sessionId: event.sessionId ?? null,
-    provider: event.provider,
-    model: event.model,
-    route: '/v1/llm/chat/completions',
-    inputTokens: event.promptTokens,
-    outputTokens: event.completionTokens,
-    cachedTokens: event.cachedTokens,
-    costUsd: event.finalCost,
-    streaming: event.streaming,
-    metadata: {
-      upstreamCostUsd: event.upstreamCost,
-      markup: llmPriceMarkup(),
-      requestId: event.requestId,
-      billingMode: event.billingMode,
-    },
-  });
+  const pureHoldRefund = isPureHoldRefund(event);
 
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || event.billingMode === 'none') return;
+  const usageEventId = pureHoldRefund
+    ? null
+    : await recordUsageEvent({
+        accountId: event.accountId,
+        actorUserId: event.actorUserId,
+        projectId: event.projectId ?? null,
+        sessionId: event.sessionId ?? null,
+        provider: event.provider,
+        model: event.model,
+        route: '/v1/llm/chat/completions',
+        inputTokens: event.promptTokens,
+        outputTokens: event.completionTokens,
+        cachedTokens: event.cachedTokens,
+        cacheWriteTokens: event.cacheWriteTokens,
+        costUsd: event.finalCost,
+        streaming: event.streaming,
+        metadata: {
+          upstreamCostUsd: event.upstreamCost,
+          markup: llmPriceMarkup(),
+          requestId: event.requestId,
+          billingMode: event.billingMode,
+        },
+      });
+
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
+
+  if (event.billingHoldUsd != null) {
+    const { toDeduct, toRefund } = reconcileBillingHold(event.finalCost, event.billingHoldUsd);
+    if (toDeduct > 0) {
+      // The real cost exceeded the (small, fixed) admission hold — collect
+      // the difference. Still a flat atomic deduct (deductForLlmUsage →
+      // atomic_use_credits), so it can never take the balance negative; if
+      // the account has since run dry, this is the same best-effort,
+      // logged-not-thrown gap the flat-deduct path always had — now bounded
+      // to (finalCost - holdUsd) instead of the full finalCost.
+      await deductForLlmUsage({
+        accountId: event.accountId,
+        costUsd: toDeduct,
+        model: event.model,
+        provider: event.provider,
+        actorUserId: event.actorUserId,
+        usageEventId,
+        upstreamCostUsd: event.upstreamCost,
+        markup: llmPriceMarkup(),
+      });
+    } else if (toRefund > 0) {
+      await grantCredits(
+        event.accountId,
+        toRefund,
+        'llm_reservation_refund',
+        `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
+        false,
+      );
+    }
+    return;
+  }
+
+  if (event.billingMode === 'none') return;
   await deductForLlmUsage({
     accountId: event.accountId,
     costUsd: event.finalCost,
@@ -202,7 +283,11 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     billingMode: trace.billingMode,
     request: trace.request,
     response: trace.response,
-    metadata: trace.metadata,
+    // gateway_request_logs has no cache_write_tokens column (unlike
+    // usage_events, which does) — stash it in metadata rather than take on a
+    // schema migration for a purely observational field; the dollar amount
+    // (finalCost/upstreamCost) already reflects the cache-write premium.
+    metadata: { ...trace.metadata, cacheWriteTokens: trace.usage.cacheWriteTokens },
   });
 }
 

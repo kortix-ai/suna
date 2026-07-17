@@ -22,6 +22,12 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
+      translationSidecar: config.LLM_TRANSLATION_SIDECAR_URL
+        ? {
+            url: config.LLM_TRANSLATION_SIDECAR_URL,
+            authToken: config.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN || undefined,
+          }
+        : undefined,
     });
     const llm = new Hono();
     llm.get('/health', (c) =>
@@ -31,6 +37,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
+        // `c.req.raw` is the underlying standard Request — its `.signal` fires
+        // when the client disconnects, so the gateway can stop reading (and
+        // billing for) upstream tokens no one is listening for anymore.
+        signal: c.req.raw.signal,
       });
     const models = (c: import('hono').Context) =>
       gateway.listModels(c.req.header('authorization'));

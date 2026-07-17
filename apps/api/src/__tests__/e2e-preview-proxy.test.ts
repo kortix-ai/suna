@@ -16,6 +16,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../lib/request-context';
+import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ mock.module('../platform/providers', () => ({
       const ptyWebsocket =
         name === 'platinum' &&
         request.transport === 'websocket' &&
-        request.path?.startsWith('/pty/');
+        classifyPtyWebSocketPath(request.path) !== null;
       return {
         effectivePort: name === 'platinum' && (request.port === 4096 || ptyWebsocket)
           ? 8000
@@ -272,6 +273,7 @@ mock.module('../projects/secrets', () => {
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
     projectSecretsRevision: (env: Record<string, string>) => `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
+    getResolvedProjectSecretValue: async () => null,
   };
 });
 
@@ -432,6 +434,32 @@ describe('Preview proxy: websocket upstream resolution', () => {
       expect(queryContext).toBeTruthy();
       expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
       expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
+    }
+  });
+
+  test('signs the user context into Platinum Kortix-native PTY websocket URLs', async () => {
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    mockPreviewUrl = 'https://8000-platinum.sbx.example';
+    mockPreviewToken = null;
+
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 8000,
+      userId: TEST_USER_ID,
+      remainingPath: '/kortix/pty/kpty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    if (upstream.ok) {
+      const url = new URL(upstream.url);
+      expect(`${url.origin}${url.pathname}`).toBe(
+        'wss://8000-platinum.sbx.example/kortix/pty/kpty_test/connect',
+      );
+      const queryContext = url.searchParams.get('__kortix_user_context');
+      expect(queryContext).toBeTruthy();
+      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
     }
   });
 });

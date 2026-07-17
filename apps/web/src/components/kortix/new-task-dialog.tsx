@@ -21,7 +21,7 @@ import {
 import { useCreateKortixTask, useStartKortixTask } from '@/hooks/kortix/use-kortix-tasks';
 import type { KortixTaskStatus } from '@/hooks/kortix/use-kortix-tasks';
 import { uploadFile } from '@/features/files/api/opencode-files';
-import { getFileIcon } from '@/features/files/components/file-icon';
+import { getFileIcon } from '@/features/project-files';
 import { toast } from '@/lib/toast';
 
 function isImageFile(file: File): boolean {

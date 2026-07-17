@@ -204,8 +204,46 @@ function startCliE2eServer() {
           updated_at: '2026-01-02T00:00:00.000Z',
         });
       }
-      if (url.pathname === '/v1/p/ext-sess-connect/4096/session/ses_oc' && req.method === 'GET') {
+      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_stale' && req.method === 'GET') {
+        return Response.json({
+          session_id: 'sess_stale',
+          account_id: 'account_1',
+          project_id: 'proj_e2e',
+          branch_name: 'session-sess_stale',
+          base_ref: 'main',
+          sandbox_provider: 'daytona',
+          sandbox_id: 'row-sandbox-id',
+          sandbox_url: `${url.origin}/v1/p/ext-sess-stale/8000`,
+          opencode_session_id: 'ses_stale',
+          name: 'Stale pin target',
+          custom_name: null,
+          agent_name: 'default',
+          status: 'running',
+          error: null,
+          metadata: {},
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_stale' && req.method === 'PATCH') {
+        return Response.json({
+          session_id: 'sess_stale',
+          opencode_session_id: entry.body && typeof entry.body === 'object'
+            ? (entry.body as { opencode_session_id?: string }).opencode_session_id
+            : null,
+        });
+      }
+      if (url.pathname === '/v1/p/ext-sess-connect/8000/session/ses_oc' && req.method === 'GET') {
         return Response.json({ id: 'ses_oc', title: 'Connected through proxy' });
+      }
+      if (url.pathname === '/v1/p/ext-sess-stale/8000/session/ses_stale' && req.method === 'GET') {
+        return Response.json({ error: 'Session not found: ses_stale' }, { status: 404 });
+      }
+      if (url.pathname === '/v1/p/ext-sess-stale/8000/session' && req.method === 'GET') {
+        return Response.json([{ id: 'ses_live', title: 'Live root' }]);
+      }
+      if (url.pathname === '/v1/p/ext-sess-stale/8000/session/ses_live' && req.method === 'GET') {
+        return Response.json({ id: 'ses_live', title: 'Live root' });
       }
 
       if (url.pathname === '/v1/marketplace/items' && req.method === 'GET') {
@@ -327,8 +365,61 @@ console.log(JSON.stringify({ cmd, args, body }));
     ]);
     expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
       'GET',
-      '/v1/p/ext-sess-connect/4096/session/ses_oc',
+      '/v1/p/ext-sess-connect/8000/session/ses_oc',
       'Bearer tok_blackbox',
+    ]);
+  }, 15_000);
+
+  test('sessions connect heals a stale opencode session pin before attaching', async () => {
+    const apiBase = startCliE2eServer();
+    const configFile = writeConfig(apiBase);
+    const fakeOpenCode = join(tmp, 'fake-opencode-stale');
+    writeFileSync(
+      fakeOpenCode,
+      `#!/usr/bin/env bun
+const [,, cmd, url, ...args] = process.argv;
+if (cmd !== 'attach') process.exit(11);
+const res = await fetch(new URL('/session/ses_live', url));
+if (!res.ok) {
+  console.error(await res.text());
+  process.exit(13);
+}
+const body = await res.json();
+console.log(JSON.stringify({ cmd, args, body }));
+`,
+      'utf8',
+    );
+    chmodSync(fakeOpenCode, 0o755);
+
+    const result = await runCli(
+      ['sessions', 'connect', 'sess_stale', '--project', 'proj_e2e', '--', '--mini'],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile, KORTIX_OPENCODE_BIN: fakeOpenCode },
+    );
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      cmd: 'attach',
+      args: ['--session', 'ses_live', '--mini'],
+      body: { id: 'ses_live', title: 'Live root' },
+    });
+    expect(requests.map((r) => [r.method, r.path, r.authorization, r.body])).toContainEqual([
+      'GET',
+      '/v1/p/ext-sess-stale/8000/session/ses_stale',
+      'Bearer tok_blackbox',
+      undefined,
+    ]);
+    expect(requests.map((r) => [r.method, r.path, r.authorization, r.body])).toContainEqual([
+      'GET',
+      '/v1/p/ext-sess-stale/8000/session',
+      'Bearer tok_blackbox',
+      undefined,
+    ]);
+    expect(requests.map((r) => [r.method, r.path, r.authorization, r.body])).toContainEqual([
+      'PATCH',
+      '/v1/projects/proj_e2e/sessions/sess_stale',
+      'Bearer tok_blackbox',
+      { opencode_session_id: 'ses_live' },
     ]);
   }, 15_000);
 

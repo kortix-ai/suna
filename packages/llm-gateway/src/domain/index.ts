@@ -6,6 +6,7 @@ export type { AuthorizeResult, GatewayHooks } from './hooks';
 export type { ModelInfo, ModelCatalog } from './catalog';
 export type {
   GatewayConfig,
+  TranslationSidecarConfig,
 } from './config';
 export type {
   ModelFallbackCondition,

@@ -9,7 +9,7 @@ import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
-import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, writeSharedProjectSecret } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
@@ -1024,19 +1024,15 @@ projectsApp.openapi(
   if (name === CODEX_AUTH_JSON_SECRET_NAME) {
     return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
   }
-  // LLM provider credentials are always project-wide. The gateway resolves
-  // BYOK keys from the SHARED row only (getProjectSecretValue), so a personal
-  // override would show the provider as connected in the UI while every model
-  // turn 400s with "No upstream configured" (2026-07-07 prod incident).
-  if (isGatewayManagedEnv(name)) {
-    return c.json(
-      {
-        error: `${name} is an LLM provider credential — provider keys are always project-wide, update the shared value instead`,
-        code: 'llm_credentials_project_wide',
-      },
-      400,
-    );
-  }
+  // LLM provider credentials USED TO be blocked here entirely: the gateway
+  // resolved BYOK keys from the SHARED row only (getProjectSecretValue), so a
+  // personal override would show the provider as connected in the UI while
+  // every model turn 400ed with "No upstream configured" (2026-07-07 prod
+  // incident, recurred on self-host deployments with pre-existing private
+  // rows). Gateway resolution now falls back to the CALLER's own private key
+  // when no shared key exists (getResolvedProjectSecretValue) — the shared
+  // row still always wins, and a private row is never visible to any other
+  // member's sessions — so creating one here is safe again.
 
   const value = typeof body.value === 'string' ? body.value : null;
   const active = typeof body.active === 'boolean' ? body.active : undefined;
@@ -1125,6 +1121,71 @@ projectsApp.openapi(
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   return c.json({ ok: true });
+},
+);
+
+// POST /v1/projects/:projectId/secrets/:name/promote-to-shared
+//
+// Copies the CALLER's own private override to the SHARED row, so every
+// project member's sessions can use it (not just theirs) — the one-click fix
+// for the "sessions can't use this key — make it shared" warning shown when a
+// provider has only a private key and no shared one. Requires the same
+// capability as writing the shared row directly (project.secret.write); the
+// value never leaves the server (it's decrypted + re-encrypted server-side,
+// never round-tripped through the client). Leaves the caller's private row in
+// place — it simply stops being the only thing that works.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/secrets/{name}/promote-to-shared',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/secrets/:name/promote-to-shared',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), name: z.string() }),
+      },
+    responses: {
+        200: json(SecretSchema, 'The now-shared secret'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const name = c.req.param('name')?.trim().toUpperCase();
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!name || !isValidSecretName(name)) {
+    return c.json({ error: 'Invalid secret name' }, 400);
+  }
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
+
+  const [mine] = await db
+    .select({ identifier: projectSecrets.identifier, valueEnc: projectSecrets.valueEnc })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      eq(projectSecrets.ownerUserId, loaded.userId),
+    ))
+    .limit(1);
+  if (!mine) {
+    return c.json({ error: 'No personal key found to promote' }, 404);
+  }
+
+  await writeSharedProjectSecret({
+    projectId,
+    name,
+    identifier: mine.identifier,
+    value: decryptProjectSecret(projectId, mine.valueEnc),
+    createdBy: loaded.userId,
+  });
+
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+
+  const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+  const view = views.find((v) => v.name === name);
+  return c.json(view ?? { name }, 200);
 },
 );
 

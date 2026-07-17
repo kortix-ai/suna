@@ -193,6 +193,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter
@@ -663,9 +666,6 @@ importers:
       '@embedpdf/models':
         specifier: ^2.14.4
         version: 2.14.4
-      '@embedpdf/pdfium':
-        specifier: 2.14.4
-        version: 2.14.4
       '@embedpdf/plugin-document-manager':
         specifier: ^2.14.4
         version: 2.14.4(@embedpdf/core@2.14.4)(preact@10.29.4)(react-dom@19.1.0)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39)
@@ -1035,6 +1035,9 @@ importers:
       katex:
         specifier: ^0.16.22
         version: 0.16.47
+      lodash:
+        specifier: ^4.18.1
+        version: 4.18.1
       lucide-react:
         specifier: ^0.479.0
         version: 0.479.0(react@19.1.0)
@@ -1060,7 +1063,7 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       papaparse:
-        specifier: ^5.5.4
+        specifier: ^5.5.2
         version: 5.5.4
       pdf-lib:
         specifier: ^1.17.1
@@ -1113,6 +1116,9 @@ importers:
       react-resizable-panels:
         specifier: ^3.0.6
         version: 3.0.6(react-dom@19.1.0)(react@19.1.0)
+      react-responsive-carousel:
+        specifier: ^3.2.23
+        version: 3.2.23
       recharts:
         specifier: ^3.2.1
         version: 3.9.2(@types/react@19.1.17)(react-dom@19.1.0)(react-is@19.2.7)(react@19.1.0)(redux@5.0.1)
@@ -1183,6 +1189,9 @@ importers:
         specifier: ^5.0.3
         version: 5.0.14(@types/react@19.1.17)(react@19.1.0)(use-sync-external-store@1.6.0)
     devDependencies:
+      '@embedpdf/pdfium':
+        specifier: 2.14.4
+        version: 2.14.4
       '@eslint/eslintrc':
         specifier: ^3
         version: 3.3.5
@@ -3514,7 +3523,6 @@ packages:
 
   /@embedpdf/pdfium@2.14.4:
     resolution: {integrity: sha512-0tDPQEH1WtfXcASNVp5U3dqfzZboNvcE4rDok/P4JCN+DCTaJDG2E9lYHGMo9FtuS2IdHgrzkmPRpOo5WV9MKQ==}
-    dev: false
 
   /@embedpdf/plugin-document-manager@2.14.4(@embedpdf/core@2.14.4)(preact@10.29.4)(react-dom@19.1.0)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39):
     resolution: {integrity: sha512-1qUKu/RAN9LV+Ih7geig0X/2i4jIn8P1D0I0nQUwSMM9hJmitcyDJ/9SK/eOSsdEs4SulIqt+a2W2IMZOY2Vew==}
