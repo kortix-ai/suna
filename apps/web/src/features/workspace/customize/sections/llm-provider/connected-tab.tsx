@@ -7,7 +7,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deleteProjectSecret } from '@kortix/sdk/projects-client';
@@ -105,7 +105,9 @@ export function ConnectedTab({
   }
 
   const confirmProvider = confirmId
-    ? (connectedProviders.find((p) => p.id === confirmId) ?? LLM_PROVIDER_BY_ID.get(confirmId) ?? null)
+    ? (connectedProviders.find((p) => p.id === confirmId) ??
+      LLM_PROVIDER_BY_ID.get(confirmId) ??
+      null)
     : null;
 
   return (
@@ -122,7 +124,7 @@ export function ConnectedTab({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-foreground truncate text-sm font-medium">
-                    {PROVIDER_LABELS[provider.id] ?? provider.label}
+                    {provider.label}
                   </span>
                   {provider.managed && (
                     <Badge size="sm" variant="secondary">

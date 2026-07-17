@@ -28,11 +28,8 @@ import {
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import {
-  MODEL_SELECTOR_PROVIDER_IDS,
-  PROVIDER_LABELS,
-  ProviderLogo,
-} from '@/features/providers/provider-branding';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
+import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
@@ -194,10 +191,14 @@ export function ModelSelector({
   // Providers whose key(s) are present — drives which of the gateway's full
   // baked catalog is shown by default in the picker (connected providers light
   // up the instant their secret lands; everything else stays search-only).
+  // Re-renders when LlmCatalogBootstrap's live-catalog fetch lands — see
+  // use-connected-providers.ts for the same pattern.
+  const catalogRevision = useLlmProviderCatalogRevision();
   const connectedProviderIds = useMemo(() => {
     if (!llmGatewayEnabled) return new Set<string>();
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
-  }, [llmGatewayEnabled, secretNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
+  }, [llmGatewayEnabled, secretNames, catalogRevision]);
 
   // Free tier (free/no plan AND no active subscription) hides Kortix managed
   // paid/AUTO models. Managed free models and connected BYOK providers remain.
@@ -262,7 +263,7 @@ export function ModelSelector({
       } else {
         groups.set(groupID, {
           providerID: groupID,
-          providerName: PROVIDER_LABELS[groupID] || m.providerName,
+          providerName: m.providerName,
           models: [m],
         });
       }
@@ -435,9 +436,7 @@ export function ModelSelector({
                               name={group.providerName}
                               size="small"
                             />
-                            <span className="flex-1">
-                              {PROVIDER_LABELS[group.providerID] || group.providerName}
-                            </span>
+                            <span className="flex-1">{group.providerName}</span>
                             <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
                               {group.models.length}
                             </span>

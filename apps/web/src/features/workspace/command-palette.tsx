@@ -23,28 +23,28 @@ import {
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
+import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { systemReload } from '@kortix/sdk/opencode-client';
 import {
-  getProjectDetail,
-  listAccounts,
-  listProjectSessions,
-  listProjectsForAccount,
   type ExperimentalFeatureKey,
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
+  getProjectDetail,
+  listAccounts,
+  listProjectSessions,
+  listProjectsForAccount,
 } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -73,11 +73,7 @@ import { Kbd } from '@/components/ui/kbd';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { useWorkspaceSearch } from '@/features/files';
-import {
-  MODEL_SELECTOR_PROVIDER_IDS,
-  PROVIDER_LABELS,
-  ProviderLogo,
-} from '@/features/providers/provider-branding';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
@@ -107,7 +103,7 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
+import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersSolid } from '@mynaui/icons-react';
@@ -644,7 +640,7 @@ export function CommandPalette() {
       } else {
         groups.set(m.providerID, {
           providerID: m.providerID,
-          providerName: PROVIDER_LABELS[m.providerID] || m.providerName,
+          providerName: m.providerName,
           models: [m],
         });
       }
@@ -867,7 +863,7 @@ export function CommandPalette() {
     }
 
     if (/^\d{2,5}$/.test(q)) {
-      const port = parseInt(q, 10);
+      const port = Number.parseInt(q, 10);
       if (port >= 1 && port <= 65535) {
         return {
           kind: 'localhost' as const,

@@ -1,4 +1,12 @@
-import catalogJson from "./catalog.generated.json" with { type: "json" };
+import catalogJson from './catalog.generated.json' with { type: 'json' };
+
+export {
+  isProviderAuthSatisfied,
+  primaryAuthEnvVars,
+  providerAuthRequirement,
+  type ProviderAuthMethod,
+  type ProviderAuthRequirement,
+} from './auth-requirements';
 
 export interface CatalogModel {
   id: string;
@@ -44,10 +52,10 @@ export interface ManagedModel {
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  transport: "bedrock" | "openrouter";
+  transport: 'bedrock' | 'openrouter';
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
-  tier: "flagship" | "balanced" | "fast";
+  tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
   // unlike BYOK models these can't derive it from the generated catalog.
@@ -78,65 +86,65 @@ export interface ManagedModel {
 // everything else goes via OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    id: "claude-opus-4.8",
-    name: "Claude Opus 4.8",
-    upstreamModelId: "us.anthropic.claude-opus-4-8",
-    transport: "bedrock",
-    pricingRef: "anthropic/claude-opus-4.8",
-    tier: "flagship",
+    id: 'claude-opus-4.8',
+    name: 'Claude Opus 4.8',
+    upstreamModelId: 'us.anthropic.claude-opus-4-8',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-opus-4.8',
+    tier: 'flagship',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
   {
-    id: "claude-sonnet-4.6",
-    name: "Claude Sonnet 4.6",
-    upstreamModelId: "us.anthropic.claude-sonnet-4-6",
-    transport: "bedrock",
-    pricingRef: "anthropic/claude-sonnet-4.6",
-    tier: "balanced",
+    id: 'claude-sonnet-4.6',
+    name: 'Claude Sonnet 4.6',
+    upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-sonnet-4.6',
+    tier: 'balanced',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
   {
-    id: "glm-5.2",
-    name: "GLM 5.2",
-    upstreamModelId: "z-ai/glm-5.2",
-    transport: "openrouter",
-    pricingRef: "z-ai/glm-5.2",
-    tier: "balanced",
+    id: 'glm-5.2',
+    name: 'GLM 5.2',
+    upstreamModelId: 'z-ai/glm-5.2',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-5.2',
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_000_000, output: 131_072 },
     // Prefer Z.AI's first-party endpoint (99.9%+ uptime, native fp8). Fallbacks
     // stay enabled so an actual Z.AI outage still routes rather than failing.
-    openrouterProvider: { order: ["z-ai"], allow_fallbacks: true },
+    openrouterProvider: { order: ['z-ai'], allow_fallbacks: true },
   },
   {
-    id: "qwen3.7-max",
-    name: "Qwen3.7 Max",
-    upstreamModelId: "qwen/qwen3.7-max",
-    transport: "openrouter",
-    pricingRef: "qwen/qwen3.7-max",
-    tier: "balanced",
+    id: 'qwen3.7-max',
+    name: 'Qwen3.7 Max',
+    upstreamModelId: 'qwen/qwen3.7-max',
+    transport: 'openrouter',
+    pricingRef: 'qwen/qwen3.7-max',
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },
   {
-    id: "deepseek-v4-pro",
-    name: "DeepSeek V4 Pro",
-    upstreamModelId: "deepseek/deepseek-v4-pro",
-    transport: "openrouter",
-    pricingRef: "deepseek/deepseek-v4-pro",
-    tier: "balanced",
+    id: 'deepseek-v4-pro',
+    name: 'DeepSeek V4 Pro',
+    upstreamModelId: 'deepseek/deepseek-v4-pro',
+    transport: 'openrouter',
+    pricingRef: 'deepseek/deepseek-v4-pro',
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },
   {
-    id: "deepseek-v4-flash",
-    name: "DeepSeek V4 Flash",
-    upstreamModelId: "deepseek/deepseek-v4-flash",
-    transport: "openrouter",
-    pricingRef: "deepseek/deepseek-v4-flash",
-    tier: "balanced",
+    id: 'deepseek-v4-flash',
+    name: 'DeepSeek V4 Flash',
+    upstreamModelId: 'deepseek/deepseek-v4-flash',
+    transport: 'openrouter',
+    pricingRef: 'deepseek/deepseek-v4-flash',
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },
@@ -155,7 +163,7 @@ export function isManagedModelId(id: string): boolean {
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
 
 export const MANAGED_FLAGSHIP_MODEL_ID = (
-  MANAGED_MODELS.find((m) => m.tier === "flagship") ?? MANAGED_MODELS[0]
+  MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
 // ─── AUTO: managed model selection ──────────────────────────────────────────
@@ -172,7 +180,7 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 // intact — the sandbox still defaults `small_model`/headless sessions to `auto`,
 // and a stale gateway caller asking for raw `auto` still resolves — so re-exposing
 // the toggle is a one-line flip.
-export const AUTO_MODEL_ID = "auto";
+export const AUTO_MODEL_ID = 'auto';
 
 // Whether AUTO is exposed in the model picker. Off for now: we want an explicit
 // opt-in on which model to use, and will bring AUTO back later. The web app reads
@@ -183,10 +191,10 @@ export const AUTO_MODEL_ENABLED = false;
 
 // The single "what to choose for auto" knob: a gateway wire model. It may be a
 // managed bare id (`glm-5.2`) or a provider-qualified id (`codex/gpt-5.6-sol`).
-export const AUTO_DEFAULT_MODEL_ID = "codex/gpt-5.6-sol";
+export const AUTO_DEFAULT_MODEL_ID = 'codex/gpt-5.6-sol';
 
 const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID;
-const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
+const AUTO_VISION_MODEL = 'claude-sonnet-4.6'; // when the request has image content
 
 function requestHasImage(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -196,9 +204,7 @@ function requestHasImage(body: Record<string, unknown>): boolean {
       Array.isArray(content) &&
       content.some(
         (part) =>
-          !!part &&
-          typeof part === "object" &&
-          (part as { type?: unknown }).type === "image_url",
+          !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'image_url',
       )
     ) {
       return true;
@@ -225,11 +231,10 @@ export function pickAutoModel(
   body: Record<string, unknown>,
   opts?: { defaultModel?: string | null },
 ): string | null {
-  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
-    return null;
+  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
   const target = opts?.defaultModel || AUTO_TARGET_MODEL;
   if (requestHasImage(body)) {
-    const bareId = target.startsWith("kortix/") ? target.slice("kortix/".length) : target;
+    const bareId = target.startsWith('kortix/') ? target.slice('kortix/'.length) : target;
     const managed = getManagedModel(bareId);
     if (managed && !managed.vision) return AUTO_VISION_MODEL;
   }
@@ -237,90 +242,90 @@ export function pickAutoModel(
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
-  "kortix",
-  "opencode",
-  "anthropic",
-  "openai",
-  "github-copilot",
-  "google",
-  "openrouter",
-  "vercel",
+  'kortix',
+  'opencode',
+  'anthropic',
+  'openai',
+  'github-copilot',
+  'google',
+  'openrouter',
+  'vercel',
 ] as const;
 
 export const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  codex: "ChatGPT",
-  google: "Google",
-  xai: "xAI",
-  moonshotai: "Moonshot",
-  "moonshotai-cn": "Moonshot",
-  opencode: "OpenCode Zen",
-  kortix: "Kortix",
-  firmware: "Firmware",
-  bedrock: "AWS Bedrock",
-  openrouter: "OpenRouter",
-  "github-copilot": "GitHub Copilot",
-  vercel: "Vercel",
-  groq: "Groq",
-  deepseek: "DeepSeek",
-  mistral: "Mistral",
-  cohere: "Cohere",
-  llama: "Llama",
-  huggingface: "Hugging Face",
-  cerebras: "Cerebras",
-  togetherai: "Together AI",
-  fireworks: "Fireworks",
-  deepinfra: "DeepInfra",
-  nvidia: "NVIDIA",
-  cloudflare: "Cloudflare",
-  azure: "Azure",
-  ollama: "Ollama",
-  perplexity: "Perplexity",
-  lmstudio: "LM Studio",
-  v0: "v0",
-  wandb: "W&B",
-  baseten: "Baseten",
-  minimax: "Moonshot",
-  "minimax-cn": "Moonshot",
-  siliconflow: "SiliconFlow",
-  "siliconflow-cn": "SiliconFlow",
-  zhipuai: "ZhipuAI",
-  "zhipuai-cn": "ZhipuAI",
-  "google-vertex": "Google Vertex",
-  "google-vertex-anthropic": "Vertex Anthropic",
-  "azure-cognitive-services": "Azure Cognitive",
-  "cloudflare-ai-gateway": "Cloudflare Gateway",
-  "github-models": "GitHub Models",
-  "ollama-cloud": "Ollama Cloud",
-  "kai Coding Plan": "AI21",
-  zaicodingplan: "AI21",
-  venice: "Venice",
-  upstage: "Upstage",
-  nebius: "Nebius",
-  vultr: "Vultr",
-  friendli: "Friendli",
-  poe: "Poe",
-  requesty: "Requesty",
-  "sap-ai-core": "SAP AI Core",
-  scaleway: "Scaleway",
-  inception: "Inception",
-  morph: "Morph",
-  abacus: "Abacus",
-  bailing: "Bailing",
-  chutes: "Chutes",
-  fastrouter: "FastRouter",
-  helicone: "Helicone",
-  iflowcn: "iFlytek",
-  inference: "Inference",
-  "io-net": "IO.net",
-  "kimi-for-coding": "Kimi",
-  lucidquery: "LucidQuery",
-  modelscope: "ModelScope",
-  "nano-gpt": "NanoGPT",
-  ovhcloud: "OVHcloud",
-  submodel: "Submodel",
-  synthetic: "Synthetic",
-  xiaomi: "Xiaomi",
-  zenmux: "Zenmux",
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  codex: 'ChatGPT',
+  google: 'Google',
+  xai: 'xAI',
+  moonshotai: 'Moonshot',
+  'moonshotai-cn': 'Moonshot',
+  opencode: 'OpenCode Zen',
+  kortix: 'Kortix',
+  firmware: 'Firmware',
+  bedrock: 'AWS Bedrock',
+  openrouter: 'OpenRouter',
+  'github-copilot': 'GitHub Copilot',
+  vercel: 'Vercel',
+  groq: 'Groq',
+  deepseek: 'DeepSeek',
+  mistral: 'Mistral',
+  cohere: 'Cohere',
+  llama: 'Llama',
+  huggingface: 'Hugging Face',
+  cerebras: 'Cerebras',
+  togetherai: 'Together AI',
+  fireworks: 'Fireworks',
+  deepinfra: 'DeepInfra',
+  nvidia: 'NVIDIA',
+  cloudflare: 'Cloudflare',
+  azure: 'Azure',
+  ollama: 'Ollama',
+  perplexity: 'Perplexity',
+  lmstudio: 'LM Studio',
+  v0: 'v0',
+  wandb: 'W&B',
+  baseten: 'Baseten',
+  minimax: 'Moonshot',
+  'minimax-cn': 'Moonshot',
+  siliconflow: 'SiliconFlow',
+  'siliconflow-cn': 'SiliconFlow',
+  zhipuai: 'ZhipuAI',
+  'zhipuai-cn': 'ZhipuAI',
+  'google-vertex': 'Google Vertex',
+  'google-vertex-anthropic': 'Vertex Anthropic',
+  'azure-cognitive-services': 'Azure Cognitive',
+  'cloudflare-ai-gateway': 'Cloudflare Gateway',
+  'github-models': 'GitHub Models',
+  'ollama-cloud': 'Ollama Cloud',
+  'kai Coding Plan': 'AI21',
+  zaicodingplan: 'AI21',
+  venice: 'Venice',
+  upstage: 'Upstage',
+  nebius: 'Nebius',
+  vultr: 'Vultr',
+  friendli: 'Friendli',
+  poe: 'Poe',
+  requesty: 'Requesty',
+  'sap-ai-core': 'SAP AI Core',
+  scaleway: 'Scaleway',
+  inception: 'Inception',
+  morph: 'Morph',
+  abacus: 'Abacus',
+  bailing: 'Bailing',
+  chutes: 'Chutes',
+  fastrouter: 'FastRouter',
+  helicone: 'Helicone',
+  iflowcn: 'iFlytek',
+  inference: 'Inference',
+  'io-net': 'IO.net',
+  'kimi-for-coding': 'Kimi',
+  lucidquery: 'LucidQuery',
+  modelscope: 'ModelScope',
+  'nano-gpt': 'NanoGPT',
+  ovhcloud: 'OVHcloud',
+  submodel: 'Submodel',
+  synthetic: 'Synthetic',
+  xiaomi: 'Xiaomi',
+  zenmux: 'Zenmux',
 };

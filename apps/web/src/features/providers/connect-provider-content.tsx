@@ -559,7 +559,7 @@ export function ConnectProviderContent({
     if (currentMethod?.label?.toLowerCase().includes('plus') && view.providerID === 'openai') {
       return 'Login with ChatGPT Pro/Plus';
     }
-    return `Connect ${PROVIDER_LABELS[view.providerID] || selectedProviderData?.name || view.providerID}`;
+    return `Connect ${selectedProviderData?.name || PROVIDER_LABELS[view.providerID] || view.providerID}`;
   })();
 
   const customMatchesSearch = !search || 'custom provider'.includes(search.toLowerCase());
@@ -596,7 +596,7 @@ export function ConnectProviderContent({
           />
           <div className="min-w-0 flex-1">
             <div className="text-foreground text-sm font-semibold">
-              {PROVIDER_LABELS[selectedProviderData.id] || selectedProviderData.name}
+              {selectedProviderData.name || PROVIDER_LABELS[selectedProviderData.id]}
             </div>
             {PROVIDER_NOTES[selectedProviderData.id] && (
               <p className="text-muted-foreground mt-0.5 text-xs">
@@ -633,7 +633,7 @@ export function ConnectProviderContent({
             <ProviderCard
               key={p.id}
               providerID={p.id}
-              name={PROVIDER_LABELS[p.id] || p.name}
+              name={p.name || PROVIDER_LABELS[p.id]}
               description={PROVIDER_NOTES[p.id]}
               connected={connectedIds.has(p.id)}
               onClick={() => handleSelectProvider(p.id)}
@@ -671,7 +671,7 @@ export function ConnectProviderContent({
                       <ProviderCard
                         key={p.id}
                         providerID={p.id}
-                        name={PROVIDER_LABELS[p.id] || p.name}
+                        name={p.name || PROVIDER_LABELS[p.id]}
                         connected={connectedIds.has(p.id)}
                         onClick={() => handleSelectProvider(p.id)}
                       />
@@ -842,7 +842,7 @@ export function ConnectProviderContent({
                 {tHardcodedUi.raw(
                   'componentsProvidersConnectProviderContent.line869JsxTextSelectLoginMethodFor',
                 )}{' '}
-                {PROVIDER_LABELS[view.providerID] || selectedProviderData?.name || view.providerID}.
+                {selectedProviderData?.name || PROVIDER_LABELS[view.providerID] || view.providerID}.
               </p>
               <div className="border-border/50 bg-muted/20 space-y-0.5 rounded-2xl border p-2">
                 {authMethods.map((method, i) => {

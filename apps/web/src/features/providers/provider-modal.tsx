@@ -71,7 +71,7 @@ function ConnectedTabBody({
     const q = search.trim().toLowerCase();
     if (!q) return connectedProviders;
     return connectedProviders.filter((p) => {
-      const label = (PROVIDER_LABELS[p.id] || p.name || p.id).toLowerCase();
+      const label = (p.name || PROVIDER_LABELS[p.id] || p.id).toLowerCase();
       return label.includes(q) || p.id.toLowerCase().includes(q);
     });
   }, [connectedProviders, search]);
@@ -152,7 +152,7 @@ function ConnectedTabBody({
           >
             <ProviderRowContent
               providerID={provider.id}
-              name={PROVIDER_LABELS[provider.id] || provider.name || provider.id}
+              name={provider.name || PROVIDER_LABELS[provider.id] || provider.id}
               connected
               description={
                 <>
@@ -330,7 +330,7 @@ function ModelsTabBody({
                 size="small"
               />
               <span className="text-foreground/70 text-xs font-medium">
-                {PROVIDER_LABELS[providerID] || list[0]?.providerName || providerID}
+                {list[0]?.providerName || PROVIDER_LABELS[providerID] || providerID}
               </span>
               <span className="text-muted-foreground/40 ml-auto text-xs">{list.length}</span>
             </div>

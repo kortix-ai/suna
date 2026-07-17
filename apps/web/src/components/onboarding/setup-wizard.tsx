@@ -24,13 +24,13 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
-import { setModelDefault } from '@kortix/sdk/projects-client';
-import { setEnv } from '@kortix/sdk/opencode-client';
-import { useServerStore } from '@/stores/server-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { useServerStore } from '@/stores/server-store';
+import { setEnv } from '@kortix/sdk/opencode-client';
+import { setModelDefault } from '@kortix/sdk/projects-client';
 import {
   ArrowLeft,
   BookOpen,
@@ -431,7 +431,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
             >
               <ProviderLogo providerID={p.id} name={p.name} size="small" />
               <span className="text-foreground/80 text-sm font-medium">
-                {PROVIDER_LABELS[p.id] || p.name || p.id}
+                {p.name || PROVIDER_LABELS[p.id] || p.id}
               </span>
               <Check className="ml-auto h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
             </div>
@@ -505,8 +505,8 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
       groups.set(m.providerID, list);
     }
     return Array.from(groups.entries()).sort((a, b) => {
-      const la = PROVIDER_LABELS[a[0]] || a[0];
-      const lb = PROVIDER_LABELS[b[0]] || b[0];
+      const la = a[1][0]?.providerName || PROVIDER_LABELS[a[0]] || a[0];
+      const lb = b[1][0]?.providerName || PROVIDER_LABELS[b[0]] || b[0];
       return la.localeCompare(lb);
     });
   }, [allModels, modelStore]);
@@ -581,7 +581,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
               <div className="flex items-center gap-2 px-1 pb-1">
                 <ProviderLogo providerID={providerID} name={models[0]?.providerName} size="small" />
                 <span className="text-foreground/40 text-xs font-medium tracking-wider uppercase">
-                  {PROVIDER_LABELS[providerID] || providerID}
+                  {models[0]?.providerName || PROVIDER_LABELS[providerID] || providerID}
                 </span>
               </div>
               {models.map((model) => {
