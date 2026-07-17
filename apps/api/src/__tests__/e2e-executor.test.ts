@@ -165,6 +165,13 @@ const deps: ExecutorRouterDeps = {
       // Always the shared credential — `per_user` was removed 2026-07-05.
       secretSet: conn.hasAuth ? world.credentials.has(credKey(conn.connectorId, null)) : true,
     })),
+  listDiscoverIntegrations: async ({ q, cursor }) => ({
+    items: [{ id: 'openapi/1forge-com', name: q ?? '1Forge' }],
+    total: 1,
+    nextCursor: cursor,
+    hasMore: false,
+  }),
+  getDiscoverIntegration: async (id) => ({ item: { id }, variants: [] }),
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
@@ -242,6 +249,33 @@ describe('POST /call', () => {
 });
 
 describe('admin routes', () => {
+  test('Discover list/detail are project-admin scoped and preserve query values', async () => {
+    const denied = await req(`/projects/${PROJECT}/discover/integrations?q=finance`);
+    expect(denied.status).toBe(403);
+
+    const pageResponse = await req(
+      `/projects/${PROJECT}/discover/integrations?q=finance&cursor=48`,
+      { headers: { 'x-test-admin': ALICE } },
+    );
+    expect(pageResponse.status).toBe(200);
+    expect(await pageResponse.json()).toEqual({
+      items: [{ id: 'openapi/1forge-com', name: 'finance' }],
+      total: 1,
+      nextCursor: '48',
+      hasMore: false,
+    });
+
+    const detailResponse = await req(
+      `/projects/${PROJECT}/discover/integrations/detail?id=${encodeURIComponent('openapi/1forge-com')}`,
+      { headers: { 'x-test-admin': ALICE } },
+    );
+    expect(detailResponse.status).toBe(200);
+    expect(await detailResponse.json()).toEqual({
+      item: { id: 'openapi/1forge-com' },
+      variants: [],
+    });
+  });
+
   test('list shows credential mode + secretSet', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
     const json = await (await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })).json();

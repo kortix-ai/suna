@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 491,
+  "count": 493,
   "routes": [
     {
       "method": "GET",
@@ -769,6 +769,14 @@
     {
       "method": "POST",
       "path": "/v1/executor/projects/:projectId/connectors/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/discover/integrations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/discover/integrations/detail"
     },
     {
       "method": "GET",

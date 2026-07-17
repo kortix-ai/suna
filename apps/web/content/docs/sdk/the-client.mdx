@@ -265,11 +265,18 @@ resource (an agent, a skill, a secret) rather than the whole project:
 | `profiles.updateCredential(profileId, input)`                       | encrypt/rotate that profile's credential without returning it   |
 | `profiles.revoke(profileId)` · `profiles.activate(profileId)`       | deny or restore the identity live                               |
 
-`p.connectors.pipedream` drives the easy-connect (Pipedream) app-catalog handshake:
+`p.connectors.discover` browses the direct integrations.sh catalogue and resolves a record's domain surfaces:
+
+| method                           | what                                                   |
+| -------------------------------- | ------------------------------------------------------ |
+| `discover.list(query?, cursor?)` | searchable direct OpenAPI, MCP, GraphQL, and CLI page |
+| `discover.detail(id)`            | normalized executable and documentation-only variants |
+
+`p.connectors.pipedream` is the optional managed-OAuth path. `listApps` returns OAuth apps only; API-key apps should connect directly instead:
 
 | method                        | what                         |
 | ----------------------------- | ---------------------------- |
-| `pipedream.listApps(params?)` | browsable app catalog        |
+| `pipedream.listApps(params?)` | browsable OAuth app catalog  |
 | `pipedream.connect(input)`    | start a connect flow         |
 | `pipedream.finalize(input)`   | finalize it into a connector |
 
