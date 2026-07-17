@@ -90,6 +90,16 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   // Everything else falls back to monochrome initials.
 };
 
+/**
+ * Resolve a provider id to its logo asset path, or `undefined` when the id has
+ * no mapped mark (the caller falls back to monochrome initials). Keyed on the
+ * VERBATIM models.dev provider ids so live-catalog entries resolve — see the
+ * icon-map notes above for the Moonshot trio / Bedrock / Vertex cases.
+ */
+export function providerIconSrc(providerID: string): string | undefined {
+  return PROVIDER_ICON_MAP[providerID]?.src;
+}
+
 function initialsFor(providerID: string, name?: string) {
   const label = PROVIDER_LABELS[providerID];
   if (label) {
