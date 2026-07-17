@@ -33,6 +33,7 @@ export function ModelPickerRow({ item, selected, onSelect }: ModelPickerRowProps
       value={item.key}
       disabled={!item.selectable}
       onSelect={item.selectable ? onSelect : undefined}
+      aria-current={selected ? 'true' : undefined}
       className={cn('min-h-10 transition-colors duration-150', selected && 'bg-primary/[0.06]')}
     >
       <div className="min-w-0 flex-1 py-0.5">

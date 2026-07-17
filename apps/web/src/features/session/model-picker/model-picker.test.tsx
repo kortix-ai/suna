@@ -173,6 +173,21 @@ describe('ModelPicker', () => {
     expect(screen.getByRole('button', { name: 'Apply' })).toHaveProperty('disabled', false);
   });
 
+  // DISC-12: the selected row exposes `aria-current` so AT hears the
+  // selection state, not just the trailing checkmark icon + tint.
+  it('exposes aria-current="true" on the selected row and no aria-current on the rest', async () => {
+    const vm = buildVm();
+    await openPicker(vm);
+
+    const selectedRow = screen.getByText('Claude Sonnet 5', { selector: 'div' }).closest(
+      '[role="option"]',
+    ) as HTMLElement;
+    expect(selectedRow.getAttribute('aria-current')).toBe('true');
+
+    const otherRow = screen.getByText('GPT-5.1').closest('[role="option"]') as HTMLElement;
+    expect(otherRow.getAttribute('aria-current')).toBeNull();
+  });
+
   it('select() fires with the row key and closes', async () => {
     const vm = buildVm();
     await openPicker(vm);
