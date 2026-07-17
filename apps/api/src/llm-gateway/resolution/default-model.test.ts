@@ -1,0 +1,220 @@
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { GatewayResolutionError } from '@kortix/llm-gateway';
+import * as resolveCandidatesModule from './resolve-candidates';
+import * as modelPreferencesModule from '../../repositories/model-preferences';
+import * as secretsModule from '../../projects/secrets';
+import {
+  invalidateAccountModelDefaults,
+  isModelServableForAccount,
+  resolveDefaultModelForPrincipal,
+  resolveEffectiveModel,
+} from './default-model';
+
+// The regression this whole file guards against: tonight's error-taxonomy
+// change made resolveCandidates THROW a typed GatewayResolutionError
+// (provider_not_connected, etc.) instead of returning `[]` when a model isn't
+// servable. That's correct for an actual generation request, but every
+// caller in default-model.ts (isModelServableForAccount, and everything that
+// probes through it — resolveDefaultModelForPrincipal used at auth time for
+// EVERY gateway request, and resolveEffectiveModel used by the
+// /model-defaults GET route + the model picker) was built against the old
+// return-`[]` contract.
+//
+// This spies on the individual named exports (spyOn + mock.restore()) rather
+// than replacing the whole modules with mock.module() — `./resolve-candidates`
+// is itself the system-under-test of resolve-candidates.test.ts, and
+// `../../repositories/model-preferences` / `../../projects/secrets` are each
+// mocked wholesale by OTHER sibling test files (seed-default.test.ts,
+// resolve-candidates.test.ts) with different shapes; mock.module() replaces a
+// module for the whole bun test PROCESS (every *.test.ts file runs together —
+// see scripts/test.sh), so it would corrupt those files' runs. spyOn+restore
+// is scoped to this file's own test lifecycle instead.
+
+let resolveCandidatesImpl: (model: string) => Promise<Array<{ provider: string }>> = async () => [];
+let accountDefaults: { account: string | null; agents: Record<string, string>; projects: Record<string, string> } = {
+  account: null,
+  agents: {},
+  projects: {},
+};
+let connectedSecretNames: string[] = [];
+
+beforeEach(() => {
+  resolveCandidatesImpl = async () => [];
+  accountDefaults = { account: null, agents: {}, projects: {} };
+  connectedSecretNames = [];
+  // resolveDefaultModelForPrincipal reads through a module-level 30s-TTL cache
+  // (cachedAccountDefaults) keyed by accountId — every test below reuses the
+  // same PRINCIPAL_BASE.accountId, so without this the FIRST test's defaults
+  // would silently serve every later test regardless of the fresh
+  // `accountDefaults` set above (a test-isolation footgun, not a prod bug: a
+  // real accountId is never reused cross-request within 30s in production).
+  invalidateAccountModelDefaults(PRINCIPAL_BASE.accountId);
+
+  spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(
+    // The real return is Promise<UpstreamDescriptor[]>; these tests only care
+    // about the LENGTH of the candidate list (servable = length > 0) and the
+    // typed-error throw path, so a minimal { provider } stub is enough — cast
+    // through the resolver's signature so tsc accepts the narrowed test double.
+    ((_principal: unknown, model: string) => resolveCandidatesImpl(model)) as typeof resolveCandidatesModule.resolveCandidates,
+  );
+  spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => accountDefaults);
+  spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => null);
+  spyOn(secretsModule, 'listProjectSecretsSnapshot').mockImplementation(async () => ({
+    env: {},
+    names: connectedSecretNames,
+    revision: 'test',
+  }));
+});
+
+afterEach(() => {
+  mock.restore();
+});
+
+const PRINCIPAL_BASE = { userId: 'u1', accountId: 'a1', projectId: 'p1' };
+
+describe('isModelServableForAccount — never 500s a passive servability check', () => {
+  test('resolveCandidates throwing a typed GatewayResolutionError → false, not a throw', async () => {
+    resolveCandidatesImpl = async () => {
+      throw new GatewayResolutionError(
+        'provider_not_connected',
+        'No openrouter API key is connected for this project.',
+        'Add an openrouter API key in project settings, then retry.',
+      );
+    };
+    await expect(
+      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'openrouter/some-model' }),
+    ).resolves.toBe(false);
+  });
+
+  test('every GatewayResolutionError reason collapses to false (model_not_found, plan_upgrade_required, ...)', async () => {
+    for (const reason of ['model_not_found', 'plan_upgrade_required', 'model_disabled_on_deployment'] as const) {
+      resolveCandidatesImpl = async () => {
+        throw new GatewayResolutionError(reason, 'nope', 'do something');
+      };
+      await expect(
+        isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'x/y' }),
+      ).resolves.toBe(false);
+    }
+  });
+
+  test('a non-GatewayResolutionError bug still propagates (never silently swallowed)', async () => {
+    resolveCandidatesImpl = async () => {
+      throw new Error('unexpected DB failure');
+    };
+    await expect(
+      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'x/y' }),
+    ).rejects.toThrow('unexpected DB failure');
+  });
+
+  test('a real candidate list → true', async () => {
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+    await expect(
+      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'openai/gpt-5.5' }),
+    ).resolves.toBe(true);
+  });
+});
+
+describe('resolveEffectiveModel — the /model-defaults GET + picker resolution path', () => {
+  test('nothing configured → platform default, no resolution/secrets calls at all', async () => {
+    const result = await resolveEffectiveModel({
+      ...PRINCIPAL_BASE,
+      freeModelsOnly: false,
+    });
+    expect(result).toEqual({ model: null, source: 'platform' });
+    expect(resolveCandidatesModule.resolveCandidates).not.toHaveBeenCalled();
+    expect(secretsModule.listProjectSecretsSnapshot).not.toHaveBeenCalled();
+  });
+
+  test('a servable configured project default is returned as-is (real source, no degrade)', async () => {
+    accountDefaults = { account: null, agents: {}, projects: { p1: 'openai/gpt-5.5' } };
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+    const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'project' });
+  });
+
+  test('THE ESSENTIA BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
+    accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
+    // The configured openrouter default is no longer servable — no key connected.
+    resolveCandidatesImpl = async (model) => {
+      if (model === 'openrouter/some-model') {
+        throw new GatewayResolutionError(
+          'provider_not_connected',
+          'No openrouter API key is connected for this project.',
+          'Add an openrouter API key in project settings, then retry.',
+        );
+      }
+      return [{ provider: 'x' }];
+    };
+    // But the project HAS OpenAI (and Bedrock) BYOK connected.
+    connectedSecretNames = ['OPENAI_API_KEY', 'AWS_BEARER_TOKEN_BEDROCK'];
+
+    const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+
+    // Never throws/500s, AND never surfaces the dead openrouter ref.
+    expect(result.model).not.toBeNull();
+    expect(result.model).not.toBe('openrouter/some-model');
+    expect(result.model?.startsWith('openrouter/')).toBe(false);
+    // Resolves to a model on a provider the project actually has a key for.
+    expect(result.model?.startsWith('openai/') || result.model?.startsWith('amazon-bedrock/')).toBe(true);
+    expect(result.source).toBe('platform');
+  });
+
+  test('stale configured default AND nothing connected → degrades to plain platform default (unchanged pre-existing behavior), still no throw', async () => {
+    accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
+    resolveCandidatesImpl = async () => {
+      throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
+    };
+    connectedSecretNames = [];
+
+    const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toEqual({ model: null, source: 'platform' });
+  });
+
+  test('an explicit pin that is unservable degrades through the same chain (never throws)', async () => {
+    accountDefaults = { account: null, agents: {}, projects: {} };
+    resolveCandidatesImpl = async () => {
+      throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
+    };
+    const result = await resolveEffectiveModel({
+      ...PRINCIPAL_BASE,
+      explicit: 'openrouter/some-model',
+      freeModelsOnly: false,
+    });
+    expect(result).toEqual({ model: null, source: 'platform' });
+  });
+});
+
+describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at generation time', () => {
+  test('nothing configured → undefined (fast path, unchanged — never touches resolveCandidates)', async () => {
+    const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toBeUndefined();
+    expect(resolveCandidatesModule.resolveCandidates).not.toHaveBeenCalled();
+  });
+
+  test('a stale/unservable configured default degrades to a CONNECTED provider, not an unconnected platform default, for a real chat/generation request', async () => {
+    accountDefaults = { account: 'openrouter/some-model', agents: {}, projects: {} };
+    resolveCandidatesImpl = async (model) => {
+      if (model === 'openrouter/some-model') {
+        throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
+      }
+      return [{ provider: 'x' }];
+    };
+    connectedSecretNames = ['OPENAI_API_KEY'];
+
+    const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toBeDefined();
+    expect(result).not.toBe('openrouter/some-model');
+    expect(result?.startsWith('openai/')).toBe(true);
+  });
+
+  test('a stale configured default with nothing connected degrades to undefined (platform default applies), never throws', async () => {
+    accountDefaults = { account: 'openrouter/some-model', agents: {}, projects: {} };
+    resolveCandidatesImpl = async () => {
+      throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
+    };
+    connectedSecretNames = [];
+
+    const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toBeUndefined();
+  });
+});
