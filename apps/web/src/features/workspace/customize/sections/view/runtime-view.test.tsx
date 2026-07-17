@@ -387,3 +387,54 @@ describe('RuntimeView — guided connect -> model flow (WS5-P2-b)', () => {
     expect(screen.queryByRole('button', { name: 'Choose model' })).toBeNull();
   });
 });
+
+// ─── WS5-P6-a: a11y — prefers-reduced-motion honored (no transform under reduce) ───
+//
+// `RuntimeEntityRow`'s stagger-in (`animate-in fade-in-0 slide-in-from-bottom-1`,
+// same idiom `changes-view.tsx`'s `CheckpointRow` uses) is a CSS animation, not
+// a `motion/react` variant like `permission-prompt.tsx`'s `rowSwapVariants` —
+// there is no per-component JS motion guard to unit-test here. The guard lives
+// in `globals.css`: a `@media (prefers-reduced-motion: reduce)` block that
+// zeroes `tw-animate-css`'s `--tw-enter-translate-*`/`--tw-enter-scale`/
+// `--tw-enter-rotate`/`--tw-enter-blur` custom properties for any
+// `.animate-in`/`.animate-out` element, leaving only the `fade-in-0` opacity
+// component under reduce. happy-dom does not evaluate `globals.css` (this
+// harness never loads it), so a DOM/computed-style assertion cannot see the
+// guard — these are source-content checks, the same technique
+// `design-guard.test.ts` uses for its regex sweep, run against the two files
+// that jointly make the guard hold: the component still emitting the exact
+// transform-driving utility combo, and the stylesheet still neutralizing it.
+describe('RuntimeView — reduced motion (WS5-P6-a)', () => {
+  const { readFileSync } = require('node:fs') as typeof import('node:fs');
+
+  test('the row entrance animation is the transform-driving animate-in/slide-in-from-bottom combo', () => {
+    const src = readFileSync(
+      'src/features/workspace/customize/sections/view/runtime-view.tsx',
+      'utf8',
+    );
+    expect(src).toMatch(/animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both/);
+  });
+
+  test('globals.css neutralizes animate-in/animate-out transform + blur under prefers-reduced-motion: reduce', () => {
+    const css = readFileSync('src/app/globals.css', 'utf8');
+    const guardMatch = css.match(
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\.animate-in,\s*\.animate-out \{([^}]*)\}/,
+    );
+    expect(guardMatch).not.toBeNull();
+    const body = guardMatch![1]!;
+    for (const prop of [
+      '--tw-enter-translate-x',
+      '--tw-enter-translate-y',
+      '--tw-enter-scale',
+      '--tw-enter-rotate',
+      '--tw-enter-blur',
+      '--tw-exit-translate-x',
+      '--tw-exit-translate-y',
+      '--tw-exit-scale',
+      '--tw-exit-rotate',
+      '--tw-exit-blur',
+    ]) {
+      expect(body).toMatch(new RegExp(`${prop}:\\s*(0|1);`));
+    }
+  });
+});

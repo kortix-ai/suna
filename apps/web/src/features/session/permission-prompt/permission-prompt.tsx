@@ -123,7 +123,7 @@ function qualifiedConnectorAction(a: SessionAuditAction): string | null {
  *  subtler than enter") — kept local rather than imported since the two
  *  components' swap semantics genuinely differ (that one swaps a whole
  *  card; this one swaps individual rows inside a shared container). */
-function rowSwapVariants(reduced: boolean) {
+export function rowSwapVariants(reduced: boolean) {
   if (reduced) {
     return {
       initial: { opacity: 0 },

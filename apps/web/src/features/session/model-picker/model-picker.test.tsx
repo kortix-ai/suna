@@ -186,6 +186,46 @@ describe('ModelPicker', () => {
   });
 });
 
+// ─── WS5-P6-a: a11y — keyboard-only walk ────────────────────────────────────
+// `CommandPopover`/`CommandPopoverContent` wrap Radix `Popover` + `cmdk`'s
+// `Command` — both own their keyboard semantics (Radix: Escape dismisses and
+// returns focus to the trigger; cmdk: Arrow keys move the roving highlight,
+// Enter fires the highlighted item's `onSelect`). This suite proves those
+// inherited behaviors actually reach the ModelPicker's own callbacks
+// (`vm.select`/popover close), not just that the libraries exist.
+describe('ModelPicker — a11y: keyboard-only walk', () => {
+  it('Escape closes the popover (Radix Popover dismissal, inherited)', async () => {
+    const vm = buildVm();
+    await openPicker(vm);
+    expect(screen.getByText('Anthropic')).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape', code: 'Escape' });
+    await flush();
+
+    expect(screen.queryByText('Anthropic')).toBeNull();
+  });
+
+  it('ArrowDown + Enter selects the highlighted row with no mouse click', async () => {
+    const vm = buildVm();
+    await openPicker(vm);
+
+    const list = screen.getByRole('listbox');
+    fireEvent.keyDown(list, { key: 'ArrowDown', code: 'ArrowDown' });
+    fireEvent.keyDown(list, { key: 'Enter', code: 'Enter' });
+    await flush();
+
+    expect(vm.select).toHaveBeenCalledWith('anthropic:claude-sonnet-5');
+  });
+
+  it('the trigger is a real <button> reachable by Tab, not a div with a click handler', () => {
+    const vm = buildVm();
+    renderPicker(vm);
+    const trigger = screen.getByTestId('model-picker-trigger');
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger.getAttribute('type')).toBe('button');
+  });
+});
+
 describe('ModelPicker — locked state', () => {
   it('renders the disabled trigger class and skips opening when not interactive', async () => {
     const vm = buildVm({

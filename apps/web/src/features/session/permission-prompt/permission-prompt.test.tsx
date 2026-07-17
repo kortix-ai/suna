@@ -295,6 +295,50 @@ describe('PermissionPrompt — auto-approve strip', () => {
   });
 });
 
+// ─── WS5-P6-a: a11y — prefers-reduced-motion honored (no transform under reduce) ───
+// Same pure-function pattern `acp-request-cards.test.tsx` locks in for
+// `cardSwapVariants` — `rowSwapVariants` is this component's equivalent
+// motion guard (row swap: pending prompt -> answered record), exported
+// solely so this regression test can assert its reduced-motion branch
+// directly rather than through fragile DOM/style inspection of a `motion.div`.
+describe('PermissionPrompt — rowSwapVariants (motion guard)', () => {
+  it('with reduced motion disabled, includes blur and scale transforms', async () => {
+    const { rowSwapVariants } = await import('./permission-prompt');
+
+    const variants = rowSwapVariants(false);
+    expect(variants.initial).toHaveProperty('filter', 'blur(4px)');
+    expect(variants.initial).toHaveProperty('scale', 0.98);
+    expect(variants.animate).toHaveProperty('filter', 'blur(0px)');
+    expect(variants.animate).toHaveProperty('scale', 1);
+    expect(variants.exit).toHaveProperty('filter', 'blur(1.5px)');
+    expect(variants.exit).toHaveProperty('scale', 0.995);
+  });
+
+  it('with reduced motion enabled, only modifies opacity — no transform/filter under reduce', async () => {
+    const { rowSwapVariants } = await import('./permission-prompt');
+
+    const variants = rowSwapVariants(true);
+    expect(variants.initial).toEqual({ opacity: 0 });
+    expect(variants.animate).toEqual({ opacity: 1 });
+    expect(variants.exit).toEqual({ opacity: 0 });
+    expect(variants.initial).not.toHaveProperty('filter');
+    expect(variants.initial).not.toHaveProperty('scale');
+    expect(variants.animate).not.toHaveProperty('filter');
+    expect(variants.animate).not.toHaveProperty('scale');
+    expect(variants.exit).not.toHaveProperty('filter');
+    expect(variants.exit).not.toHaveProperty('scale');
+  });
+
+  it('transition stays the calm {duration:0.3, bounce:0} spring regardless of motion preference', async () => {
+    const { rowSwapVariants } = await import('./permission-prompt');
+
+    const reduced = rowSwapVariants(true);
+    const full = rowSwapVariants(false);
+    expect(reduced.transition).toEqual(full.transition);
+    expect(reduced.transition).toEqual({ type: 'spring', duration: 0.3, bounce: 0 });
+  });
+});
+
 describe('PermissionPrompt — empty state', () => {
   it('renders nothing when there is no pending permission, no connector action, and autoApprove is off', () => {
     const { container } = render(

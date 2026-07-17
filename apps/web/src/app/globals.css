@@ -968,6 +968,32 @@
   }
 }
 
+/* `tw-animate-css`'s `animate-in`/`animate-out` enter/exit keyframes
+   (`.slide-in-from-*`, `.zoom-in-*`, `.spin-in-*`, `.blur-in-*` and their
+   `-out` counterparts) drive `transform`/`filter` through these custom
+   properties (see the library's `@keyframes enter`/`exit`). Every call site
+   across the app (list-row stagger-ins, marketing demos, popovers) composes
+   its own combination of these utilities, so the one robust place to honor
+   "no transform motion under reduce" for all of them is here: zero the
+   transform/blur-driving custom properties back to their `@property`
+   initial values, leaving only the `fade-in-*`/`fade-out-*` opacity
+   component (still a real, non-motion way to signal enter/exit). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-out {
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-enter-scale: 1;
+    --tw-enter-rotate: 0;
+    --tw-enter-blur: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+    --tw-exit-scale: 1;
+    --tw-exit-rotate: 0;
+    --tw-exit-blur: 0;
+  }
+}
+
 /* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
 @utility animate-pulse-* {
   animation-name: pulse;
