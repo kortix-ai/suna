@@ -3,7 +3,7 @@
  * v1 project may instead declare `[[connectors]]` in `kortix.toml`).
  *
  * A connector is one named integration the Executor can call — Pipedream,
- * MCP, OpenAPI, GraphQL, or raw HTTP. The manifest holds the *definition*
+ * MCP, OpenAPI, Postman, GraphQL, or raw HTTP. The manifest holds the *definition*
  * (provider, endpoint/spec, auth method + which project-secret to use) and,
  * for the policy layer, each connector's `policies:` list. The
  * secret *value* and Pipedream OAuth live in the platform, never in git.
@@ -37,8 +37,8 @@ import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 import { isValidSecretName } from './secrets';
 import { CHANNEL_PLATFORMS, RESERVED_SLUG_PROVIDERS, SLUG_RE } from '@kortix/manifest-schema';
 
-export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
-const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel', 'computer'];
+export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
+const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel', 'computer'];
 
 /**
  * Platform-owned slugs and the ONLY provider allowed to use each. These are
@@ -132,7 +132,7 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
-  /** openapi/graphql/http: a URL or repo-relative file path. Optional for graphql. */
+  /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
   auth: ConnectorAuthSpec;
@@ -232,7 +232,7 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     if (spec.spec) entry.spec = spec.spec;
   } else if (spec.provider === 'channel') {
     if (spec.platform) entry.platform = spec.platform;
-  } else if (spec.provider === 'openapi') {
+  } else if (spec.provider === 'openapi' || spec.provider === 'postman') {
     if (spec.spec) entry.spec = spec.spec;
   }
 
@@ -389,9 +389,9 @@ function parseProviderFields(
     return { ok: true, value: { ...base, url, transport: t } };
   }
 
-  if (provider === 'openapi') {
+  if (provider === 'openapi' || provider === 'postman') {
     const spec = str(row.spec);
-    if (!spec) return err(slug, 'provider="openapi" requires `spec` (a URL or repo-relative file path)', filename);
+    if (!spec) return err(slug, `provider="${provider}" requires \`spec\` (a URL or repo-relative file path)`, filename);
     return { ok: true, value: { ...base, spec } };
   }
 
@@ -445,7 +445,7 @@ function parseAuth(
   if (provider === 'channel' && type !== 'none') {
     return err(slug, 'provider="channel" authenticates via its platform install token — omit [connectors.auth]', filename);
   }
-  if (type === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+  if (type === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
     return err(slug, '[connectors.auth] type="oauth1" is only supported for openapi/http connectors');
   }
 

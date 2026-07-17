@@ -442,7 +442,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
-    keywords: 'connectors integrations pipedream mcp openapi apps executor project customize',
+    keywords: 'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
   },
   {
     id: 'proj-connectors-policies',

@@ -809,3 +809,44 @@ The exact self-host fast E2E also reported **24 pass / 0 fail**.
 snapshot-locked, install-verified, and the self-host CLI contract is green.
 
 - 2026-07-17 — additive: `PtyMutationOptions` + `ptyMutationOverrides`, `useCreatePty`/`useUpdatePty` accept optional `onError` so hosts can keep pty errors out of global toasts (web terminal UX). Surface snapshot re-recorded (adds only).
+
+---
+
+### 2026-07-17 — session `postman-connectors` (claim)
+
+Claimed the additive Postman connector surface within the user-directed
+end-to-end Postman ingestion rollout. The SDK scope is deliberately narrow: add
+`postman` to existing connector provider unions and preserve the current
+`ConnectorDraftInput` API. No exported name is renamed or removed. Design and
+execution plan: `docs/specs/2026-07-17-postman-connectors.md` and
+`docs/plans/2026-07-17-postman-connectors.md`.
+
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `postman-connectors` (completion)
+
+Completed the additive Postman connector provider contract. The published SDK
+now accepts and reports `postman` anywhere the existing connector surfaces
+accept a provider, without renaming or removing an exported symbol.
+
+**TDD evidence:** the focused connector contract initially rejected `postman`,
+then passed after the provider union was widened. **Final SDK gates:**
+`pnpm --filter @kortix/sdk typecheck` exited 0; `pnpm --filter @kortix/sdk test`
+reported **1113 pass / 0 fail** across 82 files with 4995 assertions; and
+`pnpm --filter @kortix/sdk smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the SDK change is additive, its complete
+runtime and type-level public surfaces remain snapshot-locked, and the packed
+consumer install path is verified. The enclosing API/CLI/UI Postman rollout
+retains its own merge, deploy, and live-dev gates.
+
+**Post-rebase gate addendum:** after rebasing onto `origin/main` at
+`bcb2a2afa`, the SDK typecheck remained green; the full suite reported
+**1121 pass / 0 fail** across 84 files with 5005 assertions; and the packed
+install smoke again passed. **Shippable to production: YES.**

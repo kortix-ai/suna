@@ -47,6 +47,21 @@ account = "work"
     expect(connectorConfig(spec)).toEqual({ app: 'gmail', account: 'work' });
   });
 
+  test('postman stores only its source and credential-free auth shape', () => {
+    const spec = specFrom(`
+[[connectors]]
+slug = "hubspot"
+provider = "postman"
+spec = "https://github.com/HubSpot/HubSpot-public-api-spec-collection"
+  [connectors.auth]
+  type = "bearer"
+`);
+    expect(connectorConfig(spec, 'https://must-not-be-used.example')).toEqual({
+      spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+      auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+    });
+  });
+
   test('mcp/graphql/http base URLs', () => {
     const mcp = specFrom(`
 [[connectors]]

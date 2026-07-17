@@ -3213,6 +3213,7 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   'pipedream',
   'mcp',
   'openapi',
+  'postman',
   'graphql',
   'http',
   // Chat platforms (Slack, later Telegram/Teams) as first-class connectors. The

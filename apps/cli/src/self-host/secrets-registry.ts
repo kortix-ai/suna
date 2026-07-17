@@ -150,6 +150,7 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'PIPEDREAM_CLIENT_ID', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_CLIENT_SECRET', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_PROJECT_ID', category: 'connectors', kind: 'operator', required: false },
+  { key: 'POSTMAN_API_KEY', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_WEBHOOK_SECRET', category: 'connectors', kind: 'operator', required: false },
 
   // Reachability (tunnel mode only — see self-host/tunnel.ts). Both optional:
@@ -287,6 +288,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   PIPEDREAM_CLIENT_ID: ['kortix-api'],
   PIPEDREAM_CLIENT_SECRET: ['kortix-api'],
   PIPEDREAM_PROJECT_ID: ['kortix-api'],
+  POSTMAN_API_KEY: ['kortix-api'],
   PIPEDREAM_ENVIRONMENT: ['kortix-api'],
   PIPEDREAM_WEBHOOK_SECRET: ['kortix-api'],
 

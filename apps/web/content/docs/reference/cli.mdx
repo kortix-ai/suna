@@ -177,7 +177,7 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 
 ### Connectors
 
-Integrations agents call as tools (Pipedream apps, MCP servers, OpenAPI/GraphQL/HTTP endpoints) — mirrors the dashboard's Customize → Connectors. Connectors are project-wide visible; the access gate is which agents may call one (`[[agents]].connectors` in `kortix.yaml`, see [Grants](#grants)). `add` / `rm` / `policy set` edit the **local** `kortix.yaml` (the source of truth) — run `kortix ship` to apply, then `sync` to reconcile — unless you pass `--apply`, which skips ship/CR and applies on the cloud project immediately.
+Integrations agents call as tools (Pipedream apps, MCP servers, Postman collections/workspaces, and OpenAPI/GraphQL/HTTP endpoints) — mirrors the dashboard's Customize → Connectors. Connectors are project-wide visible; the access gate is which agents may call one (`[[agents]].connectors` in `kortix.yaml`, see [Grants](#grants)). `add` / `rm` / `policy set` edit the **local** `kortix.yaml` (the source of truth) — run `kortix ship` to apply, then `sync` to reconcile — unless you pass `--apply`, which skips ship/CR and applies on the cloud project immediately.
 
 | Command | Effect |
 | --- | --- |
@@ -200,7 +200,7 @@ Integrations agents call as tools (Pipedream apps, MCP servers, OpenAPI/GraphQL/
 | `kortix connectors policy <slug> rm <match>` | Remove a connector rule. |
 | `kortix connectors policy <slug> clear` | Remove all of a connector's rules. |
 
-`add` options: `--name <label>` (default: slug), `--provider <pipedream\|mcp\|openapi\|graphql\|http>`, `--app <slug>` (Pipedream), `--url <url>` (MCP), `--transport <http\|sse>` (MCP), `--endpoint <url>` (GraphQL), `--base-url <url>` (HTTP), `--spec <url\|path>` (OpenAPI/GraphQL/HTTP), `--auth-type <none\|bearer\|basic\|custom>`, `--credential shared`.
+`add` options: `--name <label>` (default: slug), `--provider <pipedream\|mcp\|openapi\|postman\|graphql\|http>`, `--app <slug>` (Pipedream), `--url <url>` (MCP), `--transport <http\|sse>` (MCP), `--endpoint <url>` (GraphQL), `--base-url <url>` (HTTP), `--spec <url\|path>` (OpenAPI/Postman/GraphQL/HTTP), `--auth-type <none\|bearer\|basic\|custom>`, `--credential shared`. A Postman `--spec` may be Collection v2 JSON, a `.postman/api` manifest, a public GitHub repository managed by Postman, or a public Postman workspace URL. Workspace URLs require the host operator to configure `POSTMAN_API_KEY`; repository and collection imports do not.
 
 ### Channels
 

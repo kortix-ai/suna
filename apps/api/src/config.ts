@@ -488,6 +488,9 @@ const envSchema = z.object({
   PIPEDREAM_PROJECT_ID:        optStr,
   PIPEDREAM_ENVIRONMENT:       optStrDefault('production'),
   PIPEDREAM_WEBHOOK_SECRET:    optStr,
+  // Optional: required only when importing a public Postman workspace URL.
+  // Exported collection JSON and Postman-managed Git repositories need no key.
+  POSTMAN_API_KEY:              optStr,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET:             optStr,
@@ -735,6 +738,7 @@ export const config = {
   PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
   PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
   PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
+  POSTMAN_API_KEY: env.POSTMAN_API_KEY,
 
   // ─── Search Providers ──────────────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,
