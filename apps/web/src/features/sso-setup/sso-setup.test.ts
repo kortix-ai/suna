@@ -455,3 +455,21 @@ describe('Google SAML guide is novice-complete', () => {
     expect(guidesSource).not.toContain('metadata from the previous step');
   });
 });
+
+// One SSO provider per account → switching mid-setup must confirm + reset
+// (Vercel parity: "your configuration with X will be reset").
+describe('change-provider guard', () => {
+  test('Change provider confirms and clears in-progress state', () => {
+    expect(wizardSource).toContain("setConfirmAction('change')");
+    expect(wizardSource).toContain('Change provider?');
+    expect(wizardSource).toContain('only one identity provider per account');
+    // the confirm actually resets the current provider's progress + stash + token
+    expect(wizardSource).toContain('clearCurrentProgress');
+    expect(flatWizardSource).toContain('window.localStorage.removeItem(metadataStashKey(');
+  });
+
+  test('Start over confirms when there is progress', () => {
+    expect(wizardSource).toContain("setConfirmAction('reset')");
+    expect(wizardSource).toContain('Start over?');
+  });
+});

@@ -32,6 +32,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1474,10 +1475,39 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     if (idx >= 0 && idx < guide.steps.length - 1) setActiveStep(idx + 1);
   };
 
-  const startOver = () => {
+  // In-progress state = anything that would be lost by switching away or
+  // resetting. Kortix allows ONE SSO provider per account, so changing
+  // provider mid-setup abandons the current one — mirror Vercel and confirm
+  // + actually reset it, rather than leaking stale half-configured state.
+  const [confirmAction, setConfirmAction] = useState<'change' | 'reset' | null>(null);
+  const metadataStashed =
+    typeof window !== 'undefined' && guide
+      ? loadMetadataStash(accountId, guide.id) !== null
+      : false;
+  const hasProgress = completed.length > 0 || metadataStashed || scimMinted !== null;
+
+  const clearCurrentProgress = () => {
+    if (!guide) return;
     setCompleted([]);
     saveCompleted(flow, accountId, guide.id, []);
+    setScimMinted(null);
+    ssoBaselineRef.current = null;
+    try {
+      window.localStorage.removeItem(metadataStashKey(accountId, guide.id));
+    } catch {
+      /* non-critical */
+    }
+  };
+
+  const startOver = () => {
+    clearCurrentProgress();
     setActiveStep(0);
+  };
+
+  const changeProviderRoute = `/accounts/${accountId}/${config.route}`;
+  const goChangeProvider = () => {
+    clearCurrentProgress();
+    router.push(changeProviderRoute);
   };
 
   const finish = () => {
@@ -1499,15 +1529,23 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={startOver} className="gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => (hasProgress ? setConfirmAction('reset') : startOver())}
+            className="gap-1.5"
+          >
             <RotateCcw className="size-3.5 shrink-0" />
             Start over
           </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link href={`/accounts/${accountId}/${config.route}`}>
-              <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
-              Change provider
-            </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => (hasProgress ? setConfirmAction('change') : goChangeProvider())}
+            className="gap-1.5"
+          >
+            <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
+            Change provider
           </Button>
         </div>
       </div>
@@ -1599,6 +1637,32 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmAction === 'change' ? 'Change provider?' : 'Start over?'}
+        description={
+          confirmAction === 'change' ? (
+            <span>
+              You can connect only one identity provider per account. Your in-progress{' '}
+              <strong>{guide.name}</strong> setup will be reset.
+            </span>
+          ) : (
+            <span>
+              This clears your progress for <strong>{guide.name}</strong> and returns to the first
+              step.
+            </span>
+          )
+        }
+        confirmLabel={confirmAction === 'change' ? 'Change provider' : 'Start over'}
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (confirmAction === 'change') goChangeProvider();
+          else startOver();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }
