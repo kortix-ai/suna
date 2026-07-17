@@ -18,7 +18,8 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { errorToast } from '@/components/ui/toast';
 import type { useSession } from '@kortix/sdk/react';
-import type { AcpChatItem, AcpSessionConfigOption } from '@kortix/sdk';
+import type { AcpChatItem, AcpSessionConfigOption, AcpUsageProjection } from '@kortix/sdk';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { AlertTriangle, Check, ChevronDown, MessageCircle, Reply } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AcpChatItemRow } from './acp-chat-item-row';
@@ -40,8 +41,10 @@ import {
 import {
   acpOrdinalTimestamps,
   acpTurnDurationMs,
+  formatAcpContextLabel,
   formatAcpCost,
   formatAcpDuration,
+  formatAcpSessionCostLabel,
   groupAcpTurns,
   groupAcpTurnItems,
   splitAcpTurn,
@@ -490,10 +493,21 @@ export function AcpSessionChat({
                       {!turnBusy && turnFooters[turnIndex]?.lastAssistantText ? (
                         <div
                           data-testid="acp-turn-footer"
-                          className="text-muted-foreground -mt-2 flex items-center gap-0.5 text-xs opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100"
+                          className={cn(
+                            'text-muted-foreground -mt-2 flex items-center gap-0.5 text-xs transition-opacity duration-150',
+                            // Last turn: legible, rest-visible — spend is not
+                            // hover-only-last-turn anymore. Historical turns
+                            // keep the hover-reveal noise control.
+                            isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
+                          )}
                         >
                           {(turnFooters[turnIndex]!.durationMs != null || turnFooters[turnIndex]!.costLabel) ? (
-                            <span className="text-muted-foreground/50 mr-1 tabular-nums">
+                            <span
+                              className={cn(
+                                'mr-1 tabular-nums',
+                                isLastTurn ? 'text-muted-foreground' : 'text-muted-foreground/50',
+                              )}
+                            >
                               {turnFooters[turnIndex]!.durationMs != null ? formatAcpDuration(turnFooters[turnIndex]!.durationMs!) : null}
                               {turnFooters[turnIndex]!.costLabel ? <> · {turnFooters[turnIndex]!.costLabel}</> : null}
                             </span>
@@ -555,6 +569,7 @@ export function AcpSessionChat({
               <Loading className="size-3 shrink-0" />Reconnecting…
             </span>
           ) : null}
+          <AcpSessionUsageMeta usage={usage} />
           <ComposerChatInput
             sessionId={sessionId}
             projectId={projectId}
@@ -667,6 +682,30 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
   }
   return btoa(binary);
+}
+
+/**
+ * Quiet, always-legible session-total line above the composer — "$0.42 this
+ * session · 128k ctx". A pure projection off the SAME `usage` snapshot
+ * `AcpSessionChat` already receives as a prop (`AcpUsageProjection`, from the
+ * store's incrementally-maintained `AcpSession`/`projectAcpUsage` —
+ * `@kortix/sdk`) — no new query, no envelope re-fold. Renders nothing until
+ * the harness has reported at least one of cost or context (never a
+ * fabricated empty row), and numbers render `tabular-nums` so a changing
+ * digit count never joggles neighboring text.
+ */
+function AcpSessionUsageMeta({ usage }: { usage: AcpUsageProjection | null | undefined }) {
+  const costLabel = formatAcpSessionCostLabel(usage?.cost);
+  const contextLabel = formatAcpContextLabel(usage);
+  if (!costLabel && !contextLabel) return null;
+  return (
+    <div data-testid="acp-session-usage-meta">
+      <InlineMeta className="tabular-nums">
+        {costLabel}
+        {contextLabel}
+      </InlineMeta>
+    </div>
+  );
 }
 
 /** The pulsing-dot + shimmering status line shown while the agent is actively

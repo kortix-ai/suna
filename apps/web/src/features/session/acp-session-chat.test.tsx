@@ -2,9 +2,10 @@ import { describe, expect, mock, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 
-import { projectAcpChatItems as projectAcpEnvelopes, type AcpChatItem } from '@kortix/sdk';
+import { projectAcpChatItems as projectAcpEnvelopes, type AcpChatItem, type AcpUsageProjection } from '@kortix/sdk';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Check, ChevronRight } from 'lucide-react';
 import type { AcpSessionChat as AcpSessionChatType } from './acp-session-chat';
 import { AcpPlanCard } from './acp-tool-call-card';
@@ -809,6 +810,170 @@ describe('AcpSessionChat — turn footer chips', () => {
     } finally {
       act(() => {
         pendingRenderer.unmount();
+      });
+    }
+  });
+
+  // ordinal timestamps 5s apart on turn 1, 12s apart on turn 2 (both
+  // completed) — mirrors the shape of `acpTurnDurationMs`'s own fixture.
+  const twoTurnRows: any[] = [
+    { ordinal: 1, direction: 'client_to_agent', streamEventId: null, createdAt: '2026-01-01T00:00:00.000Z', envelope: { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: { prompt: [{ type: 'text', text: 'First' }] } } },
+    { ordinal: 2, direction: 'agent_to_client', streamEventId: 1, createdAt: '2026-01-01T00:00:05.000Z', envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'First done.' } } } } },
+    { ordinal: 3, direction: 'client_to_agent', streamEventId: null, createdAt: '2026-01-01T00:01:00.000Z', envelope: { jsonrpc: '2.0', id: 2, method: 'session/prompt', params: { prompt: [{ type: 'text', text: 'Second' }] } } },
+    { ordinal: 4, direction: 'agent_to_client', streamEventId: 2, createdAt: '2026-01-01T00:01:12.000Z', envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Second done.' } } } } },
+  ];
+
+  test('the last turn footer is rest-visible (no opacity-0 hover-gate, tabular-nums, full-contrast text); a historical turn stays hover-only', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const twoTurnItems = projectAcpEnvelopes(twoTurnRows);
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({
+            ready: true,
+            busy: false,
+            chatItems: twoTurnItems,
+            envelopes: twoTurnRows as any,
+            usage: { used: null, size: null, percent: null, cost: { amount: 0.42, currency: 'USD' }, tokens: null, source: 'usage_update' },
+          })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const footers = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-turn-footer');
+      expect(footers).toHaveLength(2);
+
+      const [historicalFooter, lastFooter] = footers;
+      const historicalClassName = (historicalFooter!.props as { className?: string }).className ?? '';
+      const lastClassName = (lastFooter!.props as { className?: string }).className ?? '';
+
+      // Historical turn: still hover-gated (noise control), but its
+      // duration still renders when present.
+      expect(historicalClassName).toContain('opacity-0');
+      expect(textOf(historicalFooter!)).toContain('5s');
+
+      // Last turn: rest-visible — no opacity-0 hover-gate at all — carrying
+      // duration · session cost, with tabular-nums on the numbers and
+      // full-contrast (not the dimmer hover-only tint) text.
+      expect(lastClassName).not.toContain('opacity-0');
+      expect(lastClassName).toContain('text-xs');
+      expect(lastClassName).toContain('text-muted-foreground');
+      const lastText = textOf(lastFooter!);
+      expect(lastText).toContain('12s');
+      expect(lastText).toContain('$0.42');
+
+      const numberSpan = lastFooter!.children.find(
+        (child) => typeof child !== 'string' && (child as any).type === 'span',
+      ) as any;
+      expect((numberSpan.props.className as string)).toContain('tabular-nums');
+      // Full contrast, not the historical row's dimmer `/50` tint.
+      expect((numberSpan.props.className as string)).not.toContain('/50');
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+});
+
+describe('AcpSessionChat — session usage meta line', () => {
+  function usage(overrides: Partial<AcpUsageProjection> = {}): AcpUsageProjection {
+    return { used: null, size: null, percent: null, cost: null, tokens: null, source: 'usage_update', ...overrides };
+  }
+
+  test('renders nothing above the composer when there is no usage data yet', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat acp={baseAcp({ ready: true, usage: null })} sessionId="s1" sessionTitle="Session" projectId="p1" />,
+      );
+    });
+
+    try {
+      expect(renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-session-usage-meta')).toHaveLength(0);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('projects the store\'s existing usage snapshot into a quiet InlineMeta line — "$0.42 this session · 128k ctx" — with tabular-nums', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, usage: usage({ used: 128_000, cost: { amount: 0.42, currency: 'USD' } }) })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const rows = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-session-usage-meta');
+      expect(rows).toHaveLength(1);
+      expect(textOf(rows[0]!)).toContain('$0.42 this session');
+      expect(textOf(rows[0]!)).toContain('128k ctx');
+
+      const inlineMeta = rows[0]!.findByType(InlineMeta);
+      expect((inlineMeta.props as { className?: string }).className ?? '').toContain('tabular-nums');
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('updates in place (same single line) when the usage snapshot changes — no new query, pure re-projection', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ ready: true, usage: usage({ used: 40_000, cost: { amount: 0.1, currency: 'USD' } }) })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      expect(textOf(renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-session-usage-meta')[0]!)).toContain('$0.10');
+
+      act(() => {
+        renderer.update(
+          <AcpSessionChat
+            acp={baseAcp({ ready: true, usage: usage({ used: 130_000, cost: { amount: 0.55, currency: 'USD' } }) })}
+            sessionId="s1"
+            sessionTitle="Session"
+            projectId="p1"
+          />,
+        );
+      });
+
+      const updatedRows = renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-session-usage-meta');
+      // Still exactly one line — the update replaced its text, not its shape.
+      expect(updatedRows).toHaveLength(1);
+      const updatedText = textOf(updatedRows[0]!);
+      expect(updatedText).toContain('$0.55 this session');
+      expect(updatedText).toContain('130k ctx');
+    } finally {
+      act(() => {
+        renderer.unmount();
       });
     }
   });

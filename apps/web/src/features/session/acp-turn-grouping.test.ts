@@ -4,10 +4,13 @@ import {
   acpContextGroupSummary,
   acpItemOrdinal,
   acpOrdinalTimestamps,
+  acpSessionContextTokens,
   acpToolGroupKind,
   acpTurnDurationMs,
+  formatAcpContextLabel,
   formatAcpCost,
   formatAcpDuration,
+  formatAcpSessionCostLabel,
   groupAcpTurnItems,
   groupAcpTurns,
   parseAcpReplyContext,
@@ -243,6 +246,64 @@ describe('formatAcpCost', () => {
   test('returns null when there is no cost', () => {
     expect(formatAcpCost(null)).toBeNull();
     expect(formatAcpCost(undefined)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session-total usage line (Task WS5-P3-b) — pure projections off the
+// existing `AcpUsageProjection` snapshot (`used`/`tokens`/`cost`), no fetch.
+// ---------------------------------------------------------------------------
+
+describe('acpSessionContextTokens', () => {
+  test('prefers the stable `usage_update` total (`used`) over the token-total fallback', () => {
+    expect(
+      acpSessionContextTokens({
+        used: 128_000,
+        tokens: { total: 999, input: 0, output: 0, thought: null, cachedRead: null, cachedWrite: null },
+      }),
+    ).toBe(128_000);
+  });
+
+  test('falls back to the prompt-response token total when `used` has not been reported', () => {
+    expect(
+      acpSessionContextTokens({
+        used: null,
+        tokens: { total: 4_500, input: 0, output: 0, thought: null, cachedRead: null, cachedWrite: null },
+      }),
+    ).toBe(4_500);
+  });
+
+  test('returns null when neither is available', () => {
+    expect(acpSessionContextTokens(null)).toBeNull();
+    expect(acpSessionContextTokens(undefined)).toBeNull();
+    expect(acpSessionContextTokens({ used: null, tokens: null })).toBeNull();
+  });
+});
+
+describe('formatAcpContextLabel', () => {
+  test('formats thousands as a compact "k ctx" label', () => {
+    expect(formatAcpContextLabel({ used: 128_000, tokens: null })).toBe('128k ctx');
+  });
+
+  test('formats sub-1000 token counts as a raw number', () => {
+    expect(formatAcpContextLabel({ used: 420, tokens: null })).toBe('420 ctx');
+  });
+
+  test('returns null when there is no context usage yet', () => {
+    expect(formatAcpContextLabel(null)).toBeNull();
+    expect(formatAcpContextLabel({ used: 0, tokens: null })).toBeNull();
+    expect(formatAcpContextLabel({ used: null, tokens: null })).toBeNull();
+  });
+});
+
+describe('formatAcpSessionCostLabel', () => {
+  test('suffixes the formatted cost with "this session"', () => {
+    expect(formatAcpSessionCostLabel({ amount: 0.42, currency: 'USD' })).toBe('$0.42 this session');
+  });
+
+  test('returns null when there is no cost', () => {
+    expect(formatAcpSessionCostLabel(null)).toBeNull();
+    expect(formatAcpSessionCostLabel(undefined)).toBeNull();
   });
 });
 

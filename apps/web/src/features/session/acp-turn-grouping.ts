@@ -5,7 +5,7 @@
  * testable without mounting a component, mirroring `acp-composer-adapters.ts`.
  */
 
-import type { AcpChatItem, AcpStoredEnvelope, AcpUsageCost } from '@kortix/sdk';
+import type { AcpChatItem, AcpStoredEnvelope, AcpUsageCost, AcpUsageProjection } from '@kortix/sdk';
 import { acpToolName } from './acp-tool-call-card';
 
 export type AcpMessageItem = Extract<AcpChatItem, { kind: 'message' }>;
@@ -218,6 +218,46 @@ export function formatAcpCost(cost: AcpUsageCost | null | undefined): string | n
   if (!cost || !Number.isFinite(cost.amount)) return null;
   const symbol = cost.currency === 'USD' ? '$' : `${cost.currency} `;
   return `${symbol}${cost.amount < 0.01 ? cost.amount.toFixed(4) : cost.amount.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Session-total usage line (continuous cost/usage, Task WS5-P3-b) — pure
+// projections off the SAME `AcpUsageProjection` snapshot the store already
+// maintains incrementally (`AcpSession`/`projectAcpUsage`, `@kortix/sdk`).
+// No fetch, no envelope re-fold: these read the object the caller already
+// has in hand.
+// ---------------------------------------------------------------------------
+
+/** Current session context-token count: prefers the stable `usage_update`
+ *  total (`used`) and falls back to the optional prompt-response token
+ *  total, mirroring the same fallback the composer's `TokenProgress` ring
+ *  uses (`session-chat-input.tsx`) so the two stay in agreement. */
+export function acpSessionContextTokens(
+  usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined,
+): number | null {
+  if (!usage) return null;
+  if (usage.used != null && Number.isFinite(usage.used)) return usage.used;
+  return usage.tokens?.total ?? null;
+}
+
+/** "128k ctx" — compact context-token label for the session-total line.
+ *  Null until the harness has reported any context usage at all (never
+ *  fabricates a "0 ctx" row). */
+export function formatAcpContextLabel(
+  usage: Pick<AcpUsageProjection, 'used' | 'tokens'> | null | undefined,
+): string | null {
+  const tokens = acpSessionContextTokens(usage);
+  if (tokens == null || tokens <= 0) return null;
+  const compact = tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : `${Math.round(tokens)}`;
+  return `${compact} ctx`;
+}
+
+/** "$0.42 this session" — the cumulative session cost, suffixed for the
+ *  session-total line. The bare `formatAcpCost` output (no suffix) still
+ *  feeds the per-turn footer, which reads as "12s · $0.42" inline. */
+export function formatAcpSessionCostLabel(cost: AcpUsageCost | null | undefined): string | null {
+  const amount = formatAcpCost(cost);
+  return amount ? `${amount} this session` : null;
 }
 
 // ---------------------------------------------------------------------------
