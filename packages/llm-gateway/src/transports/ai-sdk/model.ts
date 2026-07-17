@@ -231,9 +231,9 @@ export function resolveAiModel(
         // verbatim regardless of what the upstream actually supports — this
         // package instead SILENTLY drops the schema (downgrading to plain
         // `json_object`) unless told the upstream supports Structured
-        // Outputs (see model.ts's request.ts buildResponseFormatOutput /
-        // extraOpenAiFields comment, and @ai-sdk/openai-compatible's
-        // getArgs: `supportsStructuredOutputs === true && schema != null`).
+        // Outputs (see request.ts's buildResponseFormatOutput comment, and
+        // @ai-sdk/openai-compatible's getArgs:
+        // `supportsStructuredOutputs === true && schema != null`).
         // Forced true here so an openai-compatible upstream (OpenRouter,
         // Groq, self-hosted...) that DOES support it isn't silently
         // downgraded — matches native's assume-it-works passthrough; an
