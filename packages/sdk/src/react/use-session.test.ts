@@ -190,10 +190,10 @@ describe('classifySendError', () => {
         message: 'No upstream configured for model "openai/gpt-4.1"',
         responseBody: JSON.stringify({
           message: 'No upstream configured for model "openai/gpt-4.1"',
-          code: 'provider_key_private',
+          code: 'provider_not_connected',
           provider: 'openai',
           request_id: 'req_send_1',
-          suggestion: 'Ask them to share the openai key with the project, or add your own.',
+          suggestion: 'Add an openai API key in project settings, then retry.',
         }),
       },
     };
@@ -202,8 +202,8 @@ describe('classifySendError', () => {
     expect(result.message).toBe('No upstream configured for model "openai/gpt-4.1"');
     expect(result.gateway).toEqual({
       provider: 'openai',
-      code: 'provider_key_private',
-      suggestion: 'Ask them to share the openai key with the project, or add your own.',
+      code: 'provider_not_connected',
+      suggestion: 'Add an openai API key in project settings, then retry.',
       upstreamStatus: undefined,
       requestId: 'req_send_1',
     });

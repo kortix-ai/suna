@@ -61,15 +61,6 @@ mock.module('../../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'operators-own-anthropic-key',
-  // resolveCandidates' BYOK path now calls this (shared-vs-private fallback —
-  // see projects/secrets.ts pickResolvedSecretRow); stub it the same as
-  // getProjectSecretValue since this file isn't exercising that distinction.
-  getResolvedProjectSecretValue: async () => 'operators-own-anthropic-key',
-  // resolveCandidates only calls this on the "no key resolved" path, which this
-  // file never exercises (getResolvedProjectSecretValue above always resolves)
-  // — stubbed purely so importing the real resolve-candidates.ts doesn't pull
-  // in the real (DB-backed) implementation.
-  projectSecretExistsForAnyOwner: async () => false,
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),

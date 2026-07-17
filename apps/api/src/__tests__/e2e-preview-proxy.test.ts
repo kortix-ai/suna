@@ -273,7 +273,6 @@ mock.module('../projects/secrets', () => {
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
     projectSecretsRevision: (env: Record<string, string>) => `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
-    getResolvedProjectSecretValue: async () => null,
   };
 });
 

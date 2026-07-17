@@ -6,10 +6,7 @@ import {
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
-import {
-  getResolvedProjectSecretValue,
-  projectSecretExistsForAnyOwner,
-} from '../../projects/secrets';
+import { getProjectSecretValue } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
@@ -134,15 +131,9 @@ export async function resolveCandidates(
   let byokFailure: GatewayResolutionError | null = null;
 
   if (byok && principal.projectId) {
-    // SHARED key wins when configured; falls back to the CALLING user's own
-    // PRIVATE key (never another member's) so a member who saved a personal
-    // provider key isn't left with a "connected" provider that silently
-    // routes nothing — see pickResolvedSecretRow's doc comment.
-    const key = await getResolvedProjectSecretValue(
-      principal.projectId,
-      byok.envVar,
-      principal.userId,
-    );
+    // Provider keys are always project-wide (shared) — there is no
+    // per-user/private key concept. See getProjectSecretValue.
+    const key = await getProjectSecretValue(principal.projectId, byok.envVar);
     if (key) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
@@ -162,11 +153,7 @@ export async function resolveCandidates(
       const baseUrl =
         byok.kind === 'bedrock'
           ? bedrockByokBaseUrl(
-              await getResolvedProjectSecretValue(
-                principal.projectId,
-                BEDROCK_REGION_ENV_VAR,
-                principal.userId,
-              ),
+              await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR),
             )
           : byok.baseUrl;
       const byokDescriptor: UpstreamDescriptor = {
@@ -187,25 +174,13 @@ export async function resolveCandidates(
       // (billed as Kortix credits) so the turn doesn't die.
       return isFreeTier ? [byokDescriptor] : [byokDescriptor, ...byokFallbackCandidates()];
     }
-    // No key resolved for THIS caller. Distinguish "nobody has connected this
-    // provider at all" from "a teammate connected their own key but kept it
-    // private" — both used to read as the same generic "No upstream
-    // configured" message with no clue which of the two applies.
-    const anyOwnerConnected = await projectSecretExistsForAnyOwner(
-      principal.projectId,
-      byok.envVar,
+    // No shared key configured for this project — provider keys are always
+    // project-wide, so there's no other place to look.
+    byokFailure = new GatewayResolutionError(
+      'provider_not_connected',
+      `No ${provider} API key is connected for this project.`,
+      `Add a ${provider} API key in project settings, then retry.`,
     );
-    byokFailure = anyOwnerConnected
-      ? new GatewayResolutionError(
-          'provider_key_private',
-          `A ${provider} API key is connected by a teammate, but it's private and not shared with this project.`,
-          `Ask them to share the ${provider} key with the project, or add your own ${provider} API key.`,
-        )
-      : new GatewayResolutionError(
-          'provider_not_connected',
-          `No ${provider} API key is connected for this project.`,
-          `Add a ${provider} API key in project settings, then retry.`,
-        );
   }
 
   // The platform's MANAGED route (Bedrock or OpenRouter on KORTIX'S OWN shared
