@@ -1,0 +1,150 @@
+---
+title: "How we process vendor invoices as they land"
+description: The accounts payable agent we run on Kortix — connected to Gmail, Google Sheets, and Slack. Every 15 minutes it pulls new invoices from the inbox, extracts vendor, amount, and line items, matches them against POs and the ledger, and routes anything clean or flagged to Slack for approval — never scheduling or marking a payment itself.
+date: "2026-06-03"
+author: team
+tags:
+  - Finance
+  - Case Study
+  - Enterprise
+template: ap-invoice-processing
+---
+
+Vendor invoices arrive by email all day, on no schedule anyone controls, and each
+one needs the same handling: open the attachment, read off the vendor and the
+amount and the line items, check it against the purchase order, check it isn't a
+duplicate of something already in the ledger, and check the price is what was
+agreed. Done by hand, that's five minutes of careful reading per invoice, and the
+five minutes is where duplicates and overcharges slip through — not because
+anyone is careless, but because checking against every prior invoice and every
+open PO doesn't scale to a person's afternoon.
+
+We run an accounts-payable agent on Kortix that checks the inbox every 15 minutes,
+extracts every new invoice, matches it against POs and the AP ledger, and posts it
+to Slack for approval — flagged if it's a duplicate, an overcharge, or missing a
+PO. It records; it never pays.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Cron, every 15 minutes</Fact>
+  <Fact label="Connected systems">Gmail · Google Sheets · Slack</Fact>
+  <Fact label="Mode">Record + route for approval — never schedules or pays</Fact>
+</KeyFacts>
+
+## The problem
+
+An invoice by itself is just a number. Whether it's *right* depends on comparing
+it against things that live elsewhere: the PO that authorized the purchase, the
+price that was agreed, and every invoice from that vendor already in the ledger.
+A person doing this by hand checks the easy cases — is there a PO, is the total
+plausible — and the checks that actually catch problems, like a vendor resending
+last month's invoice or padding a line item by a few percent, get skipped when the
+inbox is long and the afternoon is short.
+
+The common shortcuts don't fix this. Paying on receipt catches nothing. A monthly
+batch review catches duplicates and overcharges after the fact, sometimes after
+the payment has already gone out. Neither one checks every invoice against every
+PO and every prior invoice at the moment it arrives.
+
+## What we built
+
+On Kortix, a cron fires every 15 minutes. Each firing spawns a fresh agent
+session — a cloud sandbox with no memory of the last run, because the AP ledger
+in Google Sheets *is* the record. The agent checks a Gmail label for new invoice
+emails, extracts the vendor, amount, and line items from each attachment, matches
+it against the known POs and prior invoices tracked in the sheet, flags anything
+that's a duplicate, an overcharge, or missing a PO, and records every invoice in
+the ledger. It then posts the batch to Slack for a person to approve. It never
+schedules a payment or marks anything paid.
+
+## How it works
+
+<Steps>
+<Step title="Run every 15 minutes, fresh">
+
+A **cron trigger** fires the agent every 15 minutes. Each firing spawns a fresh
+**session** in its own sandbox — nothing carries over in the agent's own memory.
+The AP ledger in Google Sheets is the continuity: every run reads it before doing
+anything, so duplicate and overcharge checks are judged against the same record
+every time.
+
+</Step>
+<Step title="Give the agent the AP rules">
+
+How we extract, match, and flag lives as a **skill** loaded into every session:
+what counts as a duplicate, the tolerance allowed before a line item counts as an
+overcharge, and what to do when no PO matches at all. The agent works to that
+standard instead of improvising it invoice by invoice.
+
+</Step>
+<Step title="Connect what invoice processing needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read Gmail** — new invoice emails and their attachments in the watched label.
+- **Read and append to Google Sheets** — the POs and the AP ledger it matches
+  against, and the new rows it records.
+- **Post to Slack** — the batch of processed invoices, flagged or clean, for
+  approval.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's only write is an appended row in the AP ledger and a Slack post. It
+has no access to a payment rail, and nothing in its instructions lets it schedule
+or mark an invoice as paid — that action belongs to a person, every time, with no
+exception for a clean match. Credentials are encrypted in the secrets manager and
+injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Route the batch for approval">
+
+With that in place, every 15 minutes any new invoices are already extracted,
+matched, and recorded by the time a person looks at Slack — each one marked clean,
+duplicate, overcharge, or missing-PO, with the PO and prior-invoice references
+attached. A person reviews the batch and approves it for payment through the
+normal AP process. The agent's part ends at the Slack post.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **cron** every 15 minutes spawns a fresh session; the Google Sheet ledger is
+  the memory. The agent reads Gmail, matches against POs and prior invoices
+  through **connectors**, records every invoice in the sheet, and posts the batch
+  to Slack. It never schedules or marks a payment as paid — that's a human, always.
+</Callout>
+
+## Guardrails
+
+Accounts payable is where a mistake costs real money, so the agent's access is
+scoped to match:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Gmail, the AP sheet, and Slack, and nothing else leaves it.
+- **Scoped secrets.** The Gmail, Sheets, and Slack credentials are encrypted in
+  the secrets manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **No payment action, ever.** The agent has no connector, tool, or instruction
+  that schedules a payment or marks an invoice as paid. Every invoice, clean or
+  flagged, is routed to a person for that decision.
+- **Flag, don't discard.** Duplicates, overcharges, and missing-PO invoices are
+  recorded and flagged in the ledger, never silently dropped or auto-approved.
+- **Everything is code.** The agent's matching rules, skill, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every 15 min" label="New invoices extracted, matched, and recorded" />
+  <Stat value="0 payments" label="Scheduled or marked paid by the agent" />
+  <Stat value="3 checks" label="Duplicate, overcharge, and missing-PO on every invoice" />
+</StatGrid>
+
+The five careful minutes an invoice used to wait for now happen automatically,
+every 15 minutes, against the full history in the ledger rather than whatever a
+person remembers. What used to reach the payment step unchecked now arrives
+flagged, with the PO and the prior invoice it conflicts with already attached —
+and the decision to pay stays exactly where it was: with a person.
