@@ -142,7 +142,7 @@ const importStep = (claimHint: string): GuideStep => ({
   kind: 'import',
   where: 'kortix',
   intro:
-    'Paste the federation metadata from the previous step. Kortix registers your IdP and routes sign-ins for your email domain through it.',
+    'The federation metadata you captured earlier is prefilled below. Kortix registers your IdP and routes sign-ins for your email domain through it.',
   note: `Group claim is prefilled with ${claimHint} — it must match the claim name your IdP emits, or group sync silently finds nothing.`,
 });
 
@@ -161,7 +161,7 @@ const testStep = (extra?: string): GuideStep => ({
     ...(extra ? [extra] : []),
   ],
   warning:
-    'If the sign-in fails: “not assigned” → assign the user to the app (assign-users step). An attribute/email error → recheck the email claim maps to the IdP’s login attribute (attributes step). Signed in but no groups → recheck the group claim NAME matches what you set at connect.',
+    'If the sign-in fails: “not assigned” → assign the user to the app (assign-users step); on Google this can also be propagation delay right after you turn the app on, so wait a few minutes and retry first. An attribute/email error → recheck the email claim maps to the IdP’s login attribute (attributes step). Signed in but no groups → recheck the group claim NAME matches what you set at connect.',
   success:
     'The test user shows up under Members on the Identity page — that’s a confirmed round-trip.',
 });
@@ -751,6 +751,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     steps: [
       {
         id: 'create-app',
+        where: 'idp',
+        menuPath: 'Google Admin → Apps → Web and mobile apps',
         title: 'Create a custom SAML app',
         intro:
           'In the Google Admin console (admin.google.com): Apps → Web and mobile apps → Add app → Add custom SAML app.',
@@ -768,15 +770,30 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'text',
             text: 'Enter an app name, such as "Kortix" — optionally upload an app icon. Click "Continue".',
           },
+          {
+            kind: 'image',
+            src: '/sso-setup/google/create-app-2.png',
+            alt: 'Google custom SAML app dialog with the App name and icon fields',
+            schematic: {
+              title: 'Add custom SAML app → App details',
+              rows: [
+                { label: 'App name', value: 'Kortix', as: 'field' },
+                { label: 'App icon', value: '(optional)', as: 'field' },
+                { label: 'Continue', as: 'button' },
+              ],
+            },
+          },
         ],
         doneLabel: 'I’ve created a custom SAML app',
       },
       {
         id: 'metadata',
+        where: 'idp',
+        menuPath: 'Add custom SAML app → Google Identity Provider details',
         title: 'Set identity provider metadata',
         kind: 'metadata-input',
         intro:
-          'On the "Google Identity Provider details" step, click "Download metadata" and paste the XML file’s contents below to continue.',
+          'On the "Google Identity Provider details" step, click "Download metadata", paste the XML file’s contents below, then click "Continue" IN GOOGLE to open the "Service provider details" screen (the next step).',
         content: [
           {
             kind: 'image',
@@ -784,7 +801,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             alt: 'Google Identity Provider details step with the Download metadata button',
             schematic: {
               title: 'Add custom SAML app → Google Identity Provider details',
-              rows: [{ label: 'Download metadata', as: 'button' }],
+              rows: [
+                { label: 'Download metadata', as: 'button' },
+                { label: 'Continue', as: 'button' },
+              ],
             },
           },
         ],
@@ -793,6 +813,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'basic-saml',
+        where: 'idp',
+        menuPath: 'Add custom SAML app → Service provider details',
         title: 'Service provider details',
         intro: 'On the "Service provider details" step, paste these two values.',
         content: [
@@ -826,9 +848,11 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'attribute-mapping',
+        where: 'idp',
+        menuPath: 'Add custom SAML app → Attribute mapping',
         title: 'Map user attributes',
         intro:
-          'On the "Attribute mapping" step, click "Add mapping" for each row and select the matching Google category/attribute.',
+          'On the "Attribute mapping" step, click "Add mapping" for each row: pick the Google Directory field on the LEFT, and type the App attribute name (primaryEmail / firstName / lastName) on the RIGHT. In the end it should look like this:',
         content: [
           {
             kind: 'claims-table',
@@ -838,11 +862,26 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
               { name: 'lastName', source: 'Basic Information > Last name' },
             ],
           },
+          {
+            kind: 'image',
+            src: '/sso-setup/google/attribute-mapping-1.png',
+            alt: 'Google custom SAML app Attribute mapping step with primaryEmail, firstName and lastName mapped',
+            schematic: {
+              title: 'Attribute mapping',
+              rows: [
+                { label: 'Primary email', value: '→ primaryEmail', as: 'field' },
+                { label: 'First name', value: '→ firstName', as: 'field' },
+                { label: 'Last name', value: '→ lastName', as: 'field' },
+              ],
+            },
+          },
         ],
         doneLabel: 'I’ve mapped the user attributes',
       },
       {
         id: 'group-claim',
+        where: 'idp',
+        menuPath: 'Attribute mapping → Group membership',
         title: 'Map the groups attribute',
         intro:
           'Still on the attribute mapping step, scroll to "Group membership (optional)", click "Add Google groups", select the groups to send, and set the "App attribute" to groups. Click "Finish".',
@@ -866,6 +905,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'assign-users',
+        where: 'idp',
+        menuPath: 'Your app → User access',
         title: 'Turn the app on',
         intro:
           'Back on the app page, select "User access", set the service to ON for the org units or groups that may sign in, then click "Save".',
