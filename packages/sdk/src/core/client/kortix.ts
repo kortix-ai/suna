@@ -415,13 +415,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
             P.pipedreamFinalize(projectId, ...a),
         },
-        /** Direct integrations.sh catalogue and normalized domain surfaces. */
-        discover: {
-          list: (...a: DropFirst<Parameters<typeof P.listDiscoverIntegrations>>) =>
-            P.listDiscoverIntegrations(projectId, ...a),
-          detail: (...a: DropFirst<Parameters<typeof P.getDiscoverIntegration>>) =>
-            P.getDiscoverIntegration(projectId, ...a),
-        },
       },
 
       policies: {

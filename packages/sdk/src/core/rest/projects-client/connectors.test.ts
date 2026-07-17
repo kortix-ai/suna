@@ -5,12 +5,10 @@ import {
   createConnector,
   deleteConnector,
   getConnectStatus,
-  getDiscoverIntegration,
   getConnectorConfig,
   getConnectorPolicies,
   listConnectionProfiles,
   listConnectors,
-  listDiscoverIntegrations,
   listPipedreamApps,
   pipedreamConnect,
   pipedreamFinalize,
@@ -199,27 +197,6 @@ test('listPipedreamApps GETs with q + cursor as query params when given', async 
   expect(last().url).toContain('q=slack');
   expect(last().url).toContain('cursor=c1');
   expect(result.nextCursor).toBe('c2');
-});
-
-test('listDiscoverIntegrations GETs a searchable cursor page', async () => {
-  nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
-  await listDiscoverIntegrations('P1', 'notion admin', '48');
-  expect(last().url).toContain('/executor/projects/P1/discover/integrations?');
-  expect(last().url).toContain('q=notion+admin');
-  expect(last().url).toContain('cursor=48');
-  expect(last().method).toBe('GET');
-});
-
-test('getDiscoverIntegration GETs detail by encoded catalogue id', async () => {
-  nextResponse = {
-    status: 200,
-    body: { item: { id: 'openapi/1forge-com' }, variants: [] },
-  };
-  const result = await getDiscoverIntegration('P1', 'openapi/1forge-com');
-  expect(last().url).toContain('/executor/projects/P1/discover/integrations/detail?');
-  expect(last().url).toContain('id=openapi%2F1forge-com');
-  expect(last().method).toBe('GET');
-  expect(result.item.id).toBe('openapi/1forge-com');
 });
 
 test('getConnectStatus GETs the deployment-wide connect-status endpoint', async () => {

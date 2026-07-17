@@ -533,8 +533,6 @@ claim is closed.
 
 **Status:** IN PROGRESS.
 
----
-
 ### 2026-07-13 — session `session-base-branches` (completion)
 
 Completed the additive session branch-environment surface in implementation
@@ -888,3 +886,37 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for the SDK surface. Repository merge, Deploy
 Dev, and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (claim)
+
+Claimed the user-directed rollback of the additive Discover catalogue SDK surface
+while preserving the earlier first-class Postman connector provider contract. The
+rollback removes only the integrations.sh list/detail APIs and facade bindings that
+shipped in PR #4920. Full SDK typecheck, suite, and packed-install smoke gates are
+required before completion.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (completion)
+
+Completed the user-directed rollback of the Discover catalogue SDK surface from
+PR #4920. The earlier first-class Postman provider remains accepted by connector
+drafts and responses; only the integrations.sh list/detail functions and
+`project(id).connectors.discover` facade binding were removed.
+
+**Focused evidence:** executor/Postman tests passed **68 / 0**; the restored
+Connectors/Channels source regression passed **6 / 0**; API typecheck exited 0;
+and the ke2e coverage gate passed at **405 / 493 routes** with the two Discover
+routes absent.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1119 pass / 2 skip / 0 fail** across 84 files with 4999
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for this explicitly requested rollback. The two
+skips are the pre-existing browser-bundle tests that require a bundle build.
