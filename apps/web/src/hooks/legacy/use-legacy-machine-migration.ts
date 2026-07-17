@@ -40,6 +40,18 @@ function eligibilityKey(accountId?: string | null) {
   return [...ELIGIBILITY_KEY, accountId ?? null] as const;
 }
 
+// "Not eligible" fallback for a deployment that doesn't carry this route at
+// all (e.g. self-host, or an environment ahead of the backend rollout) — same
+// shape react-query would otherwise be handed as an error, but treated as a
+// normal "nothing to migrate" result instead of a query error. Mirrors
+// use-account-deletion.ts's isUnsupportedEndpoint fallback for the same class
+// of "this backend route may legitimately not exist here" 404.
+const NOT_ELIGIBLE: LegacyEligibility = { eligible: false, sandboxes: [] };
+
+function isUnsupportedEndpoint(error: { status?: number; code?: string } | undefined): boolean {
+  return error?.status === 404 || error?.code === '404';
+}
+
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }): T {
   if (!response.success || response.data === undefined) {
     throw response.error ?? new Error('Legacy migration request failed');
@@ -58,14 +70,23 @@ export function useLegacyMachines(opts?: { enabled?: boolean; accountId?: string
     queryKey: eligibilityKey(accountId),
     queryFn: async () => {
       const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
-      return unwrap(
-        // Background eligibility probe on the projects grid — a user who just
-        // joined (or left) an account can race the account switch and 403;
-        // the Migrate card simply doesn't render, never a global toast.
-        await backendApi.get<LegacyEligibility>(`/projects/legacy-migration/eligibility${qs}`, {
-          showErrors: false,
-        }),
+      // Background eligibility probe on the projects grid — a user who just
+      // joined (or left) an account can race the account switch and 403;
+      // the Migrate card simply doesn't render, never a global toast.
+      const response = await backendApi.get<LegacyEligibility>(
+        `/projects/legacy-migration/eligibility${qs}`,
+        { showErrors: false },
       );
+      // A deployment without this route (self-host, or ahead of the backend
+      // rollout) 404s here on every poll. That is an EXPECTED "nothing to
+      // migrate" outcome, not a query error — surfacing it as a thrown/error
+      // query state spams the console/devtools on every 15s refetch for no
+      // actionable reason. Degrade to the same shape a real 200 "not
+      // eligible" response would carry.
+      if (!response.success && isUnsupportedEndpoint(response.error as { status?: number; code?: string } | undefined)) {
+        return NOT_ELIGIBLE;
+      }
+      return unwrap(response);
     },
     enabled: opts?.enabled ?? true,
     staleTime: 15_000,
