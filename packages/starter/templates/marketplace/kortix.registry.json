@@ -3819,6 +3819,917 @@
           ]
         }
       }
+    },
+    {
+      "name": "ap-invoice-processing-agent",
+      "type": "registry:agent",
+      "title": "Accounts payable agent",
+      "description": "Extracts vendor invoices from email, matches them to POs and prior invoices, flags anomalies, and records them to the AP ledger for human approval.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/ap-invoice-processing.md",
+          "type": "registry:file",
+          "target": "@agents/ap-invoice-processing.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "ap-invoice-match-skill",
+      "type": "registry:skill",
+      "title": "AP invoice matching",
+      "description": "Extract-and-match runbook for incoming vendor invoices: line-item extraction, PO/prior-invoice matching, duplicate + overcharge detection, and the ledger + approval hand-off.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/ap-invoice-match",
+          "type": "registry:file",
+          "target": "@skills/ap-invoice-match"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "ap-invoice-processing",
+      "type": "registry:template",
+      "title": "Accounts payable on autopilot",
+      "description": "An agent that works the incoming-invoice queue: it extracts each vendor invoice from email, matches it to POs and prior invoices, flags duplicates and overcharges, and records it to the AP ledger for approval — never scheduling or marking a payment without a human.",
+      "categories": [
+        "finance",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "ap-invoice-processing-agent",
+        "ap-invoice-match-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check for new invoices",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        },
+        {
+          "key": "invoice_label",
+          "label": "Gmail label for incoming invoices",
+          "type": "text",
+          "default": "Invoices",
+          "help": "The agent reads invoices filed under this Gmail label.",
+          "required": true
+        },
+        {
+          "key": "ap_ledger",
+          "label": "AP ledger spreadsheet",
+          "type": "text",
+          "default": "Accounts Payable",
+          "help": "The Google Sheet the agent records invoices into.",
+          "required": true
+        },
+        {
+          "key": "approval_channel",
+          "label": "Slack channel for approvals",
+          "type": "channel",
+          "help": "Where invoices needing a decision are posted for human approval.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "ap-invoice-processing",
+        "capabilities": {
+          "connectors": [
+            "gmail",
+            "google_sheets"
+          ]
+        },
+        "template": {
+          "agents": {
+            "ap-invoice-processing": {
+              "connectors": [
+                "gmail",
+                "google_sheets"
+              ],
+              "skills": [
+                "ap-invoice-match"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "gmail",
+              "provider": "pipedream",
+              "app": "gmail"
+            },
+            {
+              "slug": "google_sheets",
+              "provider": "pipedream",
+              "app": "google_sheets"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "invoice-intake",
+              "name": "Invoice intake",
+              "type": "cron",
+              "agent": "ap-invoice-processing",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `ap-invoice-match` skill and process new vendor invoices filed under the {{invoice_label}} label in Gmail. For each invoice: extract the vendor, amount, and line items; match it against known POs and prior invoices in {{ap_ledger}}; flag duplicates, overcharges, and missing POs; and record it to {{ap_ledger}}, posting anything that needs a decision to {{approval_channel}}. Never schedule or mark a payment as paid — a human approves every payment."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "customer-onboarding-agent",
+      "type": "registry:agent",
+      "title": "Customer onboarding agent",
+      "description": "Tracks new accounts against onboarding milestones, drafts a customer nudge on a stall, and alerts the owning CSM with context.",
+      "categories": [
+        "customer-success"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/customer-onboarding.md",
+          "type": "registry:file",
+          "target": "@agents/customer-onboarding.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "onboarding-milestones-skill",
+      "type": "registry:skill",
+      "title": "Onboarding milestones",
+      "description": "Runbook for tracking activation milestones and product events, detecting stalls and overdue accounts, drafting the nudge, and alerting the owning CSM.",
+      "categories": [
+        "customer-success"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/onboarding-milestones",
+          "type": "registry:file",
+          "target": "@skills/onboarding-milestones"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "customer-onboarding",
+      "type": "registry:template",
+      "title": "Drive new customers to activation",
+      "description": "A daily agent that checks every new account against its onboarding milestones in Postgres, drafts a nudge email when one stalls, and alerts the owning CSM in Slack with the context to act — it never sends the email itself and never changes account settings.",
+      "categories": [
+        "customer-success",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "customer-onboarding-agent",
+        "onboarding-milestones-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the onboarding check",
+          "type": "cron",
+          "default": "0 0 7 * * *",
+          "help": "Defaults to every day at 7:00 AM.",
+          "required": true
+        },
+        {
+          "key": "customer_since_property",
+          "label": "HubSpot customer-since property",
+          "type": "text",
+          "default": "closedate",
+          "help": "The HubSpot company/deal property marking when the account became a paying customer.",
+          "required": true
+        },
+        {
+          "key": "onboarding_window_days",
+          "label": "Onboarding window (days)",
+          "type": "text",
+          "default": "30",
+          "help": "How many days after becoming a customer an account is tracked for onboarding.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for CSM alerts",
+          "type": "channel",
+          "help": "Where the owning CSM is alerted about stalled or overdue accounts.",
+          "required": true
+        },
+        {
+          "key": "draft_channel",
+          "label": "Where customer nudge drafts are held",
+          "type": "channel",
+          "help": "The email channel the drafted nudge is held in for the CSM to review and send.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "customer-onboarding",
+        "capabilities": {
+          "connectors": [
+            "postgresql",
+            "hubspot"
+          ]
+        },
+        "template": {
+          "agents": {
+            "customer-onboarding": {
+              "connectors": [
+                "postgresql",
+                "hubspot"
+              ],
+              "skills": [
+                "onboarding-milestones"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "postgresql",
+              "provider": "pipedream",
+              "app": "postgresql"
+            },
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            }
+          ],
+          "channels": [
+            "slack",
+            "email"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-onboarding-check",
+              "name": "Daily onboarding check",
+              "type": "cron",
+              "agent": "customer-onboarding",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `onboarding-milestones` skill and run today's onboarding check. Read HubSpot for accounts where {{customer_since_property}} falls within the last {{onboarding_window_days}} days, and read Postgres read-only for each account's activation milestones and product events. Classify every account as on track, stalled at a specific milestone, or overdue past {{onboarding_window_days}} days without full activation. For every stalled or overdue account, draft a nudge email addressed to the specific missed step into {{draft_channel}}, and alert the owning CSM in {{alert_channel}} with the account's status, the stall, and the drafted nudge. Draft and alert only: never send the nudge yourself and never change any account setting in HubSpot or elsewhere. Write back only the nudge-milestone marker so the same stall isn't re-drafted."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "payment-recovery-agent",
+      "type": "registry:agent",
+      "title": "Payment recovery agent",
+      "description": "Works every failed Stripe invoice through a smart-retry-to-final-notice dunning ladder on a per-subscription ledger, and stops on payment.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/payment-recovery.md",
+          "type": "registry:file",
+          "target": "@agents/payment-recovery.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "dunning-escalation-skill",
+      "type": "registry:skill",
+      "title": "Dunning escalation ladder",
+      "description": "The four-rung dunning ladder, minimum wait times between rungs, and the ledger format that carries each subscription's recovery state across hourly runs.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/dunning-escalation",
+          "type": "registry:file",
+          "target": "@skills/dunning-escalation"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "payment-recovery",
+      "type": "registry:template",
+      "title": "Recover failed subscription payments",
+      "description": "Installs an hourly, session-persistent agent that reads failed Stripe invoices and escalates each one through a fixed dunning ladder — smart retry, payment reminder, update-your-card notice, final notice — alerting the revenue team on Slack and stopping the moment an invoice is paid. It only retries charges and sends dunning email; it never cancels a subscription, issues a credit, or refunds without human approval.",
+      "categories": [
+        "finance",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "payment-recovery-agent",
+        "dunning-escalation-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check failed invoices",
+          "type": "cron",
+          "default": "0 0 * * * *",
+          "help": "Defaults to every hour.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for the revenue-team summary",
+          "type": "channel",
+          "help": "Where each run's ladder advances, final notices, and recoveries are posted, e.g. #revenue.",
+          "required": true
+        },
+        {
+          "key": "dunning_channel",
+          "label": "Where dunning emails are sent from",
+          "type": "channel",
+          "help": "The email channel connected in Settings→Channels that the agent sends the smart-retry, reminder, update-card, and final-notice emails through.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "payment-recovery",
+        "capabilities": {
+          "connectors": [
+            "stripe"
+          ]
+        },
+        "template": {
+          "agents": {
+            "payment-recovery": {
+              "connectors": [
+                "stripe"
+              ],
+              "skills": [
+                "dunning-escalation"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "stripe",
+              "provider": "pipedream",
+              "app": "stripe"
+            }
+          ],
+          "channels": [
+            "slack",
+            "email"
+          ],
+          "triggers": [
+            {
+              "slug": "hourly-payment-recovery-sweep",
+              "name": "Hourly payment-recovery sweep",
+              "type": "cron",
+              "agent": "payment-recovery",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `dunning-escalation` skill and run one payment-recovery pass. This is ONE persistent session re-prompted hourly, so resume the ledger first: read `.kortix/memory/payment-recovery-ledger.md` for every subscription's current rung and next-eligible escalation time. Read fresh failed-invoice and subscription state from Stripe. For each subscription whose wait time has elapsed, advance it exactly one rung on the ladder — smart retry, payment reminder, update-your-card notice, final notice — and send the matching email via {{dunning_channel}}. The moment a tracked subscription's invoice is paid, mark it recovered and stop emailing it. Never advance past the final notice, and never cancel a subscription, issue a credit, or process a refund without human approval — flag anything past final notice for a human instead. Post one summary to {{alert_channel}} covering what advanced, what's newly awaiting a human, and what recovered. Update the ledger before ending the turn."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "pipeline-hygiene-agent",
+      "type": "registry:agent",
+      "title": "Pipeline hygiene agent",
+      "description": "Daily read-mostly HubSpot deal-hygiene scan that nudges reps in Slack and escalates the worst offenders to the sales manager.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/pipeline-hygiene.md",
+          "type": "registry:file",
+          "target": "@agents/pipeline-hygiene.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "pipeline-hygiene-rules-skill",
+      "type": "registry:skill",
+      "title": "Pipeline hygiene rules",
+      "description": "Staleness, missing-field, stage-stall, and overdue-task rules, plus how to nudge the owning rep and escalate the day's worst offenders.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/pipeline-hygiene-rules",
+          "type": "registry:file",
+          "target": "@skills/pipeline-hygiene-rules"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "pipeline-hygiene",
+      "type": "registry:template",
+      "title": "Keep the pipeline moving",
+      "description": "Installs a daily cron that scans every open HubSpot deal for stale activity, missing next steps/close dates, stage stalls, and overdue tasks, nudges the owning rep in Slack, and escalates the day's worst offenders to the sales manager. Read-mostly — the only write is an internal hygiene flag; it never changes a deal's stage, owner, or amount.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "pipeline-hygiene-agent",
+        "pipeline-hygiene-rules-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the daily pipeline scan",
+          "type": "cron",
+          "default": "0 0 6 * * *",
+          "help": "Defaults to every day at 06:00 UTC.",
+          "required": true
+        },
+        {
+          "key": "stale_days",
+          "label": "No-activity window (days)",
+          "type": "text",
+          "default": "7",
+          "help": "Flag a deal that's had no logged activity in this many days.",
+          "required": true
+        },
+        {
+          "key": "stall_days",
+          "label": "Stage-stall window (days)",
+          "type": "text",
+          "default": "21",
+          "help": "Flag a deal that's sat in its current stage this many days without moving.",
+          "required": true
+        },
+        {
+          "key": "escalation_channel",
+          "label": "Slack channel for manager escalation",
+          "type": "channel",
+          "help": "Where the day's worst offenders are escalated, e.g. #sales-management.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "pipeline-hygiene",
+        "capabilities": {
+          "connectors": [
+            "hubspot"
+          ]
+        },
+        "template": {
+          "agents": {
+            "pipeline-hygiene": {
+              "connectors": [
+                "hubspot"
+              ],
+              "skills": [
+                "pipeline-hygiene-rules"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-pipeline-hygiene-scan",
+              "name": "Daily pipeline-hygiene scan",
+              "type": "cron",
+              "agent": "pipeline-hygiene",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `pipeline-hygiene-rules` skill and run one complete pipeline-hygiene scan. This is a fresh session each run, so recompute from HubSpot's current state — nothing carries over from the prior day. Read every open deal's stage, amount, close date, next step, and time-in-stage, its logged activities, and its open tasks, all read-mostly. Flag any deal with no activity in {{stale_days}} days, a missing next step or close date, no stage movement in {{stall_days}} days, or an overdue task — writing only an internal hygiene flag onto the deal, never its stage, owner, or amount. Nudge each owning rep in Slack with what's wrong on their deals and what to do about it, then escalate the day's worst offenders — most rules tripped, largest amount at risk, longest gone quiet — to {{escalation_channel}}. Hold every other action for the rep and the sales manager."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "renewal-manager-agent",
+      "type": "registry:agent",
+      "title": "Renewal manager agent",
+      "description": "Surfaces upcoming renewals, preps the renewal packet, and drafts outreach for the account owner to review and send.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/renewal-manager.md",
+          "type": "registry:file",
+          "target": "@agents/renewal-manager.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "renewal-prep-skill",
+      "type": "registry:skill",
+      "title": "Renewal prep",
+      "description": "Renewal-workflow runbook: find renewals 90/60/30 days out, assemble the value/usage/expansion packet, draft outreach, and flag at-risk renewals.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/renewal-prep",
+          "type": "registry:file",
+          "target": "@skills/renewal-prep"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "renewal-manager",
+      "type": "registry:template",
+      "title": "Renewals on autopilot",
+      "description": "A daily agent that surfaces upcoming contract renewals 90/60/30 days out, preps a renewal packet (usage, value delivered, expansion ideas), and drafts outreach for the account owner to review and send — never discounting or sending on its own.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "renewal-manager-agent",
+        "renewal-prep-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to check renewals",
+          "type": "cron",
+          "default": "0 0 8 * * *",
+          "help": "Defaults to every day at 8:00 AM.",
+          "required": true
+        },
+        {
+          "key": "renewal_date_property",
+          "label": "HubSpot renewal-date property",
+          "type": "text",
+          "default": "renewal_date",
+          "help": "The HubSpot deal/company property holding the renewal date.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for renewal alerts",
+          "type": "channel",
+          "help": "Where upcoming + at-risk renewals are posted to the account owner.",
+          "required": true
+        },
+        {
+          "key": "draft_channel",
+          "label": "Where renewal outreach drafts are held",
+          "type": "channel",
+          "help": "The email channel the drafted outreach is held in for the owner to review and send.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "renewal-manager",
+        "capabilities": {
+          "connectors": [
+            "hubspot",
+            "google_calendar"
+          ]
+        },
+        "template": {
+          "agents": {
+            "renewal-manager": {
+              "connectors": [
+                "hubspot",
+                "google_calendar"
+              ],
+              "skills": [
+                "renewal-prep"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "hubspot",
+              "provider": "pipedream",
+              "app": "hubspot"
+            },
+            {
+              "slug": "google_calendar",
+              "provider": "pipedream",
+              "app": "google_calendar"
+            }
+          ],
+          "channels": [
+            "slack",
+            "email"
+          ],
+          "triggers": [
+            {
+              "slug": "daily-renewals",
+              "name": "Daily renewal check",
+              "type": "cron",
+              "agent": "renewal-manager",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `renewal-prep` skill and run today's renewal check. Read {{renewal_date_property}} across HubSpot to find renewals 90/60/30 days out. For each, prep a renewal packet — usage and value delivered, account health, and expansion ideas — draft outreach into {{draft_channel}}, and post the upcoming and at-risk renewals to {{alert_channel}} for the account owner. Prep and draft only: the owner reviews and sends. Never send outreach or apply a discount automatically."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rfp-responder-agent",
+      "type": "registry:agent",
+      "title": "RFP-responder agent",
+      "description": "Parses inbound RFPs and drafts grounded responses for human review.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/rfp-responder.md",
+          "type": "registry:file",
+          "target": "@agents/rfp-responder.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "rfp-response-skill",
+      "type": "registry:skill",
+      "title": "RFP response",
+      "description": "Parses an RFP, matches questions to the vetted answer library, and drafts the response in Google Docs.",
+      "categories": [
+        "sales"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/rfp-response",
+          "type": "registry:file",
+          "target": "@skills/rfp-response"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "rfp-responder",
+      "type": "registry:template",
+      "title": "Draft RFP and proposal responses",
+      "description": "On each new inbound RFP or proposal questionnaire, drafts every answer from our vetted past-answers library and product docs into a new Google Doc, and flags anything it can't answer confidently — holding the completed draft for a human to review and submit. Never submits or sends anything itself.",
+      "categories": [
+        "sales",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "rfp-responder-agent",
+        "rfp-response-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "How often to check for new RFPs",
+          "type": "cron",
+          "default": "0 */15 * * * *",
+          "help": "Defaults to every 15 minutes.",
+          "required": true
+        },
+        {
+          "key": "rfp_label",
+          "label": "Gmail label/folder to watch for inbound RFPs",
+          "type": "text",
+          "default": "RFPs",
+          "help": "The Gmail label the agent checks for new inbound RFPs and proposal questionnaires.",
+          "required": true
+        },
+        {
+          "key": "drafts_folder",
+          "label": "Google Drive folder for draft response docs",
+          "type": "text",
+          "default": "RFP Drafts",
+          "help": "Where the agent creates the new Google Doc containing each drafted response.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "rfp-responder",
+        "capabilities": {
+          "connectors": [
+            "gmail",
+            "google_drive",
+            "google_docs"
+          ]
+        },
+        "template": {
+          "agents": {
+            "rfp-responder": {
+              "connectors": [
+                "gmail",
+                "google_drive",
+                "google_docs"
+              ],
+              "skills": [
+                "rfp-response"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "gmail",
+              "provider": "pipedream",
+              "app": "gmail"
+            },
+            {
+              "slug": "google_drive",
+              "provider": "pipedream",
+              "app": "google_drive"
+            },
+            {
+              "slug": "google_docs",
+              "provider": "pipedream",
+              "app": "google_docs"
+            }
+          ],
+          "triggers": [
+            {
+              "slug": "rfp-check",
+              "name": "RFP inbox check",
+              "type": "cron",
+              "agent": "rfp-responder",
+              "cron": "{{cadence}}",
+              "prompt": "Load the `rfp-response` skill and check {{rfp_label}} in Gmail for inbound RFPs or proposal questionnaires that haven't been drafted yet. For each new one, open its attached or linked document from Google Drive, parse every question, match it to our vetted past-answers library and current product docs, and draft the full response in a new Google Doc inside {{drafts_folder}}, mirroring the RFP's own structure. Flag anything without a confident match for a person. Leave an unsent Gmail draft reply on the original thread linking the response doc and summarizing what was answered and what's flagged. Never submit or send the response yourself — hold it for a human to review and submit."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "saas-spend-audit-agent",
+      "type": "registry:agent",
+      "title": "SaaS spend audit agent",
+      "description": "Reconciles recurring charges against the subscription register and flags waste: duplicate tools, unused seats, price hikes, upcoming renewals, and shadow IT.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/agents/saas-spend-audit.md",
+          "type": "registry:file",
+          "target": "@agents/saas-spend-audit.md"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "subscription-audit-skill",
+      "type": "registry:skill",
+      "title": "Subscription audit",
+      "description": "Weekly SaaS-spend reconciliation runbook: match recurring charges to the register, detect duplicates/unused seats/price hikes/shadow IT, and rank recommended actions.",
+      "categories": [
+        "finance"
+      ],
+      "files": [
+        {
+          "path": "runtime/skills/subscription-audit",
+          "type": "registry:file",
+          "target": "@skills/subscription-audit"
+        }
+      ],
+      "meta": {
+        "source": "kortix"
+      }
+    },
+    {
+      "name": "saas-spend-audit",
+      "type": "registry:template",
+      "title": "SaaS spend audit",
+      "description": "A weekly agent that reconciles recurring charges against your subscription register to surface duplicate tools, unused seats, price hikes, upcoming renewals, and shadow IT — recommending cancellations, never making them.",
+      "categories": [
+        "finance",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "saas-spend-audit-agent",
+        "subscription-audit-skill"
+      ],
+      "inputs": [
+        {
+          "key": "cadence",
+          "label": "When to run the weekly audit",
+          "type": "cron",
+          "default": "0 0 9 * * 1",
+          "help": "Defaults to every Monday at 9:00 AM.",
+          "required": true
+        },
+        {
+          "key": "subscription_sheet",
+          "label": "Subscription register spreadsheet",
+          "type": "text",
+          "default": "SaaS Subscriptions",
+          "help": "The Google Sheet listing known tools + seats the agent reconciles charges against.",
+          "required": true
+        },
+        {
+          "key": "alert_channel",
+          "label": "Slack channel for the audit",
+          "type": "channel",
+          "help": "Where the weekly waste report is posted.",
+          "required": true
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "icon": "saas-spend-audit",
+        "capabilities": {
+          "connectors": [
+            "plaid",
+            "google_sheets"
+          ]
+        },
+        "template": {
+          "agents": {
+            "saas-spend-audit": {
+              "connectors": [
+                "plaid",
+                "google_sheets"
+              ],
+              "skills": [
+                "subscription-audit"
+              ],
+              "kortix_cli": [
+                "project.cr.open"
+              ]
+            }
+          },
+          "connectors": [
+            {
+              "slug": "plaid",
+              "provider": "pipedream",
+              "app": "plaid"
+            },
+            {
+              "slug": "google_sheets",
+              "provider": "pipedream",
+              "app": "google_sheets"
+            }
+          ],
+          "channels": [
+            "slack"
+          ],
+          "triggers": [
+            {
+              "slug": "weekly-spend-audit",
+              "name": "Weekly SaaS spend audit",
+              "type": "cron",
+              "agent": "saas-spend-audit",
+              "cron": "{{cadence}}",
+              "session_mode": "reuse",
+              "prompt": "Load the `subscription-audit` skill and run this week's SaaS spend audit. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/subscription-audit-log.md` for known subscriptions and what you already flagged. Pull recurring charges via Plaid, reconcile them against {{subscription_sheet}}, and surface duplicate/overlapping tools, unused seats, price hikes, upcoming renewals, and shadow IT (charges absent from the register). Post a ranked waste report with a recommended action for each to {{alert_channel}}. Recommend only — never cancel or change a subscription. Update the ledger before finishing."
+            }
+          ]
+        }
+      }
     }
   ]
 }
