@@ -156,69 +156,6 @@ export function connectedGatewayProviderIdsFromSecretNames(
   return ids;
 }
 
-/**
- * The minimal shape of a `GET /projects/:id/secrets` list item this module
- * needs — `configured` (a SHARED row exists) and `effective_source` (what
- * resolves for the viewer: their own active PRIVATE override, the shared
- * row, or nothing). Both are computed per-viewer by the API.
- */
-export interface SecretUsabilityItem {
-  name: string;
-  configured: boolean;
-  effective_source: 'mine' | 'shared' | 'none';
-}
-
-/**
- * Env-var KEYS actually usable in the VIEWER's own sessions: either a shared
- * (project-wide) row is configured, or the viewer has their own active
- * private override. Mirrors gateway resolution (`getResolvedProjectSecretValue`
- * — shared wins, falls back to the caller's own private key). Deliberately
- * NOT "any row exists for this name" — a row owned by a DIFFERENT member is
- * invisible to both the viewer's sessions and this computation, exactly like
- * gateway resolution. Using raw name-presence here is the bug behind the
- * "provider shows connected but every turn 400s" BYOK incident: a lingering
- * private-only row from someone else made every viewer see "Connected".
- */
-export function usableSecretNamesForViewer(items: SecretUsabilityItem[]): Set<string> {
-  const usable = new Set<string>();
-  for (const item of items) {
-    if (item.configured || item.effective_source === 'mine') usable.add(item.name);
-  }
-  return usable;
-}
-
-/**
- * Env-var KEYS usable ONLY via the viewer's own private override — no shared
- * row exists, so no other project member's sessions can use it.
- */
-export function privateOnlySecretNamesForViewer(items: SecretUsabilityItem[]): Set<string> {
-  const privateOnly = new Set<string>();
-  for (const item of items) {
-    if (!item.configured && item.effective_source === 'mine') privateOnly.add(item.name);
-  }
-  return privateOnly;
-}
-
-/**
- * Connected provider ids whose credential is usable by the viewer ONLY
- * through their own private override — i.e. every env var resolves for the
- * viewer, but at least one of them isn't shared. Drives the "sessions can't
- * use this key — make it shared" warning.
- */
-export function privateOnlyProviderIdsFromSecretNames(
-  usableNames: Set<string>,
-  privateOnlyNames: Set<string>,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const provider of LLM_PROVIDERS) {
-    if (provider.id === 'kortix' || provider.envVars.length === 0) continue;
-    const allUsable = provider.envVars.every((envVar) => usableNames.has(envVar));
-    const anyPrivateOnly = provider.envVars.some((envVar) => privateOnlyNames.has(envVar));
-    if (allUsable && anyPrivateOnly) ids.add(provider.id);
-  }
-  return ids;
-}
-
 export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
