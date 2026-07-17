@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import * as React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 // Same DOM-free harness the sibling interactive-component tests in this
@@ -55,29 +56,28 @@ if (typeof (globalThis as any).localStorage === 'undefined') {
 // stand-in `acp-session-perf.test.tsx` uses. Must be registered before the
 // first `import('./acp-transcript-groups')` below.
 mock.module('motion/react', () => {
-  const ReactModule = require('react');
   function stripMotionProps(props: Record<string, unknown>) {
     const { initial, animate, exit, transition, layout, layoutId, variants, ...rest } = props;
     return rest;
   }
   const motionFactory = (Component: unknown) =>
     function MotionCreateStub(props: Record<string, unknown>) {
-      return ReactModule.createElement(Component as never, stripMotionProps(props));
+      return React.createElement(Component as never, stripMotionProps(props));
     };
   const motion = new Proxy(motionFactory, {
     apply: (target, _thisArg, args) => (target as typeof motionFactory)(args[0]),
     get: (_target, tag: string) => {
       if (tag === 'create') return motionFactory;
       return function MotionStub(props: Record<string, unknown>) {
-        return ReactModule.createElement(tag, stripMotionProps(props));
+        return React.createElement(tag, stripMotionProps(props));
       };
     },
   });
-  function AnimatePresence({ children }: { children?: unknown }) {
-    return ReactModule.createElement(ReactModule.Fragment, null, children);
+  function AnimatePresence({ children }: { children?: React.ReactNode }) {
+    return React.createElement(React.Fragment, null, children);
   }
-  function MotionConfig({ children }: { children?: unknown }) {
-    return ReactModule.createElement(ReactModule.Fragment, null, children);
+  function MotionConfig({ children }: { children?: React.ReactNode }) {
+    return React.createElement(React.Fragment, null, children);
   }
   function useReducedMotion() {
     return false;

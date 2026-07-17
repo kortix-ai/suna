@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import * as React from 'react';
 import { Profiler, type ProfilerOnRenderCallback } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -121,7 +122,6 @@ mock.module('next-intl', () => ({
 // `acp-request-cards.test.tsx` uses (current-children-only, no animation
 // machinery). Must be registered before the first `import('./acp-session-chat')`.
 mock.module('motion/react', () => {
-  const ReactModule = require('react');
   function stripMotionProps(props: Record<string, unknown>) {
     const { initial, animate, exit, transition, layout, layoutId, variants, ...rest } = props;
     return rest;
@@ -134,26 +134,26 @@ mock.module('motion/react', () => {
   // (which crashed with "Element type is invalid: ... got: <create />").
   const motionFactory = (Component: unknown) =>
     function MotionCreateStub(props: Record<string, unknown>) {
-      return ReactModule.createElement(Component as never, stripMotionProps(props));
+      return React.createElement(Component as never, stripMotionProps(props));
     };
   const motion = new Proxy(motionFactory, {
     apply: (target, _thisArg, args) => (target as typeof motionFactory)(args[0]),
     get: (_target, tag: string) => {
       if (tag === 'create') return motionFactory;
       return function MotionStub(props: Record<string, unknown>) {
-        return ReactModule.createElement(tag, stripMotionProps(props));
+        return React.createElement(tag, stripMotionProps(props));
       };
     },
   });
-  function AnimatePresence({ children }: { children?: unknown }) {
-    return ReactModule.createElement(ReactModule.Fragment, null, children);
+  function AnimatePresence({ children }: { children?: React.ReactNode }) {
+    return React.createElement(React.Fragment, null, children);
   }
   // `@/components/ui/disclosure` (the "Protocol events (n)" collapsible)
   // wraps its tree in `MotionConfig` — a config-only provider with no
   // visual output of its own, so a Fragment pass-through is exact, not an
   // approximation.
-  function MotionConfig({ children }: { children?: unknown }) {
-    return ReactModule.createElement(ReactModule.Fragment, null, children);
+  function MotionConfig({ children }: { children?: React.ReactNode }) {
+    return React.createElement(React.Fragment, null, children);
   }
   function useReducedMotion() {
     return false;

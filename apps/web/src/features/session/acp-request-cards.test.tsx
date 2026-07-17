@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import * as React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { AcpPendingQuestion } from '@kortix/sdk';
@@ -58,7 +59,6 @@ if (typeof (globalThis as any).localStorage === 'undefined') {
 // `@/components/markdown` mock in `acp-chat-item-row.test.tsx`. Must be
 // registered before the first `import('./acp-request-cards')` below.
 mock.module('motion/react', () => {
-  const ReactModule = require('react');
   function stripMotionProps(props: Record<string, unknown>) {
     const { initial, animate, exit, transition, layout, layoutId, variants, ...rest } = props;
     return rest;
@@ -68,13 +68,13 @@ mock.module('motion/react', () => {
     {
       get: (_target, tag: string) => {
         return function MotionStub(props: Record<string, unknown>) {
-          return ReactModule.createElement(tag, stripMotionProps(props));
+          return React.createElement(tag, stripMotionProps(props));
         };
       },
     },
   );
-  function AnimatePresence({ children }: { children?: unknown }) {
-    return ReactModule.createElement(ReactModule.Fragment, null, children);
+  function AnimatePresence({ children }: { children?: React.ReactNode }) {
+    return React.createElement(React.Fragment, null, children);
   }
   function useReducedMotion() {
     return false;
