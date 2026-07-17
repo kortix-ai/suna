@@ -367,17 +367,21 @@ export const EasyPanel = memo(function EasyPanel({
             }
           : undefined;
 
-      if (output.kind === 'app' && output.url) {
+      // An app opens even with NO url — the quick "Open Browser" with nothing
+      // running hands over `url: ''`, and `AppPreview` renders its recents/
+      // port landing for that. Guarding on `output.url` here silently ate the
+      // click (the browser button did nothing), which reads as broken.
+      if (output.kind === 'app') {
         track('deliverable_opened', { kind: output.kind, source });
         openDetail({
-          key: `app:${output.url}`,
+          key: `app:${output.url || 'landing'}`,
           title: displayName,
           hideHeader: true,
           padded: false,
           nav,
           body: (
             <AppPreview
-              url={output.url}
+              url={output.url ?? ''}
               name={displayName}
               onClose={closeDetail}
               onAskForChanges={askForChanges}
@@ -535,8 +539,8 @@ export const EasyPanel = memo(function EasyPanel({
   /**
    * Header/palette "Open Browser": the in-panel port browser (`AppPreview`),
    * defaulting to the first running app's url when the session has one, else
-   * `http://localhost:3000` (a hint, not a guess — `AppPreview`'s own address
-   * bar placeholder teaches ports the same way). Routes through
+   * an empty url — `AppPreview` renders its "no app yet" landing (focused
+   * address bar) for that instead of iframing a guessed port. Routes through
    * `handleOpenOutput` with a synthetic app `OutputItem` rather than opening
    * `AppPreview` directly: that's the one path that already carries the wide
    * split, the terminal mutual-exclusion, and `deliverable_opened` telemetry,

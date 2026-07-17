@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, test } from 'bun:test';
 import type { ToolPart } from '@/ui';
 import {
   type StepFamily,
@@ -10,12 +10,12 @@ import {
 import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
 
-function part(tool: string, input: Record<string, unknown> = {}): ToolPart {
+function part(tool: string, input: Record<string, unknown> = {}, output?: string): ToolPart {
   return {
     type: 'tool',
     tool,
     callID: `c-${tool}-${Math.random()}`,
-    state: { status: 'completed', input },
+    state: { status: 'completed', input, output },
   } as unknown as ToolPart;
 }
 
@@ -72,6 +72,15 @@ describe('narrateStep', () => {
     ).toBe('Updated 2 files');
   });
 
+  it('an all-write edit group says Wrote, not Updated', () => {
+    const parts = [part('write'), part('write'), part('write')];
+    expect(narrateStep('edit', parts)).toBe('Wrote 3 files');
+  });
+
+  it('a mixed write+edit group stays Updated', () => {
+    expect(narrateStep('edit', [part('write'), part('edit')])).toBe('Updated 2 files');
+  });
+
   it('counts reads', () => {
     expect(narrateStep('explore', [part('read'), part('read'), part('read')])).toBe('Read 3 files');
   });
@@ -80,6 +89,27 @@ describe('narrateStep', () => {
     expect(narrateStep('web', [part('web_search'), part('web_search')])).toBe(
       'Searched the web · 2 queries',
     );
+  });
+
+  it('mixed search+fetch step counts distinct source urls, not calls', () => {
+    const search = part(
+      'web_search',
+      { query: 'marko' },
+      JSON.stringify({
+        results: [
+          { title: 'A', url: 'https://a.com' },
+          { title: 'B', url: 'https://b.com' },
+        ],
+      }),
+    );
+    const fetch = part('web_fetch', { url: 'https://c.com' }, '');
+    expect(narrateStep('web', [search, fetch])).toBe('Searched and read 3 sources');
+  });
+
+  test('mixed step with unparseable outputs falls back to call count', () => {
+    const search = part('web_search', { query: 'x' }, 'not json at all');
+    const fetch = part('web_fetch', {}); // no url input
+    expect(narrateStep('web', [search, fetch])).toBe('Searched and read 2 sources');
   });
 
   it('never emits a raw tool name for unknown tools', () => {

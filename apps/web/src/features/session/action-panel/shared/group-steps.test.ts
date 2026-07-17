@@ -34,14 +34,24 @@ describe('groupSteps', () => {
     expect(steps.map((s) => s.family)).toEqual(['explore', 'run', 'explore']);
   });
 
-  it('never folds write / show / show_user — each is its own step', () => {
+  it('never folds show / show_user — each is its own step', () => {
     const steps = groupSteps([
-      part('write', 'completed', { filePath: '/a/one.md' }),
-      part('write', 'completed', { filePath: '/a/two.md' }),
+      part('show', 'completed', { title: 'one' }),
+      part('show', 'completed', { title: 'two' }),
     ]);
     expect(steps).toHaveLength(2);
-    expect(steps[0].label).toBe('Wrote one.md');
-    expect(steps[1].label).toBe('Wrote two.md');
+  });
+
+  it('consecutive writes fold into one edit step', () => {
+    const steps = groupSteps([
+      part('write', 'completed', { filePath: 'a.json' }),
+      part('write', 'completed', { filePath: 'b.json' }),
+      part('write', 'completed', { filePath: 'c.json' }),
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].family).toBe('edit');
+    expect(steps[0].parts).toHaveLength(3);
+    expect(steps[0].label).toBe('Wrote 3 files');
   });
 
   it('drops hidden context-engine tools entirely', () => {

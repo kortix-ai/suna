@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { useKortixComputerStore } from './kortix-computer-store';
+import { useKortixComputerStore, QUICK_VIEW_TTL_MS } from './kortix-computer-store';
 
 describe('ready chip state (W1)', () => {
   beforeEach(() => {
@@ -206,5 +206,54 @@ describe('panelSplit (width override for presentation/terminal layers)', () => {
     s.setIsSidePanelOpen(true);
     expect(useKortixComputerStore.getState().panelSplit).toBe(50);
     expect(useKortixComputerStore.getState().skipNextExpandAnimation).toBe(false);
+  });
+});
+
+describe('pendingQuickView staleness', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('a fresh request is consumed and returns its view', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('terminal', 'session-a');
+    const now = useKortixComputerStore.getState().pendingQuickView!.requestedAt;
+    expect(useKortixComputerStore.getState().consumeQuickView('session-a', now + 1000)).toBe(
+      'terminal',
+    );
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+
+  test('a stale request is discarded, not acted on', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('terminal', 'session-a');
+    const at = useKortixComputerStore.getState().pendingQuickView!.requestedAt;
+    expect(
+      useKortixComputerStore.getState().consumeQuickView('session-a', at + QUICK_VIEW_TTL_MS + 1),
+    ).toBeNull();
+    // Discarded on the failed consume — it must not survive to fire later.
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+
+  test('switching the active session clears a request for a different session', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('terminal', 'session-a');
+    s.setActiveSession('session-b');
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
+  });
+
+  test('switching TO the requesting session keeps the request', () => {
+    const s = useKortixComputerStore.getState();
+    s.requestQuickView('terminal', 'session-a');
+    s.setActiveSession('session-a');
+    expect(useKortixComputerStore.getState().pendingQuickView?.sessionId).toBe('session-a');
+  });
+
+  test('re-activating the already-active session still clears another session request', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('session-b');
+    s.requestQuickView('terminal', 'session-a');
+    s.setActiveSession('session-b'); // no-op re-activation
+    expect(useKortixComputerStore.getState().pendingQuickView).toBeNull();
   });
 });
