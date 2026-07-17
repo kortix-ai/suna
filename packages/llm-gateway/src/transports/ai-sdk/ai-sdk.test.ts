@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, afterEach } from 'bun:test';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import { streamText } from 'ai';
 import { calculateCost, extractUsageFromSseBuffer } from '../../usage';
 import { sseErrorFrame, sseHasContent } from '../../usage/completion-guard';
 import type { UpstreamDescriptor } from '../../domain';
-import { aiSdkFamilyFor } from './model';
+import { guardAgainstUnhandledResultRejections } from './index';
+import { aiSdkFamilyFor, clampMaxOutputTokensForBedrock, openRouterCostMetadataExtractor } from './model';
 import { buildAiSdkArgs, toModelMessages } from './request';
-import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
+import { mapUsage, openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
 // A fullStream is just an async iterable of TextStreamPart-shaped objects — feed
 // the adapter the exact parts streamText emits and assert the OpenAI SSE bytes.
@@ -322,5 +323,180 @@ describe('ai-sdk non-streaming JSON adapter', () => {
       function: { name: 'wx', arguments: '{"city":"Paris"}' },
     });
     expect(json.usage.prompt_tokens).toBe(100);
+  });
+});
+
+// Defect 1 (2026-07-17): streaming's unconsumed streamText result promises
+// (usage/text/finishReason/steps/...) crashing the whole Bun worker with an
+// unhandled promise rejection on a mid-stream upstream error, dropping the
+// connection as a bare 502 before sse.ts's clean error frame or any
+// settle/logging path ever runs. `guardAgainstUnhandledResultRejections`
+// (index.ts) is the fix: attach a no-op catch to every one of those promises
+// right after `streamText()` returns.
+describe('guardAgainstUnhandledResultRejections — defect 1 (streaming crash safety)', () => {
+  const shapeOf = (usage: Promise<unknown>) => ({
+    usage,
+    text: Promise.resolve(''),
+    finishReason: Promise.resolve('stop'),
+    steps: Promise.resolve([]),
+    toolCalls: Promise.resolve([]),
+    finalStep: Promise.resolve({}),
+    providerMetadata: Promise.resolve(undefined),
+  });
+
+  const unhandled: unknown[] = [];
+  const onUnhandledRejection = (err: unknown) => unhandled.push(err);
+
+  afterEach(() => {
+    process.off('unhandledRejection', onUnhandledRejection);
+    unhandled.length = 0;
+  });
+
+  // NOTE: bun:test intercepts the process's own `unhandledRejection` event to
+  // fail whichever test is running when one fires — so a THIRD "and without
+  // the guard it WOULD have crashed" test can't observe that counterfactual
+  // from inside the same suite without failing itself (proven while writing
+  // this file: bun's harness turned the deliberate unhandled rejection into a
+  // hard test failure rather than routing it to a custom listener). The two
+  // tests below instead verify the guard's actual, positive contract: applied
+  // to a result shape, a later rejection on any of its promises is inert.
+
+  it('with the guard applied, a later rejection is inert — no unhandled rejection reaches the process', async () => {
+    let reject: (e: unknown) => void = () => {};
+    const usagePromise = new Promise((_resolve, r) => {
+      reject = r;
+    });
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    guardAgainstUnhandledResultRejections(shapeOf(usagePromise));
+    reject(new Error('upstream boom'));
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(unhandled).toEqual([]);
+  });
+
+  it('drives a real streamText() through a mock model that errors mid-stream, guards it, and still gets a clean SSE error frame with no crash', async () => {
+    const mock = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: 'stream-start', warnings: [] });
+            controller.enqueue({ type: 'text-start', id: '0' });
+            controller.enqueue({ type: 'text-delta', id: '0', delta: 'partial' });
+            controller.error(Object.assign(new Error('upstream socket reset'), { statusCode: undefined }));
+          },
+        }),
+      }),
+    });
+
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    const result = streamText({
+      model: mock,
+      prompt: 'hello',
+      maxRetries: 0,
+      onError: () => {
+        /* mirrors index.ts's swallow — the real error surfaces via fullStream */
+      },
+    });
+    guardAgainstUnhandledResultRejections(result);
+
+    const sse = await readAll(openAiSseFromFullStream(result.fullStream, CTX));
+    await new Promise((r) => setTimeout(r, 20));
+
+    const frame = sseErrorFrame(sse);
+    expect(frame?.message).toBe('upstream socket reset');
+    expect(unhandled).toEqual([]);
+  });
+});
+
+// Defect 2 (2026-07-17, live-confirmed against Nova Micro): Bedrock's
+// Converse API hard-rejects any maxOutputTokens above the model's own
+// ceiling ("The maximum tokens you requested exceeds the model limit of
+// 10000...") instead of clamping it — a generic large client default then
+// 400s/502s every call to a small Nova model, breaking a tool loop before it
+// completes a single round trip.
+describe('clampMaxOutputTokensForBedrock — defect 2 (Nova max-tokens ceiling)', () => {
+  it('clamps an oversized request for a Nova model on the bedrock family', () => {
+    expect(clampMaxOutputTokensForBedrock(32_000, 'bedrock', 'us.amazon.nova-micro-v1:0')).toBe(10_000);
+    expect(clampMaxOutputTokensForBedrock(64_000, 'bedrock', 'amazon.nova-lite-v1:0')).toBe(10_000);
+  });
+
+  it('leaves an already-small request untouched', () => {
+    expect(clampMaxOutputTokensForBedrock(4096, 'bedrock', 'us.amazon.nova-micro-v1:0')).toBe(4096);
+  });
+
+  it('never touches non-Nova bedrock models (e.g. Claude-on-Bedrock)', () => {
+    expect(
+      clampMaxOutputTokensForBedrock(64_000, 'bedrock', 'us.anthropic.claude-opus-4-8-v1:0'),
+    ).toBe(64_000);
+  });
+
+  it('never touches non-bedrock families', () => {
+    expect(clampMaxOutputTokensForBedrock(64_000, 'anthropic', 'claude-haiku-4-5')).toBe(64_000);
+  });
+
+  it('passes through undefined unchanged', () => {
+    expect(clampMaxOutputTokensForBedrock(undefined, 'bedrock', 'us.amazon.nova-micro-v1:0')).toBeUndefined();
+  });
+});
+
+// Defect 3 (2026-07-17, live-confirmed against OpenRouter): mapUsage emitted
+// token-only usage, never cost — a managed OpenRouter model with no
+// models.dev catalog price booked $0 even though OpenRouter's own
+// `usage.cost` (returned only when the request carries `usage:
+// {include:true}`, threaded via model.ts's openRouterCostMetadataExtractor)
+// has the real upstream-billed figure.
+describe('cost-hint threading — defect 3 (OpenRouter usage.cost parity)', () => {
+  it('mapUsage folds a providerMetadata cost into the OpenAI-shaped usage.cost field', () => {
+    const out = mapUsage(usage() as any, { openrouterCost: { cost: 0.00012 } });
+    expect(out.cost).toBe(0.00012);
+  });
+
+  it('mapUsage omits cost entirely when no provider metadata carries one', () => {
+    const out = mapUsage(usage() as any, undefined);
+    expect(out.cost).toBeUndefined();
+    const out2 = mapUsage(usage() as any, { openrouterCost: {} });
+    expect(out2.cost).toBeUndefined();
+  });
+
+  it('a no-catalog-price model bills non-zero end-to-end via the SSE usage-chunk cost field', async () => {
+    // No `pricingOverride` passed to calculateCost — mirrors a managed model
+    // with no models.dev catalog entry, exactly the $0-booking bug.
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts(
+          { type: 'text-delta', id: '1', text: 'hi' },
+          {
+            type: 'finish-step',
+            usage: usage(),
+            finishReason: 'stop',
+            providerMetadata: { openrouterCost: { cost: 0.00042 } },
+          },
+          { type: 'finish', finishReason: 'stop', totalUsage: usage() },
+        ),
+        CTX,
+      ),
+    );
+    const extracted = extractUsageFromSseBuffer(sse);
+    expect(extracted).not.toBeNull();
+    expect(extracted!.upstreamCostHint).toBe(0.00042);
+
+    const cost = calculateCost('some/no-catalog-model', extracted!, 1.1, extracted!.upstreamCostHint);
+    expect(cost.upstreamCost).toBe(0.00042);
+    expect(cost.finalCost).toBeGreaterThan(0);
+  });
+
+  it('openRouterCostMetadataExtractor pulls usage.cost from both non-streaming and streaming shapes', async () => {
+    const extractor = openRouterCostMetadataExtractor();
+    const nonStreaming = await extractor.extractMetadata({
+      parsedBody: { usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0009 } },
+    });
+    expect(nonStreaming).toEqual({ openrouterCost: { cost: 0.0009 } });
+
+    const streamExtractor = extractor.createStreamExtractor();
+    streamExtractor.processChunk({ choices: [{ delta: { content: 'hi' } }] });
+    streamExtractor.processChunk({ usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0011 } });
+    expect(streamExtractor.buildMetadata()).toEqual({ openrouterCost: { cost: 0.0011 } });
   });
 });

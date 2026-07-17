@@ -1,4 +1,4 @@
-import type { FinishReason, LanguageModelUsage } from 'ai';
+import type { FinishReason, LanguageModelUsage, ProviderMetadata } from 'ai';
 
 // Adapts the AI SDK's provider-neutral stream/result back into the OpenAI
 // chat.completions SSE + JSON shapes the gateway pipeline (probe, relay, usage
@@ -14,14 +14,39 @@ export interface OpenAiUsage {
   total_tokens: number;
   prompt_tokens_details?: { cached_tokens: number };
   completion_tokens_details?: { reasoning_tokens: number };
+  cost?: number;
+}
+
+// Best-effort scan of AI-SDK provider metadata for a `cost` field under any
+// provider namespace (currently only OpenRouter's — see model.ts's
+// openRouterCostMetadataExtractor — written generically so a future
+// provider-specific cost source needs no change here). `providerMetadata` is
+// keyed by provider name (e.g. `{openrouterCost: {cost: 0.00012}}`); scan all
+// namespaces rather than hardcoding the key so this keeps working if the
+// namespace name ever changes on the model.ts side.
+function costFromProviderMetadata(metadata: ProviderMetadata | undefined): number | undefined {
+  if (!metadata) return undefined;
+  for (const namespace of Object.values(metadata)) {
+    const cost = (namespace as { cost?: unknown } | undefined)?.cost;
+    if (typeof cost === 'number' && cost > 0) return cost;
+  }
+  return undefined;
 }
 
 // LanguageModelUsage → OpenAI `usage`. `inputTokens` is the full prompt count
 // (cached included), matching OpenAI's `prompt_tokens`; the cached subset is
 // broken out under `prompt_tokens_details.cached_tokens` exactly as the native
 // path forwards it, so the gateway's usage extractor + pricing table produce the
-// same cost on both engines.
-export function mapUsage(usage: LanguageModelUsage | undefined): OpenAiUsage {
+// same cost on both engines. `cost`, when present, is the real upstream-billed
+// dollar figure (e.g. OpenRouter's `usage.cost`) — the gateway's cost-hint
+// extractor (usage/extract.ts normalizeUsageChunk) reads it as
+// `upstreamCostHint` and pricing.ts prefers it whenever no catalog price is
+// available, so a managed model with no models.dev price still bills real
+// cost instead of $0 (defect 3, 2026-07-17).
+export function mapUsage(
+  usage: LanguageModelUsage | undefined,
+  providerMetadata?: ProviderMetadata,
+): OpenAiUsage {
   const prompt = usage?.inputTokens ?? 0;
   const completion = usage?.outputTokens ?? 0;
   const cached = usage?.inputTokenDetails?.cacheReadTokens ?? 0;
@@ -34,6 +59,8 @@ export function mapUsage(usage: LanguageModelUsage | undefined): OpenAiUsage {
   };
   if (cached > 0) out.prompt_tokens_details = { cached_tokens: cached };
   if (reasoning > 0) out.completion_tokens_details = { reasoning_tokens: reasoning };
+  const cost = costFromProviderMetadata(providerMetadata);
+  if (cost !== undefined) out.cost = cost;
   return out;
 }
 
@@ -90,6 +117,13 @@ export function openAiSseFromFullStream(
       const emit = (bytes: Uint8Array): void => controller.enqueue(bytes);
       let usage: LanguageModelUsage | undefined;
       let finishReason: FinishReason | undefined;
+      // Cost (when present) only ever arrives on `finish-step` — the `finish`
+      // part carries totalUsage but no providerMetadata of its own. The
+      // gateway's tool loop is always single-step per call (see model.ts's
+      // `toToolSet` — no `execute`, so the SDK stops after the tool call
+      // instead of continuing to a second step), so the last `finish-step`
+      // seen is the authoritative one, same as `usage`/`finishReason` above.
+      let providerMetadata: ProviderMetadata | undefined;
       try {
         for await (const part of fullStream) {
           switch (part.type) {
@@ -178,6 +212,7 @@ export function openAiSseFromFullStream(
             case 'finish-step': {
               if (!usage) usage = part.usage as LanguageModelUsage;
               if (!finishReason) finishReason = part.finishReason as FinishReason;
+              providerMetadata = part.providerMetadata as ProviderMetadata | undefined;
               break;
             }
             case 'error': {
@@ -210,7 +245,7 @@ export function openAiSseFromFullStream(
         sse({
           ...base,
           choices: [],
-          usage: mapUsage(usage),
+          usage: mapUsage(usage, providerMetadata),
         }),
       );
       emit(enc.encode('data: [DONE]\n\n'));
@@ -227,6 +262,7 @@ export function openAiJsonFromResult(
     toolCalls?: Array<{ toolCallId: string; toolName: string; input: unknown }>;
     finishReason: FinishReason;
     usage: LanguageModelUsage;
+    providerMetadata?: ProviderMetadata;
   },
   ctx: StreamCtx,
 ): Record<string, unknown> {
@@ -252,6 +288,6 @@ export function openAiJsonFromResult(
         finish_reason: mapFinishReason(result.finishReason),
       },
     ],
-    usage: mapUsage(result.usage),
+    usage: mapUsage(result.usage, result.providerMetadata),
   };
 }
