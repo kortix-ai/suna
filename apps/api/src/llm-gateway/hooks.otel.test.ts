@@ -48,7 +48,7 @@ function baseTrace(overrides: Partial<GatewayTrace> = {}): GatewayTrace {
     latencyMs: 850,
     attempts: 1,
     candidatesTried: ['claude-sonnet-4-5'],
-    usage: { promptTokens: 120, completionTokens: 45, cachedTokens: 10 },
+    usage: { promptTokens: 120, completionTokens: 45, cachedTokens: 10, cacheWriteTokens: 0 },
     upstreamCost: 0.002,
     finalCost: 0.003,
     request: {},
