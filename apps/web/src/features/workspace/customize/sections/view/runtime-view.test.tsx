@@ -135,16 +135,16 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
     });
     modelsPageState = {
       ...modelsPageState,
-      runtimes: [
+      connections: [
         {
-          id: 'claude',
-          harness: 'claude',
-          label: 'Claude Code',
+          id: 'claude_subscription',
+          name: 'Claude subscription',
+          kind: 'claude_subscription',
           status: 'ready',
-          selectedConnectionId: 'claude_subscription',
-          modelSummary: 'Claude subscription · Harness default',
-          compatibleConnectionIds: ['claude_subscription'],
-          blocker: null,
+          usedBy: ['claude'],
+          catalogState: 'not-exposed',
+          modelCount: null,
+          statusReason: null,
         },
       ],
     };
@@ -156,6 +156,40 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
     expect(within(claudeRow!).getByText('Connected')).toBeDefined();
     expect(within(codexRow!).getByText('Not connected')).toBeDefined();
   });
+
+  test(
+    'a harness with a ready connection but zero routed agents still shows "Connected" — regression ' +
+      'test for the WS5-P2-a review Important finding: the badge must derive from harness-scoped ' +
+      'connection state (`ModelsPageState.connections`), not from `useModelsPage(...).runtimes`, ' +
+      'which is agent-presence-gated and empty here on purpose',
+    () => {
+      setRuntimes({ 'runtime-1': { harness: 'claude' } });
+      modelsPageState = {
+        ...modelsPageState,
+        // Deliberately empty — no agent is routed to `claude` yet, which is
+        // the normal state right after enabling harnesses. The old
+        // `runtimes`-derived badge read this as "Not connected"; the fix
+        // must not.
+        runtimes: [],
+        connections: [
+          {
+            id: 'claude_subscription',
+            name: 'Claude subscription',
+            kind: 'claude_subscription',
+            status: 'ready',
+            usedBy: [],
+            catalogState: 'not-exposed',
+            modelCount: null,
+            statusReason: null,
+          },
+        ],
+      };
+      render(<RuntimeView projectId={PROJECT_ID} />);
+
+      const claudeRow = screen.getAllByRole('listitem').find((row) => within(row).queryByText('Claude Code'));
+      expect(within(claudeRow!).getByText('Connected')).toBeDefined();
+    },
+  );
 
   test('primary DOM carries no manifest jargon — no schema_version, kortix.yaml/toml, profile slugs, or config-dir paths', () => {
     setRuntimes({

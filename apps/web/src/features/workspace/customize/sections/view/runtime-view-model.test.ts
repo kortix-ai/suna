@@ -1,38 +1,64 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ModelsPageRuntime } from '@kortix/sdk/react';
+import type { ModelsPageConnection } from '@kortix/sdk/react';
 
 import {
   buildRuntimeRows,
-  connectionsByHarnessFromModelsPage,
+  connectedHarnessesFromModelsPage,
 } from './runtime-view-model';
 
-function modelsPageRuntime(over: Partial<ModelsPageRuntime> & Pick<ModelsPageRuntime, 'harness'>): ModelsPageRuntime {
+function modelsPageConnection(
+  over: Partial<ModelsPageConnection> & Pick<ModelsPageConnection, 'kind'>,
+): ModelsPageConnection {
   return {
-    id: over.harness,
-    label: over.harness,
-    status: 'missing',
-    selectedConnectionId: null,
-    modelSummary: null,
-    compatibleConnectionIds: [],
-    blocker: null,
+    id: over.kind,
+    name: over.kind,
+    status: 'ready',
+    usedBy: [],
+    catalogState: 'available',
+    modelCount: null,
+    statusReason: null,
     ...over,
   };
 }
 
-describe('connectionsByHarnessFromModelsPage', () => {
-  test('keys the runtime list by harness id', () => {
-    const map = connectionsByHarnessFromModelsPage([
-      modelsPageRuntime({ harness: 'claude', status: 'ready' }),
-      modelsPageRuntime({ harness: 'codex', status: 'missing' }),
+describe('connectedHarnessesFromModelsPage', () => {
+  test('keys ready connections by every harness the auth kind is compatible with', () => {
+    const map = connectedHarnessesFromModelsPage([
+      modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
+      modelsPageConnection({ kind: 'codex_subscription', status: 'needs-attention' }),
     ]);
-    expect(map.claude?.status).toBe('ready');
-    expect(map.codex?.status).toBe('missing');
+    expect(map.claude?.kind).toBe('claude_subscription');
+    // Not ready — must not count as connected.
+    expect(map.codex).toBeUndefined();
     expect(map.opencode).toBeUndefined();
   });
 
+  test('a managed_gateway connection is compatible with opencode and pi, not claude/codex', () => {
+    const map = connectedHarnessesFromModelsPage([
+      modelsPageConnection({ kind: 'managed_gateway', status: 'ready' }),
+    ]);
+    expect(map.opencode?.kind).toBe('managed_gateway');
+    expect(map.pi?.kind).toBe('managed_gateway');
+    expect(map.claude).toBeUndefined();
+    expect(map.codex).toBeUndefined();
+  });
+
   test('empty input yields an empty map', () => {
-    expect(connectionsByHarnessFromModelsPage([])).toEqual({});
+    expect(connectedHarnessesFromModelsPage([])).toEqual({});
+  });
+
+  test('a ready connection with zero routed agents still counts as connected — the fix for the '
+    + 'agent-presence-gating bug (WS5-P2-a review): unlike `useModelsPage(...).runtimes`, which is '
+    + 'derived from declared agents and omits any harness with none currently routed, `connections` '
+    + 'carries no such gate', () => {
+    // No `ModelsPageRuntime` entries exist for `claude` at all here (that
+    // list is what the old, buggy derivation read) — only a bare ready
+    // connection, which is all a harness needs to be genuinely connected.
+    const map = connectedHarnessesFromModelsPage([
+      modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
+    ]);
+    expect(map.claude?.status).toBe('ready');
   });
 });
 
@@ -77,13 +103,9 @@ describe('buildRuntimeRows', () => {
   test('a ready connection produces a plain-words "Connected via …" meta line and connected: true', () => {
     const rows = buildRuntimeRows(
       { claude: { harness: 'claude' } },
-      {
-        claude: modelsPageRuntime({
-          harness: 'claude',
-          status: 'ready',
-          selectedConnectionId: 'claude_subscription',
-        }),
-      },
+      connectedHarnessesFromModelsPage([
+        modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
+      ]),
     );
     expect(rows[0]!.connected).toBe(true);
     expect(rows[0]!.meta).toBe('Runs Claude Code · Connected via Claude subscription');
@@ -92,7 +114,9 @@ describe('buildRuntimeRows', () => {
   test('a missing/unready connection reads "Not connected" — no jargon connection-kind ids', () => {
     const rows = buildRuntimeRows(
       { claude: { harness: 'claude' } },
-      { claude: modelsPageRuntime({ harness: 'claude', status: 'missing' }) },
+      connectedHarnessesFromModelsPage([
+        modelsPageConnection({ kind: 'claude_subscription', status: 'needs-attention' }),
+      ]),
     );
     expect(rows[0]!.connected).toBe(false);
     expect(rows[0]!.meta).toBe('Runs Claude Code · Not connected');
@@ -104,16 +128,31 @@ describe('buildRuntimeRows', () => {
     expect(rows[0]!.meta).toBe('Runs Pi · Not connected');
   });
 
+  test(
+    'a harness with a ready compatible connection but zero routed agents still reads Connected — ' +
+      'regression test for the WS5-P2-a review Important finding: the badge must not be gated on ' +
+      'agent presence',
+    () => {
+      const rows = buildRuntimeRows(
+        { claude: { harness: 'claude' } },
+        connectedHarnessesFromModelsPage([
+          // Simulates the real-world "just enabled harnesses, no agent
+          // routed yet" state: a ready connection exists, no agent routing
+          // data backs it.
+          modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
+        ]),
+      );
+      expect(rows[0]!.connected).toBe(true);
+      expect(rows[0]!.meta).toBe('Runs Claude Code · Connected via Claude subscription');
+    },
+  );
+
   test('no row ever contains manifest jargon (schema_version, kortix.yaml, config-dir paths)', () => {
     const rows = buildRuntimeRows(
       { claude: { harness: 'claude', config_dir: '.claude' } },
-      {
-        claude: modelsPageRuntime({
-          harness: 'claude',
-          status: 'ready',
-          selectedConnectionId: 'claude_subscription',
-        }),
-      },
+      connectedHarnessesFromModelsPage([
+        modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
+      ]),
     );
     const serialized = JSON.stringify(rows);
     expect(serialized).not.toContain('schema_version');

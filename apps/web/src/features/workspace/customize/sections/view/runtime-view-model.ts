@@ -12,8 +12,9 @@
  */
 
 import type { AcpHarness, RuntimeProfile } from '@kortix/sdk/projects-client';
-import { connectionDisplayName, harnessPresentation, type KortixHarness, type ModelsPageRuntime } from '@kortix/sdk/react';
+import { connectionDisplayName, harnessPresentation, type KortixHarness, type ModelsPageConnection } from '@kortix/sdk/react';
 
+import { METHOD_COMPATIBLE_HARNESSES } from '../llm-provider/connect-model-modal';
 import { ACP_HARNESS_STABILITY } from './runtime-profile-options';
 
 export interface RuntimeRowViewModel {
@@ -32,35 +33,60 @@ export interface RuntimeRowViewModel {
   connected: boolean;
 }
 
-/** Maps `useModelsPage(...).runtimes` (keyed by harness id) for O(1) lookups
- * while building rows. */
-export function connectionsByHarnessFromModelsPage(
-  runtimes: readonly ModelsPageRuntime[],
-): Partial<Record<AcpHarness, ModelsPageRuntime>> {
-  const map: Partial<Record<AcpHarness, ModelsPageRuntime>> = {};
-  for (const runtime of runtimes) {
-    map[runtime.harness as AcpHarness] = runtime;
+/** Maps `useModelsPage(...).connections` — the harness-scoped auth-connection
+ * list — to a per-harness "is there a ready, compatible connection" lookup,
+ * for O(1) reads while building rows.
+ *
+ * Deliberately built from `connections`, NOT `runtimes`:
+ * `ModelsPageState.runtimes` is `dedupeHarnesses(agents)`-gated (one entry
+ * per harness with at least one non-hidden routed agent), so a harness with
+ * a fully valid ready connection but zero agents currently routed to it
+ * (the normal state right after enabling a harness, before any agent picks
+ * it) would never appear there and would wrongly read "Not connected".
+ * `connections` carries no such agent-presence gate — it lists every
+ * configured/ready/in-use auth connection regardless of routing — so this
+ * derivation is used instead (WS5-P2-a review, Important finding).
+ *
+ * Compatibility is read off `METHOD_COMPATIBLE_HARNESSES` (the
+ * `@kortix/shared` harness-descriptor inversion `connect-model-modal.tsx`
+ * already derives for the Models page connect flow) rather than
+ * re-deriving auth-kind -> harness membership here. */
+export function connectedHarnessesFromModelsPage(
+  connections: readonly ModelsPageConnection[],
+): Partial<Record<AcpHarness, ModelsPageConnection>> {
+  const map: Partial<Record<AcpHarness, ModelsPageConnection>> = {};
+  for (const connection of connections) {
+    if (connection.status !== 'ready') continue;
+    for (const harness of METHOD_COMPATIBLE_HARNESSES[connection.kind] ?? []) {
+      // First ready compatible connection wins per harness — a harness is
+      // "Connected" the moment any one of its compatible connections is
+      // ready; which one a session actually resolves to is the Models
+      // page's concern (`resolveActiveConnection`), not this badge's.
+      if (!map[harness as AcpHarness]) {
+        map[harness as AcpHarness] = connection;
+      }
+    }
   }
   return map;
 }
 
 /** One row per declared runtime profile — the primary Runtime section list.
- * `connectionsByHarness` is harness-scoped (from `useModelsPage`), not
- * profile-scoped: two profiles on the same harness share connection state,
- * which matches reality (a harness either has a resolved auth or it doesn't). */
+ * `connectedHarnesses` is harness-scoped (from `useModelsPage(...).connections`
+ * via {@link connectedHarnessesFromModelsPage}), not profile-scoped: two
+ * profiles on the same harness share connection state, which matches
+ * reality (a harness either has a ready compatible connection or it
+ * doesn't) — and is independent of whether any agent is currently routed
+ * to that harness. */
 export function buildRuntimeRows(
   runtimes: Record<string, RuntimeProfile>,
-  connectionsByHarness: Partial<Record<AcpHarness, ModelsPageRuntime>>,
+  connectedHarnesses: Partial<Record<AcpHarness, ModelsPageConnection>>,
 ): RuntimeRowViewModel[] {
   return Object.entries(runtimes).map(([profileName, profile]) => {
     const harness = profile.harness;
     const presentation = harnessPresentation(harness as KortixHarness);
-    const connection = connectionsByHarness[harness];
-    const connected = connection?.status === 'ready';
-    const connectionLabel =
-      connected && connection?.selectedConnectionId
-        ? connectionDisplayName(connection.selectedConnectionId)
-        : null;
+    const connection = connectedHarnesses[harness];
+    const connected = Boolean(connection);
+    const connectionLabel = connection ? connectionDisplayName(connection.kind) : null;
 
     return {
       profileName,

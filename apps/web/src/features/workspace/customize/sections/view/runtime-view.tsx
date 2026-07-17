@@ -57,7 +57,7 @@ import {
 } from '@/features/workspace/customize/sections/view/runtime-profile-options';
 import {
   buildRuntimeRows,
-  connectionsByHarnessFromModelsPage,
+  connectedHarnessesFromModelsPage,
   type RuntimeRowViewModel,
 } from '@/features/workspace/customize/sections/view/runtime-view-model';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -86,16 +86,16 @@ export function RuntimeView({ projectId }: { projectId: string }) {
     staleTime: 30_000,
   });
   const modelsPage = useModelsPage(projectId, canWrite);
-  const connectionsByHarness = useMemo(
-    () => connectionsByHarnessFromModelsPage(modelsPage.runtimes),
-    [modelsPage.runtimes],
+  const connectedHarnesses = useMemo(
+    () => connectedHarnessesFromModelsPage(modelsPage.connections),
+    [modelsPage.connections],
   );
   const rows = useMemo<RuntimeRowViewModel[]>(
     () =>
       profilesQuery.data?.editable
-        ? buildRuntimeRows(profilesQuery.data.runtimes, connectionsByHarness)
+        ? buildRuntimeRows(profilesQuery.data.runtimes, connectedHarnesses)
         : [],
-    [profilesQuery.data, connectionsByHarness],
+    [profilesQuery.data, connectedHarnesses],
   );
 
   return (
