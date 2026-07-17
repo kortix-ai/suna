@@ -150,16 +150,20 @@ export async function resolveCandidates(
       // back to DEFAULT_BEDROCK_BYOK_REGION when unset), never from deployment
       // config. Every other BYOK provider already carries a static baseUrl on
       // `byok`, narrowed to `string` by the `byok.kind === 'bedrock'` check.
-      const baseUrl =
+      // Bedrock's project-scoped region also feeds the AI-SDK engine's Bedrock
+      // provider (descriptor.region); resolve it once for both baseUrl + region.
+      const bedrockRegion =
         byok.kind === 'bedrock'
-          ? bedrockByokBaseUrl(
-              await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR),
-            )
-          : byok.baseUrl;
+          ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
+          : undefined;
+      const baseUrl =
+        byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
+        npm: byok.npm,
         baseUrl,
+        ...(bedrockRegion ? { region: bedrockRegion } : {}),
         apiKey: key,
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',

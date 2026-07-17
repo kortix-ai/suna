@@ -2,15 +2,23 @@ import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
 import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
 import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
 import { transportFor } from '../transports';
+import { callUpstreamViaAiSdk, isAiSdkServable } from '../transports/ai-sdk';
 import { resolveTransportKind } from '../transports/route-kind';
 import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
+export type TransportEngine = 'native' | 'ai-sdk';
+
 export interface CallUpstreamOptions {
   retry?: RetryOptions;
   binding?: BreakerBinding;
   fetchImpl?: FetchImpl;
+  // Which transport engine executes this call. Defaults to 'native'. 'ai-sdk'
+  // routes replaceable providers through the Vercel AI SDK; a provider the
+  // AI-SDK engine cannot serve (openai-responses/Codex) transparently falls back
+  // to native regardless of this flag.
+  engine?: TransportEngine;
   /** See GatewayConfig.translationSidecar. Unset = direct upstream (current behavior). */
   translationSidecar?: TranslationSidecarConfig;
   /** Inbound client's abort signal — combined with the per-attempt timeout
@@ -30,6 +38,27 @@ export async function callUpstream(
   descriptor: UpstreamDescriptor,
   opts: CallUpstreamOptions = {},
 ): Promise<Response> {
+  // AI-SDK engine: the SDK provider package owns the request build, HTTP, and
+  // response decoding; the adapter maps its output back to the same OpenAI-
+  // compatible shape the native path produces (so the pipeline, billing, and
+  // opencode see no difference). Still wrapped in withResilience so the circuit
+  // breaker + gateway retry apply identically. Non-streaming awaits inside (a
+  // 4xx/5xx throws → retry/failover); streaming returns immediately (errors
+  // surface as an in-stream frame the pipeline probe handles), matching native
+  // timing. A provider the engine can't serve (Codex) falls through to native.
+  if (opts.engine === 'ai-sdk' && isAiSdkServable(descriptor)) {
+    return withResilience(
+      async (attemptSignal) => {
+        const signal = opts.signal
+          ? AbortSignal.any([attemptSignal, opts.signal])
+          : attemptSignal;
+        return callUpstreamViaAiSdk(body, descriptor, { signal });
+      },
+      opts.retry ?? {},
+      opts.binding,
+    );
+  }
+
   const fetchImpl: FetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   // Resolved per-request (not just from the descriptor's static `kind`): a
   // genuine-OpenAI reasoning model with function tools + a live reasoning

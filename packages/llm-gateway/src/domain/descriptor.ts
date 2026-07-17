@@ -45,4 +45,13 @@ export interface UpstreamDescriptor {
   // any same-named client fields (e.g. OpenRouter's `provider` routing
   // preferences pinning managed models to reliable hosts). openai-compat only.
   bodyExtras?: Record<string, unknown>;
+  // The models.dev `npm` field for the provider (e.g. '@ai-sdk/openai',
+  // '@ai-sdk/anthropic', '@ai-sdk/amazon-bedrock'). Selects the AI SDK provider
+  // package under the 'ai-sdk' transport engine. Optional: when absent the engine
+  // falls back to `kind`. Ignored by the native transports.
+  npm?: string;
+  // AWS region for the Bedrock provider under the 'ai-sdk' engine (bearer-token
+  // auth still comes from `apiKey`; region only selects the endpoint host).
+  // Ignored by every other provider/engine.
+  region?: string;
 }

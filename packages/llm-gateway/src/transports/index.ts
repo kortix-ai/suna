@@ -11,3 +11,10 @@ export {
   responsesJsonToChat,
   translateResponsesResponse,
 } from './openai-responses';
+
+export {
+  aiSdkFamilyFor,
+  callUpstreamViaAiSdk,
+  isAiSdkServable,
+  resolveAiModel,
+} from './ai-sdk';

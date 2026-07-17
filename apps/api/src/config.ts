@@ -357,6 +357,15 @@ const envSchema = z.object({
   // technically run with no master key; self-host always sets one (see
   // kortix-compose.yml).
   LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: optStr,
+  // Transport engine for upstream LLM calls. 'native' (default) uses the
+  // hand-written per-provider transports (optionally fronted by the LiteLLM
+  // translation sidecar above). 'ai-sdk' routes replaceable providers
+  // (openai-compat / anthropic / bedrock) through the Vercel AI SDK provider
+  // packages, which own the provider quirks, adapting back to the same
+  // OpenAI-compatible /v1/llm contract. Codex (openai-responses) always stays
+  // native. Flag-gated for a proven, staged rollout and, ultimately, retiring
+  // the sidecar.
+  LLM_TRANSPORT_ENGINE:        optStrDefault('native'),
   // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
   // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
   // service-specific credential for bedrock.amazonaws.com.
@@ -822,6 +831,7 @@ export const config = {
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   LLM_TRANSLATION_SIDECAR_URL: env.LLM_TRANSLATION_SIDECAR_URL,
   LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: env.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN,
+  LLM_TRANSPORT_ENGINE: env.LLM_TRANSPORT_ENGINE,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
   AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,

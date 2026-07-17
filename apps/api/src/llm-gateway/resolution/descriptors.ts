@@ -86,6 +86,10 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     kind: 'bedrock',
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
+    // Region for the AI-SDK engine's Bedrock provider (bearer-token auth still
+    // comes from apiKey; region only picks the endpoint host). Ignored by the
+    // native path, which bakes the region into baseUrl.
+    region: config.AWS_BEDROCK_REGION || 'us-west-2',
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
