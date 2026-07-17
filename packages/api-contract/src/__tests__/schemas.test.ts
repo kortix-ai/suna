@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  AcpPermissionPolicySchema,
   ConnectionProfileMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
   ErrorEnvelopeSchema,
@@ -366,6 +367,38 @@ describe('envelopes', () => {
   test('sharing intent normalizes readonly member lists', () => {
     const parsed = SharingIntentSchema.parse({ mode: 'members', memberIds: ['u1'] });
     expect(parsed).toEqual({ mode: 'members', memberIds: ['u1'] });
+  });
+});
+
+describe('AcpPermissionPolicySchema', () => {
+  test('conservative defaults apply when both fields are omitted — deny-by-default: no auto-approval, nothing remembered', () => {
+    const parsed = AcpPermissionPolicySchema.parse({});
+    expect(parsed).toEqual({ autoApprove: 'none', toolDecisions: {} });
+  });
+
+  test('accepts every autoApprove level and an arbitrary per-tool decision map', () => {
+    for (const autoApprove of ['none', 'reads', 'all'] as const) {
+      expect(() => AcpPermissionPolicySchema.strict().parse({
+        autoApprove,
+        toolDecisions: { bash: 'allow', edit_file: 'deny' },
+      })).not.toThrow();
+    }
+  });
+
+  test('rejects an unrecognized autoApprove level', () => {
+    expect(AcpPermissionPolicySchema.safeParse({ autoApprove: 'everything' }).success).toBe(false);
+  });
+
+  test('rejects a toolDecisions value outside allow/deny', () => {
+    expect(
+      AcpPermissionPolicySchema.safeParse({ toolDecisions: { bash: 'ask' } }).success,
+    ).toBe(false);
+  });
+
+  test('strict() rejects an unknown top-level key (the route layer 422s on this)', () => {
+    expect(
+      AcpPermissionPolicySchema.strict().safeParse({ autoApprove: 'none', toolDecisions: {}, extra: true }).success,
+    ).toBe(false);
   });
 });
 

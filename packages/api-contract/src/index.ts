@@ -72,6 +72,25 @@ export const ExperimentalFeatureViewSchema = z.object({
 });
 export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
 
+/**
+ * Persistent, project-level ACP permission policy (Task WS5-P1-a). Storage:
+ * `projects.metadata.acp_permission_policy` (JSONB — no migration). Deny-by-
+ * default: an absent/malformed stored value resolves to these same defaults
+ * (`autoApprove: 'none'`, `toolDecisions: {}`) — i.e. exactly today's
+ * behavior, every tool call prompts and nothing is remembered. The policy
+ * only ever REDUCES prompting friction; it can never grant an ACP tool call
+ * beyond what a user could already click through in the composer.
+ */
+export const AcpPermissionPolicySchema = z.object({
+  /** 'none' = prompt for every tool call (conservative default). 'reads' =
+   *  auto-approve read-only tool calls. 'all' = auto-approve every tool call. */
+  autoApprove: z.enum(['none', 'reads', 'all']).default('none'),
+  /** Per-tool remembered decision, keyed by tool name — overrides `autoApprove`
+   *  for that specific tool. */
+  toolDecisions: z.record(z.string(), z.enum(['allow', 'deny'])).default({}),
+});
+export type AcpPermissionPolicy = z.infer<typeof AcpPermissionPolicySchema>;
+
 /** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
 export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
