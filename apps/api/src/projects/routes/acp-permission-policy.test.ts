@@ -181,6 +181,15 @@ describe('PUT /:projectId/acp/permission-policy', () => {
     expect(updateCalls).toEqual([]);
   });
 
+  test('422s an oversize toolDecisions map (metadata-JSONB bloat guard) and never persists', async () => {
+    const toolDecisions = Object.fromEntries(
+      Array.from({ length: 129 }, (_, index) => [`tool_${index}`, 'allow']),
+    );
+    const res = await putPolicy({ toolDecisions });
+    expect(res.status).toBe(422);
+    expect(updateCalls).toEqual([]);
+  });
+
   test('403s a caller who lacks project.customize.write (non-member/insufficient role) and never persists', async () => {
     capabilityDenied = true;
     const res = await putPolicy({ autoApprove: 'reads', toolDecisions: {} });

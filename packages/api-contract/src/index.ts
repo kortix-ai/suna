@@ -81,13 +81,43 @@ export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSche
  * only ever REDUCES prompting friction; it can never grant an ACP tool call
  * beyond what a user could already click through in the composer.
  */
+// Bounds mirror `SessionRuntimeContextSchema` below: an unbounded
+// `Record<string, ...>` inside project metadata (JSONB) is a bloat vector for
+// any caller with `project.customize.write` — cap both the number of
+// remembered tool decisions and the length of each tool-name key. Tool names
+// span plain builtins (`Bash`, `Read`) and namespaced MCP tools
+// (`mcp__server__tool`), so unlike the lower-case-only runtime-context key
+// pattern, only length is bounded here, not character class.
+export const ACP_PERMISSION_POLICY_MAX_TOOLS = 128;
+export const ACP_PERMISSION_POLICY_MAX_KEY_LENGTH = 256;
+
 export const AcpPermissionPolicySchema = z.object({
   /** 'none' = prompt for every tool call (conservative default). 'reads' =
    *  auto-approve read-only tool calls. 'all' = auto-approve every tool call. */
   autoApprove: z.enum(['none', 'reads', 'all']).default('none'),
   /** Per-tool remembered decision, keyed by tool name — overrides `autoApprove`
-   *  for that specific tool. */
-  toolDecisions: z.record(z.string(), z.enum(['allow', 'deny'])).default({}),
+   *  for that specific tool. Bounded to at most
+   *  `ACP_PERMISSION_POLICY_MAX_TOOLS` entries, each keyed by a tool name of
+   *  at most `ACP_PERMISSION_POLICY_MAX_KEY_LENGTH` characters. */
+  toolDecisions: z
+    .record(
+      z
+        .string()
+        .max(
+          ACP_PERMISSION_POLICY_MAX_KEY_LENGTH,
+          `toolDecisions keys must be at most ${ACP_PERMISSION_POLICY_MAX_KEY_LENGTH} characters`,
+        ),
+      z.enum(['allow', 'deny']),
+    )
+    .default({})
+    .superRefine((value, ctx) => {
+      if (Object.keys(value).length > ACP_PERMISSION_POLICY_MAX_TOOLS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `toolDecisions may contain at most ${ACP_PERMISSION_POLICY_MAX_TOOLS} entries`,
+        });
+      }
+    }),
 });
 export type AcpPermissionPolicy = z.infer<typeof AcpPermissionPolicySchema>;
 

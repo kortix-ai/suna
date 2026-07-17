@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ACP_PERMISSION_POLICY_MAX_KEY_LENGTH,
+  ACP_PERMISSION_POLICY_MAX_TOOLS,
   AcpPermissionPolicySchema,
   ConnectionProfileMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
@@ -399,6 +401,39 @@ describe('AcpPermissionPolicySchema', () => {
     expect(
       AcpPermissionPolicySchema.strict().safeParse({ autoApprove: 'none', toolDecisions: {}, extra: true }).success,
     ).toBe(false);
+  });
+
+  test('accepts exactly ACP_PERMISSION_POLICY_MAX_TOOLS sane tool-name keys', () => {
+    const toolDecisions = Object.fromEntries(
+      Array.from({ length: ACP_PERMISSION_POLICY_MAX_TOOLS }, (_, index) => [`tool_${index}`, 'allow']),
+    );
+    const result = AcpPermissionPolicySchema.safeParse({ toolDecisions });
+    expect(result.success).toBe(true);
+    expect(Object.keys(result.success ? result.data.toolDecisions : {})).toHaveLength(
+      ACP_PERMISSION_POLICY_MAX_TOOLS,
+    );
+  });
+
+  test('rejects a toolDecisions map one entry over ACP_PERMISSION_POLICY_MAX_TOOLS with a clear message', () => {
+    const toolDecisions = Object.fromEntries(
+      Array.from({ length: ACP_PERMISSION_POLICY_MAX_TOOLS + 1 }, (_, index) => [`tool_${index}`, 'allow']),
+    );
+    const result = AcpPermissionPolicySchema.safeParse({ toolDecisions });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes('at most'))).toBe(true);
+    }
+  });
+
+  test('rejects a tool-name key over ACP_PERMISSION_POLICY_MAX_KEY_LENGTH characters', () => {
+    const longKey = 'x'.repeat(ACP_PERMISSION_POLICY_MAX_KEY_LENGTH + 44);
+    const result = AcpPermissionPolicySchema.safeParse({ toolDecisions: { [longKey]: 'allow' } });
+    expect(result.success).toBe(false);
+  });
+
+  test('accepts a tool-name key at exactly ACP_PERMISSION_POLICY_MAX_KEY_LENGTH characters', () => {
+    const maxKey = 'x'.repeat(ACP_PERMISSION_POLICY_MAX_KEY_LENGTH);
+    expect(AcpPermissionPolicySchema.safeParse({ toolDecisions: { [maxKey]: 'deny' } }).success).toBe(true);
   });
 });
 
