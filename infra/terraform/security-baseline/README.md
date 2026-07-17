@@ -6,7 +6,8 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 ## What it manages
 - IAM account password policy (DCF-68 / DCF-350)
 - CloudTrail KMS CMK + multi-region trail + log-file validation + S3 data events (DCF-54 / DCF-478 / DCF-406)
-- GuardDuty detectors, us-west-2 + us-east-1 (DCF-87)
+- GuardDuty detectors in all 17 opted-in commercial regions (DCF-87)
+- EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
 - VPC Flow Logs delivery role + log group (DCF-406)
@@ -15,9 +16,8 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
   sibling `compliance-monitoring` stack and state.
 
 ## Applied via CLI (not in this stack — by design)
-These were one-time or region-spanning and live outside the stack; documented
+These were one-time resource cleanup/remediation actions and live outside the stack; documented
 in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
-- GuardDuty in the other 15 regions
 - Deletion of 15 empty regional default VPCs
 - Per-VPC flow logs, default-SG stripping, and NACL deny (22/3389) for the 5 us-west-2 VPCs
 - S3 per-bucket versioning / TLS-deny policy / access-logging
