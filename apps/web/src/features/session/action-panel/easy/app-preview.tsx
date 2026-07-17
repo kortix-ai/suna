@@ -38,6 +38,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Globe,
   Link as LinkIcon,
   Maximize2,
   MessageSquarePlus,
@@ -99,6 +100,9 @@ export function AppPreview({
   const [history, setHistory] = useState<string[]>([url]);
   const [index, setIndex] = useState(0);
   const current = history[index] ?? url;
+  // The quick-view "Open Browser" with no running app hands over url: '' —
+  // no port to load, nothing to spin on. Land on the address bar instead.
+  const noApp = !current;
   const port = useMemo(() => parseLocalhostUrl(current)?.port ?? 0, [current]);
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
@@ -142,14 +146,20 @@ export function AppPreview({
   // of silence, assume the worst and say so — a blank frame reads as "your app
   // is broken" with no explanation, which is worse than an honest error (W8).
   useEffect(() => {
-    if (!isLoading) return;
+    if (!isLoading || noApp) return;
     clearLoadTimeout();
     loadTimeout.current = setTimeout(() => {
       setIsLoading(false);
       setHasError(true);
     }, 5000);
     return clearLoadTimeout;
-  }, [isLoading, refreshKey, clearLoadTimeout]);
+  }, [isLoading, refreshKey, clearLoadTimeout, noApp]);
+
+  // Nothing to load, so land the cursor on the address bar — the fastest way
+  // in once you know the port.
+  useEffect(() => {
+    if (noApp) addressRef.current?.focus();
+  }, [noApp]);
 
   const reload = useCallback(() => {
     setIsLoading(true);
@@ -384,7 +394,7 @@ export function AppPreview({
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        {isLoading && hasPreview && (
+        {isLoading && hasPreview && !noApp && (
           <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
             <div className="text-muted-foreground flex flex-col items-center gap-2">
               <Loading className="size-4" />
@@ -393,7 +403,7 @@ export function AppPreview({
           </div>
         )}
 
-        {hasError && (
+        {hasError && !noApp && (
           <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
             <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
               <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
@@ -419,7 +429,20 @@ export function AppPreview({
           </div>
         )}
 
-        {hasPreview ? (
+        {noApp ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="text-muted-foreground flex max-w-sm flex-col items-center gap-4 px-4 text-center">
+              <Globe className="size-12 opacity-20" />
+              <div>
+                <p className="text-foreground text-sm font-medium">No app running yet</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-balance">
+                  When the agent starts a web app it shows up here. Know the port already? Type
+                  it above — e.g. <span className="text-foreground/80 font-mono">3000</span>.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : hasPreview ? (
           <iframe
             key={refreshKey}
             src={previewUrl}

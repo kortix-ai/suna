@@ -206,16 +206,16 @@ describe('neighborOutputs (W10)', () => {
 });
 
 describe('quickBrowserOutput (header/palette "Open Browser")', () => {
-  it('defaults to localhost:3000 when the session has no running app', () => {
-    expect(quickBrowserOutput([])).toEqual({
-      callID: 'quick-browser',
-      name: 'Browser',
-      kind: 'app',
-      url: 'http://localhost:3000',
-    });
+  it('uses the first running app url when there is one', () => {
+    const apps = [{ callID: 'x', name: 'App', kind: 'app', url: 'http://localhost:5173' }] as any;
+    expect(quickBrowserOutput(apps).url).toBe('http://localhost:5173');
   });
 
-  it('defaults to the first running app\'s url when one exists', () => {
+  it('returns an empty url when no app is running — the preview must land on the port picker, never a guessed dead port', () => {
+    expect(quickBrowserOutput([]).url).toBe('');
+  });
+
+  it('defaults to the first running app\'s url when several exist', () => {
     const apps = [appOutput({ url: 'http://localhost:5173' }), appOutput({ callID: 'app-2', url: 'http://localhost:8080' })];
     expect(quickBrowserOutput(apps).url).toBe('http://localhost:5173');
   });
