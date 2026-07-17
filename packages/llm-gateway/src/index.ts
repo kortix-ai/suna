@@ -29,6 +29,7 @@ export {
   UpstreamHttpError,
   defaultIsRetryable,
   indicatesUpstreamDown,
+  looksLikeTerminalAuthFailure,
 } from './errors';
 export type { NoUpstreamReasonCode, UpstreamErrorKind } from './errors';
 
