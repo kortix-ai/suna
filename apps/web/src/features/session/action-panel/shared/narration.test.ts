@@ -10,12 +10,12 @@ import {
 import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
 
-function part(tool: string, input: Record<string, unknown> = {}): ToolPart {
+function part(tool: string, input: Record<string, unknown> = {}, output?: string): ToolPart {
   return {
     type: 'tool',
     tool,
     callID: `c-${tool}-${Math.random()}`,
-    state: { status: 'completed', input },
+    state: { status: 'completed', input, output },
   } as unknown as ToolPart;
 }
 
@@ -89,6 +89,21 @@ describe('narrateStep', () => {
     expect(narrateStep('web', [part('web_search'), part('web_search')])).toBe(
       'Searched the web · 2 queries',
     );
+  });
+
+  it('mixed search+fetch step counts distinct source urls, not calls', () => {
+    const search = part(
+      'web_search',
+      { query: 'marko' },
+      JSON.stringify({
+        results: [
+          { title: 'A', url: 'https://a.com' },
+          { title: 'B', url: 'https://b.com' },
+        ],
+      }),
+    );
+    const fetch = part('web_fetch', { url: 'https://c.com' }, '');
+    expect(narrateStep('web', [search, fetch])).toBe('Searched and read 3 sources');
   });
 
   it('never emits a raw tool name for unknown tools', () => {

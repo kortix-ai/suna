@@ -18,7 +18,7 @@
  */
 
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
-import { wsDomain } from '../../tool/shared/web-helpers';
+import { parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
 import { safeHttpUrl } from '@/lib/safe-url';
 import type { ToolPart } from '@/ui';
 
@@ -593,13 +593,31 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
     case 'web': {
-      const searches = parts.filter((p) => {
+      const isSearch = (p: ToolPart) => {
         const t = normalizeName(p.tool);
         return t === 'web_search' || t === 'websearch' || t === 'image_search';
-      }).length;
+      };
+      const searches = parts.filter(isSearch).length;
       if (searches === n) return `Searched the web · ${n} ${plural(n, 'query', 'queries')}`;
       if (searches === 0) return `Read ${n} ${plural(n, 'page', 'pages')}`;
-      return `Searched and read ${n} ${plural(n, 'source', 'sources')}`;
+
+      // Mixed step: "sources" means pages, so count distinct page URLs —
+      // every search result plus every fetched URL — never tool calls.
+      // Unparseable outputs fall back to the call count (still a floor, not a lie).
+      const urls = new Set<string>();
+      for (const p of parts) {
+        if (isSearch(p)) {
+          const raw = (p.state as { output?: unknown } | undefined)?.output;
+          for (const src of parseWebSearchOutput(raw).flatMap((q) => q.sources)) {
+            if (src.url) urls.add(src.url);
+          }
+        } else {
+          const url = (p.state?.input as Record<string, unknown> | undefined)?.url;
+          if (typeof url === 'string' && url) urls.add(url);
+        }
+      }
+      const count = urls.size || n;
+      return `Searched and read ${count} ${plural(count, 'source', 'sources')}`;
     }
     case 'create': {
       if (n === 1) {

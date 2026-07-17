@@ -422,6 +422,38 @@ describe('deriveContext', () => {
     ]);
   });
 
+  // ─── Task 9 — a search contributes EVERY result to context web sources,
+  // not just the first: a 10-result search used to collapse to one entry. ──
+
+  it('a search contributes EVERY result to context web sources, not just the first', () => {
+    const searchOutput = JSON.stringify({
+      results: [
+        { title: 'LinkedIn', url: 'https://linkedin.com/in/marko' },
+        { title: 'Personal site', url: 'https://markokraemer.com' },
+        { title: 'GitHub', url: 'https://github.com/markokraemer' },
+      ],
+    });
+    const { web } = deriveContext([
+      part('web_search', { query: 'marko' }, { output: searchOutput }),
+    ]);
+    expect(web.map((w) => w.url)).toEqual([
+      'https://linkedin.com/in/marko',
+      'https://markokraemer.com',
+      'https://github.com/markokraemer',
+    ]);
+  });
+
+  it('a later fetch of a searched result still dedups to one entry', () => {
+    const searchOutput = JSON.stringify({
+      results: [{ title: 'Personal site', url: 'https://markokraemer.com' }],
+    });
+    const { web } = deriveContext([
+      part('web_search', { query: 'marko' }, { output: searchOutput }),
+      part('web_fetch', { url: 'https://markokraemer.com' }, { output: '<html><title>Marko</title></html>' }),
+    ]);
+    expect(web).toHaveLength(1);
+  });
+
   it('deduplicates a file read twice', () => {
     const { files } = deriveContext([
       part('read', { filePath: '/a/one.ts' }),
