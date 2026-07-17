@@ -72,6 +72,7 @@ const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {
   entra: '/provider-icons/azure.svg',
   okta: '/provider-icons/okta.svg',
   google: '/provider-icons/google-workspace.svg',
+  cloudflare: '/provider-icons/cloudflare.svg',
   custom: '/provider-icons/generic-provider.svg',
 };
 

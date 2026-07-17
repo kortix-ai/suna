@@ -128,7 +128,7 @@ export interface ProviderConfig {
 }
 
 export interface ProviderGuide {
-  id: 'entra' | 'okta' | 'google' | 'custom';
+  id: 'entra' | 'okta' | 'google' | 'cloudflare' | 'custom';
   name: string;
   blurb: string;
   config: ProviderConfig;
@@ -930,6 +930,254 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         ],
         note: 'Google can take up to 24 hours to fully propagate an access change — a user reporting "not assigned" right after you flip this on may just need to wait.',
         doneLabel: 'I’ve turned the app on for the right users',
+      },
+      importStep('groups'),
+      testStep(),
+    ],
+  },
+  {
+    id: 'cloudflare',
+    name: 'Cloudflare Access',
+    blurb: 'SAML brokered through Cloudflare Zero Trust',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Cloudflare forwards the group NAMES from your upstream IdP through a JSONata transform on the "groups" SAML attribute — map those names in Kortix.',
+      preferredMetadata: 'url',
+      metadataSource:
+        'The SaaS app’s Overview / "Get started" tab → "SAML Metadata endpoint" (a hosted URL). If your Cloudflare build shows only the SSO endpoint + Access Entity ID + public key, switch to Manual and assemble the XML from those.',
+      metadataUrlPlaceholder:
+        'https://<your-team>.cloudflareaccess.com/cdn-cgi/access/sso/saml/<app-id>',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Connect Cloudflare Access to your identity provider',
+        where: 'idp',
+        menuPath: 'Cloudflare Zero Trust → Settings → Authentication → Login methods',
+        intro:
+          'Cloudflare Access sits BETWEEN Kortix and your real identity provider: it authenticates users against your IdP, then presents itself to Kortix as a SAML IdP. So set up the upstream connection first — in Zero Trust → Settings → Authentication, add a login method (Okta, Entra, Google, …) per Cloudflare’s docs.',
+        bullets: [
+          'This guide covers the DOWNSTREAM half (Cloudflare → Kortix). The upstream half (your IdP → Cloudflare) follows Cloudflare’s own documentation for your provider.',
+          'Whatever attributes Kortix needs (email, first/last name, and groups) must survive the upstream hop — Cloudflare forwards them on.',
+        ],
+        doneLabel: 'Cloudflare Access is connected to my IdP',
+      },
+      {
+        id: 'add-app',
+        title: 'Add a SaaS application in Cloudflare Access',
+        where: 'idp',
+        menuPath: 'Zero Trust → Access → Applications → Add an application',
+        intro: 'In Cloudflare Zero Trust: Access → Applications → "Add an application".',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/add-app-1.png',
+            alt: 'Cloudflare Zero Trust Access Applications page with Add an application',
+            schematic: {
+              title: 'Access → Applications',
+              rows: [{ label: 'Add an application', as: 'button' }],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Choose the "SaaS" application type, then select SAML (not OIDC) as the protocol. Give it a name such as "Kortix".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/add-app-2.png',
+            alt: 'Cloudflare Add an application dialog with the SaaS type selected',
+            schematic: {
+              title: 'Add an application → Select type',
+              rows: [
+                { label: 'SaaS', as: 'button' },
+                { label: 'Protocol', value: 'SAML', as: 'field' },
+              ],
+            },
+          },
+        ],
+        doneLabel: 'I’ve added a SaaS SAML application',
+      },
+      {
+        id: 'basic-saml',
+        title: 'Service provider details',
+        where: 'idp',
+        menuPath: 'Your SaaS app → Configuration',
+        intro:
+          'In the app’s configuration, paste Kortix’s service-provider values into Cloudflare’s fields.',
+        content: [
+          {
+            kind: 'sp-values',
+            acsLabel: 'Assertion Consumer Service URL',
+            entityIdLabel: 'Entity ID',
+            acsFirst: true,
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/basic-saml-1.png',
+            alt: 'Cloudflare SaaS SAML app configuration with Entity ID and ACS URL fields',
+            schematic: {
+              title: 'SaaS app → Configuration',
+              rows: [
+                { label: 'Entity ID', value: '(pasted from below)', as: 'field' },
+                {
+                  label: 'Assertion Consumer Service URL',
+                  value: '(pasted from below)',
+                  as: 'field',
+                },
+                { label: 'Name ID format', value: 'Email', as: 'field' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Set "Name ID format" to Email — Kortix correlates accounts by email address.',
+          },
+        ],
+        doneLabel: 'I’ve entered the service-provider details',
+      },
+      {
+        id: 'attributes',
+        title: 'Configure SAML attributes',
+        where: 'idp',
+        menuPath: 'SaaS app → Configuration → SAML attributes',
+        intro:
+          'Email is sent by default (the "Email attribute name" field). Add the other attributes Kortix reads — id, firstName, lastName — under "SAML attributes" → "Add attribute".',
+        content: [
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'email', source: 'Email attribute name (default)', required: true },
+              { name: 'id', source: 'SAML attribute → id', required: true },
+              { name: 'firstName', source: 'SAML attribute → firstName' },
+              { name: 'lastName', source: 'SAML attribute → lastName' },
+            ],
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/attributes-1.png',
+            alt: 'Cloudflare SaaS app SAML attributes section with id, firstName, lastName added',
+            schematic: {
+              title: 'Configuration → SAML attributes',
+              rows: [
+                { label: 'Email attribute name', value: 'email', as: 'field' },
+                { label: 'SAML attribute', value: 'id', as: 'field' },
+                { label: 'SAML attribute', value: 'firstName', as: 'field' },
+                { label: 'SAML attribute', value: 'lastName', as: 'field' },
+                { label: 'Add attribute', as: 'button' },
+              ],
+            },
+          },
+        ],
+        doneLabel: 'I’ve added the SAML attributes',
+      },
+      {
+        id: 'group-claim',
+        title: 'Add the groups attribute',
+        where: 'idp',
+        menuPath: 'SaaS app → Configuration → SAML attributes',
+        intro:
+          'To sync groups, add one more SAML attribute named "groups". Cloudflare exposes the upstream IdP’s group list through a JSONata transform — set the attribute’s value to the transform below.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/group-claim-1.png',
+            alt: 'Cloudflare SAML attribute for groups',
+            schematic: {
+              title: 'SAML attributes → groups',
+              rows: [
+                { label: 'Attribute name', value: 'groups', as: 'field' },
+                { label: 'Value', value: '(JSONata transform, below)', as: 'field' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'In the attribute’s value, use a JSONata expression that maps the IdP’s groups onto the "groups" attribute — Cloudflare’s docs show the exact transform for your identity provider.',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/group-jsonata-1.png',
+            alt: 'Cloudflare JSONata transform configuring the groups attribute',
+            schematic: {
+              title: 'Attribute value → JSONata transform',
+              rows: [{ label: 'groups', value: 'JSONata expression', as: 'field' }],
+            },
+          },
+        ],
+        note: 'The attribute name here (groups) must match Kortix’s group claim (prefilled at the connect step). Cloudflare passes through whatever group NAMES the upstream IdP sends.',
+        doneLabel: 'I’ve added the groups attribute',
+      },
+      {
+        id: 'login-methods',
+        title: 'Configure login methods',
+        where: 'idp',
+        menuPath: 'SaaS app → Authentication',
+        intro:
+          'Choose which identity provider(s) this application accepts — the upstream login method(s) you set up in the first step. Restrict to the one(s) you intend, or allow all configured methods.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/login-methods-1.png',
+            alt: 'Cloudflare selecting the identity provider login methods for the app',
+            schematic: {
+              title: 'App → Authentication → Login methods',
+              rows: [{ label: 'Identity providers', value: 'Okta / Entra / …', as: 'field' }],
+            },
+          },
+        ],
+        doneLabel: 'I’ve chosen the login methods',
+      },
+      {
+        id: 'policy',
+        title: 'Add an access policy',
+        where: 'idp',
+        menuPath: 'SaaS app → Policies',
+        intro:
+          'Cloudflare requires at least one Access policy or NOBODY can reach the app. Add a policy that allows the users/groups who may sign in (e.g. Action: Allow, Include: Emails ending in your domain, or a specific group).',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/policy-1.png',
+            alt: 'Cloudflare Access policy configuration with rules',
+            schematic: {
+              title: 'App → Policies → Add a policy',
+              rows: [
+                { label: 'Action', value: 'Allow', as: 'field' },
+                { label: 'Include', value: 'Emails ending in @yourdomain / a group', as: 'field' },
+              ],
+            },
+          },
+        ],
+        warning:
+          'No policy = a locked door: Cloudflare denies everyone until at least one Allow policy exists. This is the most common "SSO redirects but access is denied" cause.',
+        doneLabel: 'I’ve added an access policy',
+      },
+      {
+        id: 'metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
+        where: 'idp',
+        menuPath: 'SaaS app → Overview → SAML Metadata endpoint',
+        intro:
+          'Save the app, then open its Overview / "Get started" tab and copy the "SAML Metadata endpoint" URL. Paste it below to continue.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/cloudflare/metadata-1.png',
+            alt: 'Cloudflare SaaS app overview with the SSO endpoint, Access Entity ID and SAML metadata endpoint',
+            schematic: {
+              title: 'SaaS app → Overview',
+              rows: [
+                { label: 'SSO endpoint', value: '(hosted URL)', as: 'field' },
+                { label: 'Access Entity ID', value: '(issuer)', as: 'field' },
+                { label: 'SAML Metadata endpoint', value: '(paste this URL)', as: 'field' },
+              ],
+            },
+          },
+        ],
+        note: 'If your Cloudflare build doesn’t show a "SAML Metadata endpoint" URL, switch the picker above to Manual and paste the metadata XML you assemble from the SSO endpoint, Access Entity ID, and the public-key certificate shown here.',
+        doneLabel: 'I’ve added the identity provider metadata',
       },
       importStep('groups'),
       testStep(),
