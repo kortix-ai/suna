@@ -270,19 +270,11 @@ export interface ExecutorRouterDeps {
       name: string;
       description: string | null;
       imgSrc: string | null;
-      authType: 'oauth';
       categories: string[];
     }>;
     nextCursor?: string;
     hasMore: boolean;
   }>;
-  /** Browse the direct integrations.sh catalogue. */
-  listDiscoverIntegrations?(input: {
-    q?: string;
-    cursor?: string;
-  }): Promise<unknown>;
-  /** Resolve every known surface for one trusted catalogue record. */
-  getDiscoverIntegration?(id: string): Promise<unknown>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
   getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
   /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */
@@ -385,69 +377,6 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const p = await deps.resolvePrincipal(c);
       if (!p) return c.json({ error: 'unauthorized' }, 401);
       return catalogResponse(c, p);
-    },
-  );
-
-  // ── Admin: browse direct integration surfaces ───────────────────────────
-  app.openapi(
-    createRoute({
-      method: 'get',
-      path: '/projects/{projectId}/discover/integrations',
-      tags: ['executor'],
-      summary: 'Browse the integrations.sh catalogue',
-      ...auth,
-      request: {
-        params: ProjectParam,
-        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
-      },
-      responses: {
-        200: json(OpaqueSchema, 'Direct integration catalogue page'),
-        ...errors(403, 502),
-      },
-    }),
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.listDiscoverIntegrations) return c.json({ error: 'catalogue unavailable' }, 502);
-      try {
-        return c.json(await deps.listDiscoverIntegrations({
-          q: c.req.query('q') || undefined,
-          cursor: c.req.query('cursor') || undefined,
-        }));
-      } catch (error) {
-        return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
-      }
-    },
-  );
-
-  app.openapi(
-    createRoute({
-      method: 'get',
-      path: '/projects/{projectId}/discover/integrations/detail',
-      tags: ['executor'],
-      summary: 'Resolve the surfaces for an integrations.sh catalogue record',
-      ...auth,
-      request: {
-        params: ProjectParam,
-        query: z.object({ id: z.string().min(1) }),
-      },
-      responses: {
-        200: json(OpaqueSchema, 'Integration surface detail'),
-        ...errors(403, 404, 502),
-      },
-    }),
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getDiscoverIntegration) return c.json({ error: 'catalogue unavailable' }, 502);
-      try {
-        return c.json(await deps.getDiscoverIntegration(c.req.query('id')));
-      } catch (error) {
-        const message = (error as Error).message || 'catalogue unavailable';
-        return c.json({ error: message }, message === 'Integration not found' ? 404 : 502);
-      }
     },
   );
 

@@ -3,10 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 const sourcePath = join(import.meta.dir, 'connectors-view.tsx');
-const source = [
-  readFileSync(sourcePath, 'utf8'),
-  readFileSync(join(import.meta.dir, 'discover-catalogue.tsx'), 'utf8'),
-].join('\n');
+const source = readFileSync(sourcePath, 'utf8');
 
 describe('Slack channel connector catalogue', () => {
   test('uses the built-in Slack install flow instead of creating the reserved slug', () => {
@@ -14,12 +11,12 @@ describe('Slack channel connector catalogue', () => {
     expect(source).not.toMatch(/<ChannelProfileCard[\s\S]*slug="kortix_slack"/);
   });
 
-  test('keeps Slack out of the Pipedream OAuth Discover catalogue', () => {
+  test('keeps Slack out of the Pipedream Easy Connect catalogue', () => {
     expect(source).toContain("new Set(['slack', 'slack_v2'])");
     expect(source).toContain(
-      "(app) => app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug)",
+      'const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));',
     );
-    expect(source).toContain('const discoverCards = [...integrationCards, ...pipedreamOAuthCards]');
+    expect(source).toContain('{visibleApps.map((app) => (');
   });
 
   test('uses Slack branding for the built-in channel card', () => {

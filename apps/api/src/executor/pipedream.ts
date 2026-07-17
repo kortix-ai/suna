@@ -14,19 +14,33 @@ import { config } from '../config';
 import { upsertCredential } from './credentials';
 import type { PipedreamActionLike } from './types';
 import type { ExecResult } from './execute';
-import { isPipedreamOAuthApp } from './pipedream-catalog';
-
-export { isPipedreamOAuthApp } from './pipedream-catalog';
 
 const PD_BASE = 'https://api.pipedream.com';
 
 /**
  * Pipedream's catalogue includes internal WORKFLOW UTILITIES (schedule, http,
  * pipedream_utils, formatting, helper_functions, data stores, …) alongside real
- * third-party apps. Discover uses Pipedream only where it adds unique value:
- * managed OAuth. API-key apps connect directly through their real API instead
- * of adding an intermediary. Utilities and native Kortix apps are excluded too.
+ * third-party apps. They aren't connectable — they carry no auth method, so
+ * there's nothing to authorize — and only clutter the "connect an app" grid.
+ * We hide anything with no auth_type, plus an explicit slug denylist for any
+ * that ever ship with a stray auth flag.
  */
+const UTILITY_APP_SLUGS = new Set([
+  'pipedream_utils', 'schedule', 'http', 'formatting', 'helper_functions',
+  'data_stores', 'sse', 'delay', 'filter', 'end', 'throw_error',
+  'only_continue', 'code', 'rss', 'pipedream', 'go', 'node', 'python', 'bash',
+]);
+
+// Apps Kortix provides NATIVELY (first-class channels/integrations), so the
+// Pipedream version would only be a confusing duplicate in the "connect an app"
+// grid. Slack is a native Kortix channel — hide the Pipedream Slack app.
+const NATIVE_APP_SLUGS = new Set(['slack', 'slack_bot']);
+
+function isConnectableApp(a: { slug: string; authType: string | null }): boolean {
+  if (UTILITY_APP_SLUGS.has(a.slug)) return false;
+  if (NATIVE_APP_SLUGS.has(a.slug)) return false;
+  return !!a.authType && a.authType !== 'none';
+}
 
 export function pipedreamConfigured(): boolean {
   return !!(config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_PROJECT_ID);
@@ -128,7 +142,7 @@ class PipedreamProvider {
         slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
         authType: a.auth_type ?? null, categories: a.categories || [],
       }))
-      .filter(isPipedreamOAuthApp);
+      .filter(isConnectableApp);
     // hasMore is driven by Pipedream's cursor, NOT apps.length — filtering out
     // utility apps would otherwise shrink a page below `limit` and stop paging early.
     return { apps, nextCursor: data.page_info?.end_cursor, hasMore: !!data.page_info?.end_cursor };
@@ -314,7 +328,7 @@ export interface PipedreamApp {
   name: string;
   description: string | null;
   imgSrc: string | null;
-  authType: 'oauth';
+  authType: string | null;
   categories: string[];
 }
 
