@@ -142,7 +142,7 @@ function WebSourceList({ items }: { items: ContextItem[] }) {
   return (
     <ul className="flex min-w-0 flex-col gap-1.5">
       {items.map((it) => (
-        <li key={it.callID}>
+        <li key={`${it.callID}:${it.url ?? it.label}`}>
           <a
             href={it.url}
             target="_blank"
