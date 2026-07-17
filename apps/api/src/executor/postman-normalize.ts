@@ -5,7 +5,7 @@ export interface PostmanNormalizationResult {
   warnings: string[];
 }
 
-const COLLECTION_SCHEMA = /schema\.getpostman\.com\/json\/collection\/v2(?:\.0|\.1)\.0\/collection\.json/i;
+const COLLECTION_SCHEMA = /^https?:\/\/schema\.getpostman\.com\/json\/collection\/v2(?:\.0|\.1)\.0\/collection\.json$/i;
 const TEMPLATE_RE = /{{\s*([^{}]+?)\s*}}/g;
 
 function isCredentialName(value: string): boolean {

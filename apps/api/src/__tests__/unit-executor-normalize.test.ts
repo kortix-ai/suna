@@ -230,6 +230,12 @@ describe('normalizePostmanCollection', () => {
 
   test('rejects non-collection documents precisely', () => {
     expect(() => normalizePostmanCollection({ openapi: '3.0.0', paths: {} })).toThrow('Postman Collection');
+    expect(() => normalizePostmanCollection({
+      info: {
+        schema: 'https://attacker.example/schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
+      item: [],
+    })).toThrow('Postman Collection');
   });
 });
 
