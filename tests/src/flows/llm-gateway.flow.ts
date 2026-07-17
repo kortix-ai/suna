@@ -64,6 +64,30 @@ flow(
 );
 
 flow(
+  "GW-6",
+  {
+    domain: "llm-gateway",
+    routes: ["POST /v1/llm/messages", "POST /v1/llm/v1/messages"],
+  },
+  async (ctx) => {
+    const gw = new Client(ctx.env.gatewayUrl);
+    const body = {
+      model: "claude-sonnet-4-6",
+      max_tokens: 64,
+      messages: [{ role: "user", content: "ping" }],
+    };
+    await ctx.step("ANON cannot call the Anthropic-Messages ingress /v1/llm/messages", async () => {
+      const r = await gw.as(ctx.P.ANON).post("/v1/llm/messages", body);
+      r.status([401, 403]);
+    });
+    await ctx.step("ANON cannot call the /v1/... prefixed variant", async () => {
+      const r = await gw.as(ctx.P.ANON).post("/v1/llm/v1/messages", body);
+      r.status([401, 403]);
+    });
+  },
+);
+
+flow(
   "GW-4",
   {
     domain: "llm-gateway",
