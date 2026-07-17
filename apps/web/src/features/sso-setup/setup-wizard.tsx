@@ -1439,6 +1439,11 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
 
   const [activeStep, setActiveStep] = useState(0);
   const [completed, setCompleted] = useState<string[]>([]);
+  // Change-provider / start-over confirmation (Kortix allows ONE SSO provider
+  // per account, so switching mid-setup abandons the current one). Declared
+  // with the other hooks — above the early returns — so it can never be called
+  // conditionally (react-hooks/rules-of-hooks).
+  const [confirmAction, setConfirmAction] = useState<'change' | 'reset' | null>(null);
 
   // Restore progress when a guide opens; jump to the first incomplete step.
   useEffect(() => {
@@ -1483,7 +1488,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   // resetting. Kortix allows ONE SSO provider per account, so changing
   // provider mid-setup abandons the current one — mirror Vercel and confirm
   // + actually reset it, rather than leaking stale half-configured state.
-  const [confirmAction, setConfirmAction] = useState<'change' | 'reset' | null>(null);
+  // (confirmAction is declared with the hooks above — never after a return.)
   const metadataStashed =
     typeof window !== 'undefined' && guide
       ? loadMetadataStash(accountId, guide.id) !== null
