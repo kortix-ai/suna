@@ -1182,8 +1182,12 @@ export function BasicTool({
     return <ClickableToolRow header={header} locked={locked} onClick={onClick} />;
   }
 
-  // A bound "activate" context opens this tool in the side panel instead of expanding inline.
-  if (activate && !locked && !forceOpen) {
+  // A bound "activate" context opens this tool in the side panel instead of
+  // expanding inline. `defaultOpen` opts out the same way `forceOpen` does: a
+  // tool that asks to start expanded is saying its payload belongs inline —
+  // `show`'s whole purpose is presenting the carousel/content IN the chat, and
+  // this row was collapsing it to a one-line "Show · 4 items" instead.
+  if (activate && !locked && !forceOpen && !defaultOpen) {
     return <ActivatableToolRow header={header} activate={activate} />;
   }
 

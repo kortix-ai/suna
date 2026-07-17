@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { BasicTool, ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
+import {
+  BasicTool,
+  BoundActivateContext,
+  ToolSurfaceContext,
+} from '@/features/session/tool/shared/infrastructure';
 
 describe('BasicTool panel surface — node trigger', () => {
   test('wraps a JSX-node trigger in the standard sticky panel header', () => {
@@ -28,5 +32,34 @@ describe('BasicTool panel surface — node trigger', () => {
 
     // The node's own content must render inside that header, not the shrunken fallback row.
     expect(html).toContain('Generating slides');
+  });
+});
+
+describe('BasicTool inline surface — activate context vs defaultOpen', () => {
+  const activate = () => {};
+
+  test('defaultOpen renders the body inline even when an activate context is bound', () => {
+    // The regression: chat binds BoundActivateContext for every tool row, and
+    // the activate branch discarded `defaultOpen` — collapsing `show`'s
+    // carousel to a bare "Show · N items" line with no content anywhere inline.
+    const html = renderToStaticMarkup(
+      <BoundActivateContext.Provider value={activate}>
+        <BasicTool trigger={{ title: 'Show', subtitle: '4 items' }} defaultOpen>
+          <div>carousel body</div>
+        </BasicTool>
+      </BoundActivateContext.Provider>,
+    );
+    expect(html).toContain('carousel body');
+  });
+
+  test('without defaultOpen the activate row still wins (no inline body)', () => {
+    const html = renderToStaticMarkup(
+      <BoundActivateContext.Provider value={activate}>
+        <BasicTool trigger={{ title: 'Read', subtitle: 'file.ts' }}>
+          <div>file contents</div>
+        </BasicTool>
+      </BoundActivateContext.Provider>,
+    );
+    expect(html).not.toContain('file contents');
   });
 });
