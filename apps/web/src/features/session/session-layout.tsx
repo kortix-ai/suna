@@ -388,14 +388,19 @@ export const SessionLayout = memo(function SessionLayout({
 
   return (
     <SessionWallpaperLayerContext.Provider value={wallpaperLayer}>
+      {/* `overflow-clip` (not -hidden) on the layout wrappers below: hidden
+          boxes still accept a programmatic scrollLeft — a focus() aimed at a
+          mid-animation (translated) panel layer scrolled them sideways and the
+          layout stuck there, with no scrollbar to undo it. Clip makes them
+          categorically unscrollable; the visual clipping is identical. */}
       <div
-        className="bg-background relative flex h-full flex-col overflow-hidden"
+        className="bg-background relative flex h-full flex-col overflow-clip"
         data-testid="session-layout"
       >
         <div
           ref={panelGroupRef}
           className={cn(
-            'relative flex min-h-0 flex-1 overflow-hidden',
+            'relative flex min-h-0 flex-1 overflow-clip',
             // Fullscreen detail: the shell's floating sidebar toggle sits at
             // z-30 in the same stacking context this wrapper competes in, and
             // this wrapper is the panel subtree's stacking-context root — so
@@ -458,14 +463,14 @@ export const SessionLayout = memo(function SessionLayout({
               >
                 <div
                   className={cn(
-                    'border-border flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden',
+                    'border-border flex h-full min-h-0 w-full min-w-0 flex-col overflow-clip',
                     // Easy mode is chrome-free — the cards carry their own
                     // borders, so a panel border would just box a box.
                     !isEasy && 'border-l',
                   )}
                 >
                   {effectivePanelHeader}
-                  <div className="min-h-0 flex-1 overflow-hidden">{effectivePanelBody}</div>
+                  <div className="min-h-0 flex-1 overflow-clip">{effectivePanelBody}</div>
                 </div>
               </div>
             </ResizablePanel>
