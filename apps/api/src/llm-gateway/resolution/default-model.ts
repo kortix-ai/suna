@@ -1,5 +1,7 @@
-import type { AuthedPrincipal } from '@kortix/llm-gateway';
+import { type AuthedPrincipal, GatewayResolutionError } from '@kortix/llm-gateway';
 import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
+import { connectedByokPickerModels } from '../models/picker-catalog';
+import { listProjectSecretsSnapshot } from '../../projects/secrets';
 import {
   type AccountModelDefaults,
   getAccountModelDefaults,
@@ -47,6 +49,29 @@ export function invalidateAccountModelDefaults(accountId: string): void {
   prefsCache.delete(accountId);
 }
 
+/**
+ * Last-resort degrade target when a configured default (or the platform
+ * default itself) turns out unservable: the flagship model of any BYOK
+ * provider the PROJECT has actually connected a key for. Reuses the exact
+ * connected-provider lookup the model picker uses (picker-catalog's
+ * connectedByokPickerModels) so "the default that's resolved/shown" and "the
+ * models a project can pick from" never disagree — a self-host project that
+ * connected OpenAI/Bedrock but not Codex/OpenRouter should land on ITS
+ * connected provider, never get stuck pointing at a provider it never
+ * connected. Returns null (→ the caller's unmodified platform default) when
+ * the project has no BYOK key connected at all, or has no project context.
+ */
+async function connectedByokFallback(projectId: string | undefined): Promise<string | null> {
+  if (!projectId) return null;
+  try {
+    const snapshot = await listProjectSecretsSnapshot(projectId);
+    const connected = new Set(snapshot.names.map((n) => n.toUpperCase()));
+    return connectedByokPickerModels(connected)[0]?.id ?? null;
+  } catch {
+    return null; // never let a secrets-read hiccup break default resolution
+  }
+}
+
 export async function resolveDefaultModelForPrincipal(
   principal: AuthedPrincipal,
 ): Promise<string | undefined> {
@@ -81,6 +106,7 @@ export async function resolveDefaultModelForPrincipal(
         freeModelsOnly: principal.freeModelsOnly ?? false,
         model: chosen as string,
       }),
+    () => connectedByokFallback(principal.projectId),
   );
   return kept ?? undefined;
 }
@@ -92,6 +118,19 @@ export async function resolveDefaultModelForPrincipal(
  * resolvable at request time (managed only when the tier grants it, BYOK only
  * when the provider key is connected, codex only when the credential exists).
  * `auto` is rejected: a stored default must be concrete.
+ *
+ * `resolveCandidates` THROWS a typed `GatewayResolutionError` (provider_not_
+ * connected, provider_reauth_required, model_disabled_on_deployment,
+ * model_not_found, plan_upgrade_required, ...) instead of returning `[]`
+ * whenever it can pin down WHY there's no upstream — the right shape for an
+ * actual generation request, where the caller wants the specific reason
+ * surfaced. This function answers a narrower yes/no question for every READ/
+ * defaults/picker/servability caller in this file (and r4.ts's PUT), so every
+ * one of those typed reasons collapses to "not servable" here — exactly the
+ * old return-`[]` behavior these callers were built against, restored. A
+ * passive "what's the default" read must never fail just because a provider
+ * key isn't connected; only an actual generation attempt should. Anything
+ * that ISN'T a GatewayResolutionError (a real bug) still propagates.
  */
 export async function isModelServableForAccount(params: {
   userId: string;
@@ -104,16 +143,21 @@ export async function isModelServableForAccount(params: {
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
   // gateway resolves the bare id, so normalize before probing candidates.
   const wire = toWireModel(params.model);
-  const candidates = await resolveCandidates(
-    {
-      userId: params.userId,
-      accountId: params.accountId,
-      projectId: params.projectId,
-      freeModelsOnly: params.freeModelsOnly,
-    },
-    wire,
-  );
-  return candidates.length > 0;
+  try {
+    const candidates = await resolveCandidates(
+      {
+        userId: params.userId,
+        accountId: params.accountId,
+        projectId: params.projectId,
+        freeModelsOnly: params.freeModelsOnly,
+      },
+      wire,
+    );
+    return candidates.length > 0;
+  } catch (err) {
+    if (err instanceof GatewayResolutionError) return false;
+    throw err;
+  }
 }
 
 /**
@@ -153,16 +197,28 @@ export async function resolveEffectiveModel(params: {
     freeModelsOnly: params.freeModelsOnly,
   });
   // Degrade a stale/unservable resolved default (e.g. a BYOK model whose key was
-  // disconnected) to the platform default, so the UI's "resolved" model reflects
-  // what the gateway will actually serve rather than a dead ref.
-  const kept = await degradeUnservableDefault(chain.model, { hasProject: true }, () =>
-    isModelServableForAccount({
-      userId: params.userId,
-      accountId: params.accountId,
-      projectId: params.projectId,
-      freeModelsOnly: params.freeModelsOnly,
-      model: chain.model as string,
-    }),
+  // disconnected) to something the project can actually use right now, so the
+  // UI's "resolved" model reflects what the gateway will actually serve rather
+  // than a dead ref: first try any OTHER BYOK provider the project has
+  // connected (connectedByokFallback), then finally the bare platform default.
+  const kept = await degradeUnservableDefault(
+    chain.model,
+    { hasProject: true },
+    () =>
+      isModelServableForAccount({
+        userId: params.userId,
+        accountId: params.accountId,
+        projectId: params.projectId,
+        freeModelsOnly: params.freeModelsOnly,
+        model: chain.model as string,
+      }),
+    () => connectedByokFallback(params.projectId),
   );
-  return kept ? chain : { model: null, source: 'platform' };
+  if (!kept) return { model: null, source: 'platform' };
+  // kept === chain.model means the originally-configured default WAS servable
+  // (probe passed) — return it with its real source (agent/project/account).
+  // Any other value is the connected-provider fallback degrade target, which
+  // isn't the account's configured choice, so it's labeled 'platform' like
+  // every other degrade-to-something-usable case.
+  return kept === chain.model ? chain : { model: kept, source: 'platform' };
 }

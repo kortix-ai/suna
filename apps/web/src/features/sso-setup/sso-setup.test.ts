@@ -17,8 +17,14 @@ const flatWizardSource = wizardSource.replace(/\s+/g, ' ');
 const flatGuidesSource = guidesSource.replace(/\s+/g, ' ');
 
 describe('provider guides', () => {
-  test('cover Entra, Okta, Google, and Custom SAML', () => {
-    expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'google', 'okta']);
+  test('cover Entra, Okta, Google, Cloudflare, and Custom SAML', () => {
+    expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'cloudflare',
+      'custom',
+      'entra',
+      'google',
+      'okta',
+    ]);
   });
 
   test('every guide ends with the inline import step followed by a test step', () => {
@@ -408,5 +414,44 @@ describe('review fixes stay fixed', () => {
 
   test('connect instructions render on resume too (skip is informed, not blind)', () => {
     expect(wizardSource).toContain('(minted || priorTokens.length > 0) && connectContent');
+  });
+});
+
+// Google SAML novice-walkthrough pins.
+describe('Google SAML guide is novice-complete', () => {
+  test('every Google IdP step has a where badge + breadcrumb', () => {
+    const google = getProviderGuide('google')!;
+    for (const step of google.steps) {
+      if (step.kind === 'import' || step.kind === 'test') continue; // Kortix-side
+      expect(step.menuPath, `google step ${step.id} missing menuPath`).toBeTruthy();
+    }
+  });
+
+  test('the Cloudflare guide brokers via Access with a required policy + groups JSONata', () => {
+    const cf = getProviderGuide('cloudflare')!;
+    const text = JSON.stringify(cf.steps);
+    expect(cf.name).toContain('Cloudflare');
+    expect(text).toContain('groups'); // group attribute
+    expect(text).toContain('OVERRIDES'); // the JSONata-breaks-attributes caution
+    const policy = cf.steps.find((st) => st.id === 'policy')!;
+    expect(policy.warning?.toLowerCase()).toContain('denies everyone'); // no-policy gotcha
+    // Cloudflare IS the SAML IdP to Kortix — every console step is on the IdP side.
+    for (const step of cf.steps) {
+      if (step.kind === 'import' || step.kind === 'test') continue;
+      expect(step.menuPath, `cloudflare step ${step.id} missing breadcrumb`).toBeTruthy();
+    }
+  });
+
+  test('the metadata step tells the admin to click Google’s own Continue', () => {
+    const meta = getProviderGuide('google')!.steps.find((s) => s.id === 'metadata')!;
+    expect(meta.intro).toContain('Continue');
+  });
+
+  test('the xml-only metadata picker drops the dead URL card', () => {
+    expect(wizardSource).toContain("config.preferredMetadata === 'xml'");
+  });
+
+  test('the import step no longer says "from the previous step"', () => {
+    expect(guidesSource).not.toContain('metadata from the previous step');
   });
 });

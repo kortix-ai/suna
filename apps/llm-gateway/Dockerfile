@@ -56,4 +56,7 @@ USER bun
 # Chart sets PORT from containerPort (8090); the server reads it from config.
 EXPOSE 8090
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8090)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["bun", "run", "src/main.ts"]

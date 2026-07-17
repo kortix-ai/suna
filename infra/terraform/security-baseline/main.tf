@@ -32,7 +32,13 @@ resource "aws_kms_key" "cloudtrail" {
       Condition = { StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } },
       { Sid = "AllowCloudTrailDescribe", Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" }, Action = "kms:DescribeKey", Resource = "*" },
       { Sid = "AllowLogReadersDecrypt", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }, Action = ["kms:Decrypt", "kms:ReEncryptFrom"], Resource = "*",
-      Condition = { StringEquals = { "kms:CallerAccount" = local.account_id }, StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } }
+      Condition = { StringEquals = { "kms:CallerAccount" = local.account_id }, StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } },
+      # Lets the CloudWatch Logs group the trail delivers to (below) also be
+      # encrypted with this CMK, instead of shipping it unencrypted (Trivy
+      # AWS-0017 / Checkov CKV_AWS_158).
+      { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-east-1.amazonaws.com" },
+        Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
+      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-east-1:${local.account_id}:log-group:*" } } }
     ]
   })
   tags = {
@@ -58,6 +64,13 @@ resource "aws_cloudtrail" "management_events" {
   include_global_service_events = true
   enable_log_file_validation    = true
 
+  # Real-time CloudWatch Logs delivery alongside the durable S3 trail
+  # (Trivy AWS-0162 / avd.aquasec.com/misconfig/aws-0162). S3 stays the
+  # long-term/durable copy; this just adds the searchable, real-time
+  # analysis path CloudTrail's own S3 delivery doesn't provide.
+  cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail_cloudwatch_logs.arn
+
   # S3 object-level read+write data events (DCF-406)
   event_selector {
     read_write_type           = "All"
@@ -73,6 +86,48 @@ resource "aws_cloudtrail" "management_events" {
     Stack      = "security-baseline"
     Compliance = "soc2"
   }
+}
+
+# CloudWatch Logs destination + delivery role for the trail above (AWS-0162).
+# Log group lives in us-east-1 alongside the trail's home region — CloudTrail
+# requires the log group and delivery role to be in the same region as the
+# trail itself.
+resource "aws_cloudwatch_log_group" "cloudtrail" {
+  provider          = aws.use1
+  name              = "/aws/cloudtrail/management-events"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.cloudtrail.arn
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudtrail"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_iam_role" "cloudtrail_cloudwatch_logs" {
+  name               = "cloudtrail-cloudwatch-logs-role"
+  description        = "CloudTrail -> CloudWatch Logs delivery (SOC2 DCF-406, AWS-0162)"
+  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudtrail-cloudwatch-logs-role"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_iam_role_policy" "cloudtrail_cloudwatch_logs" {
+  name = "cloudtrail-cloudwatch-logs-delivery"
+  role = aws_iam_role.cloudtrail_cloudwatch_logs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+    }]
+  })
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -386,5 +441,38 @@ resource "aws_iam_role_policy" "flow_logs" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/vpc/flowlogs"
   retention_in_days = 90
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
   tags              = local.tags
+}
+
+# CMK for CloudWatch Logs in the default (us-west-2) region — CloudWatch log
+# groups are encrypted at rest by AWS either way, but a dedicated CMK gives us
+# key-rotation + access control (Trivy AWS-0017 / avd.aquasec.com/misconfig/aws-0017).
+resource "aws_kms_key" "cloudwatch_logs" {
+  description             = "CloudWatch Logs encryption, us-west-2 (SOC2 DCF-54)"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "cloudwatch-logs-cmk-policy"
+    Statement = [
+      { Sid    = "EnableRoot", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" },
+        Action = ["kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*", "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion", "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"],
+      Resource = "*" },
+      { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-west-2.amazonaws.com" },
+        Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
+      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-west-2:${local.account_id}:log-group:*" } } }
+    ]
+  })
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudwatch-logs"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_kms_alias" "cloudwatch_logs" {
+  name          = "alias/cloudwatch-logs"
+  target_key_id = aws_kms_key.cloudwatch_logs.key_id
 }
