@@ -88,16 +88,28 @@ export function chooseEffectiveModel(params: {
  * a per-request probe — only BYOK/codex defaults are probed. An unservable one
  * degrades to the platform default (`null`), never a dead turn. The `probe` is
  * injected so the decision stays pure and unit-testable without a DB.
+ *
+ * `fallback` is a second, optional degrade step tried ONLY when the configured
+ * default itself turns out unservable (probe() is false) — e.g. a BYOK model
+ * whose provider key was disconnected/rotated away. Rather than silently
+ * dropping straight to the (possibly ALSO unservable, e.g. an unconnected
+ * platform default like Codex) platform default, a caller can supply a
+ * best-effort "something this project can actually run right now" lookup
+ * (see default-model.ts's connectedByokFallback). Returning null from
+ * `fallback` (or omitting it) preserves the original platform-default
+ * behavior exactly.
  */
 export async function degradeUnservableDefault(
   model: string | null | undefined,
   ctx: { hasProject: boolean },
   probe: () => Promise<boolean>,
+  fallback?: () => Promise<string | null>,
 ): Promise<string | null> {
   if (!model) return null;
   if (isManagedRef(model)) return model;
   if (!ctx.hasProject) return null; // BYOK resolves its key from a project secret
-  return (await probe()) ? model : null;
+  if (await probe()) return model;
+  return fallback ? await fallback() : null;
 }
 
 /**

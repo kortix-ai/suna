@@ -72,6 +72,7 @@ const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {
   entra: '/provider-icons/azure.svg',
   okta: '/provider-icons/okta.svg',
   google: '/provider-icons/google-workspace.svg',
+  cloudflare: '/provider-icons/cloudflare.svg',
   custom: '/provider-icons/generic-provider.svg',
 };
 
@@ -505,30 +506,36 @@ function MetadataInputStep({
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        {(
-          [
-            ['url', 'Dynamic configuration', 'Recommended — a metadata URL'],
-            ['xml', 'Manual configuration', 'Paste the metadata XML'],
-          ] as const
-        ).map(([m, title, sub]) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMode(m)}
-            aria-pressed={mode === m}
-            className={cn(
-              'rounded-md border px-4 py-3 text-left transition-colors',
-              mode === m
-                ? 'border-foreground bg-popover'
-                : 'border-border/60 bg-card hover:border-border text-muted-foreground',
-            )}
-          >
-            <span className={cn('block text-sm font-medium', mode === m && 'text-foreground')}>
-              {title}
-            </span>
-            <span className="text-muted-foreground block text-xs">{sub}</span>
-          </button>
-        ))}
+        {
+          // Google (and any xml-preferred IdP) hosts NO metadata URL, so the
+          // 'url' card would send a rule-following admin to a dead input.
+          // Drop it — and its "Recommended" lure — for those providers.
+          (config.preferredMetadata === 'xml'
+            ? ([['xml', 'Paste the metadata XML', 'Your IdP offers an XML download only']] as const)
+            : ([
+                ['url', 'Dynamic configuration', 'Recommended — a metadata URL'],
+                ['xml', 'Manual configuration', 'Paste the metadata XML'],
+              ] as const)
+          ).map(([m, title, sub]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              aria-pressed={mode === m}
+              className={cn(
+                'rounded-md border px-4 py-3 text-left transition-colors',
+                mode === m
+                  ? 'border-foreground bg-popover'
+                  : 'border-border/60 bg-card hover:border-border text-muted-foreground',
+              )}
+            >
+              <span className={cn('block text-sm font-medium', mode === m && 'text-foreground')}>
+                {title}
+              </span>
+              <span className="text-muted-foreground block text-xs">{sub}</span>
+            </button>
+          ))
+        }
       </div>
 
       <div className="border-border/60 bg-popover space-y-1.5 rounded-md border p-4">
