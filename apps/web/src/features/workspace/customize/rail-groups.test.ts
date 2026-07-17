@@ -26,8 +26,9 @@ describe('GROUPS — customize rail ordering (WS5-P5-a)', () => {
   test('rail item count is unchanged this cycle — every base group keeps its full item set', () => {
     const totalBaseItems = GROUPS.reduce((sum, g) => sum + g.items.length, 0);
     // Build(4) + Connect(3) + Automate(2) + Workspace(3) + Manage(2) = 14 base
-    // items; flag-gated extras (Marketplace, Meet, Computers, LLM, Review,
-    // Upgrades) bring the full rail to 24 — bounded scope, not a reduction.
+    // items; the 6 flag-gated extras (Marketplace, Meet, Computers, LLM,
+    // Review, Upgrades) bring the full rail to 20 — bounded scope, not a
+    // reduction (this test pins only the 14 base items).
     expect(totalBaseItems).toBe(14);
   });
 
