@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, test } from 'bun:test';
 import type { ToolPart } from '@/ui';
 import {
   type StepFamily,
@@ -104,6 +104,12 @@ describe('narrateStep', () => {
     );
     const fetch = part('web_fetch', { url: 'https://c.com' }, '');
     expect(narrateStep('web', [search, fetch])).toBe('Searched and read 3 sources');
+  });
+
+  test('mixed step with unparseable outputs falls back to call count', () => {
+    const search = part('web_search', { query: 'x' }, 'not json at all');
+    const fetch = part('web_fetch', {}); // no url input
+    expect(narrateStep('web', [search, fetch])).toBe('Searched and read 2 sources');
   });
 
   it('never emits a raw tool name for unknown tools', () => {

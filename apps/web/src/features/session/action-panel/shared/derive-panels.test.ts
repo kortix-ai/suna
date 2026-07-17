@@ -443,6 +443,29 @@ describe('deriveContext', () => {
     ]);
   });
 
+  // ─── a search's web items all share the same tool call, so `callID` alone
+  // is NOT a unique identity for them — the view layer must key rows on
+  // `callID` + `url`, or a 3-result search renders 3 <li> with the same
+  // React key. ───────────────────────────────────────────────────────────
+
+  it('gives every web item from one search a distinct (callID, url) identity, even though they share a callID', () => {
+    const searchOutput = JSON.stringify({
+      results: [
+        { title: 'LinkedIn', url: 'https://linkedin.com/in/marko' },
+        { title: 'Personal site', url: 'https://markokraemer.com' },
+        { title: 'GitHub', url: 'https://github.com/markokraemer' },
+      ],
+    });
+    const { web } = deriveContext([
+      part('web_search', { query: 'marko' }, { output: searchOutput }),
+    ]);
+    expect(web).toHaveLength(3);
+    // Same call → same callID for all three, by design.
+    expect(new Set(web.map((w) => w.callID)).size).toBe(1);
+    // But callID + url together are distinct — that's the key consumers must use.
+    expect(new Set(web.map((w) => `${w.callID}:${w.url}`)).size).toBe(3);
+  });
+
   it('a later fetch of a searched result still dedups to one entry', () => {
     const searchOutput = JSON.stringify({
       results: [{ title: 'Personal site', url: 'https://markokraemer.com' }],
