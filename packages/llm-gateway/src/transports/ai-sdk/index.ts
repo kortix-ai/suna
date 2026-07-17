@@ -1,11 +1,11 @@
 import { generateText, streamText } from 'ai';
-import { NetworkError, UpstreamHttpError, looksLikeTerminalAuthFailure } from '../../errors';
 import type { UpstreamDescriptor } from '../../domain';
+import { NetworkError, UpstreamHttpError, looksLikeTerminalAuthFailure } from '../../errors';
 import {
-  clampMaxOutputTokensForBedrock,
-  resolveAiModel,
   aiSdkFamilyFor,
+  clampMaxOutputTokensForBedrock,
   isCodexDescriptor,
+  resolveAiModel,
 } from './model';
 import { buildAiSdkArgs } from './request';
 import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
@@ -123,7 +123,11 @@ export function guardAgainstUnhandledResultRejections(result: {
 export function mapToolCalls(
   toolCalls: ReadonlyArray<{ toolCallId: string; toolName: string; input?: unknown }> | undefined,
 ): Array<{ toolCallId: string; toolName: string; input: unknown }> | undefined {
-  return toolCalls?.map((tc) => ({ toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.input }));
+  return toolCalls?.map((tc) => ({
+    toolCallId: tc.toolCallId,
+    toolName: tc.toolName,
+    input: tc.input,
+  }));
 }
 
 // The AI-SDK transport engine. Given the same OpenAI chat.completions body and
@@ -152,9 +156,16 @@ export async function callUpstreamViaAiSdk(
     // buildAiSdkArgs's opt-in default rather than in buildAiSdkArgs itself, so
     // every non-Codex caller's "no default effort" behavior is untouched.
     defaultReasoningEffort: isCodex ? 'low' : undefined,
+    // Needed so buildAiSdkArgs keys providerOptions under the SAME name
+    // model.ts passed to createOpenAICompatible for this descriptor — see
+    // request.ts's providerOptionsKeyFor / defect 5 comment.
+    providerName: descriptor.provider,
   });
   const clientWantsStream = body.stream === true;
-  const ctx = { model: descriptor.resolvedModel || String(body.model ?? ''), provider: descriptor.provider };
+  const ctx = {
+    model: descriptor.resolvedModel || String(body.model ?? ''),
+    provider: descriptor.provider,
+  };
 
   const shared = {
     model,
@@ -173,6 +184,14 @@ export async function callUpstreamViaAiSdk(
       descriptor.resolvedModel,
     ),
     stopSequences: args.stopSequences,
+    seed: args.seed,
+    frequencyPenalty: args.frequencyPenalty,
+    presencePenalty: args.presencePenalty,
+    // Drives response_format (JSON mode / structured output) — see
+    // request.ts's buildResponseFormatOutput. `undefined` here is exactly
+    // streamText/generateText's own default (plain text), so a request with
+    // no response_format is completely unaffected by this field existing.
+    output: args.output,
     providerOptions: args.providerOptions,
     // The gateway owns retry/failover/circuit-breaking; keep the SDK from adding a
     // second, opaque retry layer on top.
@@ -210,17 +229,25 @@ export async function callUpstreamViaAiSdk(
     // `guardAgainstUnhandledResultRejections` already made safe to await, and
     // build the identical JSON shape `generateText`'s branch below produces.
     try {
-      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] = await Promise.all([
-        result.text,
-        result.reasoningText,
-        result.toolCalls,
-        result.finishReason,
-        result.usage,
-        result.providerMetadata,
-      ]);
+      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] =
+        await Promise.all([
+          result.text,
+          result.reasoningText,
+          result.toolCalls,
+          result.finishReason,
+          result.usage,
+          result.providerMetadata,
+        ]);
       return jsonResponse(
         openAiJsonFromResult(
-          { text, reasoningText, toolCalls: mapToolCalls(toolCalls), finishReason, usage, providerMetadata },
+          {
+            text,
+            reasoningText,
+            toolCalls: mapToolCalls(toolCalls),
+            finishReason,
+            usage,
+            providerMetadata,
+          },
           ctx,
         ),
       );

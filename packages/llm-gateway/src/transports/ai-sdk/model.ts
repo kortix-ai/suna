@@ -1,7 +1,7 @@
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createOpenAICompatible, type MetadataExtractor } from '@ai-sdk/openai-compatible';
+import { type MetadataExtractor, createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { LanguageModel } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
 import { resolveTransportKind } from '../route-kind';
@@ -194,7 +194,9 @@ export function resolveAiModel(
       // `.chat()` — the better-trodden, narrower-surface path — exactly like
       // the native transports keep genuine reasoning-only or tool-only traffic
       // on openai-compat instead of moving everything to Responses.
-      return needsResponsesApi(body, descriptor) ? provider.responses(modelId) : provider.chat(modelId);
+      return needsResponsesApi(body, descriptor)
+        ? provider.responses(modelId)
+        : provider.chat(modelId);
     }
     case 'anthropic': {
       const provider = createAnthropic({ baseURL, apiKey: descriptor.apiKey, headers });
@@ -225,6 +227,19 @@ export function resolveAiModel(
         // but requesting it explicitly is the documented, correct way and
         // costs nothing when the upstream already does it by default.
         includeUsage: true,
+        // Native forwards a client's `response_format:{type:'json_schema',...}`
+        // verbatim regardless of what the upstream actually supports — this
+        // package instead SILENTLY drops the schema (downgrading to plain
+        // `json_object`) unless told the upstream supports Structured
+        // Outputs (see request.ts's buildResponseFormatOutput comment, and
+        // @ai-sdk/openai-compatible's getArgs:
+        // `supportsStructuredOutputs === true && schema != null`).
+        // Forced true here so an openai-compatible upstream (OpenRouter,
+        // Groq, self-hosted...) that DOES support it isn't silently
+        // downgraded — matches native's assume-it-works passthrough; an
+        // upstream that genuinely doesn't support it 400s the same way
+        // native's verbatim forward would have.
+        supportsStructuredOutputs: true,
         ...(isOpenRouter
           ? {
               transformRequestBody: withOpenRouterUsageInclude,
