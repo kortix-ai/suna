@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
-import { provisionProjectWithToken } from './projects';
+import { provisionProjectWithToken, type ExperimentalFeatureKey } from './projects';
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
 
@@ -64,4 +64,24 @@ test('returns ok:false without hitting the network when credentials are missing'
   const result = await provisionProjectWithToken({ backendUrl: '', accessToken: '' }, input);
   expect(result).toEqual({ ok: false, limitReached: false });
   expect(calls).toHaveLength(0);
+});
+
+// DISC-07: the SDK's local ExperimentalFeatureKey union mirrors
+// @kortix/api-contract's ExperimentalFeatureMapSchema keys and had drifted,
+// missing `experimental_harnesses`. Type-level assertion — a regression here
+// is a typecheck failure, not a runtime one.
+test('ExperimentalFeatureKey union includes every api-contract registry key', () => {
+  const keys: ExperimentalFeatureKey[] = [
+    'agent_tunnel',
+    'marketplace',
+    'agentmail_email',
+    'meet',
+    'llm_gateway',
+    'review_center',
+    'experimental_harnesses',
+    'unified_model_picker',
+  ];
+  const harnesses: ExperimentalFeatureKey = 'experimental_harnesses';
+  expect(keys).toContain(harnesses);
+  expect(keys).toHaveLength(8);
 });

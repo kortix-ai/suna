@@ -13,10 +13,10 @@ import {
 } from "./shared";
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features).
- *  NOTE: this mirror was already missing `experimental_harnesses` before this
- *  edit (apps/api commit `8658acde6`) — pre-existing drift, not introduced
- *  here and out of this change's scope; `unified_model_picker` is added
- *  because this task's web code depends on it. See PROGRESS.md Backlog. */
+ *  NOTE: this mirror is now complete against the authoritative registry —
+ *  `@kortix/api-contract`'s `ExperimentalFeatureMapSchema`
+ *  (`packages/api-contract/src/index.ts`). Keep both in sync when either
+ *  side adds a key. See PROGRESS.md Discovered-this-session (DISC-07). */
 export type ExperimentalFeatureKey =
   | "agent_tunnel"
   | "marketplace"
@@ -24,6 +24,7 @@ export type ExperimentalFeatureKey =
   | "meet"
   | "llm_gateway"
   | "review_center"
+  | "experimental_harnesses"
   | "unified_model_picker";
 
 /** One experimental feature as described by the API catalog. */
