@@ -46,6 +46,8 @@ export const permissionPolicyKey = (projectId: string | null | undefined) =>
  * from `@kortix/api-contract` in `acp-permission-policy.ts`) so the UI never
  * sends a `PUT` the server is guaranteed to 422 — it rejects locally instead,
  * with no cache mutation and no network call.
+ *
+ * Query caching mirrors `use-composer-capabilities.ts` with 10s staleTime.
  */
 export function usePermissionPolicy(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
@@ -55,6 +57,7 @@ export function usePermissionPolicy(projectId: string | null | undefined) {
     queryKey,
     queryFn: () => getAcpPermissionPolicy(projectId as string),
     enabled: !!projectId,
+    staleTime: 10_000,
   });
 
   const policy = query.data ?? DEFAULT_ACP_PERMISSION_POLICY;

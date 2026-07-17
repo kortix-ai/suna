@@ -10,6 +10,7 @@ import { configureKortix } from '../core/http/config';
 // config object itself is still spread through (`enabled`, `queryKey`, …) so
 // wiring assertions work exactly like the identity-mock hooks.
 let store = new Map<string, unknown>();
+let serverValues = new Map<string, unknown>();
 let invalidated: unknown[][] = [];
 let setDataCalls: Array<{ key: unknown[]; value: unknown }> = [];
 
@@ -30,7 +31,15 @@ mock.module('@tanstack/react-query', () => ({
       setDataCalls.push({ key: [...key], value: resolved });
     },
     invalidateQueries: (opts: { queryKey: unknown[] }) => {
+      const k = JSON.stringify(opts.queryKey);
       invalidated.push([...opts.queryKey]);
+      // Simulate refetch-on-error: restore the server's authoritative value
+      // (or clear if no server value exists, triggering a refetch on next access)
+      if (serverValues.has(k)) {
+        store.set(k, serverValues.get(k));
+      } else {
+        store.delete(k);
+      }
     },
   }),
 }));
@@ -42,6 +51,7 @@ let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
 
 beforeEach(() => {
   store = new Map();
+  serverValues = new Map();
   invalidated = [];
   setDataCalls = [];
   calls = [];
@@ -119,7 +129,12 @@ describe('usePermissionPolicy — setAutoApprove', () => {
   });
 
   test('rolls back by refetching the server state and rethrows the error on PUT failure', async () => {
-    store.set(JSON.stringify(permissionPolicyKey('P1')), { autoApprove: 'none', toolDecisions: {} });
+    const key = permissionPolicyKey('P1');
+    const keyStr = JSON.stringify(key);
+    const serverValue = { autoApprove: 'none', toolDecisions: {} };
+
+    store.set(keyStr, serverValue);
+    serverValues.set(keyStr, serverValue);
     nextResponse = { status: 500, body: { message: 'boom' } };
 
     const result = usePermissionPolicy('P1');
@@ -129,9 +144,11 @@ describe('usePermissionPolicy — setAutoApprove', () => {
     expect(setDataCalls[0]!.value).toEqual({ autoApprove: 'all', toolDecisions: {} });
 
     // ...but the write rejects, and the caller is told to refetch (rollback),
-    // not left holding a hand-restored previous snapshot.
+    // not left holding a hand-restored previous snapshot. Verify the cache
+    // is discarded and restored to the server value (not the rejected optimistic 'all').
     await expect(pending).rejects.toBeTruthy();
-    expect(invalidated).toEqual([permissionPolicyKey('P1') as unknown as unknown[]]);
+    expect(invalidated).toEqual([key as unknown as unknown[]]);
+    expect(store.get(keyStr)).toEqual(serverValue);
   });
 });
 
