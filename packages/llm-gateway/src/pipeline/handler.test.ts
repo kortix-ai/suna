@@ -1141,6 +1141,91 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(traces[0].candidatesTried).toEqual(["openrouter"]);
   });
 
+  // A dead BYOK credential is one of the providers (e.g. OpenAI) that reports
+  // an invalid-key failure as a 200-status stream carrying a `data:
+  // {"error":{...}}` frame rather than a non-2xx HTTP response — so this never
+  // throws an UpstreamHttpError, it lands here via probeStream's error-frame
+  // detection. A blanket 502 (this branch's default for every other in-band
+  // error frame — "Overloaded", request-too-large, ...) tells an OpenAI-
+  // compatible client "transient, retry me", and a dead key never stops being
+  // dead: the 2026-07-17 incident this guards against saw exactly that client-
+  // side retry loop end in an empty, error-free turn with nothing surfaced to
+  // the session. 401 is non-retryable to any spec-compliant client (retry
+  // eligibility is keyed off HTTP status, not body), so the failure reaches
+  // the session's error-surfacing path on the first attempt instead.
+  const authErrorSse =
+    'data: {"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}\n\n' +
+    "data: [DONE]\n\n";
+
+  test("streaming: a terminal-auth error frame (dead BYOK key) surfaces as 401, not a retryable 502", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(authErrorSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.code).toBe("upstream_error");
+    expect(body.message).toBe("Incorrect API key provided");
+    expect(body.upstream_code).toBe("invalid_api_key");
+    expect(calls).toBe(1); // no same-candidate retry storm on a dead key
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].status).toBe(401);
+    expect(traces[0].errorCode).toBe("upstream_error");
+  });
+
+  // The ai-sdk transport (transports/ai-sdk/sse.ts) pre-classifies its own
+  // upstream errors and embeds the real HTTP-equivalent status as a NUMERIC
+  // `code` on the frame — e.g. a genuine 429 the provider itself returned
+  // mid-stream, not just an auth failure. This branch must trust that
+  // pre-computed status verbatim instead of falling back to a blanket 502.
+  const numericCodeSse =
+    'data: {"error":{"message":"Rate limit exceeded","code":429}}\n\n' + "data: [DONE]\n\n";
+
+  test("streaming: a numeric error-frame code (ai-sdk transport's own classification) is trusted verbatim", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => sseResponse(numericCodeSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.message).toBe("Rate limit exceeded");
+    expect(body.upstream_code).toBe(429);
+    await flush();
+    expect(traces[0].status).toBe(429);
+  });
+
+  // A numeric code OUTSIDE the 4xx range (e.g. a provider that reports its own
+  // 5xx mid-stream) must NOT override the branch's generic "transient" 502 —
+  // trusting an arbitrary 5xx here wouldn't change anything meaningful, so the
+  // classifier deliberately only trusts 4xx.
+  const numeric5xxSse =
+    'data: {"error":{"message":"Upstream had an internal error","code":503}}\n\n' + "data: [DONE]\n\n";
+
+  test("streaming: a numeric 5xx error-frame code stays the branch's generic 502", async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => sseResponse(numeric5xxSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(502);
+  });
+
   test("streaming: an error frame from candidate A still fails over to a healthy candidate B", async () => {
     const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
     const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
