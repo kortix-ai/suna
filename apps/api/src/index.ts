@@ -684,6 +684,12 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   mountLlmGateway(app);
 }
 
+// OpenRouter-parity read endpoints, scoped to the authenticated account.
+import { generationApp } from './router/routes/generation';
+import { usageApp } from './router/routes/usage';
+app.route('/v1/generation', generationApp); // GET /v1/generation?id=<requestId> — single gateway-call forensics
+app.route('/v1/usage', usageApp);       // GET /v1/usage[?start&end&group_by] — account usage rollup
+
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version

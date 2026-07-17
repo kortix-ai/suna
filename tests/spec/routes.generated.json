@@ -787,6 +787,10 @@
       "path": "/v1/executor/webhook/pipedream"
     },
     {
+      "method": "GET",
+      "path": "/v1/generation"
+    },
+    {
       "method": "POST",
       "path": "/v1/git/:project/git-receive-pack"
     },
@@ -1893,6 +1897,10 @@
     {
       "method": "POST",
       "path": "/v1/tunnel/rpc/:tunnelId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage"
     },
     {
       "method": "GET",
