@@ -768,6 +768,19 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'text',
             text: 'Enter an app name, such as "Kortix" — optionally upload an app icon. Click "Continue".',
           },
+          {
+            kind: 'image',
+            src: '/sso-setup/google/create-app-2.png',
+            alt: 'Google custom SAML app dialog with the App name and icon fields',
+            schematic: {
+              title: 'Add custom SAML app → App details',
+              rows: [
+                { label: 'App name', value: 'Kortix', as: 'field' },
+                { label: 'App icon', value: '(optional)', as: 'field' },
+                { label: 'Continue', as: 'button' },
+              ],
+            },
+          },
         ],
         doneLabel: 'I’ve created a custom SAML app',
       },
@@ -828,7 +841,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'attribute-mapping',
         title: 'Map user attributes',
         intro:
-          'On the "Attribute mapping" step, click "Add mapping" for each row and select the matching Google category/attribute.',
+          'On the "Attribute mapping" step, click "Add mapping" for each row and select the matching Google category/attribute. In the end it should look like this:',
         content: [
           {
             kind: 'claims-table',
@@ -837,6 +850,19 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
               { name: 'firstName', source: 'Basic Information > First name' },
               { name: 'lastName', source: 'Basic Information > Last name' },
             ],
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/google/attribute-mapping-1.png',
+            alt: 'Google custom SAML app Attribute mapping step with primaryEmail, firstName and lastName mapped',
+            schematic: {
+              title: 'Attribute mapping',
+              rows: [
+                { label: 'Primary email', value: '→ primaryEmail', as: 'field' },
+                { label: 'First name', value: '→ firstName', as: 'field' },
+                { label: 'Last name', value: '→ lastName', as: 'field' },
+              ],
+            },
           },
         ],
         doneLabel: 'I’ve mapped the user attributes',
