@@ -5,6 +5,10 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 
 const HIDE_BROWSER_TAB = true;
 
+/** How long a quick-view request stays honorable. Long enough for a mount +
+ *  paint on a slow machine, far too short to replay on a later visit. */
+export const QUICK_VIEW_TTL_MS = 10_000;
+
 export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 
 export type ReadyChipOutcome = 'ready' | 'failed' | 'stopped' | 'needs_input';
@@ -68,7 +72,15 @@ interface KortixComputerState {
   // EasyPanel stays mounted behind a closed panel on desktop, so this must be
   // a changing STORE VALUE the consume effect subscribes to, not a stable
   // action reference.
-  pendingQuickView: { sessionId: string; view: 'terminal' | 'audit' | 'browser' } | null;
+  pendingQuickView: {
+    sessionId: string;
+    view: 'terminal' | 'audit' | 'browser';
+    /** When the request was made — consume discards anything older than
+     *  {@link QUICK_VIEW_TTL_MS}. A quick-view is a "right now" intent; a
+     *  request that couldn't be consumed promptly must never replay later
+     *  (the "terminal randomly pops up" bug). */
+    requestedAt: number;
+  } | null;
 
   // === ACTIONS ===
 
@@ -127,7 +139,7 @@ interface KortixComputerState {
   requestQuickView: (view: 'terminal' | 'audit' | 'browser', explicitSessionId?: string) => void;
   /** One-shot, session-scoped consume — mirrors `consumePrimaryOpen`. Returns
    *  the requested view when it belonged to `sessionId`, else null. */
-  consumeQuickView: (sessionId: string) => 'terminal' | 'audit' | 'browser' | null;
+  consumeQuickView: (sessionId: string, now?: number) => 'terminal' | 'audit' | 'browser' | null;
 
   // Reset all state (full reset)
   reset: () => void;
@@ -147,7 +159,11 @@ const initialState = {
   focusedToolCallId: null as string | null,
   readyChip: null as ReadyChipState | null,
   pendingPrimaryOpenSessionId: null as string | null,
-  pendingQuickView: null as { sessionId: string; view: 'terminal' | 'audit' | 'browser' } | null,
+  pendingQuickView: null as {
+    sessionId: string;
+    view: 'terminal' | 'audit' | 'browser';
+    requestedAt: number;
+  } | null,
 };
 
 export const useKortixComputerStore = create<KortixComputerState>()(
@@ -261,6 +277,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           isExpanded: false,
           panelSplit: null,
           detailOpen: false,
+          // A quick-view is an intent about the session it was made in — it
+          // must not replay when some other session mounts later.
+          ...(get().pendingQuickView && get().pendingQuickView!.sessionId !== sessionId
+            ? { pendingQuickView: null }
+            : {}),
         });
       },
 
@@ -340,15 +361,16 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: true };
-          update.pendingQuickView = { sessionId, view };
+          update.pendingQuickView = { sessionId, view, requestedAt: Date.now() };
         }
         set(update);
       },
 
-      consumeQuickView: (sessionId: string) => {
+      consumeQuickView: (sessionId: string, now: number = Date.now()) => {
         const pending = get().pendingQuickView;
         if (!pending || pending.sessionId !== sessionId) return null;
         set({ pendingQuickView: null });
+        if (now - pending.requestedAt > QUICK_VIEW_TTL_MS) return null;
         return pending.view;
       },
 
