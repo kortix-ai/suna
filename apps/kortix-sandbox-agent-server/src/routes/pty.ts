@@ -55,7 +55,27 @@ export interface PtyRegistry {
   remove(id: string): boolean
   /** Attach a live viewer to a running pty — used by the WS bridge in proxy.ts. */
   attach(id: string, viewer: Viewer): PtyAttachHandle | null
+  /**
+   * Lookup-or-create: the WS bridge's single entry point for "open a
+   * terminal". A requested id that names a *running* entry reattaches (a
+   * genuine reconnect resumes the same shell + scrollback). A requested id
+   * that names an *exited* entry reports that explicitly so the caller can
+   * tell the client the session really ended (never silently reincarnated —
+   * the user may have typed `exit` on purpose). Every other case — id
+   * missing from the registry entirely (daemon restarted and forgot it, a
+   * stale id from a reload, a create/attach race) or no id supplied at all —
+   * mints a fresh pty and attaches to it instead of failing. When a
+   * requested id is supplied but unknown, the new entry reuses that exact
+   * id so the caller's existing bookkeeping (tab/URL/list-cache key) keeps
+   * working with zero protocol changes.
+   */
+  attachOrCreate(id: string | undefined, viewer: Viewer): AttachOrCreateResult
 }
+
+export type AttachOrCreateResult =
+  | { kind: 'attached'; meta: KortixPtyMeta; handle: PtyAttachHandle }
+  | { kind: 'created'; meta: KortixPtyMeta; handle: PtyAttachHandle }
+  | { kind: 'exited'; meta: KortixPtyMeta }
 
 /**
  * In-memory PTY registry, owned for the life of the daemon process (a
@@ -88,59 +108,87 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
     entry.viewers.clear()
   }
 
+  // Shared by `create()` (HTTP — always mints a fresh id) and
+  // `attachOrCreate()` (WS lookup-or-create — reuses the requested id when
+  // one was supplied, so a caller reconnecting after a registry loss keeps
+  // its existing tab/URL/list-cache key working unmodified).
+  function spawnEntry(
+    id: string,
+    opts: { command?: string; args?: string[]; cwd?: string; title?: string; env?: Record<string, string> },
+  ): PtyEntry {
+    const command = opts.command?.trim() || process.env.SHELL || '/bin/bash'
+    const args = opts.args ?? (opts.command ? [] : ['-l'])
+    const cwd = opts.cwd || cfg.workspace
+    const env = {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      ...(opts.env ?? {}),
+    }
+
+    const entry: PtyEntry = {
+      meta: {
+        id,
+        title: opts.title?.trim() || command,
+        command,
+        args,
+        cwd,
+        status: 'running',
+        pid: 0,
+      },
+      proc: undefined as unknown as ReturnType<typeof Bun.spawn>,
+      scrollback: [],
+      scrollbackBytes: 0,
+      viewers: new Set(),
+    }
+
+    const proc = Bun.spawn([command, ...args], {
+      cwd,
+      env,
+      onExit: (_subprocess, exitCode) => {
+        finish(entry, exitCode)
+      },
+      terminal: {
+        cols: 80,
+        rows: 24,
+        name: 'xterm-256color',
+        data: (_terminal, data) => {
+          broadcast(entry, Buffer.from(data).toString())
+        },
+      },
+    })
+
+    entry.proc = proc
+    entry.meta.pid = proc.pid
+    entries.set(id, entry)
+    return entry
+  }
+
+  function buildHandle(entry: PtyEntry, viewer: Viewer): PtyAttachHandle {
+    entry.viewers.add(viewer)
+    return {
+      replay: entry.scrollback.join(''),
+      write: (data) => {
+        try { entry.proc.terminal?.write(data) } catch {}
+      },
+      resize: (cols, rows) => {
+        try { entry.proc.terminal?.resize(cols, rows) } catch {}
+      },
+      detach: () => {
+        entry.viewers.delete(viewer)
+      },
+    }
+  }
+
   return {
     list() {
       return [...entries.values()].map((e) => ({ ...e.meta }))
     },
 
     create(opts) {
-      const command = opts.command?.trim() || process.env.SHELL || '/bin/bash'
-      const args = opts.args ?? (opts.command ? [] : ['-l'])
-      const cwd = opts.cwd || cfg.workspace
       const id = `kpty_${randomUUID().replace(/-/g, '')}`
-      const env = {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        ...(opts.env ?? {}),
-      }
-
-      const entry: PtyEntry = {
-        meta: {
-          id,
-          title: opts.title?.trim() || command,
-          command,
-          args,
-          cwd,
-          status: 'running',
-          pid: 0,
-        },
-        proc: undefined as unknown as ReturnType<typeof Bun.spawn>,
-        scrollback: [],
-        scrollbackBytes: 0,
-        viewers: new Set(),
-      }
-
-      const proc = Bun.spawn([command, ...args], {
-        cwd,
-        env,
-        onExit: (_subprocess, exitCode) => {
-          finish(entry, exitCode)
-        },
-        terminal: {
-          cols: 80,
-          rows: 24,
-          name: 'xterm-256color',
-          data: (_terminal, data) => {
-            broadcast(entry, Buffer.from(data).toString())
-          },
-        },
-      })
-
-      entry.proc = proc
-      entry.meta.pid = proc.pid
-      entries.set(id, entry)
-      logger.info('[pty] created', { id, command, args, cwd, pid: proc.pid })
+      const entry = spawnEntry(id, opts)
+      logger.info('[pty] created', { id, command: entry.meta.command, args: entry.meta.args, cwd: entry.meta.cwd, pid: entry.meta.pid })
       return { ...entry.meta }
     },
 
@@ -165,19 +213,34 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
     attach(id, viewer) {
       const entry = entries.get(id)
       if (!entry || entry.meta.status !== 'running') return null
-      entry.viewers.add(viewer)
-      return {
-        replay: entry.scrollback.join(''),
-        write: (data) => {
-          try { entry.proc.terminal?.write(data) } catch {}
-        },
-        resize: (cols, rows) => {
-          try { entry.proc.terminal?.resize(cols, rows) } catch {}
-        },
-        detach: () => {
-          entry.viewers.delete(viewer)
-        },
+      return buildHandle(entry, viewer)
+    },
+
+    attachOrCreate(id, viewer) {
+      const entry = id ? entries.get(id) : undefined
+      if (entry) {
+        if (entry.meta.status === 'running') {
+          return { kind: 'attached', meta: { ...entry.meta }, handle: buildHandle(entry, viewer) }
+        }
+        // Present but exited: the shell really ended (e.g. the user typed
+        // `exit`). Report it plainly instead of silently reincarnating a
+        // session the user may have deliberately closed.
+        return { kind: 'exited', meta: { ...entry.meta } }
       }
+
+      // Id missing entirely (never existed, a stale id surviving a registry
+      // loss, a create/attach race) or no id supplied at all — a normal
+      // "open a terminal" always succeeds with a working shell. Reuse the
+      // requested id when present so the caller's existing bookkeeping
+      // (tab/URL/list-cache key) keeps working with zero protocol changes.
+      const newId = id || `kpty_${randomUUID().replace(/-/g, '')}`
+      const created = spawnEntry(newId, {})
+      logger.info('[pty] lookup-or-create minted a new pty', {
+        requestedId: id ?? null,
+        id: newId,
+        pid: created.meta.pid,
+      })
+      return { kind: 'created', meta: { ...created.meta }, handle: buildHandle(created, viewer) }
     },
   }
 }
