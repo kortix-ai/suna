@@ -154,27 +154,28 @@ jobs:
           SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
         run: |
           set -euo pipefail
-          # Prefer the image built from the EXACT promoted staging commit
-          # (staging-<sha8>). This covers both paths into staging:
-          #   1. main -> staging PR, where staging contains the full dev candidate.
-          #   2. targeted branch -> staging PR, where the SHA may never exist on main.
-          # For legacy/manual releases, fall back to dev-<sha8>, then dev-latest.
+          # HARD REQUIREMENT: only ever retag an image built from the EXACT
+          # promoted commit (staging-<sha8>, or dev-<sha8> as a same-commit
+          # fallback for the rare case main already built it). There is
+          # DELIBERATELY no further fallback (e.g. to :dev-latest or any
+          # "latest"-style tag): that used to silently retag an UNRELATED,
+          # arbitrarily-stale image as the release when the exact tag was
+          # missing (wrong-image incident, 2026-07). A missing exact-commit
+          # image is a hard pipeline failure, not a "best effort" — fix the
+          # staging build and retry, never ship a guess.
+          if [ -z "${SOURCE_SHA:-}" ]; then
+            echo "::error::RELEASE_SOURCE_SHA is empty — refusing to retag from any non-commit-pinned tag. This release PR was not stamped with a source commit (see promote.yml); re-cut it."
+            exit 1
+          fi
           for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
-            STAGING_TAG=""
-            DEV_TAG=""
-            if [ -n "${SOURCE_SHA:-}" ]; then
-              STAGING_TAG="staging-${SOURCE_SHA:0:8}"
-              DEV_TAG="dev-${SOURCE_SHA:0:8}"
-            fi
-            if [ -n "$STAGING_TAG" ] && docker buildx imagetools inspect "$IMAGE:$STAGING_TAG" >/dev/null 2>&1; then
+            STAGING_TAG="staging-${SOURCE_SHA:0:8}"
+            DEV_TAG="dev-${SOURCE_SHA:0:8}"
+            if docker buildx imagetools inspect "$IMAGE:$STAGING_TAG" >/dev/null 2>&1; then
               SRC_TAG="$STAGING_TAG"
-            elif [ -n "$DEV_TAG" ] && docker buildx imagetools inspect "$IMAGE:$DEV_TAG" >/dev/null 2>&1; then
+            elif docker buildx imagetools inspect "$IMAGE:$DEV_TAG" >/dev/null 2>&1; then
               SRC_TAG="$DEV_TAG"
-            elif docker buildx imagetools inspect "$IMAGE:dev-latest" >/dev/null 2>&1; then
-              SRC_TAG="dev-latest"
-              echo "::notice::$IMAGE has no ${STAGING_TAG:-staging-<sha8>} or ${DEV_TAG:-dev-<sha8>} — using :dev-latest."
             else
-              echo "::error::$IMAGE: no staging/dev image is published for this release source."
+              echo "::error::$IMAGE: no image tagged for the exact release commit ${SOURCE_SHA} (looked for :$STAGING_TAG and :$DEV_TAG). Refusing to fall back to :dev-latest or any other tag — that has shipped a stale/unrelated image before. Build+push the staging image for this commit, then re-run this job."
               exit 1
             fi
             # A prod release publishes :X.Y.Z + :latest only. The self-host
@@ -182,12 +183,23 @@ jobs:
             # CURATED, not automatic: a human promotes a proven version to
             # :stable via the "Promote Self-Host Stable" workflow (promote-self-host-stable.yml).
             # Released != auto-shipped to every self-hosted customer overnight.
-            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + :latest"
+            SRC_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$SRC_TAG" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+            [ -n "$SRC_DIGEST" ] || { echo "::error::$IMAGE:$SRC_TAG has no resolvable manifest digest."; exit 1; }
+            echo "Re-tagging $IMAGE:$SRC_TAG (digest $SRC_DIGEST) → $IMAGE:${VERSION} + :latest"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
               "$IMAGE:$SRC_TAG"
-            echo "✓ $IMAGE:${VERSION} (from $SRC_TAG)"
+            # Integrity check: the freshly-created :VERSION tag must be
+            # byte-identical (same digest) to the exact-commit source tag we
+            # just resolved — proves the retag copied what we intended, not a
+            # stale cached/mismatched manifest.
+            NEW_DIGEST="$(docker buildx imagetools inspect "$IMAGE:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+            if [ "$NEW_DIGEST" != "$SRC_DIGEST" ]; then
+              echo "::error::$IMAGE:${VERSION} digest ($NEW_DIGEST) does not match source $IMAGE:$SRC_TAG digest ($SRC_DIGEST) — retag did not copy the expected image. Aborting."
+              exit 1
+            fi
+            echo "✓ $IMAGE:${VERSION} (from $SRC_TAG, digest $NEW_DIGEST verified)"
           done
       - name: Summary
         env:
@@ -200,6 +212,51 @@ jobs:
             echo ""
             echo "_Zero rebuilds — re-tagged from the promoted staging manifests._"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── HARD GATE: verify the retagged images actually contain the release commit ──
+  # retag-images resolves the correct source tag and digest-verifies the copy,
+  # but this is an independent, second check against a DIFFERENT source of truth:
+  # the KORTIX_COMMIT value baked into the image at build time (apps/api/Dockerfile
+  # / apps/llm-gateway/Dockerfile ENV, set from the exact checked-out sha in
+  # build-staging.yml — not the OCI org.opencontainers.image.revision label, which
+  # has been wrong/misleading before). We actually PULL and RUN the freshly
+  # retagged :VERSION image and read that env var back out of the running
+  # container, then assert it equals the release's source commit byte-for-byte.
+  # No deploy job may start until this passes — this is what makes "stale image"
+  # a hard pipeline failure instead of a silent, hours-later production incident.
+  verify-image-commits:
+    name: Verify deployed image CODE matches the release commit
+    needs: [version, retag-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Pull + verify baked KORTIX_COMMIT on api and gateway
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SOURCE_SHA:-}" ]; then
+            echo "::error::No RELEASE_SOURCE_SHA to verify against — refusing to deploy unverified images."
+            exit 1
+          fi
+          fail=0
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway; do
+            docker pull --quiet "$IMAGE:${VERSION}" >/dev/null
+            baked="$(docker run --rm --entrypoint sh "$IMAGE:${VERSION}" -c 'printf "%s" "$KORTIX_COMMIT"' || true)"
+            echo "$IMAGE:${VERSION} baked KORTIX_COMMIT=${baked:-<empty>}  expected=${SOURCE_SHA}"
+            if [ "$baked" != "$SOURCE_SHA" ]; then
+              echo "::error::$IMAGE:${VERSION} baked KORTIX_COMMIT ('${baked:-empty}') does NOT match the release source commit ('${SOURCE_SHA}'). This image is NOT built from the release commit — refusing to deploy it. Do not trust org.opencontainers.image.revision or any version-string label here; this is a direct read of the running container's baked env."
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "✓ api + gateway :${VERSION} images verified to contain release commit ${SOURCE_SHA}."
 
   # ── Build prod CLI (4 targets on one Linux runner via Bun cross-compile) ────
   build-cli:
@@ -691,7 +748,7 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, migrate-db]
+    needs: [version, retag-images, verify-image-commits, migrate-db]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -723,7 +780,7 @@ jobs:
   # silently drifts is worthless the day you need the flip.
   deploy-api:
     name: Deploy API to prod (EKS / GitOps)
-    needs: [version, retag-images, migrate-db]
+    needs: [version, retag-images, verify-image-commits, migrate-db]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → read the cluster
@@ -825,7 +882,7 @@ jobs:
   # applied gateway app or ingress/cert lag never blocks the rest of the release.
   deploy-gateway:
     name: Deploy gateway to prod (EKS / GitOps)
-    needs: [version, retag-images]
+    needs: [version, retag-images, verify-image-commits]
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
@@ -950,39 +1007,58 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
     steps:
       - name: Assert public + origin endpoints report v${{ needs.version.outputs.version }}
         run: |
           set -uo pipefail
 
-          # name|url|kind  (kind: required = public router host, origin = direct backend)
+          # name|url|kind|check_commit  (kind: required = public router host, origin
+          # = direct backend; check_commit = also assert /v1/health's .commit field
+          # against the release source commit — a `.version` match ALONE is not
+          # trustworthy: it is stamped externally (EKS values.yaml / ECS task-def
+          # env), so a stale/wrong image can still report the "right" version
+          # string. .commit is read from the image's baked KORTIX_COMMIT, so it
+          # actually proves which code is running. Gateway's /health/live has no
+          # commit field, so only the API endpoints check it.)
           ENDPOINTS=(
-            "router-api|https://api.kortix.com/v1/health|required"
-            "router-gateway|https://gateway.kortix.com/health/live|required"
-            "origin-api-ecs|https://api-ecs-fargate.kortix.com/v1/health|origin"
-            "origin-api-eks|https://api-eks.kortix.com/v1/health|origin"
-            "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin"
-            "origin-gateway-eks|https://gateway-eks.kortix.com/health/live|origin"
+            "router-api|https://api.kortix.com/v1/health|required|1"
+            "router-gateway|https://gateway.kortix.com/health/live|required|0"
+            "origin-api-ecs|https://api-ecs-fargate.kortix.com/v1/health|origin|1"
+            "origin-api-eks|https://api-eks.kortix.com/v1/health|origin|1"
+            "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin|0"
+            "origin-gateway-eks|https://gateway-eks.kortix.com/health/live|origin|0"
           )
 
           declare -A live
+          declare -A live_commit
           # ~5 min window: 20 polls, 15s apart. Retries absorb router/DNS/ALB
           # propagation and the last pods draining; a real mismatch stays a mismatch.
           for attempt in $(seq 1 20); do
             all_ok=1
             for e in "${ENDPOINTS[@]}"; do
-              IFS='|' read -r name url kind <<< "$e"
-              v="$(curl -fsS --max-time 10 "$url" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+              IFS='|' read -r name url kind check_commit <<< "$e"
+              body="$(curl -fsS --max-time 10 "$url" 2>/dev/null || true)"
+              v="$(printf '%s' "$body" | jq -r '.version // empty' 2>/dev/null || true)"
+              c="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
               live[$name]="$v"
-              if [ "$v" = "$VERSION" ]; then
-                echo "($attempt/20) ✓ $name  $v"
+              live_commit[$name]="$c"
+              commit_ok=1
+              if [ "$check_commit" = "1" ] && [ -n "${SOURCE_SHA:-}" ] && [ -n "$c" ]; then
+                case "$c" in
+                  "$SOURCE_SHA"*|*"${SOURCE_SHA:0:8}") commit_ok=1 ;;
+                  *) commit_ok=0 ;;
+                esac
+              fi
+              if [ "$v" = "$VERSION" ] && [ "$commit_ok" = 1 ]; then
+                echo "($attempt/20) ✓ $name  version=$v commit=${c:-n/a}"
               else
-                echo "($attempt/20) … $name  ${v:-<unreachable>}"
+                echo "($attempt/20) … $name  version=${v:-<unreachable>} commit=${c:-n/a}"
                 all_ok=0
               fi
             done
             if [ "$all_ok" = 1 ]; then
-              echo "✅ every endpoint reports v${VERSION} — release is live on both backends."
+              echo "✅ every endpoint reports v${VERSION} (and the correct commit where checkable) — release is live on both backends."
               exit 0
             fi
             sleep 15
@@ -991,9 +1067,17 @@ jobs:
           # Deadline: classify what's still off.
           fail=0
           for e in "${ENDPOINTS[@]}"; do
-            IFS='|' read -r name url kind <<< "$e"
+            IFS='|' read -r name url kind check_commit <<< "$e"
             v="${live[$name]:-}"
-            if [ "$v" = "$VERSION" ]; then
+            c="${live_commit[$name]:-}"
+            commit_mismatch=0
+            if [ "$check_commit" = "1" ] && [ -n "${SOURCE_SHA:-}" ] && [ -n "$c" ]; then
+              case "$c" in
+                "$SOURCE_SHA"*|*"${SOURCE_SHA:0:8}") ;;
+                *) commit_mismatch=1 ;;
+              esac
+            fi
+            if [ "$v" = "$VERSION" ] && [ "$commit_mismatch" = 0 ]; then
               continue
             elif [ -z "$v" ]; then
               if [ "$kind" = "required" ]; then
@@ -1002,13 +1086,16 @@ jobs:
               else
                 echo "::warning::$name ($url) is unreachable — tolerated for a direct origin (dark standby), but check it."
               fi
+            elif [ "$commit_mismatch" = 1 ]; then
+              echo "::error::$name ($url) reports version '$v' (matches) but commit '$c' does NOT match release source commit '${SOURCE_SHA}' — this backend is serving the WRONG CODE under the right version label. Release blocked. Do not trust the version string alone."
+              fail=1
             else
               echo "::error::$name ($url) reports '$v', expected '$VERSION' — a backend is serving the WRONG version. Release blocked."
               fail=1
             fi
           done
           if [ "$fail" = 1 ]; then
-            echo "::error::Live version verification failed after ~5m. Nothing will be announced; fix the deploy and re-run this workflow."
+            echo "::error::Live version/commit verification failed after ~5m. Nothing will be announced; fix the deploy and re-run this workflow."
             exit 1
           fi
           echo "✅ public endpoints report v${VERSION} (some dark origins warned above)."

@@ -79,3 +79,53 @@ describe('chatToResponses — vision', () => {
     });
   });
 });
+
+// Found while investigating the max_tokens P0 (req_mro97uigg6rnflvf): a
+// genuine reasoning+tools OpenAI request that route-kind.ts reroutes onto
+// THIS transport previously carried NO output-token cap at all — neither
+// `max_tokens` nor `max_completion_tokens` was ever translated into the
+// Responses API's `max_output_tokens` field, so the client's budget was
+// silently dropped rather than rejected (a distinct, quieter bug from the
+// chat/completions 400 — no wire error, just an unbounded request).
+describe('chatToResponses — max_output_tokens translation', () => {
+  test('translates a chat/completions max_tokens into max_output_tokens', () => {
+    const payload = chatToResponses(
+      { model: 'openai/gpt-5.6-sol', messages: [{ role: 'user', content: 'hi' }], max_tokens: 32000 },
+      descriptor,
+    ) as AnyJson;
+    expect(payload.max_output_tokens).toBe(32000);
+  });
+
+  test('translates an already-renamed max_completion_tokens into max_output_tokens', () => {
+    const payload = chatToResponses(
+      {
+        model: 'openai/gpt-5.6-sol',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_completion_tokens: 8192,
+      },
+      descriptor,
+    ) as AnyJson;
+    expect(payload.max_output_tokens).toBe(8192);
+  });
+
+  test('prefers max_completion_tokens over max_tokens when both are present', () => {
+    const payload = chatToResponses(
+      {
+        model: 'openai/gpt-5.6-sol',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 999,
+        max_completion_tokens: 111,
+      },
+      descriptor,
+    ) as AnyJson;
+    expect(payload.max_output_tokens).toBe(111);
+  });
+
+  test('omits max_output_tokens entirely when the caller sent no token budget', () => {
+    const payload = chatToResponses(
+      { model: 'openai/gpt-5.6-sol', messages: [{ role: 'user', content: 'hi' }] },
+      descriptor,
+    ) as AnyJson;
+    expect('max_output_tokens' in payload).toBe(false);
+  });
+});

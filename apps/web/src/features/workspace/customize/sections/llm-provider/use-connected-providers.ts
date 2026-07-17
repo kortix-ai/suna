@@ -1,10 +1,5 @@
 'use client';
 
-import {
-  privateOnlyProviderIdsFromSecretNames,
-  privateOnlySecretNamesForViewer,
-  usableSecretNamesForViewer,
-} from '@/hooks/opencode/provider-selection';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { isManagedProviderEnabled } from '@/lib/config';
@@ -36,19 +31,11 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     enabled,
   });
 
-  // `secretNames` used to be "any row exists for this KEY, shared or not" —
-  // which is exactly the gap behind the "connected but every turn 400s" BYOK
-  // incident: a lingering PRIVATE-only row (owner_user_id set) made a provider
-  // look connected to every viewer even though only its owner's OWN sessions
-  // can actually use it (see getResolvedProjectSecretValue). Use the same
-  // per-viewer usability rule the gateway now applies instead of a blind name
-  // match (see provider-selection.ts, unit-tested there).
-  const items = useMemo(() => {
+  const secretNames = useMemo(() => {
     const data = secretsQuery.data;
-    return Array.isArray(data) ? data : (data?.items ?? []);
+    const items = Array.isArray(data) ? data : (data?.items ?? []);
+    return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
-  const secretNames = useMemo(() => usableSecretNamesForViewer(items), [items]);
-  const privateOnlyNames = useMemo(() => privateOnlySecretNamesForViewer(items), [items]);
 
   // The managed Kortix gateway exists only for projects that explicitly opt
   // into the LLM Gateway. Native OpenCode projects should show only providers
@@ -91,21 +78,11 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
-        p.id !== 'kortix' &&
-        p.envVars.length > 0 &&
-        p.envVars.every((v) => secretNames.has(v)),
+        p.id !== 'kortix' && p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v)),
     );
     const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
     return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
   }, [secretNames, kortixProvider, ocProviders]);
 
-  // A connected provider where at least one env var only resolves via MY
-  // private override — nobody else on the project can use it. Drives the
-  // "sessions can't use this key — make it shared" warning + one-click fix.
-  const privateOnlyProviderIds = useMemo(
-    () => privateOnlyProviderIdsFromSecretNames(secretNames, privateOnlyNames),
-    [secretNames, privateOnlyNames],
-  );
-
-  return { secretsQuery, connectedProviders, llmGatewayEnabled, privateOnlyProviderIds };
+  return { secretsQuery, connectedProviders, llmGatewayEnabled };
 }

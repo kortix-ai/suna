@@ -39,8 +39,10 @@ export function ProjectProviderModal({
   canWrite = false,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { secretsQuery, connectedProviders, llmGatewayEnabled, privateOnlyProviderIds } =
-    useConnectedProviders(projectId, open || asPanel);
+  const { secretsQuery, connectedProviders, llmGatewayEnabled } = useConnectedProviders(
+    projectId,
+    open || asPanel,
+  );
   const hasConnections = connectedProviders.length > 0;
 
   // Read-only members never reach the catalog (its detail → connect forms POST
@@ -156,7 +158,6 @@ export function ProjectProviderModal({
               <ConnectedTab
                 projectId={projectId}
                 connectedProviders={connectedProviders}
-                privateOnlyProviderIds={privateOnlyProviderIds}
                 search={search}
                 canWrite={canWrite}
                 onAddProvider={() => switchTab('catalog')}

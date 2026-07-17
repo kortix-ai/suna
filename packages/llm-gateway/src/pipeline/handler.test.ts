@@ -186,9 +186,9 @@ describe("gateway.chatCompletions", () => {
     const { hooks } = makeHooks({
       resolveUpstream: async () => {
         throw new GatewayResolutionError(
-          "provider_key_private",
-          "A openai API key is connected by a teammate, but it's private and not shared with this project.",
-          "Ask them to share the openai key with the project, or add your own openai API key.",
+          "provider_not_connected",
+          "No openai API key is connected for this project.",
+          "Add an openai API key in project settings, then retry.",
         );
       },
     });
@@ -200,12 +200,12 @@ describe("gateway.chatCompletions", () => {
     });
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe("provider_key_private");
+    expect(body.code).toBe("provider_not_connected");
     expect(body.message).toBe(
-      "A openai API key is connected by a teammate, but it's private and not shared with this project.",
+      "No openai API key is connected for this project.",
     );
     expect(body.suggestion).toBe(
-      "Ask them to share the openai key with the project, or add your own openai API key.",
+      "Add an openai API key in project settings, then retry.",
     );
   });
 
