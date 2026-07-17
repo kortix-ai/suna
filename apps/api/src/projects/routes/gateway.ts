@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
-import { calculateCost, callUpstream, type AuthedPrincipal } from '@kortix/llm-gateway';
+import { calculateCost, callUpstream, GatewayResolutionError, type AuthedPrincipal } from '@kortix/llm-gateway';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
@@ -1147,10 +1147,21 @@ projectsApp.openapi(
       requires: { imageInput: body.imageInput === true },
     });
     const models = [route.primaryModel, ...(route.fallbackModels ?? [])];
-    const availability = await Promise.all(models.map(async (model) => ({
-      model,
-      available: (await resolveCandidates(principal, model)).length > 0,
-    })));
+    // This is an AVAILABILITY PREVIEW, not a generation request: its whole
+    // contract is "tell me which of these models are usable right now",
+    // per-model. resolveCandidates THROWS a typed GatewayResolutionError
+    // (e.g. provider_not_connected) instead of returning [] when a model
+    // isn't servable — correct for an actual generation call, but here it
+    // must degrade to `available: false` for JUST that model rather than
+    // fail the whole Promise.all/response for every model in the list.
+    const availability = await Promise.all(models.map(async (model) => {
+      try {
+        return { model, available: (await resolveCandidates(principal, model)).length > 0 };
+      } catch (err) {
+        if (err instanceof GatewayResolutionError) return { model, available: false };
+        throw err;
+      }
+    }));
     return c.json({ version: 1, route, models: availability });
   },
 );

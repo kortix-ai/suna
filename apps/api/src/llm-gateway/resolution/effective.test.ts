@@ -147,4 +147,59 @@ describe('degradeUnservableDefault — stale default guard', () => {
       ),
     ).toBeNull();
   });
+
+  test('unservable default + no fallback supplied → platform (omitting fallback preserves old behavior exactly)', async () => {
+    expect(
+      await degradeUnservableDefault('openrouter/some-model', { hasProject: true }, async () => false),
+    ).toBeNull();
+  });
+
+  test('unservable default + a fallback that finds nothing → still platform', async () => {
+    expect(
+      await degradeUnservableDefault(
+        'openrouter/some-model',
+        { hasProject: true },
+        async () => false,
+        async () => null,
+      ),
+    ).toBeNull();
+  });
+
+  test('unservable default + a fallback that finds a connected provider → the fallback model, not platform (the essentia bug)', async () => {
+    // A stale/disconnected openrouter default degrades to whatever the project
+    // ACTUALLY has connected (e.g. its own OpenAI BYOK key) instead of silently
+    // falling all the way to a platform default that may ALSO be unusable
+    // (e.g. Codex, also unconnected).
+    expect(
+      await degradeUnservableDefault(
+        'openrouter/some-model',
+        { hasProject: true },
+        async () => false,
+        async () => 'openai/gpt-5.5',
+      ),
+    ).toBe('openai/gpt-5.5');
+  });
+
+  test('a servable default never calls the fallback at all', async () => {
+    const neverFallback = () => {
+      throw new Error('fallback must not be called when the probe passes');
+    };
+    expect(
+      await degradeUnservableDefault(
+        'anthropic/claude-opus-4-8',
+        { hasProject: true },
+        async () => true,
+        neverFallback,
+      ),
+    ).toBe('anthropic/claude-opus-4-8');
+  });
+
+  test('a managed default never calls probe or fallback', async () => {
+    const neverFallback = () => {
+      throw new Error('fallback must not be called for a trusted managed ref');
+    };
+    expect(await degradeUnservableDefault('glm-5.2', { hasProject: true }, neverProbe, neverFallback)).toBe(
+      'glm-5.2',
+    );
+  });
 });
