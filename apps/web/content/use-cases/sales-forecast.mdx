@@ -1,0 +1,154 @@
+---
+title: "How we roll the pipeline into a weekly forecast"
+description: The sales-forecast agent we run on Kortix — a weekly cron rolls up HubSpot's open pipeline into a weighted forecast vs quota by stage, rep, and segment, flags deals slipping the quarter, and posts it to Slack. Read-only — it never touches a deal's amount or close date.
+date: "2026-05-02"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+template: sales-forecast
+---
+
+Every sales org has a number it's chasing every quarter, and every sales org
+reconciles that number the same way: someone pulls open deals out of HubSpot,
+weights them by gut feel or a spreadsheet formula nobody remembers building,
+and calls it the forecast. It's accurate for about a day — the day it was
+built — and it says nothing about the deal whose close date quietly slid past
+last week, or the six-figure deal that hasn't had a logged activity in a
+month.
+
+We run a sales-forecast agent on Kortix that reads HubSpot every week and
+posts a weighted forecast to our sales Slack channel — broken down by stage,
+rep, and segment, measured against quota, with the deals putting that number
+at risk called out by name. It only reads the pipeline; the single output is
+the Slack post. This is how we forecast our own quarter.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="CRM">HubSpot</Fact>
+  <Fact label="Runs on">Weekly cron</Fact>
+  <Fact label="Mode">Read-only · one Slack post per week</Fact>
+</KeyFacts>
+
+## The problem
+
+A stage-by-stage pipeline view and a real forecast are different things. The
+pipeline view says a deal is "open" and sitting in "Proposal Sent"; it doesn't
+say whether that deal is on track to close this quarter, whether the rep's
+commit number matches what the stage actually implies, or whether a big deal
+has quietly gone stale while still counting toward the total. Turning open
+deals into a forecast means weighting every deal by how likely its stage
+really is to close, then rolling that up three different ways — by stage, by
+rep, by segment — and comparing it to quota.
+
+The usual fix is a spreadsheet rebuilt the week before the forecast call:
+someone exports deals, applies a weighting rule by hand, and reconciles it
+against every rep's stated commit. It's stale the moment it's built, it
+depends on someone remembering to run it, and it rarely catches a deal whose
+close date has already passed or one that's gone quiet in a late stage until
+the quarter is nearly over.
+
+## What we built
+
+On Kortix, a weekly cron triggers an agent. It spawns a fresh session with
+read-only access to HubSpot, pulls every open deal — stage, amount, close
+date, owner, and its segment — weights each one by the probability already
+configured on its HubSpot pipeline stage, and rolls the weighted amounts up by
+stage, by rep, and by segment. It compares the total to this quarter's quota,
+flags deals whose close date has already slipped or that don't have enough
+runway left in their current stage to realistically close this quarter, flags
+large deals that look at risk for other reasons — no recent activity, stalled
+in a late stage — and posts the whole forecast to Slack. It writes nothing
+back to HubSpot.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly cron">
+
+A **cron trigger** fires the agent once a week. Each firing spawns a fresh
+**session** in its own sandbox — one week, one run, nothing carried over. The
+forecast is rebuilt from HubSpot's current state every time, so it never
+drifts from what's actually in the CRM.
+
+</Step>
+<Step title="Give the agent the rollup rules">
+
+How deals get weighted, which ones count toward this quarter, and what
+"slipping" and "at risk" mean live as a **skill** that travels with the
+agent: weight every deal by the probability HubSpot already has configured on
+its stage rather than a hardcoded guess, count a deal into the quarter by its
+close date, and call out a deal as slipping when its close date has already
+passed or its stage leaves it too little runway to close in time.
+
+</Step>
+<Step title="Connect HubSpot read-only">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches
+the model, the agent reads:
+
+- **Open deals** — amount, stage, close date, owner, and the segment property
+  used for the rollup.
+- **Pipeline stage configuration** — the win probability HubSpot already has
+  set on each stage, used as the weighting instead of an assumption.
+- **Posts to Slack** — the weekly forecast, broken down by stage, rep, and
+  segment, with slipping and at-risk deals called out.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** across HubSpot. It has no write access to a deal's
+amount, close date, stage, or owner — it cannot change the number tied to any
+deal, no matter what the rollup shows. Its only output is the Slack post.
+Credentials are encrypted in the Secrets Manager and injected at runtime,
+never shown to the model or written to logs.
+
+</Step>
+<Step title="Post the forecast">
+
+Each week brings one Slack post: the total weighted forecast against quota,
+the breakdown by stage, by rep, and by segment, the deals that have slipped
+or are running out of runway this quarter, and the large deals showing other
+signs of risk. The sales team reads it and decides what to do. Nothing is
+written back to HubSpot automatically.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** spawns a session with read-only **connector** access to
+  HubSpot. The weighting and rollup rules live as a **skill**. The agent reads
+  the whole pipeline and writes nothing but the weekly Slack post.
+</Callout>
+
+## Guardrails
+
+Rolling up the entire pipeline every week is a trust question, so the agent's
+access is scoped and one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only HubSpot and Slack, and only the forecast post leaves the sandbox.
+- **Scoped secrets.** The HubSpot credential is encrypted in the Secrets
+  Manager and injected into the sandbox at runtime, never exposed to the model
+  or the logs.
+- **Read-only, no exceptions.** The connector into HubSpot is read-only. The
+  agent never changes a deal's amount, close date, stage, or owner — it can
+  only report on what it finds.
+- **Everything is code.** The weighting rule, the quarter window, and the
+  slipping/at-risk criteria are files in the repo, versioned and changed
+  through a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every week" label="Forecast rebuilt from HubSpot's current pipeline state" />
+  <Stat value="Read-only" label="No deal amount, date, stage, or owner ever written" />
+  <Stat value="3 cuts" label="Stage, rep, and segment rolled up in one weekly post" />
+</StatGrid>
+
+The forecast that used to get rebuilt by hand the week before the call now
+arrives every Monday in the channel where the team already works, weighted by
+HubSpot's own stage probabilities and carrying the specific deals putting the
+number at risk. The agent only reads and reports; the sales team still owns
+every deal.

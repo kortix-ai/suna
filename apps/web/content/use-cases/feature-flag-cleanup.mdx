@@ -1,0 +1,142 @@
+---
+title: "How we remove stale feature flags"
+description: The flag-cleanup agent we run on Kortix — a weekly sweep that finds feature flags that are fully rolled out or long dead, deletes the flag and the dead code branch it guards, and opens a PR for a human to merge.
+date: "2026-03-05"
+author: team
+tags:
+  - Engineering
+  - Case Study
+  - Enterprise
+template: feature-flag-cleanup
+---
+
+Every feature flag we ship is supposed to be temporary. It guards a rollout, we
+watch it ramp to 100%, and then someone is supposed to go back and delete it. In
+practice that last step loses to whatever shipped after it. Flags pile up, each
+one leaving an `if` branch, a dead `else`, and a config entry that nobody reads
+anymore — until the codebase is carrying the weight of every rollout it ever did.
+
+We run a flag-cleanup agent on Kortix that sweeps our repo every week, finds the
+flags that are safe to remove, deletes them and the branches they guard, and
+opens a PR. It never merges its own work, and it never touches a flag that's
+still in the middle of a rollout — those get flagged for a human instead.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron, reusable session</Fact>
+  <Fact label="Connected systems">GitHub</Fact>
+  <Fact label="Mode">Opens PRs only · human merges</Fact>
+</KeyFacts>
+
+## The problem
+
+A feature flag has a natural lifecycle: ship behind it, ramp the rollout, hit
+100%, delete it. The first three steps are urgent and have an owner. The fourth
+one isn't and doesn't — by the time a flag is fully rolled out, the team that
+shipped it has moved on, and removing a few lines of conditional logic loses
+every priority fight.
+
+The cost isn't obvious from any single flag. It's cumulative: every live flag is
+a branch some engineer has to reason about, a code path that might not even be
+tested anymore, and a source of bugs where the "off" branch silently rots. Left
+alone, the flag inventory only grows, and nobody wants to be the one who deletes
+a flag that turns out to still matter.
+
+## What we built
+
+On Kortix, a weekly cron re-prompts one **reusable session** that treats flag
+cleanup as an ongoing sweep rather than a one-off task. It clones our repo,
+inventories every feature flag, and classifies each one: fully rolled out and
+safe to remove, long dead with no live check left, still in partial rollout, or
+part of an active experiment. For the first two categories it deletes the flag
+and the dead branch it guards, proves the suite still passes, and opens a PR. For
+the rest, it does nothing but note them for a human to look at.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly reusable session">
+
+A **cron trigger** fires once a week and re-prompts the same **session** rather
+than starting fresh each time. The agent keeps a ledger of every flag's age,
+rollout state, and whatever it already proposed, so it never re-litigates a flag
+it already handled or duplicates an open PR.
+
+</Step>
+<Step title="Give the agent the classification rules">
+
+How to tell a dead flag from a live one lives as a **skill** that travels with
+the agent: what "fully rolled out" looks like in our flag config, how long a flag
+has to go unchecked before it counts as long dead, and — just as important — what
+partial rollout and active-experiment signals look like, so the agent knows
+exactly when to stop.
+
+</Step>
+<Step title="Work the codebase through GitHub">
+
+The agent's only system is the codebase itself, reached through the **GitHub**
+connector via a scoped token: it clones the repo, greps for every flag
+definition and call site, removes the flag and the code branch it guards on an
+isolated branch, runs the verification suite in the sandbox, and pushes a PR
+through the `gh` CLI.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent never removes a flag still in partial rollout or an active experiment —
+those are reported, not touched. It never pushes to the default branch and never
+merges its own PR. The GitHub token is injected into the sandbox at runtime and
+never exposed to the model or written to logs.
+
+</Step>
+<Step title="Open the cleanup PR">
+
+Once the affected flags are classified and the dead code is removed, the agent
+runs the full suite. Only when it's green does it push the branch and open a PR
+listing exactly which flags it removed and why, plus a separate note for any
+flag it found still in partial rollout. A human reviews and merges; nothing lands
+on its own.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** re-prompts a reusable **session** that keeps a ledger of
+  every flag's age and rollout state. The classification rules live as a
+  **skill**. The agent removes only what's fully rolled out or long dead, and
+  hands anything still in partial rollout to a human.
+</Callout>
+
+## Guardrails
+
+The agent deletes code, so its judgment is bounded on both sides — what it's
+allowed to remove, and what it must leave alone:
+
+- **Partial rollout is untouchable.** Any flag still ramping, or part of an
+  active experiment, is never removed. The agent logs it and moves on; a human
+  decides its fate.
+- **No direct pushes, no self-merges.** Every change lands on an isolated branch
+  and becomes a PR. The agent never pushes to the default branch and never merges
+  its own work.
+- **Verification before the PR, not after.** The full suite runs inside the
+  sandbox on the cleanup branch. A failing removal is dropped and logged, never
+  pushed for a human to untangle.
+- **Scoped, ephemeral access.** The GitHub token is encrypted in the Secrets
+  Manager and injected into the sandbox at runtime — never shown to the model,
+  never written to disk or logs.
+- **Everything is code.** The classification rules, the ledger, and the agent's
+  permissions are files in the repo, versioned and changed through a reviewed
+  change request.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Weekly" label="Every flag re-checked against its current rollout state" />
+  <Stat value="PR-only" label="Every removal lands as a reviewable PR, never a direct push" />
+  <Stat value="0" label="Partial-rollout flags ever touched by the agent" />
+</StatGrid>
+
+Flags that used to sit forgotten at 100% rollout now get deleted within a week of
+reaching it, with the dead branch cleaned up alongside them. The agent proposes;
+a human still owns the merge, and anything mid-rollout stays exactly where the
+team left it.

@@ -1,0 +1,149 @@
+---
+title: "How we detect and quarantine flaky tests"
+description: The flaky-test agent we run on Kortix — connected to GitHub CI history and Slack. It scores every test's non-determinism, opens a quarantine PR for the worst offenders, and files a tracking issue for a human to review.
+date: "2026-02-20"
+author: team
+tags:
+  - Testing
+  - Case Study
+  - Engineering
+template: flaky-test-triage
+---
+
+Flaky tests erode trust in CI fast. A test fails for no reason anyone can pin
+down, gets rerun, goes green, and CI moves on — until the day a real
+regression hides behind the same "oh that one's just flaky" shrug. Nobody
+schedules time to fix the true flakes because nobody has a ranked list of
+which ones are actually costing the team reruns.
+
+We run a flaky-test-triage agent on Kortix that reads the CI run history every
+day, scores every test on how often it flips outcome on unchanged code, and
+opens a quarantine PR for the worst offenders with a tracking issue attached.
+It only skips tests, never deletes one, and it never merges its own PR — a
+human reviews the quarantine and eventually retires it once the test is fixed.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron, one persistent session</Fact>
+  <Fact label="Connected systems">GitHub · CI run history · Slack</Fact>
+  <Fact label="Mode">Quarantine PR + tracking issue only — never merges, never deletes</Fact>
+</KeyFacts>
+
+## The problem
+
+Flakiness hides in plain sight. A test fails, the job reruns, it passes, and
+CI goes green — so the failure never becomes a signal anyone tracks. Spread
+across a few hundred tests and a few months, a handful of tests are quietly
+eating a rerun every week, and genuinely broken tests get the same "just
+rerun it" treatment as the flaky ones.
+
+The common responses don't fix this. Rerunning failed jobs until green hides
+the problem instead of measuring it. A channel where someone occasionally
+asks "is this one flaky again?" depends on a person noticing and remembering.
+Deleting a flaky test outright throws away whatever real coverage it had, and
+doing any of this by hand means first digging through weeks of CI logs to
+find which tests are actually the worst offenders.
+
+## What we built
+
+On Kortix, a daily cron re-prompts one persistent agent session. It resumes
+from a flakiness ledger, pulls the CI run history from GitHub since the last
+check, updates every test's non-determinism score, and once a test crosses
+the quarantine threshold, opens a PR that skips it with a reason and a link to
+the evidence — plus a running tracking issue listing every currently
+quarantined test. It never deletes a test and never merges its own PR.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron, one persistent session">
+
+A **cron trigger** fires once a day against the same **session**, not a fresh
+sandbox each time. Because the trigger runs in reusable-session mode, the
+per-test flakiness history survives from one run to the next instead of being
+recomputed from scratch, so a test's score reflects weeks of runs, not just
+today's.
+
+</Step>
+<Step title="Give the agent the quarantine playbook">
+
+How we score flakiness, which skip syntax each test framework uses, and what
+a quarantine PR and tracking issue should contain live as **skills** and
+**memory** that travel with the agent. When we tune the threshold or learn a
+flaky test's root cause, we write it down and the next run picks it up.
+
+</Step>
+<Step title="Connect the systems the triage needs">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches
+the model, plus a **GH_TOKEN** secret for the `gh` CLI, the agent can:
+
+- **Read CI run history from GitHub** — every workflow run's per-test results
+  over a rolling window, to see which tests flip outcome on unchanged code.
+- **Open a quarantine PR on GitHub** — skip markers on the worst offenders,
+  each with a reason and a link to the run evidence.
+- **File a tracking issue on GitHub** — one running issue listing every
+  currently-quarantined test, its flakiness score, and its status.
+- **Post to Slack** — a summary of what changed this run: newly quarantined
+  tests, tests still flaky, and tests ready to be de-quarantined.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent can only **skip and mark**, never delete. It opens a PR and an
+issue and stops; it never merges its own PR and never pushes to the default
+branch. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let the daily triage happen">
+
+With that in place, each day the agent updates every test's flakiness score
+against the current run history, and when a test crosses the threshold,
+quarantines it in a PR with the evidence attached, rolls it into the tracking
+issue, and posts the day's summary to Slack. A human reviews the PR, merges
+it if the quarantine is warranted, and eventually removes the skip once the
+test is actually fixed.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** re-prompts one persistent **session** so the flakiness
+  ledger survives across runs. The agent reads CI history through GitHub,
+  scores and ranks every test, and its only outputs are a quarantine PR, a
+  tracking issue, and a Slack summary — never a merge, never a deletion.
+</Callout>
+
+## Guardrails
+
+The agent changes what runs in CI, so its access is scoped and
+one-directional:
+
+- **Isolation.** Every run happens in the session's own microVM sandbox. Only
+  the PR, the issue, and the Slack post leave it.
+- **Scoped secrets.** The GitHub connector and the `GH_TOKEN` used by the `gh`
+  CLI are encrypted in the Secrets Manager and injected at runtime, never
+  exposed to the model or the logs.
+- **Skip, never delete.** The agent's only edit to a test file is a
+  skip/quarantine marker with a reason; it never removes a test, its
+  assertions, or its file.
+- **PR-gated.** The agent opens a PR and an issue and stops. It never merges
+  and never pushes to the default branch; a human owns the merge and the
+  eventual de-quarantine.
+- **Everything is code.** The agent's scoring rules, skills, and permissions
+  are files in the repo, versioned and changed through a reviewed **change
+  request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="Test flakiness re-scored against the latest CI history" />
+  <Stat value="Ranked, not guessed" label="Quarantine targets picked from evidence, not gut feel" />
+  <Stat value="Human merge" label="The agent proposes the quarantine; the team decides" />
+</StatGrid>
+
+The tests that used to eat a silent rerun every week now show up ranked, with
+a PR and a tracking issue attached to the worst of them. CI gets quieter
+without losing coverage nobody meant to drop, and the team spends its fixing
+time on the flakes that are actually costing the most reruns.

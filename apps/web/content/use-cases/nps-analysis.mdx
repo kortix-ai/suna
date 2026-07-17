@@ -1,0 +1,144 @@
+---
+title: "How we turn NPS responses into themes"
+description: A weekly cron reads new NPS/CSAT survey responses from a Google Sheet, clusters them into themes with sentiment and detractor drivers, and posts the score trend and representative quotes to Slack.
+date: "2026-05-23"
+author: team
+tags:
+  - Customer Success
+  - Case Study
+  - Enterprise
+template: nps-analysis
+---
+
+NPS and CSAT surveys generate a response every time someone answers, and most of
+it goes unread. The score gets tracked in a dashboard, but the comment next to it
+— the actual reason someone gave a 4 instead of a 9 — sits in a spreadsheet row
+and never gets aggregated with the hundred other comments saying the same thing.
+By the time a theme is obvious to a human skimming the sheet, it's been building
+for months.
+
+We run an NPS analysis agent on Kortix that reads new survey responses every week
+and posts the themes, sentiment, and detractor drivers to our customer-success
+Slack channel, alongside how the score moved since last week. It only reads the
+survey sheet; the single output is the Slack post. This is how we keep our own
+NPS program from turning into an unread spreadsheet.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron</Fact>
+  <Fact label="Connected systems">Google Sheets · Slack</Fact>
+  <Fact label="Mode">Read-only · one Slack post per week</Fact>
+</KeyFacts>
+
+## The problem
+
+Every NPS or CSAT response is really two signals: a number and a comment. The
+number is easy to track — most survey tools already chart it. The comment is
+where the "why" lives, and it's the part that gets lost. Free-text feedback piles
+up in a spreadsheet export, one row per response, and nobody reads all of it every
+week, so the same complaint from a dozen different detractors never gets counted
+as one thing.
+
+The common approaches don't fix this. A dashboard shows the score moving without
+saying why. Someone skimming the sheet manually catches the loudest complaint, not
+the most common one, and does it inconsistently from week to week. And because
+nothing tracks the theme over time, a driver that's been growing for a month looks
+identical to one that appeared once and went away.
+
+## What we built
+
+On Kortix, a weekly cron triggers an agent. It spawns an isolated session (a cloud
+sandbox) with read-only access to the Google Sheet the survey tool exports
+responses into, reads the full response history, clusters the free-text comments
+into themes, tags each response's sentiment and score band, isolates what's
+actually driving detractors this week, and computes how the score has moved
+week over week. It posts one summary to Slack with representative quotes. It
+writes nothing back to the sheet.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly cron">
+
+A **cron trigger** fires the agent once a week. Each firing spawns a fresh
+**session** in its own sandbox. There's no memory carried between runs — the
+sheet itself is the record, so the agent recomputes themes, sentiment, and the
+score trend from the full response history every time.
+
+</Step>
+<Step title="Give the agent the analysis rules">
+
+How we cluster feedback and read the score lives as **skills** and **memory**
+that travel with the agent: what counts as a detractor driver versus a one-off
+complaint, how to pick a representative quote for a theme, where the promoter,
+passive, and detractor bands sit, and how to describe a week-over-week move. When
+we refine what a theme should look like, we write it down and the next run
+follows it.
+
+</Step>
+<Step title="Connect the survey sheet and Slack">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches the
+model, the agent reads:
+
+- **Survey responses from Google Sheets** — the full export of NPS/CSAT scores,
+  comments, and timestamps, read-only.
+- **Posts to Slack** — one weekly summary: the score and its trend, the top
+  themes with quotes and counts, and the leading detractor drivers.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** on the survey sheet — it never edits a row, adds a
+column, or writes back a score. It never contacts a respondent. Its only output
+is the Slack post, and that post is a report, not an action. Credentials are
+encrypted in the Secrets Manager and injected at runtime, never shown to the model
+or written to logs.
+
+</Step>
+<Step title="Post the weekly summary">
+
+With that in place, each Monday brings one Slack post: the current NPS/CSAT
+score and how it moved since last week, the themes behind the comments with a
+representative quote and count for each, and the drivers pulling detractors down
+this week. The customer-success team reads it and decides what, if anything, to
+act on.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** spawns a fresh session with a read-only **connector** into the
+  survey Google Sheet. The clustering and scoring rules live as **skills** and
+  **memory**. The agent reads the full history every time and writes nothing but
+  the Slack post.
+</Callout>
+
+## Guardrails
+
+The agent reads a live survey export, so its access is scoped and one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only the sheet it's scoped to, and only the Slack post leaves the sandbox.
+- **Scoped secrets.** The Google Sheets and Slack credentials are encrypted in the
+  Secrets Manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Read-only, report-only.** The connector into the survey sheet is read-only —
+  the agent cannot edit a response, add a row, or write back a score — and it
+  never reaches out to a respondent. It reports; it doesn't act.
+- **Everything is code.** The agent's clustering rules, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every week" label="Themes and score trend recomputed from the full response history" />
+  <Stat value="Read-only" label="Nothing written back to the survey sheet" />
+  <Stat value="1 post" label="Score trend, themes, and detractor drivers in one Slack message" />
+</StatGrid>
+
+Survey comments that used to sit unread in a spreadsheet now arrive every week as
+a set of named themes with quotes and counts, next to the score's actual
+week-over-week move and what's driving it. The agent only reads and reports; the
+team still decides what to do about each theme.

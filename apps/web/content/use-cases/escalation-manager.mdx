@@ -1,0 +1,157 @@
+---
+title: "How we route support escalations"
+description: The escalation-manager agent we run on Kortix — every 15 minutes it scans the Plain queue for SLA breaches, VIP accounts, and high-severity tickets, routes each to the right team, opens a linked Linear issue when engineering is needed, and posts to our escalation Slack channel. It never closes a ticket or promises a resolution.
+date: "2026-03-20"
+author: team
+tags:
+  - Support
+  - Case Study
+  - Enterprise
+template: escalation-manager
+---
+
+A ticket that needs to jump the line looks like any other ticket until someone
+reads it closely: the SLA clock that's about to run out, the account that
+happens to be one of our biggest, the report that's actually a full outage. In
+a busy queue, those tickets sit in first-in-first-out order next to everything
+else, and the person who should be routing them is also the person answering
+the queue.
+
+We run an escalation-manager agent on Kortix that checks the Plain queue every
+15 minutes, finds the tickets that meet our escalation criteria, routes each
+one to the right internal team, opens a linked Linear issue when it's an
+engineering problem, and posts the whole thing to our escalation Slack
+channel. It routes, links, and alerts. It never closes a ticket and never
+tells a customer when or how their issue will be fixed.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every 15 minutes</Fact>
+  <Fact label="Connected systems">Plain · Linear · Slack</Fact>
+  <Fact label="Mode">Routes + alerts · never closes a ticket</Fact>
+</KeyFacts>
+
+## The problem
+
+Escalation-worthy tickets don't announce themselves. An SLA breach is a
+timestamp comparison someone has to actually run. A VIP account is a fact
+that lives in a spreadsheet or a CRM field, not in the ticket itself. High
+severity is a judgment call that depends on reading the ticket body, not just
+its tags. Any one of those, on its own, is easy to miss in a queue moving fast
+enough that most tickets get handled in the order they arrived.
+
+The common fallback is a person periodically scanning the queue for anything
+that looks urgent, on top of their regular ticket load. It works until the
+queue is busy, at which point the SLA-breaching ticket and the VIP account's
+ticket wait behind ten routine ones, and the bug report that should already be
+a Linear issue is still just a paragraph in a support thread nobody on
+engineering has seen.
+
+## What we built
+
+On Kortix, a cron fires every 15 minutes and spawns a fresh agent session. It
+reads the current state of the Plain queue, checks every open ticket against
+three criteria — SLA breach, VIP account, high severity — routes each
+qualifying ticket to the right internal team, opens a linked Linear issue when
+the ticket is an engineering problem, and posts one alert per escalation to
+the escalation Slack channel with the reason, the routed team, and the linked
+issue. It never closes a ticket, and it never tells the customer anything.
+
+## How it works
+
+<Steps>
+<Step title="Run every 15 minutes, from scratch">
+
+A **cron trigger** fires every 15 minutes. Each firing spawns a fresh
+**session** with no memory of the last one — the agent re-checks the entire
+open queue against Plain's current state rather than trusting what it
+concluded 15 minutes ago. Nothing carries over, and nothing is missed because
+a prior run's notes went stale.
+
+</Step>
+<Step title="Give the agent the escalation rules">
+
+What counts as an escalation lives as a **skill**: the SLA targets per
+severity tier, the VIP account list, what qualifies as high severity, and the
+routing table mapping ticket type to owning team. When we tighten an SLA
+target or add an account to the VIP list, we update the skill and the next
+sweep applies it.
+
+</Step>
+<Step title="Connect the queue, the tracker, and the channel">
+
+Through scoped **connectors** and **secrets**, brokered server-side so no raw
+credential reaches the model, the agent:
+
+- **Reads and routes tickets in Plain** — pulls the open queue, checks SLA
+  timers and account metadata, and tags or assigns a qualifying ticket to the
+  right internal team. It never resolves or closes a ticket.
+- **Opens a linked issue in Linear** — when a ticket needs engineering work,
+  it files an issue in the engineering team's tracker with the ticket's
+  context attached, and links the two records to each other.
+- **Posts to Slack** — one alert per escalation in the escalation channel:
+  which ticket, why it escalated, which team it went to, and the linked issue
+  if one was opened.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's write access to Plain is scoped to **routing, not resolving** — it
+can tag and assign a ticket, but it cannot close one or mark it resolved. It
+never drafts or sends anything to the customer, and it never states or
+implies a resolution timeline. The only things that leave the sandbox are the
+Plain routing update, the linked Linear issue, and the Slack alert.
+
+</Step>
+<Step title="Route, link, and alert">
+
+With that in place, every 15 minutes the queue gets rechecked against the
+current SLA clock, the current VIP list, and the current severity of every
+open ticket. Whatever qualifies gets routed to the right team, gets a linked
+Linear issue if engineering needs to see it, and shows up in the escalation
+channel with the reason attached. The team decides what happens from there.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A 15-minute **cron** spawns a fresh session that reads the Plain queue
+  against **skill**-defined SLA targets, a VIP list, and a severity bar. It
+  routes the ticket, opens a **linked Linear issue** for engineering work, and
+  posts to Slack — it never closes a ticket or promises the customer anything.
+</Callout>
+
+## Guardrails
+
+The agent has write access to the support queue and the issue tracker, so its
+authority is scoped tightly to routing and alerting:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Plain, Linear, and the escalation Slack channel — nothing else.
+- **Scoped secrets.** The Plain API key is encrypted in the Secrets Manager and
+  injected into the sandbox at runtime; the Linear connector is brokered
+  server-side. No raw credential is ever shown to the model or written to
+  logs.
+- **Route and alert, never resolve.** The agent can tag, assign, and open a
+  linked issue. It cannot close a ticket, mark one resolved, or take any
+  action that ends the customer's case.
+- **No promises to the customer.** The agent never drafts or sends a
+  customer-facing message and never states a resolution timeline. Every
+  output is internal: the routing tag, the linked issue, and the Slack alert.
+- **Everything is code.** The SLA targets, the VIP list, the severity bar, and
+  the routing table are files in the repo, versioned and changed through a
+  reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every 15 min" label="The open queue rechecked against the current SLA clock" />
+  <Stat value="0 closures" label="The agent routes and alerts; it never closes or resolves a ticket" />
+  <Stat value="1 linked issue" label="Per engineering escalation, traceable from ticket to issue and back" />
+</StatGrid>
+
+Tickets that used to wait behind the rest of the queue for someone to notice
+now get caught within 15 minutes of qualifying, routed to the team that owns
+them, and — when it's an engineering problem — turned into a linked issue
+before anyone has to ask. The agent routes, links, and alerts; the team
+decides how the ticket actually gets resolved.

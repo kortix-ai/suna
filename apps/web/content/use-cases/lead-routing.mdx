@@ -1,0 +1,153 @@
+---
+title: "How we route inbound leads to the right rep"
+description: The lead-routing agent we run on Kortix — every 15 minutes it scores each new HubSpot lead, assigns it to the right rep by territory, segment, or round-robin, and notifies the rep in Slack, flagging anything ambiguous for a human instead of guessing.
+date: "2026-04-18"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+template: lead-routing
+---
+
+A new inbound lead is worth the most in the first few minutes after it lands.
+Every minute it sits unassigned is a minute a rep isn't calling it, and the
+minute it does get routed still depends on someone checking the queue,
+knowing which territory owns which region, and remembering whose turn it is
+in the rotation. That's a lot to ask of a manual process running every
+fifteen minutes, all day.
+
+We run a lead-routing agent on Kortix that does exactly that check, every 15
+minutes: read HubSpot for new leads, assign each one to the right rep, notify
+them in Slack, and flag anything it can't confidently route for a human. It
+never deletes or merges a lead — assignment and notification are the only
+actions it takes.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Cron, every 15 minutes</Fact>
+  <Fact label="Connected systems">HubSpot · Slack</Fact>
+  <Fact label="Mode">Fresh session · assigns + notifies, never deletes or merges</Fact>
+</KeyFacts>
+
+## The problem
+
+Routing rules live in more than one place: territory boundaries by region,
+segment specialists by company size or industry, and a round-robin pool for
+whatever's left over. A rep checking the lead queue has to hold all of that
+in their head, get it right every time, and still do it fast enough that the
+lead is still warm when the notification lands.
+
+The common fallback is a static routing workflow inside the CRM — a fixed
+if/then chain that breaks the moment a territory is split, a rep goes on
+leave, or a lead doesn't cleanly fit one bucket. Those leads get stuck in a
+queue, silently misrouted to whoever built the workflow's default, or
+followed up on days later once someone notices. None of that is fast, and
+none of it flags the leads that most need a human's judgment.
+
+## What we built
+
+On Kortix, a cron fires an agent every 15 minutes. It spawns a fresh session
+with scoped access to HubSpot, reads every new inbound lead that hasn't been
+routed yet, scores it for intent, matches it against the territory and
+segment rules, and falls back to whichever rep in the round-robin pool has
+taken the fewest leads so far this week. It assigns the HubSpot owner, posts
+a notification to the rep's Slack channel, and calls out anything high-intent
+so it gets worked first. A lead it can't confidently route — missing
+territory data, no segment match, a genuine tie — goes to a separate Slack
+channel for a human to assign by hand. It never deletes or merges a lead.
+
+## How it works
+
+<Steps>
+<Step title="Run on a 15-minute cron">
+
+A **cron trigger** fires the agent every 15 minutes. Each firing spawns a
+fresh **session** in its own sandbox — there's no persistent process and no
+local ledger. The HubSpot record itself is the memory: a routing-status
+property marks a lead as handled, so the next sweep only looks at what's
+genuinely new.
+
+</Step>
+<Step title="Give the agent the routing rules">
+
+The territory map, the segment-to-specialist mapping, and the round-robin
+pool live as a **skill** and **memory** that travels with the agent, not as a
+workflow buried in the CRM. When territories get redrawn or a rep joins the
+rotation, we update the skill and the very next sweep routes against the new
+rules — no CRM workflow to rebuild.
+
+</Step>
+<Step title="Connect HubSpot and Slack">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches
+the model, the agent:
+
+- **Reads new leads from HubSpot** — lifecycle stage, region, company size,
+  industry, title, and engagement signals.
+- **Writes the owner and a routing-status marker back to HubSpot** — the only
+  writes it makes, and never a delete or a merge.
+- **Posts to Slack** — an assignment notification to the rep, a distinct flag
+  for high-intent leads, and a separate escalation post for anything it can't
+  confidently route.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent assigns and notifies strictly per the routing rules. It never
+deletes or merges a lead record under any circumstance, and it never guesses
+an owner for a lead that's ambiguous or doesn't match the rules — that lead
+goes to a human instead. Credentials are encrypted in the Secrets Manager and
+injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Assign, notify, and escalate">
+
+With that in place, every 15 minutes brings one pass over the new-lead queue:
+each lead lands on the right rep's desk with the reason it was routed there,
+high-intent leads are called out so they get worked first, and anything
+genuinely ambiguous waits in a separate channel for a human to assign. No
+lead sits unrouted for more than one cycle without someone knowing why.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A 15-minute **cron** spawns a fresh session with scoped **connector** access
+  to HubSpot and a **channel** into Slack. The territory, segment, and
+  round-robin rules live as **skills** and **memory**. The agent assigns and
+  notifies exactly per those rules, and hands anything it can't confidently
+  route to a human.
+</Callout>
+
+## Guardrails
+
+The agent writes to the lead record, so its write access is narrow and its
+escalation path is explicit:
+
+- **Never delete or merge.** The agent can set a lead's owner and a
+  routing-status marker. It cannot delete a lead, merge two records, or touch
+  any other field, no matter how confident the routing rules are.
+- **Ambiguous means human, not a guess.** A lead with no territory match, no
+  segment match, and no clean tiebreak in the round-robin pool is flagged in
+  a dedicated Slack channel for a person to assign. The agent never invents a
+  fallback owner.
+- **Scoped secrets.** The HubSpot credential is encrypted in the Secrets
+  Manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Everything is code.** The territory map, segment rules, round-robin pool,
+  and intent-scoring criteria are files in the repo, versioned and changed
+  through a reviewed **change request** rather than a CRM workflow builder.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every 15 min" label="Sweep of the new-lead queue, all day" />
+  <Stat value="0" label="Leads deleted or merged by the agent — ever" />
+  <Stat value="3-way routing" label="Territory, segment, and round-robin in one pass" />
+</StatGrid>
+
+Leads that used to sit in a queue waiting for someone to notice now land on
+the right rep's desk within 15 minutes, tagged with why they were routed
+there and whether they need to be worked first. The agent assigns and
+notifies; a human still owns every lead it can't confidently place.

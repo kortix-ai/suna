@@ -1,0 +1,147 @@
+---
+title: "How we triage reported phishing emails"
+description: The phishing-triage agent we run on Kortix — every 15 minutes it pulls newly reported emails from our phishing-report inbox, inspects headers, links, and attachments for phishing indicators, and posts a risk verdict with a recommended action to our security channel. It only recommends; a human decides whether to block a sender or warn staff.
+date: "2026-06-06"
+author: team
+tags:
+  - Security
+  - Case Study
+  - Enterprise
+template: phishing-triage
+---
+
+Security awareness training tells every employee to forward anything suspicious
+to a phishing-report inbox, and they do — which means that inbox fills up
+faster than one person can open each message, view the raw headers, hover over
+every link, and decide whether it's real. The obvious spam never gets that far;
+the gateway already caught it. What lands in the report inbox is the ambiguous
+case, the one that needs an actual look, and during a real campaign it arrives
+in a burst.
+
+We run a phishing-triage agent on Kortix that checks that inbox every 15
+minutes, analyzes each reported email, and posts a verdict and a recommended
+action to our security Slack channel. It reads mail and it recommends; it never
+blocks a sender, deletes a message, or touches anything else in Gmail.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every 15 minutes</Fact>
+  <Fact label="Connected systems">Gmail · Slack</Fact>
+  <Fact label="Mode">Read-only on Gmail · one Slack alert per report</Fact>
+</KeyFacts>
+
+## The problem
+
+A secure email gateway filters out the obvious junk, so what a human forwards
+to the phishing-report inbox is already the hard tier: a plausible-looking
+invoice, a lookalike login page, a reply-to that doesn't match the display
+name. Judging it well means checking SPF/DKIM/DMARC results, tracing where a
+shortened link actually resolves, and noticing an attachment that's a macro
+document dressed up as a PDF — several checks, every time, before anyone can
+say whether it's real.
+
+The common approaches don't hold up under volume. A person checks the inbox
+when they get to it, so a real campaign sits unflagged for hours. A static
+blocklist of known-bad domains misses this morning's freshly registered
+lookalike. A rule that auto-quarantines anything reported is fast but wrong
+often enough that people stop trusting it — and a false block on a legitimate
+sender is its own incident.
+
+## What we built
+
+On Kortix, a cron fires every 15 minutes and spawns a fresh agent session with
+read-only access to the phishing-report Gmail inbox. It pulls every message
+reported since the last check, examines the sender's authentication results,
+the reply-to and return-path against the display name, where every link
+actually resolves, and any attachments, then classifies the risk and drafts a
+verdict — block this sender, warn everyone who may have gotten the same email,
+or no action needed — and posts it to the security Slack channel. It changes
+nothing in Gmail itself.
+
+## How it works
+
+<Steps>
+<Step title="Run on a 15-minute cron">
+
+A **cron trigger** fires the agent every 15 minutes. Each firing spawns a
+fresh **session** in its own sandbox, so a burst of reports during an active
+campaign gets picked up on the next tick instead of waiting on a person, and
+nothing carries state between runs.
+
+</Step>
+<Step title="Give the agent the indicator rulebook">
+
+What counts as a red flag lives as a **skill**: how to read SPF/DKIM/DMARC
+results, what a reply-to/return-path mismatch means, how to trace a shortened
+or embedded link to its real destination, which attachment types are
+high-risk, and how those signals combine into a risk tier and a recommended
+action.
+
+</Step>
+<Step title="Connect the report inbox read-only">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches
+the model, the agent reads:
+
+- **The phishing-report Gmail inbox** — every newly reported message, its full
+  headers, its links, and its attachments.
+- **Posts to Slack** — one verdict per reported email, with the risk tier, the
+  indicators that drove it, and the recommended action.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent **analyzes, recommends, and alerts — nothing more.** It never blocks
+a sender, deletes or moves a message, or takes any remediation action in
+Gmail or anywhere else. The recommended action is exactly that: a
+recommendation, for a person on the security team to act on.
+
+</Step>
+<Step title="Post the verdict">
+
+With that in place, every reported email produces one Slack post within 15
+minutes: a risk tier, the specific indicators found — the failed
+authentication, the mismatched link, the suspicious attachment — and a
+recommended action. Security reads it and decides whether to block the
+sender, warn affected staff, or close it out as benign.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A 15-minute **cron** spawns a fresh session with a read-only **connector**
+  into the phishing-report Gmail inbox. The indicator rulebook lives as a
+  **skill**. The agent classifies and recommends; it never blocks, deletes, or
+  remediates.
+</Callout>
+
+## Guardrails
+
+The agent reads live employee reports of suspected attacks, so its access is
+scoped and strictly one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only the phishing-report inbox and the security channel; nothing else
+  leaves the sandbox.
+- **Scoped secrets.** The Gmail credential is encrypted in the Secrets Manager
+  and injected into the sandbox at runtime, never exposed to the model or the
+  logs.
+- **Recommend-only.** The agent analyzes, classifies, and recommends. It never
+  blocks a sender, deletes or quarantines mail, or takes any other remediation
+  action — every action it names is for a human to carry out.
+- **Everything is code.** The indicator rulebook, the risk tiers, and the
+  per-system permissions are files in the repo, versioned and changed through
+  a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="15 min" label="Worst-case delay before a reported email gets a verdict" />
+  <Stat value="Read-only" label="Nothing blocked, deleted, or changed in Gmail automatically" />
+  <Stat value="3 signals" label="Headers, links, and attachments checked on every report" />
+</StatGrid>
+
+Reports that used to wait for someone to have a free moment now get a verdict
+within 15 minutes, with the specific indicators laid out and a recommended
+action attached. The agent never touches a sender or a mailbox; the security
+team still makes every call, just with the analysis already done.
