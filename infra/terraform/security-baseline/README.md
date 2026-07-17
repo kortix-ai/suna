@@ -6,12 +6,18 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 ## What it manages
 - IAM account password policy (DCF-68 / DCF-350)
 - CloudTrail KMS CMK + multi-region trail + log-file validation + S3 data events (DCF-54 / DCF-478 / DCF-406)
-- GuardDuty detectors in all 17 opted-in commercial regions (DCF-87)
+- GuardDuty detectors with 15-minute finding publication and managed EC2/EKS/ECS
+  Runtime Monitoring agents in all 17 opted-in commercial regions (DCF-87)
+- Regional GuardDuty EventBridge rules forwarding every finding to the existing
+  central operations alert topic (DCF-87)
 - EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
 - VPC Flow Logs delivery role + log group (DCF-406)
 - IAM groups, attachments, memberships + 2 customer-managed policies (DCF-776)
+- Weekly SSM security-patch installation and reboot-if-needed for every current
+  and replacement dev/prod EKS worker, serialized one node at a time
+  (DCF-152 / DCF-677)
 - Regional ALB/WAF/alarm and backup-failure monitoring is isolated in the
   sibling `compliance-monitoring` stack and state.
 
