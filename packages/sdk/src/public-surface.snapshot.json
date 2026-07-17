@@ -602,6 +602,7 @@
     "promptOpenCodeMessage",
     "providerConnectedInSecrets",
     "ptyKeys",
+    "ptyMutationOverrides",
     "readLastSeen",
     "readStartStash",
     "recoverFromSendFailure",

@@ -12,9 +12,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * terminal so "how do I get a shell into this from my machine?" is answered
  * right where a shell already lives.
  *
- * Collapsed, it shows just the one command that matters (`kortix sessions
- * connect <id>`) with a copy button. Expanded, it adds the one-time install
- * step and a one-line explainer.
+ * Collapsed, it teases the one command that works on any machine — the
+ * one-time CLI install. Expanded, it shows the full two-step flow:
+ * 1. install, 2. `kortix sessions connect <id>`.
  */
 export function SessionTerminalConnectBar({ projectSessionId }: { projectSessionId: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -31,7 +31,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
       >
         <Laptop className="h-3.5 w-3.5 shrink-0" />
         <span className="shrink-0 font-medium">Connect from your machine</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-white/35">{connectCmd}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-white/35">{installCmd}</span>
         <ChevronRight
           className={cn('h-3.5 w-3.5 shrink-0 transition-transform', expanded && 'rotate-90')}
         />

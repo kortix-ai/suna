@@ -214,7 +214,9 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
     })
     .catch(() => codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers }))
     .then((html) => {
-      cacheHtml(key, html);
+      // null = the highlighter isn't available (yet) — don't negative-cache
+      // it, so a later call can retry once the highlighter is up.
+      if (html !== null) cacheHtml(key, html);
       shikiPending.delete(key);
       return html;
     })

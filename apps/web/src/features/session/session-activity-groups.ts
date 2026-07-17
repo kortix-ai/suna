@@ -13,16 +13,23 @@ export function shellActivityGroupLabel(count: number, running: boolean): string
 }
 
 /**
- * Tools that must never fold into a "Tool · Nx" group. Each call is a distinct
- * artifact the user needs on its own row:
- *   - write: distinct files (index.html, styles.css, …)
+ * Tools that must never fold into a "Tool · Nx" group:
  *   - show / show-user: rendered output (preview, image, viewer) the user has
  *     to actually see — folding it behind a group means it can be missed.
+ * `write` used to be here ("distinct files"), but a scaffold run writing six
+ * JSON files as six rows buries the narrative — the grouped row lists every
+ * file inside, nothing is lost.
  */
-export const NO_GROUP_ACTIVITY_TOOLS = new Set(['write', 'show', 'show_user']);
+export const NO_GROUP_ACTIVITY_TOOLS = new Set(['show', 'show_user']);
 
 export function isNoGroupActivityTool(toolName: string | undefined): boolean {
   return NO_GROUP_ACTIVITY_TOOLS.has(normalizeActivityToolName(toolName));
+}
+
+export function writeActivityGroupLabel(count: number, running: boolean): string {
+  const safeCount = Math.max(0, count);
+  const prefix = running ? 'Writing' : 'Wrote';
+  return `${prefix} ${safeCount} file${safeCount === 1 ? '' : 's'}`;
 }
 
 /**
