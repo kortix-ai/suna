@@ -108,6 +108,55 @@ flow("CONN-9", { domain: "connectors", routes: ["GET /v1/executor/projects/:proj
   });
 });
 
+flow(
+  "CONN-15",
+  {
+    domain: "connectors",
+    routes: [
+      "GET /v1/executor/projects/:projectId/discover/integrations",
+      "GET /v1/executor/projects/:projectId/discover/integrations/detail",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("project admin browses the direct catalogue", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/executor/projects/:projectId/discover/integrations", {
+          params: { projectId: p.id },
+          query: { q: "HubSpot" },
+        });
+      r.status([200, 502]);
+      if (r.statusCode !== 200) return;
+      r.body().exists("$.items").exists("$.total").exists("$.hasMore");
+      const firstId = r.json<{ items?: Array<{ id?: string }> }>().items?.[0]?.id;
+      if (!firstId) return;
+      const detail = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/executor/projects/:projectId/discover/integrations/detail", {
+          params: { projectId: p.id },
+          query: { id: firstId },
+        });
+      detail.status(200).body().exists("$.item").exists("$.variants");
+    });
+    await ctx.step("NONMEMBER cannot browse or resolve catalogue records", async () => {
+      const list = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/executor/projects/:projectId/discover/integrations", {
+          params: { projectId: p.id },
+        });
+      list.status(403);
+      const detail = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/executor/projects/:projectId/discover/integrations/detail", {
+          params: { projectId: p.id },
+          query: { id: "openapi/example" },
+        });
+      detail.status(403);
+    });
+  },
+);
+
 flow("CONN-12", { domain: "connectors", routes: ["GET /v1/executor/projects/:projectId/connectors/:slug/config"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("unknown connector → 404", async () => {
