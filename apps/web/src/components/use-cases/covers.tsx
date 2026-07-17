@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import {
+  Activity,
   BarChart3,
   CalendarClock,
   CheckCircle2,
@@ -7,27 +8,38 @@ import {
   ClipboardCheck,
   ClipboardList,
   Coffee,
+  CreditCard,
   Database,
+  FileSignature,
+  Files,
   FileText,
+  Filter,
   GitMerge,
   GitPullRequest,
   KeyRound,
   Mail,
   MessagesSquare,
   PhoneCall,
+  Presentation,
   Radar,
   Receipt,
+  RefreshCw,
+  Repeat,
+  Rocket,
   ScrollText,
   Send,
   ShieldCheck,
   Siren,
   Tag,
+  Target,
   TrendingDown,
   TrendingUp,
   UserMinus,
   UserPlus,
+  UserRoundSearch,
   Users,
   UserSearch,
+  Wallet,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
 
@@ -433,5 +445,91 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
       }
       b={<Linear />}
     />
+  ),
+  // ── business-function batch ────────────────────────────────────────────────
+  'payment-recovery': () => (
+    <RowCover>
+      <IconTile>
+        <CreditCard className={cn(ic, 'text-rose-500')} />
+      </IconTile>
+      <Kortix />
+      <div className={cn(TILE, 'bg-emerald-500 text-white')}>
+        <CircleDollarSign className={ic} />
+      </div>
+    </RowCover>
+  ),
+  'ap-invoice-processing': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <Files className={cn(ic, 'text-amber-500')} />
+        </IconTile>
+      }
+      b={<Slack />}
+    />
+  ),
+  'saas-spend-audit': () => (
+    <FeatureCover glow="bg-lime-500/15">
+      <Wallet className={cn(big, 'text-lime-600')} />
+    </FeatureCover>
+  ),
+  'renewal-manager': () => (
+    <FeatureCover glow="bg-indigo-500/15">
+      <Repeat className={cn(big, 'text-indigo-500')} />
+    </FeatureCover>
+  ),
+  'rfp-responder': () => (
+    <FeatureCover glow="bg-purple-500/15">
+      <FileSignature className={cn(big, 'text-purple-500')} />
+    </FeatureCover>
+  ),
+  'pipeline-hygiene': () => (
+    <FeatureCover glow="bg-pink-500/15">
+      <Filter className={cn(big, 'text-pink-500')} />
+    </FeatureCover>
+  ),
+  'content-refresh': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <RefreshCw className={cn(ic, 'text-orange-500')} />
+        </IconTile>
+      }
+      b={<GitHub />}
+    />
+  ),
+  'ad-performance': () => (
+    <FeatureCover glow="bg-rose-500/15">
+      <Target className={cn(big, 'text-rose-500')} />
+    </FeatureCover>
+  ),
+  'qbr-prep': () => (
+    <FeatureCover glow="bg-blue-500/15">
+      <Presentation className={cn(big, 'text-blue-500')} />
+    </FeatureCover>
+  ),
+  'customer-onboarding': () => (
+    <FeatureCover glow="bg-sky-500/15">
+      <Rocket className={cn(big, 'text-sky-500')} />
+    </FeatureCover>
+  ),
+  'data-pipeline-monitor': () => (
+    <DuoCover
+      a={
+        <IconTile>
+          <Activity className={cn(ic, 'text-cyan-500')} />
+        </IconTile>
+      }
+      b={
+        <IconTile>
+          <Database className={cn(ic, 'text-foreground/70')} />
+        </IconTile>
+      }
+    />
+  ),
+  'candidate-sourcing': () => (
+    <FeatureCover glow="bg-violet-500/15">
+      <UserRoundSearch className={cn(big, 'text-violet-500')} />
+    </FeatureCover>
   ),
 };
