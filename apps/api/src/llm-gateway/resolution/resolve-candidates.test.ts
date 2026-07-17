@@ -56,6 +56,14 @@ const resolveCodexCredential = mock(async () => {
 });
 mock.module('../credentials/codex', () => ({ resolveCodexCredential, CodexRefreshError }));
 
+// Captures every id `livePricing` is called with, in call order — lets tests
+// assert resolveCandidates strips the Bedrock cross-region inference-profile
+// prefix (`us.`/`eu.`/`apac.`/`us-gov.`) before the PRICING lookup while
+// still keeping the full profile id as `resolvedModel` (the id actually sent
+// upstream). Mirrors the real stripBedrockInferenceProfilePrefix (descriptors.ts)
+// closely enough to exercise the call site; the prefix-stripping logic itself
+// is unit-tested directly in descriptors.test.ts.
+let livePricingCalls: string[] = [];
 mock.module('./descriptors', () => ({
   codexDescriptor: (credential: { access: string }, model: string) => ({
     provider: 'openai-codex',
@@ -66,7 +74,12 @@ mock.module('./descriptors', () => ({
     markup: 0,
     resolvedModel: model,
   }),
-  livePricing: () => undefined,
+  livePricing: (modelId: string) => {
+    livePricingCalls.push(modelId);
+    return undefined;
+  },
+  stripBedrockInferenceProfilePrefix: (modelId: string) =>
+    modelId.replace(/^(us-gov|us|eu|apac)\.(?=.)/, ''),
   managedCandidates: (managed: { id: string }) => [
     {
       provider: 'kortix-managed',
@@ -132,6 +145,7 @@ beforeEach(() => {
   runtimeManagedModel = undefined;
   knownManagedModelId = null;
   capabilities = { reasoning: false, temperature: true };
+  livePricingCalls = [];
   getAccountTier.mockClear();
   getCachedAccountTier.mockClear();
   getProjectSecretValue.mockClear();
@@ -226,6 +240,38 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     expect(candidates[0]).toMatchObject({
       baseUrl: 'https://bedrock-runtime.us-east-1.amazonaws.com',
     });
+  });
+
+  // Regression coverage for the $0 upstream-cost-hint bug: models.dev only
+  // catalogs the BASE Bedrock model id, never the cross-region
+  // inference-profile id the user actually requests — so the PRICING lookup
+  // must strip the `us./eu./apac./us-gov.` prefix while `resolvedModel` (what
+  // actually gets invoked) keeps the full profile id untouched.
+  test('BYOK Bedrock: pricing lookup strips the cross-region inference-profile prefix, resolvedModel keeps it', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: 'eu-west-1' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
+
+    expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-4-8' });
+    expect(livePricingCalls).toEqual(['anthropic.claude-opus-4-8']);
+  });
+
+  test('BYOK non-Bedrock provider: pricing lookup is never run through the Bedrock prefix-strip', async () => {
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecret = 'sk-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+
+    expect(livePricingCalls).toEqual(['claude-sonnet-4.6']);
   });
 
   test('Bedrock with no project key connected: provider_not_connected (never a silent managed fallback)', async () => {
