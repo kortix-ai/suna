@@ -374,6 +374,7 @@
                     "pipedream",
                     "mcp",
                     "openapi",
+                    "postman",
                     "graphql",
                     "http",
                     "channel"
@@ -1326,6 +1327,7 @@
                     "pipedream",
                     "mcp",
                     "openapi",
+                    "postman",
                     "graphql",
                     "http",
                     "channel"

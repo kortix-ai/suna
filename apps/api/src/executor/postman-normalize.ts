@@ -8,6 +8,11 @@ export interface PostmanNormalizationResult {
 const COLLECTION_SCHEMA = /schema\.getpostman\.com\/json\/collection\/v2(?:\.0|\.1)\.0\/collection\.json/i;
 const TEMPLATE_RE = /{{\s*([^{}]+?)\s*}}/g;
 
+function isCredentialName(value: string): boolean {
+  const compact = value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return /(?:apikey|hapikey|accesstoken|authtoken|authorization|password|passwd|secret|credential|cookie)$/.test(compact);
+}
+
 function segment(value: string): string {
   return value
     .replace(/[^a-zA-Z0-9]+/g, '_')
@@ -29,7 +34,11 @@ function collectionVariables(raw: unknown): Map<string, string> {
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
     const item = entry as Record<string, unknown>;
-    if (item.disabled === true || String(item.type ?? '').toLowerCase() === 'secret') continue;
+    if (
+      item.disabled === true ||
+      String(item.type ?? '').toLowerCase() === 'secret' ||
+      isCredentialName(String(item.key ?? ''))
+    ) continue;
     if (typeof item.key !== 'string') continue;
     const value = item.value;
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -59,6 +68,30 @@ function requestUrl(raw: unknown): string | null {
     : '';
   if (!host) return null;
   return `${protocol}${host}${path ? `/${path}` : ''}${query ? `?${query}` : ''}`;
+}
+
+function stripCredentialQuery(url: string): { url: string; removed: boolean } {
+  const question = url.indexOf('?');
+  if (question < 0) return { url, removed: false };
+  const hash = url.indexOf('#', question);
+  const suffix = hash >= 0 ? url.slice(hash) : '';
+  const query = url.slice(question + 1, hash >= 0 ? hash : undefined);
+  const kept: string[] = [];
+  let removed = false;
+  for (const part of query.split('&')) {
+    const rawKey = part.split('=', 1)[0] ?? '';
+    let key = rawKey;
+    try { key = decodeURIComponent(rawKey); } catch { /* keep raw */ }
+    if (isCredentialName(key)) {
+      removed = true;
+      continue;
+    }
+    if (part) kept.push(part);
+  }
+  return {
+    url: `${url.slice(0, question)}${kept.length ? `?${kept.join('&')}` : ''}${suffix}`,
+    removed,
+  };
 }
 
 function templateVariables(value: string): string[] {
@@ -134,6 +167,7 @@ export function normalizePostmanCollection(doc: any): PostmanNormalizationResult
   const actions: NormalizedAction[] = [];
   const rootVariables = collectionVariables(doc.variable);
   if (hasScripts(doc)) warnings.push('collection pre-request/test scripts were ignored');
+  if (doc.auth) warnings.push('collection authentication was ignored; configure connector auth in Kortix');
 
   const walk = (items: unknown[], folders: string[], inherited: Map<string, string>) => {
     for (const candidate of items) {
@@ -152,23 +186,29 @@ export function normalizePostmanCollection(doc: any): PostmanNormalizationResult
 
       const request = item.request as Record<string, any>;
       if (hasScripts(request)) warnings.push(`${[...folders, name].join(' / ')} scripts were ignored`);
+      if (request.auth) warnings.push(`${[...folders, name].join(' / ')} authentication was ignored; configure connector auth in Kortix`);
       const method = String(request.method ?? 'GET').toUpperCase();
       const unresolvedUrl = requestUrl(request.url);
       if (!unresolvedUrl) {
         warnings.push(`${[...folders, name].join(' / ')} has no usable URL and was skipped`);
         continue;
       }
-      const url = resolveKnownVariables(unresolvedUrl, variables).replace(
+      const renderedUrl = resolveKnownVariables(unresolvedUrl, variables).replace(
         /(^|\/)\:([A-Za-z_][A-Za-z0-9_]*)/g,
         '$1{{$2}}',
       );
+      const sanitizedUrl = stripCredentialQuery(renderedUrl);
+      const url = sanitizedUrl.url;
+      if (sanitizedUrl.removed) {
+        warnings.push(`${[...folders, name].join(' / ')} credential-like query parameter was ignored; configure connector auth in Kortix`);
+      }
 
       const headers: Record<string, string> = {};
       if (Array.isArray(request.header)) {
         for (const rawHeader of request.header) {
           if (!rawHeader || rawHeader.disabled === true || typeof rawHeader.key !== 'string') continue;
           const key = rawHeader.key.trim();
-          if (!key || /^(authorization|proxy-authorization|cookie|set-cookie)$/i.test(key)) continue;
+          if (!key || /^(authorization|proxy-authorization|cookie|set-cookie)$/i.test(key) || isCredentialName(key)) continue;
           headers[key] = resolveKnownVariables(String(rawHeader.value ?? ''), variables);
         }
       }

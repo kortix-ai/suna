@@ -18,7 +18,7 @@ export interface ConnectorAction {
 export interface AdminConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model. Always `shared` — `per_user` (each member's

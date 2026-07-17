@@ -362,6 +362,26 @@ provider = "mcp"
     expect(errorPaths).toContain('connectors[0].url');
   });
 
+  test('postman connector accepts a repository source and requires spec', () => {
+    const accepted = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "hubspot"
+provider = "postman"
+spec = "https://github.com/HubSpot/HubSpot-public-api-spec-collection"
+`);
+    expect(accepted.errorPaths).toEqual([]);
+    expect(accepted.valid).toBe(true);
+
+    const missing = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "hubspot"
+provider = "postman"
+`);
+    expect(missing.warningPaths).toContain('connectors[0].spec');
+  });
+
   test('auth.secret is rejected', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1

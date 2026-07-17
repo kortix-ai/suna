@@ -16,7 +16,7 @@ import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/executor) ───────────────────────────────────
 
-type Provider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+type Provider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
 
 interface ConnectorAction {
   path: string;
@@ -43,12 +43,12 @@ interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
-const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
+const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
 
 Manage the project's connectors — the integrations agents call as tools
-(Pipedream apps, MCP servers, OpenAPI/GraphQL/HTTP endpoints). Mirrors the
+(Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
 dashboard's Customize → Connectors. Connectors are project-wide visible; the
 only access gate is which AGENTS may call one (\`kortix agents scope\` /
 \`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
@@ -93,7 +93,7 @@ Add options (provider-specific):
   --transport <http|sse>   MCP transport (provider=mcp).
   --endpoint <url>         GraphQL endpoint (provider=graphql).
   --base-url <url>         HTTP base URL (provider=http).
-  --spec <url|path>        OpenAPI/GraphQL/HTTP spec ref.
+  --spec <url|path>        OpenAPI/Postman/GraphQL/HTTP spec or source ref.
   --auth-type <t>          none|bearer|basic|custom.
   --credential <mode>      shared (the only mode).
 

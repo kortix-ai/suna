@@ -88,6 +88,44 @@ describe('normalizeOpenApi', () => {
     expect(normalizeOpenApi(null)).toEqual([]);
     expect(normalizeOpenApi({})).toEqual([]);
   });
+
+  test('memoizes repeated schema refs within a large document', () => {
+    const shared = {
+      type: 'object',
+      properties: { id: { type: 'string' }, nested: { $ref: '#/components/schemas/Nested' } },
+    };
+    const actions = normalizeOpenApi({
+      paths: {
+        '/a': { get: { responses: { '200': { content: { 'application/json': { schema: { $ref: '#/components/schemas/Shared' } } } } } } },
+        '/b': { get: { responses: { '200': { content: { 'application/json': { schema: { $ref: '#/components/schemas/Shared' } } } } } } },
+      },
+      components: { schemas: { Shared: shared, Nested: { type: 'object', properties: { value: { type: 'string' } } } } },
+    });
+    expect(actions[0]!.outputSchema).toBe(actions[1]!.outputSchema);
+    expect((actions[0]!.outputSchema as any).properties.nested.properties.value.type).toBe('string');
+  });
+
+  test('bounds serialized schema expansion for deeply shared OpenAPI graphs', () => {
+    const schemas: Record<string, unknown> = {
+      Level0: { type: 'object', properties: { value: { type: 'string' } } },
+    };
+    for (let level = 1; level <= 18; level++) {
+      schemas[`Level${level}`] = {
+        type: 'object',
+        properties: {
+          left: { $ref: `#/components/schemas/Level${level - 1}` },
+          right: { $ref: `#/components/schemas/Level${level - 1}` },
+        },
+      };
+    }
+    const [action] = normalizeOpenApi({
+      paths: { '/tree': { get: { responses: { '200': { content: { 'application/json': { schema: { $ref: '#/components/schemas/Level18' } } } } } } } },
+      components: { schemas },
+    });
+    const serialized = JSON.stringify(action!.outputSchema);
+    expect(serialized.length).toBeLessThan(100_000);
+    expect(serialized).toContain('value');
+  });
 });
 
 describe('normalizePostmanCollection', () => {
@@ -99,6 +137,7 @@ describe('normalizePostmanCollection', () => {
     variable: [
       { key: 'baseUrl', value: 'https://api.hubapi.com', type: 'string' },
       { key: 'privateToken', value: 'must-not-be-imported', type: 'secret' },
+      { key: 'apiKey', value: 'also-must-not-be-imported', type: 'string' },
     ],
     item: [
       {
@@ -111,6 +150,7 @@ describe('normalizePostmanCollection', () => {
               header: [
                 { key: 'X-Trace', value: '{{traceId}}' },
                 { key: 'Authorization', value: 'Bearer {{privateToken}}' },
+                { key: 'X-API-Key', value: '{{apiKey}}' },
               ],
               url: {
                 raw: '{{baseUrl}}/crm/v3/objects/contacts/:contactId?archived={{archived}}',
@@ -156,7 +196,25 @@ describe('normalizePostmanCollection', () => {
     expect((create.inputSchema as any).properties.body).toMatchObject({ type: 'object' });
     expect((create.inputSchema as any).required).toContain('body');
     expect(JSON.stringify(result)).not.toContain('must-not-be-imported');
+    expect(JSON.stringify(result)).not.toContain('also-must-not-be-imported');
     expect(JSON.stringify(result)).not.toContain('Authorization');
+    expect(JSON.stringify(result)).not.toContain('X-API-Key');
+  });
+
+  test('drops credential-like query parameters instead of persisting inline values', () => {
+    const result = normalizePostmanCollection({
+      info: { name: 'credentials', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      item: [{
+        name: 'list',
+        request: {
+          method: 'GET',
+          url: 'https://example.com/items?hapikey=inline-secret&limit={{limit}}',
+        },
+      }],
+    });
+    expect((result.actions[0]!.binding as any).url).toBe('https://example.com/items?limit={{limit}}');
+    expect(JSON.stringify(result)).not.toContain('inline-secret');
+    expect(result.warnings.join('\n')).toContain('credential-like query parameter');
   });
 
   test('reports scripts and unsupported file bodies without executing them', () => {

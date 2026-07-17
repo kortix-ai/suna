@@ -58,6 +58,7 @@ export function normalizeOpenApi(doc: any): NormalizedAction[] {
   if (!doc || typeof doc !== 'object' || !doc.paths) return [];
   const server = firstServerUrl(doc);
   const actions: NormalizedAction[] = [];
+  const derefContext: DerefContext = { refs: new Map(), objects: new WeakMap(), bounded: new WeakMap() };
 
   for (const [pathTemplate, pathItem] of Object.entries(doc.paths as Record<string, any>)) {
     if (!pathItem || typeof pathItem !== 'object') continue;
@@ -72,11 +73,11 @@ export function normalizeOpenApi(doc: any): NormalizedAction[] {
         : [seg(pathTemplate) || 'root', method].filter(Boolean).join('.');
 
       const params = [...pathLevelParams, ...(Array.isArray(op.parameters) ? op.parameters : [])]
-        .map((p) => deref(doc, p))
+        .map((p) => deref(doc, p, new Set(), derefContext))
         .filter((p) => p && typeof p === 'object');
 
-      const inputSchema = buildOpenApiInput(doc, params, op.requestBody);
-      const outputSchema = buildOpenApiOutput(doc, op.responses);
+      const inputSchema = buildOpenApiInput(doc, params, op.requestBody, derefContext);
+      const outputSchema = buildOpenApiOutput(doc, op.responses, derefContext);
 
       const binding: ActionBinding = { kind: 'openapi', method: method.toUpperCase(), path: pathTemplate, server };
       actions.push({
@@ -98,26 +99,35 @@ function firstServerUrl(doc: any): string | null {
   return null;
 }
 
-function buildOpenApiInput(doc: any, params: any[], requestBody: any): Record<string, unknown> | null {
+function buildOpenApiInput(
+  doc: any,
+  params: any[],
+  requestBody: any,
+  context: DerefContext,
+): Record<string, unknown> | null {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
   for (const p of params) {
     if (!p?.name) continue;
+    const parameterSchema = boundedSchema(
+      deref(doc, p.schema, new Set(), context) ?? { type: 'string' },
+      context,
+    );
     properties[p.name] = {
-      ...(deref(doc, p.schema) ?? { type: 'string' }),
-      ...(p.description ? { description: String(p.description) } : {}),
+      ...parameterSchema,
+      ...(p.description ? { description: String(p.description).slice(0, 4_000) } : {}),
       'x-in': p.in,
     };
     if (p.required) required.push(p.name);
   }
 
-  const body = deref(doc, requestBody);
+  const body = deref(doc, requestBody, new Set(), context);
   if (body?.content) {
     const json = body.content['application/json'] ?? Object.values(body.content)[0];
-    const bodySchema = deref(doc, (json as any)?.schema);
+    const bodySchema = deref(doc, (json as any)?.schema, new Set(), context);
     if (bodySchema) {
-      properties.body = bodySchema;
+      properties.body = boundedSchema(bodySchema, context);
       if (body.required) required.push('body');
     }
   }
@@ -126,31 +136,88 @@ function buildOpenApiInput(doc: any, params: any[], requestBody: any): Record<st
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
 
-function buildOpenApiOutput(doc: any, responses: any): Record<string, unknown> | null {
+function buildOpenApiOutput(
+  doc: any,
+  responses: any,
+  context: DerefContext,
+): Record<string, unknown> | null {
   if (!responses || typeof responses !== 'object') return null;
   const ok = responses['200'] ?? responses['201'] ?? responses['2XX'] ?? responses.default;
-  const resolved = deref(doc, ok);
+  const resolved = deref(doc, ok, new Set(), context);
   const content = resolved?.content;
   if (!content) return null;
   const json = content['application/json'] ?? Object.values(content)[0];
-  const schema = deref(doc, (json as any)?.schema);
-  return schema ?? null;
+  const schema = deref(doc, (json as any)?.schema, new Set(), context);
+  return schema ? boundedSchema(schema, context) : null;
 }
 
 /** Resolve `$ref` (only `#/...` local refs) recursively, cycle-guarded. */
-function deref(doc: any, node: any, seen: Set<string> = new Set()): any {
+interface DerefContext {
+  refs: Map<string, any>;
+  objects: WeakMap<object, any>;
+  bounded: WeakMap<object, any>;
+}
+
+function deref(
+  doc: any,
+  node: any,
+  seen: Set<string> = new Set(),
+  context: DerefContext = { refs: new Map(), objects: new WeakMap(), bounded: new WeakMap() },
+): any {
   if (!node || typeof node !== 'object') return node;
   if (typeof node.$ref === 'string') {
     const ref = node.$ref;
     if (!ref.startsWith('#/') || seen.has(ref)) return {};
+    if (context.refs.has(ref)) return context.refs.get(ref);
     seen.add(ref);
     const target = resolvePointer(doc, ref.slice(2).split('/'));
-    return deref(doc, target, seen);
+    const resolved = deref(doc, target, seen, context);
+    context.refs.set(ref, resolved);
+    return resolved;
   }
-  if (Array.isArray(node)) return node.map((n) => deref(doc, n, new Set(seen)));
+  if (context.objects.has(node)) return context.objects.get(node);
+  if (Array.isArray(node)) {
+    const out: any[] = [];
+    context.objects.set(node, out);
+    for (const child of node) out.push(deref(doc, child, new Set(seen), context));
+    return out;
+  }
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(node)) out[k] = deref(doc, v, new Set(seen));
+  context.objects.set(node, out);
+  for (const [k, v] of Object.entries(node)) out[k] = deref(doc, v, new Set(seen), context);
   return out;
+}
+
+/**
+ * Convert a dereferenced schema graph into a bounded, JSON-safe tree. OpenAPI
+ * documents commonly reuse the same component through several branches; a
+ * naive JSON serialization expands that DAG exponentially even though it is
+ * small in memory. Connector schemas are discovery hints, so keep a generous
+ * first occurrence and replace repeated/deep branches with an empty schema.
+ */
+function boundedSchema(node: any, context: DerefContext): any {
+  if (!node || typeof node !== 'object') return node;
+  const cached = context.bounded.get(node);
+  if (cached) return cached;
+
+  let remaining = 2_000;
+  const seen = new WeakSet<object>();
+  const visit = (value: any, depth: number): any => {
+    if (typeof value === 'string') return value.length > 4_000 ? value.slice(0, 4_000) : value;
+    if (!value || typeof value !== 'object') return value;
+    if (depth >= 64 || remaining-- <= 0 || seen.has(value)) return {};
+    seen.add(value);
+    if (Array.isArray(value)) return value.slice(0, 200).map((entry) => visit(entry, depth + 1));
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value).slice(0, 300)) {
+      out[key] = visit(child, depth + 1);
+    }
+    return out;
+  };
+
+  const bounded = visit(node, 0);
+  context.bounded.set(node, bounded);
+  return bounded;
 }
 
 function resolvePointer(doc: any, parts: string[]): any {

@@ -17,6 +17,8 @@ export interface PostmanSourceOptions {
   resolveWorkspace?: (url: string, apiKey: string) => Promise<PostmanSourceDocument[]>;
   maxApis?: number;
   maxDocumentBytes?: number;
+  concurrency?: number;
+  onWarning?: (warning: string) => void;
 }
 
 export interface PostmanApiEntity {
@@ -88,10 +90,12 @@ export function parsePostmanApiEntity(raw: string): PostmanApiEntity {
 
 function namespaceFor(path: string): string {
   const withoutExtension = path.replace(/\.(?:json|ya?ml)$/i, '');
-  return withoutExtension
-    .split('/')
-    .filter(Boolean)
-    .slice(-2)
+  const parts = withoutExtension.split('/').filter(Boolean);
+  const publicApiSpecs = parts.indexOf('PublicApiSpecs');
+  const selected = publicApiSpecs >= 0 && parts.length > publicApiSpecs + 2
+    ? [parts[publicApiSpecs + 1]!, parts[publicApiSpecs + 2]!, parts.at(-2)!]
+    : parts.slice(-2);
+  return selected
     .join('_')
     .replace(/[^a-zA-Z0-9]+/g, '_')
     .replace(/_+/g, '_')
@@ -140,8 +144,8 @@ function resolveRelative(base: string, path: string): string {
     return new URL(path, base).href;
   }
   const slash = base.lastIndexOf('/');
-  const root = base.endsWith('/.postman/api') || /\/\.postman\/api_[^/]+$/.test(base)
-    ? base.replace(/\/\.postman\/api(?:_[^/]+)?$/, '')
+  const root = /(?:^|\/)\.postman\/api(?:_[^/]+)?$/.test(base)
+    ? base.replace(/(?:^|\/)\.postman\/api(?:_[^/]+)?$/, '')
     : slash >= 0 ? base.slice(0, slash) : '';
   return `${root ? `${root}/` : ''}${path.replace(/^\/+/, '')}`;
 }
@@ -167,29 +171,59 @@ async function resolveApiManifest(
   const maxApis = options.maxApis ?? 250;
   if (ids.length > maxApis) throw new Error(`Postman repository contains ${ids.length} APIs; limit is ${maxApis}`);
 
-  const relations = await Promise.all(ids.map(async (id) => {
+  const concurrency = options.concurrency ?? 8;
+  const relations = (await mapConcurrent(ids, concurrency, async (id) => {
     const entitySource = manifestSource.replace(/\/api$/, `/api_${encodeURIComponent(id)}`);
-    return { entitySource, entity: parsePostmanApiEntity(await loader(entitySource)) };
-  }));
+    try {
+      return { entitySource, entity: parsePostmanApiEntity(await loader(entitySource)) };
+    } catch (error) {
+      options.onWarning?.(`skipped Postman API relation ${id}: ${(error as Error).message}`);
+      return null;
+    }
+  })).filter((value): value is NonNullable<typeof value> => value !== null);
   const refs = relations.flatMap(({ entitySource, entity }) =>
     entity.files.map((path) => ({ kind: entity.type, source: resolveRelative(entitySource, path), path })),
   );
   refs.sort((a, b) => a.source.localeCompare(b.source));
 
   const maxBytes = options.maxDocumentBytes ?? 10 * 1024 * 1024;
-  const documents = await Promise.all(refs.map(async (ref) => {
-    const raw = await loader(ref.source);
-    if (new TextEncoder().encode(raw).byteLength > maxBytes) {
-      throw new Error(`Postman source document at ${ref.source} exceeds ${maxBytes} bytes`);
+  const documents = (await mapConcurrent(refs, concurrency, async (ref) => {
+    try {
+      const raw = await loader(ref.source);
+      if (new TextEncoder().encode(raw).byteLength > maxBytes) {
+        throw new Error(`document exceeds ${maxBytes} bytes`);
+      }
+      return {
+        namespace: namespaceFor(ref.path),
+        kind: ref.kind,
+        source: ref.source,
+        doc: parseDocument(raw, ref.source, ref.kind),
+      } satisfies PostmanSourceDocument;
+    } catch (error) {
+      options.onWarning?.(`skipped Postman source ${ref.source}: ${(error as Error).message}`);
+      return null;
     }
-    return {
-      namespace: namespaceFor(ref.path),
-      kind: ref.kind,
-      source: ref.source,
-      doc: parseDocument(raw, ref.source, ref.kind),
-    } satisfies PostmanSourceDocument;
-  }));
+  })).filter((value): value is PostmanSourceDocument => value !== null);
+  if (documents.length === 0) throw new Error('Postman repository contains no usable API definitions or collections');
   return documents;
+}
+
+async function mapConcurrent<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const output = new Array<R>(items.length);
+  let cursor = 0;
+  const run = async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      output[index] = await worker(items[index]!, index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, run));
+  return output;
 }
 
 export async function resolvePostmanSource(
@@ -217,6 +251,11 @@ export async function resolvePostmanSource(
 
   const raw = await loader(source);
   if (/^\s*apis\[\]\s*=/m.test(raw)) return resolveApiManifest(source, async (ref) => ref === source ? raw : loader(ref), options);
+
+  const maxBytes = options.maxDocumentBytes ?? 10 * 1024 * 1024;
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) {
+    throw new Error(`Postman source document at ${source} exceeds ${maxBytes} bytes`);
+  }
 
   const doc = parseSpecDocument(raw, source);
   if (!String(doc?.info?.schema ?? '').includes('/collection/v2.')) {

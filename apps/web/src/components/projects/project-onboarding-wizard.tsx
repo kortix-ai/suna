@@ -85,7 +85,7 @@ const SlackConnectForm = lazy(() =>
   })),
 );
 
-/** Lazy — the full custom-connector form (OpenAPI / GraphQL / MCP / HTTP), reused
+/** Lazy — the full custom-connector form (OpenAPI / Postman / GraphQL / MCP / HTTP), reused
  * verbatim from the Connectors page so onboarding's "Advanced" tab matches it. */
 const CustomConnectorForm = lazy(() =>
   import('@/features/workspace/customize/sections/connectors-view').then((m) => ({
@@ -524,10 +524,10 @@ function ToolsStep({
           </p>
         </TabsContent>
 
-        {/* Custom — wire up any OpenAPI / GraphQL / MCP / HTTP service directly. */}
+        {/* Custom — wire up any OpenAPI / Postman / GraphQL / MCP / HTTP service directly. */}
         <TabsContent value="custom" className="mt-0">
           <p className="text-muted-foreground mb-3 text-sm leading-6">
-            Have your own API? Connect a custom OpenAPI, GraphQL, MCP, or HTTP service so your agent
+            Have your own API? Connect a custom OpenAPI, Postman, GraphQL, MCP, or HTTP service so your agent
             can call it directly.
           </p>
           <div className="max-h-[46vh] overflow-y-auto pr-1">

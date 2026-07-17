@@ -375,7 +375,7 @@ model: [Connections](/docs/concepts/connections).
 ```yaml
 connectors:
   - slug: gmail-work
-    provider: pipedream     # pipedream | mcp | openapi | graphql | http | channel
+    provider: pipedream     # pipedream | mcp | openapi | postman | graphql | http | channel
     app: gmail               # pipedream app slug
     credential: shared        # shared is the only mode — see below
     policies:
@@ -386,7 +386,7 @@ connectors:
 | Field        | Required | Type   | Notes                                                              |
 | ------------ | -------- | ------ | ------------------------------------------------------------------ |
 | `slug`       | yes      | string | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors; the tool namespace. |
-| `provider`   | yes      | string | `pipedream` \| `mcp` \| `openapi` \| `graphql` \| `http` \| `channel`. |
+| `provider`   | yes      | string | `pipedream` \| `mcp` \| `openapi` \| `postman` \| `graphql` \| `http` \| `channel`. |
 | `name`       | no       | string | Display name. Defaults to slug.                                  |
 | `enabled`    | no       | bool   | Defaults to `true`.                                              |
 | `credential` | no       | string | `shared` is the only mode and the default. `per_user` (per-member BYO credential) was removed 2026-07-05 — a legacy manifest that still says `credential: per_user` is tolerated and always resolves to `shared`. |
@@ -396,6 +396,13 @@ Provider-specific fields:
 - **pipedream** — `app` (required), `account` (optional, defaults to slug).
 - **mcp** — `url` (required), `transport` = `http` (default) or `sse`.
 - **openapi** — `spec` (required: URL or repo-relative path).
+- **postman** — `spec` (required): a Collection v2.0/v2.1 JSON URL or repo path,
+  a `.postman/api` manifest, a public Postman-managed GitHub repository, or a
+  public Postman workspace URL. Repository imports prefer their original OpenAPI
+  3 definitions and fall back to collections. Workspace URLs use the official
+  Postman API and require the host operator's `POSTMAN_API_KEY`; Kortix never
+  scrapes the Postman web app. Collection scripts, cookies, and embedded
+  credential values are never imported or executed.
 - **graphql** — `endpoint` (required), `spec` (optional SDL).
 - **http** — `base_url` (required), `spec` (optional).
 - **channel** — `platform` (required) = `slack` \| `teams` \| `email` \| `meet`. Chat

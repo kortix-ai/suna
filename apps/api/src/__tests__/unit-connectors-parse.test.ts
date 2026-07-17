@@ -114,6 +114,16 @@ connectors:
     });
   });
 
+  test('postman requires a source spec', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: hubspot
+    provider: postman
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('provider="postman" requires `spec`');
+  });
+
   test('graphql — endpoint, optional spec, bearer', () => {
     const { specs, errors } = parseAndExtract(`
 connectors:
@@ -566,6 +576,7 @@ describe('connectors: — runtime parser ⇄ schema gate provider agreement', ()
     { name: 'pipedream', accept: true, body: `connectors:\n  - slug: c\n    provider: pipedream\n    app: gmail` },
     { name: 'mcp', accept: true, body: `connectors:\n  - slug: c\n    provider: mcp\n    url: https://e.com` },
     { name: 'openapi', accept: true, body: `connectors:\n  - slug: c\n    provider: openapi\n    spec: https://e.com/o.json` },
+    { name: 'postman', accept: true, body: `connectors:\n  - slug: c\n    provider: postman\n    spec: https://github.com/acme/apis` },
     { name: 'graphql', accept: true, body: `connectors:\n  - slug: c\n    provider: graphql\n    endpoint: https://e.com/graphql` },
     { name: 'http', accept: true, body: `connectors:\n  - slug: c\n    provider: http\n    base_url: https://e.com` },
     { name: 'channel', accept: true, body: `connectors:\n  - slug: kortix_slack\n    provider: channel\n    platform: slack` },
