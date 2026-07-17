@@ -863,3 +863,28 @@ backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and fin
 with typecheck, full-suite, and packed-install smoke evidence.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `discover-marketplace` (completion)
+
+Completed the additive Discover catalogue SDK surface. The published client now
+exposes typed integrations.sh list/detail calls plus
+`project(id).connectors.discover.{list,detail}`. Pipedream remains a separate
+existing catalogue surface and its app contract is narrowed to the OAuth-only
+records returned by the API. Runtime and type snapshots contain additions only;
+no exported name was removed or renamed.
+
+**TDD and live evidence:** the focused API/Postman/SDK/UI run passed **96 tests / 0
+failures**. A real authenticated local flow searched HubSpot through the Discover
+API, resolved its direct MCP/docs/CLI/Postman variants, verified the official
+Postman repository requires bearer auth, and materialized **1,223 actions** with
+zero sync errors. The live Pipedream search returned only `authType: oauth`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1121 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository merge, Deploy
+Dev, and live-dev verification remain part of the parent feature lifecycle.
