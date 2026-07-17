@@ -888,3 +888,15 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for the SDK surface. Repository merge, Deploy
 Dev, and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (claim)
+
+Claimed the user-directed rollback of the additive Discover catalogue SDK surface
+while preserving the earlier first-class Postman connector provider contract. The
+rollback removes only the integrations.sh list/detail APIs and facade bindings that
+shipped in PR #4920. Full SDK typecheck, suite, and packed-install smoke gates are
+required before completion.
+
+**Status:** IN PROGRESS.
