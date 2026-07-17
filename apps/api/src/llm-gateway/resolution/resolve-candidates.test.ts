@@ -39,15 +39,12 @@ mock.module('../../config', () => ({ config }));
 // `secretsByName` falls back to `resolvedSecret` for backward compatibility.
 let resolvedSecret: string | null = null;
 let secretsByName: Record<string, string | null> = {};
-let secretExistsForAnyOwner = false;
-const getResolvedProjectSecretValue = mock(async (_projectId: string, name: string) => {
+const getProjectSecretValue = mock(async (_projectId: string, name: string) => {
   if (name in secretsByName) return secretsByName[name] ?? null;
   return resolvedSecret;
 });
-const projectSecretExistsForAnyOwner = mock(async () => secretExistsForAnyOwner);
 mock.module('../../projects/secrets', () => ({
-  getResolvedProjectSecretValue,
-  projectSecretExistsForAnyOwner,
+  getProjectSecretValue,
 }));
 
 class CodexRefreshError extends Error {}
@@ -129,7 +126,6 @@ beforeEach(() => {
   });
   resolvedSecret = null;
   secretsByName = {};
-  secretExistsForAnyOwner = false;
   codexCredential = null;
   codexThrows = false;
   catalogUpstream = null;
@@ -138,8 +134,7 @@ beforeEach(() => {
   capabilities = { reasoning: false, temperature: true };
   getAccountTier.mockClear();
   getCachedAccountTier.mockClear();
-  getResolvedProjectSecretValue.mockClear();
-  projectSecretExistsForAnyOwner.mockClear();
+  getProjectSecretValue.mockClear();
   resolveCodexCredential.mockClear();
 });
 
@@ -215,13 +210,10 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       resolvedModel: 'us.anthropic.claude-opus-4-8',
     });
     // The bearer token AND the region are each looked up under their own
-    // AWS-standard secret name, both scoped to this project/caller.
-    expect(getResolvedProjectSecretValue).toHaveBeenCalledWith(
-      'p1',
-      'AWS_BEARER_TOKEN_BEDROCK',
-      'u1',
-    );
-    expect(getResolvedProjectSecretValue).toHaveBeenCalledWith('p1', 'AWS_REGION', 'u1');
+    // AWS-standard secret name, project-wide (shared) only — there is no
+    // per-caller/private lookup.
+    expect(getProjectSecretValue).toHaveBeenCalledWith('p1', 'AWS_BEARER_TOKEN_BEDROCK');
+    expect(getProjectSecretValue).toHaveBeenCalledWith('p1', 'AWS_REGION');
   });
 
   test('BYOK Bedrock with no AWS_REGION set: falls back to the BYOK default (us-east-1), not the managed AWS_BEDROCK_REGION default', async () => {
@@ -239,7 +231,6 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
   test('Bedrock with no project key connected: provider_not_connected (never a silent managed fallback)', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
     secretsByName = { AWS_BEARER_TOKEN_BEDROCK: null };
-    secretExistsForAnyOwner = false;
     const p = principal();
     tierByAccount[p.accountId] = 'pro';
 
@@ -288,25 +279,10 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       kind: 'anthropic',
     };
     resolvedSecret = null;
-    secretExistsForAnyOwner = false;
 
     await expect(
       resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6'),
     ).rejects.toMatchObject({ code: 'provider_not_connected' });
-  });
-
-  test("a teammate's private key (not shared) throws the distinct provider_key_private", async () => {
-    catalogUpstream = {
-      baseUrl: 'https://api.anthropic.com/v1',
-      envVar: 'ANTHROPIC_API_KEY',
-      kind: 'anthropic',
-    };
-    resolvedSecret = null;
-    secretExistsForAnyOwner = true;
-
-    await expect(
-      resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6'),
-    ).rejects.toMatchObject({ code: 'provider_key_private' });
   });
 });
 

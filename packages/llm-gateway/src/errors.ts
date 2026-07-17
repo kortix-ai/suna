@@ -62,7 +62,6 @@ export type NoUpstreamReasonCode =
   | 'model_disabled_on_deployment'
   | 'plan_upgrade_required'
   | 'provider_not_connected'
-  | 'provider_key_private'
   | 'provider_reauth_required';
 
 export class GatewayResolutionError extends Error {

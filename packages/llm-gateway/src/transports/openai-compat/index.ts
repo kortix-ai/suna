@@ -30,16 +30,46 @@ export function isGenuineOpenAiUpstream(baseUrl: string): boolean {
   }
 }
 
+// Whether this descriptor's model is a genuine OpenAI-family model that
+// speaks OpenAI's own chat/completions param quirks (rejects `max_tokens` /
+// non-default temperature-and-friends) — REGARDLESS of which literal host
+// ends up serving the request.
+//
+// P0 incident (req_mro97uigg6rnflvf, 2026-07-17): a real `openai/gpt-5.6-sol`
+// BYOK session 400ed with "Unsupported parameter: 'max_tokens' ... Use
+// 'max_completion_tokens' instead" even though `resolveCandidates` built a
+// descriptor whose `baseUrl` genuinely WAS `https://api.openai.com/v1` —
+// proving `isGenuineOpenAiUpstream(baseUrl)` alone is too fragile a gate to
+// hang correctness on for every future routing shape: an operator-configured
+// proxy in front of OpenAI, a managed/Azure-fronted route, or any other
+// OpenAI-compatible host that still speaks OpenAI's literal chat/completions
+// wire format would all resolve a `baseUrl` that ISN'T `api.openai.com` while
+// still needing this exact translation. The durable signal is the MODEL/
+// CONNECTION identity, not the resolved network address: `descriptor.
+// provider === 'openai'` is set once, in resolveCandidates.ts, directly from
+// the caller's requested `openai/<model>` id — it doesn't move around based
+// on which host that provider happens to resolve to. `isGenuineOpenAiUpstream`
+// is kept as an OR-fallback (not replaced) so a `custom`/differently-labeled
+// descriptor that genuinely resolves to api.openai.com is still covered —
+// this is a strict widening, never a narrowing, of the original scope.
+export function requiresOpenAiChatCompletionsQuirks(descriptor: {
+  provider: string;
+  baseUrl: string;
+}): boolean {
+  return descriptor.provider === 'openai' || isGenuineOpenAiUpstream(descriptor.baseUrl);
+}
+
 // OpenAI's chat completions endpoint now rejects `max_tokens` for its current
 // chat models (o-series, gpt-5.x, and newer gpt-4o snapshots all 400 with
 // "Unsupported parameter: 'max_tokens' is not supported with this model. Use
 // 'max_completion_tokens' instead.") — observed live against api.openai.com.
 // `max_completion_tokens` is accepted for every model OpenAI still serves
 // under chat/completions, so the translation is unconditional for genuine
-// OpenAI traffic rather than a model-name allowlist that would need upkeep as
-// OpenAI ships new model families. If the caller already sent
-// `max_completion_tokens` (e.g. opencode/the SDK already speaks the new
-// field), it passes through untouched and `max_tokens` is left alone too.
+// OpenAI traffic (see `requiresOpenAiChatCompletionsQuirks` above) rather than
+// a model-name allowlist that would need upkeep as OpenAI ships new model
+// families. If the caller already sent `max_completion_tokens` (e.g.
+// opencode/the SDK already speaks the new field), it passes through untouched
+// and `max_tokens` is left alone too.
 function translateMaxTokensForGenuineOpenAi(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -181,12 +211,23 @@ export function buildUpstreamRequest(
   let payload = body;
   if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
   if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
-  if (isGenuineOpenAiUpstream(descriptor.baseUrl)) {
+  // Model-identity-scoped quirks (max_tokens rename, reasoning-restricted
+  // sampling params) — fire for ANY descriptor whose model is genuinely
+  // OpenAI's, regardless of which host it resolves to. See
+  // `requiresOpenAiChatCompletionsQuirks`'s doc comment for the incident this
+  // widening fixes.
+  if (requiresOpenAiChatCompletionsQuirks(descriptor)) {
     payload = translateMaxTokensForGenuineOpenAi(payload);
-    payload = ensureStreamUsageForGenuineOpenAi(payload);
     if (descriptor.temperature === false) {
       payload = stripReasoningRestrictedSamplingParams(payload);
     }
+  }
+  // Billing-safety quirk (force stream usage accounting) stays scoped to the
+  // LITERAL genuine host — it exists to stop $0-billing against Kortix's own
+  // real upstream fetch to api.openai.com, not a model-identity concern, so
+  // widening it the same way as the params above isn't warranted.
+  if (isGenuineOpenAiUpstream(descriptor.baseUrl)) {
+    payload = ensureStreamUsageForGenuineOpenAi(payload);
   }
   if (descriptor.provider === 'perplexity' && Array.isArray(payload.messages)) {
     payload = {
