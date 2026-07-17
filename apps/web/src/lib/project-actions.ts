@@ -80,6 +80,10 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   { read: ProjectAction; write?: ProjectAction }
 > = {
   agents: { read: PROJECT_ACTIONS.PROJECT_AGENT_READ, write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
+  // Runtime profiles are agent-scoped config (which harness an agent runs on)
+  // — same leaves as Agents, whose `RuntimeProfilesEditor` this section was
+  // extracted from (WS5-P2-a).
+  runtime: { read: PROJECT_ACTIONS.PROJECT_AGENT_READ, write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
   skills: { read: PROJECT_ACTIONS.PROJECT_SKILL_READ, write: PROJECT_ACTIONS.PROJECT_SKILL_WRITE },
   commands: {
     read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,

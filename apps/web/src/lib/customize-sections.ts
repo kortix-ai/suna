@@ -17,6 +17,7 @@ export type CustomizeSection =
   | 'review'
   | 'skills'
   | 'agents'
+  | 'runtime'
   | 'commands'
   | 'marketplace'
   | 'secrets'
@@ -45,6 +46,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'review',
   'skills',
   'agents',
+  'runtime',
   'commands',
   'marketplace',
   'secrets',

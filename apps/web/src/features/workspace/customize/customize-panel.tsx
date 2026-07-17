@@ -10,6 +10,7 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
+import { RuntimeView } from '@/features/workspace/customize/sections/view/runtime-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
@@ -36,6 +37,7 @@ import {
   Bot,
   Boxes,
   Container,
+  Cpu,
   History,
   Inbox,
   KeyRound,
@@ -62,6 +64,9 @@ const GROUPS: readonly RailGroup[] = [
     label: 'Build',
     items: [
       { section: 'agents', label: 'Agents', icon: Bot },
+      // Provisional slot — final rail ordering across every group is P5-a's
+      // scope (WS5-P2-a only registers the section).
+      { section: 'runtime', label: 'Runtime', icon: Cpu },
       { section: 'skills', label: 'Skills', icon: Sparkles },
       { section: 'commands', label: 'Commands', icon: Command },
     ],
@@ -477,6 +482,8 @@ function SectionContent({
   switch (section) {
     case 'agents':
       return <AgentsView projectId={projectId} />;
+    case 'runtime':
+      return <RuntimeView projectId={projectId} />;
     case 'skills':
       return <SkillsView projectId={projectId} />;
     case 'commands':

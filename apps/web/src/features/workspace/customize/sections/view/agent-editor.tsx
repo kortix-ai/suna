@@ -61,12 +61,13 @@ import {
 } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bot, Cpu, Layers, Route } from 'lucide-react';
+import { Bot, Cpu, FolderOpen, Layers, Route } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { FieldRow, SectionHeader, LayerHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
 import { RuntimeLayerFields } from './runtime-layer-fields';
-import { ACP_HARNESS_LABELS } from './runtime-profile-options';
+import { ACP_HARNESS_LABELS, projectFilesHref } from './runtime-profile-options';
 
 export {
   AGENT_MODE_HELP,
@@ -245,11 +246,21 @@ function AgentEditorModal({
                   </FieldRow>
                 ) : null}
                 {draft.runtime && runtimes[draft.runtime] ? (
-                  <InfoBanner tone="info" title={`${runtimes[draft.runtime].harness} owns behavior`}>
-                    Edit prompts, models, providers, hooks, modes, and permissions in{' '}
+                  <InfoBanner
+                    tone="info"
+                    icon={FolderOpen}
+                    title={`${ACP_HARNESS_LABELS[runtimes[draft.runtime].harness]} owns this agent's behavior`}
+                    action={
+                      <Button asChild variant="transparent" size="sm">
+                        <Link href={projectFilesHref(projectId)}>Open Files</Link>
+                      </Button>
+                    }
+                  >
+                    Prompts, models, providers, hooks, modes, and permissions live in{' '}
                     <span className="font-mono">
                       {runtimes[draft.runtime].config_dir || `.${runtimes[draft.runtime].harness}`}
-                    </span>.
+                    </span>{' '}
+                    — open Files to edit them directly.
                   </InfoBanner>
                 ) : null}
               </section>
