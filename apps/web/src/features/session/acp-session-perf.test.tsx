@@ -70,14 +70,31 @@ mock.module('./composer-chat-input', () => ({
   ...actualComposerChatInput,
   ComposerChatInput: () => null,
 }));
-// `useSessionAudit` (connector-approval lock) calls `useQuery`, which needs a
-// `QueryClientProvider` this DOM-free harness has no reason to mount. Only that
-// hook is overridden — the module's pure helpers stay real for
-// `session-approval-prompt` (imported by `AcpSessionChat`).
+// `useSessionAudit`/`useResolveApproval` (connector-approval lock) call
+// `useQuery`/`useMutation`, which need a `QueryClientProvider` this DOM-free
+// harness has no reason to mount. Only those hooks are overridden — the
+// module's pure helpers stay real for the unified `PermissionPrompt`
+// (mounted for real by `AcpSessionChat`'s inputSlot).
 import * as actualSessionAudit from './session-audit-shared';
 mock.module('./session-audit-shared', () => ({
   ...actualSessionAudit,
   useSessionAudit: () => ({ data: undefined }),
+  useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => {}, isPending: false }),
+}));
+// `usePermissionPolicy` (persistent ACP permission policy) also calls
+// `useQuery`/`useQueryClient` — same QueryClientProvider problem.
+import * as actualSdkReact from '@kortix/sdk/react';
+mock.module('@kortix/sdk/react', () => ({
+  ...actualSdkReact,
+  usePermissionPolicy: () => ({
+    policy: { autoApprove: 'none', toolDecisions: {} },
+    isLoading: false,
+    setAutoApprove: async () => {},
+    rememberToolDecision: async () => {},
+  }),
+}));
+mock.module('@/lib/use-project-can', () => ({
+  useProjectCan: () => ({ allowed: false, reason: null, isLoading: false, isError: false }),
 }));
 mock.module('./session-context-modal', () => ({ SessionContextModal: () => null }));
 // This file — unlike the sibling test files above — replays real `tool`

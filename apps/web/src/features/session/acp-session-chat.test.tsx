@@ -96,16 +96,39 @@ mock.module('./composer-chat-input', () => ({
     return null;
   },
 }));
-// `useSessionAudit` (the connector-approval lock) calls `useQuery` from
-// `@tanstack/react-query`, which needs a `QueryClientProvider` this DOM-free
-// harness has no reason to mount. Only that hook is overridden (to a
-// no-pending-approvals result) — the module's pure helpers (`relativeTime`,
-// `riskTone`, `isPendingAction`, …) stay real, since `session-approval-prompt`
-// (imported by `AcpSessionChat`) binds them at module-eval time.
+// `useSessionAudit`/`useResolveApproval` (the connector-approval lock) call
+// `useQuery`/`useMutation` from `@tanstack/react-query`, which need a
+// `QueryClientProvider` this DOM-free harness has no reason to mount. Only
+// those hooks are overridden (to a no-pending-approvals result / an inert
+// mutation) — the module's pure helpers (`relativeTime`, `riskTone`,
+// `isPendingAction`, …) stay real, since the unified `PermissionPrompt`
+// (mounted for real by `AcpSessionChat`'s inputSlot, not stubbed away) binds
+// them at module-eval time.
 import * as actualSessionAudit from './session-audit-shared';
 mock.module('./session-audit-shared', () => ({
   ...actualSessionAudit,
   useSessionAudit: () => ({ data: undefined }),
+  useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => {}, isPending: false }),
+}));
+// `usePermissionPolicy` (Task WS5-P1-a/b's persistent ACP permission policy)
+// also calls `useQuery`/`useQueryClient` — same QueryClientProvider problem.
+// Spread the real module so every other export (`useSession`'s type, etc.)
+// stays exactly what the rest of this file already relies on.
+import * as actualSdkReact from '@kortix/sdk/react';
+mock.module('@kortix/sdk/react', () => ({
+  ...actualSdkReact,
+  usePermissionPolicy: () => ({
+    policy: { autoApprove: 'none', toolDecisions: {} },
+    isLoading: false,
+    setAutoApprove: async () => {},
+    rememberToolDecision: async () => {},
+  }),
+}));
+// `useProjectCan` (gates the connector "Always allow" footer) resolves an
+// account id via `useQuery` too — same story, stubbed to "not allowed" (the
+// footer this file never asserts on).
+mock.module('@/lib/use-project-can', () => ({
+  useProjectCan: () => ({ allowed: false, reason: null, isLoading: false, isError: false }),
 }));
 mock.module('./session-context-modal', () => ({ SessionContextModal: () => null }));
 // Raw protocol frames now render inline as `AcpUnknownMethodCard` ->

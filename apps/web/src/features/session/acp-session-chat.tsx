@@ -28,7 +28,6 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { type AttachedFile } from './session-chat-input';
 import { ComposerChatInput } from './composer-chat-input';
-import { SessionApprovalPrompt } from './session-approval-prompt';
 import { isPendingAction, useSessionAudit } from './session-audit-shared';
 import { SessionContextModal } from './session-context-modal';
 import { QuestionPrompt, type QuestionAction, type QuestionPromptHandle } from './question-prompt';
@@ -600,8 +599,9 @@ export function AcpSessionChat({
             }
             inputSlot={
               <>
-                <SessionApprovalPrompt />
                 <AcpSessionPermissionPrompt
+                  projectId={projectId}
+                  sessionId={sessionId}
                   permissions={pendingPrompts.permissions}
                   autoApprove={autoApprovePermissions}
                   onAutoApproveChange={setAutoApprovePermissions}
