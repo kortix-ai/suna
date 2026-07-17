@@ -29,6 +29,15 @@ export interface NormalizedAction {
 
 export type ActionBinding =
   | { kind: 'openapi'; method: string; path: string; server: string | null }
+  | {
+      kind: 'postman';
+      method: string;
+      /** Fully-qualified request template after safe collection defaults resolve. */
+      url: string;
+      /** Static or templated non-credential headers. */
+      headers: Record<string, string>;
+      bodyMode: 'json' | 'raw' | 'urlencoded' | null;
+    }
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
   | { kind: 'mcp'; tool: string }
   | { kind: 'http'; method: string; path: string }

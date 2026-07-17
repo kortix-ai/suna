@@ -45,6 +45,13 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
 
+const postmanDraftTypecheck: import('./connectors').ConnectorDraftInput = {
+  slug: 'hubspot',
+  provider: 'postman',
+  spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+};
+void postmanDraftTypecheck;
+
 test('listConnectors GETs the project connectors list', async () => {
   nextResponse = { status: 200, body: { connectors: [] } };
   const result = await listConnectors('P1');

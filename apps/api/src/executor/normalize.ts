@@ -14,6 +14,7 @@ import type {
   PipedreamActionLike,
   Risk,
 } from './types';
+export { normalizePostmanCollection } from './postman-normalize';
 
 /* ─── shared helpers ─────────────────────────────────────────────────────── */
 

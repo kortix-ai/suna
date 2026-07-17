@@ -95,6 +95,25 @@ connectors:
     expect(specs[0]).toMatchObject({ spec: '.kortix/executor/internal.openapi.json', auth: { type: 'none' } });
   });
 
+  test('postman by public repository URL', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: hubspot
+    provider: postman
+    spec: https://github.com/HubSpot/HubSpot-public-api-spec-collection
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      slug: 'hubspot',
+      provider: 'postman',
+      spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+    });
+    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
+      provider: 'postman',
+      spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+    });
+  });
+
   test('graphql — endpoint, optional spec, bearer', () => {
     const { specs, errors } = parseAndExtract(`
 connectors:
