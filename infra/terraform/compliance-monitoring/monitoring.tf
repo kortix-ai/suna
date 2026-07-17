@@ -64,6 +64,20 @@ locals {
   drata_autopilot_role_arn = "arn:aws:iam::${local.account_id}:role/DrataAutopilotRole"
 }
 
+data "aws_iam_policy_document" "drata_sns_inspection" {
+  statement {
+    sid       = "ReadAlertTopicSubscriptions"
+    actions   = ["sns:GetTopicAttributes", "sns:ListSubscriptionsByTopic"]
+    resources = [data.aws_sns_topic.usw2_alerts.arn, data.aws_sns_topic.euw2_alerts.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "drata_sns_inspection" {
+  name   = "DrataSNSSubscriptionInspection"
+  role   = "DrataAutopilotRole"
+  policy = data.aws_iam_policy_document.drata_sns_inspection.json
+}
+
 resource "aws_wafv2_web_acl_association" "usw2" {
   for_each     = local.usw2_albs
   resource_arn = each.key
