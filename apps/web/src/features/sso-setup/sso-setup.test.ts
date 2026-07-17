@@ -19,11 +19,15 @@ const flatGuidesSource = guidesSource.replace(/\s+/g, ' ');
 describe('provider guides', () => {
   test('cover Entra, Okta, Google, Cloudflare, and Custom SAML', () => {
     expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'auth0',
       'cloudflare',
       'custom',
       'entra',
       'google',
+      'jumpcloud',
       'okta',
+      'onelogin',
+      'pingone',
     ]);
   });
 

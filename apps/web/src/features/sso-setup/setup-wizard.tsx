@@ -74,6 +74,10 @@ const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {
   okta: '/provider-icons/okta.svg',
   google: '/provider-icons/google-workspace.svg',
   cloudflare: '/provider-icons/cloudflare.svg',
+  onelogin: '/provider-icons/onelogin.svg',
+  jumpcloud: '/provider-icons/jumpcloud.svg',
+  pingone: '/provider-icons/pingone.svg',
+  auth0: '/provider-icons/auth0.svg',
   custom: '/provider-icons/generic-provider.svg',
 };
 
