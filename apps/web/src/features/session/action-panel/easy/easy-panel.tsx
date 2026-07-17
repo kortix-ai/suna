@@ -367,17 +367,21 @@ export const EasyPanel = memo(function EasyPanel({
             }
           : undefined;
 
-      if (output.kind === 'app' && output.url) {
+      // An app opens even with NO url — the quick "Open Browser" with nothing
+      // running hands over `url: ''`, and `AppPreview` renders its recents/
+      // port landing for that. Guarding on `output.url` here silently ate the
+      // click (the browser button did nothing), which reads as broken.
+      if (output.kind === 'app') {
         track('deliverable_opened', { kind: output.kind, source });
         openDetail({
-          key: `app:${output.url}`,
+          key: `app:${output.url || 'landing'}`,
           title: displayName,
           hideHeader: true,
           padded: false,
           nav,
           body: (
             <AppPreview
-              url={output.url}
+              url={output.url ?? ''}
               name={displayName}
               onClose={closeDetail}
               onAskForChanges={askForChanges}

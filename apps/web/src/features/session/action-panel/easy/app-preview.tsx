@@ -31,6 +31,7 @@ import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbo
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
+import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import {
@@ -51,6 +52,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { GrRefresh } from 'react-icons/gr';
 import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
+import { sandboxRecents } from './easy-panel-logic';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -103,6 +105,11 @@ export function AppPreview({
   // The quick-view "Open Browser" with no running app hands over url: '' —
   // no port to load, nothing to spin on. Land on the address bar instead.
   const noApp = !current;
+
+  // The landing's "Recents" — the shared history BrowserPanel also shows,
+  // filtered to sandbox ports (the only URLs this address bar will open).
+  const recents = useBrowserRecentsStore((s) => s.recents);
+  const localhostRecents = useMemo(() => sandboxRecents(recents), [recents]);
   const port = useMemo(() => parseLocalhostUrl(current)?.port ?? 0, [current]);
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
@@ -169,6 +176,9 @@ export function AppPreview({
 
   const navigateTo = useCallback(
     (next: string) => {
+      // Feed the shared recents (the same list BrowserPanel's landing shows)
+      // so the port map builds up from either surface.
+      useBrowserRecentsStore.getState().addRecent(next);
       setHistory((prev) => [...prev.slice(0, index + 1), next]);
       setIndex((i) => i + 1);
       reload();
@@ -430,18 +440,45 @@ export function AppPreview({
         )}
 
         {noApp ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-muted-foreground flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <Globe className="size-12 opacity-20" />
-              <div>
-                <p className="text-foreground text-sm font-medium">No app running yet</p>
-                <p className="mt-1.5 text-xs leading-relaxed text-balance">
-                  When the agent starts a web app it shows up here. Know the port already? Type
-                  it above — e.g. <span className="text-foreground/80 font-mono">3000</span>.
-                </p>
+          /* Landing — recent ports when we have them (the same list
+             BrowserPanel's landing shows), a quiet search hint otherwise. */
+          localhostRecents.length > 0 ? (
+            <div className="h-full overflow-y-auto">
+              <div className="mx-auto w-full max-w-md px-6 py-12">
+                <section className="space-y-3">
+                  <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
+                  <ul className="space-y-1">
+                    {localhostRecents.map((recent) => (
+                      <li key={recent.url}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const parsed = parseLocalhostUrl(recent.url);
+                            if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
+                          }}
+                          className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
+                        >
+                          <span className="flex size-5 shrink-0 items-center justify-center">
+                            <Globe className="text-muted-foreground/60 size-4" />
+                          </span>
+                          <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
+                            {recentDisplayLabel(recent.url)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
+                <Globe className="size-12 opacity-20" />
+                <p className="text-sm">Search a URL or port</p>
+              </div>
+            </div>
+          )
         ) : hasPreview ? (
           <iframe
             key={refreshKey}

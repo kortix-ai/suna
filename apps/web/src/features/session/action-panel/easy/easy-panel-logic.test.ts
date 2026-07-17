@@ -7,6 +7,7 @@ import {
   neighborOutputs,
   outputKey,
   quickBrowserOutput,
+  sandboxRecents,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
   stepForCallId,
@@ -222,5 +223,24 @@ describe('quickBrowserOutput (header/palette "Open Browser")', () => {
 
   it('always uses a synthetic callID that cannot collide with a real tool call', () => {
     expect(quickBrowserOutput([appOutput()]).callID).toBe('quick-browser');
+  });
+});
+
+describe('sandboxRecents (AppPreview landing "Recents")', () => {
+  test('keeps only localhost recents the sandbox address bar can actually open', () => {
+    const recents = [
+      { url: 'http://localhost:3000', visitedAt: 1 },
+      { url: 'https://github.com/kortix-ai/suna', visitedAt: 2 },
+      { url: 'http://127.0.0.1:8008/health', visitedAt: 3 },
+      { url: 'http://localhost', visitedAt: 4 },
+    ];
+    expect(sandboxRecents(recents).map((r) => r.url)).toEqual([
+      'http://localhost:3000',
+      'http://127.0.0.1:8008/health',
+    ]);
+  });
+
+  test('empty in, empty out — the landing falls back to the search hint', () => {
+    expect(sandboxRecents([])).toEqual([]);
   });
 });
