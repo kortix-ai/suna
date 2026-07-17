@@ -50,7 +50,9 @@ export function SessionTerminalPanel({
   const runtimeReady = useOpenCodeRuntimeReady();
 
   const { data: ptys, isLoading } = useOpenCodePtyList();
-  const createPty = useCreatePty();
+  // Failures surface in the pane (retry button / reconnect flow) — keep them
+  // out of the app-global "Failed to perform action" toast.
+  const createPty = useCreatePty({ onError: () => {} });
   const terminalPtyId = useSessionBrowserStore((s) => s.terminalPtyBySession[sessionId] ?? null);
   const setTerminalPty = useSessionBrowserStore((s) => s.setTerminalPty);
   const [optimisticPty, setOptimisticPty] = React.useState<Pty | null>(null);

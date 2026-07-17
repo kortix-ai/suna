@@ -32,6 +32,25 @@ export const ptyKeys = {
   detail: (id: string) => ['pty', id] as const,
 };
 
+/**
+ * Optional react-query overrides for the PTY mutations. TanStack Query only
+ * falls back to the host's `defaultOptions.mutations.onError` (commonly a
+ * global error toast) when the mutation defines none of its own — so a host
+ * whose terminal UI already surfaces failures can pass a no-op `onError`
+ * to keep pty create/resize errors out of its global handler.
+ */
+export interface PtyMutationOptions {
+  onError?: (error: unknown) => void;
+}
+
+/** Pure merge helper for {@link PtyMutationOptions} — spread into `useMutation`.
+ *  Omits the key entirely when unset so the host default still applies. */
+export function ptyMutationOverrides(
+  options?: PtyMutationOptions,
+): { onError?: (error: unknown) => void } {
+  return options?.onError ? { onError: options.onError } : {};
+}
+
 // ============================================================================
 // Hooks
 // ============================================================================
@@ -50,7 +69,7 @@ export function useOpenCodePtyList(options?: { enabled?: boolean; serverUrl?: st
   });
 }
 
-export function useCreatePty() {
+export function useCreatePty(hookOptions?: PtyMutationOptions) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -65,6 +84,7 @@ export function useCreatePty() {
       // SSE pty.created will also fire; this is instant feedback
       queryClient.refetchQueries({ queryKey: ptyKeys.listPrefix(), type: 'active' });
     },
+    ...ptyMutationOverrides(hookOptions),
   });
 }
 
@@ -80,7 +100,7 @@ export function useRemovePty() {
   });
 }
 
-export function useUpdatePty() {
+export function useUpdatePty(options?: PtyMutationOptions) {
   return useMutation({
     mutationFn: ({
       id,
@@ -91,6 +111,7 @@ export function useUpdatePty() {
       title?: string;
       size?: { rows: number; cols: number };
     }) => updateKortixPty(getActiveOpenCodeUrl(), id, { title, size }),
+    ...ptyMutationOverrides(options),
   });
 }
 
