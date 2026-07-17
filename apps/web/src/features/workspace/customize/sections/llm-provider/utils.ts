@@ -1,9 +1,6 @@
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
-import {
-  CODEX_AUTH_JSON_SECRET_NAME,
-  LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
-} from './constants';
+import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
 import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
@@ -28,10 +25,10 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
           .filter(([id]) => id.startsWith('codex/'))
           .map(([id, m]) => ({
             id: id.slice('codex/'.length),
-            name: (((m as { name?: string }).name || id).replace('(latest)', '').trim()).replace(
-              /\s*\(ChatGPT\)$/,
-              '',
-            ),
+            name: ((m as { name?: string }).name || id)
+              .replace('(latest)', '')
+              .trim()
+              .replace(/\s*\(ChatGPT\)$/, ''),
             released:
               (m as { release_date?: string; released?: string }).release_date ??
               (m as { released?: string }).released ??
@@ -43,6 +40,16 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
     id: 'codex',
     label: 'ChatGPT',
     envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
+    // EITHER secret alone is a full ChatGPT subscription connection (current
+    // vs. legacy secret name) — two alternative single-var methods, not one
+    // AND-of-both requirement. Matches the `hasCodexSubscription` OR check in
+    // use-connected-providers.ts.
+    authRequirement: {
+      methods: [
+        { envVars: [CODEX_AUTH_JSON_SECRET_NAME] },
+        { envVars: [LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME] },
+      ],
+    },
     helpUrl: null,
     hint: 'ChatGPT Plus or Pro subscription',
     models,
@@ -50,7 +57,10 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
   };
 }
 
-export function pickInitialTab(defaultTab: ActiveTab | undefined, hasConnections: boolean): ActiveTab {
+export function pickInitialTab(
+  defaultTab: ActiveTab | undefined,
+  hasConnections: boolean,
+): ActiveTab {
   if (defaultTab === 'catalog') return 'catalog';
   if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
   if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';

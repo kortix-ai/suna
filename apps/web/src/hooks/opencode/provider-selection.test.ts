@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
   filterToGatewayProviders,
   filterToNativeProviders,
@@ -10,7 +11,6 @@ import {
   projectLlmCatalogToProviderList,
   providerListHasGateway,
   providerListHasModels,
-  type ProviderListResponse,
 } from './provider-selection';
 
 function providers(ids: string[]): ProviderListResponse {
@@ -30,19 +30,23 @@ function providers(ids: string[]): ProviderListResponse {
 describe('provider-selection', () => {
   test('detects usable connected provider models', () => {
     expect(providerListHasModels(providers(['anthropic']))).toBe(true);
-    expect(providerListHasModels({ default: {}, connected: [], all: [] } as ProviderListResponse)).toBe(false);
+    expect(
+      providerListHasModels({ default: {}, connected: [], all: [] } as ProviderListResponse),
+    ).toBe(false);
   });
 
   test('normalizes v0.9.68 native provider responses for the model picker', () => {
     const legacy = {
       default: { opencode: 'deepseek-v4-flash-free' },
-      providers: [{
-        id: 'opencode',
-        name: 'OpenCode Zen',
-        models: {
-          'deepseek-v4-flash-free': { name: 'DeepSeek V4 Flash Free' },
+      providers: [
+        {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          models: {
+            'deepseek-v4-flash-free': { name: 'DeepSeek V4 Flash Free' },
+          },
         },
-      }],
+      ],
     } as unknown as ProviderListResponse;
 
     const normalized = normalizeProviderList(legacy);
@@ -81,20 +85,82 @@ describe('provider-selection', () => {
         ],
       } as unknown as ProviderListResponse,
       new Set(['ANTHROPIC_API_KEY']),
-      [{ id: 'anthropic', envVars: ['ANTHROPIC_API_KEY'] }],
+      [{ id: 'anthropic', authRequirement: { methods: [{ envVars: ['ANTHROPIC_API_KEY'] }] } }],
     );
 
     expect(merged.connected).toEqual(['opencode', 'anthropic']);
     expect(providerListHasModels(merged)).toBe(true);
   });
 
+  test('any-of-methods: a provider with an alternate auth method connects via either method', () => {
+    const merged = mergeProjectSecretConnectedProviders(
+      {
+        default: {},
+        connected: [],
+        all: [
+          { id: 'amazon-bedrock', name: 'Amazon Bedrock', models: { claude: { name: 'Claude' } } },
+        ],
+      } as unknown as ProviderListResponse,
+      new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']),
+      [
+        {
+          id: 'amazon-bedrock',
+          authRequirement: { methods: [{ envVars: ['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION'] }] },
+        },
+      ],
+    );
+
+    expect(merged.connected).toEqual(['amazon-bedrock']);
+  });
+
+  test('does not connect a provider whose method is only partially configured', () => {
+    const merged = mergeProjectSecretConnectedProviders(
+      {
+        default: {},
+        connected: [],
+        all: [
+          { id: 'amazon-bedrock', name: 'Amazon Bedrock', models: { claude: { name: 'Claude' } } },
+        ],
+      } as unknown as ProviderListResponse,
+      new Set(['AWS_BEARER_TOKEN_BEDROCK']),
+      [
+        {
+          id: 'amazon-bedrock',
+          authRequirement: { methods: [{ envVars: ['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION'] }] },
+        },
+      ],
+    );
+
+    expect(merged.connected).toEqual([]);
+  });
+
   test('maps ChatGPT subscription secrets to the codex gateway provider', () => {
+    expect([...connectedGatewayProviderIdsFromSecretNames(new Set(['CODEX_AUTH_JSON']))]).toEqual([
+      'codex',
+    ]);
+    expect([
+      ...connectedGatewayProviderIdsFromSecretNames(new Set(['OPENCODE_AUTH_JSON'])),
+    ]).toEqual(['codex']);
+  });
+
+  test('amazon-bedrock is connected via bearer token + region alone (matches what the transport reads)', () => {
+    const ids = connectedGatewayProviderIdsFromSecretNames(
+      new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']),
+    );
+    expect(ids.has('amazon-bedrock')).toBe(true);
+  });
+
+  test('amazon-bedrock is NOT connected from the bearer token alone, nor from the SigV4 pair alone', () => {
     expect(
-      [...connectedGatewayProviderIdsFromSecretNames(new Set(['CODEX_AUTH_JSON']))],
-    ).toEqual(['codex']);
+      connectedGatewayProviderIdsFromSecretNames(new Set(['AWS_BEARER_TOKEN_BEDROCK'])).has(
+        'amazon-bedrock',
+      ),
+    ).toBe(false);
     expect(
-      [...connectedGatewayProviderIdsFromSecretNames(new Set(['OPENCODE_AUTH_JSON']))],
-    ).toEqual(['codex']);
+      connectedGatewayProviderIdsFromSecretNames(
+        new Set(['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION']),
+      ).has('amazon-bedrock'),
+    ).toBe(false);
   });
 
   test('converts the project catalog into the managed kortix provider', () => {

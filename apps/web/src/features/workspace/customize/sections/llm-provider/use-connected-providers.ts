@@ -1,9 +1,10 @@
 'use client';
 
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
+import { isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -13,9 +14,14 @@ import {
   LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
+import { useLlmProviderCatalogRevision } from './use-live-catalog';
 import { buildCodexProvider } from './utils';
 
 export function useConnectedProviders(projectId: string, enabled: boolean) {
+  // Re-renders this hook when LlmCatalogBootstrap's fetch lands (module
+  // bindings are reassigned, not mutated — a plain memo dependency array
+  // won't otherwise notice). See use-live-catalog.ts.
+  const catalogRevision = useLlmProviderCatalogRevision();
   const projectDetailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -64,6 +70,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       id: 'kortix',
       label: kortix.name || 'Kortix',
       envVars: [],
+      authRequirement: { methods: [] },
       helpUrl: null,
       hint: 'Included with your plan',
       models,
@@ -78,11 +85,12 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
-        p.id !== 'kortix' && p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v)),
+        p.id !== 'kortix' && isProviderAuthSatisfied(p.authRequirement, (v) => secretNames.has(v)),
     );
     const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
     return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
-  }, [secretNames, kortixProvider, ocProviders]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
+  }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
 
   return { secretsQuery, connectedProviders, llmGatewayEnabled };
 }

@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
@@ -130,10 +130,10 @@ export function ModelsTab({
           <div key={provider.id}>
             <div className="flex items-center gap-2 px-1 pb-1">
               <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
-              <span className="text-foreground/70 text-xs font-medium">
-                {PROVIDER_LABELS[provider.id] ?? provider.label}
+              <span className="text-foreground/70 text-xs font-medium">{provider.label}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">
+                {providerRows.length}
               </span>
-              <span className="text-muted-foreground/40 ml-auto text-xs">{providerRows.length}</span>
             </div>
             <div className="bg-popover overflow-hidden rounded-md border">
               {providerRows.map(({ model, storeKey }, i) => {

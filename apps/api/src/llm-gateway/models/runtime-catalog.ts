@@ -1,7 +1,16 @@
 import { CATALOG, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
 
 const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
-const DEFAULT_REFRESH_MS = 24 * 60 * 60 * 1_000;
+// Was 24h — a full day for a new model launch (or a provider's own metadata
+// fix) to reach every deployment is a bad user experience once the web
+// connect modal reads this SAME live catalog instead of a baked snapshot
+// (see apps/web/src/lib/llm-providers.ts). 1h is a large freshness win (24x)
+// while staying trivially light on models.dev — one small JSON GET/hour per
+// deployment, no auth, no burst — and the existing atomic last-known-good
+// swap (see `refresh` below) makes ANY interval safe: a failed/slow fetch
+// never replaces `current` with a partial or broken catalog, it just keeps
+// serving the last good one and logs the miss.
+const DEFAULT_REFRESH_MS = 60 * 60 * 1_000;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -91,7 +100,9 @@ function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt:
   };
 }
 
-export function createRuntimeModelCatalog(options: RuntimeModelCatalogOptions): RuntimeModelCatalog {
+export function createRuntimeModelCatalog(
+  options: RuntimeModelCatalogOptions,
+): RuntimeModelCatalog {
   const sourceUrl = options.sourceUrl ?? DEFAULT_SOURCE_URL;
   const fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
   const refreshIntervalMs = options.refreshIntervalMs ?? DEFAULT_REFRESH_MS;
@@ -122,7 +133,11 @@ export function createRuntimeModelCatalog(options: RuntimeModelCatalogOptions): 
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const fetchedAt = new Date().toISOString();
-      const next = normalizeCatalog((await response.json()) as ModelsDevResponse, sourceUrl, fetchedAt);
+      const next = normalizeCatalog(
+        (await response.json()) as ModelsDevResponse,
+        sourceUrl,
+        fetchedAt,
+      );
 
       // Atomic reference swap: request readers see either the complete old
       // catalog or the complete new one, never a partially refreshed registry.
@@ -136,7 +151,9 @@ export function createRuntimeModelCatalog(options: RuntimeModelCatalogOptions): 
       return true;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      logger.warn(`[llm-gateway] runtime catalog refresh failed; keeping last known catalog: ${lastError}`);
+      logger.warn(
+        `[llm-gateway] runtime catalog refresh failed; keeping last known catalog: ${lastError}`,
+      );
       return false;
     }
   };

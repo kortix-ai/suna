@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { ChevronLeft, ChevronRight, ExternalLink, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -98,13 +98,19 @@ export function CatalogTab({
   return (
     <div className="space-y-3 px-5 pt-3 pb-4">
       {canWrite && (
-        <button type="button" className={`${ROW} border-dashed`} onClick={() => setSubview({ kind: 'custom' })}>
+        <button
+          type="button"
+          className={`${ROW} border-dashed`}
+          onClick={() => setSubview({ kind: 'custom' })}
+        >
           <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
             <Plus className="size-4 shrink-0" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-foreground truncate text-sm font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line492JsxTextCustomProvider',
+              )}
             </div>
             <p className="text-muted-foreground mt-0.5 truncate text-xs">
               {tHardcodedUi.raw(
@@ -133,7 +139,7 @@ export function CatalogTab({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-foreground truncate text-sm font-medium">
-                        {PROVIDER_LABELS[provider.id] ?? provider.label}
+                        {provider.label}
                       </span>
                       {isConnected && (
                         <Badge variant="success" size="sm">
@@ -188,9 +194,7 @@ function ProviderDetail({
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-foreground truncate text-sm font-medium">
-              {PROVIDER_LABELS[provider.id] ?? provider.label}
-            </span>
+            <span className="text-foreground truncate text-sm font-medium">{provider.label}</span>
             {isConnected && (
               <Badge variant="success" size="sm">
                 Connected
@@ -234,7 +238,9 @@ function ProviderDetail({
 
         {models.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared')}
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared',
+            )}
           </p>
         ) : (
           <ul className="space-y-2">
