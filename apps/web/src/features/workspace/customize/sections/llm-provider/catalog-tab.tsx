@@ -16,7 +16,7 @@ import type { CatalogSubview } from './types';
 import { helpHostnameFromUrl, providerCredentialSummary, releasedAgo } from './utils';
 
 const ROW =
-  'group bg-popover hover:bg-muted/40 flex w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors';
+  'group bg-popover hover:bg-muted/40 flex w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors active:scale-[0.995]';
 
 export function CatalogTab({
   projectId,

@@ -12,7 +12,7 @@ import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deleteProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Unplug } from 'lucide-react';
+import { Plug, Plus, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
@@ -79,9 +79,15 @@ export function ConnectedTab({
           title={tHardcodedUi.raw(
             'componentsProjectsProjectProviderModal.line300JsxTextNoProvidersConnectedYet',
           )}
+          description={
+            canWrite
+              ? 'Connect an LLM provider to give this project its own models. Keys are encrypted and shared with everyone on the project.'
+              : 'No LLM providers have been connected to this project yet.'
+          }
           action={
             canWrite ? (
-              <Button variant="outline" size="sm" onClick={onAddProvider}>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddProvider}>
+                <Plus className="size-3.5 shrink-0" />
                 {tHardcodedUi.raw(
                   'componentsProjectsProjectProviderModal.line302JsxTextAddProvider',
                 )}
