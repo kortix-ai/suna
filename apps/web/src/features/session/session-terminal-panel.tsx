@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
+import { shouldAutoReplaceTerminal } from '@/features/session/pty-connection';
 import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
 import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
 import { useServerStore } from '@/stores/server-store';
@@ -79,6 +80,19 @@ export function SessionTerminalPanel({
       });
   }, [createPty, sessionId, setTerminalPty]);
 
+  // 'pty not found' → PtyTerminal classifies the close as 'replace' and calls
+  // this. The registry is process-local: after a daemon restart the remembered
+  // id can never reconnect — drop it so the lazy-create effect below mints a
+  // fresh shell. Capped so a broken runtime can't spawn terminals forever.
+  const replacementAttemptRef = useRef(0);
+  const handleUnavailable = useCallback(() => {
+    if (!shouldAutoReplaceTerminal(replacementAttemptRef.current)) return;
+    replacementAttemptRef.current += 1;
+    ensuringRef.current = false;
+    setOptimisticPty(null);
+    setTerminalPty(sessionId, null);
+  }, [sessionId, setTerminalPty]);
+
   useEffect(() => {
     if (listedPty && optimisticPty?.id === listedPty.id) {
       setOptimisticPty(null);
@@ -129,6 +143,7 @@ export function SessionTerminalPanel({
         pty={pty}
         serverUrl={serverUrl}
         hidden={hidden}
+        onUnavailable={handleUnavailable}
         className="absolute inset-0 h-full w-full"
       />
     );
