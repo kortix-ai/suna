@@ -12,6 +12,7 @@ import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { logger } from '../lib/logger';
+import { emitOtelSpan, isOtelTraceExporterConfigured } from '../lib/otel';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
@@ -253,6 +254,59 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   });
 }
 
+/**
+ * Build + fire a standard OTel `gen_ai.*` span for one gateway call.
+ *
+ * Best-effort telemetry only: gated on isOtelTraceExporterConfigured() so we
+ * skip building the attributes object entirely when no OTLP endpoint is
+ * configured (the common self-host case), fire-and-forget (never awaited by
+ * the caller), and guarded so a span-emission failure can never throw into —
+ * or block — trace persistence or billing.
+ */
+export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
+  if (!isOtelTraceExporterConfigured()) return;
+  try {
+    const endTimeMs = Date.now();
+    const startTimeMs = endTimeMs - Math.max(0, trace.latencyMs || 0);
+    const resolvedModel = trace.resolvedModel || trace.requestedModel;
+    void emitOtelSpan({
+      name: `chat ${resolvedModel}`,
+      kind: 'INTERNAL',
+      startTimeMs,
+      endTimeMs,
+      attributes: {
+        'gen_ai.system': trace.provider,
+        'gen_ai.operation.name': 'chat',
+        'gen_ai.request.model': trace.requestedModel,
+        'gen_ai.response.model': resolvedModel,
+        'gen_ai.usage.input_tokens': trace.usage.promptTokens,
+        'gen_ai.usage.output_tokens': trace.usage.completionTokens,
+        'kortix.cost_usd': trace.finalCost,
+        'kortix.upstream_cost_usd': trace.upstreamCost,
+        'kortix.provider': trace.provider,
+        'kortix.cached_tokens': trace.usage.cachedTokens,
+        'kortix.streaming': trace.streaming,
+        'kortix.billing_mode': trace.billingMode,
+        'kortix.request_id': trace.requestId,
+        'kortix.attempts': trace.attempts,
+        'kortix.gateway_status': trace.status,
+        'kortix.ok': trace.ok,
+        ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
+      },
+    }).catch((error) => {
+      console.warn(
+        '[otel] gen_ai span emit failed:',
+        error instanceof Error ? error.message : error,
+      );
+    });
+  } catch (error) {
+    console.warn(
+      '[otel] gen_ai span build failed:',
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 /** Persist a request trace to gateway_request_logs (skips unauthenticated traces). */
 export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   // Pre-auth failures (401) carry no accountId — nothing useful to attribute.
@@ -289,6 +343,8 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     // (finalCost/upstreamCost) already reflects the cache-write premium.
     metadata: { ...trace.metadata, cacheWriteTokens: trace.usage.cacheWriteTokens },
   });
+  // Non-blocking: never let telemetry delay the caller or affect the trace write.
+  emitGatewayGenAiSpan(trace);
 }
 
 /** The full set of hooks the pipeline needs, bound to the in-process control plane. */
