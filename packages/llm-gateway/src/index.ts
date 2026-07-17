@@ -41,6 +41,18 @@ export type { ExtractedUsage } from './usage';
 export { buildUpstreamRequest } from './transports';
 export type { UpstreamRequest } from './transports';
 
+export {
+  anthropicMessagesToChat,
+  chatJsonToAnthropicMessage,
+  chatSseToAnthropicSse,
+} from './ingress/anthropic-messages';
+export type {
+  AnthropicContentBlock,
+  AnthropicMessage,
+  AnthropicMessagesRequest,
+  AnthropicTool,
+} from './ingress/anthropic-messages';
+
 export { createModelFallbackPolicyEngine } from './routing';
 export type { ModelFallbackPolicyEngine } from './routing';
 

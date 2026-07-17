@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 490,
+  "count": 492,
   "routes": [
     {
       "method": "GET",
@@ -815,8 +815,16 @@
       "path": "/v1/llm/health"
     },
     {
+      "method": "POST",
+      "path": "/v1/llm/messages"
+    },
+    {
       "method": "GET",
       "path": "/v1/llm/models"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/v1/messages"
     },
     {
       "method": "GET",
