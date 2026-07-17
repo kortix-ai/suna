@@ -20,6 +20,7 @@ export * from './model-defaults';
 export * from './agent-scope';
 export * from './agent-config';
 export * from './composer-capabilities';
+export * from './acp-permission-policy';
 export * from './billing';
 export * from './channels';
 export * from './gateway';
