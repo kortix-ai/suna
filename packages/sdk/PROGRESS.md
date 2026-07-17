@@ -850,3 +850,16 @@ retains its own merge, deploy, and live-dev gates.
 `bcb2a2afa`, the SDK typecheck remained green; the full suite reported
 **1121 pass / 0 fail** across 84 files with 5005 assertions; and the packed
 install smoke again passed. **Shippable to production: YES.**
+
+---
+
+### 2026-07-17 — session `discover-marketplace` (claim)
+
+Claimed the additive Discover integration-catalog SDK surface for the user-directed
+unified marketplace rollout. The SDK will expose integrations.sh catalog records and
+their executable variants, while Pipedream entries remain separate, explicitly
+labelled OAuth-only alternatives. Existing connector APIs and exported names remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and finish
+with typecheck, full-suite, and packed-install smoke evidence.
+
+**Status:** IN PROGRESS.
