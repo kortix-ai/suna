@@ -1,11 +1,18 @@
 import { describe, expect, it, afterEach } from 'bun:test';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
-import { streamText } from 'ai';
+import { jsonSchema, streamText, tool } from 'ai';
 import { calculateCost, extractUsageFromSseBuffer } from '../../usage';
 import { sseErrorFrame, sseHasContent } from '../../usage/completion-guard';
 import type { UpstreamDescriptor } from '../../domain';
-import { guardAgainstUnhandledResultRejections } from './index';
-import { aiSdkFamilyFor, clampMaxOutputTokensForBedrock, openRouterCostMetadataExtractor } from './model';
+import { guardAgainstUnhandledResultRejections, mapToolCalls } from './index';
+import {
+  aiSdkFamilyFor,
+  clampMaxOutputTokensForBedrock,
+  isCodexDescriptor,
+  needsResponsesApi,
+  openRouterCostMetadataExtractor,
+  resolveAiModel,
+} from './model';
 import { buildAiSdkArgs, toModelMessages } from './request';
 import { mapUsage, openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
@@ -499,4 +506,277 @@ describe('cost-hint threading — defect 3 (OpenRouter usage.cost parity)', () =
     streamExtractor.processChunk({ usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0011 } });
     expect(streamExtractor.buildMetadata()).toEqual({ openrouterCost: { cost: 0.0011 } });
   });
+});
+
+// Piece A (2026-07-17): absorbs the OpenAI Responses API into the ai-sdk
+// engine itself, so Codex + genuine-OpenAI reasoning-with-tools no longer
+// need to fall through to the native openai-responses transport. The routing
+// decision (needsResponsesApi) is the exact same predicate route-kind.ts's
+// resolveTransportKind already uses for the native path — see route-kind.test.ts
+// for the exhaustive truth table this reuses; the tests here focus on what's
+// NEW: the AI SDK model that decision builds, and Codex's forced-streaming
+// wrinkle (its backend 400s on `stream:false`, which is all `generateText`
+// ever sends).
+describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () => {
+  const reasoningTool = {
+    type: 'function',
+    function: { name: 'get_weather', description: 'd', parameters: { type: 'object' } },
+  };
+
+  const genuineOpenAiReasoning: UpstreamDescriptor = {
+    provider: 'openai',
+    kind: 'openai-compat',
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: 'sk-test',
+    billingMode: 'platform-fee',
+    markup: 0.1,
+    resolvedModel: 'gpt-5.6',
+    reasoning: true,
+    temperature: false,
+    npm: '@ai-sdk/openai',
+  };
+
+  // Mirrors apps/api's descriptors.ts codexDescriptor shape (no `npm` field —
+  // it's hand-built for the ChatGPT OAuth backend, never catalog-resolved).
+  const codex: UpstreamDescriptor = {
+    provider: 'openai-codex',
+    kind: 'openai-responses',
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    apiKey: 'oat_test',
+    billingMode: 'none',
+    markup: 0,
+    resolvedModel: 'gpt-5-codex',
+    headers: { 'ChatGPT-Account-ID': 'acct_1' },
+  };
+
+  describe('needsResponsesApi — reused verbatim from resolveTransportKind', () => {
+    it('is true for a genuine OpenAI reasoning model with function tools and a live effort', () => {
+      expect(
+        needsResponsesApi(
+          { messages: [], tools: [reasoningTool], reasoning_effort: 'medium' },
+          genuineOpenAiReasoning,
+        ),
+      ).toBe(true);
+    });
+
+    it('is false for the same descriptor with no tools (not the broken combination)', () => {
+      expect(
+        needsResponsesApi({ messages: [], reasoning_effort: 'medium' }, genuineOpenAiReasoning),
+      ).toBe(false);
+    });
+
+    it("is false when reasoning_effort is explicitly 'none' (OpenAI's documented escape hatch)", () => {
+      expect(
+        needsResponsesApi(
+          { messages: [], tools: [reasoningTool], reasoning_effort: 'none' },
+          genuineOpenAiReasoning,
+        ),
+      ).toBe(false);
+    });
+
+    it('is true for a Codex descriptor no matter what the body contains', () => {
+      expect(needsResponsesApi({}, codex)).toBe(true);
+      expect(needsResponsesApi({ messages: [], stream: false }, codex)).toBe(true);
+    });
+  });
+
+  it('aiSdkFamilyFor resolves a Codex descriptor to the openai family (Responses-capable), not generic openai-compatible', () => {
+    expect(aiSdkFamilyFor(codex)).toBe('openai');
+  });
+
+  describe('resolveAiModel — .chat() vs .responses() selection', () => {
+    // `LanguageModel` (the return type) is a union that also admits a bare
+    // model-id string (a global-registry reference) — narrow to the object
+    // shape resolveAiModel actually returns to read `.provider` off it.
+    const providerOf = (model: ReturnType<typeof resolveAiModel>): string =>
+      (model as { provider: string }).provider;
+
+    it('builds a .responses() model for genuine OpenAI reasoning + tools + a live effort', () => {
+      const model = resolveAiModel(genuineOpenAiReasoning, {
+        messages: [],
+        tools: [reasoningTool],
+        reasoning_effort: 'medium',
+      });
+      expect(providerOf(model)).toBe('openai.responses');
+    });
+
+    it('keeps using .chat() for a plain non-reasoning-blocked openai request (no tools)', () => {
+      const model = resolveAiModel(genuineOpenAiReasoning, { messages: [], reasoning_effort: 'medium' });
+      expect(providerOf(model)).toBe('openai.chat');
+    });
+
+    it('keeps using .chat() when no body is passed at all (default {})', () => {
+      expect(providerOf(resolveAiModel(genuineOpenAiReasoning))).toBe('openai.chat');
+    });
+
+    it('always builds a .responses() model for Codex, regardless of what the body says', () => {
+      expect(providerOf(resolveAiModel(codex, { messages: [] }))).toBe('openai.responses');
+      expect(providerOf(resolveAiModel(codex, { messages: [], stream: false }))).toBe('openai.responses');
+    });
+  });
+
+  describe('buildAiSdkArgs — reasoning-effort mapping onto providerOptions.openai', () => {
+    it('maps the nested reasoning.effort shape the same as the flat reasoning_effort field', () => {
+      const args = buildAiSdkArgs({ messages: [], reasoning: { effort: 'high' } }, 'openai');
+      expect(args.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+    });
+
+    it("applies defaultReasoningEffort (Codex's 'low') only when the body carries none of its own", () => {
+      const defaulted = buildAiSdkArgs({ messages: [] }, 'openai', { defaultReasoningEffort: 'low' });
+      expect(defaulted.providerOptions).toEqual({ openai: { reasoningEffort: 'low' } });
+
+      const explicitWins = buildAiSdkArgs(
+        { messages: [], reasoning_effort: 'high' },
+        'openai',
+        { defaultReasoningEffort: 'low' },
+      );
+      expect(explicitWins.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+
+      const noDefaultNoEffort = buildAiSdkArgs({ messages: [] }, 'openai');
+      expect(noDefaultNoEffort.providerOptions).toBeUndefined();
+    });
+  });
+
+  // Codex's backend is stream-only (`stream:false` 400s — see
+  // openai-responses/request.ts's chatToResponses comment). The AI SDK's
+  // non-streaming `doGenerate` always sends `stream:false`, so
+  // callUpstreamViaAiSdk drives Codex through `streamText` (`doStream`, which
+  // DOES force `stream:true` on the wire — see @ai-sdk/openai's
+  // OpenAIResponsesLanguageModel) even for a client that asked for a
+  // non-streaming completion, then collapses the settled result into one JSON
+  // response. This exercises that exact sequence — streamText + guard +
+  // Promise.all + mapToolCalls + openAiJsonFromResult — against a real
+  // streamText() result (mock model, no network) instead of hand-rolling the
+  // JSON shape, so a regression in how callUpstreamViaAiSdk assembles it would
+  // very likely break this too.
+  describe('Codex non-streaming client request over a stream-only upstream (collapse path)', () => {
+    it('collapses a streamText() tool-call result into the same JSON shape generateText would produce', async () => {
+      const mock = new MockLanguageModelV4({
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: 'stream-start', warnings: [] },
+              { type: 'tool-input-start', id: 'call_1', toolName: 'get_weather' },
+              { type: 'tool-input-delta', id: 'call_1', delta: '{"city":"sf"}' },
+              { type: 'tool-input-end', id: 'call_1' },
+              {
+                type: 'tool-call',
+                toolCallId: 'call_1',
+                toolName: 'get_weather',
+                input: JSON.stringify({ city: 'sf' }),
+              },
+              {
+                type: 'finish',
+                // LanguageModelV4's finish reason is `{unified, raw}`, not a bare
+                // string (see @ai-sdk/provider's LanguageModelV4FinishReason) —
+                // a plain string here silently degrades to 'other'.
+                finishReason: { unified: 'tool-calls', raw: undefined },
+                usage: {
+                  inputTokens: { total: 4, noCache: 4, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 6, reasoning: 0 },
+                  totalTokens: 10,
+                },
+              },
+            ] as any,
+          }),
+        }),
+      });
+
+      // The same tool the gateway builds via request.ts's `toToolSet` — no
+      // `execute`, so the SDK surfaces the call and stops instead of running it.
+      const result = streamText({
+        model: mock,
+        prompt: 'weather?',
+        maxRetries: 0,
+        tools: {
+          get_weather: tool({
+            description: 'd',
+            inputSchema: jsonSchema({ type: 'object', properties: {} }),
+          }),
+        },
+      });
+      guardAgainstUnhandledResultRejections(result);
+
+      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] = await Promise.all([
+        result.text,
+        result.reasoningText,
+        result.toolCalls,
+        result.finishReason,
+        result.usage,
+        result.providerMetadata,
+      ]);
+      const json = openAiJsonFromResult(
+        {
+          text,
+          reasoningText,
+          toolCalls: mapToolCalls(toolCalls as any),
+          finishReason,
+          usage,
+          providerMetadata,
+        },
+        { model: 'codex/gpt-5-codex', provider: 'openai-codex' },
+      ) as any;
+
+      expect(json.object).toBe('chat.completion');
+      expect(json.choices[0].finish_reason).toBe('tool_calls');
+      expect(json.choices[0].message.tool_calls[0]).toMatchObject({
+        id: 'call_1',
+        function: { name: 'get_weather', arguments: '{"city":"sf"}' },
+      });
+      expect(json.usage.prompt_tokens).toBe(4);
+      expect(json.usage.completion_tokens).toBe(6);
+    });
+
+    it('collapses a plain-text streamText() result the same way, with no tool_calls key', async () => {
+      const mock = new MockLanguageModelV4({
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: 'stream-start', warnings: [] },
+              { type: 'text-start', id: '0' },
+              { type: 'text-delta', id: '0', delta: 'low-effort answer' },
+              { type: 'text-end', id: '0' },
+              {
+                type: 'finish',
+                finishReason: { unified: 'stop', raw: undefined },
+                usage: {
+                  inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 2, reasoning: 0 },
+                  totalTokens: 5,
+                },
+              },
+            ] as any,
+          }),
+        }),
+      });
+
+      const result = streamText({ model: mock, prompt: 'hi', maxRetries: 0 });
+      guardAgainstUnhandledResultRejections(result);
+      const [text, reasoningText, toolCalls, finishReason, usage, providerMetadata] = await Promise.all([
+        result.text,
+        result.reasoningText,
+        result.toolCalls,
+        result.finishReason,
+        result.usage,
+        result.providerMetadata,
+      ]);
+      const json = openAiJsonFromResult(
+        { text, reasoningText, toolCalls: mapToolCalls(toolCalls as any), finishReason, usage, providerMetadata },
+        { model: 'codex/gpt-5-codex', provider: 'openai-codex' },
+      ) as any;
+
+      expect(json.object).toBe('chat.completion');
+      expect(json.choices[0].finish_reason).toBe('stop');
+      expect(json.choices[0].message.content).toBe('low-effort answer');
+      expect(json.choices[0].message.tool_calls).toBeUndefined();
+    });
+  });
+
+  // Codex OAuth cannot be driven live in this environment (no OAuth creds
+  // available here) — the routing (needsResponsesApi/resolveAiModel/
+  // aiSdkFamilyFor above) and the forced-streaming collapse path (this
+  // describe block) are covered by code path + unit test only, matching the
+  // native openai-responses transport's own existing Codex test coverage
+  // (openai-responses/request.test.ts, response.test.ts), which is unchanged
+  // by this piece.
 });

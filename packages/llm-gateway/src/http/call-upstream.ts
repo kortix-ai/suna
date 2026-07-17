@@ -45,7 +45,11 @@ export async function callUpstream(
   // breaker + gateway retry apply identically. Non-streaming awaits inside (a
   // 4xx/5xx throws → retry/failover); streaming returns immediately (errors
   // surface as an in-stream frame the pipeline probe handles), matching native
-  // timing. A provider the engine can't serve (Codex) falls through to native.
+  // timing. `isAiSdkServable` is unconditionally true today (every descriptor
+  // kind, including Codex/openai-responses, is now servable — see ai-sdk/
+  // model.ts) but stays as an explicit gate here rather than being inlined
+  // away, so a future descriptor kind the engine genuinely can't serve has an
+  // obvious place to opt back out to native.
   if (opts.engine === 'ai-sdk' && isAiSdkServable(descriptor)) {
     return withResilience(
       async (attemptSignal) => {
