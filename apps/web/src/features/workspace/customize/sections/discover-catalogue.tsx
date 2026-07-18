@@ -41,13 +41,6 @@ type DiscoverCard =
   | { source: 'integration'; item: DiscoverIntegration }
   | { source: 'pipedream'; app: PipedreamApp };
 
-function integrationKindLabel(kind: DiscoverIntegration['kind']): string {
-  if (kind === 'openapi') return 'OpenAPI';
-  if (kind === 'mcp') return 'MCP';
-  if (kind === 'graphql') return 'GraphQL';
-  return 'CLI';
-}
-
 function connectorSlug(item: DiscoverIntegration, variant: DiscoverIntegrationVariant): string {
   return `${item.slug}-${variant.kind}`
     .trim()
@@ -216,7 +209,9 @@ export function DiscoverCatalogue({
               const description = isOAuth ? card.app.description : card.item.description;
               const icon = isOAuth ? card.app.imgSrc : card.item.icon;
               const key = isOAuth ? `pipedream:${card.app.slug}` : card.item.id;
-              const subtitle = isOAuth ? 'Pipedream OAuth' : integrationKindLabel(card.item.kind);
+              // The public index often has one feed entry (commonly MCP) for a
+              // domain whose surface document contains APIs, CLIs, and more.
+              const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';
               return (
                 <button
                   key={key}

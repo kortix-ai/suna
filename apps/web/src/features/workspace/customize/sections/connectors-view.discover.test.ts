@@ -45,4 +45,11 @@ describe('feature-flagged Discover connector marketplace', () => {
     expect(discoverSource).toContain('variant.connector');
     expect(discoverSource).toContain('Configure manually');
   });
+
+  test('does not mislabel a domain card as only its feed-provided MCP surface', () => {
+    expect(discoverSource).toContain("const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';");
+    expect(discoverSource).not.toContain(
+      "const subtitle = isOAuth ? 'Pipedream OAuth' : integrationKindLabel(card.item.kind);",
+    );
+  });
 });

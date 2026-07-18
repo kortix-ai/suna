@@ -42,6 +42,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     experimental: {
       agent_tunnel: false,
       marketplace: false,
+      connectors_api_discover: false,
       agentmail_email: false,
       meet: false,
       llm_gateway: true,

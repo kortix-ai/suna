@@ -2,10 +2,17 @@
 
 ## Product contract
 
-Replace the Pipedream-only "Easy Connect" catalogue with one Discover marketplace.
-The default inventory is the complete public integrations.sh index. Direct provider
-surfaces are the primary path: OpenAPI, Postman, MCP, GraphQL, HTTP documentation,
-and CLI metadata remain visibly attributed to their real source.
+Keep the existing Pipedream-backed "Easy Connect" catalogue unchanged. Add Discover
+as a sibling tab behind the per-project `connectors_api_discover` experimental flag.
+The flag is always available, explicit opt-in, and off by default. When disabled,
+Discover is not mounted and makes no catalogue requests. Easy Connect remains the
+default tab whenever it is available.
+
+Discover's inventory is the complete public integrations.sh index. A direct card
+represents a domain's available surfaces and must not be labelled as MCP-only merely
+because the public index was sourced from an MCP feed. Opening it shows the
+individually labelled OpenAPI, Postman, MCP, GraphQL, HTTP documentation, and CLI
+variants attributed to their real source.
 
 Pipedream is not a generic API proxy. It contributes only applications whose
 Pipedream `auth_type` is exactly `oauth`. Those applications may appear as separate
@@ -26,8 +33,8 @@ Built-in channels such as Slack remain in Channels and are excluded from Pipedre
 3. Executable OpenAPI, MCP, and GraphQL variants become existing connector drafts.
    Base-URL/docs-only and CLI variants remain discoverable but link to documentation
    instead of creating an empty connector.
-4. The existing Pipedream catalogue endpoint remains independently paginated but
-   returns OAuth apps only.
+4. Discover reads the existing Pipedream catalogue independently and includes only
+   OAuth apps. Easy Connect keeps its current catalogue and behavior.
 
 ## Reliability and safety
 
@@ -48,9 +55,13 @@ renamed or removed.
 
 ## Acceptance criteria
 
-- Discover is the default add-connector tab even when Pipedream is not configured.
+- With the flag off, the Discover tab is absent and Easy Connect is unchanged.
+- With the flag on, Discover appears beside Easy Connect; Easy Connect remains the
+  default when available. If Easy Connect is unavailable, Discover becomes default.
 - Search returns integrations.sh records and separately-labelled Pipedream OAuth
   alternatives in the same marketplace grid.
+- Direct cards are labelled `Direct surfaces`, not as only MCP/OpenAPI/CLI based on
+  the feed record that led to the domain.
 - Pipedream `keys`, `none`, or missing-auth apps never appear.
 - A real integrations.sh OpenAPI record can be added and synchronized through the
   existing connector path; a real remote MCP record can be added when it has an
