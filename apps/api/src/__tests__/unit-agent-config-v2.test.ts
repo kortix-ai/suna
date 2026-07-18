@@ -21,7 +21,7 @@ import {
   applyDefaultAgentV2,
   readAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
-import { parseManifestString } from '../projects/triggers';
+import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
 
 const V2 = `
 kortix_version: 2
@@ -197,12 +197,80 @@ agents:
   });
 
   test('refuses a v1 manifest', () => {
-    const applied = applyDefaultAgentV2(
-      parseManifestString(V1, 'toml', 'kortix.toml'),
-      'kortix',
-    );
+    const applied = applyDefaultAgentV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix');
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('kortix_version 2');
+  });
+});
+
+// GAP 2 (dev-live repro): `applyDefaultAgentV2`/`applyAgentBlockV2` validate
+// via `validateManifest(manifest.raw, format)` — the RAW in-memory object,
+// never through `serializeManifest`/re-parse (which re-injects
+// `kortix_version` from `manifest.schemaVersion` on the way OUT — see that
+// function's doc comment). `loadManifestForEdit`'s synthesized "blank
+// project" manifest (no kortix.yaml/kortix.toml committed yet) is exactly
+// this raw, never-serialized shape. #4974's own regression test proved the
+// synthesis valid only via serialize→reparse→validate — never the raw path
+// these two functions actually run — so it missed that the synthesized
+// `.raw` never embedded `kortix_version`, and `validateRoot` (manifest-schema)
+// rejects an object with no `kortix_version` key as unversioned before ever
+// reaching the v2 body validators. PUT /default-agent and PUT
+// /agents/:name/config both 400'd `kortix_version is required` on a blank
+// project even after #4974 merged. `synthesizeBlankManifest` (../projects/
+// triggers.ts) now embeds it — these tests exercise the EXACT functions the
+// write routes call, on the EXACT object those routes hold (not a
+// hand-rolled fixture), so a future regression that drops the key again
+// fails here instead of shipping.
+describe('the raw path `loadManifestForEdit` actually produces for a blank project', () => {
+  test('applyDefaultAgentV2 validates against the synthesized manifest as-is (no serialize/reparse)', () => {
+    const manifest = synthesizeBlankManifest({
+      name: 'blank-project',
+      manifestPath: 'kortix.toml',
+    });
+    // Sanity: the bug this guards against — a raw object with no
+    // `kortix_version` key reads as unversioned to `validateRoot`.
+    expect(manifest.raw.kortix_version).toBe(2);
+
+    const applied = applyDefaultAgentV2(manifest, 'kortix');
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.raw.default_agent).toBe('kortix');
+  });
+
+  test('applyAgentBlockV2 validates a new agent block against the synthesized manifest as-is', () => {
+    const manifest = synthesizeBlankManifest({
+      name: 'blank-project',
+      manifestPath: 'kortix.toml',
+    });
+
+    const applied = applyAgentBlockV2(manifest, 'release-bot', {
+      connectors: ['github'],
+      kortix_cli: ['project.cr.open'],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const agents = applied.raw.agents as Record<string, unknown>;
+    expect(Object.keys(agents).sort()).toEqual(['kortix', 'release-bot']);
+    // The write result still carries kortix_version — a second edit in the
+    // same request (or a subsequent PUT before the first commit lands) must
+    // keep validating too, not just the very first one.
+    expect(applied.raw.kortix_version).toBe(2);
+    const reapplied = applyDefaultAgentV2({ ...manifest, raw: applied.raw }, 'release-bot');
+    expect(reapplied.ok).toBe(true);
+  });
+
+  test('the synthesized manifest itself is schema-valid on the exact object identity applyDefaultAgentV2 spreads', () => {
+    // `applyDefaultAgentV2`/`applyAgentBlockV2` both do `{ ...manifest.raw, ... }`
+    // then `validateManifest(nextRaw, manifest.format)` directly — prove the
+    // UNMODIFIED synthesized raw already round-trips through the real
+    // validator with zero errors (a stricter check than the old test's
+    // serialize→reparse indirection).
+    const manifest = synthesizeBlankManifest({
+      name: 'blank-project',
+      manifestPath: 'kortix.toml',
+    });
+    const applied = applyDefaultAgentV2(manifest, manifest.raw.default_agent as string);
+    expect(applied.ok).toBe(true);
   });
 });
