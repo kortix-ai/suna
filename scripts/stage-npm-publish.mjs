@@ -97,16 +97,25 @@ if (missing.length) {
 //    if-present, never assumed: a package with no `dist/version.js` (every
 //    other publishable package today) is untouched.
 const PLACEHOLDER_VERSION = '0.0.0-dev';
+const readIfPresent = (file) => {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
+};
 for (const versionFile of ['dist/version.js', 'dist/version.d.ts']) {
-  if (!existsSync(versionFile)) continue;
-  const contents = readFileSync(versionFile, 'utf8');
+  const contents = readIfPresent(versionFile);
+  if (contents === null) continue;
   const stamped = contents.split(PLACEHOLDER_VERSION).join(version);
   if (stamped !== contents) writeFileSync(versionFile, stamped);
 }
 
 writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
 console.log(`staged ${pkg.name}@${version} for publish`);
-if (existsSync('dist/version.js')) console.log(`  version:${readFileSync('dist/version.js', 'utf8').includes(version) ? version : '(stamp failed)'}`);
+const stampedVersionJs = readIfPresent('dist/version.js');
+if (stampedVersionJs !== null) console.log(`  version:${stampedVersionJs.includes(version) ? version : '(stamp failed)'}`);
 console.log(`  main:   ${pkg.main ?? '(none)'}`);
 console.log(`  types:  ${pkg.types ?? '(none)'}`);
 if (pkg.browser || pkg.unpkg || pkg.jsdelivr) {

@@ -135,6 +135,9 @@ COPY --from=deps /app/node_modules ./node_modules
 # which may contain stale symlinks to the .pnpm store.
 # Full dirs (not src-only): the API and @kortix/llm-gateway resolve @kortix/llm-catalog
 # (and @kortix/shared's subpaths) at runtime, which needs package-resolution intact.
+# @kortix/manifest-schema is full-dir too: it imports @kortix/shared, and only its
+# nested node_modules carries the workspace symlink that resolves it — pnpm does
+# not shamefully-hoist workspace links into the root node_modules.
 COPY --from=deps /app/packages/shared ./packages/shared
 COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
@@ -162,9 +165,7 @@ COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig
 # Without this the "Create project" seed path throws
 # ENOENT scandir packages/starter/templates/base → 502.
 COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
-COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
-COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
-COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+COPY --from=deps /app/packages/manifest-schema ./packages/manifest-schema
 COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
 COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
 COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json

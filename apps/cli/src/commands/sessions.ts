@@ -634,15 +634,19 @@ function formatRelative(iso: string): string {
 
 function openInBrowser(url: string): void {
   // Only hand a real web URL to the OS opener — a value starting with '-' would
-  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
-  // so an unvalidated URL is a command-injection vector.
+  // be read as a flag by open/xdg-open, so an unvalidated URL is a
+  // command-injection vector. On Windows, avoid `cmd /c start`: cmd.exe
+  // re-parses its argument line, so metacharacters (&, |, ^) inside an
+  // otherwise-valid URL would be interpreted as commands. rundll32's
+  // FileProtocolHandler receives the URL as a plain argument with no shell
+  // parsing in between.
   if (!/^https?:\/\//i.test(url)) return;
   const cmd =
     process.platform === 'darwin'
       ? 'open'
       : process.platform === 'win32'
-        ? 'cmd'
+        ? 'rundll32'
         : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
   spawnSync(cmd, args, { stdio: 'ignore' });
 }
