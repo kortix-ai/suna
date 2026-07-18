@@ -28,9 +28,12 @@ Subcommands:
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
   new [--prompt "<text>"]           Start a new session, optionally with an
-                                    initial prompt. --wait blocks until it's
-                                    running; --json prints the session object
-                                    (capture session_id to orchestrate).
+                                    initial prompt. --agent <name> pins the
+                                    session to that agent (default: the
+                                    project's declared default agent).
+                                    --wait blocks until it's running; --json
+                                    prints the session object (capture
+                                    session_id to orchestrate).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
   connect [<session-id>]            Open the harness-neutral ACP chat for a
@@ -131,11 +134,13 @@ export async function runSessions(argv: string[]): Promise<number> {
   let promptFlag: string | undefined;
   let hostFlag: string | undefined;
   let portFlag: string | undefined;
+  let agentFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
     portFlag = takeFlagValue(rest, ['--port']);
+    agentFlag = takeFlagValue(rest, ['--agent']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -148,7 +153,7 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsLs(ctxOpts, json);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, ctxOpts, json, wait);
+      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag);
     case 'info':
     case 'show':
       return sessionsInfo(rest[0], ctxOpts, json);
@@ -217,12 +222,18 @@ async function sessionsNew(
   opts: CtxOpts,
   json = false,
   wait = false,
+  agent?: string,
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const body: Record<string, unknown> = {};
   if (prompt) body.initial_prompt = prompt;
+  // Explicit caller override — the server otherwise falls back to the
+  // project's declared default agent (kortix.yaml's `default_agent`), or the
+  // non-binding 'default' sentinel when none is configured. See
+  // apps/api/src/projects/lib/sessions.ts createProjectSession.
+  if (agent) body.agent_name = agent;
 
   const prepared = await prepareClientCreatedBranch(ctx, body);
   if (prepared === 'error') return 1;

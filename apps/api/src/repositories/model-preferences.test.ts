@@ -9,7 +9,7 @@ let conflictMode: 'update' | 'nothing' | null = null;
 
 function chain(): any {
   const c: any = {};
-  for (const m of ['select', 'from', 'where', 'update', 'set', 'delete', 'returning', 'limit']) {
+  for (const m of ['select', 'from', 'where', 'update', 'set', 'delete', 'returning', 'limit', 'leftJoin']) {
     c[m] = () => c;
   }
   c.values = (v: any) => {
@@ -32,7 +32,7 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { getAccountModelDefaults, upsertAccountModelPreference, getSessionAgentContext } = await import(
+const { getAccountModelDefaults, getSessionAgentContext, upsertAccountModelPreference } = await import(
   './model-preferences'
 );
 
@@ -122,5 +122,58 @@ describe('getSessionAgentContext', () => {
   test('row with neither key → model is null', async () => {
     selectRows = [{ agentName: 'default', metadata: { existing: true } }];
     expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: null });
+  });
+});
+
+// The join that lets a caller resolve the 'default' agent-name sentinel to
+// the owning project's declared default agent (see default-model.ts's
+// cachedSessionAgent) — the fix for agent-scope model pins silently never
+// applying to sessions whose agent_name never resolved past 'default'.
+describe('getSessionAgentContext', () => {
+  test('no row for sessionId → null', async () => {
+    selectRows = [];
+    expect(await getSessionAgentContext('s-missing')).toBeNull();
+  });
+
+  test('carries the joined project.metadata.default_agent as projectDefaultAgent', async () => {
+    selectRows = [
+      { agentName: 'default', metadata: {}, projectMetadata: { default_agent: 'kortix' } },
+    ];
+    const ctx = await getSessionAgentContext('s1');
+    expect(ctx).toEqual({ agentName: 'default', opencodeModel: null, projectDefaultAgent: 'kortix' });
+  });
+
+  test('project metadata with no default_agent → projectDefaultAgent null', async () => {
+    selectRows = [{ agentName: 'default', metadata: {}, projectMetadata: { git: {} } }];
+    const ctx = await getSessionAgentContext('s1');
+    expect(ctx?.projectDefaultAgent).toBeNull();
+  });
+
+  test('null project metadata (left join miss / never happens in practice, but must not throw) → projectDefaultAgent null', async () => {
+    selectRows = [{ agentName: 'default', metadata: {}, projectMetadata: null }];
+    const ctx = await getSessionAgentContext('s1');
+    expect(ctx?.projectDefaultAgent).toBeNull();
+  });
+
+  test('blank-string default_agent is treated as unset', async () => {
+    selectRows = [{ agentName: 'default', metadata: {}, projectMetadata: { default_agent: '   ' } }];
+    const ctx = await getSessionAgentContext('s1');
+    expect(ctx?.projectDefaultAgent).toBeNull();
+  });
+
+  test('still surfaces the session-level opencode_model override unchanged', async () => {
+    selectRows = [
+      {
+        agentName: 'release-bot',
+        metadata: { opencode_model: 'anthropic/claude-opus-4.8' },
+        projectMetadata: { default_agent: 'kortix' },
+      },
+    ];
+    const ctx = await getSessionAgentContext('s1');
+    expect(ctx).toEqual({
+      agentName: 'release-bot',
+      opencodeModel: 'anthropic/claude-opus-4.8',
+      projectDefaultAgent: 'kortix',
+    });
   });
 });

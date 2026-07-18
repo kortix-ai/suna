@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -17,20 +18,30 @@ import { parse } from 'yaml';
 // warning behavior.
 const CLI_ENTRY = resolve(import.meta.dir, '..', '..', 'index.ts');
 
+// Several black-box cases intentionally execute more than one bounded Docker
+// liveness probe. Keep the suite above Bun's 5s default while production probes
+// remain individually capped at 3s.
+setDefaultTimeout(15_000);
+
 describe('kortix self-host (generic Docker CLI)', () => {
   let tmp: string;
   let configRoot: string;
+  let instance: string;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-self-host-cli-'));
     configRoot = join(tmp, 'self-host');
+    // Compose project identity is based only on --instance. Never let a test
+    // that exercises `env set` inspect or recreate a developer's real
+    // `kortix-default` services merely because its files use a temp root.
+    instance = `kortixtest${randomUUID().replaceAll('-', '')}`;
   });
 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   async function run(args: string[], extraEnv: Record<string, string> = {}) {
     const proc = Bun.spawn({
-      cmd: [process.execPath, CLI_ENTRY, 'self-host', ...args],
+      cmd: [process.execPath, CLI_ENTRY, 'self-host', ...args, '--instance', instance],
       cwd: tmp,
       env: {
         ...process.env,
@@ -52,8 +63,8 @@ describe('kortix self-host (generic Docker CLI)', () => {
     return { code, stdout, stderr };
   }
 
-  function readEnv(instance = 'default'): Record<string, string> {
-    const content = readFileSync(join(configRoot, instance, '.env'), 'utf8');
+  function readEnv(instanceName = instance): Record<string, string> {
+    const content = readFileSync(join(configRoot, instanceName, '.env'), 'utf8');
     const out: Record<string, string> = {};
     for (const line of content.split(/\r?\n/)) {
       if (!line.trim() || !line.includes('=')) continue;
@@ -63,8 +74,8 @@ describe('kortix self-host (generic Docker CLI)', () => {
     return out;
   }
 
-  function readCompose(instance = 'default'): { services: Record<string, unknown> } {
-    return parse(readFileSync(join(configRoot, instance, 'docker-compose.yml'), 'utf8'));
+  function readCompose(instanceName = instance): { services: Record<string, unknown> } {
+    return parse(readFileSync(join(configRoot, instanceName, 'docker-compose.yml'), 'utf8'));
   }
 
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
@@ -223,7 +234,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
     // is KORTIX_INSTANCE_DIR — recomputed from the real on-disk instance dir
     // on every render (see normalizeFullSupabaseEnv in commands/self-host.ts).
     await run(['init', '--yes']);
-    const instanceDir = join(configRoot, 'default');
+    const instanceDir = join(configRoot, instance);
     expect(readEnv().KORTIX_INSTANCE_DIR).toBe(instanceDir);
 
     const compose = readCompose() as { services: Record<string, {
@@ -512,7 +523,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
     // init/start/update/configure/env-set render — hand-edit .env the way
     // `env set` itself refuses to (see secrets.test.ts's updater-managed
     // refusal coverage for KORTIX_INSTANCE_DIR).
-    const envFile = join(configRoot, 'default', '.env');
+    const envFile = join(configRoot, instance, '.env');
     writeFileSync(
       envFile,
       readFileSync(envFile, 'utf8').replace(

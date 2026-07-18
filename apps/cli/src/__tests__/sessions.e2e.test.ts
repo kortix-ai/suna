@@ -228,6 +228,22 @@ describe('sessions new CLI flow', () => {
     expect(sessionSha).toBe(baseSha);
   });
 
+  test('--agent forces the session onto an explicit agent instead of the project default', async () => {
+    const code = await runSessions(['new', '--agent', 'release-bot']);
+
+    expect(code).toBe(0);
+    expect(sessionCreateBody).not.toBeNull();
+    expect(sessionCreateBody).toMatchObject({ agent_name: 'release-bot' });
+  });
+
+  test('omitting --agent never sends agent_name (server resolves the project default)', async () => {
+    const code = await runSessions(['new']);
+
+    expect(code).toBe(0);
+    expect(sessionCreateBody).not.toBeNull();
+    expect(sessionCreateBody).not.toHaveProperty('agent_name');
+  });
+
   test('digest uses compact project transcript endpoint', async () => {
     const runningId = '11111111-1111-4111-8111-111111111111';
     const stoppedId = '22222222-2222-4222-8222-222222222222';
