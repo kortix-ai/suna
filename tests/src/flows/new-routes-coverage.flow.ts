@@ -17,8 +17,14 @@ flow(
     routes: ['GET /metrics', 'GET /v1/router/health'],
   },
   async (ctx) => {
-    await ctx.step('metrics endpoint is mounted or explicitly disabled', async () => {
+    await ctx.step('metrics endpoint rejects anonymous callers', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/metrics');
+      r.status(401);
+    });
+    await ctx.step('internal metrics endpoint is mounted or explicitly disabled', async () => {
+      const r = await ctx.client
+        .withBearer(ctx.env.internalServiceKey!, 'INTERNAL_OBSERVABILITY')
+        .get('/metrics');
       r.status([200, 404]);
     });
     await ctx.step('LLM gateway health endpoint is mounted', async () => {
