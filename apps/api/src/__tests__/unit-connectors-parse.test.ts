@@ -92,7 +92,27 @@ connectors:
     spec: .kortix/executor/internal.openapi.json
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ spec: '.kortix/executor/internal.openapi.json', auth: { type: 'none' } });
+    expect(specs[0]).toMatchObject({
+      spec: '.kortix/executor/internal.openapi.json', authAuto: true, auth: { type: 'none' },
+    });
+  });
+
+  test('explicit none is distinct from omitted auto-detect and survives round-trip', () => {
+    const { specs } = parseAndExtract(`
+connectors:
+  - slug: auto
+    provider: openapi
+    spec: https://example.com/auto.json
+  - slug: public
+    provider: openapi
+    spec: https://example.com/public.json
+    auth:
+      type: none
+`);
+    expect(specs[0]?.authAuto).toBe(true);
+    expect(specs[1]?.authAuto).toBe(false);
+    expect(connectorSpecToTomlEntry(specs[0]!)).not.toHaveProperty('auth');
+    expect(connectorSpecToTomlEntry(specs[1]!)).toMatchObject({ auth: { type: 'none' } });
   });
 
   test('postman by public repository URL', () => {
@@ -334,7 +354,7 @@ connectors:
   slug: x
 `);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toContain('array of tables');
+    expect(errors[0]!.error).toContain('must be a list');
   });
 
   test('missing slug', () => {
