@@ -24,6 +24,7 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
+let updatedProjectSets: any[];
 let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
@@ -92,6 +93,8 @@ mock.module('../projects/git-backends', () => ({
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
   managedGithubInstallId: () => INSTALL_ID,
+  managedGithubOwner: () => REPO_OWNER,
+  managedGithubOwnerType: () => undefined,
   managedGithubToken: () => managedPat,
 }));
 
@@ -306,7 +309,23 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
+    update: (table: unknown) => ({
+      set: (values: any) => ({
+        where: () => {
+          if (table === projects) updatedProjectSets.push(values);
+          // Real drizzle's UPDATE builder is thenable at every chain step
+          // (a caller may `.catch()` it directly without `.returning()` —
+          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // the several other `.where(...).catch(() => {})` call sites this
+          // mirrors), so this stub must be too: a real Promise (which
+          // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
+          // callers that chain it.
+          const result: any = Promise.resolve([]);
+          result.returning = async () => [];
+          return result;
+        },
+      }),
+    }),
     delete: () => ({ where: async () => {} }),
   },
 }));
@@ -329,6 +348,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
   beforeEach(() => {
     setTestAuth();
     insertedProject = null;
+    updatedProjectSets = [];
     grantedProjectRole = null;
     seedFilePaths = [];
     seedBaseFilePaths = [];
@@ -434,7 +454,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(insertedProject).toBeNull();
   });
 
-  test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
+  test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
+    // The deterministic install/lock engine is gone (see
+    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
+    // the plain starter scaffold. `marketplace_items` is accepted for API
+    // back-compat but no longer installs anything at provision time; adding a
+    // marketplace item to a project is now an agent import
+    // (POST /:projectId/marketplace/install-session), which needs the project
+    // (and a session) to already exist.
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -455,8 +482,16 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(201);
     expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(seedFilePaths).toContain('registry-lock.json');
+    // No lock is ever produced — the engine that wrote it is deleted.
+    expect(seedFilePaths).not.toContain('registry-lock.json');
+    // The requested marketplace skills are NOT deterministically installed —
+    // only the always-present kortix-system skill (part of the base minimal
+    // scaffold) is present.
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(seedFilePaths).toContain('kortix.yaml');
 
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
@@ -464,27 +499,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
 
-    const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
-    expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toContain('agent-browser');
-    expect(Object.keys(lock.items).sort()).toContain('deep-research');
-    expect(Object.keys(lock.items).sort()).toContain('pdf');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-system');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
-    expect(Object.keys(lock.items).sort()).not.toContain('account-research');
-    // kortix-computer now lives in the marketplace tier (opt-in), not the base
-    // floor — it's absent here because this request didn't select it.
-    expect(Object.keys(lock.items).sort()).not.toContain('kortix-computer');
-    expect(lock.items['agent-browser'].type).toBe('registry:skill');
-    expect(lock.items['agent-browser'].source).toBe('kortix-starter');
-    expect(lock.items['agent-browser'].sourceType).toBe('local');
-    expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(lock.items['kortix-system'].source).toBe('kortix-starter');
-    expect(lock.items['kortix-system'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
-    expect(lock.items['deep-research'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/deep-research/SKILL.md');
-    expect(lock.items['pdf'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    // The bug this route fix closes: the base template's kortix.yaml declares
+    // `default_agent: kortix`, but project.metadata.default_agent was never
+    // mirrored from it — so every session silently stored the non-binding
+    // 'default' sentinel and any agent-scope model pin set on 'kortix' was
+    // never applied (see llm-gateway/resolution/default-model.ts). Provision
+    // must now stamp the mirror at creation time.
+    expect(updatedProjectSets).toHaveLength(1);
+    expect(updatedProjectSets[0]).toMatchObject({ metadata: { default_agent: 'kortix' } });
   });
 
   test('returns 503 when managed git is not configured', async () => {
@@ -507,5 +529,30 @@ describe('POST /v1/projects/provision (managed git)', () => {
       body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent', provider: 'gitlab' }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// GET /v1/projects/managed-git/status — lets the create-project UI pre-check
+// whether the managed-git ("Create project") path is usable before hitting
+// the 503, so it can disable/annotate that option gracefully instead of
+// surfacing a raw server error (self-host with no MANAGED_GIT_* configured is
+// the primary case this exists for).
+describe('GET /v1/projects/managed-git/status', () => {
+  beforeEach(() => {
+    setTestAuth();
+    backendConfigured = true;
+  });
+
+  test('reports configured: true when the managed backend is configured', async () => {
+    const res = await createApp().request('/v1/projects/managed-git/status');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: true, provider: 'github' });
+  });
+
+  test('reports configured: false when the managed backend is not configured', async () => {
+    backendConfigured = false;
+    const res = await createApp().request('/v1/projects/managed-git/status');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, provider: 'github' });
   });
 });

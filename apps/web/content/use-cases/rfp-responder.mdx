@@ -1,0 +1,158 @@
+---
+title: "How we draft RFP responses"
+description: The RFP-responder agent we run on Kortix — connected to the inbound RFP and our vetted answer library. It parses each question, drafts a response in a new Google Doc from the library and our product docs, and flags anything it can't answer confidently for a human to review before it goes out.
+date: "2026-06-19"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+template: rfp-responder
+---
+
+An RFP or proposal questionnaire lands as a long document attached to an email —
+pricing, implementation timeline, support model, integrations, company
+background, references — and a submission deadline that doesn't move. Most of
+it we've answered before, in a past proposal or a product doc, but it's scattered
+across old submissions and no one remembers exactly where. A rep spends a day
+combing through past deals and pinging product and support for lines that
+already exist, before writing a single new sentence.
+
+We run an RFP-responder agent on Kortix that drafts the response from our vetted
+answer library the moment the RFP arrives. This is how we answer our own RFPs and
+proposal questionnaires, including the connections and guardrails involved.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every 15 minutes</Fact>
+  <Fact label="Connected systems">Gmail · Google Drive · Google Docs</Fact>
+  <Fact label="Mode">Drafts only · a human reviews and submits</Fact>
+</KeyFacts>
+
+## The problem
+
+Most of an RFP is questions we've answered dozens of times — pricing tiers,
+implementation timeline, integrations, support SLAs, company background,
+references — but each one arrives in its own document, a Word file, a PDF, a
+vendor's own spreadsheet, with its own structure and its own deadline. Someone
+has to read the whole thing, recall or dig up the answer we gave last time, and
+write it back into that document's layout, all before the submission window
+closes.
+
+The shortcuts don't hold up. Copying the last similar proposal wholesale risks
+carrying over stale pricing or a client-specific detail that doesn't apply here.
+Searching a shared drive of past submissions by hand is slow and depends on
+remembering which deal had the closest answer. A generic AI drafter with no
+grounding writes something that reads well and is often wrong — on a document
+that can become a contract exhibit, a confident wrong answer is worse than a
+blank one.
+
+## What we built
+
+On Kortix, a cron checks the inbox every 15 minutes for a new RFP or proposal
+questionnaire. Each check spawns a fresh session (a cloud sandbox) with access
+to our vetted past-answers library, our product docs, and the incoming RFP
+document. It parses the RFP into individual questions, matches each against the
+library and the docs, drafts the full response in a new Google Doc, and flags
+any question it can't answer confidently for a person. It never submits
+anything — the draft is the only output, and a human reviews and submits it
+through whatever channel the RFP requires.
+
+## How it works
+
+<Steps>
+<Step title="Poll the inbox every 15 minutes">
+
+A **cron trigger** checks Gmail every 15 minutes for a new RFP or proposal
+questionnaire. Each firing spawns a fresh **session** in its own sandbox — this
+is a fresh-session agent, so nothing carries over between checks; it finds new
+work from what's sitting in the inbox right now.
+
+</Step>
+<Step title="Ground the agent in our vetted answers">
+
+Our past-answers library lives as **skills** and **memory** that travel with the
+agent: the vetted response to each recurring question — pricing tiers,
+implementation timeline, integrations, support model, security basics, company
+background, references — cross-checked against the current product docs so an
+answer that's gone stale doesn't get reused. The agent drafts only from this
+grounded set. When we win a deal with a better answer, we write it down and the
+next RFP gets the improved version.
+
+</Step>
+<Step title="Connect the RFP source and the drafting surface">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the inbound RFP from Gmail** — the email that carries the RFP or
+  questionnaire and its deadline.
+- **Open the RFP document from Google Drive** — the attached or linked Word doc,
+  PDF, or spreadsheet, whatever format the buyer sent.
+- **Build the draft in Google Docs** — a new document with the full response,
+  mirroring the RFP's own question order and sections.
+- **Flag low-confidence questions** — anything without a confident match in the
+  library, called out for a person to answer.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent **drafts only**: it writes the response doc and flags what it's
+unsure of, and it never submits or sends anything back to the buyer — no portal
+upload, no email, no attachment sent on our behalf. Anything without a confident
+match in the vetted library is left for a person rather than guessed. The
+finished draft stops at a **human approval gate** — a person reviews it and
+submits it. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Return a completed draft for review">
+
+With that in place, a new RFP comes back within 15 minutes as a fully drafted
+Google Doc, answers pulled from our vetted library and product docs, and the
+uncertain questions called out by name. The rep reviews the draft, answers the
+flagged questions, and submits it through the channel the RFP calls for. The
+research and first draft are done; the review and submission stay with a
+person.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A 15-minute **cron** checks Gmail and spawns a fresh session with scoped
+  **connectors** into Drive and Docs. The past-answers library lives as
+  **skills** and **memory**. The agent drafts every answer it can and flags what
+  it can't; a human reviews and submits.
+</Callout>
+
+## Guardrails
+
+The agent drafts a document that can end up in front of a customer, so its
+access is scoped and the output is contained:
+
+- **Isolation.** Every check runs in its own microVM sandbox. The session reads
+  only the RFP source and the answer library it's scoped to, and only the draft
+  Google Doc is the output.
+- **Scoped secrets.** The Gmail, Drive, and Docs credentials are encrypted in the
+  Secrets Manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Draft only, never submitted.** The agent has no path to submit an RFP
+  portal, send an email, or upload a file to the buyer. A human reviews the
+  draft and submits it themselves.
+- **Everything is code.** The agent's answer library, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every 15 min" label="Inbox checked for a new RFP or questionnaire" />
+  <Stat value="Grounded" label="Every answer drawn from the vetted library and product docs" />
+  <Stat value="Draft only" label="A human reviews and submits every response" />
+</StatGrid>
+
+RFPs that used to cost a rep a day of digging through old proposals now come back
+as a completed draft within 15 minutes, with the vetted answer already in place
+and the uncertain questions called out by name. The team spends its time on the
+questions that actually need judgment, and nothing goes to a buyer without a
+person reviewing and submitting it.

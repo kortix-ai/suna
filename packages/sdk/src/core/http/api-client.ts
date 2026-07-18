@@ -239,6 +239,23 @@ async function makeRequest<T = any>(
         error = parseBillingError(error);
       }
 
+      // Account-wide MFA gate (403 + code account_mfa_required): the one
+      // actionable authz denial — the user can complete an MFA challenge and
+      // retry. Surface it as a browser event so the app's step-up dialog opens
+      // no matter which call site tripped the gate. No-op outside the browser.
+      if (
+        response.status === 403 &&
+        errorData?.code === 'account_mfa_required' &&
+        typeof window !== 'undefined' &&
+        typeof window.dispatchEvent === 'function'
+      ) {
+        try {
+          window.dispatchEvent(new CustomEvent('kortix:mfa-required'));
+        } catch {
+          // Never let telemetry-grade signaling break the error path.
+        }
+      }
+
       // Handle HTTP 431 - Request Header Fields Too Large
       // This typically happens when uploading many files at once
       if (response.status === 431) {

@@ -273,6 +273,7 @@ mock.module('../projects/github', () => ({
   }),
   getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
   listInstallationRepositories: async () => [],
+  listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
@@ -1110,6 +1111,14 @@ describe('project session API contract', () => {
       {
         body: { error: 'client-owned' },
         message: 'field is server-managed: error',
+      },
+      {
+        body: { metadata: { deletedAt: '2026-07-13T00:00:00Z' } },
+        message: 'metadata key is server-managed: deletedAt',
+      },
+      {
+        body: { metadata: { deletedBy: 'user-x' } },
+        message: 'metadata key is server-managed: deletedBy',
       },
       {
         body: { random: 'field' },

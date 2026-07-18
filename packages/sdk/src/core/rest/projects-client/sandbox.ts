@@ -14,6 +14,8 @@ export type SnapshotErrorCategory =
   /** Daytona org snapshot quota exhausted — infra, not repo-fixable. */
   | 'quota'
   | 'dockerfile'
+  /** A step in the Kortix-injected runtime layer failed — platform's fault, not the repo's. */
+  | 'layer'
   | 'tunnel'
   | 'provider'
   | 'timeout'

@@ -636,7 +636,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
     } else {
       seenSlugs.add(slug);
     }
-    // The runtime caps sandbox-template slugs at 64 chars (apps/api dockerfile-layer
+    // The runtime caps sandbox-template slugs at 64 chars (@kortix/shared/sandbox
     // SLUG_RE) — a longer slug parses here but is silently dropped at sync, so warn.
     if (slug && SLUG_RE.test(slug) && slug.length > 64) {
       issues.push({
@@ -858,15 +858,30 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
         : typeof entry.sessionMode === 'string'
           ? entry.sessionMode
           : undefined;
+    let sessionMode: string | undefined;
     if (sessionModeRaw !== undefined) {
-      const sessionMode = sessionModeRaw.trim().toLowerCase();
-      if (sessionMode !== 'fresh' && sessionMode !== 'reuse') {
+      sessionMode = sessionModeRaw.trim().toLowerCase();
+      if (sessionMode !== 'fresh' && sessionMode !== 'reuse' && sessionMode !== 'pinned') {
         issues.push({
           path: `${where}.session_mode`,
-          message: 'session_mode must be "fresh" or "reuse".',
+          message: 'session_mode must be "fresh", "reuse", or "pinned".',
           severity: 'error',
         });
       }
+    }
+    // `pinned` requires a session_id to loop; must not be empty.
+    const sessionIdRaw =
+      typeof entry.session_id === 'string'
+        ? entry.session_id
+        : typeof entry.sessionId === 'string'
+          ? entry.sessionId
+          : undefined;
+    if (sessionMode === 'pinned' && !(sessionIdRaw && sessionIdRaw.trim())) {
+      issues.push({
+        path: `${where}.session_id`,
+        message: 'session_mode "pinned" requires a non-empty session_id.',
+        severity: 'error',
+      });
     }
   });
 }
@@ -990,11 +1005,11 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         });
       }
     }
-    if (provider === 'openapi' && typeof entry.spec !== 'string') {
+    if ((provider === 'openapi' || provider === 'postman') && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
         message:
-          'openapi connectors need a `spec` (URL or repo path); without it the connector fails to materialize.',
+          `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
         severity: 'warning',
       });
     }
@@ -1083,10 +1098,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
-        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
           issues.push({
             path: `${where}.auth.type`,
-            message: 'auth.type "oauth1" is only supported for openapi/http connectors.',
+            message: 'auth.type "oauth1" is only supported for openapi/postman/http connectors.',
             severity: 'error',
           });
         }

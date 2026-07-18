@@ -170,6 +170,50 @@ describe('HTTP execution request shape', () => {
   });
 });
 
+describe('Postman execution request shape', () => {
+  test('renders URL/header templates, preserves static values, sends body, and attaches connector auth', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: {
+        kind: 'postman',
+        method: 'POST',
+        url: 'https://api.example.com/contacts/{{contactId}}?archived={{archived}}',
+        headers: { 'X-Client': 'kortix', 'X-Trace': '{{traceId}}' },
+        bodyMode: 'json',
+      },
+      auth: BEARER,
+      secret: 'hubspot-token',
+      args: {
+        contactId: 'a/b',
+        archived: false,
+        traceId: 'trace-1',
+        body: { properties: { email: 'person@example.com' } },
+      },
+      fetchImpl,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://api.example.com/contacts/a%2Fb?archived=false');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.headers).toMatchObject({
+      Authorization: 'Bearer hubspot-token',
+      'Content-Type': 'application/json',
+      'X-Client': 'kortix',
+      'X-Trace': 'trace-1',
+    });
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ properties: { email: 'person@example.com' } });
+  });
+
+  test('fails closed when a required template variable is missing', async () => {
+    const { fetchImpl } = recordingFetch();
+    await expect(executeCall({
+      binding: { kind: 'postman', method: 'GET', url: 'https://api.example.com/{{id}}', headers: {}, bodyMode: null },
+      args: {},
+      fetchImpl,
+    })).rejects.toThrow('missing Postman variable "id"');
+  });
+});
+
 describe('MCP execution request shape', () => {
   test('builds JSON-RPC tools/call with auth', async () => {
     const { fetchImpl, calls } = recordingFetch();

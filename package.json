@@ -40,9 +40,10 @@
     "ci:release": "bash scripts/ci-local.sh release",
     "migrate": "pnpm --filter @kortix/db migrate",
     "migrate:status": "pnpm --filter @kortix/db migrate:status",
-    "migrate:create": "node-pg-migrate create -m packages/db/migrations -j sql --migration-filename-format utc",
+    "migrate:create": "pnpm --filter @kortix/db migrate:create",
     "migrate:generate": "pnpm --filter @kortix/db migrate:generate",
-    "migrate:lint": "pnpm --filter @kortix/db migrate:lint"
+    "migrate:lint": "pnpm --filter @kortix/db migrate:lint",
+    "migrate:lint:squawk": "pnpm --filter @kortix/db lint:squawk"
   },
   "devDependencies": {
     "@clack/prompts": "^0.7.0",

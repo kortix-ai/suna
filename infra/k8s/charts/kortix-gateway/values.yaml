@@ -10,6 +10,11 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+# Runtime version reported by /health/live. Release images are promoted from
+# staging without rebuilding, so production must override the baked staging
+# version just as the API chart does.
+kortixVersion: ""
+
 createNamespace: false
 
 containerPort: 8090
@@ -84,6 +89,8 @@ ingress:
   enabled: true
   host: gateway-eks.kortix.com
   certificateArn: ""
+  # Regional WAFv2 Web ACL ARN. Required when ingress is enabled.
+  wafAclArn: ""
   extraHosts: []
   extraCertificateArns: []
   albGroup: ""

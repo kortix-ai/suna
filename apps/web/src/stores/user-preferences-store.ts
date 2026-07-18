@@ -12,6 +12,9 @@ import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 /** Which modifier key is used for tab switching (Cmd+1..9 or Ctrl+1..9) */
 export type TabSwitchModifier = 'meta' | 'ctrl';
 
+/** Session panel presentation: 'easy' = plain-language cards, 'advanced' = the tool stepper */
+export type PanelMode = 'easy' | 'advanced';
+
 export interface KeyboardShortcutPreferences {
   /** Modifier used for tab switching shortcuts (1-9) — default: 'meta' on macOS, 'ctrl' elsewhere */
   tabSwitchModifier: TabSwitchModifier;
@@ -27,6 +30,8 @@ export interface UserPreferences {
   wallpaperId: string;
   /** When true, the tab selector bar is hidden and content extends to the top */
   disableTabSelector: boolean;
+  /** Session action panel mode — defaults to 'easy' for all users */
+  panelMode: PanelMode;
 }
 
 // ============================================================================
@@ -61,6 +66,12 @@ interface UserPreferencesState {
   /** Toggle the tab selector bar on/off */
   setDisableTabSelector: (disabled: boolean) => void;
 
+  /** Set the session panel mode */
+  setPanelMode: (mode: PanelMode) => void;
+
+  /** Flip between easy and advanced */
+  togglePanelMode: () => void;
+
   /** Reset all preferences to defaults */
   resetPreferences: () => void;
 
@@ -76,6 +87,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         themeId: 'graphite',
         wallpaperId: DEFAULT_WALLPAPER_ID,
         disableTabSelector: false,
+        panelMode: 'easy',
       },
 
       setKeyboardPreferences: (prefs) => {
@@ -118,6 +130,27 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         });
       },
 
+      setPanelMode: (mode) => {
+        const current = get().preferences;
+        set({ preferences: { ...current, panelMode: mode } });
+      },
+
+      togglePanelMode: () => {
+        const current = get().preferences;
+        // Legacy users' persisted preferences predate this key entirely, so
+        // `current.panelMode` can be `undefined` at runtime even though the
+        // type says it can't — treat that exactly like 'easy' (every read
+        // site in the app already does via `?? 'easy'`), or the toggle
+        // silently writes 'easy' back and the Advanced affordance does nothing.
+        const effective = current.panelMode ?? 'easy';
+        set({
+          preferences: {
+            ...current,
+            panelMode: effective === 'easy' ? 'advanced' : 'easy',
+          },
+        });
+      },
+
       resetPreferences: () => {
         set({
           preferences: {
@@ -125,6 +158,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
             themeId: 'graphite',
             wallpaperId: DEFAULT_WALLPAPER_ID,
             disableTabSelector: false,
+            panelMode: 'easy',
           },
         });
       },

@@ -177,6 +177,36 @@ describe('classifySendError', () => {
     const result = classifySendError(new Error('opencode went sideways'));
     expect(result.kind).toBe('runtime-error');
     expect(result.message).toContain('opencode went sideways');
+    expect(result.gateway).toBeUndefined();
+  });
+
+  // ERROR-TAXONOMY fix: a runtime-error carrying the gateway's structured
+  // envelope (provider/code/suggestion/request_id) surfaces those fields on
+  // `.gateway` instead of discarding everything but the bare message.
+  test('a runtime-error carrying the gateway envelope (via responseBody) surfaces .gateway', () => {
+    const err = {
+      name: 'APIError',
+      data: {
+        message: 'No upstream configured for model "openai/gpt-4.1"',
+        responseBody: JSON.stringify({
+          message: 'No upstream configured for model "openai/gpt-4.1"',
+          code: 'provider_not_connected',
+          provider: 'openai',
+          request_id: 'req_send_1',
+          suggestion: 'Add an openai API key in project settings, then retry.',
+        }),
+      },
+    };
+    const result = classifySendError(err);
+    expect(result.kind).toBe('runtime-error');
+    expect(result.message).toBe('No upstream configured for model "openai/gpt-4.1"');
+    expect(result.gateway).toEqual({
+      provider: 'openai',
+      code: 'provider_not_connected',
+      suggestion: 'Add an openai API key in project settings, then retry.',
+      upstreamStatus: undefined,
+      requestId: 'req_send_1',
+    });
   });
 });
 

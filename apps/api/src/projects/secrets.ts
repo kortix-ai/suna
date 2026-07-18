@@ -360,3 +360,4 @@ export async function getProjectSecretValue(
   const row = canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
   return decryptProjectSecret(projectId, row.valueEnc);
 }
+

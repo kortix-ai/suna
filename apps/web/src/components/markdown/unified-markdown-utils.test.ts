@@ -7,6 +7,7 @@ import {
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
+  shikiWasmAvailable,
 } from './unified-markdown-utils';
 
 describe('isInternalUrl', () => {
@@ -126,5 +127,32 @@ describe('looksLikeFilePath', () => {
     expect(looksLikeFilePath('e.g.')).toBe(false);
     expect(looksLikeFilePath('nofile.txt')).toBe(false);
     expect(looksLikeFilePath('has space/file.ts')).toBe(false);
+  });
+});
+
+// Regression for Better Stack 1604d50a (`WebAssembly is not defined`,
+// `Can't find variable: WebAssembly`): the Shiki highlighter singleton must not
+// be eagerly started when WebAssembly is unavailable, or its rejection fires
+// `onunhandledrejection` → Sentry on every page load for visitors whose browser
+// blocks/disables WebAssembly (privacy browsers, hardened WebViews, spoofed-UA
+// bots). The renderer gates the eager init on this guard.
+describe('shikiWasmAvailable', () => {
+  test('returns true in the normal test environment (WebAssembly present)', () => {
+    // bun's test runtime exposes WebAssembly, matching every modern browser.
+    expect(shikiWasmAvailable()).toBe(true);
+  });
+
+  test('returns false when WebAssembly is undefined (the BS 1604d50a context)', () => {
+    const original = (globalThis as { WebAssembly?: unknown }).WebAssembly;
+    try {
+      // Simulate a browser/context that blocks or disables WebAssembly.
+      // `delete` mirrors how such runtimes expose no WebAssembly global at all.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (globalThis as any).WebAssembly;
+      expect(shikiWasmAvailable()).toBe(false);
+    } finally {
+      // Restore — other tests (and the live Shiki init) need WebAssembly.
+      (globalThis as { WebAssembly?: unknown }).WebAssembly = original;
+    }
   });
 });

@@ -1,7 +1,7 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
 import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -58,10 +58,15 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Use request origin for redirects (most reliable for local dev)
-  // This ensures localhost:3000 redirects stay on localhost, not staging
+  // Prefer the request origin for redirects (most reliable for local dev — keeps
+  // localhost:3000 on localhost, not a configured staging APP_URL). On self-host
+  // the frontend is a Next standalone server bound to HOSTNAME=0.0.0.0 behind a
+  // reverse proxy, so request.nextUrl.origin can be the internal bind address
+  // (https://0.0.0.0:3000); resolveAuthRedirectBaseUrl falls back to the public
+  // APP_URL in exactly that case so post-auth (incl. SSO) redirects land on the
+  // real host. See lib/auth/return-url.ts.
   const requestOrigin = request.nextUrl.origin;
-  const baseUrl = requestOrigin || runtimeEnv.APP_URL || 'http://localhost:3000';
+  const baseUrl = resolveAuthRedirectBaseUrl(requestOrigin, runtimeEnv.APP_URL);
   const error = searchParams.get('error');
   const errorCode = searchParams.get('error_code');
   const errorDescription = searchParams.get('error_description');
@@ -144,6 +149,15 @@ export async function GET(request: NextRequest) {
       let authMethod = 'email';
 
       if (data.user) {
+        // TODO(sso-identity-mismatch-notice): an IdP can return an already
+        // authenticated identity that differs from the email the user typed
+        // on /auth (IdP session reuse) — they land signed in as someone else
+        // with zero indication anything unusual happened. Once the typed
+        // email travels through the redirect (query param or short-lived
+        // cookie set before the IdP hop), compare it to data.user.email here
+        // and carry a "You signed in as {actual_email}" notice through to the
+        // redirect instead of proceeding silently. See docs/ENTRA_SSO_SCIM_SETUP.md
+        // "Known behaviors & caveats".
         // Determine if this is a new user (for analytics tracking)
         const createdAt = new Date(data.user.created_at).getTime();
         const now = Date.now();

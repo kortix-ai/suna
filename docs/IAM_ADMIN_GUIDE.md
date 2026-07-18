@@ -371,7 +371,7 @@ later.
    | Field | Meaning | Notes |
    | --- | --- | --- |
    | Display name | Label in the UI | required |
-   | **Primary email domain** | Routes sign-ins for `you@thatdomain.com` to this IdP | e.g. `essentia-inc.com`; extra domains can be added at import |
+   | **Primary email domain** | Routes sign-ins for `you@thatdomain.com` to this IdP | e.g. `acme-inc.com`; extra domains can be added at import |
    | **Group claim name** | The SAML attribute carrying group memberships | default `groups` (Okta convention); Entra emits `memberOf` |
    | **Auto-create members** | Any successful SSO login from the domain self-provisions a baseline account `member` | default **on**; turn **off** for strict, invite/SCIM-only membership |
    | **Auto-provision groups** | Unmapped group claims automatically create an IAM group (+ mapping) on login | default **off** — see below |

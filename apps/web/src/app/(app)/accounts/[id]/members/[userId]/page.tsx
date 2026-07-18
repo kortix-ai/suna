@@ -53,6 +53,7 @@ function formatDate(iso: string | null | undefined) {
 }
 
 export default function MemberDetailPage() {
+  const router = useRouter();
   const params = useParams<{ id: string; userId: string }>();
   const accountId = params?.id;
   const memberUserId = params?.userId;

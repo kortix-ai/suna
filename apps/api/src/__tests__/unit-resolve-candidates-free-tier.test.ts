@@ -3,6 +3,12 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 let billingEnabled = true;
 let accountTier = 'free';
 let accountTierCalls = 0;
+// Defaults true here (cloud-shaped fixture): the real gate is covered by the
+// managed-provider-disabled test suite (llm-gateway/models/managed-provider-disabled.test.ts),
+// which imports the REAL (unmocked) descriptors.ts against the flag OFF. This
+// file mocks descriptors.ts entirely (below), so this toggle only exercises
+// resolveCandidates' OWN inline gate.
+let managedProviderEnabled = true;
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -14,6 +20,7 @@ mock.module('../config', () => ({
       get: (target: Record<PropertyKey, unknown>, key) => {
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
+        if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return managedProviderEnabled;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
@@ -40,6 +47,16 @@ mock.module('../billing/services/entitlements', () => ({
     accountTierCalls += 1;
     return accountTier;
   },
+  // resolveCandidates now calls the SAME cached tier resolver the rest of the
+  // gateway uses (entitlements.getCachedAccountTier) instead of keeping its own
+  // duplicate cache — see unit-account-tier-cache-unified.test.ts for the
+  // caching/invalidation behavior itself. This mock intentionally does NOT
+  // cache: every call increments accountTierCalls, which is what every
+  // existing assertion below counts on.
+  getCachedAccountTier: async () => {
+    accountTierCalls += 1;
+    return accountTier;
+  },
 }));
 
 mock.module('../projects/secrets', () => ({
@@ -62,6 +79,7 @@ mock.module('../projects/secrets', () => ({
 }));
 
 mock.module('../llm-gateway/credentials/codex', () => ({
+  CodexRefreshError: class CodexRefreshError extends Error {},
   resolveCodexCredential: async () => ({
     access: 'codex-token',
     accountId: 'chatgpt-account',
@@ -90,6 +108,21 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
       resolvedModel: managed.upstreamModelId ?? managed.id,
     },
   ],
+  // resolve-candidates.ts's Bedrock BYOK branch imports this unconditionally
+  // (only CALLS it for kind:'bedrock' candidates, which this file never
+  // exercises) — stub it so the static import binding resolves against this
+  // mock.
+  bedrockByokBaseUrl: (region: string | null | undefined) =>
+    `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
+}));
+
+// resolveCandidates resolves raw "auto"/"kortix/auto" via resolveGatewayRoute
+// BEFORE any BYOK/managed-model logic below runs. The real implementation
+// looks up the project's routing policy from the DB, which isn't available
+// here (config is mocked, no DATABASE_URL) — stub it to the same platform
+// default (config.LLM_GATEWAY_DEFAULT_MODEL above) the "auto" tests assert on.
+mock.module('../llm-gateway/routing', () => ({
+  resolveGatewayRoute: async () => ({ primaryModel: 'codex/gpt-5.6-sol' }),
 }));
 
 const { resolveCandidates } = await import('../llm-gateway/resolution/resolve-candidates');
@@ -111,12 +144,15 @@ describe('resolveCandidates free-tier premium gate', () => {
     billingEnabled = true;
     accountTier = 'free';
     accountTierCalls = 0;
+    managedProviderEnabled = true;
   });
 
   test('blocks managed premium candidates for free accounts', async () => {
     accountTier = 'free';
-    const candidates = await resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6');
-    expect(candidates).toEqual([]);
+    await expect(resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'plan_upgrade_required',
+    });
     expect(accountTierCalls).toBe(1);
   });
 
@@ -177,11 +213,34 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(0);
   });
 
-  test('keeps managed candidates available when internal billing is disabled', async () => {
+  test('keeps managed candidates available when internal billing is disabled AND the managed provider is explicitly on', async () => {
     billingEnabled = false;
     accountTier = 'free';
+    managedProviderEnabled = true;
     const candidates = await resolveCandidates(principal('self-host-managed'), 'claude-sonnet-4.6');
     expect(candidates).toHaveLength(1);
     expect(accountTierCalls).toBe(0);
+  });
+
+  test('CLOUD-ONLY gate: blocks an explicitly-named managed model when KORTIX_MANAGED_PROVIDER_ENABLED is off, even for a paid tier', async () => {
+    managedProviderEnabled = false;
+    accountTier = 'per_seat';
+    await expect(
+      resolveCandidates(principal('self-host-flag-off'), 'claude-sonnet-4.6'),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_disabled_on_deployment',
+    });
+  });
+
+  test('CLOUD-ONLY gate: a self-host BYOK request gets no managed fallback candidate appended when the flag is off', async () => {
+    managedProviderEnabled = false;
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(
+      principal('self-host-byok-flag-off'),
+      'openai/gpt-4.1',
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.billingMode).toBe('platform-fee');
   });
 });

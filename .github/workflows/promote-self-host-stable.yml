@@ -1,0 +1,99 @@
+name: Promote Self-Host Stable
+
+# Promote a proven released version to the self-host `:stable` channel.
+#
+# WHY THIS IS SEPARATE FROM deploy-prod: a prod release publishes
+# kortix/kortix-{api,gateway,frontend}:X.Y.Z + :latest. Self-hosted boxes track
+# the moving `:stable` tag and auto-update to it nightly. We DON'T want every
+# prod release shipped to every customer overnight — `:stable` is curated. When
+# a version has soaked (staging, cloud prod, and ideally customer-zero), a human
+# runs THIS workflow to repoint :stable → that version. From that moment,
+# self-hosts on the default `stable` channel pick it up on their next nightly
+# update check (no rebuild, just a manifest re-tag).
+#
+# Rollback is the same tool: run it again with an older, known-good version.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to promote to :stable (e.g. 0.9.108 — no leading v)"
+        required: true
+        type: string
+
+concurrency:
+  # Never let two promotions race the :stable tag.
+  group: mark-stable
+  cancel-in-progress: false
+
+jobs:
+  mark-stable:
+    name: Promote v${{ inputs.version }} → :stable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Normalize + validate version exists
+        id: prep
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          # Accept "v0.9.108" or "0.9.108"; store the bare X.Y.Z.
+          VERSION="${RAW_VERSION#v}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$RAW_VERSION' is not a X.Y.Z version."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Every image must already be published at this exact version, or a
+          # partial promote would ship a mismatched fleet. Verify all three
+          # BEFORE moving any tag.
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
+            if ! docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+              echo "::error::$IMAGE:$VERSION does not exist on Docker Hub — was v$VERSION released by deploy-prod?"
+              exit 1
+            fi
+            echo "✓ found $IMAGE:$VERSION"
+          done
+
+      - name: Repoint :stable → this version
+        env:
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
+            # Manifest re-tag: :stable now points at the SAME digest as :$VERSION.
+            # Zero rebuild, multi-arch preserved.
+            echo "Promoting $IMAGE:$VERSION → $IMAGE:stable"
+            docker buildx imagetools create --tag "$IMAGE:stable" "$IMAGE:$VERSION"
+            DIGEST="$(docker buildx imagetools inspect "$IMAGE:stable" --format '{{.Manifest.Digest}}' 2>/dev/null || echo '?')"
+            echo "✓ $IMAGE:stable → $VERSION ($DIGEST)"
+          done
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          {
+            echo "## ✅ Marked v$VERSION as self-host stable"
+            echo ""
+            echo "The following images now share the \`:stable\` tag:"
+            echo ""
+            echo "- \`kortix/kortix-api:stable\` → \`$VERSION\`"
+            echo "- \`kortix/kortix-gateway:stable\` → \`$VERSION\`"
+            echo "- \`kortix/kortix-frontend:stable\` → \`$VERSION\`"
+            echo ""
+            echo "Self-hosted instances on the default \`stable\` channel will update to"
+            echo "v$VERSION on their next nightly check (\`kortix self-host update\` forces it now)."
+            echo ""
+            echo "To roll the channel back, re-run this workflow with an older version."
+          } >> "$GITHUB_STEP_SUMMARY"

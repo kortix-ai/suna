@@ -32,10 +32,21 @@ resource "aws_kms_key" "cloudtrail" {
       Condition = { StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } },
       { Sid = "AllowCloudTrailDescribe", Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" }, Action = "kms:DescribeKey", Resource = "*" },
       { Sid = "AllowLogReadersDecrypt", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }, Action = ["kms:Decrypt", "kms:ReEncryptFrom"], Resource = "*",
-      Condition = { StringEquals = { "kms:CallerAccount" = local.account_id }, StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } }
+      Condition = { StringEquals = { "kms:CallerAccount" = local.account_id }, StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } },
+      # Lets the CloudWatch Logs group the trail delivers to (below) also be
+      # encrypted with this CMK, instead of shipping it unencrypted (Trivy
+      # AWS-0017 / Checkov CKV_AWS_158).
+      { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-east-1.amazonaws.com" },
+        Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
+      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-east-1:${local.account_id}:log-group:*" } } }
     ]
   })
-  tags = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudtrail"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "cloudtrail" {
@@ -53,6 +64,13 @@ resource "aws_cloudtrail" "management_events" {
   include_global_service_events = true
   enable_log_file_validation    = true
 
+  # Real-time CloudWatch Logs delivery alongside the durable S3 trail
+  # (Trivy AWS-0162 / avd.aquasec.com/misconfig/aws-0162). S3 stays the
+  # long-term/durable copy; this just adds the searchable, real-time
+  # analysis path CloudTrail's own S3 delivery doesn't provide.
+  cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail_cloudwatch_logs.arn
+
   # S3 object-level read+write data events (DCF-406)
   event_selector {
     read_write_type           = "All"
@@ -62,25 +80,280 @@ resource "aws_cloudtrail" "management_events" {
       values = ["arn:aws:s3"]
     }
   }
-  tags = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "management-events"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+# CloudWatch Logs destination + delivery role for the trail above (AWS-0162).
+# Log group lives in us-east-1 alongside the trail's home region — CloudTrail
+# requires the log group and delivery role to be in the same region as the
+# trail itself.
+resource "aws_cloudwatch_log_group" "cloudtrail" {
+  provider          = aws.use1
+  name              = "/aws/cloudtrail/management-events"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.cloudtrail.arn
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudtrail"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_iam_role" "cloudtrail_cloudwatch_logs" {
+  name               = "cloudtrail-cloudwatch-logs-role"
+  description        = "CloudTrail -> CloudWatch Logs delivery (SOC2 DCF-406, AWS-0162)"
+  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudtrail-cloudwatch-logs-role"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_iam_role_policy" "cloudtrail_cloudwatch_logs" {
+  name = "cloudtrail-cloudwatch-logs-delivery"
+  role = aws_iam_role.cloudtrail_cloudwatch_logs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+    }]
+  })
 }
 
 # ════════════════════════════════════════════════════════════════════════════
-# GuardDuty — Drata DCF-87 (threat detection). Enabled in ALL 17 regions via CLI;
-# the two active regions are codified here. Add provider aliases for the rest if
-# you want full Terraform coverage.
+# GuardDuty — Drata DCF-87 (threat detection). GuardDuty is regional, so every
+# opted-in commercial region is managed even when it currently has no workload.
 # ════════════════════════════════════════════════════════════════════════════
 resource "aws_guardduty_detector" "usw2" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   enable                       = true
-  finding_publishing_frequency = "SIX_HOURS"
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
   tags                         = local.tags
 }
 
 resource "aws_guardduty_detector" "use1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
   provider                     = aws.use1
   enable                       = true
-  finding_publishing_frequency = "SIX_HOURS"
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
   tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "aps1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.aps1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "eun1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.eun1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "euw3" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.euw3
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "euw2" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.euw2
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "euw1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.euw1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "apne3" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.apne3
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "apne2" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.apne2
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "apne1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.apne1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "cac1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.cac1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "sae1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.sae1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "apse1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.apse1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "apse2" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.apse2
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "euc1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.euc1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "use2" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.use2
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+resource "aws_guardduty_detector" "usw1" {
+  #checkov:skip=CKV2_AWS_3:Kortix is a member of a reseller-owned CONSOLIDATED_BILLING organization and cannot configure organization-wide GuardDuty administration; this detector enforces the account-level regional control.
+  provider                     = aws.usw1
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+  tags                         = local.tags
+}
+
+# EBS default encryption — Drata DCF-54. This account-level regional default is
+# enforced everywhere, including empty regions, so future volumes are encrypted
+# before a workload can make that region part of the compliance scope.
+resource "aws_ebs_encryption_by_default" "usw2" {
+  enabled = true
+}
+
+resource "aws_ebs_encryption_by_default" "use1" {
+  provider = aws.use1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "aps1" {
+  provider = aws.aps1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "eun1" {
+  provider = aws.eun1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "euw3" {
+  provider = aws.euw3
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "euw2" {
+  provider = aws.euw2
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "euw1" {
+  provider = aws.euw1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "apne3" {
+  provider = aws.apne3
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "apne2" {
+  provider = aws.apne2
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "apne1" {
+  provider = aws.apne1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "cac1" {
+  provider = aws.cac1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "sae1" {
+  provider = aws.sae1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "apse1" {
+  provider = aws.apse1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "apse2" {
+  provider = aws.apse2
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "euc1" {
+  provider = aws.euc1
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "use2" {
+  provider = aws.use2
+  enabled  = true
+}
+
+resource "aws_ebs_encryption_by_default" "usw1" {
+  provider = aws.usw1
+  enabled  = true
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -102,7 +375,12 @@ resource "aws_iam_role" "backup" {
   name               = "AWSBackupDefaultServiceRole"
   description        = "AWS Backup service role (SOC2 DCF-99)"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "backup.amazonaws.com" }, Action = "sts:AssumeRole" }] })
-  tags               = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "AWSBackupDefaultServiceRole"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 resource "aws_iam_role_policy_attachment" "backup_backup" {
   role       = aws_iam_role.backup.name
@@ -148,7 +426,12 @@ resource "aws_iam_role" "flow_logs" {
   name               = "vpc-flow-logs-role"
   description        = "VPC Flow Logs delivery (SOC2 DCF-406)"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "vpc-flow-logs.amazonaws.com" }, Action = "sts:AssumeRole" }] })
-  tags               = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "vpc-flow-logs-role"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 resource "aws_iam_role_policy" "flow_logs" {
   name   = "flow-logs-delivery"
@@ -158,5 +441,38 @@ resource "aws_iam_role_policy" "flow_logs" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/vpc/flowlogs"
   retention_in_days = 90
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
   tags              = local.tags
+}
+
+# CMK for CloudWatch Logs in the default (us-west-2) region — CloudWatch log
+# groups are encrypted at rest by AWS either way, but a dedicated CMK gives us
+# key-rotation + access control (Trivy AWS-0017 / avd.aquasec.com/misconfig/aws-0017).
+resource "aws_kms_key" "cloudwatch_logs" {
+  description             = "CloudWatch Logs encryption, us-west-2 (SOC2 DCF-54)"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "cloudwatch-logs-cmk-policy"
+    Statement = [
+      { Sid    = "EnableRoot", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" },
+        Action = ["kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*", "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion", "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"],
+      Resource = "*" },
+      { Sid    = "AllowCloudWatchLogsEncrypt", Effect = "Allow", Principal = { Service = "logs.us-west-2.amazonaws.com" },
+        Action = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"], Resource = "*",
+      Condition = { ArnLike = { "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:us-west-2:${local.account_id}:log-group:*" } } }
+    ]
+  })
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "cloudwatch-logs"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_kms_alias" "cloudwatch_logs" {
+  name          = "alias/cloudwatch-logs"
+  target_key_id = aws_kms_key.cloudwatch_logs.key_id
 }

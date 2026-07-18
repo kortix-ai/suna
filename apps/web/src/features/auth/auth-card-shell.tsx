@@ -21,7 +21,11 @@ import { openExternalRoute } from '@/lib/desktop';
 const EASE = [0.23, 1, 0.32, 1] as const;
 
 /** Tiny legal line pinned to the bottom of every auth surface. */
-export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' | 'signup' }) {
+export function AuthLegalFooter({
+  variant = 'default',
+}: {
+  variant?: 'default' | 'signup' | 'continue';
+}) {
   const onLegalClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     if (openExternalRoute(href)) event.preventDefault();
   };
@@ -46,7 +50,11 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' |
 
   return (
     <footer className="text-muted-foreground/60 mx-auto max-w-[380px] px-6 pb-10 text-center text-sm text-balance">
-      {variant === 'signup' ? (
+      {variant === 'continue' ? (
+        <>
+          By continuing, you agree to the {terms} and {privacy}
+        </>
+      ) : variant === 'signup' ? (
         <>
           By creating an account, you agree to the {terms} and {privacy}
         </>
@@ -65,7 +73,7 @@ export function AuthFrame({
   footerVariant = 'default',
 }: {
   children: React.ReactNode;
-  footerVariant?: 'default' | 'signup';
+  footerVariant?: 'default' | 'signup' | 'continue';
 }) {
   return (
     <div className="bg-background relative flex min-h-svh flex-col">

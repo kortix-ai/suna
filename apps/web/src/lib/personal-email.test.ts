@@ -16,7 +16,7 @@ describe('emailDomain', () => {
   });
 
   test('ignores plus-addressing in the local part', () => {
-    expect(emailDomain('user+sales@essentia-inc.com')).toBe('essentia-inc.com');
+    expect(emailDomain('user+sales@acme-inc.com')).toBe('acme-inc.com');
   });
 
   test('returns null when there is no @', () => {
@@ -53,7 +53,7 @@ describe('isPersonalEmail', () => {
 
   test('does not flag corporate domains', () => {
     expect(isPersonalEmail('x@corp.com')).toBe(false);
-    expect(isPersonalEmail('x@essentia-inc.com')).toBe(false);
+    expect(isPersonalEmail('x@acme-inc.com')).toBe(false);
   });
 
   test('returns false for unparseable input', () => {
@@ -65,7 +65,7 @@ describe('isPersonalEmail', () => {
 describe('isWorkEmail', () => {
   test('routes a work-email domain (the domain SSO discovery probes)', () => {
     expect(isWorkEmail('manager@kortixssotest.com')).toBe(true);
-    expect(isWorkEmail('ino@essentia-inc.com')).toBe(true);
+    expect(isWorkEmail('ino@acme-inc.com')).toBe(true);
   });
 
   test('skiplists consumer providers so they are never probed', () => {

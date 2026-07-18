@@ -12,7 +12,7 @@
  * shadcn tooling for plain files.
  */
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   buildRegistry,
@@ -21,13 +21,11 @@ import {
   loadRegistry,
   parseItemAddress,
   parseRegistryAddress,
-  readLock,
   validateRegistry,
-  writeLock,
   type RegistryItem,
   type RegistryLoaderOptions,
 } from '@kortix/registry';
-import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
+import { emitJson } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix registry <subcommand> [options]
@@ -40,8 +38,6 @@ Subcommands:
   list <registry>     List items in a registry (owner/repo, URL, or ./path).
   view <item>         Show one item (owner/repo/item, URL, or ./path#item).
   search <registry>   Filter a registry's items with --query.
-  installed           List what's installed in this project (from the lock).
-  remove <name>       Remove an installed item (its files + lock entry).
 
 Options:
   --out <path>        build: where to write (default: ./registry.json).
@@ -50,7 +46,6 @@ Options:
   --homepage <url>    build: registry homepage.
   --stdout            build: print to stdout instead of writing a file.
   --query <text>      search: case-insensitive filter over name/title/desc.
-  --project <id>      installed/remove: target a linked cloud project's repo.
   --ref <ref>         list/view: git ref for a GitHub registry.
   --json              Machine-readable output.
   -h, --help          Show this help.
@@ -100,12 +95,6 @@ export async function runRegistry(argv: string[]): Promise<number> {
       return registryView(rest, json);
     case 'search':
       return registrySearch(rest, json);
-    case 'installed':
-    case 'ls-installed':
-      return registryInstalled(rest, json);
-    case 'remove':
-    case 'rm':
-      return registryRemove(rest, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -144,7 +133,7 @@ function registryBuild(argv: string[], json: boolean): number {
       '\n',
   );
   process.stdout.write(
-    `  ${C.dim}Commit it and others can${C.reset} ${C.cyan}kortix marketplace install ${registry.name}/<item>${C.reset}\n`,
+    `  ${C.dim}Commit it and others can${C.reset} ${C.dim}point an agent at this repo to import ${registry.name}/<item>${C.reset}\n`,
   );
   return 0;
 }
@@ -269,100 +258,7 @@ async function registryView(argv: string[], json: boolean): Promise<number> {
   }
   const envKeys = Object.keys(it.envVars ?? {});
   if (envKeys.length) process.stdout.write(`\n  ${C.dim}Secrets:${C.reset} ${envKeys.join(', ')}\n`);
-  process.stdout.write(`\n  ${C.dim}Install:${C.reset} ${C.cyan}kortix marketplace install ${address}${C.reset}\n`);
-  return 0;
-}
-
-function registryInstalled(argv: string[], json: boolean): number {
-  const root = resolve(takeValue(argv, '--root') ?? process.cwd());
-  const lock = readLock(root);
-  const items = Object.entries(lock.items).sort((a, b) => a[0].localeCompare(b[0]));
-  if (json) {
-    emitJson(
-      items.map(([name, e]) => ({
-        name,
-        type: e.type,
-        source: e.source,
-        files: e.files.length,
-        installed_at: e.installedAt ?? null,
-      })),
-    );
-    return 0;
-  }
-  if (items.length === 0) {
-    process.stdout.write(`${status.info('No registry items installed in this project.')}\n`);
-    process.stdout.write(`  ${C.dim}Add one with${C.reset} ${C.cyan}kortix marketplace install <item>${C.reset}\n`);
-    return 0;
-  }
-  process.stdout.write(`\n  ${C.bold}Installed${C.reset} ${C.faded}— ${items.length} items${C.reset}\n\n`);
-  const width = Math.min(26, Math.max(...items.map(([n]) => n.length)));
-  for (const [name, e] of items) {
-    const kind = e.type.replace('registry:', '');
-    process.stdout.write(
-      `  ${C.cyan}${name.padEnd(width)}${C.reset}  ${C.faded}${kind.padEnd(8)}${C.reset}  ${C.dim}${e.source}${C.reset}\n`,
-    );
-  }
-  process.stdout.write(`\n  ${C.dim}Remove one with${C.reset} ${C.cyan}kortix registry remove <name>${C.reset}\n`);
-  return 0;
-}
-
-async function registryRemove(argv: string[], json: boolean): Promise<number> {
-  const project = takeValue(argv, '--project');
-  const root = resolve(takeValue(argv, '--root') ?? process.cwd());
-  const name = argv.find((a) => !a.startsWith('-'));
-  if (!name) {
-    process.stderr.write(`${status.err('pass an item name: kortix registry remove <name>')}\n`);
-    return 2;
-  }
-
-  // Cloud path: remove from a linked project's repo (commits the removal).
-  if (project) {
-    const ctx = await resolveProjectContext({ projectArg: project });
-    if (!ctx) return 1;
-    try {
-      const res = await ctx.client.delete<{ removed: string; commit_sha?: string; branch?: string; file_count: number }>(
-        `/projects/${ctx.projectId}/registry/${encodeURIComponent(name)}`,
-      );
-      if (json) {
-        emitJson(res);
-        return 0;
-      }
-      process.stdout.write(`${status.ok(`Removed ${C.bold}${name}${C.reset} from your project`)}\n`);
-      process.stdout.write(
-        `  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}— ${res.file_count} files removed, live next session.${C.reset}\n`,
-      );
-      return 0;
-    } catch (err) {
-      return surfaceApiError(err);
-    }
-  }
-  const lock = readLock(root);
-  const entry = lock.items[name];
-  if (!entry) {
-    process.stderr.write(`${status.err(`"${name}" is not installed`)} Run ${C.cyan}kortix registry installed${C.reset}.\n`);
-    return 1;
-  }
-  const removed: string[] = [];
-  for (const f of entry.files) {
-    try {
-      rmSync(resolve(root, f.target));
-      removed.push(f.target);
-    } catch {
-      // already gone — fine
-    }
-  }
-  delete lock.items[name];
-  writeLock(root, lock);
-
-  if (json) {
-    emitJson({ removed: name, files: removed });
-    return 0;
-  }
-  process.stdout.write(`${status.ok(`Removed ${C.bold}${name}${C.reset} — ${removed.length} files`)}\n`);
-  for (const t of removed) process.stdout.write(`  ${C.faded}- ${t}${C.reset}\n`);
-  process.stdout.write(
-    `  ${C.dim}Commit + ship to apply:${C.reset} ${C.cyan}git add -A && git commit -m "remove ${name}" && kortix ship${C.reset}\n`,
-  );
+  process.stdout.write(`\n  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import "${address}"${C.reset}\n`);
   return 0;
 }
 
@@ -381,5 +277,5 @@ function printItemTable(registryName: string, items: RegistryItem[]): void {
       `  ${C.cyan}${it.name.padEnd(nameWidth)}${C.reset}  ${C.faded}${kind.padEnd(8)}${C.reset}  ${C.dim}${trimmed}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}Install one with${C.reset} ${C.cyan}kortix marketplace install ${registryName}/<name>${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}Add one to a project:${C.reset} ${C.dim}start a session and ask the agent to import ${registryName}/<name>${C.reset}\n`);
 }

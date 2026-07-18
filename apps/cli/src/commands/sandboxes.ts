@@ -12,6 +12,7 @@ import {
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
 import { C, help, pad, status } from '../style.ts';
+import { runSandboxBuildLocal } from './sandboxes-local.ts';
 
 // ── Shapes (mirror apps/api/src/projects sandbox-template + snapshot routes) ─
 
@@ -64,10 +65,29 @@ Subcommands:
   update <slug> [--name ...] [--image ...] [--dockerfile ...] [--cpu n] [--memory n] [--disk n]
                                     Update a UI-created template.
   build <slug>                      Trigger a rebuild for a template.
+  build --local [slug]              Build the image HERE, on your Docker, before
+                                    you push. See "Local build" below.
   rebuild <slug>                    Force-rebuild (delete existing snapshot first).
   rm <slug>                         Delete a UI-created template.
   fix                               Start a session seeded with the last failed
                                     build log so an agent can repair it.
+
+Local build (build --local):
+  Renders your Dockerfile + the Kortix toolchain layer and builds it with an
+  EMPTY context — the same repo-less constraint the cloud builds under. Needs
+  no login and no linked project, just Docker. For the checks that need neither,
+  run \`kortix validate\` (it lints these Dockerfiles statically).
+
+  Slug: the positional, else \`sandbox.default\`, else your only template.
+
+  --local              Build locally instead of triggering a cloud build.
+  --platform <p>       Target platform (default: this host's). The cloud always
+                       builds linux/amd64; matching it here is exact but slow
+                       under emulation.
+  --tag <t>            Image tag (default: kortix-local/<slug>:latest).
+  --no-cache           Pass --no-cache to docker build.
+  --no-layer           Build only your Dockerfile, without the Kortix layer.
+  --print              Print the composed Dockerfile to stdout and exit.
 
 Options:
   --image <ref>        Public docker image (mutually exclusive with --dockerfile).
@@ -89,8 +109,10 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   const f: Record<string, string | undefined> = {};
   let json = false;
+  let local = false;
   try {
     json = takeFlagBool(rest, ['--json']);
+    local = takeFlagBool(rest, ['--local']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.image = takeFlagValue(rest, ['--image']);
@@ -111,6 +133,22 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   if (sub === 'add' || sub === 'create') return sandboxAddLocal(positional[0], f);
   if (sub === 'update' || sub === 'edit') return sandboxUpdateLocal(positional[0], f);
   if (sub === 'rm' || sub === 'remove' || sub === 'delete') return sandboxRmLocal(positional[0]);
+  // `build --local` is the same kind of thing: it reads kortix.yaml + a
+  // Dockerfile and talks to the local Docker daemon. No token, no linked
+  // project, no network — so it must route above resolveProjectContext, which
+  // would otherwise dead-end a logged-out developer on a pre-push check.
+  // (It takes its own flags out of `rest` and reads the slug positional itself —
+  // `positional` above was computed before --platform/--tag were stripped, so it
+  // would mistake a flag VALUE for a slug.)
+  if (sub === 'build' && local) return runSandboxBuildLocal(rest, { json });
+  if (local) {
+    // `--local` was consumed above, so an unhandled one would otherwise vanish
+    // and the command would quietly do the CLOUD thing instead — `sandboxes
+    // rebuild --local` silently rebuilding a live snapshot is not a mistake
+    // anyone should be able to make by typo.
+    process.stderr.write(`${status.err(`--local only applies to \`sandboxes build\`, not "${sub}".`)}\n`);
+    return 2;
+  }
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;

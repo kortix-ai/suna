@@ -1,0 +1,32 @@
+-- Add 'local-docker' to the sandbox_provider enum — the EXPERIMENTAL
+-- same-machine Docker provider (apps/api/src/platform/providers/local-docker.ts).
+--
+-- Same precedent as 'platinum' (20260708154500000_sandbox_provider_add_platinum.sql)
+-- and 'managed' before it: the value lives in the Drizzle schema
+-- (packages/db/src/schema/kortix.ts) so fresh databases already have it; this
+-- migration is what carries it onto every OTHER database (dev/staging/prod,
+-- and any baseline that FAKED past the original CREATE TYPE — see that
+-- migration's comment for the mixed-version-baseline mechanics that make this
+-- ADD VALUE necessary even though the type "already has it" in a fresh schema).
+--
+-- ADD VALUE only (never USED in this same transaction) — Postgres forbids
+-- using a freshly-added enum value in the same transaction that added it, so a
+-- session actually pinning provider='local-docker' must happen in a later
+-- transaction (it always does — this migration only ever runs standalone).
+-- Non-destructive + idempotent.
+--
+-- enum-value-checked: no baseline (real or faked) can already have this exact
+-- value, so there is nothing for a faked baseline to have silently skipped
+-- (unlike the 'platinum' 22P02 incident this rule guards against, where the
+-- value WAS in the original CREATE TYPE and got dropped by faking past it).
+-- The ORIGINAL baseline (20260621094136410_baseline.sql) reserved a
+-- differently-spelled, never-wired-to-code placeholder,
+-- 'local_docker' (underscore) — grepped apps/api/src, apps/cli/src, and
+-- packages/db/src for it: zero references anywhere. The actual provider
+-- (apps/api/src/platform/providers/local-docker.ts, this PR's Drizzle schema
+-- change) uses the hyphenated 'local-docker', which exists nowhere before
+-- this migration. So every environment, including any faked baseline, is
+-- missing 'local-docker' until this migration runs — there is no skip case.
+set statement_timeout = '5s';
+set lock_timeout = '1s';
+ALTER TYPE "kortix"."sandbox_provider" ADD VALUE IF NOT EXISTS 'local-docker';

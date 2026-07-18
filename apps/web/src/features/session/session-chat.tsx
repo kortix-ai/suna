@@ -1,8 +1,8 @@
 'use client';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { SandboxImage } from '@/features/session/sandbox-image';
 import { detectCommandFromText } from '@/features/session/detect-command';
+import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
@@ -22,7 +22,6 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
-  MessageSquare,
   Reply,
   Scissors,
   Search,
@@ -46,7 +45,9 @@ import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
   isShellActivityTool,
+  normalizeActivityToolName,
   shellActivityGroupLabel,
+  writeActivityGroupLabel,
 } from '@/features/session/session-activity-groups';
 import {
   type AttachedFile,
@@ -62,6 +63,7 @@ import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
@@ -71,8 +73,8 @@ import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
+import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
+import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
@@ -110,6 +112,7 @@ import {
   buildFileRefsBlock,
 } from '@/lib/project-preamble';
 import { playSound } from '@/lib/sounds';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import {
   type KortixSystemMessage,
@@ -128,6 +131,10 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import {
+  useSessionComposerPrefillStore,
+  useSessionPrefill,
+} from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   type KortixSendError,
@@ -168,6 +175,7 @@ import {
   getShellModePart,
   getTurnCost,
   getTurnError,
+  getTurnErrorDetails,
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
@@ -339,14 +347,8 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
 // Answered question card — collapsible summary of completed Q&A
 // ============================================================================
 
-function AnsweredQuestionCard({
-  part,
-  defaultExpanded = false,
-}: {
-  part: ToolPart;
-  defaultExpanded?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+function AnsweredQuestionCard({ part }: { part: ToolPart }) {
+  const [expanded, setExpanded] = useState(false);
   const input = (part.state as any)?.input ?? {};
   const metadata = (part.state as any)?.metadata ?? {};
   const questions: Array<{ question: string; options?: { label: string }[] }> = Array.isArray(
@@ -360,43 +362,47 @@ function AnsweredQuestionCard({
   const answeredCount = answers.filter((a) => a.length > 0).length;
 
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div className="border-border/40 bg-muted/20 overflow-hidden rounded-2xl border">
-        <CollapsibleTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            className="hover:bg-muted/40 flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-2.5 py-1.5 text-left"
-          >
-            <MessageSquare className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground text-xs font-medium">Questions</span>
-            <span className="text-muted-foreground/70 text-xs">{answeredCount} answered</span>
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground ml-auto size-3 transition-transform',
-                expanded && 'rotate-180',
-              )}
-            />
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-border/30 border-t">
-            {questions.map((q, i) => {
-              const answer = answers[i] || [];
-              const answerText = answer.join(', ') || 'No answer';
-              return (
-                <div key={i} className="border-border/30 border-b px-2.5 py-2 last:border-b-0">
-                  <div className="[&_*]:!text-muted-foreground/70 [&_strong]:!text-muted-foreground/60 [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_ul]:!my-0">
-                    <UnifiedMarkdown content={q.question} />
-                  </div>
-                  <div className="text-foreground mt-0.5 text-sm font-medium">{answerText}</div>
+    <Disclosure
+      variant="outline"
+      className="bg-card overflow-hidden"
+      open={expanded}
+      onOpenChange={setExpanded}
+    >
+      <DisclosureTrigger variant="outline">
+        <Button
+          type="button"
+          variant="popover"
+          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+        >
+          <span className="text-foreground text-xs font-medium">Questions</span>
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {answeredCount} answered
+          </span>
+          <ChevronDown
+            className={cn(
+              'text-muted-foreground ml-auto shrink-0 transition-transform',
+              expanded && 'rotate-180',
+            )}
+          />
+        </Button>
+      </DisclosureTrigger>
+      <DisclosureContent variant="outline" contentClassName="border-border border-t">
+        <div className="space-y-4 px-4 py-2.5">
+          {questions.map((q, i) => {
+            const answer = answers[i] || [];
+            const answerText = answer.join(', ') || 'No answer';
+            return (
+              <div key={i} className="space-y-1">
+                <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
+                  <UnifiedMarkdown content={q.question} />
                 </div>
-              );
-            })}
-          </div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
+                <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
+              </div>
+            );
+          })}
+        </div>
+      </DisclosureContent>
+    </Disclosure>
   );
 }
 
@@ -2031,6 +2037,10 @@ function SameToolGroup({
   const isShell = useMemo(() => {
     return isShellActivityTool(entries[0]?.part.tool);
   }, [entries]);
+  const isWrite = useMemo(
+    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
+    [entries],
+  );
 
   const headerLabel = useMemo(() => {
     if (isContext) {
@@ -2067,9 +2077,13 @@ function SameToolGroup({
       return shellActivityGroupLabel(entries.length, anyRunning);
     }
 
+    if (isWrite) {
+      return writeActivityGroupLabel(entries.length, anyRunning);
+    }
+
     const t = contextToolTrigger(entries[0].part);
     return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, isShell, entries, anyRunning]);
+  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2346,6 +2360,11 @@ function SessionTurn({
     }
     return undefined;
   }, [turn]);
+
+  // The gateway's structured fields (provider/suggestion/request_id) for
+  // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
+  // provider failed and WHAT to do about it instead of only the raw message.
+  const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
 
   // Shell mode detection
   const shellModePart = useMemo(() => getShellModePart(turn), [turn]);
@@ -2724,7 +2743,9 @@ function SessionTurn({
           onPermissionReply={onPermissionReply}
           defaultOpen
         />
-        {turnError && <TurnErrorDisplay errorText={turnError} className="mt-2" />}
+        {turnError && (
+          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+        )}
         <ConnectProviderDialog
           open={connectProviderOpen}
           onOpenChange={setConnectProviderOpen}
@@ -3083,9 +3104,7 @@ function SessionTurn({
                   // so they appear exactly where the user answered them.
                   const answeredPart = answeredQuestionPartsById.get(part.id);
                   if (answeredPart) {
-                    return (
-                      <AnsweredQuestionCard key={part.id} part={answeredPart} defaultExpanded />
-                    );
+                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
                   }
                   // Unanswered/dismissed questions: don't render in steps;
                   // dismissed ones show via the turnError banner.
@@ -3175,7 +3194,7 @@ function SessionTurn({
                   </div>
                 );
               }
-              return <AnsweredQuestionCard key={item.id} part={item.part} defaultExpanded />;
+              return <AnsweredQuestionCard key={item.id} part={item.part} />;
             });
           })()}
         </div>
@@ -3260,7 +3279,7 @@ function SessionTurn({
       )}
 
       {/* ── Error (abort / failure banner) ── */}
-      {turnError && <TurnErrorDisplay errorText={turnError} />}
+      {turnError && <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} />}
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
@@ -3354,8 +3373,17 @@ export function SessionChat({
   const setSidePanelView = useSessionBrowserStore((s) => s.setView);
   const handleToolActivate = useCallback(
     (callID: string) => {
+      // Telemetry honesty (MINOR SWEEP c): the panel's own chat-focus effect
+      // (`easy-panel.tsx`) can't tell whether this open was fresh — by the
+      // time that effect runs, `focusToolCall` has already flipped
+      // `isSidePanelOpen` to true, so reading the store there always reports
+      // "already open". This callback is the only point in the flow where
+      // the PRE-open state is still observable, so the `panel_opened` event
+      // is tracked here instead, gated on that read.
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
       setSidePanelView(sessionId, 'actions');
       focusToolCall(callID);
+      if (!wasOpen) track('panel_opened', { source: 'chat_tool' });
     },
     [sessionId, setSidePanelView, focusToolCall],
   );
@@ -3542,6 +3570,18 @@ export function SessionChat({
     files: AttachedFile[];
     id: number;
   } | null>(null);
+  // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
+  // starter line. Held (not one-shot) in the store; the composer's own
+  // `prefill.id` effect below is what makes application happen exactly once.
+  const sessionPrefill = useSessionPrefill(sessionId);
+  // Held (not consumed) by the store so a fresh id always reaches the
+  // composer's own id-keyed effect — but held forever ghosts stale text back
+  // in on a later remount (tab switch, panel toggle): SessionChatInput's
+  // prefill effect runs before this one in the same commit (child before
+  // parent), so the text has already landed by the time we clear it here.
+  useEffect(() => {
+    if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
+  }, [sessionPrefill?.id, sessionId]);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -5107,7 +5147,7 @@ export function SessionChat({
   return (
     <div
       className={cn(
-        'relative flex h-full flex-col pt-10',
+        'relative flex h-full flex-col',
         // Transparent in the welcome state so the root-level full-bleed wallpaper
         // (portaled into SessionLayout) reads through; solid once real content
         // takes over. Same base color either way, so non-welcome is unchanged.
@@ -5173,7 +5213,7 @@ export function SessionChat({
           <div
             ref={scrollContainerCallbackRef}
             className={cn(
-              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] px-4 py-4',
+              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
               shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
             )}
             onMouseUp={handleChatMouseUp}
@@ -5183,7 +5223,7 @@ export function SessionChat({
             <div
               ref={contentRef}
               role="log"
-              className="mx-auto w-full max-w-3xl min-w-0 px-3 sm:px-6"
+              className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
             >
               <div className="flex min-w-0 flex-col">
                 {/* Optimistic user message */}
@@ -5347,7 +5387,7 @@ export function SessionChat({
           {selectionPopup && (
             <div
               data-reply-popup
-              className="animate-in fade-in-0 slide-in-from-bottom-1 absolute z-50 duration-150"
+              className="absolute z-50"
               style={{
                 left: `${selectionPopup.x}px`,
                 top: `${selectionPopup.y}px`,
@@ -5356,12 +5396,28 @@ export function SessionChat({
             >
               <Button
                 onClick={handleSelectionReply}
-                variant="outline"
-                size="toolbar"
-                className="bg-popover shadow-md"
+                size="xs"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
               >
-                <Reply className="size-3.5" />
                 Reply
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  width="24"
+                  height="24"
+                  color="currentColor"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  className="size-4"
+                >
+                  <path d="M3.99219 10H11.9922C13.8521 10 14.7821 10 15.5451 10.2044C17.6157 10.7592 19.2329 12.3765 19.7877 14.4471C19.9922 15.2101 19.9922 16.1401 19.9922 18"></path>
+                  <path
+                    d="M7.99219 6L6.83839 6.87652C4.94092 8.31801 3.99219 9.03875 3.99219 10C3.99219 10.9612 4.94092 11.682 6.83839 13.1235L7.99219 14"
+                    strokeLinejoin="round"
+                  ></path>
+                </svg>
               </Button>
             </div>
           )}
@@ -5371,7 +5427,6 @@ export function SessionChat({
             turns={turns}
             scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
             contentRef={contentRef as React.RefObject<HTMLDivElement>}
-            messages={messages || []}
           />
 
           {/* Scroll to bottom FAB */}
@@ -5399,8 +5454,26 @@ export function SessionChat({
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
         <SessionChatInput
-          onSend={handleSendWithDraftClear}
-          prefill={chatPrefill}
+          onSend={async (text, files, mentions) => {
+            await handleSend(text, files, mentions);
+            if (failedStartDraft) {
+              clearStartStash(sessionId);
+              usePendingFilesStore.getState().consumePendingFiles();
+              setFailedStartDraft(null);
+            }
+          }}
+          prefill={
+            failedStartDraft
+              ? {
+                  text: failedStartDraft.text,
+                  files: failedStartDraft.files,
+                  id: failedStartDraft.id,
+                  mode: 'merge',
+                }
+              : sessionPrefill
+                ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
+                : null
+          }
           isBusy={isBusy}
           queuedMessages={queuedMessages}
           onQueueMessage={handleQueueMessage}

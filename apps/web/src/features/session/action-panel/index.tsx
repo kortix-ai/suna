@@ -1,0 +1,97 @@
+'use client';
+
+/**
+ * Picks which panel presentation to render for a session: `EasyPanel` (the
+ * plain-language card home) or `AdvancedPanel` (the tool-call stepper),
+ * driven by `preferences.panelMode`.
+ *
+ * `isSessionBusy` (the session's own busy/retry status, computed once in
+ * `session-layout.tsx`) only matters to `EasyPanel` — it ORs this with its own
+ * part-derived running flag so an inter-tool-call gap doesn't read as
+ * "finished". `AdvancedPanel` derives its own presentation per tool part and
+ * never needs a session-wide running flag.
+ */
+
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { type PanelMode, useUserPreferencesStore } from '@/stores/user-preferences-store';
+import type { MessageWithParts } from '@/ui';
+import { useEffect } from 'react';
+// import { AdvancedPanel } from './advanced/advanced-panel'; // ADVANCED PANEL TEMPORARILY DISABLED
+import { EasyPanel } from './easy/easy-panel';
+
+/**
+ * Whether Advanced mode should discard a chip's pending "open with the
+ * primary deliverable" request for this session (W7). Only `EasyPanel` reads
+ * `pendingPrimaryOpenSessionId`, so Advanced mode never naturally consumes
+ * it — left standing, it survives a later switch back to Easy and
+ * auto-opens a deliverable the user never asked THIS render to show. Pulled
+ * out as a pure predicate (same reasoning as `easy-panel-logic.ts`) so the
+ * discard condition is unit-testable without mounting the component or a DOM.
+ */
+export function shouldDiscardPendingPrimaryOpen(
+  mode: PanelMode,
+  pendingPrimaryOpenSessionId: string | null,
+  sessionId: string,
+): boolean {
+  return mode === 'advanced' && pendingPrimaryOpenSessionId === sessionId;
+}
+
+export function ActionPanel({
+  sessionId,
+  messages,
+  isSessionBusy = false,
+  projectId,
+  projectSessionId,
+}: {
+  sessionId: string;
+  messages: MessageWithParts[] | undefined;
+  isSessionBusy?: boolean;
+  /** Route ids `EasyPanel`'s Terminal/Audit quick-nav needs — see its own
+   *  prop doc. `AdvancedPanel` has its own Terminal/Audit tabs wired from
+   *  `session-layout.tsx` directly, so it ignores these. */
+  projectId?: string;
+  projectSessionId?: string;
+}) {
+  // Users with preferences persisted before this shipped have no panelMode key.
+  const mode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
+
+  // Hooks can't be conditional, so this subscribes unconditionally and only
+  // acts when `shouldDiscardPendingPrimaryOpen` says so (i.e. mode is
+  // 'advanced' and the pending request belongs to this session).
+  const pendingPrimaryOpenSessionId = useKortixComputerStore(
+    (s) => s.pendingPrimaryOpenSessionId,
+  );
+  useEffect(() => {
+    if (!shouldDiscardPendingPrimaryOpen(mode, pendingPrimaryOpenSessionId, sessionId)) return;
+    useKortixComputerStore.getState().consumePrimaryOpen(sessionId);
+  }, [mode, pendingPrimaryOpenSessionId, sessionId]);
+
+  // Same discard contract for the palette's quick-view request: only
+  // `EasyPanel` consumes it, so in Advanced mode it would otherwise survive a
+  // later mode switch and replay a Terminal/Audit open the user never asked
+  // that render for. (Advanced handles the palette command directly via
+  // session-browser-store — see command-palette.tsx.)
+  const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
+  useEffect(() => {
+    if (mode !== 'advanced' || pendingQuickView?.sessionId !== sessionId) return;
+    useKortixComputerStore.getState().consumeQuickView(sessionId);
+  }, [mode, pendingQuickView, sessionId]);
+
+  // ADVANCED PANEL TEMPORARILY DISABLED — Easy is the one panel presentation
+  // (Easy Panel v2 spec, 2026-07-17). Everything advanced-mode is kept intact
+  // (advanced/advanced-panel.tsx, the panelMode preference, the discard
+  // effects above) so uncommenting this branch restores it wholesale.
+  //
+  // return mode === 'advanced' ? (
+  //   <AdvancedPanel sessionId={sessionId} messages={messages} />
+  // ) : (
+  return (
+    <EasyPanel
+      sessionId={sessionId}
+      messages={messages}
+      isSessionBusy={isSessionBusy}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
+  );
+}

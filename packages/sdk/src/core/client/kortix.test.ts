@@ -64,23 +64,23 @@ test('session(...).audit hits the audit endpoint with the given limit', async ()
 
 test('project(id).access.invite forwards a time-bound expiry to the backend', async () => {
   const expiry = '2027-01-01T00:00:00.000Z';
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', expiry);
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member', expiry);
   expect(last().url).toContain('/projects/PID123/access/invite');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({
-    email: 'teammate@essentia.com',
+    email: 'teammate@acme.com',
     role: 'member',
     expires_at: expiry,
   });
 });
 
 test('project(id).access.invite omits expires_at for a permanent grant', async () => {
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member');
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member');
   expect(last().body).not.toHaveProperty('expires_at');
 });
 
 test('project(id).access.invite sends expires_at:null to clear a bound', async () => {
-  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', null);
+  await kortix.project('PID123').access.invite('teammate@acme.com', 'member', null);
   expect(last().body).toMatchObject({ expires_at: null });
 });
 
@@ -313,6 +313,13 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
 });
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
+  await kortix.project('PID123').connectors.auth.discover({
+    slug: 'hubspot', provider: 'postman',
+    spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  });
+  expect(last().url).toContain('/executor/projects/PID123/connectors/auth-discovery');
+  expect(last().method).toBe('POST');
+
   await kortix.project('PID123').connectors.setName('slack-1', 'My Slack');
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/name');
 
@@ -434,52 +441,6 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
 
   await kortix.billing.tierConfigurations();
   expect(last().url).toContain('/billing/tier-configurations');
-});
-
-test('project(id).marketplace covers list/install/updates/update/updateAll/remove', async () => {
-  await kortix.project('PID123').marketplace.list();
-  expect(last().url).toContain('/projects/PID123/marketplace');
-  expect(last().method).toBe('GET');
-
-  await kortix.project('PID123').marketplace.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updates();
-  expect(last().url).toContain('/projects/PID123/marketplace/updates');
-
-  await kortix.project('PID123').marketplace.update('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/update');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updateAll();
-  expect(last().url).toContain('/projects/PID123/marketplace/update-all');
-
-  await kortix.project('PID123').marketplace.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/researcher');
-  expect(last().method).toBe('DELETE');
-});
-
-test('project(id).registry is the compatibility alias of marketplace (same paths, /registry prefix)', async () => {
-  await kortix.project('PID123').registry.list();
-  expect(last().url).toContain('/projects/PID123/registry');
-
-  await kortix.project('PID123').registry.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/registry/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').registry.updates();
-  expect(last().url).toContain('/projects/PID123/registry/updates');
-
-  await kortix.project('PID123').registry.update('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/update');
-
-  await kortix.project('PID123').registry.updateAll();
-  expect(last().url).toContain('/projects/PID123/registry/update-all');
-
-  await kortix.project('PID123').registry.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/researcher');
-  expect(last().method).toBe('DELETE');
 });
 
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {

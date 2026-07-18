@@ -5,12 +5,18 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { getBackend, hasBackend, type GitScope } from '../git-backends';
+import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
-import { buildProjectSeedFiles, normalizeMarketplaceItems } from '../seed-files';
+import {
+  buildProjectSeedFiles,
+  buildProjectSeedFilesFromItem,
+  defaultAgentFromSeedFiles,
+  normalizeMarketplaceItems,
+} from '../seed-files';
+import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
@@ -316,6 +322,34 @@ projectsApp.openapi(
 },
 );
 
+// GET /v1/projects/managed-git/status
+// Lets the frontend pre-check whether the managed-git "Create project" path
+// (POST /provision) is usable BEFORE the user hits its 503, so the create UI
+// can disable/annotate that option instead of surfacing a raw server error.
+// Self-host deployments with no MANAGED_GIT_* configured are the primary
+// case — the BYO-repo import path (POST / and /create-repo) stays available
+// regardless.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/managed-git/status',
+    tags: ['projects'],
+    summary: 'GET /managed-git/status',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ configured: z.boolean(), provider: z.string() }),
+        'Whether the managed-git provider is configured on this server',
+      ),
+    },
+  }),
+  async (c: any) => {
+    const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
+    const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
+    return c.json({ configured, provider });
+  },
+);
+
 // POST /v1/projects/provision
 // Managed-git "Create project": provisions a repo on the managed backend +
 // scoped per-project push token, optionally seeds the starter (web flow), and
@@ -380,6 +414,18 @@ projectsApp.openapi(
       400,
     );
   }
+
+  // "Clone project" — seed the new repo from a `registry:project` marketplace
+  // item instead of the blank starter. Resolved + type-checked BEFORE any
+  // upstream repo/DB row is created, same as the name checks above.
+  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+  if (sourceItemId) {
+    const sourceItem = await getCatalogItemDetail(sourceItemId);
+    if (!sourceItem || sourceItem.type !== 'registry:project') {
+      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+    }
+  }
+
   // Managed repo name = a readable slug from the display name + the project's
   // UUID, so managed repos under the shared org NEVER collide (two projects can
   // share a name). We generate the project id up front to bake it into the repo
@@ -500,7 +546,7 @@ projectsApp.openapi(
   // tree to push (web "Create project"). The CLI leaves this false and pushes
   // its own files on first `kortix ship`. If seeding fails we roll back the
   // orphan repo + project so we never leave a half-created project behind.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
   const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
   const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
   let seeded = false;
@@ -508,13 +554,21 @@ projectsApp.openapi(
     const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
     try {
       if (!internalPushToken) throw new Error('no push credential resolved for seeding');
-      const seed = await buildProjectSeedFiles({
-        projectName: name,
-        repoFullName: repoSlug,
-        template: starterTemplate,
-        marketplaceItems,
-        now: now.toISOString(),
-      });
+      const seed = sourceItemId
+        ? await buildProjectSeedFilesFromItem({
+            id: sourceItemId,
+            projectName: name,
+            repoFullName: repoSlug,
+            extraMarketplaceItems: marketplaceItems,
+            now: now.toISOString(),
+          })
+        : await buildProjectSeedFiles({
+            projectName: name,
+            repoFullName: repoSlug,
+            template: starterTemplate,
+            marketplaceItems,
+            now: now.toISOString(),
+          });
       if (backend.seedFiles) {
         // Seed the project tip == the deterministic scaffold root (the constant
         // 'kortix-project' render), byte-identical to the image-baked scaffold
@@ -540,6 +594,23 @@ projectsApp.openapi(
         });
       }
       seeded = true;
+
+      // Mirror the seeded manifest's declared default agent into
+      // project.metadata (see defaultAgentFromSeedFiles in ../seed-files.ts)
+      // so session creation resolves it from birth instead of falling back
+      // to the non-binding 'default' sentinel — see
+      // llm-gateway/resolution/default-model.ts's cachedSessionAgent for the
+      // defense-in-depth fallback that also covers pre-existing/CLI-created
+      // projects where this mirror is still stale.
+      const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
+      if (seededDefaultAgent) {
+        row.metadata = { ...((row.metadata as Record<string, unknown> | null) ?? {}), default_agent: seededDefaultAgent };
+        await db
+          .update(projects)
+          .set({ metadata: row.metadata, updatedAt: new Date() })
+          .where(eq(projects.projectId, row.projectId))
+          .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+      }
     } catch (error) {
       try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
       await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
@@ -711,7 +782,12 @@ projectsApp.openapi(
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
 
@@ -739,7 +815,12 @@ projectsApp.openapi(
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
 

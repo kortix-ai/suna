@@ -27,6 +27,9 @@ mock.module('../sandbox-proxy/backend', () => ({
 
 mock.module('../shared/preview-ownership', () => ({
   resolvePreviewUserContext: async () => null,
+  // Not exercised by this suite — stub so the real module's shape stays
+  // satisfied for anything else that imports it in the same test run.
+  resolveSandboxProjectId: async () => null,
 }));
 
 const { ensureOpencodeSessionPin } = await import('../projects/opencode-mapping');

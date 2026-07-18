@@ -44,13 +44,3 @@ regexes = [
   '''95788432-f5df-4ffe-af9e-0ed4e03cf96e''',
   '''b4a01f33-d46c-4a96-8a1d-0a265e48978f''',
 ]
-
-[[allowlists]]
-description = "False-positive ACM key_algorithm enum. EC_prime256v1 is an AWS certificate algorithm name, not key material. Both the exact Terraform path and literal must match."
-condition = "AND"
-paths = [
-  '''infra/terraform/modules/enterprise-vpc/acm\.tf$''',
-]
-regexes = [
-  '''EC_prime256v1''',
-]

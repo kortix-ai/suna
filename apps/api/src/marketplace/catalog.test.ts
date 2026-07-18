@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import {
   clampMarketplaceItemsLimit,
+  getCatalogItemDetail,
   pageCatalogItems,
   selectTemplateItems,
   type CatalogItem,
 } from './catalog';
 
+// Default fixtures use a neutral external registry ('acme') so generic
+// filter/pagination behavior is tested independent of the `kortix-starter`
+// fold rule (those skills live inside the "Kortix Starter" project now and are
+// covered by their own test below).
 function item(overrides: Partial<CatalogItem> = {}): CatalogItem {
   return {
-    id: `kortix:${overrides.name ?? 'item'}`,
-    registry: 'kortix-starter',
+    id: `acme:${overrides.name ?? 'item'}`,
+    registry: 'acme',
     name: 'item',
     type: 'registry:skill',
     title: 'Item',
@@ -18,9 +23,9 @@ function item(overrides: Partial<CatalogItem> = {}): CatalogItem {
     capabilities: { secrets: [], connectors: [], tools: [], network: [] },
     dependencies: [],
     fileCount: 1,
-    external: false,
-    marketplaceId: 'kortix',
-    marketplaceLabel: 'Kortix',
+    external: true,
+    marketplaceId: 'acme',
+    marketplaceLabel: 'Acme',
     ...overrides,
   };
 }
@@ -30,6 +35,33 @@ function synthetic(count: number, overrides: (i: number) => Partial<CatalogItem>
     item({ id: `kortix:item-${i}`, name: `item-${i}`, ...overrides(i) }),
   );
 }
+
+describe('template + agent resolution (decoupled from browse)', () => {
+  test('use-case templates + their agents are NOT surfaced in the browse list', () => {
+    const mix = [
+      item({ type: 'registry:template', name: 't', id: 'kortix-starter:t' }),
+      item({ type: 'registry:agent', name: 'a', id: 'kortix-starter:a' }),
+      item({ type: 'registry:skill', name: 's', id: 'kortix-starter:s' }),
+    ];
+    expect(pageCatalogItems(mix, {}).items.map((i) => i.type)).toEqual(['registry:skill']);
+  });
+
+  test('but a template resolves by id and detail carries its full declaration', async () => {
+    const detail = await getCatalogItemDetail('kortix-starter:customer-support');
+    expect(detail).not.toBeNull();
+    expect(detail!.type).toBe('registry:template');
+    expect((detail!.inputs as Array<{ key: string }>).map((i) => i.key)).toContain('cadence');
+    expect(Object.keys(detail!.envVars ?? {})).toContain('PLAIN_API_KEY');
+    const tpl = detail!.template as { triggers?: Array<{ slug: string }> };
+    expect(tpl.triggers?.map((t) => t.slug)).toContain('support-triage');
+  });
+
+  test('and the agent a template installs resolves by id too (for the install-session fetch)', async () => {
+    const agent = await getCatalogItemDetail('kortix-starter:support-agent');
+    expect(agent).not.toBeNull();
+    expect(agent!.type).toBe('registry:agent');
+  });
+});
 
 describe('selectTemplateItems', () => {
   test('keeps registry:template items only, and drops hidden ones', () => {
@@ -99,10 +131,12 @@ describe('pageCatalogItems', () => {
   });
 
   test('query/type/source filters compose with paging and the visible-type filter stays intact', () => {
+    // 'kortix-projects' is a browseable Kortix registry (maps to source 'kortix');
+    // 'kortix-starter' items are folded away, so we use projects here.
     const items = [
-      ...synthetic(3, (i) => ({ name: `alpha-${i}`, title: `Alpha ${i}`, type: 'registry:skill', registry: 'kortix-starter' })),
+      ...synthetic(3, (i) => ({ name: `alpha-${i}`, title: `Alpha ${i}`, type: 'registry:skill', registry: 'kortix-projects', marketplaceId: 'kortix' })),
       ...synthetic(3, (i) => ({ name: `beta-${i}`, title: `Beta ${i}`, type: 'registry:skill', registry: 'other-registry' })),
-      item({ id: 'hidden-tool', name: 'hidden-tool', title: 'Hidden Tool', type: 'registry:tool', registry: 'kortix-starter' }),
+      item({ id: 'hidden-tool', name: 'hidden-tool', title: 'Hidden Tool', type: 'registry:tool', registry: 'kortix-projects' }),
     ];
     const result = pageCatalogItems(items, { query: 'alpha', source: 'kortix', limit: 2, offset: 0 });
     expect(result.total).toBe(3);
@@ -110,9 +144,28 @@ describe('pageCatalogItems', () => {
     expect(result.items.every((it) => it.name.startsWith('alpha'))).toBe(true);
   });
 
-  test('surfaces skills, agents, commands, and bundles as browseable; hides support types', () => {
+  test('surfaces kortix-starter skills in the browse list alongside the Kortix Starter project', () => {
+    const items = [
+      item({
+        id: 'kortix-starter:pdf',
+        name: 'pdf',
+        type: 'registry:skill',
+        registry: 'kortix-starter',
+        partOfProject: { id: 'kortix-projects:starter', title: 'Kortix Starter' },
+      }),
+      item({ id: 'kortix-projects:starter', name: 'starter', type: 'registry:project', registry: 'kortix-projects' }),
+    ];
+    const result = pageCatalogItems(items, {});
+    expect(result.items.map((it) => it.name).sort()).toEqual(['pdf', 'starter']);
+    expect(result.total).toBe(2);
+    const pdf = result.items.find((it) => it.name === 'pdf')!;
+    expect(pdf.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
+  });
+
+  test('surfaces skills and projects as browseable; hides agents/commands/bundles/support types', () => {
     const items = [
       item({ id: 'k:skill', name: 'a-skill', type: 'registry:skill' }),
+      item({ id: 'k:project', name: 'a-project', type: 'registry:project' }),
       item({ id: 'k:agent', name: 'a-agent', type: 'registry:agent' }),
       item({ id: 'k:command', name: 'a-command', type: 'registry:command' }),
       item({ id: 'k:bundle', name: 'a-bundle', type: 'registry:bundle' }),
@@ -121,10 +174,8 @@ describe('pageCatalogItems', () => {
     ];
     const result = pageCatalogItems(items, {});
     const visible = new Set(result.items.map((it) => it.type));
-    expect(visible).toEqual(
-      new Set(['registry:skill', 'registry:agent', 'registry:command', 'registry:bundle']),
-    );
-    expect(result.total).toBe(4);
+    expect(visible).toEqual(new Set(['registry:skill', 'registry:project']));
+    expect(result.total).toBe(2);
   });
 
   test('offset past the end returns empty items, hasMore false, and a correct total', () => {

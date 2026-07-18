@@ -7,6 +7,7 @@ tags:
   - Security
   - Case Study
   - Enterprise
+template: compliance-monitoring
 ---
 
 Infrastructure drifts out of compliance quietly. A bucket gets made public for a
@@ -45,11 +46,6 @@ isolated session — a cloud sandbox — with scoped, read access to AWS and the
 audit logs. The agent checks resources against policy — public buckets, untagged
 resources, over-broad roles — and files what it finds to Slack. Remediation is
 proposed as a reviewed change, never applied automatically.
-
-<Figure
-  caption="The daily sweep filing compliance findings and proposing remediation as a reviewed change"
-  aspect="16/9"
-/>
 
 ## How it works
 
@@ -122,11 +118,6 @@ relevant controls on Kortix:
 - **Everything is code.** The agent's persona, skills, and permissions are files
   in the repo — versioned and changed through a reviewed **change request**, not
   a dashboard setting.
-
-<Figure
-  caption="A proposed remediation held as a reviewed change before anything is applied"
-  aspect="16/9"
-/>
 
 ## The outcome
 

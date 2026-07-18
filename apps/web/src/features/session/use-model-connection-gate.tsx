@@ -5,9 +5,11 @@ import { useParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { hasUsableModel } from '@/hooks/opencode/use-model-store';
+import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -33,6 +35,10 @@ import type { FlatModel } from './session-chat-input';
  * `hasUsableModel` for the actual entitlement check.
  */
 export function useModelConnectionGate(models: FlatModel[] = []) {
+  // See use-connected-providers.ts: re-renders when LlmCatalogBootstrap's
+  // live-catalog fetch lands, since connectedProviderIds below reads the
+  // module-level LLM_PROVIDERS binding.
+  const catalogRevision = useLlmProviderCatalogRevision();
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -76,7 +82,8 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     const items = Array.isArray(data) ? data : (data?.items ?? []);
     const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
-  }, [llmGatewayEnabled, secretsQuery.data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
+  }, [llmGatewayEnabled, secretsQuery.data, catalogRevision]);
   const { data: accountState, isPending: accountStatePending } = useAccountState();
   const freeTier = useMemo(() => {
     const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
@@ -136,5 +143,19 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     />
   ) : null;
 
-  return { openConnectProvider, openUpgrade, modal, hasSelectableModels, entitlementsPending };
+  // Billing off (self-host default): there's no Kortix plan to upgrade to and
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
+  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
+  // "Upgrade" button would be a dead click. Callers should hide it and only
+  // offer "bring your own key" when this is false.
+  const showUpgradeOption = isBillingEnabled();
+
+  return {
+    openConnectProvider,
+    openUpgrade,
+    modal,
+    hasSelectableModels,
+    entitlementsPending,
+    showUpgradeOption,
+  };
 }

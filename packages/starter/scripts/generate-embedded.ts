@@ -27,6 +27,7 @@ const TEMPLATE_ROOTS = {
   base: join(STARTER_ROOT, 'templates', 'base'),
   'general-knowledge-worker': join(STARTER_ROOT, 'templates', 'general-knowledge-worker'),
   marketplace: join(STARTER_ROOT, 'templates', 'marketplace'),
+  'marketplace-projects': join(STARTER_ROOT, 'templates', 'marketplace-projects'),
 } as const;
 
 interface RawFile {

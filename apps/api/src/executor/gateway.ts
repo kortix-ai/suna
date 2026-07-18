@@ -40,7 +40,7 @@ export interface GatewayConnector {
   profileIsDefault?: boolean;
   profileMetadata?: Record<string, unknown>;
   slug: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;

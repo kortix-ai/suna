@@ -23,26 +23,28 @@ import {
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
+import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { systemReload } from '@kortix/sdk/opencode-client';
 import {
-  getProjectDetail,
-  listAccounts,
-  listProjectSessions,
-  listProjectsForAccount,
   type ExperimentalFeatureKey,
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
+  getProjectDetail,
+  listAccounts,
+  listProjectSessions,
+  listProjectsForAccount,
 } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -71,11 +73,7 @@ import { Kbd } from '@/components/ui/kbd';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { useWorkspaceSearch } from '@/features/files';
-import {
-  MODEL_SELECTOR_PROVIDER_IDS,
-  PROVIDER_LABELS,
-  ProviderLogo,
-} from '@/features/providers/provider-branding';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
@@ -89,6 +87,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
+import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
@@ -104,7 +103,7 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
+import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersSolid } from '@mynaui/icons-react';
@@ -393,6 +392,7 @@ export function CommandPalette() {
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
+  const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
   const billingEnabled = isBillingEnabled();
 
   const { data: agents } = useOpenCodeAgents();
@@ -640,7 +640,7 @@ export function CommandPalette() {
       } else {
         groups.set(m.providerID, {
           providerID: m.providerID,
-          providerName: PROVIDER_LABELS[m.providerID] || m.providerName,
+          providerName: m.providerName,
           models: [m],
         });
       }
@@ -863,7 +863,7 @@ export function CommandPalette() {
     }
 
     if (/^\d{2,5}$/.test(q)) {
-      const port = parseInt(q, 10);
+      const port = Number.parseInt(q, 10);
       if (port >= 1 && port <= 65535) {
         return {
           kind: 'localhost' as const,
@@ -998,6 +998,41 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
+  const handleTogglePanelMode = useCallback(() => {
+    close();
+    const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
+    track('panel_mode_switched', { to: nextMode });
+    useUserPreferencesStore.getState().togglePanelMode();
+  }, [close, panelMode]);
+
+  /**
+   * "Open Terminal" / "Open Audit" / "Open Browser" (Easy: the Easy panel's
+   * detail layer, Advanced: the panel's Terminal/Audit/Browser tab). The
+   * id-space-sensitive branching lives in `openSessionQuickView` — shared
+   * with the session header's terminal/browser buttons, so it can never
+   * drift between them.
+   */
+  const handleOpenQuickView = useCallback(
+    (view: 'terminal' | 'audit' | 'browser') => {
+      close();
+      openSessionQuickView(view, 'palette');
+    },
+    [close],
+  );
+
+  const handleOpenSessionTerminal = useCallback(
+    () => handleOpenQuickView('terminal'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionAudit = useCallback(
+    () => handleOpenQuickView('audit'),
+    [handleOpenQuickView],
+  );
+  const handleOpenSessionBrowser = useCallback(
+    () => handleOpenQuickView('browser'),
+    [handleOpenQuickView],
+  );
+
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
       close();
@@ -1110,6 +1145,10 @@ export function CommandPalette() {
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
       toggleSidebar: handleToggleSidebar,
+      togglePanelMode: handleTogglePanelMode,
+      openSessionTerminal: handleOpenSessionTerminal,
+      openSessionAudit: handleOpenSessionAudit,
+      openSessionBrowser: handleOpenSessionBrowser,
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
@@ -1124,6 +1163,10 @@ export function CommandPalette() {
       handleViewChanges,
       handleInviteMembers,
       handleToggleSidebar,
+      handleTogglePanelMode,
+      handleOpenSessionTerminal,
+      handleOpenSessionAudit,
+      handleOpenSessionBrowser,
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
@@ -1494,6 +1537,7 @@ export function CommandPalette() {
                         {filteredNavItems.map((item) => {
                           const Icon = item.icon;
                           const isToggleSidebar = item.id === 'toggle-sidebar';
+                          const isTogglePanelMode = item.id === 'toggle-panel-mode';
                           const SidebarIcon = isToggleSidebar
                             ? sidebarOpen
                               ? PanelLeftClose
@@ -1503,7 +1547,11 @@ export function CommandPalette() {
                             ? sidebarOpen
                               ? 'Collapse Sidebar'
                               : 'Expand Sidebar'
-                            : item.label;
+                            : isTogglePanelMode
+                              ? panelMode === 'easy'
+                                ? 'Switch to Advanced View'
+                                : 'Switch to Easy View'
+                              : item.label;
                           const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
                           const isActiveWallpaper =
                             item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;

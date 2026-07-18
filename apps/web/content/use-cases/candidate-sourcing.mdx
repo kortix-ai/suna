@@ -1,0 +1,155 @@
+---
+title: "How we source candidates for open roles"
+description: The outbound-sourcing agent we run on Kortix — daily, it finds candidates on LinkedIn for each open role, checks Greenhouse so no one already in the pipeline gets a duplicate reach-out, and drafts a personalized email for the recruiter to review and send.
+date: "2026-06-08"
+author: team
+tags:
+  - Recruiting
+  - Case Study
+  - Enterprise
+template: candidate-sourcing
+---
+
+Filling an open role isn't just reading the applications that arrive — the
+best candidates for a lot of roles aren't applying anywhere, they're already
+employed and not looking. Finding them means searching LinkedIn by hand,
+checking the ATS to make sure whoever you found isn't already in the
+pipeline, and writing an intro that actually references their background
+instead of a generic template. Done well, it's hours of work per role.
+Done under time pressure, it gets skipped and the role stays open longer.
+
+We run a candidate-sourcing agent on Kortix that does the search and the
+first draft every day. For an open role, it finds matching candidates on
+LinkedIn, checks Greenhouse so it never resurfaces someone already in the
+pipeline, and drafts a personalized outreach email referencing each
+candidate's actual background. It sources and drafts only — the recruiter
+reviews every draft, and nothing sends and no one is added to the ATS
+without them. This is how we source our own outbound pipeline.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">Greenhouse · LinkedIn · Email</Fact>
+  <Fact label="Mode">Sources and drafts only · recruiter reviews and sends</Fact>
+</KeyFacts>
+
+## The problem
+
+Outbound recruiting is a research problem before it's a writing problem, and
+neither half scales by hand. Searching LinkedIn for candidates who actually
+match a role's real bar takes real time, and doing it well across several
+open roles at once is more than one recruiter can sustain daily. Then there's
+the dedupe check: has this person already applied, already been
+contacted, already passed on an earlier round? Skipping that check means a
+candidate gets the same cold email twice, which reads as sloppy at best.
+
+The usual shortcuts make it worse. A generic sourcing tool exports a list of
+profiles with no reference to the pipeline, so recruiters re-discover people
+who are already in Greenhouse. A templated outreach message goes out to
+everyone in the list with a name swapped in, and candidates who get a lot of
+these can tell instantly. Neither problem gets fixed by working faster —
+they get fixed by connecting the systems that already have the answer.
+
+## What we built
+
+On Kortix, a daily cron triggers an agent. It spawns a fresh session (a cloud
+sandbox) scoped to an open role, searches LinkedIn for candidates matching
+that role's profile, checks the role's Greenhouse pipeline so it never
+proposes someone already there, and drafts a personalized outreach email for
+each new match — referencing that candidate's real background, not a
+template. Every draft lands in the recruiter's inbox for review; the agent
+never emails a candidate and never touches Greenhouse.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox scoped to one open role, so every day's batch
+is sourced and deduped against the current state of the pipeline — nothing
+carries over from the day before.
+
+</Step>
+<Step title="Give the agent the role's sourcing profile">
+
+What "a match" means for this role — the title, seniority, skills, and any
+other criteria worth searching for — lives as **skills** and **memory** that
+travel with the agent, alongside the outreach angles that make a message
+worth opening instead of ignoring. When the role's bar changes or a message
+pattern gets better replies, we write it down and the next day's batch
+reflects it.
+
+</Step>
+<Step title="Connect Greenhouse, LinkedIn, and email">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches
+the model, the agent can:
+
+- **Search LinkedIn** — for candidates matching the role's sourcing profile.
+- **Check Greenhouse** — the open role's pipeline, so anyone already
+  applied, contacted, or passed on gets skipped rather than re-surfaced.
+- **Draft to email** — a personalized outreach message per new candidate,
+  referencing their actual background, held for the recruiter to send.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's job stops at the draft. It never sends an outreach email itself
+and never adds, moves, or tags anyone in Greenhouse — sourcing and drafting
+only. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Hand the batch to the recruiter">
+
+With that in place, each morning brings a small batch of new candidates for
+the open role, each with a drafted email that references their real
+background and a note on why they matched. The recruiter reads each one,
+edits where they want, and sends it themselves — or adds the candidate to
+Greenhouse themselves, if they choose to. Nothing leaves the sandbox except
+the drafts.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a fresh session scoped to one open role, with
+  **connectors** into LinkedIn to source and Greenhouse to dedupe. The
+  sourcing profile and outreach angles live as **skills** and **memory**. The
+  agent drafts to email and stops — the recruiter reviews, sends, and owns
+  the ATS.
+</Callout>
+
+## Guardrails
+
+The agent can search for and contact real people, so the boundary between
+"draft" and "send" is the control that matters:
+
+- **Isolation.** Every run happens in its own microVM sandbox, scoped to one
+  open role. Only the drafted emails leave the sandbox.
+- **Scoped secrets.** The Greenhouse and LinkedIn credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed
+  to the model or the logs.
+- **Human approval gate.** The agent never sends outreach itself and never
+  adds a candidate to Greenhouse. Every draft is held for the recruiter to
+  review, edit, and send — and the ATS is theirs to update.
+- **Dedupe before draft.** The agent checks the role's Greenhouse pipeline
+  before drafting anything, so a candidate already applied, contacted, or
+  passed on never gets a duplicate reach-out.
+- **Everything is code.** The sourcing profile, outreach angles, and
+  per-system permissions are files in the repo, versioned and changed through
+  a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="New candidates sourced and deduped per open role" />
+  <Stat value="Zero" label="Duplicate reach-outs to candidates already in the pipeline" />
+  <Stat value="3 systems" label="Greenhouse, LinkedIn, and email in one agent" />
+</StatGrid>
+
+Sourcing for an open role now starts with a batch already searched, deduped
+against the pipeline, and drafted with a real reference to each candidate's
+background. The recruiter's day starts with review instead of research, and
+every send and every ATS change still stays with them.

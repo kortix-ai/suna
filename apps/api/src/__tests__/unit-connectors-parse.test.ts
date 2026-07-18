@@ -92,7 +92,56 @@ connectors:
     spec: .kortix/executor/internal.openapi.json
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ spec: '.kortix/executor/internal.openapi.json', auth: { type: 'none' } });
+    expect(specs[0]).toMatchObject({
+      spec: '.kortix/executor/internal.openapi.json', authAuto: true, auth: { type: 'none' },
+    });
+  });
+
+  test('explicit none is distinct from omitted auto-detect and survives round-trip', () => {
+    const { specs } = parseAndExtract(`
+connectors:
+  - slug: auto
+    provider: openapi
+    spec: https://example.com/auto.json
+  - slug: public
+    provider: openapi
+    spec: https://example.com/public.json
+    auth:
+      type: none
+`);
+    expect(specs[0]?.authAuto).toBe(true);
+    expect(specs[1]?.authAuto).toBe(false);
+    expect(connectorSpecToTomlEntry(specs[0]!)).not.toHaveProperty('auth');
+    expect(connectorSpecToTomlEntry(specs[1]!)).toMatchObject({ auth: { type: 'none' } });
+  });
+
+  test('postman by public repository URL', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: hubspot
+    provider: postman
+    spec: https://github.com/HubSpot/HubSpot-public-api-spec-collection
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      slug: 'hubspot',
+      provider: 'postman',
+      spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+    });
+    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
+      provider: 'postman',
+      spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+    });
+  });
+
+  test('postman requires a source spec', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: hubspot
+    provider: postman
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('provider="postman" requires `spec`');
   });
 
   test('graphql — endpoint, optional spec, bearer', () => {
@@ -305,7 +354,7 @@ connectors:
   slug: x
 `);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toContain('array of tables');
+    expect(errors[0]!.error).toContain('must be a list');
   });
 
   test('missing slug', () => {
@@ -547,6 +596,7 @@ describe('connectors: — runtime parser ⇄ schema gate provider agreement', ()
     { name: 'pipedream', accept: true, body: `connectors:\n  - slug: c\n    provider: pipedream\n    app: gmail` },
     { name: 'mcp', accept: true, body: `connectors:\n  - slug: c\n    provider: mcp\n    url: https://e.com` },
     { name: 'openapi', accept: true, body: `connectors:\n  - slug: c\n    provider: openapi\n    spec: https://e.com/o.json` },
+    { name: 'postman', accept: true, body: `connectors:\n  - slug: c\n    provider: postman\n    spec: https://github.com/acme/apis` },
     { name: 'graphql', accept: true, body: `connectors:\n  - slug: c\n    provider: graphql\n    endpoint: https://e.com/graphql` },
     { name: 'http', accept: true, body: `connectors:\n  - slug: c\n    provider: http\n    base_url: https://e.com` },
     { name: 'channel', accept: true, body: `connectors:\n  - slug: kortix_slack\n    provider: channel\n    platform: slack` },

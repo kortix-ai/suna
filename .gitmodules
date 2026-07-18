@@ -1,3 +1,0 @@
-[submodule "vendor/executor"]
-	path = vendor/executor
-	url = https://github.com/RhysSullivan/executor

@@ -27,6 +27,11 @@ reusable session exists yet (or the last one is dead or failed), the trigger
 falls back to creating a fresh session, which then becomes the canonical one
 for the next fire.
 
+Use `session_mode: pinned` with a `session_id` when a trigger must first try to
+loop a specific existing session. If that pinned session is gone or unavailable,
+Kortix gracefully falls back to the trigger's reusable session, then to a fresh
+session.
+
 The scheduler reads triggers from the default branch, so a new or edited trigger
 goes live only after its change request merges. Fields, signature format, and
 template variables: [Triggers](/docs/reference/triggers).

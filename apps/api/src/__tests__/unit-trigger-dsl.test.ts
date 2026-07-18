@@ -408,7 +408,7 @@ prompt = "x"
 `));
     const { specs, errors } = extractTriggers(parsed);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/session_mode must be "fresh" or "reuse"/);
+    expect(errors[0]!.error).toMatch(/session_mode must be "fresh", "reuse", or "pinned"/);
   });
 
   test('session_mode = "reuse" round-trips through serialize', () => {

@@ -2,8 +2,11 @@
 {{- if not .Values.ingress.certificateArn }}
 {{- fail "ingress.certificateArn is required (the ACM cert ARN for qa.kortix.com)" }}
 {{- end }}
+{{- if not .Values.ingress.wafAclArn }}
+{{- fail "ingress.wafAclArn is required so the AWS Load Balancer Controller preserves the WAF association" }}
+{{- end }}
 # Same ALB shape as kortix-api: the AWS Load Balancer Controller provisions an
-# internet-facing ALB (ACM TLS, :80 -> :443 redirect, IP targets); external-dns
+# internet-facing ALB (ACM TLS on :443 only, IP targets); external-dns
 # points qa.kortix.com at it (Cloudflare, proxied). Lock to Cloudflare IPs via
 # ingress.inboundCidrs so the raw ALB DNS can't be hit directly.
 apiVersion: networking.k8s.io/v1
@@ -19,9 +22,9 @@ metadata:
     alb.ingress.kubernetes.io/group.name: {{ .Values.ingress.albGroup | quote }}
     {{- end }}
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.ingress.wafAclArn | quote }}
     alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.certificateArn | quote }}
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.health.path | quote }}

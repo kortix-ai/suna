@@ -38,6 +38,9 @@ export interface MarketplaceItem {
   sourceId?: string;
   defaultProjectInstall?: boolean;
   defaultProjectInstallOrder?: number;
+  /** Set when this item also ships inside a whole project (e.g. a starter skill);
+   *  the card badges it "Part of <project>". */
+  partOfProject?: { id: string; title: string };
 }
 
 export interface DependencyItem {
@@ -48,10 +51,25 @@ export interface DependencyItem {
   description: string | null;
 }
 
+export interface ProjectAgent {
+  name: string;
+  title: string;
+  description: string | null;
+}
+
+export interface ProjectTrigger {
+  slug: string;
+  description: string | null;
+  agent: string | null;
+}
+
 export interface MarketplaceItemDetail extends MarketplaceItem {
   files: Array<{ target: string; type: string }>;
   readme: string | null;
   dependencyItems: DependencyItem[];
+  /** For a `registry:project`: its agents + triggers (parsed from kortix.yaml). */
+  projectAgents?: ProjectAgent[];
+  projectTriggers?: ProjectTrigger[];
 }
 
 export interface InstallResult {
@@ -61,14 +79,6 @@ export interface InstallResult {
   file_count: number;
   installed: Array<{ name: string; type: string }>;
   capabilities: ItemCapabilities;
-}
-
-export interface InstalledItem {
-  name: string;
-  type: string;
-  source: string;
-  installed_at: string | null;
-  file_count: number;
 }
 
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }): T {
@@ -233,78 +243,22 @@ export async function getMarketplaceItemFile(
   );
 }
 
-export async function installMarketplaceItem(
+/** Install ANY marketplace item (skill/agent/command/tool, or a whole
+ *  `registry:project`) into a project via an agent session instead of a
+ *  deterministic file commit — the session installs it and wires up whatever
+ *  it needs (connectors, secrets), or for a `registry:project` merges it into
+ *  an existing project's kortix.yaml, which isn't safe to do deterministically.
+ *  Starts a session with a constructed prompt; the caller should navigate into
+ *  `session_id` to watch it work. */
+export async function installMarketplaceItemAsSession(
   projectId: string,
   id: string,
-): Promise<InstallResult> {
+): Promise<{ session_id: string }> {
   return unwrap(
-    await backendApi.post<InstallResult>(`/projects/${projectId}/registry/install`, { id }),
-  );
-}
-
-export async function listInstalledItems(projectId: string): Promise<InstalledItem[]> {
-  const res = unwrap(
-    await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`),
-  );
-  return res.installed ?? [];
-}
-
-export type RegistryItemStatus = 'up-to-date' | 'update-available' | 'orphaned';
-
-export interface RegistryUpdate {
-  name: string;
-  type: string;
-  status: RegistryItemStatus;
-  /** Count of changed/added/removed files at the source. */
-  changed: number;
-}
-
-export async function listRegistryUpdates(
-  projectId: string,
-): Promise<{ updates: RegistryUpdate[]; update_available: string[] }> {
-  return unwrap(
-    await backendApi.get<{ updates: RegistryUpdate[]; update_available: string[] }>(
-      `/projects/${projectId}/registry/updates`,
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${projectId}/marketplace/install-session`,
+      { id },
     ),
-  );
-}
-
-export async function updateMarketplaceItem(
-  projectId: string,
-  name: string,
-): Promise<{ ok: boolean; updated: string; commit_sha: string; file_count: number }> {
-  return unwrap(
-    await backendApi.post<{ ok: boolean; updated: string; commit_sha: string; file_count: number }>(
-      `/projects/${projectId}/registry/update`,
-      { name },
-    ),
-  );
-}
-
-export async function updateAllMarketplaceItems(
-  projectId: string,
-): Promise<{ ok: boolean; updated: string[]; commit_sha: string | null; file_count: number }> {
-  return unwrap(
-    await backendApi.post<{
-      ok: boolean;
-      updated: string[];
-      commit_sha: string | null;
-      file_count: number;
-    }>(`/projects/${projectId}/marketplace/update-all`),
-  );
-}
-
-export async function uninstallMarketplaceItem(
-  projectId: string,
-  name: string,
-): Promise<{ ok: boolean; removed: string; commit_sha: string; file_count: number }> {
-  return unwrap(
-    await backendApi.delete<{
-      ok: boolean;
-      removed: string;
-      commit_sha: string;
-      file_count: number;
-    }>(`/projects/${projectId}/registry/${encodeURIComponent(name)}`),
   );
 }
 

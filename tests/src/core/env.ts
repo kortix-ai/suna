@@ -8,7 +8,7 @@
  * Bun auto-loads a `.env` in the cwd, so local runs can drop secrets there.
  */
 
-export type TargetName = "local" | "dev" | "prod" | "custom";
+export type TargetName = 'local' | 'dev' | 'staging' | 'prod' | 'custom';
 
 export interface Capabilities {
   /** Real Daytona sandbox provisioning available. */
@@ -23,6 +23,8 @@ export interface Capabilities {
   database: boolean;
   /** Platform-admin token for /v1/ops/* + requireAdmin routes. */
   admin: boolean;
+  /** Internal service key for authenticated cron routes. */
+  internalCron: boolean;
   /** The target OWNER account is already funded enough to create sessions. */
   funded: boolean;
 }
@@ -43,6 +45,8 @@ export interface Env {
   ownerPassword: string | null;
   /** Platform-admin bearer token (kortix_pat_* or kortix_*). */
   adminToken: string | null;
+  /** Internal service bearer used only by the cron-contract flows. */
+  internalServiceKey: string | null;
   /** Stripe TEST secret key — to confirm PaymentIntents in the real subscribe flow. */
   stripeSecretKey: string | null;
   /**
@@ -64,31 +68,46 @@ export interface Env {
 function pick(...names: string[]): string | null {
   for (const n of names) {
     const v = process.env[n];
-    if (v != null && v.trim() !== "") return v.trim();
+    if (v != null && v.trim() !== '') return v.trim();
   }
   return null;
 }
 
 function stripTrailingSlash(u: string): string {
-  return u.replace(/\/+$/, "");
+  return u.replace(/\/+$/, '');
 }
 
-function inferTarget(apiUrl: string): TargetName {
-  const explicit = pick("KE2E_TARGET", "E2E_TARGET");
-  if (explicit === "local" || explicit === "dev" || explicit === "prod" || explicit === "custom") {
+export function inferTarget(apiUrl: string): TargetName {
+  const explicit = pick('KE2E_TARGET', 'E2E_TARGET');
+  if (
+    explicit === 'local' ||
+    explicit === 'dev' ||
+    explicit === 'staging' ||
+    explicit === 'prod' ||
+    explicit === 'custom'
+  ) {
     return explicit;
   }
   const host = (() => {
     try {
       return new URL(apiUrl).hostname;
     } catch {
-      return "";
+      return '';
     }
   })();
-  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost")) return "local";
-  if (host.startsWith("dev-api.") || host.startsWith("dev-")) return "dev";
-  if (host === "api.kortix.com" || host.startsWith("api-prod.") || host === "kortix.com") return "prod";
-  return "custom";
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) return 'local';
+  if (host.startsWith('dev-api.') || host.startsWith('dev-')) return 'dev';
+  if (host.startsWith('staging-api.') || host.startsWith('staging-')) return 'staging';
+  if (host === 'api.kortix.com' || host.startsWith('api-prod.') || host === 'kortix.com')
+    return 'prod';
+  return 'custom';
+}
+
+export function defaultGatewayUrl(target: TargetName): string {
+  if (target === 'prod') return 'https://gateway.kortix.com';
+  if (target === 'staging') return 'https://gateway-staging.kortix.com';
+  if (target === 'dev') return 'https://gateway-dev.kortix.com';
+  return 'http://localhost:8009';
 }
 
 let cached: Env | null = null;
@@ -97,49 +116,45 @@ export function loadEnv(): Env {
   if (cached) return cached;
 
   const apiUrl = stripTrailingSlash(
-    pick("KE2E_API_URL", "E2E_API_URL", "NEXT_PUBLIC_BACKEND_URL") || "http://localhost:8008/v1",
+    pick('KE2E_API_URL', 'E2E_API_URL', 'NEXT_PUBLIC_BACKEND_URL') || 'http://localhost:8008/v1',
   );
   const baseUrl = stripTrailingSlash(
-    pick("KE2E_BASE_URL", "E2E_BASE_URL") || apiUrl.replace(/\/v1$/, "").replace("://api.", "://").replace("://dev-api.", "://dev."),
+    pick('KE2E_BASE_URL', 'E2E_BASE_URL') ||
+      apiUrl.replace(/\/v1$/, '').replace('://api.', '://').replace('://dev-api.', '://dev.'),
   );
   const supabaseUrl = stripTrailingSlash(
-    pick("KE2E_SUPABASE_URL", "E2E_SUPABASE_URL", "SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") ||
-      "http://127.0.0.1:54321",
+    pick('KE2E_SUPABASE_URL', 'E2E_SUPABASE_URL', 'SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL') ||
+      'http://127.0.0.1:54321',
   );
   const supabaseAnonKey = pick(
-    "KE2E_SUPABASE_ANON_KEY",
-    "SUPABASE_ANON_KEY",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    'KE2E_SUPABASE_ANON_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   );
   const supabaseServiceRoleKey = pick(
-    "KE2E_SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
+    'KE2E_SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
   );
-  const databaseUrl = pick("KE2E_DATABASE_URL", "E2E_DATABASE_URL");
-  const ownerEmail = pick("KE2E_OWNER_EMAIL", "E2E_OWNER_EMAIL");
-  const ownerPassword = pick("KE2E_OWNER_PASSWORD", "E2E_OWNER_PASSWORD");
-  const adminToken = pick("KE2E_ADMIN_TOKEN", "E2E_ADMIN_TOKEN", "ADMIN_TOKEN");
-  const stripeSecretKey = pick("KE2E_STRIPE_SECRET_KEY");
-  const stripeWebhookSecret = pick("KE2E_STRIPE_WEBHOOK_SECRET");
-  const liveConfirm = pick("KE2E_LIVE_CONFIRM");
+  const databaseUrl = pick('KE2E_DATABASE_URL', 'E2E_DATABASE_URL');
+  const ownerEmail = pick('KE2E_OWNER_EMAIL', 'E2E_OWNER_EMAIL');
+  const ownerPassword = pick('KE2E_OWNER_PASSWORD', 'E2E_OWNER_PASSWORD');
+  const adminToken = pick('KE2E_ADMIN_TOKEN', 'E2E_ADMIN_TOKEN', 'ADMIN_TOKEN');
+  const internalServiceKey = pick('KE2E_INTERNAL_SERVICE_KEY');
+  const stripeSecretKey = pick('KE2E_STRIPE_SECRET_KEY');
+  const stripeWebhookSecret = pick('KE2E_STRIPE_WEBHOOK_SECRET');
+  const liveConfirm = pick('KE2E_LIVE_CONFIRM');
   const target = inferTarget(apiUrl);
-  const gatewayUrl = stripTrailingSlash(
-    pick("KE2E_GATEWAY_URL") ||
-      (target === "prod"
-        ? "https://gateway.kortix.com"
-        : target === "dev"
-          ? "https://gateway-dev.kortix.com"
-          : "http://localhost:8009"),
-  );
+  const gatewayUrl = stripTrailingSlash(pick('KE2E_GATEWAY_URL') || defaultGatewayUrl(target));
 
   const capabilities: Capabilities = {
-    daytona: pick("KE2E_CAP_DAYTONA") !== "0",
-    managedGit: pick("KE2E_CAP_MANAGED_GIT") !== "0",
+    daytona: pick('KE2E_CAP_DAYTONA') !== '0',
+    managedGit: pick('KE2E_CAP_MANAGED_GIT') !== '0',
     stripe: stripeSecretKey != null,
     supabaseAdmin: supabaseServiceRoleKey != null,
     database: databaseUrl != null,
     admin: adminToken != null,
-    funded: pick("KE2E_CAP_FUNDED") === "1",
+    internalCron: internalServiceKey != null,
+    funded: pick('KE2E_CAP_FUNDED') === '1',
   };
 
   cached = {
@@ -153,12 +168,13 @@ export function loadEnv(): Env {
     ownerEmail,
     ownerPassword,
     adminToken,
+    internalServiceKey,
     stripeSecretKey,
     stripeWebhookSecret,
     liveConfirm,
     target,
     capabilities,
-    testEmailDomain: pick("KE2E_EMAIL_DOMAIN") || "ke2e.kortix.test",
+    testEmailDomain: pick('KE2E_EMAIL_DOMAIN') || 'ke2e.kortix.test',
   };
   return cached;
 }
@@ -167,6 +183,6 @@ export function describeEnv(env: Env): string {
   const caps = Object.entries(env.capabilities)
     .filter(([, v]) => v)
     .map(([k]) => k)
-    .join(", ");
+    .join(', ');
   return `target=${env.target} api=${env.apiUrl} caps=[${caps}]`;
 }

@@ -95,8 +95,8 @@ flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-emai
     const r = await ctx.client.post("/v1/access/check-email", {});
     r.status(400);
   });
-  await ctx.step("POST /v1/access/check-email (valid) → 200", async () => {
+  await ctx.step("POST /v1/access/check-email (valid) → 200 with flow mode", async () => {
     const r = await ctx.client.post("/v1/access/check-email", { email: `probe-${Date.now()}@ke2e.kortix.test` });
-    r.status(200).body().exists("$.allowed");
+    r.status(200).body().exists("$.allowed").exists("$.mode");
   });
 });

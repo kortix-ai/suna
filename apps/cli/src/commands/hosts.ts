@@ -1,4 +1,5 @@
 import {
+  type Host,
   activeHostName,
   getHost,
   listHosts,
@@ -6,12 +7,11 @@ import {
   upsertHost,
   useHost,
   validateHostName,
-  type Host,
 } from '../api/config.ts';
-import { confirm, prompt } from '../prompts.ts';
-import { selectFromList } from '../tui-select.ts';
-import { C, help, pad, status } from '../style.ts';
 import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { confirm, prompt } from '../prompts.ts';
+import { C, help, pad, status } from '../style.ts';
+import { selectFromList } from '../tui-select.ts';
 import { runLogin } from './login.ts';
 
 const HELP = help`Usage: kortix hosts <subcommand> [options]
@@ -29,8 +29,12 @@ Built-in hosts (always exist):
 Subcommands:
   ls                                  List hosts (built-ins always exist) (--json)
   use <name>                          Switch the active host
-  add <name> --url <url> [--login]    Register a new host; with --login
-                                      run the browser flow immediately
+  add <name> --url <url>              Register a new host; with --login
+    [--dashboard-url <url>] [--login]  run the browser flow immediately.
+                                      Pass --dashboard-url for a self-host
+                                      instance if \`kortix login\` opens the
+                                      wrong origin (it otherwise guesses the
+                                      frontend URL from the API URL's shape).
   rm <name>                           Remove a custom host; built-ins
                                       are reset instead
   info [<name>]                       Show one host (or the active) (--json)
@@ -121,7 +125,9 @@ function hostsLs(json = false): number {
   const active = rows.find((r) => r.active);
   process.stdout.write(`\n  ${C.green}●${C.reset}${C.dim} active${C.reset}`);
   if (active) {
-    process.stdout.write(`${C.dim}: ${C.reset}${C.bold}${active.name}${C.reset}${C.dim} -> ${active.host.url}${C.reset}`);
+    process.stdout.write(
+      `${C.dim}: ${C.reset}${C.bold}${active.name}${C.reset}${C.dim} -> ${active.host.url}${C.reset}`,
+    );
   }
   process.stdout.write('\n\n');
   return 0;
@@ -166,10 +172,12 @@ async function hostsUse(name: string | undefined): Promise<number> {
 
 async function hostsAdd(args: string[]): Promise<number> {
   let url: string | undefined;
+  let dashboardUrl: string | undefined;
   let runLoginFlow = false;
   let name: string | undefined;
   try {
     url = takeFlagValue(args, ['--url', '--api']);
+    dashboardUrl = takeFlagValue(args, ['--dashboard-url']);
     runLoginFlow = removeBoolFlag(args, ['--login']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -209,15 +217,32 @@ async function hostsAdd(args: string[]): Promise<number> {
     process.stderr.write(`${status.err(`"${url}" is not a valid URL.`)}\n`);
     return 1;
   }
+  if (dashboardUrl) {
+    try {
+      new URL(dashboardUrl); // validate
+    } catch {
+      process.stderr.write(`${status.err(`"${dashboardUrl}" is not a valid URL.`)}\n`);
+      return 1;
+    }
+  }
 
   // Persist an empty-credential placeholder so `--host <name>` resolves
   // before login. Subsequent `kortix login --host <name>` fills in token.
+  //
+  // `dashboard_url` (when passed) is the frontend/dashboard origin for this
+  // host — pass it for a self-host instance so `kortix login`'s browser flow
+  // opens the right origin instead of guessing one from the API URL's shape
+  // (a guess that assumes cloud conventions and breaks for non-default local
+  // ports; see web-url.ts). `kortix self-host` sets this automatically for
+  // its own built-in `selfhost` host — only needed here for a manually added
+  // host pointed at a self-host API the CLI didn't itself provision.
   const placeholder: Host = {
     url,
     token: '',
     user_id: '',
     user_email: '',
     account_id: '',
+    ...(dashboardUrl ? { dashboard_url: dashboardUrl } : {}),
     logged_in_at: new Date().toISOString(),
   };
   upsertHost(name, placeholder, false);
@@ -281,7 +306,9 @@ async function hostsRm(args: string[]): Promise<number> {
       `${C.dim}  Active host is now ${C.reset}${C.bold}${result.switchedTo}${C.reset}\n`,
     );
   } else if (isActive) {
-    process.stdout.write(`${C.dim}  Built-in host reset; run ${C.cyan}kortix login --host ${name}${C.reset}${C.dim} to authenticate again.${C.reset}\n`);
+    process.stdout.write(
+      `${C.dim}  Built-in host reset; run ${C.cyan}kortix login --host ${name}${C.reset}${C.dim} to authenticate again.${C.reset}\n`,
+    );
   }
   return 0;
 }
@@ -291,7 +318,9 @@ async function hostsRm(args: string[]): Promise<number> {
 function hostsInfo(name: string | undefined, json = false): number {
   const target = name ?? activeHostName();
   if (!target) {
-    process.stderr.write(`${status.err('No host configured. Pass a name or run `kortix login`.')}\n`);
+    process.stderr.write(
+      `${status.err('No host configured. Pass a name or run `kortix login`.')}\n`,
+    );
     return 1;
   }
   const host = getHost(target);
@@ -310,11 +339,18 @@ function hostsInfo(name: string | undefined, json = false): number {
     `  ${C.bold}${target}${C.reset}${active ? `  ${C.green}● active${C.reset}` : ''}\n`,
   );
   process.stdout.write(`  ${C.dim}url        ${C.reset}${host.url}\n`);
-  process.stdout.write(`  ${C.dim}user       ${C.reset}${host.user_email || host.user_id || '— (not logged in)'}\n`);
+  if (host.dashboard_url) {
+    process.stdout.write(`  ${C.dim}dashboard  ${C.reset}${host.dashboard_url}\n`);
+  }
+  process.stdout.write(
+    `  ${C.dim}user       ${C.reset}${host.user_email || host.user_id || '— (not logged in)'}\n`,
+  );
   if (host.account_id) {
     process.stdout.write(`  ${C.dim}account_id ${C.reset}${host.account_id}\n`);
   }
-  process.stdout.write(`  ${C.dim}token      ${C.reset}${host.token ? `${host.token.slice(0, 18)}…` : '— (none)'}\n`);
+  process.stdout.write(
+    `  ${C.dim}token      ${C.reset}${host.token ? `${host.token.slice(0, 18)}…` : '— (none)'}\n`,
+  );
   process.stdout.write(`  ${C.dim}logged in  ${C.reset}${host.logged_in_at}\n\n`);
   return 0;
 }
@@ -341,6 +377,7 @@ function hostJson(name: string, host: Host, active: boolean) {
   return {
     name,
     url: host.url,
+    dashboard_url: host.dashboard_url || null,
     user_email: host.user_email || null,
     user_id: host.user_id || null,
     account_id: host.account_id || null,

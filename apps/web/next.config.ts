@@ -5,6 +5,41 @@ import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
+import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+
+// --- Viewer wasm asset guarantee ------------------------------------------
+// Document viewers (PDF/DOCX/XLSX) fetch their wasm engines from `public/`
+// (see scripts/viewer-wasm.mjs for why). Normally `pnpm dev`/`pnpm build`
+// prepend `node scripts/copy-viewer-wasm.mjs` to populate them, but any path
+// that invokes `next build`/`next dev` directly bypasses that and would
+// silently 404 on these assets at runtime. Belt-and-suspenders: repeat the
+// same copy here as a side effect of loading this config, then verify the
+// outputs actually exist regardless of how the attempt went.
+let viewerWasmCopyError: unknown = null;
+try {
+  copyViewerWasm();
+} catch (err) {
+  viewerWasmCopyError = err;
+}
+const missingViewerWasmOutputs = getViewerWasmOutputPaths().filter(
+  (output) => !fs.existsSync(output),
+);
+if (missingViewerWasmOutputs.length > 0) {
+  throw new Error(
+    `[next.config.ts] scripts/viewer-wasm.mjs failed to produce required viewer wasm asset(s): ` +
+      `${missingViewerWasmOutputs.join(', ')}` +
+      (viewerWasmCopyError ? ` (${(viewerWasmCopyError as Error).message})` : '') +
+      `. Run \`node scripts/copy-viewer-wasm.mjs\` manually to diagnose.`,
+  );
+} else if (viewerWasmCopyError) {
+  // Expected in a slim prod image: `next start` ships a `public/` populated
+  // at build time but not the node_modules the wasm ships in. Only reach
+  // here when the outputs already exist, so it's safe to continue.
+  console.warn(
+    `[next.config.ts] Could not refresh viewer wasm assets (${(viewerWasmCopyError as Error).message}), ` +
+      `but all expected outputs already exist in public/ — continuing.`,
+  );
+}
 
 // Unified platform version. Prefer the explicit build env (CI passes
 // NEXT_PUBLIC_KORTIX_VERSION = X.Y.Z-dev.<sha> on dev, clean X.Y.Z on prod);
@@ -174,6 +209,27 @@ const nextConfig = (): NextConfig => ({
     ],
   },
 
+  async redirects() {
+    return [
+      // Canonical self-host doc lives at /docs/self-hosting (fumadocs derives
+      // the slug from content/docs/self-hosting.mdx). The CLI, README, and
+      // most people say "self-host" (no -ing) out loud and in links, which
+      // 404'd here before this redirect existed. Keep this even if the CLI
+      // copy changes — it's cheap insurance against the shorter form living
+      // on in bookmarks, chat history, and muscle memory.
+      {
+        source: '/docs/self-hosting',
+        destination: '/docs/guides/self-hosting',
+        permanent: true,
+      },
+      {
+        source: '/docs/self-host',
+        destination: '/docs/guides/self-hosting',
+        permanent: true,
+      },
+    ];
+  },
+
   async rewrites() {
     return [
       // Proxy API calls to backend to avoid CORS in local dev. The target is
@@ -182,6 +238,15 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/v1/:path*',
         destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/v1/:path*`,
+      },
+      // SCIM mounts at the API ROOT (no /v1 prefix) and identity providers call
+      // it server-to-server at whatever origin the admin was shown. In
+      // same-origin deployments that shown origin is the web origin, so /scim
+      // must forward to the API too — without this, the Tenant URL a
+      // self-hosted admin pastes into Entra/Okta would 404.
+      {
+        source: '/scim/:path*',
+        destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/scim/:path*`,
       },
       // Same-origin Supabase proxy for the sandbox preview. ENV-GATED: only
       // active when KORTIX_SUPABASE_PROXY_TARGET is set (scripts/dev-local.sh

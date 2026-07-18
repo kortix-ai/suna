@@ -9,15 +9,43 @@
 # that blob's JSON key — no hand-maintained secret list, no drift.
 #
 # Usage:
-#   ecs-deploy.sh <env> <image> [--service api|gateway] [--no-wait]
+#   ecs-deploy.sh <env> <image> [--service api|gateway] [--version X.Y.Z]
+#                 [--no-wait] [--dry-run]
 #
-#   env    dev | staging | prod
-#   image  full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
+#   env        dev | staging | prod
+#   image      full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
+#   --version  explicit KORTIX_VERSION to stamp into the task-def env. When
+#              omitted, it is DERIVED from the image tag if the tag is a clean
+#              release version (X.Y.Z). Why: prod release images are RETAGGED
+#              staging manifests, so their baked KORTIX_VERSION is the staging
+#              string (e.g. 0.9.109-staging.<sha8>) — without this stamp, ECS
+#              /v1/health reports that instead of the released X.Y.Z while EKS
+#              (which stamps kortixVersion via Helm values) reports the clean
+#              version. The stamp keeps both backends' reported versions
+#              IDENTICAL, which is what lets deploy-prod's verify-live-version
+#              job assert the public endpoint serves the released version.
+#   --dry-run  render + print the task-def override, then exit WITHOUT
+#              registering or rolling anything.
 #
 # Requires: awscli v2, jq. Assumes the ECS cluster/service/ALB/target-group and
 # the exec/task IAM roles already exist (Terraform owns those).
 
 set -euo pipefail
+
+# If the image tag is a clean release version (X.Y.Z), echo it; else echo "".
+# Kept a pure function so it can be unit-tested without AWS.
+derive_version_from_image() {
+  local tag="${1##*:}"
+  if printf '%s' "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    printf '%s' "$tag"
+  fi
+}
+
+# Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
+if [ "${KORTIX_ECS_DEPLOY_LIB:-}" = "1" ]; then
+  # shellcheck disable=SC2317 # `exit` is the non-sourced fallback for `return`
+  return 0 2>/dev/null || exit 0
+fi
 
 ENV="${1:?env required: dev|staging|prod}"
 IMAGE="${2:?image required, e.g. kortix/kortix-api:dev-481dc551}"
@@ -25,13 +53,19 @@ shift 2
 
 SVC_KIND="api"
 WAIT=1
+DRY_RUN=0
+VERSION_OVERRIDE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --service) SVC_KIND="$2"; shift 2 ;;
+    --version) VERSION_OVERRIDE="$2"; shift 2 ;;
     --no-wait) WAIT=0; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+[ -n "$VERSION_OVERRIDE" ] || VERSION_OVERRIDE="$(derive_version_from_image "$IMAGE")"
 
 # ── per-environment coordinates ──────────────────────────────────────────────
 case "$ENV" in
@@ -57,6 +91,11 @@ SECRET_NAME="kortix-${ENV}-env"
 
 echo "▶ env=$ENV region=$REGION cluster=$CLUSTER service=$SERVICE container=$CONTAINER"
 echo "▶ image=$IMAGE  secrets<-$SECRET_NAME"
+if [ -n "$VERSION_OVERRIDE" ]; then
+  echo "▶ KORTIX_VERSION=$VERSION_OVERRIDE (task-def env stamp)"
+else
+  echo "▶ KORTIX_VERSION: no override (non-release tag) — image's baked version reports"
+fi
 
 # ── skip gracefully if this env's ECS service isn't built yet ────────────────
 # Lets the ECS-roll step live in EVERY env's CI before the staging/prod ECS infra
@@ -90,13 +129,32 @@ CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" 
 
 NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
   --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json \
-  | jq --arg img "$IMAGE" --arg c "$CONTAINER" --argjson secrets "$SECRETS_JSON" '
+  | jq --arg img "$IMAGE" --arg c "$CONTAINER" --arg ver "$VERSION_OVERRIDE" \
+       --argjson secrets "$SECRETS_JSON" '
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
           .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-      # override image + full secrets on the target container
+      # override image + full secrets on the target container, and stamp
+      # KORTIX_VERSION as explicit container env (env beats the image-baked
+      # value) so ECS reports the same clean version EKS does. On non-release
+      # tags ($ver == "") any stale stamp from a previous release roll is
+      # REMOVED so the image-baked dev/staging version reports again.
       | .containerDefinitions |= map(
-          if .name == $c then .image = $img | .secrets = $secrets else . end)')"
+          if .name == $c then
+            .image = $img
+            | .secrets = $secrets
+            | .environment = (
+                ((.environment // []) | map(select(.name != "KORTIX_VERSION")))
+                + (if $ver == "" then [] else [{name: "KORTIX_VERSION", value: $ver}] end))
+          else . end)')"
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "── dry-run: rendered task-def override for container '$CONTAINER' ──"
+  echo "$NEW_TD_JSON" | jq --arg c "$CONTAINER" \
+    '.containerDefinitions[] | select(.name == $c) | {image, environment, secretKeys: (.secrets | length)}'
+  echo "✅ dry-run only — nothing registered, nothing rolled."
+  exit 0
+fi
 
 TDFILE="$(mktemp -t ecs-td-XXXX.json)"
 trap 'rm -f "$TDFILE"' EXIT

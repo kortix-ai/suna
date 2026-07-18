@@ -8,7 +8,6 @@ import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
-import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
@@ -22,12 +21,12 @@ import {
 import {
   type GitTriggerSessionMode,
   type GitTriggerSpec,
-  KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
   type ParsedManifest,
   loadProjectTriggers,
   readManifest,
   serializeManifest,
+  synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
@@ -696,13 +695,40 @@ export async function fireGitTrigger(input: {
     return { status: 'failed', error: 'No account owner available to own the session' };
   }
 
+  // Session pinning — when a trigger opts into `session_mode = "pinned"`, always
+  // re-prompt the EXACT session the user chose (`spec.pinnedSessionId`), not
+  // "whatever this trigger last created" (that's `reuse`). If the pinned session
+  // is gone/unresumable we degrade gracefully: fall through to the `reuse` block
+  // (the trigger's own last session), then to a brand-new session.
+  if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
+    const outcome = await continueSession({
+      source: `trigger:${source}`,
+      sessionId: spec.pinnedSessionId,
+      text: renderedPrompt,
+      userId: actor,
+    });
+    if (outcome === 'delivered') {
+      return { status: 'fired', sessionId: spec.pinnedSessionId };
+    }
+    if (outcome === 'pending') {
+      return {
+        status: 'queued',
+        sessionId: spec.pinnedSessionId,
+        reason: 'pinned session resuming',
+      };
+    }
+    // outcome === 'no-session' | 'failed' → pinned session is gone/unusable;
+    // fall through to the reuse/create fallback below.
+  }
+
   // Session reuse — when a trigger opts into `session_mode = "reuse"`, re-prompt
   // the canonical session this trigger already created (resuming its sandbox +
   // opencode root) so ONE long-lived session accumulates context across fires,
   // instead of minting a brand-new session every time. If no reusable session
   // exists yet, or the last one is gone/failed, we fall through to createSession
-  // below and that fresh session becomes the canonical one for next time.
-  if (spec.sessionMode === 'reuse') {
+  // below and that fresh session becomes the canonical one for next time. Also
+  // the graceful-degradation path for a `pinned` trigger whose pin is dead.
+  if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
       const outcome = await continueSession({
@@ -1049,6 +1075,7 @@ export async function loadTriggersForResponse(
       secret_env: spec.secretEnv,
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
+      session_id: spec.pinnedSessionId,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
@@ -1077,6 +1104,8 @@ export interface TriggerDraft {
   timezone: string;
   secretEnv: string | null;
   sessionMode: GitTriggerSessionMode;
+  /** For sessionMode === 'pinned' only: the exact session id to loop. */
+  pinnedSessionId: string | null;
 }
 
 export function parseTriggerDraft(
@@ -1107,10 +1136,22 @@ export function parseTriggerDraft(
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
   const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
-  if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
-    return { error: 'session_mode must be "fresh" or "reuse"' };
+  if (
+    sessionModeRaw &&
+    sessionModeRaw !== 'fresh' &&
+    sessionModeRaw !== 'reuse' &&
+    sessionModeRaw !== 'pinned'
+  ) {
+    return { error: 'session_mode must be "fresh", "reuse", or "pinned"' };
   }
-  const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
+  const sessionMode: GitTriggerSessionMode =
+    sessionModeRaw === 'reuse' ? 'reuse' : sessionModeRaw === 'pinned' ? 'pinned' : 'fresh';
+  const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
+  if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
+    return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
+  }
+  const pinnedSessionId: string | null =
+    sessionMode === 'pinned' ? (pinnedSessionIdRaw ?? null) : null;
 
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
@@ -1134,6 +1175,7 @@ export function parseTriggerDraft(
         timezone,
         secretEnv: null,
         sessionMode,
+        pinnedSessionId,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -1152,6 +1194,7 @@ export function parseTriggerDraft(
       timezone,
       secretEnv: null,
       sessionMode,
+      pinnedSessionId,
     };
   }
 
@@ -1173,6 +1216,7 @@ export function parseTriggerDraft(
     timezone: 'UTC',
     secretEnv,
     sessionMode,
+    pinnedSessionId,
   };
 }
 
@@ -1192,6 +1236,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     timezone: spec.timezone,
     secret_env: spec.secretEnv,
     session_mode: spec.sessionMode,
+    session_id: spec.pinnedSessionId,
   };
 }
 
@@ -1223,6 +1268,7 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
     sessionMode: draft.sessionMode,
+    pinnedSessionId: draft.pinnedSessionId,
   };
 }
 
@@ -1230,26 +1276,30 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
  * Read the project's manifest. If the manifest doesn't exist yet (brand-new
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
+ *
+ * MUST be kortix_version 2, not KNOWN_SCHEMA_VERSION (which deliberately
+ * stays pinned at 1 — see its own doc comment in ../triggers.ts). Every
+ * project created through POST /projects/provision (seeded or not) is
+ * stamped `metadata.require_declared_agents: true` and reads/writes
+ * through the v2-only agent-config API (`applyAgentBlockV2`/
+ * `applyDefaultAgentV2` in ./agent-config-v2.ts hard-refuse a v1
+ * manifest). A blank project (no `seed_starter`, so no kortix.yaml ever
+ * got pushed) synthesizing v1 here meant every agent-config write 400'd
+ * with "upgrade to kortix_version 2" before it could ever commit a real
+ * manifest — a self-inflicted catch-22 that left the project permanently
+ * un-declarable (AGENT_NOT_DECLARED on every session-create) short of a
+ * force-pushed kortix.yaml or a full re-provision with `seed_starter:true`.
+ *
+ * Delegates the actual synthesis to `synthesizeBlankManifest` (../triggers.ts)
+ * — the SAME shape `loadProjectAgents` (../agents.ts) synthesizes on the
+ * session-create read path, so a blank project's declared-agent check passes
+ * with zero writes needed on EITHER path, not just this edit one (see that
+ * function's doc comment for why the two must stay in sync).
  */
-
 export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
   const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
-  // No manifest yet → synthesize a minimal one. Brand-new repos scaffold
-  // kortix.yaml (matching the CLI scaffold); resolve the yaml sibling of
-  // whatever manifestPath is configured (defaults to `kortix`'s stem) rather
-  // than trusting a stale/legacy `.toml` value literally, so format and path
-  // stay in sync on commit.
-  return {
-    schemaVersion: KNOWN_SCHEMA_VERSION,
-    raw: {
-      project: { name: project.name, description: '' },
-      runtime: { root: '.opencode' },
-      env: { required: [], optional: [] },
-    },
-    format: 'yaml',
-    path: manifestCandidatePaths(project.manifestPath)[0].path,
-  };
+  return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath });
 }
 
 /** Insert or replace a trigger by slug inside the manifest's triggers array. */

@@ -9,11 +9,17 @@ backend `ACTIVE_BACKEND` names. One source (`worker.mjs`), three envs (`wrangler
 | `staging` | `staging-api.kortix.com` | `staging-api-kortix-router` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` |
 | `dev`  | `dev-api.kortix.com` | `dev-api-kortix-router` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` |
 
-EKS is the active backend for the public API hostnames; ECS Fargate is the warm
-standby. CI deploys the EKS services via Argo CD GitOps (`deploy-dev.yml` /
-`deploy-staging.yml` / `deploy-prod.yml`). Keep
-the ECS origins available for failover, but do not treat them as the primary
-runtime. Background-worker leadership is guarded by a single global DB lease
+**ECS Fargate is the ACTIVE backend for prod and dev** (`ACTIVE_BACKEND` /
+`GATEWAY_ACTIVE_BACKEND` = `ecs-fargate` since PR #4683); EKS is the warm
+standby. **Staging is the exception: EKS-active** — `deploy-staging.yml`'s
+wire-cloudflare job re-asserts `ACTIVE_BACKEND=eks` on every staging rollout.
+CI always deploys BOTH backends in lockstep: the ECS task-defs via
+`infra/scripts/ecs-deploy.sh` (rendered from the per-env Secrets Manager blob,
+with `KORTIX_VERSION` stamped so both sides report identical versions) and the
+EKS services via Argo CD GitOps (`deploy-dev.yml` / `deploy-staging.yml` /
+`deploy-prod.yml`). On prod, `deploy-prod.yml`'s `verify-live-version` job
+asserts the public hosts serve the released version before anything announces.
+Background-worker leadership is guarded by a single global DB lease
 (`apps/api/src/shared/leader-election.ts`), so only one side ever runs cron.
 
 The checked-in Worker vars are deploy defaults; the live Worker plain-text var is
@@ -33,9 +39,9 @@ wrangler deploy --env dev       # dev-api.kortix.com
 ## Fail over (no code change) — flip the active backend
 
 ```bash
-# prod → ECS Fargate standby, then back to EKS
-wrangler deploy --env prod --var ACTIVE_BACKEND:ecs-fargate
+# prod → EKS standby, then back to ECS Fargate (the normal active backend)
 wrangler deploy --env prod --var ACTIVE_BACKEND:eks
+wrangler deploy --env prod --var ACTIVE_BACKEND:ecs-fargate
 ```
 
 Or set the `ACTIVE_BACKEND` plain-text var in the Cloudflare dashboard. Verify

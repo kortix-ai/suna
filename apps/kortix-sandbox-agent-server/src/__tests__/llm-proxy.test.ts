@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { writeFileSync, mkdtempSync } from 'fs'
+import { readFileSync, writeFileSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -16,7 +16,7 @@ import {
   stopExecutorProxy,
   EXECUTOR_PROXY_PLACEHOLDER_KEY,
 } from '../llm-proxy'
-import { buildOpencodeConfigContent } from '../opencode'
+import { buildOpencodeConfigContent, refreshGatewayCatalogFile } from '../opencode'
 
 // A mock upstream that echoes back the Authorization header + path it received,
 // so we can prove the proxy injects the live token (not the placeholder).
@@ -169,5 +169,67 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
     expect(cfg.provider.kortix.options.apiKey).toBe('real-session-llm-key')
     expect(cfg.mcp).toBeUndefined()
+  })
+})
+
+describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
+  test('replaces a stale frozen catalog with the authenticated live catalog', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'catalog-refresh-'))
+    const frozen = join(dir, 'frozen.json')
+    const refreshed = join(dir, 'refreshed.json')
+    writeFileSync(frozen, JSON.stringify({ models: { 'retired-model': { name: 'Retired' } } }))
+
+    const liveModels = {
+      'glm-5.2': { name: 'GLM 5.2' },
+      'claude-sonnet-4.6': { name: 'Claude Sonnet 4.6' },
+    }
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        expect(req.headers.get('authorization')).toBe('Bearer live-session-token')
+        return Response.json({ models: liveModels })
+      },
+    })
+
+    try {
+      const result = await refreshGatewayCatalogFile({
+        currentCatalogFile: frozen,
+        targetCatalogFile: refreshed,
+        fetchBaseURL: `http://127.0.0.1:${server.port}`,
+        fetchApiKey: 'live-session-token',
+      })
+
+      expect(result).toEqual({ changed: true, catalogFile: refreshed })
+      expect(JSON.parse(readFileSync(refreshed, 'utf8'))).toEqual({ models: liveModels })
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('keeps the no-restart path when the frozen and live catalogs match', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'catalog-current-'))
+    const frozen = join(dir, 'frozen.json')
+    const refreshed = join(dir, 'refreshed.json')
+    const liveModels = { 'glm-5.2': { name: 'GLM 5.2' } }
+    writeFileSync(frozen, JSON.stringify({ models: liveModels }))
+
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => Response.json({ models: liveModels }),
+    })
+
+    try {
+      const result = await refreshGatewayCatalogFile({
+        currentCatalogFile: frozen,
+        targetCatalogFile: refreshed,
+        fetchBaseURL: `http://127.0.0.1:${server.port}`,
+        fetchApiKey: 'live-session-token',
+      })
+
+      expect(result).toEqual({ changed: false, catalogFile: refreshed })
+      expect(JSON.parse(readFileSync(refreshed, 'utf8'))).toEqual({ models: liveModels })
+    } finally {
+      server.stop(true)
+    }
   })
 })

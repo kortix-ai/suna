@@ -44,7 +44,14 @@ data "aws_iam_policy_document" "staging_ci_assume" {
 resource "aws_iam_role" "staging_ci_deploy" {
   name               = "kortix-gha-eks-deploy-staging"
   assume_role_policy = data.aws_iam_policy_document.staging_ci_assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "kortix-gha-eks-deploy-staging"
+    Environment = lookup(local.tags, "Environment", "managed")
+    Project     = lookup(local.tags, "Project", "kortix")
+    Service     = lookup(local.tags, "Service", "deployment")
+    Platform    = lookup(local.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy" "staging_ci_deploy" {
@@ -129,7 +136,14 @@ data "aws_iam_policy_document" "staging_app_assume" {
 resource "aws_iam_role" "staging_app" {
   name               = "kortix-staging-eks-app"
   assume_role_policy = data.aws_iam_policy_document.staging_app_assume.json
-  tags               = local.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "kortix-staging-eks-app"
+    Environment = lookup(local.tags, "Environment", "managed")
+    Project     = lookup(local.tags, "Project", "kortix")
+    Service     = lookup(local.tags, "Service", "application")
+    Platform    = lookup(local.tags, "Platform", "eks")
+  }
 }
 
 resource "aws_iam_role_policy" "staging_app_secrets_read" {

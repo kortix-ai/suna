@@ -23,13 +23,15 @@ export type {
 
 export {
   CircuitOpenError,
+  GatewayResolutionError,
   NetworkError,
   TimeoutError,
   UpstreamHttpError,
   defaultIsRetryable,
   indicatesUpstreamDown,
+  looksLikeTerminalAuthFailure,
 } from './errors';
-export type { UpstreamErrorKind } from './errors';
+export type { NoUpstreamReasonCode, UpstreamErrorKind } from './errors';
 
 export { calculateCost } from './usage';
 export type { CostBreakdown, TokenUsage } from './usage';
@@ -37,8 +39,17 @@ export type { CostBreakdown, TokenUsage } from './usage';
 export { extractUsageFromJson, extractUsageFromSseBuffer } from './usage';
 export type { ExtractedUsage } from './usage';
 
-export { buildUpstreamRequest } from './transports';
-export type { UpstreamRequest } from './transports';
+export {
+  anthropicMessagesToChat,
+  chatJsonToAnthropicMessage,
+  chatSseToAnthropicSse,
+} from './ingress/anthropic-messages';
+export type {
+  AnthropicContentBlock,
+  AnthropicMessage,
+  AnthropicMessagesRequest,
+  AnthropicTool,
+} from './ingress/anthropic-messages';
 
 export { createModelFallbackPolicyEngine } from './routing';
 export type { ModelFallbackPolicyEngine } from './routing';

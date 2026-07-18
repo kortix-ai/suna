@@ -13,7 +13,7 @@ the workload.
 | ------ | ------- |
 | `Deployment` | `web` (nginx) serves the branded landing page at `/` from a small generated file and reverse-proxies every other path to `s3gw`; `s3gw` (`nginx-s3-gateway`, stock) signs each request (SigV4) and streams the object from the **private** bucket; `index-gen` (aws-cli, **read-only**) relists the `reports/` lanes every `syncIntervalSeconds` and rebuilds the kilobyte landing `index.html`. Only that landing file is local. |
 | `Service` (ClusterIP) | Backend for the ALB target group (port 80 → web `8081`). |
-| `Ingress` (`alb`) | AWS Load Balancer Controller → internet-facing ALB, ACM TLS, `:80→:443`, IP targets. external-dns → proxied `qa.kortix.com`. |
+| `Ingress` (`alb`) | AWS Load Balancer Controller → internet-facing ALB, ACM TLS on `:443` only, IP targets. external-dns → proxied `qa.kortix.com`. |
 | `ServiceAccount` | Annotated with the IRSA role (S3 read) — **no static AWS keys**. |
 
 ## Durability model

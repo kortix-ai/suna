@@ -253,6 +253,7 @@ resource (an agent, a skill, a secret) rather than the whole project:
 | `list()`                                                            | configured connectors                                           |
 | `config(connectorId)`                                               | one connector's config                                          |
 | `create(input)`                                                     | add a connector                                                 |
+| `auth.discover(input)`                                              | preview auth advertised by OpenAPI, Postman, or an endpoint     |
 | `remove(connectorId)`                                               | delete a connector                                              |
 | `sync()`                                                            | re-sync connectors                                              |
 | `setName(connectorId, name)`                                        | rename a connector                                              |
@@ -295,11 +296,11 @@ A trigger fires an agent action on a schedule or an inbound webhook.
 | method                             | what                                                                                                                           |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `list()`                           | all triggers                                                                                                                   |
-| `create(input)`                    | create — `{ name, type: 'cron' \| 'webhook', prompt_template, slug?, agent?, model?, cron?, run_at?, timezone?, secret_env? }` |
+| `create(input)`                    | create — `{ name, type: 'cron' \| 'webhook', prompt_template, slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?, timezone?, secret_env? }` |
 | `update(triggerId, input)`         | edit a trigger                                                                                                                 |
 | `remove(triggerId)`                | delete a trigger                                                                                                               |
 | `fire(triggerId)`                  | run it now                                                                                                                     |
-| `setActivation(triggerId, active)` | enable / disable                                                                                                               |
+| `setActivation(paused)`            | pause / resume all of the project's triggers server-side; per-trigger enablement uses `update(triggerId, { enabled })`         |
 
 `name` and `prompt_template` are required; `slug` is optional and auto-derived
 from `name` when omitted. `cron`/`run_at` (mutually exclusive) and `timezone`

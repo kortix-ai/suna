@@ -4,10 +4,6 @@ import { validateRegistry } from '../validate';
 import { expandTarget } from '../paths';
 import { buildRegistry, type BuildSource } from '../build';
 import { loadItem, loadRegistry } from '../fetch';
-import { planInstall } from '../install';
-import { readLock, type LockIo } from '../lock';
-import { compareInstalled } from '../status';
-import type { ResolvedItem } from '../fetch';
 
 // --- address parsing -------------------------------------------------------
 
@@ -230,85 +226,6 @@ describe('loadRegistry / loadItem (local + include)', () => {
   });
 });
 
-// --- install planning ------------------------------------------------------
-
-describe('planInstall', () => {
-  const mk = (name: string, deps: string[], file: string, target: string): ResolvedItem => ({
-    ref: { kind: 'local', path: '.' },
-    item: {
-      name,
-      type: 'registry:skill',
-      registryDependencies: deps,
-      files: [{ path: file, type: 'registry:file', target }],
-    },
-    readFile: async () => `content of ${name}`,
-  });
-
-  test('resolves dependencies before the item and expands targets', async () => {
-    const root = mk('root', ['dep'], 'a.md', '@skills/root/a.md');
-    const dep = mk('dep', [], 'b.md', '@skills/dep/b.md');
-    const plan = await planInstall(root, {
-      configDir: '.kortix/opencode',
-      exists: () => false,
-      resolveDependency: async () => dep,
-    });
-    expect(plan.units.map((u) => u.name)).toEqual(['dep', 'root']);
-    expect(plan.dependencies).toEqual(['dep']);
-    expect(plan.writes.map((w) => w.target)).toEqual([
-      '.kortix/opencode/skills/dep/b.md',
-      '.kortix/opencode/skills/root/a.md',
-    ]);
-  });
-
-  test('warns on an unresolved dependency when no resolver is configured', async () => {
-    const root = mk('root', ['dep'], 'a.md', '@skills/root/a.md');
-    const plan = await planInstall(root, { configDir: '.kortix/opencode', exists: () => false });
-    expect(plan.warnings.some((w) => w.includes('dep'))).toBe(true);
-  });
-
-  test('flags existing files', async () => {
-    const root = mk('root', [], 'a.md', '@skills/root/a.md');
-    const plan = await planInstall(root, {
-      configDir: '.kortix/opencode',
-      exists: (t) => t === '.kortix/opencode/skills/root/a.md',
-    });
-    expect(plan.writes[0].exists).toBe(true);
-  });
-});
-
-// --- lock migration --------------------------------------------------------
-
-describe('readLock', () => {
-  function memIo(map: Record<string, string>): LockIo {
-    return {
-      exists: (p) => p in map,
-      read: (p) => map[p],
-      write: (p, c) => {
-        map[p] = c;
-      },
-    };
-  }
-
-  test('migrates a legacy skills-lock.json to v2', () => {
-    const io = memIo({
-      '/p/skills-lock.json': JSON.stringify({
-        version: 1,
-        skills: { pdf: { source: 'kortix-ai/skills', sourceType: 'github', skillPath: 'skills/pdf/SKILL.md', computedHash: 'abc' } },
-      }),
-    });
-    const lock = readLock('/p', io);
-    expect(lock.version).toBe(2);
-    expect(lock.items.pdf.type).toBe('registry:skill');
-    expect(lock.items.pdf.source).toBe('kortix-ai/skills');
-    expect(lock.items.pdf.files[0].hash).toBe('abc');
-  });
-
-  test('returns an empty lock when nothing exists', () => {
-    const lock = readLock('/none', memIo({}));
-    expect(lock).toEqual({ version: 2, items: {} });
-  });
-});
-
 // --- SKILL.md scan fallback (Anthropic / skills.sh / Codex compatibility) ---
 
 describe('loadRegistry — SKILL.md scan fallback (no registry.json)', () => {
@@ -364,31 +281,6 @@ describe('loadRegistry — SKILL.md scan fallback (no registry.json)', () => {
     const names = resolved.registry.items!.map((i) => i.name);
     expect(names).toContain('hello');
     expect(names).not.toContain('x'); // outside the sparse path
-  });
-
-  test('compareInstalled — up-to-date / update-available / orphaned', () => {
-    const locked = [
-      { target: '.kortix/opencode/skills/pdf/SKILL.md', hash: 'a' },
-      { target: '.kortix/opencode/skills/pdf/forms.py', hash: 'b' },
-    ];
-    // identical → up-to-date
-    expect(compareInstalled(locked, [...locked]).status).toBe('up-to-date');
-    // one hash changed → update-available
-    const changed = compareInstalled(locked, [locked[0], { ...locked[1], hash: 'b2' }]);
-    expect(changed.status).toBe('update-available');
-    expect(changed.changed).toEqual(['.kortix/opencode/skills/pdf/forms.py']);
-    // a new file at source → update-available (added)
-    const added = compareInstalled(locked, [...locked, { target: '.kortix/opencode/skills/pdf/new.py', hash: 'c' }]);
-    expect(added.status).toBe('update-available');
-    expect(added.added).toHaveLength(1);
-    // source dropped a file → update-available (removed)
-    const removed = compareInstalled(locked, [locked[0]]);
-    expect(removed.status).toBe('update-available');
-    expect(removed.removed).toEqual(['.kortix/opencode/skills/pdf/forms.py']);
-    // source gone → orphaned
-    expect(compareInstalled(locked, null).status).toBe('orphaned');
-    // a bundle (no files) is always up-to-date
-    expect(compareInstalled([], []).status).toBe('up-to-date');
   });
 
   test('layers registry:bundle from a Claude-Code/Codex marketplace.json', async () => {

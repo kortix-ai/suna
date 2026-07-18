@@ -73,7 +73,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
     type: "http",
     scheme: "bearer",
     description:
-      "Supabase user JWT, or a Kortix token: PAT (`kortix_pat_…`), API key (`kortix_…`), or service account (`kortix_sa_…`).",
+      "Supabase user JWT, or a Kortix token: PAT (`kortix_pat_…`), API key (`kortix_…`), service account (`kortix_sa_…`), or (LLM Gateway inference routes only) a project gateway key (`kortix_gw_…`).",
   });
 
   app.doc31("/v1/openapi.json", (c) => ({

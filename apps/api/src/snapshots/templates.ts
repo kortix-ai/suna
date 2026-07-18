@@ -112,7 +112,25 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // starter tool files against it) can't actually be bundled by Bun — a
 // bundle-breaking axios override once shipped silently baked into every
 // sandbox image (bun install succeeded; the runtime bundle did not).
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v24';
+// v25: bake the `kortix skills` subcommand into the in-sandbox CLI so the
+// seeded kortix-system <live-skills> pointer (`kortix skills get <name>`)
+// resolves — without this rebake, fresh sandboxes run an older baked CLI that
+// hard-errors on `kortix skills`.
+// v26: layer robustness. (a) The starter Python floor moved OUT of the system
+// interpreter into a `--system-site-packages` venv at /opt/kortix/pyfloor (on the
+// front of PATH): the old `pip install --break-system-packages` fought dpkg for
+// any floor package the USER's Dockerfile had apt-installed — a project's
+// `gdal-bin` pulled dpkg-owned python3-numpy 1.26.4, our `numpy>=1.26` resolved
+// to 2.x, pip tried to uninstall it and hard-failed the build ("RECORD file not
+// found ... installed by debian") on a CORRECT user image. pip in a venv cannot
+// uninstall a dpkg package at all, which retires the whole class (every floor
+// member has a dpkg counterpart). (b) The post-warm-up `find /workspace
+// -mindepth 1 -delete` is now emitted ONLY for the shared default image; custom
+// templates get a targeted cleanup of just the staged starter config, so an
+// image that seeds /workspace (a documented WORKDIR) no longer has it silently
+// deleted. (c) ENV DEBIAN_FRONTEND=noninteractive is set by the layer instead of
+// being inherited by luck from the user's base.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v26';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

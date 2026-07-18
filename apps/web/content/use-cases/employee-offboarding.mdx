@@ -1,12 +1,13 @@
 ---
 title: "How we offboard employees"
-description: When HR marks a departure, an agent runs the offboarding checklist across Google Workspace, Slack, GitHub, and Okta — revoking access, transferring ownership, and reclaiming licenses, with the irreversible steps held for approval.
+description: On a schedule, an agent checks for newly marked departures and runs the offboarding checklist across Okta, Google Workspace, Google Drive, and GitHub — revoking access, transferring ownership, and reclaiming licenses — holding the ownership transfer for approval and never deleting an account.
 date: "2026-06-02"
 author: team
 tags:
   - Security
   - Case Study
   - Enterprise
+template: employee-offboarding
 ---
 
 Offboarding is a checklist that has to run to completion. When someone leaves,
@@ -15,15 +16,16 @@ to change hands, and their licenses have to come back. Miss a step and a former
 employee keeps a login, a shared drive loses its owner, or a paid seat sits
 unused. The steps are simple; the risk is in the ones that get skipped.
 
-We run offboarding through an agent on Kortix. When HR marks a departure, the
-agent works the checklist across every connected tool and posts what it did and
-what is still pending. This is the security counterpart to how we onboard.
+We run offboarding through an agent on Kortix. On a schedule, the agent checks
+for newly marked departures and works the checklist across every connected
+tool, posting what it did and what is still pending. This is the security
+counterpart to how we onboard.
 
 <KeyFacts>
   <Fact label="Team">Kortix</Fact>
-  <Fact label="Runs on">HR departure event</Fact>
-  <Fact label="Connected systems">Okta/SSO · Google Workspace · Slack · GitHub</Fact>
-  <Fact label="Mode">Trigger-driven · irreversible steps gated</Fact>
+  <Fact label="Runs on">Scheduled Okta departure check</Fact>
+  <Fact label="Connected systems">Okta/SSO · Google Workspace · Google Drive · GitHub</Fact>
+  <Fact label="Mode">Schedule-driven · ownership transfer gated</Fact>
 </KeyFacts>
 
 ## The problem
@@ -41,28 +43,25 @@ forget are exactly the ones that matter for security.
 
 ## What we built
 
-On Kortix, a departure marked in HR triggers an agent. It spawns an isolated
-session (a cloud sandbox) with scoped access to Okta, Google Workspace, Slack, and
-GitHub, and works the offboarding checklist: revoke SSO and app access, remove the
-person from the Slack and GitHub orgs, transfer document and repository ownership,
-and reclaim licenses. The irreversible steps wait at a human approval gate, and
-the agent posts a completed checklist showing what it did and what is still
-pending.
-
-<Figure
-  caption="The offboarding agent posting its completed checklist"
-  aspect="16/9"
-/>
+On Kortix, an agent checks Okta on a schedule for newly marked departures. Each
+check spawns an isolated session (a cloud sandbox) with scoped access to Okta,
+Google Workspace, Google Drive, and GitHub, and works the offboarding checklist
+for every departure it finds: revoke SSO and app access, remove the person from
+the GitHub org, transfer document and drive ownership, and reclaim licenses.
+The ownership transfer waits at a human approval gate — account deletion is
+never attempted — and the agent posts a completed checklist showing what it did
+and what is still pending.
 
 ## How it works
 
 <Steps>
-<Step title="Connect HR as the trigger">
+<Step title="Check Okta on a schedule">
 
-The HR system is connected so that marking someone as leaving fires a signed
-webhook at the project. Each firing spawns a fresh **session** in its own sandbox,
-seeded with the departing person's identity. One departure maps to one session on
-one disposable machine, so nothing carries over between runs.
+The agent checks the Okta group HR adds departing employees to on a schedule,
+so access comes down the same day a departure is marked. Each check spawns a
+fresh **session** in its own sandbox; if it finds more than one new departure,
+each is worked as its own independent case, and nothing carries over between
+runs.
 
 </Step>
 <Step title="Give the agent the offboarding checklist">
@@ -80,39 +79,42 @@ Through scoped **connectors**, brokered server-side so no raw token reaches the
 model, the agent can:
 
 - **Revoke SSO in Okta** — deactivate the account and pull the app assignments that
-  hang off it.
-- **Remove from Slack and GitHub** — deactivate the Slack account and remove the
-  person from the GitHub org and its teams.
-- **Transfer ownership in Google Workspace** — reassign document and shared-drive
-  ownership so nothing is orphaned, then suspend the account.
+  hang off it. Access to Slack drops the moment SSO is revoked, where Slack is
+  SSO-connected.
+- **Remove from GitHub** — remove the person from the GitHub org and its teams.
+- **Transfer ownership in Google Drive, then suspend in Google Workspace** —
+  reassign document and shared-drive ownership so nothing is orphaned, then
+  suspend the account.
 - **Reclaim licenses** — release paid seats across the connected tools so they
   return to the pool.
 
 </Step>
 <Step title="Set the guardrails">
 
-The reversible steps run on their own; the irreversible ones (deleting an account,
-transferring ownership away from a person) stop at a **human approval gate** before
-they execute. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+The reversible steps run on their own; transferring ownership away from a
+person stops at a **human approval gate** before it executes. Account deletion
+is out of scope for this agent entirely — it is never performed, gated or
+otherwise, and hands off to a human if one is ever genuinely needed.
+Credentials are encrypted in the Secrets Manager and injected at runtime,
+never shown to the model or written to logs.
 
 </Step>
 <Step title="Run the checklist to completion">
 
-With that in place, a departure marked in HR becomes one run: SSO revoked, Slack
-and GitHub access removed, ownership transferred, and licenses reclaimed, with the
-irreversible steps held for approval. The agent posts a completed checklist
-showing every step it took and anything still pending a human, so nothing is left
-half-done.
+With that in place, each departure the scheduled check finds becomes one worked
+case: SSO revoked, GitHub access removed, ownership transferred, and licenses
+reclaimed, with the ownership transfer held for approval. The agent posts a
+completed checklist showing every step it took and anything still pending a
+human, so nothing is left half-done.
 
 </Step>
 </Steps>
 
 <Callout title="The pattern" tone="accent">
-  An HR **trigger** spawns a session with scoped **connectors** into Okta, Google
-  Workspace, Slack, and GitHub. The offboarding policy is encoded as **skills**
-  and **memory**. The agent runs the reversible steps and holds the irreversible
-  ones behind a human.
+  A scheduled **trigger** spawns a session with scoped **connectors** into Okta,
+  Google Workspace, Google Drive, and GitHub. The offboarding policy is encoded
+  as **skills** and **memory**. The agent runs the reversible steps on its own
+  and holds the ownership transfer behind a human.
 </Callout>
 
 ## Guardrails
@@ -120,32 +122,30 @@ half-done.
 The agent revokes access and transfers ownership across every system, so the
 access is scoped and contained:
 
-- **Isolation.** Every departure runs in its own microVM sandbox. The session can
-  reach only the systems it's scoped to, and only the checklist result leaves the
-  sandbox.
-- **Scoped secrets.** The Okta, Google Workspace, Slack, and GitHub credentials are
-  encrypted in the Secrets Manager and injected into the sandbox at runtime, never
-  exposed to the model or the logs.
-- **Human approval gate.** Irreversible steps — account deletion, ownership
-  transfer — require a person to approve before they run.
+- **Isolation.** Every departure case runs in its own microVM sandbox. The
+  session can reach only the systems it's scoped to, and only the checklist
+  result leaves the sandbox.
+- **Scoped secrets.** The Okta, Google Workspace, Google Drive, and GitHub
+  credentials are encrypted in the Secrets Manager and injected into the
+  sandbox at runtime, never exposed to the model or the logs.
+- **Human approval gate.** Transferring ownership away from a person requires a
+  person to approve before it runs.
+- **Never deletes.** Account deletion is out of scope for this agent entirely —
+  it is never performed, gated or otherwise. It hands off to a human if a
+  deletion is ever genuinely needed.
 - **Everything is code.** The agent's checklist, skills, and per-system permissions
   are files in the repo, versioned and changed through a reviewed **change
   request** rather than a dashboard setting.
-
-<Figure
-  caption="An approval gate holding the irreversible steps before they run"
-  aspect="16/9"
-/>
 
 ## The outcome
 
 <StatGrid>
   <Stat value="Every departure" label="The full checklist run across all systems" />
-  <Stat value="Same day" label="Access revoked when HR marks the departure" />
-  <Stat value="4 systems" label="Okta, Google Workspace, Slack, GitHub in one run" />
+  <Stat value="Same day" label="Access revoked once the scheduled check finds it" />
+  <Stat value="4 systems" label="Okta, Google Workspace, Google Drive, GitHub in one run" />
 </StatGrid>
 
 Access that used to depend on someone working a runbook by hand now comes down
-the moment HR marks a departure, with ownership transferred and licenses
-reclaimed in the same run. The irreversible steps wait for a person, and the
+the same day a departure is marked, with ownership transferred and licenses
+reclaimed in the same run. The ownership transfer waits for a person, and the
 completed checklist shows exactly what happened and what is still pending.

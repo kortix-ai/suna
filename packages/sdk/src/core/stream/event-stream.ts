@@ -41,6 +41,7 @@ export interface EventStreamClient {
       signal: AbortSignal;
       sseDefaultRetryDelay?: number;
       sseMaxRetryDelay?: number;
+      sseMaxRetryAttempts?: number;
     }) => Promise<{ stream: AsyncIterable<unknown> }>;
   };
 }
@@ -319,6 +320,34 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
               signal: attemptAbort.signal,
               sseDefaultRetryDelay: SSE_DEFAULT_RETRY_DELAY_MS,
               sseMaxRetryDelay: SSE_MAX_RETRY_DELAY_MS,
+              // CRITICAL: caps the vendor client's OWN internal reconnect loop
+              // to a single attempt. `@opencode-ai/sdk`'s `createSseClient`
+              // wraps every connection in its own `while(true)` retry-with-
+              // backoff generator that swallows failures and silently
+              // schedules its next fetch via a plain `setTimeout` sleep that
+              // does NOT observe `signal` — aborting mid-sleep only stops it
+              // once the sleep elapses and the generator wakes up to check
+              // `signal.aborted`. Left unset (the old default), that inner
+              // loop runs CONCURRENTLY with this module's own outer
+              // connect/backoff loop below: the moment we abort a stalled
+              // attempt (heartbeat timeout, gap reconnect, or a fresh `close()`)
+              // and immediately open the next one, the previous vendor-level
+              // generator can still be mid-sleep and — on a race — wakes up
+              // and fires ONE MORE fetch before it finally notices the abort,
+              // stacking a second live connection on top of the new attempt.
+              // On a flaky self-host sandbox (frequent brief-unreachable →
+              // reconnect cycles) this piles up fast: every retry can leave a
+              // stray in-flight fetch behind, and under HTTP/1.1's 6-per-origin
+              // cap those leaked connections alone can saturate the pool and
+              // queue out every other request (/projects, /sessions, ...).
+              // Setting this to 1 makes a failed fetch complete the generator
+              // (a clean `done`, no throw, no internal retry/sleep) instead of
+              // scheduling its own reconnect — so THIS module's outer loop is
+              // the only thing that ever decides to open a new connection, and
+              // it only ever does so after the previous attempt's
+              // `attemptAbort.abort()` has already run (see the `finally`
+              // block below).
+              sseMaxRetryAttempts: 1,
             })
             .then(
               (value) => {

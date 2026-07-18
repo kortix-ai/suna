@@ -5,12 +5,8 @@ import {
   flattenMarketplaceItems,
   MARKETPLACE_GRID_COLUMNS,
   marketplaceGridRowKey,
-  resolveEffectiveMarketplaceType,
-  resolveMarketplaceExploreViewMode,
-  resolveMarketplaceQueryParams,
   resolveMarketplaceTypeSectionTotal,
   shouldFetchNextMarketplacePage,
-  shouldOfferMarketplaceSeeAll,
   shouldVirtualizeMarketplacePagedGrid,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
@@ -130,20 +126,6 @@ describe('marketplaceGridRowKey', () => {
   });
 });
 
-describe('resolveEffectiveMarketplaceType', () => {
-  test('keeps the selected type when it is a valid option', () => {
-    expect(resolveEffectiveMarketplaceType('skill', [{ value: 'all' }, { value: 'skill' }])).toBe(
-      'skill',
-    );
-  });
-
-  test('falls back to all when the selected type is no longer an option', () => {
-    expect(resolveEffectiveMarketplaceType('agent', [{ value: 'all' }, { value: 'skill' }])).toBe(
-      'all',
-    );
-  });
-});
-
 describe('shouldFetchNextMarketplacePage', () => {
   test('fetches when intersecting, a next page exists, and nothing is in flight', () => {
     const result = shouldFetchNextMarketplacePage(true, {
@@ -179,52 +161,6 @@ describe('shouldFetchNextMarketplacePage', () => {
     });
 
     expect(result).toBe(false);
-  });
-});
-
-describe('resolveMarketplaceQueryParams', () => {
-  test('maps control state into query params', () => {
-    const params = resolveMarketplaceQueryParams({
-      debounced: 'agent',
-      effectiveType: 'skill',
-      source: 'src-1',
-      publicOnly: true,
-    });
-
-    expect(params).toEqual({ query: 'agent', type: 'skill', source: 'src-1', publicOnly: true });
-  });
-
-  test('different search/type/source controls produce different params', () => {
-    const base = { debounced: '', effectiveType: 'all', source: 'all', publicOnly: false };
-
-    const bySearch = resolveMarketplaceQueryParams({ ...base, debounced: 'notion' });
-    const byType = resolveMarketplaceQueryParams({ ...base, effectiveType: 'skill' });
-    const bySource = resolveMarketplaceQueryParams({ ...base, source: 'src-1' });
-    const baseline = resolveMarketplaceQueryParams(base);
-
-    expect(bySearch).not.toEqual(baseline);
-    expect(byType).not.toEqual(baseline);
-    expect(bySource).not.toEqual(baseline);
-  });
-});
-
-describe('resolveMarketplaceExploreViewMode', () => {
-  test('an empty catalog wins even while a search is in flight', () => {
-    const mode = resolveMarketplaceExploreViewMode({ catalogEmpty: true, searching: true });
-
-    expect(mode).toBe('empty');
-  });
-
-  test('a search in flight switches to the paged search view, not the preview grid', () => {
-    const mode = resolveMarketplaceExploreViewMode({ catalogEmpty: false, searching: true });
-
-    expect(mode).toBe('search');
-  });
-
-  test('no search and a non-empty catalog renders the grouped preview sections', () => {
-    const mode = resolveMarketplaceExploreViewMode({ catalogEmpty: false, searching: false });
-
-    expect(mode).toBe('browse');
   });
 });
 
@@ -278,32 +214,6 @@ describe('company explore paged grid bounding (A4)', () => {
 
     expect(rows.length).toBe(Math.ceil(items.length / 2));
     expect(rows.length).toBeLessThan(items.length);
-  });
-});
-
-describe('shouldOfferMarketplaceSeeAll', () => {
-  test('offers See all when the preview cap hides items that exist', () => {
-    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: true, renderedCount: 9, total: 40 })).toBe(
-      true,
-    );
-  });
-
-  test('offers See all when the SSR-bounded sample is truncated below the true total even under the preview cap', () => {
-    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: true, renderedCount: 5, total: 8 })).toBe(
-      true,
-    );
-  });
-
-  test('does not offer See all when every item that exists is already rendered', () => {
-    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: true, renderedCount: 8, total: 8 })).toBe(
-      false,
-    );
-  });
-
-  test('never offers See all for a section without a paged view', () => {
-    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: false, renderedCount: 8, total: 40 })).toBe(
-      false,
-    );
   });
 });
 

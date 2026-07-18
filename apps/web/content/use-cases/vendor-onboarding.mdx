@@ -1,0 +1,161 @@
+---
+title: "How we onboard new vendors"
+description: The vendor-onboarding agent we run on Kortix — connected to Gmail, Google Sheets, and Slack. Every day it checks new vendor requests for a completed W-9, banking form, and signed contract, records each vendor's status to our vendor register, and flags anything missing or invalid — never approving a vendor or touching payment setup itself.
+date: "2026-06-14"
+author: team
+tags:
+  - Operations
+  - Case Study
+  - Enterprise
+template: vendor-onboarding
+---
+
+A new vendor shows up as an email thread: a name, a contact, and — if we're
+lucky — three attachments. A W-9, a banking form, and a signed contract. Each one
+needs to be there, complete, and consistent with the others before the vendor is
+ready to be set up. Done by hand, that check gets skipped under deadline pressure,
+and the gap that slips through is exactly the one that matters: a vendor entered
+into a payment system on an unsigned contract or a W-9 with no TIN.
+
+We run a vendor-onboarding agent on Kortix that checks the inbox every day,
+validates the required documents for every new vendor request against a fixed
+checklist, records the result to our vendor register, and flags anything missing
+or invalid in Slack. It collects, validates, and records; it never approves a
+vendor and never touches payment or banking setup.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">Gmail · Google Sheets · Slack</Fact>
+  <Fact label="Mode">Collect + validate + record — never approves, never sets up payment</Fact>
+</KeyFacts>
+
+## The problem
+
+Vendor onboarding paperwork is simple in principle and inconsistent in practice.
+A W-9 arrives unsigned. A banking form is missing the routing number. A contract
+comes back with the wrong entity name because someone copy-pasted from a
+template. None of these are hard to catch individually, but catching all three,
+for every vendor, every time, is the kind of checklist work that a busy person
+does thoroughly on the first vendor of the week and loosely on the tenth.
+
+The cost of skipping it isn't visible until later — a vendor gets set up for
+payment on paperwork that turns out to be incomplete, and untangling it after the
+fact costs far more than the two minutes the check would have taken. What's
+missing isn't judgment about whether to onboard a vendor; it's someone reading
+every attachment against the same checklist, every time, without skipping ahead
+to the next request.
+
+## What we built
+
+On Kortix, a daily cron re-prompts a fresh session with no memory of the prior
+run — the vendor register in Google Sheets is the record it works from. Each run
+reads new vendor-request threads from a Gmail label, checks each attachment
+against a fixed checklist (a complete, signed W-9; a complete banking form; a
+signed contract with a matching entity name), records the result for every
+vendor whether clean or flagged, drafts a follow-up email for anything missing
+or invalid, and posts a summary to Slack for a person to act on. It never marks
+a vendor approved and never sets up a payment method or banking profile.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron, fresh each time">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox with no memory of the previous run — the vendor
+register it reads from Google Sheets is the only carry-over, so the same vendor
+is never processed twice and nothing depends on the agent remembering anything
+itself.
+
+</Step>
+<Step title="Give the agent the intake checklist">
+
+What counts as a complete W-9, a complete banking form, and a valid signed
+contract lives as a **skill** that travels with the agent — the exact fields
+each document needs, how the vendor name must match across all three, and what
+"invalid" looks like versus "missing." This is the fixed standard every vendor
+is checked against, every run.
+
+</Step>
+<Step title="Connect the systems it needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent:
+
+- **Reads new vendor requests from Gmail** — the request thread and its
+  attachments, filed under a dedicated label.
+- **Reads and writes the vendor register in Google Sheets** — the prior state
+  of every vendor, and this run's recorded status for each one.
+- **Drafts follow-up emails in Gmail** — requesting a missing or corrected
+  document, saved as a draft, never sent by the agent.
+- **Posts to Slack** — a summary of every vendor processed this run, flagged
+  ones called out with exactly what's missing or invalid.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's job stops at collect, validate, and record. It never marks a vendor
+approved, never initiates a payment method, and never touches a banking or ACH
+setup in any system — not even for a vendor whose paperwork is fully complete.
+Outbound email to a vendor is created as a draft only; a person reviews and
+sends it. Bank account and routing numbers are checked for presence and
+completeness but never copied into the register — only the document's status
+is recorded.
+
+</Step>
+<Step title="Record every vendor and flag what's missing">
+
+With that in place, each day the register gains one row per new vendor request
+— complete or flagged, with the specific missing or invalid item named — and
+Slack gets one summary post. Anything incomplete has a draft email already
+written and waiting. A person reviews the flag, sends the draft or requests
+something else, and makes the actual onboarding decision.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** re-prompts a **fresh session** that reads new requests from
+  Gmail, checks the required documents against a **skill**-defined checklist,
+  and records the result in the Google Sheets vendor register — the register,
+  not the agent's memory, is the state. Anything missing gets a drafted email
+  and a Slack flag. The agent never approves a vendor or touches payment.
+</Callout>
+
+## Guardrails
+
+The agent handles vendor paperwork end to end except the decision that matters,
+so its access is scoped and its authority is capped below approval:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Gmail, Google Sheets, and Slack, and only the register update and
+  the Slack post are meant to persist past the run.
+- **Scoped, brokered credentials.** Gmail and Google Sheets access are injected
+  into the sandbox at runtime, never exposed to the model or written to logs.
+- **Collect, validate, record — nothing further.** The agent checks documents
+  and writes status to the register. It has no path to mark a vendor approved
+  or to configure a payment method or banking profile, complete paperwork or
+  not.
+- **Drafts, never sends.** A follow-up email to a vendor is created as a Gmail
+  draft. A human reviews and sends it.
+- **No sensitive data at rest in the sheet.** Bank account and routing numbers
+  are checked for completeness on the source document but never transcribed
+  into the register — only a status.
+- **Everything is code.** The intake checklist, the register schema, and the
+  agent's per-system permissions are files in the repo, versioned and changed
+  through a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="New vendor requests checked against the same fixed checklist" />
+  <Stat value="3 documents" label="W-9, banking form, and signed contract validated per vendor" />
+  <Stat value="0 approvals" label="Vendor approval and payment setup always stay with a human" />
+</StatGrid>
+
+Vendor paperwork that used to get a thorough read on the first request and a
+quick skim by the tenth now gets the same checklist every time, recorded in one
+register instead of scattered across a dozen email threads. The agent collects,
+validates, and records; a person still decides who gets approved and who gets
+paid.

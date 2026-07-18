@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { Separator } from '@/components/ui/separator';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { CliInstallSection } from '@/features/marketing/cli-install-section';
 import {
   CompanyAsCodeSection,
   HowItRunsSection,
@@ -61,27 +62,32 @@ export default function Home() {
 
         <SectionDivider />
 
-        {/* 4. A workforce, one shared main */}
+        {/* 4. CLI install — a terminal-native way to get started */}
+        <CliInstallSection />
+
+        <SectionDivider />
+
+        {/* 5. A workforce, one shared main */}
         <HowItRunsSection />
 
         <SectionDivider />
 
-        {/* 5. The 1% vs the 99% — shared with everyone */}
+        {/* 6. The 1% vs the 99% — shared with everyone */}
         <ProblemSection />
 
         <SectionDivider />
 
-        {/* 6. Open & yours */}
+        {/* 7. Open & yours */}
         <WhyKortix />
 
         <SectionDivider />
 
-        {/* 7. Enterprise & security */}
+        {/* 8. Enterprise & security */}
         <Security />
 
         <SectionDivider />
 
-        {/* 8. CTA — run your whole company from one repo you own */}
+        {/* 9. CTA — run your whole company from one repo you own */}
         <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
           <Reveal>
             <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
@@ -108,7 +114,12 @@ export default function Home() {
                       {tHome('line337JsxTextGetStarted')}
                       <HiArrowRight className="size-4" />
                     </Button>
-                    <Button size="lg" className="w-full" variant="accent" onClick={() => openDemo()}>
+                    <Button
+                      size="lg"
+                      className="w-full"
+                      variant="accent"
+                      onClick={() => openDemo()}
+                    >
                       {tHome('line338JsxTextTalkToSales')}
                     </Button>
                   </div>

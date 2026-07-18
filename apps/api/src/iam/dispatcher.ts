@@ -44,16 +44,36 @@ export async function assertAuthorized(
 ): Promise<void> {
   const result = await authorize(userId, accountId, action, target, actingTokenId, requestCtx);
   if (!result.allowed) {
-    // User-facing 403 message: "You don't have permission to create
-    // projects." Falls back to a generic "perform this action" when
-    // the action isn't in the verb map, with the action code suffixed
-    // in parens so support / dev tooling can still identify it. The
-    // reason code (account_role_insufficient, etc.) is intentionally
-    // dropped — it's diagnostic, not actionable for end users.
-    throw new HTTPException(403, {
-      message: humanizePermissionDenial(action),
+    throw buildDenialError(action, result.reason);
+  }
+}
+
+/**
+ * Turn a denial into the HTTPException the route layer surfaces. Exported for
+ * unit tests.
+ *
+ * Most reason codes (account_role_insufficient, …) are diagnostic, not
+ * actionable, so the body stays a plain humanized message. The ONE actionable
+ * reason is `account_mfa_required` — the caller can fix it by completing an
+ * MFA challenge and retrying — so that denial carries a machine-readable
+ * `code` the web client keys its step-up dialog on (the SDK's ApiError
+ * already lifts `code` from error bodies).
+ */
+export function buildDenialError(action: string, reason?: string): HTTPException {
+  if (reason === 'account_mfa_required') {
+    const message =
+      'This account requires multi-factor authentication. Verify your second factor and retry.';
+    return new HTTPException(403, {
+      message,
+      res: new Response(JSON.stringify({ error: message, code: 'account_mfa_required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      }),
     });
   }
+  return new HTTPException(403, {
+    message: humanizePermissionDenial(action),
+  });
 }
 
 /**

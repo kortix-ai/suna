@@ -1,11 +1,11 @@
 ---
 title: Triggers
-description: Cron and signed-webhook entries that spawn fresh sessions — fields, template variables, and gotchas.
+description: Cron and signed-webhook entries that spawn, reuse, or pin sessions — fields, template variables, and gotchas.
 ---
 
 Field-level reference for triggers. For the plain-language version, see [Automations](/docs/concepts/triggers).
 
-A trigger fires and spawns a new session that runs the rendered prompt as its initial message. The platform creates a session branch like an interactive session; the agent works, commits, pushes. Landing on `main` goes through a [change request](/docs/reference/change-requests).
+A trigger fires a session that runs the rendered prompt as its initial message. By default the platform creates a fresh session branch like an interactive session; `session_mode` can instead reuse that trigger's prior session or pin the fire to a specific session. The agent works, commits, pushes. Landing on `main` goes through a [change request](/docs/reference/change-requests).
 
 Triggers live in the manifest — `triggers:` (a YAML list) in v2 `kortix.yaml`, `[[triggers]]` (a TOML array of tables) in legacy v1 `kortix.toml`. Same fields either way, just a different container. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
 
@@ -117,7 +117,8 @@ The token is compared to `secret_env` with constant-time `timingSafeEqual`, same
 | `name` | no | string | `slug` | Human label. |
 | `agent` | no | string | `"default"` | Agent name. In v2 (`kortix.yaml`), must name a key in `agents:` or be omitted to fall back to `default_agent`. Legacy v1 projects with no `[[agents]]` resolve it through OpenCode discovery instead. Alias: `agent_name`. |
 | `model` | no | string | — (resolves at fire time) | Per-trigger model override, wire form `provider/model` (e.g. `"anthropic/claude-sonnet-4-5"`). When unset, resolves through the chain agent → project → account → platform `auto` at fire time — catalog availability is validated when the trigger runs, not when the manifest is parsed. |
-| `session_mode` | no | string | `"fresh"` | `"fresh"`: every fire mints a brand-new session (new sandbox + branch). `"reuse"`: re-prompts the trigger's most recent session (resuming its sandbox) so one long-lived session accumulates context across fires; falls back to a fresh session if none exists or the last one is dead. Case-insensitive. Alias: `sessionMode`. |
+| `session_mode` | no | string | `"fresh"` | `"fresh"`: every fire mints a brand-new session (new sandbox + branch). `"reuse"`: re-prompts the trigger's most recent session (resuming its sandbox) so one long-lived session accumulates context across fires. `"pinned"`: first tries the exact `session_id` below, then falls back to the trigger's reusable session or a fresh one if the pin is gone or unavailable. Case-insensitive. Alias: `sessionMode`. |
+| `session_id` | required only for `session_mode: "pinned"` | string | — | Exact project session to re-prompt for pinned mode. Alias: `sessionId`. |
 | `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. |
 
 ### Cron-only fields

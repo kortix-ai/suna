@@ -7,6 +7,7 @@ tags:
   - SRE
   - Case Study
   - Enterprise
+template: incident-postmortem
 ---
 
 A postmortem is worth writing and easy to skip. Once an incident is resolved and
@@ -49,11 +50,6 @@ correlates them, and drafts a structured postmortem, timeline, root cause, and
 action items, as a doc PR against the repo. The team reviews and edits the draft
 the way they'd review any change. The agent drafts; it never publishes a final
 postmortem on its own.
-
-<Figure
-  caption="The drafted postmortem opened as a doc PR for review"
-  aspect="16/9"
-/>
 
 ## How it works
 
@@ -134,11 +130,6 @@ document others will act on, so the access is scoped and contained:
 - **Everything is code.** The postmortem format and the per-tool permissions are
   files in the repo, versioned and changed through a reviewed **change request**
   rather than a dashboard setting.
-
-<Figure
-  caption="A correlated timeline lining up channel messages against deploys and log spikes"
-  aspect="16/9"
-/>
 
 ## The outcome
 

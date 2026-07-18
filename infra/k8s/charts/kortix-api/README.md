@@ -11,7 +11,7 @@ controllers; this chart owns the application objects that Argo CD reconciles.
 | ------ | ------- |
 | `Deployment` | The API. Startup/liveness/readiness probes, `preStop` drain, 3-AZ `topologySpreadConstraints`, `maxUnavailable: 0` rolling deploys. |
 | `Service` (ClusterIP) | Backend for the ALB target group. |
-| `Ingress` (`alb`) | AWS Load Balancer Controller → internet-facing ALB, ACM TLS, `:80→:443`, IP targets, `/v1/health` checks. external-dns → proxied `api-eks.kortix.com`. |
+| `Ingress` (`alb`) | AWS Load Balancer Controller → internet-facing ALB, ACM TLS on `:443` only, IP targets, `/v1/health` checks. external-dns → proxied `api-eks.kortix.com`. |
 | `HorizontalPodAutoscaler` | CPU+memory target tracking, 3→12 replicas. |
 | `PodDisruptionBudget` | `minAvailable: 50%` — disruptions never drop below half. |
 | `ServiceAccount` | Annotated with the IRSA role (Secrets Manager read). |

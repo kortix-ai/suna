@@ -7,6 +7,7 @@ tags:
   - Sales
   - Case Study
   - Growth
+template: lead-follow-up
 ---
 
 Inbound leads have a short half-life. A form filled out on Tuesday is worth far
@@ -22,7 +23,7 @@ run that on Kortix — the connections, the steps, and the guardrails.
 <KeyFacts>
   <Fact label="Team">Kortix</Fact>
   <Fact label="Connected systems">HubSpot · Email · Google Calendar</Fact>
-  <Fact label="Trigger">New lead in HubSpot</Fact>
+  <Fact label="Trigger">Scheduled HubSpot sweep (every 15 min)</Fact>
   <Fact label="Mode">Trigger-driven · human-gated</Fact>
 </KeyFacts>
 
@@ -40,25 +41,24 @@ work that moves a lead forward is the work that keeps slipping.
 ## What we built
 
 Our lead pipeline in **HubSpot** is connected to an agent running on Kortix.
-Every new lead spawns its own isolated session — a cloud sandbox — with scoped
-access to what a follow-up needs: the lead record, the web for research, our
-email, and the team calendar. It researches the company, drafts a personalized
-message, and proposes a call slot. A human approves before it sends.
-
-<Figure
-  caption="The sales agent drafting a personalized follow-up from a new lead"
-  aspect="16/9"
-/>
+A scheduled sweep spawns a fresh, isolated session — a cloud sandbox — with
+scoped access to what a follow-up needs: the lead record, the web for
+research, our email, and the team calendar. It researches each new lead,
+drafts a personalized message, and proposes a call slot. A human approves
+before it sends.
 
 ## How it works
 
 <Steps>
 <Step title="Connect HubSpot as the trigger">
 
-A signed webhook from HubSpot points at the project. Every new lead fires it, and
-each firing spawns a fresh **session** in its own sandbox, seeded with the lead
-record. One lead, one session, one disposable machine. Sessions don't share
-state, and a busy pipeline means more sessions running in parallel.
+A scheduled **trigger** sweeps HubSpot every 15 minutes for new leads, and each
+firing spawns a fresh **session** in its own sandbox. A sweep that turns up
+several new leads at once still runs as a single session, but each lead is
+handled as an independent unit — a research or drafting failure on one lead
+never blocks or corrupts the others. Sessions don't share state between
+sweeps: the marker written back onto each HubSpot record is what carries
+forward.
 
 </Step>
 <Step title="Give the agent our playbook">
@@ -113,9 +113,10 @@ want, and sends — instead of starting each follow-up from a blank page.
 Giving an agent the ability to reach out to leads is a brand question as much as
 a sales one. The relevant controls on Kortix:
 
-- **Isolation.** Each lead runs in its own microVM sandbox. The session can
-  research and draft with the context it needs, and only the draft it produces
-  leaves the sandbox.
+- **Isolation.** Each sweep runs in its own microVM sandbox — a fresh session
+  that can cover several new leads at once, each handled as an independent
+  unit so a failure on one never blocks the rest. Only the drafts it produces
+  leave the sandbox.
 - **Scoped secrets.** The HubSpot, email, and Calendar credentials are encrypted
   in the secrets manager and injected into the sandbox at runtime, never exposed
   to the model or the logs.
@@ -124,11 +125,6 @@ a sales one. The relevant controls on Kortix:
 - **Everything is code.** The agent's persona, skills, and permissions are files
   in the repo — versioned and changed through a reviewed **change request**, not a
   dashboard setting.
-
-<Figure
-  caption="A follow-up draft held at a human approval gate before it sends"
-  aspect="16/9"
-/>
 
 ## The outcome
 

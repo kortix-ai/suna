@@ -1,13 +1,16 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, Copy } from 'lucide-react';
+import { Check, ChevronLeft, Copy, Info, Plus, TriangleAlert } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useState } from 'react';
 
@@ -117,7 +120,7 @@ export function CustomProviderForm({
   }
 
   return (
-    <div className="space-y-3 px-5 pt-3 pb-5">
+    <div className="space-y-4 px-5 pt-3 pb-5">
       <Button
         type="button"
         variant="ghost"
@@ -125,141 +128,174 @@ export function CustomProviderForm({
         className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
+        <ChevronLeft className="size-3.5 shrink-0" />
         {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}
       </Button>
 
-      <div className="border-border/50 bg-muted/20 rounded-2xl border px-3.5 py-3">
-        <div className="text-foreground text-sm font-medium">
-          {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line987JsxTextCustomProvider')}
+      <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
+        <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
+          <Plus className="size-4 shrink-0" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-foreground text-sm font-medium">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line987JsxTextCustomProvider',
+            )}
+          </div>
+          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey',
+            )}{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
+              .opencode/opencode.jsonc
+            </code>
+            .
+          </p>
         </div>
-        <p className="text-muted-foreground mt-0.5 text-xs">
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey',
-          )}{' '}
-          <code className="bg-background rounded px-1 py-0.5 font-mono">
-            .opencode/opencode.jsonc
-          </code>
-          .
-        </p>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4"
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1002JsxTextProviderId')}
-            </label>
-            <Input
-              type="text"
-              value={form.providerId}
-              onChange={(e) =>
-                setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
-              }
-              placeholder="my-llm"
-              className="h-9 font-mono text-xs"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1020JsxTextDisplayName',
-              )}
-            </label>
-            <Input
-              type="text"
-              value={form.name}
-              onChange={(e) => setField('name', e.target.value)}
-              placeholder={tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
-              )}
-              className="h-9 text-sm"
-            />
-          </div>
-        </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
+          <FieldGroup className="gap-5">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="custom-provider-id">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line1002JsxTextProviderId',
+                  )}
+                </FieldLabel>
+                <Input
+                  id="custom-provider-id"
+                  type="text"
+                  value={form.providerId}
+                  onChange={(e) =>
+                    setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+                  }
+                  placeholder="my-llm"
+                  className="font-mono text-xs"
+                  autoFocus
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="custom-display-name">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line1020JsxTextDisplayName',
+                  )}
+                </FieldLabel>
+                <Input
+                  id="custom-display-name"
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setField('name', e.target.value)}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
+                  )}
+                />
+              </Field>
+            </div>
 
-        {form.apiKey.trim() && (
-          <p className="text-muted-foreground text-xs">
-            Project-wide — every member of this project can use this provider.
-          </p>
-        )}
-        <div>
-          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}
-          </label>
-          <Input
-            type="text"
-            value={form.baseURL}
-            onChange={(e) => setField('baseURL', e.target.value)}
-            placeholder="https://api.example.com/v1"
-            className="h-9 font-mono text-xs"
-          />
-        </div>
-        <div>
-          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
-            <span className="text-muted-foreground/60 font-normal">(optional)</span>
-          </label>
-          <Input
-            type="text"
-            value={form.apiKey}
-            onChange={(e) => setField('apiKey', e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret',
-            )}
-            className="h-9 font-mono text-xs"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}
-            </label>
-            <Input
-              type="text"
-              value={form.modelId}
-              onChange={(e) => setField('modelId', e.target.value)}
-              placeholder="my-llm/foo-7b"
-              className="h-9 font-mono text-xs"
-            />
-          </div>
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1071JsxTextModelName')}
-            </label>
-            <Input
-              type="text"
-              value={form.modelName}
-              onChange={(e) => setField('modelName', e.target.value)}
-              placeholder={tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b',
+            <Field>
+              <FieldLabel htmlFor="custom-base-url">
+                {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}
+              </FieldLabel>
+              <Input
+                id="custom-base-url"
+                type="text"
+                value={form.baseURL}
+                onChange={(e) => setField('baseURL', e.target.value)}
+                placeholder="https://api.example.com/v1"
+                className="font-mono text-xs"
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="custom-api-key">
+                {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
+                <span className="text-muted-foreground/60 font-normal">(optional)</span>
+              </FieldLabel>
+              <Input
+                id="custom-api-key"
+                type="text"
+                value={form.apiKey}
+                onChange={(e) => setField('apiKey', e.target.value)}
+                placeholder={tHardcodedUi.raw(
+                  'componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret',
+                )}
+                className="font-mono text-xs"
+              />
+              {form.apiKey.trim() && (
+                <FieldDescription className="text-xs">
+                  Project-wide — every member of this project can use this provider.
+                </FieldDescription>
               )}
-              className="h-9 text-sm"
-            />
-          </div>
+            </Field>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="custom-model-id">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line1059JsxTextModelId',
+                  )}
+                </FieldLabel>
+                <Input
+                  id="custom-model-id"
+                  type="text"
+                  value={form.modelId}
+                  onChange={(e) => setField('modelId', e.target.value)}
+                  placeholder="my-llm/foo-7b"
+                  className="font-mono text-xs"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="custom-model-name">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line1071JsxTextModelName',
+                  )}
+                </FieldLabel>
+                <Input
+                  id="custom-model-name"
+                  type="text"
+                  value={form.modelName}
+                  onChange={(e) => setField('modelName', e.target.value)}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b',
+                  )}
+                />
+              </Field>
+            </div>
+          </FieldGroup>
+
+          <Button type="submit" size="sm" className="w-full" disabled={save.isPending}>
+            {save.isPending ? (
+              <>
+                <Loading className="size-3.5 shrink-0" />
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectProviderModal.line1094JsxTextGenerating',
+                )}
+              </>
+            ) : (
+              'Generate snippet'
+            )}
+          </Button>
         </div>
 
         {error && (
-          <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
+          <InfoBanner tone="destructive" icon={TriangleAlert} title="Check the fields">
+            {error}
+          </InfoBanner>
         )}
 
-        <Button type="submit" size="sm" className="px-4" disabled={save.isPending}>
-          {save.isPending ? (
-            <>
-              <Loading className="mr-1.5 size-3.5 shrink-0" />
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}
-            </>
-          ) : (
-            'Generate snippet'
-          )}
-        </Button>
+        {/* GAP C2 — a custom provider's traffic goes straight to `baseURL`
+            (see buildCustomProviderSnippet's `options.baseURL`), never through
+            the Kortix gateway — so it never appears in gateway logs, never
+            counts against gateway budgets, and never participates in routing
+            policy/fallback. Disclosed here since nothing else in this flow
+            says so. */}
+        <InfoBanner tone="warning" icon={Info}>
+          Requests to a custom provider go straight to its own endpoint — they don&apos;t pass
+          through the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or
+          routing.
+        </InfoBanner>
       </form>
     </div>
   );
@@ -289,57 +325,78 @@ function CustomProviderSnippetView({
   }
 
   return (
-    <div className="space-y-3 px-5 pt-3 pb-5">
-      <div className="border-kortix-green/30 bg-kortix-green/[0.04] rounded-2xl border px-3.5 py-3">
-        <div className="text-foreground text-sm font-medium">
-          {secretName ? 'API key saved' : 'Snippet ready'}
-        </div>
-        <p className="text-muted-foreground mt-0.5 text-xs">
-          {secretName ? (
-            <>
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs',
-              )}{' '}
-              <code className="bg-background rounded px-1 py-0.5 font-mono">{secretName}</code>{' '}
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn',
-              )}
-            </>
-          ) : (
-            tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow',
-            )
-          )}
-        </p>
-      </div>
+    <div className="space-y-4 px-5 pt-3 pb-5">
+      <InfoBanner
+        tone="success"
+        icon={Check}
+        title={secretName ? 'API key saved' : 'Snippet ready'}
+      >
+        {secretName ? (
+          <>
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs',
+            )}{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">{secretName}</code>{' '}
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn',
+            )}
+          </>
+        ) : (
+          tHardcodedUi.raw(
+            'componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow',
+          )
+        )}
+      </InfoBanner>
 
-      <div>
-        <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-muted-foreground/60 text-xs font-medium tracking-wide uppercase">
+      <InfoBanner tone="warning" icon={Info}>
+        This provider talks directly to its own endpoint, bypassing the Kortix gateway — no budgets,
+        logs, or routing apply to it.
+      </InfoBanner>
+
+      <div className="bg-popover overflow-hidden rounded-md border">
+        <div className="border-border/60 flex items-center justify-between gap-3 border-b px-4 py-2.5">
+          <span className="text-muted-foreground text-xs">
             {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1149JsxTextAddTo')}
-            <code className="font-mono normal-case">.opencode/opencode.jsonc</code>
+            <code className="font-mono">.opencode/opencode.jsonc</code>
           </span>
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs"
             onClick={handleCopy}
+            aria-label={copied ? 'Copied' : 'Copy snippet'}
+            className="text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors active:scale-[0.97]"
           >
-            <Copy className="h-3 w-3" />
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
+            <span className="relative inline-flex size-3.5 items-center justify-center">
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.span
+                  key={copied ? 'check' : 'copy'}
+                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="absolute inset-0 inline-flex items-center justify-center"
+                >
+                  {copied ? (
+                    <Check className="text-kortix-green size-3.5" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+          </button>
         </div>
-        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[280px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-snug">
+        <pre className="text-foreground max-h-[280px] overflow-auto px-4 py-3 font-mono text-xs leading-relaxed">
           {snippet}
         </pre>
       </div>
 
-      <p className="text-muted-foreground px-1 text-xs">
+      <p className="text-muted-foreground px-1 text-xs text-pretty">
         {tHardcodedUi.raw(
           'componentsProjectsProjectProviderModal.line1168JsxTextPasteThisIntoYourProjectRepoAposS',
         )}{' '}
-        <code className="bg-muted rounded px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}
+        <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
+          .opencode/opencode.jsonc
+        </code>{' '}
         {tHardcodedUi.raw(
           'componentsProjectsProjectProviderModal.line1170JsxTextAndCommitRestartAnyRunningSessionForThe',
         )}

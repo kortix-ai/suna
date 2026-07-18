@@ -84,6 +84,14 @@ spec:
             - .spec.dataFrom[]?.extract.conversionStrategy
             - .spec.dataFrom[]?.extract.decodingStrategy
             - .spec.dataFrom[]?.extract.metadataPolicy
+        # Open previews can pin commits from before central ALB hardening. Keep
+        # listener and WAF annotations under the compliance control plane so
+        # self-heal cannot restore public HTTP or remove the regional Web ACL.
+        - group: networking.k8s.io
+          kind: Ingress
+          jsonPointers:
+            - /metadata/annotations/alb.ingress.kubernetes.io~1listen-ports
+            - /metadata/annotations/alb.ingress.kubernetes.io~1wafv2-acl-arn
       syncPolicy:
         automated:
           prune: true
@@ -93,6 +101,7 @@ spec:
           # true in envs/preview/values.yaml), so Argo owns + prunes it on PR
           # close. NOT CreateNamespace=true, which leaves an orphaned empty shell.
           - ServerSideApply=true
+          - RespectIgnoreDifferences=true
         retry:
           limit: 5
           backoff:

@@ -2,286 +2,360 @@
  * Accounts & identity — authenticated. Maps to spec §4 (ME-*, ACCT-*, MEM-*, TOK-*).
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
-import { flow } from "../core/flow";
+import { flow } from '../core/flow';
 
-flow("ME-1", { domain: "accounts", tags: ["smoke"], routes: ["GET /v1/accounts/me"] }, async (ctx) => {
-  await ctx.step("OWNER sees own identity", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/me");
-    r.status(200).body().exists("$.user_id").exists("$.email");
-  });
-  await ctx.step("ANON → 401", async () => {
-    const r = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me");
-    r.status(401);
-  });
-});
+flow(
+  'ME-1',
+  { domain: 'accounts', tags: ['smoke'], routes: ['GET /v1/accounts/me'] },
+  async (ctx) => {
+    await ctx.step('OWNER sees own identity', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
+      r.status(200).body().exists('$.user_id').exists('$.email');
+    });
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/me');
+      r.status(401);
+    });
+  },
+);
 
-flow("ACCT-1", { domain: "accounts", routes: ["GET /v1/accounts"] }, async (ctx) => {
-  await ctx.step("list memberships", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts");
+flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx) => {
+  await ctx.step('list memberships', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
     r.status(200);
   });
 });
 
 flow(
-  "ACCT-2",
-  { domain: "accounts", routes: ["POST /v1/accounts", "GET /v1/accounts/:accountId"], },
+  'ACCT-2',
+  { domain: 'accounts', routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
   async (ctx) => {
-    let accountId = "";
-    await ctx.step("create team account → caller is owner", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts", { name: ctx.fixtures.name("team") });
-      r.status(201).body().has("$.personal_account", false).has("$.account_role", "owner");
+    let accountId = '';
+    await ctx.step('create team account → caller is owner', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts', { name: ctx.fixtures.name('team') });
+      r.status(201).body().has('$.is_primary_owner', true).has('$.account_role', 'owner');
       accountId = r.json<any>().account_id;
-      ctx.track("account", accountId);
+      ctx.track('account', accountId);
     });
-    await ctx.step("owner can read it", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId", { params: { accountId } });
-      r.status(200).body().has("$.account_id", accountId);
+    await ctx.step('owner can read it', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId', { params: { accountId } });
+      r.status(200).body().has('$.account_id', accountId);
     });
-    await ctx.step("NONMEMBER cannot read it → 403", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/accounts/:accountId", { params: { accountId } });
+    await ctx.step('NONMEMBER cannot read it → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/accounts/:accountId', { params: { accountId } });
       r.status(403);
     });
   },
 );
 
 flow(
-  "TOK-1",
-  { domain: "accounts", routes: ["POST /v1/accounts/tokens", "GET /v1/accounts/tokens", "DELETE /v1/accounts/tokens/:tokenId"], serial: true },
+  'TOK-1',
+  {
+    domain: 'accounts',
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+    ],
+    serial: true,
+  },
   async (ctx) => {
-    let tokenId = "";
-    await ctx.step("mint PAT → secret returned once", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: ctx.fixtures.name("tok") });
-      r.status(201).body().exists("$.secret_key").exists("$.token_id");
+    let tokenId = '';
+    await ctx.step('mint PAT → secret returned once', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('tok') });
+      r.status(201).body().exists('$.secret_key').exists('$.token_id');
       tokenId = r.json<any>().token_id;
     });
-    await ctx.step("list does not expose the secret", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/tokens");
+    await ctx.step('list does not expose the secret', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens');
       r.status(200);
     });
-    await ctx.step("revoke it", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/tokens/:tokenId", { params: { tokenId } });
-      r.status(200).body().has("$.ok", true);
+    await ctx.step('revoke it', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
+      r.status(200).body().has('$.ok', true);
     });
   },
 );
 
-flow("TOK-2", { domain: "accounts", routes: ["POST /v1/accounts/tokens"] }, async (ctx) => {
-  await ctx.step("missing name → 400", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", {});
+flow('TOK-2', { domain: 'accounts', routes: ['POST /v1/accounts/tokens'] }, async (ctx) => {
+  await ctx.step('missing name → 400', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {});
     r.status(400);
   });
 });
 
-flow("ACCT-4", { domain: "accounts", routes: ["PATCH /v1/accounts/:accountId"] }, async (ctx) => {
+flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }, async (ctx) => {
   const team = await ctx.fixtures.team();
-  await ctx.step("OWNER renames account", async () => {
+  await ctx.step('OWNER renames account', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .patch("/v1/accounts/:accountId", { name: ctx.fixtures.name("renamed") }, { params: { accountId: team.id } });
+      .patch(
+        '/v1/accounts/:accountId',
+        { name: ctx.fixtures.name('renamed') },
+        { params: { accountId: team.id } },
+      );
     r.status(200);
   });
-  await ctx.step("MEMBER cannot rename → 403", async () => {
-    const member = await team.addMember("member");
+  await ctx.step('MEMBER cannot rename → 403', async () => {
+    const member = await team.addMember('member');
     const r = await ctx.client
       .as(member)
-      .patch("/v1/accounts/:accountId", { name: "nope" }, { params: { accountId: team.id } });
+      .patch('/v1/accounts/:accountId', { name: 'nope' }, { params: { accountId: team.id } });
     r.status(403);
   });
 });
 
 flow(
-  "MEM-1",
-  { domain: "accounts", routes: ["GET /v1/accounts/:accountId/members", "POST /v1/accounts/:accountId/members"] },
+  'MEM-1',
+  {
+    domain: 'accounts',
+    routes: ['GET /v1/accounts/:accountId/members', 'POST /v1/accounts/:accountId/members'],
+  },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    await ctx.step("add an admin member → 201 status added", async () => {
-      await team.addMember("admin");
+    await ctx.step('add an admin member → 201 status added', async () => {
+      await team.addMember('admin');
     });
-    await ctx.step("list members → owner + admin present", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/members", { params: { accountId: team.id } });
+    await ctx.step('list members → owner + admin present', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
       r.status(200);
     });
-    await ctx.step("NONMEMBER cannot list → 403", async () => {
+    await ctx.step('NONMEMBER cannot list → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/accounts/:accountId/members", { params: { accountId: team.id } });
+        .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
       r.status(403);
     });
-    await ctx.step("plain MEMBER sees owners/admins + self only, sensitive columns redacted", async () => {
-      const memberA = await team.addMember("member");
-      const memberB = await team.addMember("member");
-      const r = await ctx.client
-        .as(memberA)
-        .get("/v1/accounts/:accountId/members", { params: { accountId: team.id } });
-      r.status(200);
-      const list = r.json<any[]>();
-      if (!list.some((m) => m.user_id === memberA.userId)) throw new Error("member cannot see their own row");
-      if (list.some((m) => m.user_id === memberB.userId)) throw new Error("member can enumerate other plain members");
-      for (const m of list) {
-        if (m.user_id === memberA.userId) continue;
-        if (m.active_pat_count !== 0 || m.has_verified_mfa !== false || m.groups.length !== 0)
-          throw new Error("sensitive member columns leaked to plain member");
-      }
-    });
+    await ctx.step(
+      "plain MEMBER sees the directory, with other members' sensitive columns redacted",
+      async () => {
+        const memberA = await team.addMember('member');
+        const memberB = await team.addMember('member');
+        const r = await ctx.client
+          .as(memberA)
+          .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
+        r.status(200);
+        const list = r.json<any[]>();
+        if (!list.some((m) => m.user_id === memberA.userId))
+          throw new Error('member cannot see their own row');
+        if (!list.some((m) => m.user_id === memberB.userId))
+          throw new Error('member directory omitted a teammate');
+        for (const m of list) {
+          if (m.user_id === memberA.userId) continue;
+          if (m.active_pat_count !== 0 || m.has_verified_mfa !== false || m.groups.length !== 0)
+            throw new Error('sensitive member columns leaked to plain member');
+        }
+      },
+    );
   },
 );
 
 flow(
-  "MEM-2",
-  { domain: "accounts", routes: ["POST /v1/accounts/:accountId/members"] },
+  'MEM-2',
+  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/members'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const member = await team.addMember("member");
-    await ctx.step("inviting an existing member again → 409", async () => {
+    const member = await team.addMember('member');
+    await ctx.step('inviting an existing member again → 409', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/accounts/:accountId/members", { email: member.email, role: "member" }, { params: { accountId: team.id } });
+        .post(
+          '/v1/accounts/:accountId/members',
+          { email: member.email, role: 'member' },
+          { params: { accountId: team.id } },
+        );
       r.status(409);
     });
-    await ctx.step("MEMBER cannot invite → 403", async () => {
+    await ctx.step('MEMBER cannot invite → 403', async () => {
       const r = await ctx.client
         .as(member)
-        .post("/v1/accounts/:accountId/members", { email: "x@ke2e.kortix.test", role: "member" }, { params: { accountId: team.id } });
+        .post(
+          '/v1/accounts/:accountId/members',
+          { email: 'x@ke2e.kortix.test', role: 'member' },
+          { params: { accountId: team.id } },
+        );
       r.status(403);
     });
   },
 );
 
 flow(
-  "MEM-3",
-  { domain: "accounts", routes: ["PATCH /v1/accounts/:accountId/members/:userId"] },
+  'MEM-3',
+  { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId/members/:userId'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const member = await team.addMember("member");
-    await ctx.step("OWNER promotes member → admin", async () => {
+    const member = await team.addMember('member');
+    await ctx.step('OWNER promotes member → admin', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/accounts/:accountId/members/:userId", { role: "admin" }, { params: { accountId: team.id, userId: member.userId! } });
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'admin' },
+          { params: { accountId: team.id, userId: member.userId! } },
+        );
       r.status(200);
     });
-    await ctx.step("invalid role → 400", async () => {
+    await ctx.step('invalid role → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/accounts/:accountId/members/:userId", { role: "wizard" }, { params: { accountId: team.id, userId: member.userId! } });
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'wizard' },
+          { params: { accountId: team.id, userId: member.userId! } },
+        );
       r.status(400);
     });
   },
 );
 
 flow(
-  "MEM-4",
-  { domain: "accounts", routes: ["DELETE /v1/accounts/:accountId/members/:userId"] },
+  'MEM-4',
+  { domain: 'accounts', routes: ['DELETE /v1/accounts/:accountId/members/:userId'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const member = await team.addMember("member");
-    await ctx.step("OWNER removes member → ok", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .del("/v1/accounts/:accountId/members/:userId", { params: { accountId: team.id, userId: member.userId! } });
-      r.status(200).body().has("$.ok", true);
+    const member = await team.addMember('member');
+    await ctx.step('OWNER removes member → ok', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: member.userId! },
+      });
+      r.status(200).body().has('$.ok', true);
     });
   },
 );
 
 flow(
-  "MEM-5",
-  { domain: "accounts", routes: ["POST /v1/accounts/:accountId/leave"] },
+  'MEM-5',
+  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/leave'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const member = await team.addMember("member");
-    await ctx.step("member leaves → ok", async () => {
-      const r = await ctx.client.as(member).post("/v1/accounts/:accountId/leave", {}, { params: { accountId: team.id } });
+    const member = await team.addMember('member');
+    await ctx.step('member leaves → ok', async () => {
+      const r = await ctx.client
+        .as(member)
+        .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(200);
     });
-    await ctx.step("non-member leave → 404", async () => {
+    await ctx.step('non-member leave → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/accounts/:accountId/leave", {}, { params: { accountId: team.id } });
+        .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(404);
     });
   },
 );
 
-flow("INV-1", { domain: "accounts", routes: ["GET /v1/accounts/:accountId/invites"] }, async (ctx) => {
-  const team = await ctx.fixtures.team();
-  await ctx.step("list pending invites", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/invites", { params: { accountId: team.id } });
-    r.status(200);
-  });
-  await ctx.step("plain MEMBER sees no pending invites", async () => {
-    const member = await team.addMember("member");
-    const r = await ctx.client.as(member).get("/v1/accounts/:accountId/invites", { params: { accountId: team.id } });
-    r.status(200);
-    if (r.json<any[]>().length !== 0) throw new Error("pending invites leaked to plain member");
-  });
-});
-
-flow("DEL-1", { domain: "accounts", routes: ["GET /v1/billing/account/deletion-status"] }, async (ctx) => {
-  await ctx.step("OWNER reads deletion status", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account/deletion-status");
-    r.status(200);
-  });
-});
-
-// ACCT-3 — GET a single account: a member reads it (200, with role + counts);
-// a NONMEMBER is forbidden (403).
 flow(
-  "ACCT-3",
-  { domain: "accounts", routes: ["GET /v1/accounts/:accountId"] },
+  'INV-1',
+  { domain: 'accounts', routes: ['GET /v1/accounts/:accountId/invites'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    await ctx.step("OWNER (member) reads the account → 200", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId", { params: { accountId: team.id } });
-      r.status(200).body().has("$.account_id", team.id).exists("$.role").exists("$.member_count");
-    });
-    await ctx.step("NONMEMBER → 403", async () => {
+    await ctx.step('list pending invites', async () => {
       const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get("/v1/accounts/:accountId", { params: { accountId: team.id } });
-      r.status(403);
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
+      r.status(200);
+    });
+    await ctx.step('plain MEMBER sees no pending invites', async () => {
+      const member = await team.addMember('member');
+      const r = await ctx.client
+        .as(member)
+        .get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
+      r.status(200);
+      if (r.json<any[]>().length !== 0) throw new Error('pending invites leaked to plain member');
     });
   },
 );
+
+flow(
+  'DEL-1',
+  { domain: 'accounts', routes: ['GET /v1/billing/account/deletion-status'] },
+  async (ctx) => {
+    await ctx.step('OWNER reads deletion status', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account/deletion-status');
+      r.status(200);
+    });
+  },
+);
+
+// ACCT-3 — GET a single account: a member reads it (200, with role + counts);
+// a NONMEMBER is forbidden (403).
+flow('ACCT-3', { domain: 'accounts', routes: ['GET /v1/accounts/:accountId'] }, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  await ctx.step('OWNER (member) reads the account → 200', async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .get('/v1/accounts/:accountId', { params: { accountId: team.id } });
+    r.status(200).body().has('$.account_id', team.id).exists('$.role').exists('$.member_count');
+  });
+  await ctx.step('NONMEMBER → 403', async () => {
+    const r = await ctx.client
+      .as(ctx.P.NONMEMBER)
+      .get('/v1/accounts/:accountId', { params: { accountId: team.id } });
+    r.status(403);
+  });
+});
 
 // TOK-3 — account-PAT revoke semantics: revoke → 200; unknown/already-revoked
 // → 404; a revoked secret used on any route → 401.
 flow(
-  "TOK-3",
+  'TOK-3',
   {
-    domain: "accounts",
+    domain: 'accounts',
     serial: true,
-    routes: ["POST /v1/accounts/tokens", "DELETE /v1/accounts/tokens/:tokenId", "GET /v1/accounts/me"],
+    routes: [
+      'POST /v1/accounts/tokens',
+      'DELETE /v1/accounts/tokens/:tokenId',
+      'GET /v1/accounts/me',
+    ],
   },
   async (ctx) => {
-    let tokenId = "";
-    let secret = "";
-    await ctx.step("mint an account PAT", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: ctx.fixtures.name("revoke") });
-      r.status(201).body().exists("$.secret_key").exists("$.token_id");
+    let tokenId = '';
+    let secret = '';
+    await ctx.step('mint an account PAT', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/tokens', { name: ctx.fixtures.name('revoke') });
+      r.status(201).body().exists('$.secret_key').exists('$.token_id');
       const j = r.json<any>();
       tokenId = j.token_id;
       secret = j.secret_key;
     });
-    await ctx.step("secret authenticates before revoke → 200", async () => {
-      const r = await ctx.client.withBearer(secret).get("/v1/accounts/me");
+    await ctx.step('secret authenticates before revoke → 200', async () => {
+      const r = await ctx.client.withBearer(secret).get('/v1/accounts/me');
       r.status(200);
     });
-    await ctx.step("revoke → 200 {ok:true}", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/tokens/:tokenId", { params: { tokenId } });
-      r.status(200).body().has("$.ok", true);
-    });
-    await ctx.step("revoke again (already revoked) → 404", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/tokens/:tokenId", { params: { tokenId } });
-      r.status(404);
-    });
-    await ctx.step("revoke an unknown id → 404", async () => {
+    await ctx.step('revoke → 200 {ok:true}', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/accounts/tokens/:tokenId", { params: { tokenId: "00000000-0000-0000-0000-000000000000" } });
+        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
+      r.status(200).body().has('$.ok', true);
+    });
+    await ctx.step('revoke again (already revoked) → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
       r.status(404);
     });
-    await ctx.step("revoked secret on any route → 401", async () => {
-      const r = await ctx.client.withBearer(secret).get("/v1/accounts/me");
+    await ctx.step('revoke an unknown id → 404', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId: '00000000-0000-0000-0000-000000000000' },
+      });
+      r.status(404);
+    });
+    await ctx.step('revoked secret on any route → 401', async () => {
+      const r = await ctx.client.withBearer(secret).get('/v1/accounts/me');
       r.status(401);
     });
   },
@@ -291,63 +365,69 @@ flow(
 // own project + the `/accounts/me` self-identity probe; every other surface
 // (a different project, project-list, account-level routes) → 403.
 flow(
-  "TOK-4",
+  'TOK-4',
   {
-    domain: "accounts",
+    domain: 'accounts',
     routes: [
-      "POST /v1/projects/:projectId/cli-token",
-      "DELETE /v1/projects/:projectId/cli-token/:tokenId",
-      "GET /v1/projects/:projectId",
-      "GET /v1/projects/:projectId/secrets",
-      "GET /v1/projects",
-      "GET /v1/accounts/me",
-      "GET /v1/accounts/tokens",
+      'POST /v1/projects/:projectId/cli-token',
+      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
+      'GET /v1/projects/:projectId',
+      'GET /v1/projects/:projectId/secrets',
+      'GET /v1/projects',
+      'GET /v1/accounts/me',
+      'GET /v1/accounts/tokens',
     ],
   },
   async (ctx) => {
     const projA = await ctx.fixtures.project();
     const projB = await ctx.fixtures.project();
-    let secret = "";
-    let tokenId = "";
-    await ctx.step("mint a project-scoped PAT on project A", async () => {
+    let secret = '';
+    let tokenId = '';
+    await ctx.step('mint a project-scoped PAT on project A', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/cli-token", { name: ctx.fixtures.name("proj-pat") }, { params: { projectId: projA.id } });
-      r.status(201).body().exists("$.secret_key").has("$.project_id", projA.id);
+        .post(
+          '/v1/projects/:projectId/cli-token',
+          { name: ctx.fixtures.name('proj-pat') },
+          { params: { projectId: projA.id } },
+        );
+      r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
       const j = r.json<any>();
       secret = j.secret_key;
       tokenId = j.token_id;
     });
-    const pat = () => ctx.client.withBearer(secret, "PAT_PROJ");
-    await ctx.step("allowed: GET its own project → 200", async () => {
-      const r = await pat().get("/v1/projects/:projectId", { params: { projectId: projA.id } });
+    const pat = () => ctx.client.withBearer(secret, 'PAT_PROJ');
+    await ctx.step('allowed: GET its own project → 200', async () => {
+      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projA.id } });
       r.status(200);
     });
     await ctx.step("allowed: GET its own project's secrets → 200", async () => {
-      const r = await pat().get("/v1/projects/:projectId/secrets", { params: { projectId: projA.id } });
+      const r = await pat().get('/v1/projects/:projectId/secrets', {
+        params: { projectId: projA.id },
+      });
       r.status(200);
     });
-    await ctx.step("allowed: self-identity probe /accounts/me → 200", async () => {
-      const r = await pat().get("/v1/accounts/me");
+    await ctx.step('allowed: self-identity probe /accounts/me → 200', async () => {
+      const r = await pat().get('/v1/accounts/me');
       r.status(200);
     });
-    await ctx.step("denied: a different project → 403", async () => {
-      const r = await pat().get("/v1/projects/:projectId", { params: { projectId: projB.id } });
+    await ctx.step('denied: a different project → 403', async () => {
+      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projB.id } });
       r.status(403);
     });
-    await ctx.step("denied: enumerate projects → 403", async () => {
-      const r = await pat().get("/v1/projects");
+    await ctx.step('denied: enumerate projects → 403', async () => {
+      const r = await pat().get('/v1/projects');
       r.status(403);
     });
-    await ctx.step("denied: account-level route → 403", async () => {
-      const r = await pat().get("/v1/accounts/tokens");
+    await ctx.step('denied: account-level route → 403', async () => {
+      const r = await pat().get('/v1/accounts/tokens');
       r.status(403);
     });
-    await ctx.step("revoke the project token → 200", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/cli-token/:tokenId", { params: { projectId: projA.id, tokenId } });
-      r.status(200).body().has("$.ok", true);
+    await ctx.step('revoke the project token → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
+        params: { projectId: projA.id, tokenId },
+      });
+      r.status(200).body().has('$.ok', true);
     });
   },
 );

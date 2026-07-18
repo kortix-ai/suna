@@ -75,11 +75,20 @@ export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/** Every sandbox provider the current platform can select or emit. */
+/**
+ * Every sandbox provider the current platform can select or emit.
+ *
+ * 'local-docker' (hyphenated) is EXPERIMENTAL — same-machine Docker
+ * containers, see apps/api/src/platform/providers/local-docker.ts. It is a
+ * deliberately DIFFERENT identifier from the retired 'local_docker'
+ * (underscore) single-instance provider ripped out in 9cbf57dda — the schema
+ * test suite asserts the old identifier stays rejected.
+ */
 export const SANDBOX_PROVIDERS = [
   'daytona',
   'platinum',
   'e2b',
+  'local-docker',
 ] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
@@ -445,7 +454,9 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse']),
+  session_mode: z.enum(['fresh', 'reuse', 'pinned']),
+  /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
+  session_id: z.string().nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

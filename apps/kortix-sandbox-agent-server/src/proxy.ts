@@ -32,7 +32,10 @@ const STRIP_REQUEST_HEADERS = new Set([
 
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 
-const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty\/([^/]+)\/connect\/?$/
+// The id segment is optional: connecting with no id (or an id the daemon
+// doesn't recognize) still opens a working terminal — see the lookup-or-
+// create handling in the `open` websocket handler below.
+const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty(?:\/([^/]+))?\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
@@ -50,7 +53,9 @@ const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 
 type OpencodeWsData = {
-  ptyId: string
+  // Absent when the client connects without an id — lookup-or-create then
+  // mints a brand new pty (see `websocket.open` below).
+  ptyId?: string
   handle?: PtyAttachHandle
 }
 
@@ -74,7 +79,9 @@ function prepareKortixPtyWsUpgrade(
   if (!match) {
     return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
   }
-  const ptyId = match[1]!
+  // Absent when the client connects with no id segment at all (e.g.
+  // `/kortix/pty/connect`) — lookup-or-create mints a fresh pty either way.
+  const ptyId = match[1]
 
   if (!cfg.sandboxToken) {
     logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured')
@@ -355,9 +362,20 @@ export function startProxy(
       return app.fetch(req, srv)
     },
     websocket: {
+      // Lookup-or-create: a normal "open a terminal" must always succeed
+      // with a working shell. A requested id that names a running pty
+      // reattaches (a genuine reconnect resumes the same shell +
+      // scrollback). A missing/unknown/absent id — the daemon restarted
+      // and forgot its in-memory registry, a stale id survived a reload, or
+      // no id was supplied at all — mints a fresh pty instead of hard-
+      // closing with "pty not found". Only a *known-exited* pty (the shell
+      // itself ended, e.g. the user typed `exit`) closes without recreating
+      // — that's a real end-of-session the client should surface, not
+      // silently paper over.
       open(ws: ServerWebSocket<OpencodeWsData>) {
         const state = ws.data
-        const handle = ptyRegistry.attach(state.ptyId, {
+        const requestedId = state.ptyId
+        const result = ptyRegistry.attachOrCreate(requestedId, {
           onData: (chunk) => {
             try { ws.send(chunk) } catch {}
           },
@@ -365,13 +383,22 @@ export function startProxy(
             try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
           },
         })
-        if (!handle) {
-          try { ws.close(1011, 'pty not found') } catch {}
+        if (result.kind === 'exited') {
+          try {
+            ws.close(1000, `pty exited${result.meta.exitCode === undefined ? '' : ` (${result.meta.exitCode})`}`)
+          } catch {}
           return
         }
-        state.handle = handle
-        if (handle.replay) {
-          try { ws.send(handle.replay) } catch {}
+        state.ptyId = result.meta.id
+        state.handle = result.handle
+        if (result.kind === 'created') {
+          logger.info('[proxy] pty websocket lookup-or-create minted a new pty', {
+            requestedId: requestedId ?? null,
+            id: result.meta.id,
+          })
+        }
+        if (result.handle.replay) {
+          try { ws.send(result.handle.replay) } catch {}
         }
       },
       message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {

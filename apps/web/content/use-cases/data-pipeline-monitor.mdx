@@ -1,0 +1,167 @@
+---
+title: "How we monitor our data pipelines and warehouse health"
+description: The pipeline-health agent we run on Kortix — connected to the warehouse and GitHub. Every hour it checks table freshness, row-count anomalies, and schema drift, alerts Slack, and drafts a GitHub issue with the likely cause. It never touches the data.
+date: "2026-04-30"
+author: team
+tags:
+  - Data
+  - Case Study
+  - Enterprise
+template: data-pipeline-monitor
+---
+
+A pipeline can fail quietly. A load job silently stops appending rows, a source
+schema changes upstream and half the fields come through null, a table that
+should refresh every hour hasn't moved since yesterday. None of that throws an
+error anyone sees — the dashboards built on top of it just start being wrong,
+and usually the first person to notice is whoever's report looks off in a
+stakeholder meeting.
+
+We run a pipeline-monitor agent on Kortix that checks the warehouse itself,
+every hour: is every table as fresh as its SLA requires, does today's row count
+look like the rest of the trend, has the schema changed under anyone, did a load
+job fail. It only reads the warehouse. When something is wrong, it posts to the
+data team's Slack channel and drafts a GitHub issue with its best guess at the
+cause. This is how we watch our own warehouse.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Hourly cron</Fact>
+  <Fact label="Connected systems">Postgres warehouse · Slack · GitHub</Fact>
+  <Fact label="Mode">Read-only · alert + draft issue, nothing else</Fact>
+</KeyFacts>
+
+## The problem
+
+Warehouse health doesn't announce itself. A load job can fail without an
+exception if it's built to skip a bad batch and move on. A table can go stale
+because an upstream cron got disabled, not because anything crashed. A schema
+can drift because a source API added a field, and the load still "succeeds" —
+it just drops or nulls what it doesn't recognize. Every one of these looks fine
+from the outside until a downstream query returns something wrong.
+
+The common approaches don't hold up. Dashboards built on the data can't tell you
+the data itself is broken — they just render whatever's there, wrong or not. A
+"did the job run" check confirms the process exited zero, not that the table it
+wrote actually looks right. Someone eyeballing row counts in a spreadsheet
+catches it eventually, usually after a downstream report has already gone out
+wrong. And this is a different failure mode from an application throwing an
+error mid-request — the pipeline can succeed and the warehouse can still be
+unhealthy.
+
+## What we built
+
+On Kortix, an hourly cron triggers an agent. It spawns a fresh session with
+read-only access to the warehouse and checks every monitored table against its
+freshness SLA, compares today's row count to the table's own trailing baseline,
+diffs the current schema against the last-seen shape, and looks for loads that
+failed or silently stalled. When it finds something out of bounds, it posts an
+alert to the data team's Slack channel with the affected table, the anomaly, and
+the most likely cause, and drafts a GitHub issue with the same diagnosis so the
+incident is tracked. It never writes to the warehouse — the alert and the draft
+issue are the only outputs.
+
+## How it works
+
+<Steps>
+<Step title="Run on an hourly cron">
+
+A **cron trigger** fires the agent once an hour. Each firing spawns a fresh
+**session** in its own sandbox. One hour maps to one run on one disposable
+machine, so every check is recomputed from the warehouse's current state and
+nothing carries over between runs.
+
+</Step>
+<Step title="Give the agent the health rules">
+
+What counts as stale, what a normal row-count trend looks like, and how a
+schema is expected to shape up live as **skills** and **memory** that travel
+with the agent: per-table freshness SLAs, the tables that are expected to grow
+in bursts versus steadily, and past incidents worth checking new anomalies
+against. When we tighten an SLA or learn a table has a legitimate weekly gap, we
+write it down and the checks adjust.
+
+</Step>
+<Step title="Connect the warehouse read-only">
+
+Through a scoped **connector**, brokered server-side so no raw credential
+reaches the model, the agent reads the warehouse directly:
+
+- **Table freshness** — the most recent load timestamp per monitored table,
+  checked against its SLA.
+- **Row counts** — today's count against the table's own trailing baseline, to
+  catch a load that ran short or doubled up.
+- **Schema state** — the current column set and types, diffed against the
+  last-seen shape, to catch drift before it breaks a downstream query.
+- **Load history** — recent job runs, to catch a failed or silently stalled
+  load.
+
+</Step>
+<Step title="Alert and draft, never fix">
+
+When a check comes back out of bounds, the agent posts to **Slack** — the
+table, the anomaly, and its best guess at the cause — and drafts a **GitHub**
+issue with the same diagnosis, using a scoped token so the incident lands as a
+trackable draft, not a merged change. It does not touch the pipeline, the
+schema, or the data.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** across the entire warehouse. It has no write access
+to any table, schema, or pipeline configuration — it can only observe and
+report. Its outputs are exactly two: the Slack alert and the drafted GitHub
+issue. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let the warehouse watch itself">
+
+With that in place, every hour brings a clean pass over the warehouse: freshness
+checked against SLA, row counts checked against trend, schema checked against
+the last-seen shape, loads checked for failures. Anything out of bounds shows
+up in Slack within the hour, with a GitHub issue already drafted and the likely
+cause attached. The data team decides what to do; nothing changes on its own.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  An hourly **cron** spawns a session with a read-only **connector** into the
+  Postgres warehouse. The SLAs and baselines live as **skills** and **memory**.
+  The agent reads everything and writes nothing but the Slack alert and a
+  drafted GitHub issue.
+</Callout>
+
+## Guardrails
+
+The agent reads across the entire warehouse, so its access is scoped and
+strictly one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only the warehouse it's scoped to, and only the Slack alert and the
+  drafted issue leave the sandbox.
+- **Scoped secrets.** The warehouse credential and the GitHub token are
+  encrypted in the Secrets Manager and injected into the sandbox at runtime,
+  never exposed to the model or the logs.
+- **Read-only, no exceptions.** The connector into the warehouse is read-only.
+  The agent cannot modify a row, alter a schema, or touch a pipeline — it can
+  only alert and draft.
+- **Draft, not decide.** The GitHub issue is a draft with a diagnosis attached,
+  never auto-closed or auto-assigned. A human owns the incident from there.
+- **Everything is code.** The agent's SLAs, baselines, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every hour" label="Freshness, row counts, and schema rechecked against the live warehouse" />
+  <Stat value="Read-only" label="Nothing written to any table, schema, or pipeline" />
+  <Stat value="2 outputs" label="A Slack alert and a drafted GitHub issue, nothing else" />
+</StatGrid>
+
+Warehouse problems that used to surface as a wrong number in someone's dashboard
+now show up as an hourly health check with a specific table, a specific anomaly,
+and a likely cause — already in Slack and already drafted as an issue. The agent
+only reads and reports; the data team decides what to fix.

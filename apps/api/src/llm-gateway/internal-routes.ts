@@ -4,8 +4,10 @@ import type {
   ModelRouteInput,
   UsageEvent,
 } from '@kortix/llm-gateway';
+import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { assertBillingActive } from '../billing/services/billing-gate';
+import { logger } from '../lib/logger';
 import { checkBudget } from './budgets';
 import {
   authenticatePrincipal,
@@ -13,11 +15,10 @@ import {
   persistGatewayTrace,
   recordGatewayUsage,
 } from './hooks';
-import { matchesInternalToken } from './internal-auth';
+import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
-import { logger } from '../lib/logger';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
 // wrapper over the shared in-process hooks in ./hooks — the standalone service
@@ -26,6 +27,10 @@ import { logger } from '../lib/logger';
 export function createInternalGatewayRoutes() {
   const app = new Hono();
   const internalToken = process.env.GATEWAY_INTERNAL_TOKEN;
+
+  for (const warning of weakInternalTokenWarnings(internalToken)) {
+    logger.warn(`[gateway-internal-auth] ${warning}`);
+  }
 
   app.use('*', async (c, next) => {
     if (!internalToken) return c.json({ error: 'internal gateway disabled' }, 503);
@@ -58,19 +63,41 @@ export function createInternalGatewayRoutes() {
 
   app.post('/resolve-upstream', async (c) => {
     const { principal, model } = await c.req.json();
-    const candidates = await resolveCandidates(
-      principal as AuthedPrincipal,
-      typeof model === 'string' ? model : '',
-    );
-    return c.json({ candidates });
+    try {
+      const candidates = await resolveCandidates(
+        principal as AuthedPrincipal,
+        typeof model === 'string' ? model : '',
+      );
+      return c.json({ candidates });
+    } catch (err) {
+      // resolveCandidates throws a GatewayResolutionError (instead of returning
+      // []) when it can pin down WHY there's no upstream — provider_not_connected
+      // ("Connect Codex to use this model."), plan_upgrade_required, expired
+      // Codex OAuth, model_disabled_on_deployment, model_not_found. These are
+      // EXPECTED, user-facing resolution outcomes the gateway pipeline is
+      // designed to catch and surface as a clean 400 with an actionable
+      // suggestion (see packages/llm-gateway/src/pipeline/handler.ts's dispatch
+      // loop, which treats a thrown GatewayResolutionError as "no candidates,
+      // with a reason"). Letting it propagate here would (a) turn an expected
+      // 4xx into a 500 to the gateway pod, (b) get captured to Sentry/Better
+      // Stack Errors as an unhandled exception (the "Connect Codex" spike,
+      // incident 991624588), and (c) be retried 3x by the api-client. Instead,
+      // return the typed error in a 200 body so the api-client can re-throw it
+      // as a GatewayResolutionError and the in-process hook contract holds.
+      if (err instanceof GatewayResolutionError) {
+        logger.warn(`[gateway-internal] resolution failed for "${model}": ${err.code} — ${err.message}`);
+        return c.json({
+          candidates: [],
+          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion },
+        });
+      }
+      throw err;
+    }
   });
 
   app.post('/resolve-route', async (c) => {
     const { principal, input } = await c.req.json();
-    const route = await resolveGatewayRoute(
-      principal as AuthedPrincipal,
-      input as ModelRouteInput,
-    );
+    const route = await resolveGatewayRoute(principal as AuthedPrincipal, input as ModelRouteInput);
     return c.json({ route });
   });
 
@@ -92,8 +119,8 @@ export function createInternalGatewayRoutes() {
   app.post('/billing', async (c) => {
     const { accountId } = await c.req.json();
     try {
-      await assertBillingActive(accountId);
-      return c.json({ active: true });
+      const result = await assertBillingActive(accountId);
+      return c.json({ active: true, holdUsd: result?.holdUsd });
     } catch (err) {
       return c.json({
         active: false,

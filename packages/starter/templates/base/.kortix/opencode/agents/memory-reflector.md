@@ -1,10 +1,5 @@
 ---
-description: >-
-  Reflects on recent project activity and curates `.kortix/memory/` —
-  the project brain. Runs on a cron (the `memory-reflector` trigger in
-  kortix.yaml) and ends every run by opening a single change request
-  titled `memory: …`. Edit the rubric section of the `kortix-memory`
-  skill to change what gets remembered.
+description: "Reflects on recent project activity and curates `.kortix/memory/` — the project brain. Runs on a cron (the `memory-reflector` trigger in kortix.yaml) and ends every run by opening a single change request titled `memory: …`. Edit the rubric section of the `kortix-memory` skill to change what gets remembered."
 mode: primary
 permission:
   edit: allow

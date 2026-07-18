@@ -65,10 +65,12 @@ or run `kortix ship` to create the cloud project and push in one step.
 
 ## Self-host
 
-One command surface manages two deployment targets. Docker is the backward-
-compatible default for local and smaller installations; `aws-vpc` is the
-enterprise target and records only AWS coordinates and release policy locally.
-Secrets for AWS deployments are written directly to the customer account.
+One command surface manages two deployment targets. `docker` ("this machine")
+is the backward-compatible default for local and smaller installations; `aws-ec2`
+("AWS EC2") is the enterprise target and records only AWS coordinates and release
+policy locally. Secrets for AWS deployments are written directly to the customer
+account. (The AWS target was previously named `aws-vpc`; existing instance configs
+that still say `aws-vpc` on disk keep working — they load as `aws-ec2`.)
 
 ### Docker
 
@@ -95,13 +97,13 @@ Edge Runtime, Kong, Studio, Supavisor, Logflare, and Vector. Published ports
 bind to loopback by default, and all generated secret material is stored in the
 owner-only instance `.env`.
 
-### Enterprise AWS VPC
+### Enterprise AWS EC2
 
 ```sh
 export AWS_PROFILE=customer
 
 ./bin/kortix self-host init \
-  --target aws-vpc \
+  --target aws-ec2 \
   --instance customer \
   --region us-west-2 \
   --channel stable \

@@ -1,30 +1,39 @@
+import {
+  CATALOG,
+  type ProviderAuthRequirement,
+  isProviderAuthSatisfied,
+  providerAuthRequirement,
+} from '@kortix/llm-catalog';
 import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
-import { CATALOG } from '@kortix/llm-catalog';
 
 import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 
 export type ProviderListResponse = SdkProviderListResponse;
 
 /**
- * Provider → credential env-var mapping, derived from the shared models.dev
- * catalog. Mirrors the `{ id, envVars }` projection of the web's `LLM_PROVIDERS`
- * (which is itself built from the same catalog), so connection inference is
- * identical without depending on the web-only provider-modal catalog module.
+ * Provider → Kortix-owned auth requirement, derived from the shared
+ * models.dev catalog via `providerAuthRequirement` (NOT the raw catalog
+ * `env` list — see that function's doc comment for why: models.dev lists
+ * every auth method the upstream SDK supports, not what Kortix actually
+ * reads). Mirrors the `{ id, authRequirement }` projection of the web's
+ * `LLM_PROVIDERS` (built from the same catalog + the same override table),
+ * so connection inference is identical without depending on the web-only
+ * provider-modal catalog module.
  */
-export const LLM_PROVIDER_CREDENTIALS: Array<{ id: string; envVars: string[] }> =
-  CATALOG.providers.map((provider) => ({
-    id: provider.id,
-    envVars: provider.env ?? [],
-  }));
+export const LLM_PROVIDER_CREDENTIALS: Array<{
+  id: string;
+  authRequirement: ProviderAuthRequirement;
+}> = CATALOG.providers.map((provider) => ({
+  id: provider.id,
+  authRequirement: providerAuthRequirement(provider),
+}));
 
 // In gateway mode OpenCode must see Kortix as the single LLM provider. Native
 // providers, including OpenCode Zen, belong only to native mode.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
-export function normalizeProviderList(
-  providers: ProviderListResponse,
-): ProviderListResponse {
+export function normalizeProviderList(providers: ProviderListResponse): ProviderListResponse {
   const modernAll = Array.isArray(providers.all) ? providers.all : [];
   const modernConnected = Array.isArray(providers.connected) ? providers.connected : [];
   if (modernAll.length > 0 || modernConnected.length > 0) {
@@ -70,12 +79,7 @@ export function providerListHasModels(providers: ProviderListResponse | undefine
   const all = Array.isArray(normalized.all) ? normalized.all : [];
   const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   if (connected.length === 0) return false;
-  return all.some(
-    (p) =>
-      connected.includes(p.id) &&
-      p.models &&
-      Object.keys(p.models).length > 0,
-  );
+  return all.some((p) => connected.includes(p.id) && p.models && Object.keys(p.models).length > 0);
 }
 
 export function providerListHasGateway(providers: ProviderListResponse | undefined): boolean {
@@ -111,7 +115,7 @@ export function filterToNativeProviders(providers: ProviderListResponse): Provid
 export function mergeProjectSecretConnectedProviders(
   providers: ProviderListResponse,
   secretNames: Set<string>,
-  providerCredentials: Array<{ id: string; envVars: string[] }>,
+  providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
 ): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
@@ -121,8 +125,7 @@ export function mergeProjectSecretConnectedProviders(
   for (const provider of providerCredentials) {
     if (
       allIds.has(provider.id) &&
-      provider.envVars.length > 0 &&
-      provider.envVars.every((envVar) => secretNames.has(envVar))
+      isProviderAuthSatisfied(provider.authRequirement, (envVar) => secretNames.has(envVar))
     ) {
       connected.add(provider.id);
     }
@@ -138,15 +141,10 @@ export function mergeProjectSecretConnectedProviders(
   return { ...normalized, connected: [...connected] };
 }
 
-export function connectedGatewayProviderIdsFromSecretNames(
-  secretNames: Set<string>,
-): Set<string> {
+export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
   const ids = new Set<string>();
   for (const provider of LLM_PROVIDER_CREDENTIALS) {
-    if (
-      provider.envVars.length > 0 &&
-      provider.envVars.every((envVar) => secretNames.has(envVar))
-    ) {
+    if (isProviderAuthSatisfied(provider.authRequirement, (envVar) => secretNames.has(envVar))) {
       ids.add(provider.id);
     }
   }
@@ -163,11 +161,13 @@ export function projectLlmCatalogToProviderList(
   return {
     default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
     connected: ['kortix'],
-    all: [{
-      id: 'kortix',
-      name: 'Kortix',
-      source: 'gateway',
-      models,
-    }],
+    all: [
+      {
+        id: 'kortix',
+        name: 'Kortix',
+        source: 'gateway',
+        models,
+      },
+    ],
   } as unknown as ProviderListResponse;
 }

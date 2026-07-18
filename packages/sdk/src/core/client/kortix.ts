@@ -322,26 +322,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
 
-      /** Marketplace install/updates — commits an item's files (+ lock) straight onto the default branch. */
-      marketplace: {
-        list: () => P.listInstalledMarketplaceItems(projectId),
-        install: (id: string) => P.installMarketplaceItem(projectId, id),
-        updates: () => P.getMarketplaceUpdates(projectId),
-        update: (name: string) => P.updateMarketplaceItem(projectId, name),
-        updateAll: () => P.updateAllMarketplaceItems(projectId),
-        remove: (name: string) => P.removeMarketplaceItem(projectId, name),
-      },
-
-      /** `registry.*` — compatibility alias of `marketplace.*` (identical server-side handlers). */
-      registry: {
-        list: () => P.listInstalledRegistryItems(projectId),
-        install: (id: string) => P.installRegistryItem(projectId, id),
-        updates: () => P.getRegistryUpdates(projectId),
-        update: (name: string) => P.updateRegistryItem(projectId, name),
-        updateAll: () => P.updateAllRegistryItems(projectId),
-        remove: (name: string) => P.removeRegistryItem(projectId, name),
-      },
-
       secrets: {
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
@@ -400,6 +380,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) =>
           P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
+        auth: {
+          discover: (...a: DropFirst<Parameters<typeof P.discoverConnectorAuth>>) =>
+            P.discoverConnectorAuth(projectId, ...a),
+        },
         setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
           P.setConnectorName(projectId, ...a),
         setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>
@@ -554,8 +538,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.previewGatewayRoute(projectId, input),
         },
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
-        playground: (prompt: string, models: string[]) =>
-          P.runGatewayPlayground(projectId, prompt, models),
+        playground: (prompt: string, models: string[], system?: string) =>
+          P.runGatewayPlayground(projectId, prompt, models, system),
       },
 
       /** Slack + email + Meet channel integrations. */

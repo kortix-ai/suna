@@ -9,6 +9,7 @@ import {
   normalizeHttp,
   normalizeMcp,
   normalizeOpenApi,
+  normalizePostmanCollection,
 } from '../executor/normalize';
 
 describe('normalizeOpenApi', () => {
@@ -86,6 +87,155 @@ describe('normalizeOpenApi', () => {
   test('empty / malformed doc → []', () => {
     expect(normalizeOpenApi(null)).toEqual([]);
     expect(normalizeOpenApi({})).toEqual([]);
+  });
+
+  test('memoizes repeated schema refs within a large document', () => {
+    const shared = {
+      type: 'object',
+      properties: { id: { type: 'string' }, nested: { $ref: '#/components/schemas/Nested' } },
+    };
+    const actions = normalizeOpenApi({
+      paths: {
+        '/a': { get: { responses: { '200': { content: { 'application/json': { schema: { $ref: '#/components/schemas/Shared' } } } } } } },
+        '/b': { get: { responses: { '200': { content: { 'application/json': { schema: { $ref: '#/components/schemas/Shared' } } } } } } },
+      },
+      components: { schemas: { Shared: shared, Nested: { type: 'object', properties: { value: { type: 'string' } } } } },
+    });
+    expect(actions[0]!.outputSchema).toBe(actions[1]!.outputSchema);
+    expect((actions[0]!.outputSchema as any).properties.nested.properties.value.type).toBe('string');
+  });
+
+  test('bounds serialized schema expansion for deeply shared OpenAPI graphs', () => {
+    const schemas: Record<string, unknown> = {
+      Level0: { type: 'object', properties: { value: { type: 'string' } } },
+    };
+    for (let level = 1; level <= 18; level++) {
+      schemas[`Level${level}`] = {
+        type: 'object',
+        properties: {
+          left: { $ref: `#/components/schemas/Level${level - 1}` },
+          right: { $ref: `#/components/schemas/Level${level - 1}` },
+        },
+      };
+    }
+    const [action] = normalizeOpenApi({
+      paths: { '/tree': { get: { responses: { '200': { content: { 'application/json': { schema: { $ref: '#/components/schemas/Level18' } } } } } } } },
+      components: { schemas },
+    });
+    const serialized = JSON.stringify(action!.outputSchema);
+    expect(serialized.length).toBeLessThan(100_000);
+    expect(serialized).toContain('value');
+  });
+});
+
+describe('normalizePostmanCollection', () => {
+  const collection = {
+    info: {
+      name: 'HubSpot Contacts',
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    },
+    variable: [
+      { key: 'baseUrl', value: 'https://api.hubapi.com', type: 'string' },
+      { key: 'privateToken', value: 'must-not-be-imported', type: 'secret' },
+      { key: 'apiKey', value: 'also-must-not-be-imported', type: 'string' },
+    ],
+    item: [
+      {
+        name: 'Contacts',
+        item: [
+          {
+            name: 'Get contact',
+            request: {
+              method: 'GET',
+              header: [
+                { key: 'X-Trace', value: '{{traceId}}' },
+                { key: 'Authorization', value: 'Bearer {{privateToken}}' },
+                { key: 'X-API-Key', value: '{{apiKey}}' },
+              ],
+              url: {
+                raw: '{{baseUrl}}/crm/v3/objects/contacts/:contactId?archived={{archived}}',
+                variable: [{ key: 'contactId', value: '' }],
+                query: [{ key: 'archived', value: '{{archived}}' }],
+              },
+            },
+            response: [{ code: 200, body: '{"id":"123","archived":false}', header: [{ key: 'Content-Type', value: 'application/json' }] }],
+          },
+          {
+            name: 'Create contact',
+            request: {
+              method: 'POST',
+              url: '{{baseUrl}}/crm/v3/objects/contacts',
+              body: { mode: 'raw', raw: '{"properties":{"email":"person@example.com"}}', options: { raw: { language: 'json' } } },
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  test('normalizes nested requests, variables, schemas, risk, and safe bindings', () => {
+    const result = normalizePostmanCollection(collection);
+    expect(result.warnings).toEqual([]);
+    expect(result.actions).toHaveLength(2);
+    const byPath = Object.fromEntries(result.actions.map((action) => [action.path, action]));
+
+    const get = byPath['contacts.get_contact']!;
+    expect(get.risk).toBe('read');
+    expect(get.binding).toEqual({
+      kind: 'postman',
+      method: 'GET',
+      url: 'https://api.hubapi.com/crm/v3/objects/contacts/{{contactId}}?archived={{archived}}',
+      headers: { 'X-Trace': '{{traceId}}' },
+      bodyMode: null,
+    });
+    expect((get.inputSchema as any).required.sort()).toEqual(['archived', 'contactId', 'traceId']);
+    expect((get.outputSchema as any).properties.id.type).toBe('string');
+
+    const create = byPath['contacts.create_contact']!;
+    expect(create.risk).toBe('write');
+    expect((create.inputSchema as any).properties.body).toMatchObject({ type: 'object' });
+    expect((create.inputSchema as any).required).toContain('body');
+    expect(JSON.stringify(result)).not.toContain('must-not-be-imported');
+    expect(JSON.stringify(result)).not.toContain('also-must-not-be-imported');
+    expect(JSON.stringify(result)).not.toContain('Authorization');
+    expect(JSON.stringify(result)).not.toContain('X-API-Key');
+  });
+
+  test('drops credential-like query parameters instead of persisting inline values', () => {
+    const result = normalizePostmanCollection({
+      info: { name: 'credentials', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      item: [{
+        name: 'list',
+        request: {
+          method: 'GET',
+          url: 'https://example.com/items?hapikey=inline-secret&limit={{limit}}',
+        },
+      }],
+    });
+    expect((result.actions[0]!.binding as any).url).toBe('https://example.com/items?limit={{limit}}');
+    expect(JSON.stringify(result)).not.toContain('inline-secret');
+    expect(result.warnings.join('\n')).toContain('credential-like query parameter');
+  });
+
+  test('reports scripts and unsupported file bodies without executing them', () => {
+    const result = normalizePostmanCollection({
+      info: { name: 'unsafe', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      event: [{ listen: 'prerequest', script: { exec: ['throw new Error("never")'] } }],
+      item: [{ name: 'upload', request: { method: 'POST', url: 'https://example.com/upload', body: { mode: 'file', file: { src: '/tmp/x' } } } }],
+    });
+    expect(result.actions).toHaveLength(1);
+    expect(result.warnings.join('\n')).toContain('pre-request');
+    expect(result.warnings.join('\n')).toContain('file');
+  });
+
+  test('rejects non-collection documents precisely', () => {
+    expect(() => normalizePostmanCollection({ openapi: '3.0.0', paths: {} })).toThrow('Postman Collection');
+    expect(() => normalizePostmanCollection({
+      info: {
+        schema: 'https://attacker.example/schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
+      item: [],
+    })).toThrow('Postman Collection');
   });
 });
 

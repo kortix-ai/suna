@@ -187,12 +187,18 @@ importers:
       '@kortix/executor-sdk':
         specifier: workspace:*
         version: link:../../packages/executor-sdk
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../../packages/llm-catalog
       '@kortix/manifest-schema':
         specifier: workspace:*
         version: link:../../packages/manifest-schema
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter
@@ -222,38 +228,6 @@ importers:
       electron-builder:
         specifier: ^25.1.8
         version: 25.1.8(electron-builder-squirrel-windows@25.1.8)
-
-  apps/enterprise-release:
-    dependencies:
-      '@kortix/cli':
-        specifier: workspace:*
-        version: link:../cli
-      '@kortix/enterprise-updater':
-        specifier: workspace:*
-        version: link:../enterprise-updater
-      '@tufjs/canonical-json':
-        specifier: 2.0.0
-        version: 2.0.0
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.1.0
-        version: 1.3.14
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
-  apps/enterprise-updater:
-    dependencies:
-      tuf-js:
-        specifier: 5.0.1
-        version: 5.0.1
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.1.0
-        version: 1.3.14
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
 
   apps/kortix-sandbox-agent-server:
     dependencies:
@@ -695,9 +669,6 @@ importers:
       '@embedpdf/models':
         specifier: ^2.14.4
         version: 2.14.4
-      '@embedpdf/pdfium':
-        specifier: 2.14.4
-        version: 2.14.4
       '@embedpdf/plugin-document-manager':
         specifier: ^2.14.4
         version: 2.14.4(@embedpdf/core@2.14.4)(preact@10.29.4)(react-dom@19.1.0)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39)
@@ -1052,6 +1023,9 @@ importers:
       katex:
         specifier: ^0.16.22
         version: 0.16.47
+      lodash:
+        specifier: ^4.18.1
+        version: 4.18.1
       lucide-react:
         specifier: ^0.479.0
         version: 0.479.0(react@19.1.0)
@@ -1077,7 +1051,7 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       papaparse:
-        specifier: ^5.5.4
+        specifier: ^5.5.2
         version: 5.5.4
       pdf-lib:
         specifier: ^1.17.1
@@ -1130,6 +1104,9 @@ importers:
       react-resizable-panels:
         specifier: ^3.0.6
         version: 3.0.6(react-dom@19.1.0)(react@19.1.0)
+      react-responsive-carousel:
+        specifier: ^3.2.23
+        version: 3.2.23
       recharts:
         specifier: ^3.2.1
         version: 3.9.2(@types/react@19.1.17)(react-dom@19.1.0)(react-is@19.2.7)(react@19.1.0)(redux@5.0.1)
@@ -1188,6 +1165,9 @@ importers:
         specifier: ^5.0.3
         version: 5.0.14(@types/react@19.1.17)(react@19.1.0)
     devDependencies:
+      '@embedpdf/pdfium':
+        specifier: 2.14.4
+        version: 2.14.4
       '@eslint/eslintrc':
         specifier: ^3
         version: 3.3.5
@@ -1378,9 +1358,24 @@ importers:
 
   packages/llm-gateway:
     dependencies:
+      '@ai-sdk/amazon-bedrock':
+        specifier: 5.0.24
+        version: 5.0.24(zod@3.25.76)
+      '@ai-sdk/anthropic':
+        specifier: 4.0.16
+        version: 4.0.16(zod@3.25.76)
+      '@ai-sdk/openai':
+        specifier: 4.0.16
+        version: 4.0.16(zod@3.25.76)
+      '@ai-sdk/openai-compatible':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
       '@kortix/shared':
         specifier: workspace:*
         version: link:../shared
+      ai:
+        specifier: 7.0.31
+        version: 7.0.31(zod@3.25.76)
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0
@@ -1479,6 +1474,87 @@ packages:
     peerDependenciesMeta:
       graphql:
         optional: true
+
+  /@ai-sdk/amazon-bedrock@5.0.24(zod@3.25.76):
+    resolution: {integrity: sha512-DqepS/e0mZfpfFjbCKIG7LzsvrQYeKJT0aoQDC6WyXvR81Vi1VIJVk6IL2q6dq2zwuBNnXIQkUPFF0NTXRXGRQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/anthropic': 4.0.16(zod@3.25.76)
+      '@ai-sdk/openai': 4.0.16(zod@3.25.76)
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
+      '@smithy/eventstream-codec': 4.4.10
+      '@smithy/util-utf8': 4.4.10
+      aws4fetch: 1.0.20
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/anthropic@4.0.16(zod@3.25.76):
+    resolution: {integrity: sha512-vyH4D6Auih5H2xvVzzh2ep5pbdWiaV7JDC+jHUE7zZJ5Kyv0TteLav4DrOgHzRuyv8ptfUSqFF6Y8//f/Ec0fQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/gateway@4.0.23(zod@3.25.76):
+    resolution: {integrity: sha512-f85diFdPMXYJpxCjOYZchMQkRH8h3r6lhK4Q2xmzJ7UA2OQ80L3W7tFu61742xGQK7zHWm5AhxYhNuc50H9SGQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
+      '@vercel/oidc': 3.2.0
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/openai-compatible@3.0.12(zod@3.25.76):
+    resolution: {integrity: sha512-tN9BUb4jUGjqtbRPUsziLxASfogLNICcq/Qrwr55vpnzKvprV6Ukl8ynED2lZaNrAHU5U4zlGnyU/iuYrjQK6g==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/openai@4.0.16(zod@3.25.76):
+    resolution: {integrity: sha512-Yh+PsXaf9NbN7oA3oKwOuyjTiHMPD75phf3SqGbDNNKQ3Yj3oTntp/WhO3nCHIPA6gr5/1lyridQokmOpPf9oQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/provider-utils@5.0.11(zod@3.25.76):
+    resolution: {integrity: sha512-7/96wE+ZsKB35iS9ASyllrE4Ym/EolXEB7AkuJ5FI++fmS85BVTAs77890C+1Z2jwHfBKjBQSBmsliOsAh0iFQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@standard-schema/spec': 1.1.0
+      '@workflow/serde': 4.1.0
+      eventsource-parser: 3.1.0
+      zod: 3.25.76
+    dev: false
+
+  /@ai-sdk/provider@4.0.3:
+    resolution: {integrity: sha512-e0CpNWJUY7OxAFAnCZkw+ri9QOHWwTs1tXP42782KFGCU07qt8NiXCrCVowyCB5dP2r5/Uls+g2oPd8kOJn9dw==}
+    engines: {node: '>=22'}
+    dependencies:
+      json-schema: 0.4.0
+    dev: false
 
   /@alloc/quick-lru@5.2.0:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -3510,7 +3586,6 @@ packages:
 
   /@embedpdf/pdfium@2.14.4:
     resolution: {integrity: sha512-0tDPQEH1WtfXcASNVp5U3dqfzZboNvcE4rDok/P4JCN+DCTaJDG2E9lYHGMo9FtuS2IdHgrzkmPRpOo5WV9MKQ==}
-    dev: false
 
   /@embedpdf/plugin-document-manager@2.14.4(@embedpdf/core@2.14.4)(preact@10.29.4)(react-dom@19.1.0)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39):
     resolution: {integrity: sha512-1qUKu/RAN9LV+Ih7geig0X/2i4jIn8P1D0I0nQUwSMM9hJmitcyDJ/9SK/eOSsdEs4SulIqt+a2W2IMZOY2Vew==}
@@ -4637,11 +4712,6 @@ packages:
     resolution: {integrity: sha512-P/IC3qws3jH+1fEs+o0RIFgXKRaQlFehjS5W0FPAqdo6hgzawLl+eD0q0JjheQ3XtoOe5n8WSYfX06KQZI/QJA==}
     dependencies:
       '@formatjs/fast-memoize': 3.1.6
-    dev: false
-
-  /@gar/promise-retry@1.0.3:
-    resolution: {integrity: sha512-GmzA9ckNokPypTg10pgpeHNQe7ph+iIKKmhKu3Ob9ANkswreCx7R3cKmY781K8QK3AqVL3xVh9A42JvIAbkkSA==}
-    engines: {node: ^20.17.0 || >=22.9.0}
     dev: false
 
   /@gar/promisify@1.1.3:
@@ -9597,12 +9667,28 @@ packages:
       tslib: 2.8.1
     dev: false
 
+  /@smithy/core@3.29.5:
+    resolution: {integrity: sha512-i0dk2t5B+CwV/dcJdUHILYkOQF5lof8f44dFCfDWToGCxjT9YQ+CgHqTAvJxzc3+zqQwm2QtVoJ5IqiNar/CnQ==}
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+    dev: false
+
   /@smithy/credential-provider-imds@4.4.6:
     resolution: {integrity: sha512-B2WQ/PV/H6Jeg3lrIq6bKUfa6Hy01mtK7CGs6lhjzHA6k4aagldH6T6eEjnzKl4HI0cJnAsxfJ19pgb5PV+CVQ==}
     engines: {node: '>=18.0.0'}
     dependencies:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
+      tslib: 2.8.1
+    dev: false
+
+  /@smithy/eventstream-codec@4.4.10:
+    resolution: {integrity: sha512-yG1n59zLQMa979xvXlTQ9+FpNmm4RRPR+2rYZo57wk28E27zmKZN4ST9wc2pKkyspLpDal2/84ST72KLJhbP1w==}
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@smithy/core': 3.29.5
       tslib: 2.8.1
     dev: false
 
@@ -9637,6 +9723,21 @@ packages:
     resolution: {integrity: sha512-x3L0XSACF6UYzKpa9biqiRMgvH5+wnFFew9Tm/grFYqgaupPwx/+ojDPpPJM8dZON3S9tjz5U+PQYsCBd1Mw5Q==}
     engines: {node: '>=18.0.0'}
     dependencies:
+      tslib: 2.8.1
+    dev: false
+
+  /@smithy/types@4.16.1:
+    resolution: {integrity: sha512-0JFs3V2y2M9tKW5na/qxe69Zv+uxLMO7QBbhxF/FHu/Gp2NFZAAL9tWl9PU02xxo07pb3G9FTyjNc6D5uZrJIg==}
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      tslib: 2.8.1
+    dev: false
+
+  /@smithy/util-utf8@4.4.10:
+    resolution: {integrity: sha512-4pWFv2sxrykZqaTixXhkgAsG6+k/VxgAiyZ6M0iLEmsOqcJaR0eidlTCmuKKtMJMIEw8lYwDTvEyR4NyC+V0cw==}
+    engines: {node: '>=18.0.0'}
+    dependencies:
+      '@smithy/core': 3.29.5
       tslib: 2.8.1
     dev: false
 
@@ -10611,19 +10712,6 @@ packages:
     resolution: {integrity: sha512-HqmEUIGRJ5fSXchkVgR5F7qn48bDBzv0kWj/Kfu5e6uci4UlEeng4331LnBkWffb++Ei3FOVLxo8JJWMFBDMeQ==}
     engines: {node: '>= 10'}
     dev: true
-
-  /@tufjs/canonical-json@2.0.0:
-    resolution: {integrity: sha512-yVtV8zsdo8qFHe+/3kw81dSLyF7D576A5cCFCi4X7B39tWT7SekaEFUnvnWJHz+9qO7qJTah1JbrDjWKqFtdWA==}
-    engines: {node: ^16.14.0 || >=18.0.0}
-    dev: false
-
-  /@tufjs/models@4.1.1:
-    resolution: {integrity: sha512-EEiiP25qQPmQpR/2Jvb4++NCHGsG76FJRLRGRccYUi6bg6SdZyXabkikv/OGlyS7ChFBBEStajJ6jxKSUT+Dbw==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-    dependencies:
-      '@tufjs/canonical-json': 2.0.0
-      minimatch: 10.2.5
-    dev: false
 
   /@tweenjs/tween.js@23.1.3:
     resolution: {integrity: sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA==}
@@ -11657,6 +11745,11 @@ packages:
       vue: 3.5.39(typescript@5.9.3)
     dev: false
 
+  /@vercel/oidc@3.2.0:
+    resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
+    engines: {node: '>= 20'}
+    dev: false
+
   /@vercel/speed-insights@1.3.1(next@15.5.18)(react@19.1.0)(svelte@5.56.4)(vue@3.5.39):
     resolution: {integrity: sha512-PbEr7FrMkUrGYvlcLHGkXdCkxnylCWePx7lPxxq36DNdfo9mcUjLOmqOyPDHAOgnfqgGGdmE3XI9L/4+5fr+vQ==}
     peerDependencies:
@@ -11870,6 +11963,10 @@ packages:
     resolution: {integrity: sha512-mMy8/ODcKhab808co15eW+yN+HgXoQxRQHTiBV9Mrvl1r0ufnid7YOcI+gi4eUWSWl9ezD6TW2KXccrL8HCh2A==}
     dev: false
 
+  /@workflow/serde@4.1.0:
+    resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
+    dev: false
+
   /@wyw-in-js/processor-utils@0.6.0:
     resolution: {integrity: sha512-5YAZMUmF+S2HaqheKfew6ybbYBMnF10PjIgI7ieyuFxCohyqJNF4xdo6oHftv2z5Z4vCQ0OZHtDOQyDImBYwmg==}
     engines: {node: '>=16.0.0'}
@@ -12038,6 +12135,18 @@ packages:
       clean-stack: 2.2.0
       indent-string: 4.0.0
     dev: true
+
+  /ai@7.0.31(zod@3.25.76):
+    resolution: {integrity: sha512-pJfwKXjF5kw0rKRTePwYo60EfWb8wfzJAgf3ojln/YkOsVVKttzZAJVcRPsg37Z3a06ZdKkxX+DSrMAFlPm5Mw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+    dependencies:
+      '@ai-sdk/gateway': 4.0.23(zod@3.25.76)
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.11(zod@3.25.76)
+      zod: 3.25.76
+    dev: false
 
   /ajv-formats@2.1.1(ajv@8.18.0):
     resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
@@ -12474,6 +12583,10 @@ packages:
   /awesome-phonenumber@5.11.0:
     resolution: {integrity: sha512-25GfikMIo6CBQIqvjoewo4uiu5Ai7WqEC8gxesH3LDwCY43oEdkLaT15a+8adC7uWIJCGh+YQiBY5bjmDpoQcg==}
     engines: {node: '>=14'}
+    dev: false
+
+  /aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
     dev: false
 
   /axe-core@4.12.1:
@@ -15309,6 +15422,11 @@ packages:
     engines: {node: '>=0.8.x'}
     dev: false
 
+  /eventsource-parser@3.1.0:
+    resolution: {integrity: sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==}
+    engines: {node: '>=18.0.0'}
+    dev: false
+
   /execa@5.1.1:
     resolution: {integrity: sha512-8uSpZZocAZRBAPIEINJj3Lo9HyGitllczc27Eh5YYojjMFMn8yHMDMaUHE2Jqfq05D/wucwI4JGURyXt1vchyg==}
     engines: {node: '>=10'}
@@ -17994,6 +18112,10 @@ packages:
   /json-schema-typed@7.0.3:
     resolution: {integrity: sha512-7DE8mpG+/fVw+dTpjbxnx47TaMnDfOI1jwft9g1VybltZCduyRQPJPvc+zzKY9WPHxhPWczyFuYa6I8Mw4iU5A==}
     dev: true
+
+  /json-schema@0.4.0:
+    resolution: {integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==}
+    dev: false
 
   /json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
@@ -24229,17 +24351,6 @@ packages:
       esbuild: 0.28.1
     optionalDependencies:
       fsevents: 2.3.3
-    dev: false
-
-  /tuf-js@5.0.1:
-    resolution: {integrity: sha512-ZjElOrQLu8Wv5bcpAb/tW2NbchK85DvHy2nJffRmp5zd1VJIQM1IqgbE+EehwgmqY+ayJD5WCGgbs2ZZkYthPQ==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-    dependencies:
-      '@gar/promise-retry': 1.0.3
-      '@tufjs/models': 4.1.1
-      debug: 4.4.3
-    transitivePeerDependencies:
-      - supports-color
     dev: false
 
   /tunnel-agent@0.6.0:

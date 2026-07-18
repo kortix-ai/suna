@@ -40,6 +40,10 @@ spec:
       env:
         - name: PORT
           value: {{ .Values.containerPort | quote }}
+        {{- if .Values.kortixVersion }}
+        - name: KORTIX_VERSION
+          value: {{ .Values.kortixVersion | quote }}
+        {{- end }}
         {{- range $k, $v := .Values.extraEnv }}
         - name: {{ $k }}
           value: {{ $v | quote }}

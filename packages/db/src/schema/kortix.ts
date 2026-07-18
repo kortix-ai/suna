@@ -32,6 +32,9 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'daytona',
   'platinum',
   'e2b',
+  // EXPERIMENTAL — same-machine Docker containers, see
+  // apps/api/src/platform/providers/local-docker.ts.
+  'local-docker',
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
@@ -583,7 +586,23 @@ export const projectSessionRuntimeContexts = kortixSchema.table(
 // per-agent default (scope='agent', scope_key=agent_name) → the account default
 // (scope='account', scope_key='') → the platform default. The stored `model` is a
 // gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
-// or 'codex/<id>') — never the synthetic `auto`. One row per (account, scope, key).
+// or 'codex/<id>') — never the synthetic `auto`.
+//
+// `project_id` (added 2026-07-18, see 20260718*_account_model_preferences_project_id.sql)
+// scopes an agent-name pin to the ONE project that set it: agent names are declared
+// per-project (each project's own kortix.yaml), so without this, two unrelated
+// projects sharing an account and an agent name (almost always the conventional
+// 'kortix') would clobber each other's pin — the row was keyed only on
+// (account, scope, scope_key=agent_name), account-wide. `project_id` is NULL for
+// scope IN ('account','project') always, and for PRE-migration `scope='agent'` rows
+// (they keep applying account-wide as a fallback until the owning project explicitly
+// re-pins that agent, which writes a NEW project-scoped row — the legacy row is
+// never auto-migrated/deleted, so OTHER projects that never re-pin keep seeing it).
+// Two unique indexes replace the old single one so both shapes stay enforced:
+//   idx_account_model_preferences_scope_global  (account_id, scope, scope_key)
+//     WHERE project_id IS NULL   — account/project scope + legacy global agent pins
+//   idx_account_model_preferences_scope_project (account_id, scope, scope_key, project_id)
+//     WHERE project_id IS NOT NULL — new per-project agent pins
 export const accountModelPreferences = kortixSchema.table(
   'account_model_preferences',
   {
@@ -593,6 +612,8 @@ export const accountModelPreferences = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     scope: text('scope').notNull(),
     scopeKey: text('scope_key').default('').notNull(),
+    // Only ever set for scope='agent' — see doc comment above.
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
     model: varchar('model', { length: 128 }).notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -600,11 +621,12 @@ export const accountModelPreferences = kortixSchema.table(
   },
   (table) => [
     index('idx_account_model_preferences_account').on(table.accountId),
-    uniqueIndex('idx_account_model_preferences_scope').on(
-      table.accountId,
-      table.scope,
-      table.scopeKey,
-    ),
+    uniqueIndex('idx_account_model_preferences_scope_global')
+      .on(table.accountId, table.scope, table.scopeKey)
+      .where(sql`${table.projectId} is null`),
+    uniqueIndex('idx_account_model_preferences_scope_project')
+      .on(table.accountId, table.scope, table.scopeKey, table.projectId)
+      .where(sql`${table.projectId} is not null`),
   ],
 );
 
@@ -734,6 +756,14 @@ export const projectTriggerRuntime = kortixSchema.table(
     // resolution — `per_user` connector credentials were removed 2026-07-05;
     // every connector resolves the one shared credential regardless of owner.)
     ownerUserId: uuid('owner_user_id'),
+    // For a `session_mode = 'pinned'` trigger: the exact session it loops. FK so
+    // deleting the session auto-clears the pin (the next fire then degrades to
+    // reuse/fresh instead of hard-failing on a dangling id) and for observability
+    // into which session a pinned trigger drives. Portable source of truth is the
+    // manifest `session_id`; this mirrors it for the FK.
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -3042,6 +3072,12 @@ export const accountSsoProviders = kortixSchema.table(
      *  so admins skip manual mapping and just attach project roles. Off by
      *  default — providers keep the explicit-mapping behavior. */
     autoProvisionGroups: boolean('auto_provision_groups').default(false).notNull(),
+    /** When true, the unified auth flow refuses password/email-code logins for
+     *  this provider's primaryDomain — /access/check-email answers mode='sso'
+     *  and the web auth actions turn the request away, so the IdP is the only
+     *  door. Off by default: pre-SSO password accounts keep working until the
+     *  org explicitly flips enforcement. */
+    enforceSso: boolean('enforce_sso').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -3196,6 +3232,7 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   'pipedream',
   'mcp',
   'openapi',
+  'postman',
   'graphql',
   'http',
   // Chat platforms (Slack, later Telegram/Teams) as first-class connectors. The

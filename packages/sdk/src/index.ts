@@ -220,6 +220,11 @@ export type {
   ConnectorSharing,
   AdminConnector,
   ConnectorConfig,
+  ConnectorDraftInput,
+  ConnectorAuthDiscovery,
+  ConnectorAuthCandidate,
+  ExecutableConnectorAuth,
+  DiscoveredAuthScheme,
   // Sessions
   ProjectSession,
   ProjectOpenCodeSession,
@@ -260,11 +265,6 @@ export type {
   BillingTransactionsSummary,
   BillingCreditBreakdown,
   BillingTierConfiguration,
-  // Marketplace / registry
-  MarketplaceInstalledItem,
-  MarketplaceInstallResult,
-  MarketplaceUpdateStatusEntry,
-  MarketplaceUpdatesResponse,
   // Account audit
   AuditEvent,
   AuditEventList,

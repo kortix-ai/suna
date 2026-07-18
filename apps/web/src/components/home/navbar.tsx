@@ -99,10 +99,10 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const lastScrollY = useRef(0);
   const isMobile = useIsMobile();
 
-  // Use-cases section is WIP — hidden until NEXT_PUBLIC_USE_CASES_ENABLED is set.
+  // Use-cases section is on by default; hide it by setting NEXT_PUBLIC_USE_CASES_ENABLED=false.
   const filteredNavLinks = siteConfig.nav.links.filter(
     (link) =>
-      process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'true' || link.href !== '/use-cases',
+      process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' || link.href !== '/use-cases',
   );
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();
@@ -409,18 +409,25 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   {filteredNavLinks.map((item) => {
                     const handleDrawerNavClick =
                       (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-                        if (!href.startsWith('#')) {
+                        const anchor = href.startsWith('#')
+                          ? href.slice(1)
+                          : href.startsWith('/#')
+                            ? href.slice(2)
+                            : null;
+
+                        if (!anchor) {
                           setIsDrawerOpen(false);
                           return;
                         }
                         e.preventDefault();
                         if (pathname !== '/') {
-                          router.push(`/${href}`);
+                          router.push(`/#${anchor}`);
                           setIsDrawerOpen(false);
                           return;
                         }
-                        const element = document.getElementById(href.substring(1));
+                        const element = document.getElementById(anchor);
                         element?.scrollIntoView({ behavior: 'smooth' });
+                        window.history.replaceState(null, '', `/#${anchor}`);
                         setIsDrawerOpen(false);
                       };
 

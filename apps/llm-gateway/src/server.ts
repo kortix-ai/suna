@@ -162,13 +162,21 @@ export function buildServer(): GatewayServer {
   });
 
   const chatCompletions = async (c: {
-    req: { header: (k: string) => string | undefined; text: () => Promise<string> };
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+      raw?: { signal?: AbortSignal };
+    };
   }) => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
       const res = await gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
+        // `c.req.raw` is Hono's underlying standard Request — its `.signal`
+        // fires on client disconnect, so a caller that goes away mid-request
+        // stops the upstream fetch/stream instead of running to completion.
+        signal: c.req.raw?.signal,
       });
       recordOutcome(res.status);
       return res;
@@ -176,8 +184,12 @@ export function buildServer(): GatewayServer {
       console.error('[gateway] request failed', err);
       recordOutcome(503);
       return gatewayErrorResponse(503, {
-        message: 'Gateway unavailable', code: 'gateway_error', provider: '',
-        requestedModel: '', resolvedModel: '', requestId,
+        message: 'Gateway unavailable',
+        code: 'gateway_error',
+        provider: '',
+        requestedModel: '',
+        resolvedModel: '',
+        requestId,
         suggestion: 'Retry the request. If the error continues, switch to another model.',
       });
     }
@@ -186,6 +198,41 @@ export function buildServer(): GatewayServer {
   app.post('/v1/chat/completions', chatCompletions);
   app.post('/v1/llm/chat/completions', chatCompletions);
   app.post('/v1/openai/chat/completions', chatCompletions);
+
+  // Anthropic-Messages-compatible ingress — a client speaking the Anthropic
+  // Messages API shape (`{model, system, messages, tools, max_tokens,
+  // stream}`) hits the SAME auth/billing/routing/failover/trace pipeline as
+  // `/v1/chat/completions`; `gateway.messages` translates request/response/SSE
+  // at the edges only. Mirrors the chat-completions alias namespaces above.
+  const messages = async (c: {
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+    };
+  }) => {
+    try {
+      const res = await gateway.messages({
+        authorization: c.req.header('authorization'),
+        rawBody: await c.req.text(),
+      });
+      recordOutcome(res.status);
+      return res;
+    } catch (err) {
+      console.error('[gateway] messages request failed', err);
+      recordOutcome(503);
+      return new Response(
+        JSON.stringify({
+          type: 'error',
+          error: { type: 'api_error', message: 'Gateway unavailable' },
+        }),
+        { status: 503, headers: { 'content-type': 'application/json' } },
+      );
+    }
+  };
+
+  app.post('/v1/messages', messages);
+  app.post('/v1/llm/messages', messages);
+  app.post('/v1/openai/messages', messages);
 
   const models = (c: { req: { header: (k: string) => string | undefined } }) =>
     gateway.listModels(c.req.header('authorization'));

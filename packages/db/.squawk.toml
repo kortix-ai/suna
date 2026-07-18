@@ -1,0 +1,54 @@
+# Squawk (https://squawkhq.com) — deterministic Postgres migration linter.
+#
+# Scope: this config is applied ONLY to migrations ADDED in the current PR
+# (see .github/workflows/db-migrations.yml, job "squawk-new-migrations"). The
+# existing corpus under packages/db/migrations/ is immutable and was NOT
+# rewritten to satisfy this ruleset — see packages/db/SQUAWK_BASELINE.md for
+# the one-time retro-lint report over the pre-existing files.
+#
+# `pnpm --filter @kortix/db lint:squawk` runs this same config locally.
+
+# Our runtime reality: packages/db/scripts/migrate.ts configures node-pg-migrate
+# with `singleTransaction: true` — every .sql migration file in a `pnpm migrate`
+# run is executed inside one wrapping BEGIN/COMMIT for the whole batch (see
+# MIGRATIONS.md "Roll-forward safety"). Tell squawk to lint AS IF each file is
+# inside a transaction, which is what unlocks `ban-concurrent-index-creation-in-transaction`
+# (CONCURRENTLY literally cannot run there) instead of silently missing it.
+assume_in_transaction = true
+
+# Rules explicitly turned OFF: style/type preferences that are not zero-downtime
+# safety issues, and would otherwise fire on nearly every new migration given
+# this codebase's established (safe) conventions.
+excluded_rules = [
+  # varchar(n) vs text+CHECK is a schema-style preference, not a downtime risk
+  # by itself (the rule exists to warn that *later resizing* varchar(n) takes
+  # an ACCESS EXCLUSIVE lock — `changing-column-type` already catches that
+  # resize when/if it happens). The existing schema uses varchar(n) throughout;
+  # re-litigating that per new migration is noise, not safety.
+  "prefer-text-field",
+
+  # int vs bigint is a capacity-planning judgment call per table, not a
+  # downtime hazard — converting int->bigint later IS caught by
+  # `changing-column-type`. Author's call per table.
+  "prefer-bigint-over-int",
+
+  # BEFORE/AFTER ordering on `ALTER TYPE ... ADD VALUE` affects only enum
+  # ordinal/comparison semantics, not locking or availability. The actual
+  # zero-downtime hazard around enum values (a faked/skipped baseline can miss
+  # a value entirely — see the sandbox_provider "platinum" 22P02 incident) is
+  # covered by our custom checker (packages/db/scripts/zero-downtime-guard.ts),
+  # which requires a `-- mixed-version-safe:` / enum annotation instead.
+  "require-enum-value-ordering",
+]
+
+# Rules explicitly turned ON (opt-in, disabled by squawk's own defaults). Zero
+# hits against the current corpus — enabling them costs nothing today and
+# extends coverage the moment someone writes the first violating migration.
+included_rules = [
+  "require-table-schema",              # every object must be schema-qualified (kortix.foo, never bare foo) — no search_path surprises across kortix/basejump/public
+  "prefer-timestamptz",                # matches existing convention everywhere in kortix.ts
+  "prefer-identity",                   # matches existing convention (GENERATED ALWAYS AS IDENTITY, not serial)
+  "ban-char-field",                    # char(n) blank-pads and is never what we want; not used today
+  "require-concurrent-partition-detach",
+  "require-concurrent-reindex",
+]

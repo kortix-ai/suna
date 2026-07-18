@@ -4,7 +4,7 @@
 # "the same thing with bigger numbers and min_capacity >= 2".
 #
 # Inputs: a VPC + subnets (from modules/network), a container image, env/secrets,
-# and an optional ACM cert. Outputs the ALB DNS name so the environment can point
+# and an ACM cert. Outputs the ALB DNS name so the environment can point
 # Cloudflare DNS at it.
 
 terraform {
@@ -21,9 +21,6 @@ locals {
   name = var.name
   # PORT is always injected so the app binds the port the target group checks.
   environment = merge(var.environment, { PORT = tostring(var.container_port) })
-  # Gate the HTTPS listener on a STATIC flag (count can't depend on the ACM
-  # cert ARN, which is unknown until apply).
-  https = var.enable_https
 }
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
@@ -47,7 +44,13 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "execution" {
   name               = "${local.name}-exec"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-exec"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "execution" {
@@ -74,7 +77,13 @@ resource "aws_iam_role_policy" "secrets" {
 resource "aws_iam_role" "task" {
   name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-task"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -84,26 +93,19 @@ resource "aws_security_group" "alb" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.alb_ingress_cidrs
-  }
-  ingress {
     description = "HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = var.alb_ingress_cidrs
   }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-alb"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
   }
-  tags = var.tags
 }
 
 resource "aws_security_group" "service" {
@@ -124,7 +126,25 @@ resource "aws_security_group" "service" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-svc"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
+}
+
+# The ALB only needs to reach the application port on ECS tasks. Keeping this
+# as a standalone rule avoids the dependency cycle that inline rules create
+# when the service SG already references the ALB SG for ingress.
+resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
+  security_group_id            = aws_security_group.alb.id
+  referenced_security_group_id = aws_security_group.service.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  description                  = "ALB to ECS tasks only"
 }
 
 # ── Load balancer ─────────────────────────────────────────────────────────────
@@ -132,9 +152,18 @@ resource "aws_lb" "this" {
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = var.public_subnet_ids
-  idle_timeout       = var.alb_idle_timeout
-  tags               = var.tags
+  subnets = [
+    var.public_subnet_ids[0],
+    var.public_subnet_ids[1],
+  ]
+  idle_timeout = var.alb_idle_timeout
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.name}-alb"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_lb_target_group" "this" {
@@ -157,35 +186,7 @@ resource "aws_lb_target_group" "this" {
   tags                 = var.tags
 }
 
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  # With a cert, force HTTPS; without one, serve HTTP directly (e.g. behind a
-  # TLS-terminating proxy like Cloudflare in dev).
-  dynamic "default_action" {
-    for_each = local.https ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-  dynamic "default_action" {
-    for_each = local.https ? [] : [1]
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.this.arn
-    }
-  }
-}
-
 resource "aws_lb_listener" "https" {
-  count             = local.https ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
@@ -205,7 +206,13 @@ resource "aws_ecs_cluster" "this" {
     name  = "containerInsights"
     value = var.container_insights ? "enabled" : "disabled"
   }
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_ecs_cluster_capacity_providers" "this" {
@@ -251,7 +258,13 @@ resource "aws_ecs_task_definition" "this" {
     # authoritative gate for routing + the deployment circuit breaker.
   }])
 
-  tags = var.tags
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 resource "aws_ecs_service" "this" {
@@ -293,13 +306,16 @@ resource "aws_ecs_service" "this" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  # Both listeners must exist before the service: the HTTPS listener (when
-  # enabled) is what associates the target group with the load balancer, and ECS
-  # rejects CreateService against a target group that has no associated LB.
-  # Without this, the service can race ahead of the HTTPS listener on a fresh
-  # apply ("target group ... does not have an associated load balancer").
-  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
-  tags       = var.tags
+  # The selected listener must exist before the service so the target group is
+  # associated with the load balancer before ECS validates CreateService.
+  depends_on = [aws_lb_listener.https]
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
 }
 
 # ── Autoscaling (target tracking on CPU + memory) ─────────────────────────────

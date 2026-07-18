@@ -44,7 +44,10 @@ spec:
           image: {{ include "kortix-api.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           workingDir: /app/packages/db
-          command: ["bun", "scripts/migrate.ts", "up"]
+          # Enterprise starts from an official, otherwise-empty Supabase data
+          # plane. bootstrap installs the self-host prerequisites on first run
+          # and is a no-op before applying pending migrations thereafter.
+          command: ["bun", "scripts/migrate.ts", "bootstrap"]
           # The full synced secret bundle (DATABASE_URL included), exactly as the app.
           envFrom:
             - secretRef:

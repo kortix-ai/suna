@@ -3,19 +3,9 @@ import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
-  getMarketplaceFiles,
-  listGeneralKnowledgeWorkerSkills,
   STARTER_TEMPLATE_IDS,
   type StarterTemplateId,
 } from '@kortix/starter';
-import {
-  applyInstall,
-  buildRegistry,
-  planInstall,
-  type BuildSource,
-  type RegistryItem,
-  type ResolvedItem,
-} from '@kortix/registry';
 
 import { applyScaffold } from '../scaffold.ts';
 import { prompt, confirm } from '../prompts.ts';
@@ -67,14 +57,14 @@ Options:
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
-  --template <name>    Starter template: minimal (default) or general-knowledge-worker.
-                       Use general-knowledge-worker to include the optional skill pack.
-  --marketplace <list> Comma-separated marketplace skills to install into the
-                       new project. Use "none" to skip. Interactive mode
-                       opens a preselected picker.
+  --template <name>    Starter template: general-knowledge-worker (default, full
+                       skill kit) or minimal (base plumbing only).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
+
+Adding more marketplace items later is an agent import, not part of init:
+start a session and ask the agent to bring one in.
 `;
 
 interface InitFlags {
@@ -82,7 +72,6 @@ interface InitFlags {
   primary?: CodingAgent;
   agents?: CodingAgent[];
   template?: StarterTemplateId;
-  marketplace?: string[];
   force: boolean;
   overwrite: boolean;
   noGit: boolean;
@@ -169,15 +158,6 @@ function parseFlags(argv: string[]): InitFlags {
         i += 1;
         break;
       }
-      case '--marketplace': {
-        const next = argv[i + 1];
-        if (!next || next.startsWith('-')) {
-          throw new Error(`kortix: --marketplace requires a comma-separated list or "none"`);
-        }
-        f.marketplace = normalizeMarketplaceList(next);
-        i += 1;
-        break;
-      }
       default:
         if (arg.startsWith('-')) throw new Error(`kortix: unknown option "${arg}"`);
         // Positional project name (the directory to create), like create-next-app.
@@ -187,11 +167,6 @@ function parseFlags(argv: string[]): InitFlags {
     }
   }
   return f;
-}
-
-function normalizeMarketplaceList(raw: string): string[] {
-  if (raw.trim().toLowerCase() === 'none') return [];
-  return [...new Set(raw.split(',').map((part) => part.trim()).filter(Boolean))];
 }
 
 function normalizeProjectName(raw: string): string {
@@ -245,83 +220,6 @@ function sampleStarterPrompt(): string {
   );
 }
 
-function formatSkillList(skills: string[]): string {
-  const visible = skills.slice(0, 12).join(', ');
-  const remaining = skills.length - 12;
-  return remaining > 0 ? `${visible}, +${remaining} more` : visible;
-}
-
-function starterMarketplaceRegistry() {
-  const files = getMarketplaceFiles();
-  const map = new Map(files.map((file) => [file.path, file.content] as const));
-  const source: BuildSource = {
-    listFiles: () => [...map.keys()],
-    readFile: (path) => {
-      const content = map.get(path);
-      if (content == null) throw new Error(`marketplace file not found: ${path}`);
-      return content;
-    },
-    isDirectory: (path) => {
-      const clean = path.replace(/\/+$/, '');
-      return [...map.keys()].some((key) => key.startsWith(`${clean}/`)) && !map.has(path);
-    },
-  };
-  return { registry: buildRegistry({ name: 'kortix-starter', source }).registry, map };
-}
-
-function defaultStarterMarketplaceItems(): RegistryItem[] {
-  const { registry } = starterMarketplaceRegistry();
-  return (registry.items ?? [])
-    .filter((item) => item.meta?.defaultProjectInstall === true)
-    .sort((a, b) => {
-      const ao = typeof a.meta?.defaultProjectInstallOrder === 'number' ? a.meta.defaultProjectInstallOrder : 999;
-      const bo = typeof b.meta?.defaultProjectInstallOrder === 'number' ? b.meta.defaultProjectInstallOrder : 999;
-      return ao - bo || a.name.localeCompare(b.name);
-    });
-}
-
-async function installStarterMarketplaceItems(input: {
-  root: string;
-  itemNames: string[];
-  overwrite: boolean;
-}): Promise<{ written: string[]; skipped: string[] }> {
-  const { registry, map } = starterMarketplaceRegistry();
-  const byName = new Map((registry.items ?? []).map((item) => [item.name, item] as const));
-
-  const resolveItem = (raw: string): ResolvedItem => {
-    const name = raw.includes(':') ? raw.split(':').pop()! : raw;
-    const item = byName.get(name);
-    if (!item) throw new Error(`unknown Kortix marketplace item "${raw}"`);
-    return {
-      ref: { kind: 'local', path: 'kortix-starter' },
-      item: item as RegistryItem,
-      readFile: async (path) => {
-        const content = map.get(path);
-        if (content == null) throw new Error(`marketplace file not found: ${path}`);
-        return content;
-      },
-    };
-  };
-
-  const written: string[] = [];
-  const skipped: string[] = [];
-  for (const name of input.itemNames) {
-    const plan = await planInstall(resolveItem(name), {
-      configDir: '.kortix/opencode',
-      exists: (target) => existsSync(resolve(input.root, target)),
-      resolveDependency: async (dep) => resolveItem(dep),
-    });
-    const result = applyInstall(plan, {
-      root: input.root,
-      overwrite: input.overwrite,
-      now: new Date().toISOString(),
-    });
-    written.push(...result.written);
-    skipped.push(...result.skipped);
-  }
-  return { written: [...new Set(written)], skipped: [...new Set(skipped)] };
-}
-
 export async function runInit(argv: string[]): Promise<number> {
   let flags: InitFlags;
   try {
@@ -365,41 +263,10 @@ export async function runInit(argv: string[]): Promise<number> {
   mkdirSync(cwd, { recursive: true });
 
   // ── Resolve starter template ────────────────────────────────────────
-  let template: StarterTemplateId;
-  if (flags.template) {
-    template = flags.template;
-  } else if (flags.yes) {
-    template = DEFAULT_STARTER_TEMPLATE_ID;
-  } else {
-    const skills = listGeneralKnowledgeWorkerSkills();
-    const includeSkills = await confirm(
-      `Include general knowledge worker skills? (${formatSkillList(skills)})`,
-      false,
-    );
-    template = includeSkills ? 'general-knowledge-worker' : 'minimal';
-  }
-
-  // ── Resolve marketplace skills ──────────────────────────────────────
-  let marketplaceItems: string[];
-  if (flags.marketplace) {
-    marketplaceItems = flags.marketplace;
-  } else if (flags.yes) {
-    marketplaceItems = [];
-  } else {
-    const defaults = defaultStarterMarketplaceItems();
-    const picked = await selectMultiFromList<string>({
-      title: 'Pick marketplace skills to install',
-      searchHint: `${C.dim}↑/↓ navigate · Space toggle · Enter confirm${C.reset}`,
-      items: defaults.map((item) => ({
-        value: item.name,
-        label: item.title ?? item.name,
-        sublabel: item.description ?? item.name,
-      })),
-      initiallySelected: defaults.map((_, index) => index),
-      minSelected: 0,
-    });
-    marketplaceItems = picked ?? [];
-  }
+  // There's one starter kit — every project scaffolds with the full Kortix
+  // skill kit. The `--template` flag stays as an advanced escape hatch (e.g.
+  // the internal base-only `minimal`), but we no longer prompt for a choice.
+  const template: StarterTemplateId = flags.template ?? DEFAULT_STARTER_TEMPLATE_ID;
 
   // ── Resolve coding agents (multi-select TUI) ─────────────────────────
   // One picker, space toggles, Enter confirms. First toggled is the
@@ -453,19 +320,6 @@ export async function runInit(argv: string[]): Promise<number> {
     template,
     preserveExisting: !flags.overwrite,
   });
-  let marketplaceInstall: { written: string[]; skipped: string[] } = { written: [], skipped: [] };
-  if (marketplaceItems.length > 0) {
-    try {
-      marketplaceInstall = await installStarterMarketplaceItems({
-        root: cwd,
-        itemNames: marketplaceItems,
-        overwrite: flags.overwrite,
-      });
-    } catch (err) {
-      process.stderr.write(`${status.err((err as Error).message)}\n`);
-      return 1;
-    }
-  }
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
   // Symlink the OpenCode config dir into each agent's native location
@@ -490,19 +344,17 @@ export async function runInit(argv: string[]): Promise<number> {
   // ── Report ───────────────────────────────────────────────────────────
   const lines: string[] = [];
   lines.push(`Initialized Kortix project "${projectName}" in ${cwd}`);
-  const totalWritten = result.written.length + marketplaceInstall.written.length + agentInstall.written.length;
+  const totalWritten = result.written.length + agentInstall.written.length;
   lines.push(`Wrote ${totalWritten} file${totalWritten === 1 ? '' : 's'}:`);
   for (const f of result.written) lines.push(`  + ${f}`);
-  for (const f of marketplaceInstall.written) lines.push(`  + ${f}`);
   for (const f of agentInstall.written) lines.push(`  + ${f}`);
 
-  const totalSkipped = result.skipped.length + marketplaceInstall.skipped.length + agentInstall.skipped.length;
+  const totalSkipped = result.skipped.length + agentInstall.skipped.length;
   if (totalSkipped > 0) {
     lines.push(
       `Preserved ${totalSkipped} existing file${totalSkipped === 1 ? '' : 's'} (pass --overwrite to replace):`,
     );
     for (const f of result.skipped) lines.push(`  · ${f}`);
-    for (const f of marketplaceInstall.skipped) lines.push(`  · ${f}`);
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }
   if (gitNote) lines.push(gitNote);

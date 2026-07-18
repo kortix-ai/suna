@@ -49,7 +49,6 @@ import {
   Layers,
   // Navigation
   LayoutDashboard,
-  LayoutTemplate,
   LogOut,
   MessagesSquare,
   Monitor,
@@ -64,8 +63,10 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Store,
+  Terminal,
   TerminalSquare,
   UserPlus,
   Volume2,
@@ -101,6 +102,7 @@ export type MenuItemKind =
 
 export type SettingsTabId =
   | 'general'
+  | 'security'
   | 'appearance'
   | 'sounds'
   | 'notifications'
@@ -259,6 +261,51 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'viewChanges',
     requiresSession: true,
   },
+  // NOTE: distinct id/actionId from the legacy 'open-terminal' entry below
+  // (which spawns a standalone workspace PTY tab and is hidden from the
+  // palette via LEGACY_PALETTE_HIDDEN in command-palette.tsx) — this one
+  // opens THIS session's own terminal/audit surface (Easy detail layer /
+  // Advanced tab), so it needs its own identity even though the label the
+  // product wants ("Open Terminal") collides in English.
+  {
+    id: 'open-session-terminal',
+    label: 'Open Terminal',
+    icon: Terminal,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionTerminal',
+    keywords: 'terminal shell console pty session',
+    requiresSession: true,
+  },
+  {
+    id: 'open-session-audit',
+    label: 'Open Audit',
+    icon: ShieldCheck,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionAudit',
+    keywords: 'audit governed actions approvals trail session',
+    requiresSession: true,
+  },
+  // Distinct id/actionId from the legacy 'agent-browser-cmd'/'internal-browser-cmd'
+  // entries below (both hidden from the palette via LEGACY_PALETTE_HIDDEN in
+  // command-palette.tsx, and both standalone workspace tabs) — this one opens
+  // THIS session's own in-panel port browser (Easy detail layer / Advanced
+  // Browser tab), the same distinction 'open-session-terminal' draws from the
+  // legacy 'open-terminal'.
+  {
+    id: 'open-session-browser',
+    label: 'Open Browser',
+    icon: Globe,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openSessionBrowser',
+    keywords: 'browser preview app port localhost session',
+    requiresSession: true,
+  },
 
   {
     id: 'restart-config',
@@ -395,7 +442,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
-    keywords: 'connectors integrations pipedream mcp openapi apps executor project customize',
+    keywords: 'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
   },
   {
     id: 'proj-connectors-policies',
@@ -704,16 +751,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'desktop selkies novnc full screen xfce sandbox vnc remote',
   },
   {
-    id: 'templates',
-    label: 'Templates',
-    icon: LayoutTemplate,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/templates',
-    keywords: 'templates starter project boilerplate',
-  },
-  {
     id: 'changelog',
     label: 'Changelog',
     icon: ScrollText,
@@ -903,6 +940,17 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'toggleSidebar',
     shortcut: 'Ctrl+B',
+  },
+  {
+    id: 'toggle-panel-mode',
+    label: 'Switch to Advanced View', // swapped dynamically at render time based on current mode
+    icon: SlidersHorizontal,
+    group: 'view',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'togglePanelMode',
+    keywords: 'easy advanced simple panel session detail mode view',
+    requiresSession: true,
   },
   {
     id: 'logout',

@@ -21,6 +21,7 @@ import type { AgentGrant } from '@kortix/db';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import type { ConnectorAuthDiscovery } from './auth-discovery';
 import { type GatewayDeps, handleCall } from './gateway';
 
 // ── Response schemas ─────────────────────────────────────────────────────────
@@ -80,6 +81,7 @@ const SyncResultSchema = z
   .passthrough()
   .openapi('ExecutorSyncResult');
 const CrudOkSchema = z.object({ ok: z.boolean(), sync: z.any().optional() }).passthrough();
+const AuthDiscoverySchema = z.record(z.string(), z.any());
 const OpaqueSchema = z.record(z.string(), z.any());
 
 export interface ExecutorPrincipal {
@@ -177,6 +179,10 @@ export interface ExecutorRouterDeps {
     accountId: string,
     draft: Record<string, unknown>,
   ): Promise<CrudOutcome>;
+  discoverConnectorAuth?(
+    projectId: string,
+    draft: Record<string, unknown>,
+  ): Promise<ConnectorAuthDiscovery>;
   /** Remove a connector from kortix.yaml + drop its rows. */
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
@@ -521,6 +527,38 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
+  // ── Admin: preview authentication advertised by a connector source ──────
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/projects/{projectId}/connectors/auth-discovery',
+      tags: ['executor'],
+      summary: 'Discover authentication advertised by a connector source',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(AuthDiscoverySchema, 'Normalized authentication candidates'),
+        ...errors(400, 403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.discoverConnectorAuth) return c.json({ error: 'not supported' }, 501);
+      let body: Record<string, unknown>;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      return c.json(await deps.discoverConnectorAuth(projectId, body));
+    },
+  );
+
   // ── Admin: add/update a connector (writes kortix.yaml) ───────────────────
   app.openapi(
     createRoute({
@@ -551,9 +589,14 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       } catch {
         return c.json({ error: 'invalid_json' }, 400);
       }
+      let authDiscovery: ConnectorAuthDiscovery | undefined;
+      if (body.auth === undefined && deps.discoverConnectorAuth) {
+        authDiscovery = await deps.discoverConnectorAuth(projectId, body);
+        if (authDiscovery.recommended) body.auth = authDiscovery.recommended;
+      }
       const result = await deps.createConnector(projectId, admin.accountId, body);
       return result.ok
-        ? c.json({ ok: true, sync: result.sync })
+        ? c.json({ ok: true, sync: result.sync, authDiscovery })
         : c.json({ error: result.error }, result.status as 400);
     },
   );

@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
+import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
 import { db } from '../../shared/db';
 import { defaultAccountName } from './app';
 
@@ -43,12 +44,16 @@ export async function bootstrapPersonalAccount(
       try {
         await initializeFreeTierAccount(userId);
       } catch (err) {
-        console.warn(
-          `[accounts] Failed to initialize free tier for ${userId}:`,
-          err,
-        );
+        console.warn(`[accounts] Failed to initialize free tier for ${userId}:`, err);
       }
     }
+
+    // Only genuinely-new users sync (created:true) — token-authed callers
+    // that reach resolveAccount with an existing account never get here.
+    // Fire-and-forget: Mailtrap being down must never affect signup.
+    void syncSignupContactToMailtrap(email).catch((err) =>
+      console.warn(`[accounts] Mailtrap contact sync failed for ${userId}:`, err),
+    );
 
     return { accountId: userId, created: true };
   }

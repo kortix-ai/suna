@@ -5,9 +5,12 @@ import {
   isAndroidWebViewNativeBridgePostMessageNoise,
   isClientRequestTimeoutMessage,
   isEmptyMessageUnresolvedBrowserChunkNoise,
+  isEmbedPdfTilingReactUpdateDepthNoise,
   isExpectedBillingGateMessage,
+  isExtensionRejectedObjectNoise,
   isExtensionSource,
   isInjectedAppSource,
+  isInpageWalletStreamNoise,
   isKnownBrowserNoiseMessage,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
@@ -17,6 +20,7 @@ import {
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
   isTronLinkProxyNoise,
+  isUnresolvableStackOverflowNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -1811,10 +1815,784 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
     }),
     false,
   )
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message: 'Error invoking postMessage: Java object is gone',
+        frames: [{ filename: 'app://navigation_performance_logger_androidx' }],
+      }),
+      false,
+    )
+})
+
+// ---------------------------------------------------------------------------
+// iOS-WebKit stack-overflow noise
+// (Better Stack pattern 87ccbef98ea62fbf90df2446141a26b78ba7f928a28642b099d53b40e8613031,
+// Kortix Frontend prod, application_id 2346967). iOS WebKit (Safari,
+// Chrome-on-iOS, Google Search App — all WKWebView/JSC) surfaces
+// `RangeError: Maximum call stack size exceeded.` through `window.onerror`
+// (Sentry mechanism `auto.browser.global_handlers.onerror`) with NO usable
+// stack: the single exception frame is the synthetic
+// `{ function: '?', filename: 'undefined', lineno: <n> }` placeholder, so
+// `call_site_file` is `undefined` and `call_site_function` is `?`. ~30
+// lifetime occurrences, 0 identified users, first 2026-04-21 / last
+// 2026-07-14, 100% iOS across 7 releases over 2.5 months — browser/engine
+// noise, NOT a deterministic app regression. The matcher is anchored on the
+// canonical message AND the absence of ANY resolvable source location so a
+// real first-party (or third-party) recursion that carries a real chunk/URL/
+// `apps/web/src/…` frame keeps reporting.
+// ---------------------------------------------------------------------------
+
+// The exact synthetic frame the iOS-WebKit global-onerror capture produces —
+// pulled verbatim from the production raw exception payload.
+const IOS_STACK_OVERFLOW_SYNTHETIC_FRAME = { function: '?', filename: 'undefined', lineno: 31 }
+const IOS_STACK_OVERFLOW_MESSAGES = [
+  'Maximum call stack size exceeded.',
+  'RangeError: Maximum call stack size exceeded.',
+  'Unhandled promise rejection: RangeError: Maximum call stack size exceeded.',
+]
+
+test('classifies the iOS-WebKit stack-overflow capture as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message,
+        frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      true,
+      `expected "${message}" with the synthetic undefined frame to be noise`,
+    )
+  }
+})
+
+test('suppresses the iOS-WebKit stack-overflow noise via the Sentry beforeSend gate', () => {
+  // The exact production event shape: single synthetic `{ filename: 'undefined' }`
+  // frame captured by Sentry's GlobalHandlers (window.onerror) integration.
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}" with the synthetic undefined frame`,
+    )
+  }
+  // Frameless global-onerror capture (no stacktrace at all) is also noise.
   assert.equal(
-    isAndroidWebViewNativeBridgePostMessageNoise({
-      message: 'Error invoking postMessage: Java object is gone',
-      frames: [{ filename: 'app://navigation_performance_logger_androidx' }],
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: 'Maximum call stack size exceeded.' }] },
+    }),
+    true,
+  )
+})
+
+test('suppresses the iOS-WebKit stack-overflow noise via the runtime (window.onerror) gate', () => {
+  // window.onerror for the noise capture carries no resolvable filename
+  // (event.filename is undefined/empty) — the engine truncated the stack.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: 'Maximum call stack size exceeded.' }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: '',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real first-party RangeError recursion with a resolved apps/web/src frame', () => {
+  // A genuine infinite recursion in our own code still produces a real stack;
+  // Sentry's sourcemap resolution rewrites the top frame back to
+  // `apps/web/src/…`. The negative guard MUST preserve it so the call site can
+  // be found + fixed — this is the whole reason the matcher is frame-aware.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/co-worker/recursion-loop.ts', function: 'deepRecurse' }],
+    [
+      { filename: 'apps/web/src/features/co-worker/recursion-loop.ts', function: 'deepRecurse' },
+      IOS_STACK_OVERFLOW_SYNTHETIC_FRAME,
+    ],
+  ]) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames,
+      }),
+      false,
+      `expected real first-party recursion with frames ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Maximum call stack size exceeded.',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real first-party recursion with frames ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    }),
+    false,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
+// (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
+// (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
+// and 3a6b00dc85a3e75f08efab371960c60f74beb2c18059a7f9bcffe409c2591ce6
+// (`Cannot read properties of undefined (reading 'emit')`, 4 occ.),
+// Kortix Frontend prod, application_id 2346967). EVM wallet extensions
+// (MetaMask + derivatives) inject `app:///inpage.js` whose provider stream is
+// `@metamask/post-message-stream`'s `ExtendedBroadcastMessage` (an
+// EventEmitter subclass). During extension init / port-teardown races the
+// underlying stream/port is `undefined`, so an `.addListener` / `.emit` call
+// throws inside `app:///inpage.js` (frames `?` / `fulfilled` /
+// `ExtendedBroadcastMessage.<anonymous>`). 0 identified users, first/last
+// 2026-07-14, request URL `https://kortix.com/`, Chrome 150. The throw is in
+// the EXTENSION's injected script, never first-party code. The matcher
+// requires BOTH one of the exact message markers AND an `app:///inpage.js` /
+// extension source so a real first-party `.addListener`/`.emit` TypeError
+// keeps reporting.
+// ---------------------------------------------------------------------------
+
+const INPAGE_WALLET_INJECTED_FRAME = { filename: 'app:///inpage.js', function: '?' }
+const INPAGE_WALLET_EMIT_FRAME_CHAIN = [
+  { filename: 'app:///inpage.js', function: 'fulfilled' },
+  { filename: '<anonymous>', function: 'Generator.next' },
+  { filename: 'app:///inpage.js', function: 'ExtendedBroadcastMessage.<anonymous>' },
+]
+
+const INPAGE_WALLET_STREAM_EVENTS = [
+  // The exact raw exception values from the two production events (V8/Chrome).
+  "Cannot read properties of undefined (reading 'addListener')",
+  "Cannot read properties of undefined (reading 'emit')",
+  // `TypeError:` prefixed (window.onerror / onunhandledrejection paths).
+  "TypeError: Cannot read properties of undefined (reading 'addListener')",
+  "TypeError: Cannot read properties of undefined (reading 'emit')",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'addListener')",
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'emit')",
+  // Old JSC (Safari) wording, same wallet-extension class.
+  "Cannot read property 'addListener' of undefined",
+  "TypeError: Cannot read property 'emit' of undefined",
+]
+
+test('classifies every inpage.js wallet-stream variant as noise when sourced from the injected script', () => {
+  for (const message of INPAGE_WALLET_STREAM_EVENTS) {
+    assert.equal(
+      isInpageWalletStreamNoise({ message, filename: 'app:///inpage.js' }),
+      true,
+      `expected "${message}" from inpage.js to be wallet-stream noise`,
+    )
+    assert.equal(
+      isInpageWalletStreamNoise({ message, frames: [INPAGE_WALLET_INJECTED_FRAME] }),
+      true,
+      `expected "${message}" with an injected frame to be wallet-stream noise`,
+    )
+  }
+})
+
+test('classifies the emit variant from the full ExtendedBroadcastMessage frame chain', () => {
+  assert.equal(
+    isInpageWalletStreamNoise({
+      message: "Cannot read properties of undefined (reading 'emit')",
+      frames: INPAGE_WALLET_EMIT_FRAME_CHAIN,
+    }),
+    true,
+  )
+})
+
+test('classifies inpage.js wallet-stream noise from a chrome-extension:// frame', () => {
+  assert.equal(
+    isInpageWalletStreamNoise({
+      message: "TypeError: Cannot read properties of undefined (reading 'emit')",
+      frames: [{ filename: 'chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('suppresses the inpage.js wallet-stream Sentry event via the beforeSend gate', () => {
+  for (const value of INPAGE_WALLET_STREAM_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: INPAGE_WALLET_EMIT_FRAME_CHAIN },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the inpage.js wallet-stream unhandled rejection from the browser (window.onerror)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'addListener')",
+      filename: 'app:///inpage.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress an inpage.js wallet-stream event with NO injected/extension source (conservative — keep reporting)', () => {
+  // No source anchor → can't confirm extension origin; a first-party emitter
+  // could theoretically throw the same wording, so keep reporting.
+  for (const value of INPAGE_WALLET_STREAM_EVENTS) {
+    assert.equal(
+      isInpageWalletStreamNoise({ message: value }),
+      false,
+      `expected frameless "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress an inpage.js wallet-stream event from a first-party app frame', () => {
+  // A genuine first-party emitter bug (Node `EventEmitter` / `mitt` /
+  // `nanoevents` / hand-rolled emitter) throws the SAME wording but inside
+  // app code — the de-minified frame is `apps/web/src/…` (or an
+  // `app:///_next/…` chunk), never the extension's `app:///inpage.js`. It
+  // must keep reporting so a real emitter bug is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///apps/web/src/lib/event-bus.ts' },
+    { filename: 'apps/web/src/lib/event-bus.ts' },
+    { filename: 'https://app.kortix.com/_next/static/chunks/event-bus.js' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///_next/static/chunks/app.js' }]]) {
+    assert.equal(
+      isInpageWalletStreamNoise({
+        message: "TypeError: Cannot read properties of undefined (reading 'emit')",
+        frames,
+      }),
+      false,
+      `expected wallet-stream-worded event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: "Cannot read properties of undefined (reading 'addListener')",
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting wallet-stream-worded event from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read properties of undefined (reading 'emit')",
+      filename: 'apps/web/src/lib/event-bus.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a real first-party TypeError on a DIFFERENT method name from inpage.js', () => {
+  // The generic `Cannot read properties of undefined (reading '<X>')` wording
+  // with a non-`addListener`/`emit` method name is NOT the wallet-stream
+  // class — even from the injected script frame it must keep reporting, so a
+  // different injected-script regression is never hidden by this guard.
+  for (const value of [
+    "Cannot read properties of undefined (reading 'addEventListener')",
+    "TypeError: Cannot read properties of undefined (reading 'on')",
+    "Cannot read properties of undefined (reading 'removeListener')",
+  ]) {
+    assert.equal(
+      isInpageWalletStreamNoise({ message: value, filename: 'app:///inpage.js' }),
+      false,
+      `expected non-wallet-stream message "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a same-worded message from a near-miss injected filename', () => {
+  // The matcher is anchored on the EXACT `app:///inpage.js` source — a
+  // near-identical filename (e.g. a path variant or a typo) must NOT be
+  // swallowed by this guard.
+  for (const filename of [
+    'app:///scripts/inpage.js',
+    'app:///inpage.min.js',
+    'app://inpage.js',
+    'app:///injected/inpage.js',
+  ]) {
+    assert.equal(
+      isInpageWalletStreamNoise({
+        message: "Cannot read properties of undefined (reading 'emit')",
+        frames: [{ filename }],
+      }),
+      false,
+      `expected "${filename}" frame to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real recursion that carries a resolvable chunk/URL frame', () => {
+  // A real recursion — even a third-party one — surfaces with at least one real
+  // chunk/URL source location (the engine recorded where it overflowed). The
+  // negative guard preserves it; only the frameless synthetic-`undefined`
+  // capture is dropped.
+  const realFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js' },
+    { filename: 'https://kortix.com/_next/static/chunks/main-abc.js' },
+    { filename: 'app:///apps/web/src/lib/something.ts' },
+  ]
+  for (const frame of realFrames) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames: [frame, IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      false,
+      `expected real recursion with frame ${JSON.stringify(frame)} to keep reporting`,
+    )
+  }
+  // Runtime gate with a real chunk filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a different RangeError message', () => {
+  // A RangeError with a different message (e.g. an invalid array length) is a
+  // different, actionable error class — never matched by this guard.
+  for (const message of [
+    'Invalid array length',
+    'RangeError: Invalid array length',
+    'Maximum call stack', // prefix-only, not the canonical message
+  ]) {
+    assert.equal(
+      isUnresolvableStackOverflowNoise({
+        message,
+        frames: [IOS_STACK_OVERFLOW_SYNTHETIC_FRAME],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+
+// ---------------------------------------------------------------------------
+// @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
+// exceeded" render-loop noise
+// (Better Stack pattern 366115d4c931a6352fe8f334ff1b366f6d4b2ce9c192769ac681831354521e30,
+// Kortix Frontend prod, application_id 2346967). The `@embedpdf/plugin-tiling`
+// `TilingLayer` React component (used by `pdf-viewer.tsx`'s `<TilingLayer>`)
+// subscribes to the tiling plugin's `onTileRendering` event and calls
+// `setTiles(...)` on every emission; under a rapid zoom/scroll burst the
+// plugin re-emits synchronously during the React commit phase, tripping
+// React's 50-nested-update guard (#185). 1 occurrence, 0 identified users,
+// 2026-07-15 09:36:41 UTC, route `/projects/:id/sessions/:sessionId`, Chrome
+// 142 / Windows 10. The throw frame is `Object.r [as onTileRendering]` in a
+// `_next/static/chunks/…` bundle — never first-party `apps/web/src/…` source.
+// React #185 is ALSO a real first-party setState-loop message, so the matcher
+// requires BOTH the #185 message AND an `onTileRendering` frame, with a
+// first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact React #185 message from the production event.
+const REACT_185 =
+  'Minified React error #185; visit https://react.dev/errors/185 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.'
+
+// A representative slice of the production stack frames (oldest-first →
+// throwing frame last): the React reconciler loop (`uE`/`ux`) recursing
+// through the @embedpdf `onTileRendering` callback. All frames are raw
+// `_next/static/chunks/…` bundles — none resolve to first-party source.
+const EMBEDPDF_TILING_REACT_185_FRAMES = [
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 'uE' },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 'ux' },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 'o1' },
+  {
+    filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy',
+    function: 'Object.r [as onTileRendering]',
+  },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy', function: 't7' },
+]
+
+test('classifies the @embedpdf tiling React #185 render loop as noise', () => {
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({
+      message: REACT_185,
+      frames: EMBEDPDF_TILING_REACT_185_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned @embedpdf tiling React #185 Sentry event via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/c4d70885-ce86-4283-b373-bc2fbcd92b85/sessions/917c2468-11bf-4cf0-92e6-20d17fa58e77',
+      },
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            stacktrace: { frames: EMBEDPDF_TILING_REACT_185_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the @embedpdf tiling React #185 event even with only the onTileRendering frame', () => {
+  // A minimal capture carrying just the tiling callback frame still qualifies.
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({
+      message: REACT_185,
+      frames: [
+        {
+          filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy',
+          function: 'Object.r [as onTileRendering]',
+        },
+      ],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the @embedpdf tiling React #185 when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own component is the looping
+  // culprit → actionable; the negative guard MUST preserve it so the call site
+  // can be found + fixed. This is the whole reason the matcher is frame-aware
+  // (React #185 is also a real first-party setState-loop message).
+  for (const frames of [
+    [{ filename: 'apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'PDFViewerInner' }],
+    [
+      { filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js', function: 'Object.r [as onTileRendering]' },
+      { filename: 'app:///apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'renderPage' },
+    ],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames }),
+      false,
+      `expected first-party React #185 from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: REACT_185, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party React #185 from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a React #185 with NO onTileRendering frame (a real app or different third-party loop)', () => {
+  // A real first-party setState loop, or a #185 from a different third-party
+  // lib, carries NO `onTileRendering` frame — it must keep reporting. Only the
+  // @embedpdf-tiling #185 class is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/app.js', function: 'useEffect' }],
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    [],
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames }),
+      false,
+      `expected React #185 from ${JSON.stringify(frames)} (no onTileRendering) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a different React error (#425) even with an onTileRendering frame', () => {
+  // The matcher is anchored on the EXACT #185 (Maximum update depth) code; a
+  // different React minified error from the tiling plugin is a different,
+  // actionable class and must keep reporting.
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({
+      message:
+        'Minified React error #425; visit https://react.dev/errors/425 for the full message',
+      frames: EMBEDPDF_TILING_REACT_185_FRAMES,
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-React message that happens to mention #185', () => {
+  // The matcher anchors on `Minified React error #185` — a different message
+  // wording must not be matched.
+  for (const message of [
+    'Maximum update depth exceeded',
+    'Error #185 in custom handler',
+    'react.dev/errors/185',
+  ]) {
+    assert.equal(
+      isEmbedPdfTilingReactUpdateDepthNoise({
+        message,
+        frames: EMBEDPDF_TILING_REACT_185_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Browser-extension EIP-1193 wallet-provider plain-object rejection noise
+// (Better Stack pattern
+// 0f78b2f8e9efa79fe9b2ea534e275c704f113eafea86bae5470f33174ebacebc,
+// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// wallet extension (extension id `lgmpcpglpngdoalbgeoldeajfclnhafa`) injects
+// an EIP-1193 provider whose content script
+// (`chrome-extension://<id>/content-script.js`) rejects pending JSON-RPC
+// requests with a PLAIN OBJECT — not an Error — of shape
+// `{ code: 4900, message: "The provider is disconnected from all chains.",
+// stack: "Error: …\\n    at … (chrome-extension://…/content-script.js)" }`
+// (EIP-1193 code 4900 = "provider is disconnected"). Because the rejected
+// value is not an Error, Sentry's GlobalHandlers `onunhandledrejection`
+// integration cannot extract a stack: it serializes the object's enumerable
+// keys into `extra.__serialized__` and sets the exception value to the
+// synthetic "Object captured as promise rejection with keys: code, message,
+// stack" with NO stacktrace frames. The extension origin therefore lives
+// ONLY in `extra.__serialized__.stack` — the frame-aware extension guards
+// (`isExtensionSource`, `isInpageWalletStreamNoise`, `isTronLinkProxyNoise`)
+// all miss it (no frames to anchor on). 2 occurrences, 0 identified users,
+// first 2026-07-06 / last 2026-07-15, mechanism
+// `auto.browser.global_handlers.onunhandledrejection`, request URL
+// `https://kortix.com/auth`, Chrome 150. The matcher requires BOTH the
+// synthetic signature AND an extension-origin frame inside the serialized
+// stack so a real first-party `Promise.reject({...})` keeps reporting.
+// ---------------------------------------------------------------------------
+
+// The exact serialized rejection payload from the raw production event.
+const EIP1193_PROVIDER_DISCONNECTED_SERIALIZED = {
+  message: 'The provider is disconnected from all chains.',
+  stack:
+    'Error: The provider is disconnected from all chains.\n' +
+    '    at s (chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:13:100356)\n' +
+    '    at Object.disconnected (chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:13:101769)\n' +
+    '    at chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:26:51970\n' +
+    '    at E.rejectWaitingRequests (chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:26:51985)\n' +
+    '    at chrome-extension://lgmpcpglpngdoalbgeoldeajfclnhafa/content-script.js:26:59539',
+  code: 4900,
+}
+
+const SYNTHETIC_OBJECT_REJECTION_VALUE =
+  'Object captured as promise rejection with keys: code, message, stack'
+
+test('classifies the EIP-1193 provider-disconnected plain-object rejection as noise', () => {
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned Sentry event via the beforeSend gate (frameless synthetic capture)', () => {
+  // Exact shape of the production event: synthetic exception value, NO
+  // stacktrace frames, extension origin only in extra.__serialized__.stack.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      exception: {
+        values: [{ value: SYNTHETIC_OBJECT_REJECTION_VALUE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Firefox (moz-extension://) wallet variant', () => {
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {
+        __serialized__: {
+          message: 'The provider is disconnected from all chains.',
+          stack: 'Error: The provider is disconnected from all chains.\n    at Object.disconnected (moz-extension://abcdef/content-script.js:1:1)',
+          code: 4900,
+        },
+      },
+    }),
+    true,
+  )
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {
+        __serialized__: {
+          message: 'foo',
+          stack: 'Error: foo\n    at x (safari-web-extension://com.example.ext/content.js:1:1)',
+          code: 1,
+        },
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the wallet-provider rejection via the runtime (unhandledrejection) gate', () => {
+  // The runtime gate receives the raw rejected object as `reason`; its
+  // `message` is the provider's own ("The provider is disconnected…"), NOT
+  // Sentry's synthetic wording, so the gate anchors on the rejected value's
+  // own `stack` tracing through the extension content script.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ error: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED }),
+    true,
+  )
+})
+
+test('does NOT suppress a synthetic plain-object rejection with NO serialized payload (conservative — keep reporting)', () => {
+  // No `extra.__serialized__` to confirm extension origin → a first-party
+  // `Promise.reject({code, message, stack})` could produce the same synthetic
+  // signature, so keep reporting.
+  assert.equal(
+    isExtensionRejectedObjectNoise({ message: SYNTHETIC_OBJECT_REJECTION_VALUE }),
+    false,
+  )
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {},
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: SYNTHETIC_OBJECT_REJECTION_VALUE }] },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a synthetic plain-object rejection whose serialized stack has NO extension origin', () => {
+  // The serialized stack traces through our own app chunk, not an extension
+  // content script → a real first-party plain-object rejection; keep reporting.
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: {
+        __serialized__: {
+          message: 'boom',
+          stack: 'Error: boom\n    at handleClick (app:///_next/static/chunks/app.js:42:10)',
+          code: 500,
+        },
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a synthetic plain-object rejection whose stacktrace resolves to a first-party frame', () => {
+  // Negative guard: a resolved `apps/web/src/…` frame means our own code
+  // rejected the plain object — actionable, keep reporting.
+  assert.equal(
+    isExtensionRejectedObjectNoise({
+      message: SYNTHETIC_OBJECT_REJECTION_VALUE,
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      frames: [{ filename: 'apps/web/src/lib/wallet-provider.ts' }],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      exception: {
+        values: [
+          {
+            value: SYNTHETIC_OBJECT_REJECTION_VALUE,
+            stacktrace: {
+              frames: [{ filename: 'app:///apps/web/src/lib/wallet-provider.ts' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a real Error rejection (not the synthetic plain-object signature)', () => {
+  // A genuine rejected Error carries a real message and stacktrace, never the
+  // synthetic "Object captured as promise rejection with keys: …" wording.
+  for (const value of [
+    'The provider is disconnected from all chains.',
+    'TypeError: Cannot read properties of undefined (reading id)',
+    'Internal server error',
+  ]) {
+    assert.equal(
+      isExtensionRejectedObjectNoise({
+        message: value,
+        extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+      }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected real Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a runtime rejection whose reason is a real Error with an app-only stack', () => {
+  // A real Error from app code has a stack of app/chunk frames, never an
+  // extension content-script frame → keep reporting.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      reason: {
+        message: 'something failed',
+        stack: 'Error: something failed\n    at handleClick (app:///_next/static/chunks/app.js:42:10)',
+      },
     }),
     false,
   )
