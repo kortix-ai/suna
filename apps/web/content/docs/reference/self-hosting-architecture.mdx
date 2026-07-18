@@ -132,13 +132,17 @@ or **`latest`** — or an explicit pinned version (`--tag <version>`). The
 `kortix-updater` service and `kortix self-host update`/`reconcile` both
 resolve the same way: an explicit pin wins, otherwise the configured channel.
 
-This is a **release-pipeline contract**, not a self-host CLI concern: the
-Kortix release flow must publish/repoint the moving `stable` tag on all three
-app images (`kortix-api`, `kortix-frontend`, `kortix-gateway`) on every
-production release, the same way it already republishes `latest` and the
-exact `X.Y.Z` tag. Self-host installs — evaluation or production — consume
-whatever that pipeline publishes; they never build or sign anything
-themselves.
+This is a **release-pipeline contract**, not a self-host CLI concern. A prod
+release automatically retags `:latest` and the exact `:X.Y.Z` on all three
+app images (`kortix-api`, `kortix-frontend`, `kortix-gateway`). The moving
+`:stable` tag is promoted **separately and deliberately** — a human runs the
+`Promote Self-Host Stable` workflow (workflow_dispatch, picks a version) to
+repoint `:stable` → that version's digest. Curation is intentional: not
+every prod release is pushed to every self-hosted box overnight; only proven
+versions reach `:stable`. Self-host installs — evaluation or production —
+consume whatever that pipeline has promoted; they never build or sign
+anything themselves. To get a release that hasn't been promoted to `:stable`
+yet, use `--channel latest` or pin `--tag <version>`.
 
 ## What changed from the old enterprise-VPC design
 

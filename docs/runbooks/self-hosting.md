@@ -372,16 +372,20 @@ tag to the concrete version it currently points to, via Docker Hub) and
 whether a newer release is available.
 
 > **Release-flow contract this depends on:** the self-host default channel is
-> `stable`, meaning the Kortix release pipeline (`deploy-prod.yml` /
-> `Promote` → GitHub Release) must publish/repoint a moving `:stable` tag on
-> all three app images (`kortix-api`, `kortix-frontend`, `kortix-gateway`) on
-> every production release, the same way it already retags `:latest` and the
-> exact `:X.Y.Z`. **As of this writing the release workflow retags `:latest`
-> and `:X.Y.Z` only — it does not yet publish `:stable`.** Until that's added,
-> self-host installs tracking the (default) `stable` channel will not see new
-> versions from the auto-updater; use `--channel latest` or pin `--tag
-> <version>` in the meantime, and treat wiring up `:stable` publishing as a
-> release-pipeline follow-up, not a self-host CLI change.
+> `stable`. A prod release (`deploy-prod.yml` → GitHub Release) retags
+> `:latest` and the exact `:X.Y.Z` on all three app images (`kortix-api`,
+> `kortix-frontend`, `kortix-gateway`) automatically. The moving `:stable`
+> tag is promoted **separately and deliberately**, not on every release: a
+> human runs the
+> [`Promote Self-Host Stable`](https://github.com/kortix-ai/suna/actions/workflows/promote-self-host-stable.yml)
+> workflow (`workflow_dispatch`, picks a version) to repoint `:stable` →
+> that version's digest (`docker buildx imagetools create`) on all three
+> images. Curation is intentional — we don't push every prod release to
+> every self-hosted box overnight; only proven versions reach `:stable`.
+> From the moment a version is promoted, self-host installs tracking the
+> (default) `stable` channel pick it up on their next auto-updater cycle.
+> To get a release that hasn't been promoted to `:stable` yet, use
+> `--channel latest` or pin `--tag <version>`.
 
 ## Configuring SMTP, Daytona, and other integrations later
 
