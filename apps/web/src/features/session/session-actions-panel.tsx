@@ -96,12 +96,10 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
   }, []);
 
   const goNext = useCallback(() => {
-    setIndex((i) => {
-      const next = Math.min(count - 1, i + 1);
-      setMode(next >= count - 1 ? 'live' : 'manual');
-      return next;
-    });
-  }, [count]);
+    const next = Math.min(count - 1, index + 1);
+    setMode(next >= count - 1 ? 'live' : 'manual');
+    setIndex(next);
+  }, [count, index]);
 
   const jumpToLatest = useCallback(() => {
     setMode('live');

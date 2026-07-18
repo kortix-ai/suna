@@ -1951,33 +1951,32 @@ function PDFViewerInner({
 
       suppressActivePageSelectionSyncRef.current = pageIndex
 
-      setSelectedPageIndexes((previousSelection) => {
-        let nextSelection: Set<number>
+      const previousSelection = selectedPageIndexesRef.current
+      let nextSelection: Set<number>
 
-        if (mode === "range") {
-          const anchorPageIndex =
-            selectionAnchorPageIndexRef.current ??
-            (activePage > 0 ? activePage - 1 : pageIndex)
+      if (mode === "range") {
+        const anchorPageIndex =
+          selectionAnchorPageIndexRef.current ??
+          (activePage > 0 ? activePage - 1 : pageIndex)
 
-          nextSelection = getPageIndexRange(anchorPageIndex, pageIndex)
-        } else if (mode === "toggle") {
-          nextSelection = new Set(previousSelection)
+        nextSelection = getPageIndexRange(anchorPageIndex, pageIndex)
+      } else if (mode === "toggle") {
+        nextSelection = new Set(previousSelection)
 
-          if (nextSelection.has(pageIndex)) {
-            nextSelection.delete(pageIndex)
-          } else {
-            nextSelection.add(pageIndex)
-          }
-
-          selectionAnchorPageIndexRef.current = pageIndex
+        if (nextSelection.has(pageIndex)) {
+          nextSelection.delete(pageIndex)
         } else {
-          nextSelection = new Set([pageIndex])
-          selectionAnchorPageIndexRef.current = pageIndex
+          nextSelection.add(pageIndex)
         }
 
-        selectedPageIndexesRef.current = nextSelection
-        return nextSelection
-      })
+        selectionAnchorPageIndexRef.current = pageIndex
+      } else {
+        nextSelection = new Set([pageIndex])
+        selectionAnchorPageIndexRef.current = pageIndex
+      }
+
+      selectedPageIndexesRef.current = nextSelection
+      setSelectedPageIndexes(nextSelection)
 
       scrollToPage(pageNumber)
     },

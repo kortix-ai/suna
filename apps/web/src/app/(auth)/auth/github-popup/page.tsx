@@ -25,6 +25,7 @@ export default function GitHubOAuthPopup() {
     const supabase = createClient();
     let authSubscription: { unsubscribe: () => void } | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let closeTimerId: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
 
     // Get return URL from sessionStorage (set by parent component)
@@ -48,7 +49,7 @@ export default function GitHubOAuthPopup() {
       });
 
       // Close popup after short delay
-      setTimeout(() => {
+      closeTimerId = setTimeout(() => {
         window.close();
       }, 500);
     };
@@ -62,7 +63,7 @@ export default function GitHubOAuthPopup() {
       });
 
       // Close popup after delay to show error
-      setTimeout(() => {
+      closeTimerId = setTimeout(() => {
         window.close();
       }, 2000);
     };
@@ -167,6 +168,7 @@ export default function GitHubOAuthPopup() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       authSubscription?.unsubscribe();
       if (timeoutId) clearTimeout(timeoutId);
+      if (closeTimerId) clearTimeout(closeTimerId);
     };
   }, []);
 

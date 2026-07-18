@@ -49,6 +49,17 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
+  // Always-current zoom value for handlers that can fire faster than React
+  // commits (trackpad wheel momentum) — reading `zoom` from closure scope in
+  // that case would collapse several events into one step because every
+  // event sees the same stale committed value. Every zoom writer below
+  // writes this ref synchronously before calling setZoom, and this effect
+  // is the backstop for any writer that sets zoom from elsewhere.
+  const zoomRef = useRef(zoom);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
   // Check if the url is an SVG
   const isSvg =
     url?.toLowerCase().endsWith('.svg') || url?.includes('image/svg');
@@ -137,30 +148,34 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
   };
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + getZoomStep(prev), 10));
+    const next = Math.min(zoom + getZoomStep(zoom), 10);
+    zoomRef.current = next;
+    setZoom(next);
     setIsFitToScreen(false);
   };
 
   const handleZoomOut = () => {
-    setZoom((prev) => {
-      const step = getZoomStep(prev - 0.01); // step based on where we're going
-      const newZoom = Math.max(prev - step, 0.25);
-      if (newZoom <= 0.5) setIsFitToScreen(true);
-      return newZoom;
-    });
+    const step = getZoomStep(zoom - 0.01); // step based on where we're going
+    const newZoom = Math.max(zoom - step, 0.25);
+    if (newZoom <= 0.5) setIsFitToScreen(true);
+    zoomRef.current = newZoom;
+    setZoom(newZoom);
   };
 
-  // Scroll wheel zoom
+  // Scroll wheel zoom — trackpad momentum can fire several events per
+  // frame, faster than React commits, so this must accumulate off a ref
+  // (always-current, written synchronously) rather than the closed-over
+  // `zoom` state value, or fast events collapse into a single step.
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -1 : 1;
-    setZoom((prev) => {
-      const step = getZoomStep(prev) * 0.5;
-      const next = Math.max(0.25, Math.min(prev + delta * step, 10));
-      if (next <= 0.5) setIsFitToScreen(true);
-      else setIsFitToScreen(false);
-      return next;
-    });
+    const current = zoomRef.current;
+    const step = getZoomStep(current) * 0.5;
+    const next = Math.max(0.25, Math.min(current + delta * step, 10));
+    zoomRef.current = next;
+    setZoom(next);
+    if (next <= 0.5) setIsFitToScreen(true);
+    else setIsFitToScreen(false);
   };
 
   // Function for rotation
@@ -170,6 +185,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
 
   // Toggle fit to screen
   const toggleFitToScreen = () => {
+    zoomRef.current = 1;
     if (isFitToScreen) {
       setZoom(1);
       setIsFitToScreen(false);
