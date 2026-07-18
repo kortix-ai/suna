@@ -178,6 +178,35 @@ describe('kortix-native pty', () => {
     }
   })
 
+  it('keeps the default interactive shell alive until its first viewer attaches', async () => {
+    const proxy = startTestProxy()
+    try {
+      const created = await createPty(proxy.port, {})
+      await Bun.sleep(50)
+
+      const list = (await (
+        await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty`, { headers: authHeaders() })
+      ).json()) as PtyMeta[]
+      expect(list.find((pty) => pty.id === created.id)?.status).toBe('running')
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`,
+        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
+      )
+      await waitForOpen(ws)
+      ws.send("printf 'DEFAULT_SHELL_MARKER\\n'\n")
+      await waitForData(ws, (acc) => acc.includes('DEFAULT_SHELL_MARKER'))
+      ws.close()
+
+      await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+    } finally {
+      await proxy.stop()
+    }
+  })
+
   it('streams real command output over the websocket', async () => {
     const proxy = startTestProxy()
     try {
@@ -252,17 +281,136 @@ describe('kortix-native pty', () => {
     }
   })
 
-  it('closes the websocket with pty-not-found for an unknown id', async () => {
+  it('lookup-or-create: mints a fresh, working pty for an unknown id instead of closing', async () => {
+    const proxy = startTestProxy()
+    try {
+      const unknownId = 'kpty_does_not_exist'
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxy.port}/kortix/pty/${unknownId}/connect`,
+        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
+      )
+      await waitForOpen(ws)
+      // The new pty reuses the requested id, so the client's existing
+      // tab/URL/list-cache key keeps working with zero protocol changes.
+      const listRes = await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty`, { headers: authHeaders() })
+      const list = (await listRes.json()) as PtyMeta[]
+      expect(list.some((p) => p.id === unknownId && p.status === 'running')).toBe(true)
+
+      // It's a genuine live shell, not a stub — commands actually execute.
+      ws.send("printf 'LOOKUP_OR_CREATE_MARKER\\n'\n")
+      await waitForData(ws, (acc) => acc.includes('LOOKUP_OR_CREATE_MARKER'))
+      ws.close()
+
+      await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${unknownId}`, { method: 'DELETE', headers: authHeaders() })
+    } finally {
+      await proxy.stop()
+    }
+  })
+
+  it('lookup-or-create: mints a fresh pty when the client supplies no id at all', async () => {
     const proxy = startTestProxy()
     try {
       const ws = new WebSocket(
-        `ws://127.0.0.1:${proxy.port}/kortix/pty/kpty_does_not_exist/connect`,
+        `ws://127.0.0.1:${proxy.port}/kortix/pty/connect`,
+        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
+      )
+      await waitForOpen(ws)
+      ws.send("printf 'NO_ID_MARKER\\n'\n")
+      await waitForData(ws, (acc) => acc.includes('NO_ID_MARKER'))
+      ws.close()
+
+      const listRes = await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty`, { headers: authHeaders() })
+      const list = (await listRes.json()) as PtyMeta[]
+      expect(list.some((p) => p.status === 'running')).toBe(true)
+    } finally {
+      await proxy.stop()
+    }
+  })
+
+  it('lookup-or-create: reattaches to a valid running id instead of recreating (reconnect semantics preserved)', async () => {
+    const proxy = startTestProxy()
+    try {
+      const created = await createPty(proxy.port, { command: 'bash', args: ['-c', 'sleep 5'] })
+      const url = `ws://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`
+      const headers = { [KORTIX_USER_CONTEXT_HEADER]: signCtx() }
+
+      const first = new WebSocket(url, { headers } as any)
+      await waitForOpen(first)
+      first.send("printf 'REATTACH_MARKER\\n'\n")
+      await waitForData(first, (acc) => acc.includes('REATTACH_MARKER'))
+      first.close()
+      await waitForClose(first)
+
+      // Reconnecting with the same still-running id resumes the SAME shell
+      // (same pid) rather than spawning a new one.
+      const second = new WebSocket(url, { headers } as any)
+      await waitForOpen(second)
+      second.close()
+
+      const listRes = await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty`, { headers: authHeaders() })
+      const list = (await listRes.json()) as PtyMeta[]
+      expect(list.find((p) => p.id === created.id)?.pid).toBe(created.pid)
+
+      await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}`, { method: 'DELETE', headers: authHeaders() })
+    } finally {
+      await proxy.stop()
+    }
+  })
+
+  it('lookup-or-create: a known-exited pty closes cleanly instead of being silently reincarnated', async () => {
+    const proxy = startTestProxy()
+    try {
+      // A command that exits immediately — entry stays in the registry with
+      // status 'exited' until an explicit DELETE (see finish() in pty.ts).
+      const created = await createPty(proxy.port, { command: 'bash', args: ['-c', 'exit 7'] })
+
+      // Wait for the process to actually exit.
+      await Bun.sleep(200)
+      const listRes = await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty`, { headers: authHeaders() })
+      const list = (await listRes.json()) as PtyMeta[]
+      expect(list.find((p) => p.id === created.id)?.status).toBe('exited')
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxy.port}/kortix/pty/${created.id}/connect`,
         { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
       )
       const closed = await waitForClose(ws)
-      expect(closed.reason).toBe('pty not found')
+      expect(closed.reason).toContain('pty exited')
+
+      await fetch(`http://127.0.0.1:${proxy.port}/kortix/pty/${created.id}`, { method: 'DELETE', headers: authHeaders() })
     } finally {
       await proxy.stop()
+    }
+  })
+
+  it('lookup-or-create: survives a daemon-restart-like registry loss — reconnecting with the old id gets a working shell', async () => {
+    // Simulates exactly the reported bug: a client holds a ptyId minted by a
+    // previous daemon process. A full daemon/container restart wipes the
+    // in-memory registry (unlike an opencode-only restart, which the pty
+    // registry is designed to survive). The client then reconnects with the
+    // now-unknown id — it must get a working terminal, not a hard failure.
+    const firstProxy = startTestProxy()
+    let staleId: string
+    try {
+      const created = await createPty(firstProxy.port, { command: 'bash', args: ['-c', 'sleep 5'] })
+      staleId = created.id
+    } finally {
+      await firstProxy.stop()
+    }
+
+    // A brand-new daemon process (fresh in-memory registry), same port range.
+    const secondProxy = startTestProxy()
+    try {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${secondProxy.port}/kortix/pty/${staleId}/connect`,
+        { headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() } } as any,
+      )
+      await waitForOpen(ws)
+      ws.send("printf 'RESTART_RECOVERY_MARKER\\n'\n")
+      await waitForData(ws, (acc) => acc.includes('RESTART_RECOVERY_MARKER'))
+      ws.close()
+    } finally {
+      await secondProxy.stop()
     }
   })
 

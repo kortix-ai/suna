@@ -122,7 +122,13 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // sandbox image (bun install succeeded; the runtime bundle did not).
 // v34: rebake after merging main's `kortix skills` in-sandbox CLI subcommand
 // (the seeded kortix-system <live-skills> pointer needs it).
-const RUNTIME_LAYER_VERSION = 'acp-credential-free-warm-repo-v34';
+// v35: venv-isolate the starter Python floor (was pip --break-system-packages
+// into the system interpreter, which fought dpkg for any package the user's
+// Dockerfile apt-installed — real incident: gdal-bin's dpkg-owned numpy vs.
+// the floor's pip-resolved numpy hard-failed the build) and stop wiping a
+// CUSTOM template's /workspace after the warm-up (only the shared default
+// image gets the post-warm-up wipe now — ported from main's 8e0b4fc39).
+const RUNTIME_LAYER_VERSION = 'acp-credential-free-warm-repo-v35';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

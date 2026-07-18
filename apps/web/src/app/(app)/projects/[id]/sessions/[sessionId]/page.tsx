@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -21,16 +21,31 @@ import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
-import { getProjectDetail, restartProjectSession, sessionStartKey } from '@kortix/sdk/projects-client';
+import {
+  getProjectDetail,
+  restartProjectSession,
+  sessionStartKey,
+} from '@kortix/sdk/projects-client';
 import { readStartStash, useSession } from '@kortix/sdk/react';
 import { projectAcpChatItems } from '@kortix/sdk';
+
+// The fullscreen deck viewer (W14's Present action), mounted ONCE at the page
+// level, outside `SessionLayout` — the wrapper renders `null` until the
+// store's `isOpen` flips, so this costs the route nothing until someone
+// actually clicks Present. Lazy + Suspense, matching SharePageWrapper — the
+// only other place that mounts it.
+const PresentationViewerWrapper = lazy(() =>
+  import('@/stores/presentation-viewer-store').then((mod) => ({
+    default: mod.PresentationViewerWrapper,
+  })),
+);
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -379,6 +394,11 @@ export default function ProjectSessionPage() {
       >
         <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
       </SessionLayout>
+      {/* Outside `SessionLayout` — exactly one instance, whichever layer (or
+          error/loader state) is showing underneath. */}
+      <Suspense fallback={null}>
+        <PresentationViewerWrapper />
+      </Suspense>
     </ProjectShell>
   );
 }

@@ -1,18 +1,22 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-const originalGlobals = new Map(
-  ['window', 'localStorage', 'sessionStorage'].map((name) => [
-    name,
-    Object.getOwnPropertyDescriptor(globalThis, name),
-  ]),
-);
+// `install()`/`installNullStorage()` stomp `globalThis.window` (and the bare
+// `localStorage`/`sessionStorage` globals) to simulate a browser. bun's test
+// runner shares one process across every *.test.{ts,tsx,mts} file in the
+// suite, so an unrestored mutation here leaks into whichever test happens to
+// run next — e.g. it was making `renderToStaticMarkup`-based SSR tests
+// elsewhere pick React's browser render path (which assumes a real `window`
+// with `addEventListener`) and crash with
+// "target.addEventListener is not a function". Always put globalThis back.
+const ORIGINAL_WINDOW = (globalThis as any).window;
+const ORIGINAL_LOCAL_STORAGE = (globalThis as any).localStorage;
+const ORIGINAL_SESSION_STORAGE = (globalThis as any).sessionStorage;
 
 afterEach(() => {
-  for (const [name, descriptor] of originalGlobals) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else Reflect.deleteProperty(globalThis, name);
-  }
+  (globalThis as any).window = ORIGINAL_WINDOW;
+  (globalThis as any).localStorage = ORIGINAL_LOCAL_STORAGE;
+  (globalThis as any).sessionStorage = ORIGINAL_SESSION_STORAGE;
 });
 
 /**

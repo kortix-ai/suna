@@ -3,12 +3,15 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { useCreatePty, useRuntimePtyList, useRemovePty } from '@/hooks/runtime/use-runtime-pty';
+import { useRuntimeReady } from '@/hooks/runtime/use-runtime-sessions';
+import { shouldAutoReplaceTerminal } from '@/features/session/pty-connection';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import { Plus, Terminal } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Lazy-load to avoid SSR issues with xterm.js
 const PtyTerminal = dynamic(
@@ -32,34 +35,41 @@ interface TerminalTabContentProps {
 export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const runtimeReady = useRuntimeReady();
 
-  const { data: ptys, isLoading, refetch } = useRuntimePtyList();
+  const { data: ptys, isLoading, refetch } = useRuntimePtyList({ serverUrl });
   const removePty = useRemovePty();
   const createPty = useCreatePty();
+  const replacementAttempt = useTabStore((state) => {
+    const value = state.tabs[tabId]?.metadata?.terminalReplacementAttempt;
+    return typeof value === 'number' ? value : 0;
+  });
+  const [initialLookupComplete, setInitialLookupComplete] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [isReplacing, setIsReplacing] = useState(false);
+  const replacingRef = useRef(false);
 
   // Find the PTY object for this tab
   const pty = ptys?.find((p) => p.id === ptyId) ?? null;
 
-  // Track whether we've ever seen this PTY in the list.
-  // Prevents auto-closing the tab before the list has had a chance to include
-  // the newly created PTY (race between POST /pty and GET /pty).
-  const hasSeenPty = useRef(false);
-  if (pty) hasSeenPty.current = true;
-
-  // If PTY isn't in the list yet (just created), trigger a refetch.
+  // A newly created PTY can race a stale Infinity-cached list. Force one lookup
+  // for this ID, then settle into the recoverable ended state instead of an
+  // infinite "Connecting" spinner when the daemon restarted and forgot it.
   useEffect(() => {
-    if (!pty && !hasSeenPty.current && !isLoading) {
-      refetch();
-    }
-  }, [pty, isLoading, refetch]);
+    setInitialLookupComplete(false);
+    setUnavailable(false);
+    setIsReplacing(false);
+    replacingRef.current = false;
+  }, [ptyId]);
 
-  // If PTY disappears (killed externally), close the tab — but only if we
-  // previously saw it in the list (avoids race on initial mount).
   useEffect(() => {
-    if (!isLoading && ptys && !pty && hasSeenPty.current) {
-      useTabStore.getState().closeTab(tabId);
+    if (!runtimeReady || isLoading || initialLookupComplete) return;
+    if (pty) {
+      setInitialLookupComplete(true);
+      return;
     }
-  }, [isLoading, ptys, pty, tabId]);
+    void refetch().finally(() => setInitialLookupComplete(true));
+  }, [initialLookupComplete, isLoading, pty, refetch, runtimeReady]);
 
   // Kill PTY on the server when the tab is ACTUALLY closed (removed from store).
   // We guard the cleanup by checking whether the tab still exists — this
@@ -78,12 +88,11 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptyId]);
 
-  // Replace this dead terminal tab with a fresh one
-  const handleNewTerminal = useCallback(async () => {
+  // Create the replacement before closing the old tab. If creation fails, the
+  // recoverable state stays visible instead of throwing the user back to an
+  // unrelated tab with no way to retry.
+  const replaceTerminal = useCallback(async (automatic: boolean) => {
     try {
-      // Close this dead tab first
-      useTabStore.getState().closeTab(tabId);
-      // Create a new PTY and open it
       const newPty = await createPty.mutateAsync({
         env: { TERM: 'xterm-256color', COLORTERM: 'truecolor' },
       });
@@ -92,25 +101,46 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
         title: newPty.title || newPty.command || 'Terminal',
         type: 'terminal',
         href: `/terminal/${newPty.id}`,
+        metadata: {
+          terminalReplacementAttempt: automatic ? replacementAttempt + 1 : 0,
+        },
       });
+      useTabStore.getState().closeTab(tabId);
     } catch {
-      // Tab was already closed, nothing more to do
+      replacingRef.current = false;
+      setIsReplacing(false);
+      setUnavailable(true);
     }
-  }, [tabId, createPty]);
+  }, [createPty, replacementAttempt, tabId]);
+
+  const handleNewTerminal = useCallback(() => {
+    replacingRef.current = true;
+    setIsReplacing(true);
+    setUnavailable(false);
+    void replaceTerminal(false);
+  }, [replaceTerminal]);
+
+  const handleUnavailable = useCallback(() => {
+    setUnavailable(true);
+    if (replacingRef.current || !shouldAutoReplaceTerminal(replacementAttempt)) return;
+    replacingRef.current = true;
+    setIsReplacing(true);
+    void replaceTerminal(true);
+  }, [replaceTerminal, replacementAttempt]);
 
   // Loading — also treat "never seen this PTY yet" as loading to handle the
   // race between tab navigation and the PTY list refetch after creation.
-  if (isLoading || (!pty && !hasSeenPty.current)) {
+  if (!runtimeReady || isLoading || !initialLookupComplete || isReplacing) {
     return (
       <div className="bg-background flex h-full w-full flex-col items-center justify-center">
-        <CircleDashed className="text-muted-foreground h-4 w-4 animate-spin" />
+        <Loading className="size-4 shrink-0" />
         <span className="text-muted-foreground mt-2 text-xs">Connecting...</span>
       </div>
     );
   }
 
-  // PTY not found — show prompt to open a new terminal
-  if (!pty) {
+  // Missing, exited, or failed-to-attach PTY — never leave a stale tab spinning.
+  if (!pty || pty.status === 'exited' || unavailable) {
     return (
       <div className="bg-background flex h-full w-full flex-col items-center justify-center gap-3">
         <Terminal className="text-muted-foreground/30 h-8 w-8" />
@@ -131,6 +161,7 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
         pty={pty}
         serverUrl={serverUrl}
         hidden={hidden}
+        onUnavailable={handleUnavailable}
         className="absolute inset-0 h-full w-full"
       />
     </div>

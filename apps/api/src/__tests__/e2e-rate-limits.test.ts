@@ -5,6 +5,7 @@ let auditRows: Array<Record<string, unknown>> = [];
 
 mock.module('../config', () => ({
   config: {
+    KORTIX_CHECK_EMAIL_REQS_PER_MIN: 1,
     KORTIX_INVITE_ACCEPT_REQS_PER_MIN: 1,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 1,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
@@ -27,6 +28,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const {
+  createCheckEmailRateLimitMiddleware,
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
   createPublicSessionShareRateLimitMiddleware,
@@ -128,6 +130,37 @@ describe('audited rate limits', () => {
       resourceType: 'public_session_share',
       resourceId: shareOne,
       metadata: { limiter: 'public_session_share' },
+    });
+  });
+
+  test('limits public check-email probes by client IP and writes an audit event on hit', async () => {
+    const app = new Hono();
+    app.use('/v1/access/check-email', createCheckEmailRateLimitMiddleware());
+    app.post('/v1/access/check-email', (c) => c.json({ allowed: true, mode: 'signup' }));
+
+    const first = await app.request('/v1/access/check-email', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.30' },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request('/v1/access/check-email', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.30' },
+    });
+    expect(second.status).toBe(429);
+    expect(second.headers.get('Retry-After')).toBeTruthy();
+
+    const otherIp = await app.request('/v1/access/check-email', {
+      method: 'POST',
+      headers: { 'X-Forwarded-For': '203.0.113.31' },
+    });
+    expect(otherIp.status).toBe(200);
+
+    expect(auditRows.at(-1)).toMatchObject({
+      resourceType: 'access_check_email',
+      ip: '203.0.113.30',
+      metadata: { limiter: 'check_email' },
     });
   });
 

@@ -35,7 +35,8 @@ function joinProxyUrl(opts: RequestOpts): string {
 
 /**
  * Make an HTTP call against a sandbox service through the Kortix proxy.
- * Used for talking to OpenCode (port 4096) from the CLI.
+ * Used for talking to the sandbox daemon (Kortix's own PTY/runtime routes,
+ * `KORTIX_DAEMON_PORT`) from the CLI.
  */
 export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   const url = joinProxyUrl(opts);

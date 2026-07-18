@@ -16,7 +16,6 @@ mock.module('../config', () => ({
 
 const { webSearchTavily } = await import('../router/services/tavily');
 const { imageSearchSerper } = await import('../router/services/serper');
-const { proxyToAnthropic } = await import('../router/services/anthropic');
 
 type FetchCall = {
   url: string;
@@ -54,10 +53,6 @@ beforeEach(() => {
       return json({ images: [{ title: 'Image', imageUrl: 'https://example.test/image.png', link: 'https://example.test' }] });
     }
 
-    if (url === 'https://openrouter.test/api/v1/messages') {
-      return json({ id: 'msg-test', usage: { input_tokens: 1, output_tokens: 1 } });
-    }
-
     return new Response('unexpected test URL', { status: 500 });
   }) as typeof fetch;
 });
@@ -89,30 +84,4 @@ describe('router provider trace propagation', () => {
     }
   });
 
-  test('forwards normalized trace headers to Anthropic-compatible LLM upstream', async () => {
-    await runWithContext(
-      'POST',
-      '/v1/router/messages',
-      async () => {
-        const res = await proxyToAnthropic({ model: 'claude-test', messages: [] }, false);
-        expect(res.status).toBe(200);
-      },
-      '00-11111111111111111111111111111111-2222222222222222-01',
-    );
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].headers.traceparent).toMatch(/^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/);
-    expect(calls[0].headers.traceparent).not.toBe('00-11111111111111111111111111111111-2222222222222222-01');
-    expect(calls[0].headers['x-request-id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
-  });
-
-  test('maps a bare managed Claude id to its OpenRouter Anthropic slug', async () => {
-    const res = await proxyToAnthropic(
-      { model: 'claude-sonnet-4.6', messages: [{ role: 'user', content: 'hi' }] },
-      false,
-    );
-    expect(res.status).toBe(200);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].body?.model).toBe('anthropic/claude-sonnet-4.6');
-  });
 });

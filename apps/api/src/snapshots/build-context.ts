@@ -103,11 +103,17 @@ export interface WarmRepoContext {
  * Stage a build context for `snapshotName` from the user's Dockerfile. Returns
  * the temp dir + composed Dockerfile path. The CALLER is responsible for
  * removing contextDir when done.
+ *
+ * `isSharedDefault` is the caller's `BuildableTemplate.isShared` — it tells the
+ * layer whether /workspace is the platform's to wipe after the opencode warm-up
+ * or the user's to leave alone (see `KortixToolchainLayerOpts.isSharedDefault`
+ * in dockerfile-layer.ts).
  */
 export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
   warmRepo?: WarmRepoContext,
+  isSharedDefault?: boolean,
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
@@ -187,6 +193,7 @@ export async function stageBuildContext(
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
+    isSharedDefault,
     warmRepo: layeredWarmRepo,
   });
 

@@ -18,11 +18,16 @@ import { createAcpHarnessRegistry } from './acp/harness-registry'
 import { AcpRuntime } from './acp/runtime'
 import { createAcpRouter } from './routes/acp'
 
-const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty\/([^/]+)\/connect\/?$/
+// The id segment is optional: connecting with no id (or an id the daemon
+// doesn't recognize) still opens a working terminal — see the lookup-or-
+// create handling in the `open` websocket handler below.
+const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty(?:\/([^/]+))?\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 type KortixPtyWsData = {
-  ptyId: string
+  // Absent when the client connects without an id — lookup-or-create then
+  // mints a brand new pty (see `websocket.open` below).
+  ptyId?: string
   handle?: PtyAttachHandle
 }
 
@@ -41,7 +46,9 @@ function prepareKortixPtyWsUpgrade(req: Request, cfg: Config): { ok: true; data:
       ok: false,
       response: jsonError(404, { error: 'unsupported websocket path' }),
     }
-  const ptyId = match[1]!
+  // Absent when the client connects with no id segment at all (e.g.
+  // `/kortix/pty/connect`) — lookup-or-create mints a fresh pty either way.
+  const ptyId = match[1]
 
   if (!cfg.sandboxToken) {
     logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured')
@@ -170,9 +177,20 @@ export function startProxy(
       return app.fetch(req, srv)
     },
     websocket: {
+      // Lookup-or-create: a normal "open a terminal" must always succeed
+      // with a working shell. A requested id that names a running pty
+      // reattaches (a genuine reconnect resumes the same shell +
+      // scrollback). A missing/unknown/absent id — the daemon restarted
+      // and forgot its in-memory registry, a stale id survived a reload, or
+      // no id was supplied at all — mints a fresh pty instead of hard-
+      // closing with "pty not found". Only a *known-exited* pty (the shell
+      // itself ended, e.g. the user typed `exit`) closes without recreating
+      // — that's a real end-of-session the client should surface, not
+      // silently paper over.
       open(ws: ServerWebSocket<KortixPtyWsData>) {
         const state = ws.data
-        const handle = ptyRegistry.attach(state.ptyId, {
+        const requestedId = state.ptyId
+        const result = ptyRegistry.attachOrCreate(requestedId, {
           onData: (chunk) => {
             try {
               ws.send(chunk)
@@ -184,16 +202,23 @@ export function startProxy(
             } catch {}
           },
         })
-        if (!handle) {
+        if (result.kind === 'exited') {
           try {
-            ws.close(1011, 'pty not found')
+            ws.close(1000, `pty exited${result.meta.exitCode === undefined ? '' : ` (${result.meta.exitCode})`}`)
           } catch {}
           return
         }
-        state.handle = handle
-        if (handle.replay) {
+        state.ptyId = result.meta.id
+        state.handle = result.handle
+        if (result.kind === 'created') {
+          logger.info('[proxy] pty websocket lookup-or-create minted a new pty', {
+            requestedId: requestedId ?? null,
+            id: result.meta.id,
+          })
+        }
+        if (result.handle.replay) {
           try {
-            ws.send(handle.replay)
+            ws.send(result.handle.replay)
           } catch {}
         }
       },

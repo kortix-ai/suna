@@ -20,7 +20,7 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
-  const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
 
   return (
     <>
@@ -30,23 +30,36 @@ export function ModelConnectionGate({
         icon={KeyRound}
         size={size}
         title="Connect a model to start chatting"
-        description="This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
+        description={
+          showUpgradeOption
+            ? "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
+            : 'This session needs an LLM connected before it can respond. Bring your own API key from any provider.'
+        }
         action={
-          <Button type="button" size="sm" onClick={openUpgrade}>
-            <CreditCard className="size-3.5" />
-            Upgrade
-          </Button>
+          showUpgradeOption ? (
+            <Button type="button" size="sm" onClick={openUpgrade}>
+              <CreditCard className="size-3.5" />
+              Upgrade
+            </Button>
+          ) : (
+            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
+              <KeyRound className="size-3.5" />
+              Bring your own key
+            </Button>
+          )
         }
         secondaryAction={
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => openConnectProvider('providers')}
-          >
-            <KeyRound className="size-3.5" />
-            Bring your own key
-          </Button>
+          showUpgradeOption ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => openConnectProvider('providers')}
+            >
+              <KeyRound className="size-3.5" />
+              Bring your own key
+            </Button>
+          ) : undefined
         }
       />
     </>
@@ -86,7 +99,7 @@ export function ModelConnectionBar({
    *  claude_subscription for "Connect Claude Code") instead of the list. */
   connectKind?: import('@kortix/sdk/projects-client').HarnessAuthKind | null;
 }) {
-  const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
   const reduceMotion = useReducedMotion();
 
   return (
@@ -137,16 +150,18 @@ export function ModelConnectionBar({
                     </Button>
                   ) : (
                     <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="toolbar"
-                        className="text-muted-foreground hover:text-foreground rounded-full active:scale-[0.96]"
-                        onClick={openUpgrade}
-                      >
-                        <CreditCard className="size-3.5" />
-                        Upgrade
-                      </Button>
+                      {showUpgradeOption && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="toolbar"
+                          className="text-muted-foreground hover:text-foreground rounded-full active:scale-[0.96]"
+                          onClick={openUpgrade}
+                        >
+                          <CreditCard className="size-3.5" />
+                          Upgrade
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         size="toolbar"

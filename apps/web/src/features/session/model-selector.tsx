@@ -28,11 +28,8 @@ import {
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import {
-  MODEL_SELECTOR_PROVIDER_IDS,
-  PROVIDER_LABELS,
-  ProviderLogo,
-} from '@/features/providers/provider-branding';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
+import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
 import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
@@ -130,7 +127,12 @@ export function ModelSelector({
   // Where Upgrade / Connect provider should route, given the current route
   // context — shared with the chat input's full-block gate and onboarding so
   // they all open the exact same dialogs.
-  const { openConnectProvider, openUpgrade, modal: connectionModal } = useModelConnectionGate();
+  const {
+    openConnectProvider,
+    openUpgrade,
+    modal: connectionModal,
+    showUpgradeOption,
+  } = useModelConnectionGate();
 
   // When mounted under /projects/[id]/..., route model filtering to the
   // per-project gateway catalog. On every other route (instance dashboard,
@@ -160,10 +162,14 @@ export function ModelSelector({
   // Providers whose key(s) are present — drives which of the gateway's full
   // baked catalog is shown by default in the picker (connected providers light
   // up the instant their secret lands; everything else stays search-only).
+  // Re-renders when LlmCatalogBootstrap's live-catalog fetch lands — see
+  // use-connected-providers.ts for the same pattern.
+  const catalogRevision = useLlmProviderCatalogRevision();
   const connectedProviderIds = useMemo(() => {
     if (!llmGatewayEnabled) return new Set<string>();
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
-  }, [llmGatewayEnabled, secretNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
+  }, [llmGatewayEnabled, secretNames, catalogRevision]);
 
   // Free tier (free/no plan AND no active subscription) hides paid/AUTO
   // Kortix models. Managed free models and connected BYOK providers remain.
@@ -246,7 +252,7 @@ export function ModelSelector({
       } else {
         groups.set(groupID, {
           providerID: groupID,
-          providerName: PROVIDER_LABELS[groupID] || m.providerName,
+          providerName: m.providerName,
           models: [m],
         });
       }
@@ -408,9 +414,7 @@ export function ModelSelector({
                                 name={group.providerName}
                                 size="small"
                               />
-                              <span className="flex-1">
-                                {PROVIDER_LABELS[group.providerID] || group.providerName}
-                              </span>
+                              <span className="flex-1">{group.providerName}</span>
                               <span className="text-muted-foreground/30 text-xs normal-case tracking-normal">
                                 {group.models.length}
                               </span>
@@ -477,17 +481,21 @@ export function ModelSelector({
                   <div className="px-3 py-5 text-center">
                     <div className="text-foreground text-sm font-medium">No models available</div>
                     <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                      Upgrade or connect your own provider to start using this session.
+                      {showUpgradeOption
+                        ? 'Upgrade or connect your own provider to start using this session.'
+                        : 'Connect your own provider to start using this session.'}
                     </p>
                     <div className="mt-4 flex items-center justify-center gap-2">
-                      <Button type="button" size="xs" onClick={handleUpgrade}>
-                        <CreditCard className="size-3.5" />
-                        Upgrade
-                      </Button>
+                      {showUpgradeOption && (
+                        <Button type="button" size="xs" onClick={handleUpgrade}>
+                          <CreditCard className="size-3.5" />
+                          Upgrade
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         size="xs"
-                        variant="outline"
+                        variant={showUpgradeOption ? 'outline' : 'default'}
                         onClick={() => handleOpenProviderModal('providers')}
                       >
                         <KeyRound className="size-3.5" />

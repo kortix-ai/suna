@@ -20,7 +20,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
-  type SessionPanelView,
+  SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';

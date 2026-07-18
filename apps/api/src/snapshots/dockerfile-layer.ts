@@ -122,6 +122,20 @@ export interface BuildLayeredDockerfileOpts {
    */
   catalogPath?: string;
   /**
+   * True iff this image is the platform's SHARED default (no user Dockerfile —
+   * `PLATFORM_DEFAULT_USER_DOCKERFILE`). Gates the post-warm-up /workspace WIPE.
+   *
+   * The wipe exists to clear whatever the warm-up staged into /workspace, and
+   * for the shared default that is ALL /workspace holds, so "delete everything"
+   * is exact. On a CUSTOM template it is not: the user's Dockerfile ran FIRST
+   * and `WORKDIR /workspace` is a documented convention, so any image that
+   * seeds data/caches/a toolchain there would have had it silently deleted by a
+   * step it never asked for. Custom templates therefore skip the wipe entirely
+   * (this layer stages nothing of its own into /workspace for a custom
+   * template — see the instance-warm step below).
+   */
+  isSharedDefault?: boolean;
+  /**
    * Per-project COLD warm: bake the project's repo checkout into /workspace at
    * build time so a session booted from this (capture:'none') image skips the
    * boot-time git clone entirely — the daemon's git.ts fast-paths a baked
@@ -154,6 +168,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     executorSdkPath,
     opencodeConfigPath,
     catalogPath,
+    isSharedDefault,
     warmRepo,
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
@@ -200,7 +215,20 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // inside the guest. Without these the IP never changes → the guest stays on
     // the baked IP while the edge routes to the allocated IP → every request
     // 502s. (Harmless on Daytona, which doesn't memory-restore.)
-    'RUN apt-get update \\',
+    // apt is non-interactive by construction here (no TTY), but a package with a
+    // debconf prompt (tzdata, libreoffice's font EULAs) can still stall or fail
+    // the build. This ENV used to be supplied only by whatever the USER's base
+    // image happened to leak in — ubuntu:24.04 doesn't set it, so the floor was
+    // relying on luck. Set it ourselves. It persists to runtime deliberately:
+    // the agent's own `apt-get install` in a session has no TTY either, and a
+    // debconf prompt there is an unrecoverable hang, not a question anyone answers.
+    'ENV DEBIAN_FRONTEND=noninteractive',
+    // `base_py` MUST be resolved BEFORE the apt floor runs — see the venv step at
+    // the end of this RUN for why. It is a shell var, so it cannot cross a RUN
+    // boundary; that is the only reason the venv is created here rather than in
+    // its own step.
+    'RUN base_py="$(command -v python3 || true)" \\',
+    '    && apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
     '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
@@ -208,10 +236,42 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '        python3 python3-dev python3-pip python3-venv \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
-    '    && rm -rf /var/lib/apt/lists/*',
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    // ─── The Python floor lives in a venv, NOT in the system interpreter ───────
+    // History: the floor used to be `pip install --break-system-packages` straight
+    // into the system interpreter. That made it fight dpkg for ownership of any
+    // package the USER's Dockerfile had pulled in via apt. Real incident: a project
+    // apt-installed `gdal-bin` → `python3-gdal` → `python3-numpy` (dpkg-owned
+    // 1.26.4); our floor's `numpy>=1.26` resolved to 2.x, pip tried to UNINSTALL the
+    // dpkg-owned copy and hard-failed the whole snapshot build with "Cannot
+    // uninstall numpy 1.26.4, RECORD file not found. Hint: The package was installed
+    // by debian." The user's image was correct — our layer broke it.
+    //
+    // A venv kills the whole class: pip inside it can NEVER uninstall a dpkg-owned
+    // package (worst case it installs a newer copy INTO the venv, shadowing it), and
+    // `--system-site-packages` keeps the user's OWN installs (apt python3-* AND
+    // their `pip install` into dist-packages) importable from the floor's interpreter.
+    //
+    // WHICH interpreter the venv is built from is load-bearing: it is built from
+    // `base_py` — the python3 that was on PATH BEFORE our apt ran — so a base like
+    // `python:3.12-slim` never gets its own interpreter shadowed by a different
+    // minor version our apt floor happens to install.
+    '    && "${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\',
+    `    && /opt/kortix/pyfloor/bin/python -c 'import sys; print("pyfloor interpreter:", sys.version)'`,
+    '',
+    // Put the floor ahead of the system interpreter for every later build step AND
+    // for the agent at runtime. `$PATH` expansion in ENV is REQUIRED to work under
+    // BOTH builders — BuildKit (Daytona) and buildah's classic imagebuilder
+    // (Platinum, which ignores `# syntax` and rejects RUN heredocs; see the
+    // portability guard in build-context.ts). Do NOT "simplify" this to a
+    // hardcoded absolute PATH: that would stomp any PATH the user's Dockerfile
+    // set (cargo, nvm, conda) — the exact bug class this change is here to remove.
+    'ENV PATH=/opt/kortix/pyfloor/bin:$PATH',
     '',
     '# Starter skill Python package floor (document/data/PDF/presentation helpers).',
-    'RUN python3 -m pip install --break-system-packages --no-cache-dir \\',
+    '# Installed INTO the venv via its own pip, which cannot touch a dpkg-owned',
+    '# package no matter what the resolver picks.',
+    'RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\',
     '        "beautifulsoup4>=4.12" \\',
     '        "lxml>=5" \\',
     '        "markdownify>=0.13" \\',
@@ -245,7 +305,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
     // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
     // equivalent (still fails the layer if any module is missing) and portable.
-    '    && python3 -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
+    '    && /opt/kortix/pyfloor/bin/python -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
     '',
     // Ubuntu 24.04 ships Node 18, while the official Claude ACP adapter
     // requires Node >=22 and Pi requires >=20. Upgrade Node before installing
@@ -409,12 +469,20 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           // Agent processes are session-selected from kortix.yaml v3. Do not
           // start or prime a specific harness while capturing the shared image;
           // all four pinned ACP adapters were verified in the runtime layer.
-          // Shared default: wipe /workspace (the session clones into it at boot).
-          // Per-project COLD warm (warmRepo): KEEP the baked repo checkout so the
-          // daemon boots off it with no clone.
+          // Three cases, and only one of them may delete indiscriminately:
+          //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
+          //    the daemon boots off it with no clone.
+          //  • SHARED default: /workspace contains only the empty .kortix dir
+          //    this step just created (the base is
+          //    `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a WORKDIR), so
+          //    wiping it is exact. The session clones into it at boot.
+          //  • CUSTOM template: the user's Dockerfile owns /workspace and this
+          //    layer staged nothing of its own there — never touch their bytes.
           warmRepo
             ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
-            : '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
+            : isSharedDefault
+              ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
+              : '    echo "custom template: leaving /workspace untouched"; \\',
           '    rm -rf /opt/kortix/warm-config; \\',
           '    echo "=== instance-warm: ACP runtime layer ready ==="; true',
           '',

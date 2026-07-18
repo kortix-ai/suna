@@ -58,12 +58,12 @@ import {
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
+import { resolveComposerResetOnSend } from './composer-reset';
 import {
   COMPOSER_PILL_ACTIVE_CLASS,
   COMPOSER_PILL_DISABLED_CLASS,
   COMPOSER_PILL_TRIGGER_CLASS,
 } from './composer-pill';
-import { resolveComposerResetOnSend } from './composer-reset';
 import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -308,9 +308,14 @@ export function AgentSelector({
         side="top"
         className="max-w-[260px] text-xs"
         label={
-          disabled
-            ? 'Agent is fixed for this session — start a new session to switch'
-            : 'Choose the agent and ACP harness for this session'
+          disabled ? (
+            'Agent is fixed for this session — start a new session to switch'
+          ) : (
+            <span className="flex items-center gap-1">
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
+              <kbd className="bg-foreground/10 rounded px-1.5 py-0.5 font-mono text-xs">Tab</kbd>
+            </span>
+          )
         }
       >
         <CommandPopoverTrigger>
@@ -2224,7 +2229,7 @@ export function SessionChatInput({
   }, [text, mentions]);
 
   return (
-    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-6 sm:px-4">
+    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 sm:px-4">
       {/* Todo panel removed — now inline inside the card as TodoChip */}
       <div
         ref={cardRef}
@@ -2233,7 +2238,7 @@ export function SessionChatInput({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border transition-colors',
+          'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border shadow transition-colors',
           cardClassName,
           isDragOver && 'border-primary',
         )}

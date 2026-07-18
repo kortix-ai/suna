@@ -87,7 +87,10 @@ describe('upsertAccountModelPreference', () => {
 
 // Persisted-session fixtures: getSessionAgentContext must dual-read the
 // session's model override so pre-rename rows (opencode_model-only) keep
-// resolving exactly as today.
+// resolving exactly as today, and must carry the joined
+// project.metadata.default_agent so agent-scope model pins apply to sessions
+// stuck on the 'default' agent-name sentinel (see default-model.ts's
+// cachedSessionAgent).
 describe('getSessionAgentContext', () => {
   test('a pre-rename row with ONLY opencode_model metadata resolves the model', async () => {
     selectRows = [
@@ -96,12 +99,17 @@ describe('getSessionAgentContext', () => {
     expect(await getSessionAgentContext('sess-1')).toEqual({
       agentName: 'default',
       model: 'anthropic/claude-opus-4-8',
+      projectDefaultAgent: null,
     });
   });
 
   test('a new-style row with ONLY model metadata resolves the model', async () => {
     selectRows = [{ agentName: 'default', metadata: { model: 'kortix/glm-5.2' } }];
-    expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: 'kortix/glm-5.2' });
+    expect(await getSessionAgentContext('sess-1')).toEqual({
+      agentName: 'default',
+      model: 'kortix/glm-5.2',
+      projectDefaultAgent: null,
+    });
   });
 
   test('both keys present: model (neutral) wins — pins current precedence', async () => {
@@ -111,7 +119,11 @@ describe('getSessionAgentContext', () => {
         metadata: { model: 'kortix/glm-5.2', opencode_model: 'anthropic/claude-opus-4-8' },
       },
     ];
-    expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: 'kortix/glm-5.2' });
+    expect(await getSessionAgentContext('sess-1')).toEqual({
+      agentName: 'default',
+      model: 'kortix/glm-5.2',
+      projectDefaultAgent: null,
+    });
   });
 
   test('no row → null', async () => {
@@ -121,18 +133,11 @@ describe('getSessionAgentContext', () => {
 
   test('row with neither key → model is null', async () => {
     selectRows = [{ agentName: 'default', metadata: { existing: true } }];
-    expect(await getSessionAgentContext('sess-1')).toEqual({ agentName: 'default', model: null });
-  });
-});
-
-// The join that lets a caller resolve the 'default' agent-name sentinel to
-// the owning project's declared default agent (see default-model.ts's
-// cachedSessionAgent) — the fix for agent-scope model pins silently never
-// applying to sessions whose agent_name never resolved past 'default'.
-describe('getSessionAgentContext', () => {
-  test('no row for sessionId → null', async () => {
-    selectRows = [];
-    expect(await getSessionAgentContext('s-missing')).toBeNull();
+    expect(await getSessionAgentContext('sess-1')).toEqual({
+      agentName: 'default',
+      model: null,
+      projectDefaultAgent: null,
+    });
   });
 
   test('carries the joined project.metadata.default_agent as projectDefaultAgent', async () => {
@@ -140,7 +145,7 @@ describe('getSessionAgentContext', () => {
       { agentName: 'default', metadata: {}, projectMetadata: { default_agent: 'kortix' } },
     ];
     const ctx = await getSessionAgentContext('s1');
-    expect(ctx).toEqual({ agentName: 'default', opencodeModel: null, projectDefaultAgent: 'kortix' });
+    expect(ctx).toEqual({ agentName: 'default', model: null, projectDefaultAgent: 'kortix' });
   });
 
   test('project metadata with no default_agent → projectDefaultAgent null', async () => {
@@ -172,7 +177,7 @@ describe('getSessionAgentContext', () => {
     const ctx = await getSessionAgentContext('s1');
     expect(ctx).toEqual({
       agentName: 'release-bot',
-      opencodeModel: 'anthropic/claude-opus-4.8',
+      model: 'anthropic/claude-opus-4.8',
       projectDefaultAgent: 'kortix',
     });
   });
