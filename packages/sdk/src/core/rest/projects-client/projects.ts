@@ -16,6 +16,7 @@ import {
 export type ExperimentalFeatureKey =
   | 'agent_tunnel'
   | 'marketplace'
+  | 'connectors_api_discover'
   | 'agentmail_email'
   | 'meet'
   | 'llm_gateway'

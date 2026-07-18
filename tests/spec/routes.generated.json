@@ -776,6 +776,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/executor/projects/:projectId/discover/integrations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/discover/integrations/detail"
+    },
+    {
+      "method": "GET",
       "path": "/v1/executor/projects/:projectId/pipedream/apps"
     },
     {

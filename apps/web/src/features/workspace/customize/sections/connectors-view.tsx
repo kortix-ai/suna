@@ -116,6 +116,7 @@ import {
   setConnectorSensitive,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
+import { DiscoverCatalogue } from './discover-catalogue';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
@@ -251,6 +252,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
+  const discoverEnabled = projectQuery.data?.experimental?.connectors_api_discover === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
   // mutating control (rename/remove/reconnect/credentials/permissions/channels/
@@ -350,6 +352,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           <AddAppPanel
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
+            discoverEnabled={discoverEnabled}
             canWrite={canWrite}
             onAdded={(slug) => {
               invalidate();
@@ -2764,19 +2767,19 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
 function AddAppPanel({
   projectId,
   emailChannelEnabled,
+  discoverEnabled,
   onAdded,
   canWrite = false,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
+  discoverEnabled: boolean;
   onAdded: (slug?: string) => void;
   canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
-  // false) — hide the "Easy connect" tab outright instead of round-tripping
-  // to /connect-status just to disable it. Custom (OpenAPI/GraphQL/MCP/HTTP)
-  // and Channels don't depend on Pipedream, so they're unaffected.
+  // false) — hide Easy Connect while leaving Discover/direct sources available.
   const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
@@ -2796,18 +2799,17 @@ function AddAppPanel({
     );
   }
   const easyConnectHidden = !connectorsEnabled;
-  // Live-configured flag lagging the deploy-time env flag (rare) still gets
-  // the softer disabled-with-hint treatment instead of vanishing outright.
   const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
   const easyConnectLabel = tI18nHardcoded.raw(
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
+  const defaultTab = !easyConnectDisabled ? 'apps' : discoverEnabled ? 'discover' : 'channels';
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
       </header>
-      <Tabs defaultValue={easyConnectDisabled ? 'channels' : 'apps'}>
+      <Tabs defaultValue={defaultTab}>
         <TabsList type="underline">
           {easyConnectHidden ? null : easyConnectDisabled ? (
             <Hint
@@ -2822,12 +2824,18 @@ function AddAppPanel({
           ) : (
             <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
           )}
+          {discoverEnabled && <TabsTrigger value="discover">Discover</TabsTrigger>}
           <TabsTrigger value="channels">Channels</TabsTrigger>
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
         {!easyConnectDisabled && (
           <TabsContent value="apps" className="mt-4">
             <AppCatalogue projectId={projectId} onAdded={onAdded} />
+          </TabsContent>
+        )}
+        {discoverEnabled && (
+          <TabsContent value="discover" className="mt-4">
+            <DiscoverCatalogue projectId={projectId} onAdded={onAdded} />
           </TabsContent>
         )}
         <TabsContent value="channels" className="mt-4">
