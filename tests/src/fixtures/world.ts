@@ -9,17 +9,23 @@
  * route contracts are pinned by the audit. OWNER/ANON/PAT_ACCT/APIKEY + the run
  * account are wired here.
  */
-import { Client, type Identity } from "../core/client";
-import type { Env } from "../core/env";
-import { log } from "../core/log";
-import type { CreatedProject, CreatedSession, Fixtures, Principal, Principals } from "../core/types";
-import type { RegisteredFlow } from "../core/flow";
-import { ResourceStack } from "./registry";
-import { adminDeleteUser } from "./supabase";
-import { provisionMatrix, synthUser, type Provisioned } from "./principals";
-import { provisionProject } from "./provision";
+import { Client, type Identity } from '../core/client';
+import type { Env } from '../core/env';
+import { log } from '../core/log';
+import type {
+  CreatedProject,
+  CreatedSession,
+  Fixtures,
+  Principal,
+  Principals,
+} from '../core/types';
+import type { RegisteredFlow } from '../core/flow';
+import { ResourceStack } from './registry';
+import { adminDeleteUser } from './supabase';
+import { provisionMatrix, synthUser, type Provisioned } from './principals';
+import { provisionProject } from './provision';
 
-const PUBLIC_DOMAINS = new Set(["system", "access"]);
+const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
 export interface World {
   principals: Principals;
@@ -28,13 +34,13 @@ export interface World {
   teardownAll(): Promise<void>;
 }
 
-const ANON_PRINCIPAL: Principal = { label: "ANON", auth: { mode: "none" } };
+const ANON_PRINCIPAL: Principal = { label: 'ANON', auth: { mode: 'none' } };
 
 function principalsProxy(provided: Partial<Principals>): Principals {
   return new Proxy(provided, {
     get(target, prop: string) {
       if (prop in target) return (target as any)[prop];
-      if (prop === "ANON") return ANON_PRINCIPAL;
+      if (prop === 'ANON') return ANON_PRINCIPAL;
       throw new Error(
         `Principal "${String(prop)}" is not provisioned in this run. ` +
           `Provide owner creds + service-role key, or this principal isn't wired yet (see fixtures/principals.ts).`,
@@ -47,8 +53,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   const needsAuth = flows.some((f) => !PUBLIC_DOMAINS.has(f.meta.domain));
 
   if (!needsAuth) {
-    log.info(log.dim("world: public-only run — no principals provisioned"));
-    const principals = principalsProxy({ ANON: ANON_PRINCIPAL, accountId: "" });
+    log.info(log.dim('world: public-only run — no principals provisioned'));
+    const principals = principalsProxy({ ANON: ANON_PRINCIPAL, accountId: '' });
     const noFixtures: Fixtures = makeUnavailableFixtures();
     return {
       principals,
@@ -61,11 +67,11 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   if (!env.capabilities.supabaseAdmin || !env.supabaseAnonKey) {
     throw new Error(
       "Auth'd flows selected but no Supabase admin access. Set KE2E_SUPABASE_SERVICE_ROLE_KEY " +
-        "+ KE2E_SUPABASE_ANON_KEY (the suite synthesizes principals), or restrict to --domain system,access.",
+        '+ KE2E_SUPABASE_ANON_KEY (the suite synthesizes principals), or restrict to --domain system,access.',
     );
   }
 
-  const runId = (globalThis as any).__KE2E_RUN_ID__ ?? "run";
+  const runId = (globalThis as any).__KE2E_RUN_ID__ ?? 'run';
   const provisioned: Provisioned = await provisionMatrix(env, runId);
   const owner = provisioned.principals.OWNER;
   const adminClient = new Client(env.apiUrl).as(owner as Identity);
@@ -81,7 +87,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (!sharedProjectPromise) {
         sharedProjectPromise = (async () => {
           const id = await provisionProject(adminClient, { name: `e2e-${runId}-shared` });
-          sharedStack.push("project", id);
+          sharedStack.push('project', id);
           return { id, name: `e2e-${runId}-shared` } as CreatedProject;
         })();
       }
@@ -94,52 +100,92 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         ...(opts?.accountId ? { account_id: opts.accountId } : {}),
         ...(opts?.seed ? { seed_starter: true } : {}),
       });
-      stack.push("project", id);
+      stack.push('project', id);
       return { id, name } as CreatedProject;
     },
     async team(opts) {
-      const res = await adminClient.post("/v1/accounts", { name: opts?.name ?? `e2e-${runId}-team-${rand()}` });
+      const res = await adminClient.post('/v1/accounts', {
+        name: opts?.name ?? `e2e-${runId}-team-${rand()}`,
+      });
       const accountId = res.json<any>()?.account_id;
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
-      stack.push("account", accountId);
+      stack.push('account', accountId);
+      if (opts?.enterprise) {
+        const enabled = await adminClient.put(
+          '/v1/accounts/:accountId/iam/enterprise-demo',
+          { enabled: true },
+          { params: { accountId } },
+        );
+        if (enabled.statusCode !== 200 || enabled.json<any>()?.enabled !== true) {
+          throw new Error(`enterprise team enable failed: ${enabled.text()}`);
+        }
+      }
       return {
         id: accountId,
         async addMember(role) {
           const u = await synthUser(env, `MEM-${role}`, runId);
           extraUserIds.push(u.user.id);
-          await adminClient.post("/v1/accounts/:accountId/members", { email: u.user.email, role }, { params: { accountId } });
+          await adminClient.post(
+            '/v1/accounts/:accountId/members',
+            { email: u.user.email, role },
+            { params: { accountId } },
+          );
           return u.principal;
         },
         async grantProjectRole(projectId, userId, role) {
-          await adminClient.put("/v1/projects/:projectId/access/:userId", { role }, { params: { projectId, userId } });
+          await adminClient.put(
+            '/v1/projects/:projectId/access/:userId',
+            { role },
+            { params: { projectId, userId } },
+          );
         },
         async project(o) {
           const name = o?.name ?? `e2e-${runId}-tproj-${rand()}`;
           const id = await provisionProject(adminClient, { name, account_id: accountId });
-          stack.push("project", id);
+          stack.push('project', id);
           return { id, name } as CreatedProject;
         },
       };
     },
+    async user(opts) {
+      const u = await synthUser(env, opts?.label ?? 'USER', runId);
+      extraUserIds.push(u.user.id);
+      // Personal accounts are lazy. Minting a PAT forces the personal account
+      // and owner membership into existence without joining this user to any
+      // team, which is exactly what account-deletion flows require.
+      const bootstrap = await new Client(env.apiUrl)
+        .as(u.principal)
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap` });
+      if (bootstrap.statusCode !== 201) {
+        throw new Error(`standalone user bootstrap failed: ${bootstrap.text()}`);
+      }
+      return u.principal;
+    },
     async session(project, opts) {
       // `prompt` was never consumed by the session API; use the documented
       // field now that the HTTP boundary rejects unknown create properties.
-      const res = await adminClient.post("/v1/projects/:projectId/sessions", { initial_prompt: opts?.prompt ?? "noop" }, {
-        params: { projectId: project.id },
-      });
+      const res = await adminClient.post(
+        '/v1/projects/:projectId/sessions',
+        { initial_prompt: opts?.prompt ?? 'noop' },
+        {
+          params: { projectId: project.id },
+        },
+      );
       const body = res.json<any>();
       const id = body?.session_id ?? body?.sessionId ?? body?.id;
       if (!id) throw new Error(`session create returned no id: ${res.text()}`);
-      stack.push("session", id, { projectId: project.id });
+      stack.push('session', id, { projectId: project.id });
       return { id, projectId: project.id } as CreatedSession;
     },
     async pat(opts) {
-      const res = await adminClient.post("/v1/accounts/tokens", { name: opts?.name ?? `e2e-${runId}-pat-${rand()}` });
+      const res = await adminClient.post('/v1/accounts/tokens', {
+        name: opts?.name ?? `e2e-${runId}-pat-${rand()}`,
+      });
       const body = res.json<any>();
       const secret = body?.secret_key ?? body?.token;
       const tokenId = body?.id ?? body?.token_id;
       if (!secret) throw new Error(`token mint returned no secret: ${res.text()}`);
-      if (tokenId) stack.push("token", tokenId);
+      if (tokenId) stack.push('token', tokenId);
       return secret as string;
     },
   });
@@ -154,7 +200,9 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         try {
           // delete-immediately resolves the caller's account; account_id in body
           // overrides for team accounts the OWNER controls.
-          await adminClient.del("/v1/billing/account/delete-immediately", { body: { account_id: acct } });
+          await adminClient.del('/v1/billing/account/delete-immediately', {
+            body: { account_id: acct },
+          });
         } catch (err) {
           log.warn(`teardown run account ${acct} failed: ${(err as Error)?.message ?? err}`);
         }
@@ -172,7 +220,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
 
 function makeUnavailableFixtures(): Fixtures {
   const fail = (): never => {
-    throw new Error("Fixtures unavailable in a public-only run (no provisioning).");
+    throw new Error('Fixtures unavailable in a public-only run (no provisioning).');
   };
   return {
     name: (slug) => slug,
@@ -181,6 +229,7 @@ function makeUnavailableFixtures(): Fixtures {
     session: fail as any,
     pat: fail as any,
     team: fail as any,
+    user: fail as any,
   };
 }
 

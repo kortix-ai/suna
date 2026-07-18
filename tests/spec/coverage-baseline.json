@@ -81,17 +81,8 @@
     "PUT /v1/projects/:*/model-defaults"
   ],
   "external": [
-    "DELETE /v1/platform/api-keys/:*",
-    "DELETE /v1/servers/:*",
-    "GET /v1/platform/api-keys",
     "GET /v1/projects/:*/sessions/:*/sandbox",
-    "GET /v1/servers",
-    "PATCH /v1/platform/api-keys/:*/revoke",
-    "POST /v1/platform/api-keys",
-    "POST /v1/platform/api-keys/:*/regenerate",
     "POST /v1/projects/:*/sessions/:*/ensure-opencode",
-    "POST /v1/projects/:*/sessions/:*/wake",
-    "POST /v1/servers",
-    "PUT /v1/servers/sync"
+    "POST /v1/projects/:*/sessions/:*/wake"
   ]
 }

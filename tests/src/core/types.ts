@@ -2,12 +2,12 @@
  * Shared interface hub. Interfaces only (no runtime), so the flow registry,
  * fixtures, and runner can reference each other without import cycles.
  */
-import type { Client, Identity } from "./client";
-import type { Capabilities, Env } from "./env";
+import type { Client, Identity } from './client';
+import type { Capabilities, Env } from './env';
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = "user" | "editor" | "manager";
+export type ProjectRole = 'user' | 'editor' | 'manager';
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {
@@ -55,7 +55,7 @@ export interface TeamFixture {
   /** The team account id (OWNER is its owner). */
   id: string;
   /** Synthesize a user, add to this account at the given role, return its principal. */
-  addMember(role: "admin" | "member"): Promise<Principal>;
+  addMember(role: 'admin' | 'member'): Promise<Principal>;
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Provision a project owned by this team account. */
@@ -84,7 +84,9 @@ export interface Fixtures {
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
   /** Create a team account with member/role helpers (auto-torn-down). */
-  team(opts?: { name?: string }): Promise<TeamFixture>;
+  team(opts?: { name?: string; enterprise?: boolean }): Promise<TeamFixture>;
+  /** Create an isolated user with only its personal account (auto-torn-down). */
+  user(opts?: { label?: string }): Promise<Principal>;
   /** A unique run-scoped name with the e2e-<runId>- prefix. */
   name(slug: string): string;
 }
