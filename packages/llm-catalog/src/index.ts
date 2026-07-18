@@ -208,10 +208,9 @@ export interface CatalogModel {
   // Present only for reasoning-capable models that expose a tunable knob —
   // `[{type:'effort', values:[...]}]` today. A reasoning model with NO
   // entry here (reasoning:true, reasoning_options absent/empty) still
-  // supports reasoning but doesn't publish a client-settable enum —
-  // generationControlCapabilities below falls back to a generic
-  // low/medium/high set for that case, per models.dev's own convention for
-  // "reasoning but unconfigurable" models.
+  // supports reasoning but doesn't publish a client-settable effort enum —
+  // generationControlCapabilities below then exposes NO effort control for it
+  // (we never fabricate effort values that models.dev doesn't advertise).
   reasoning_options?: CatalogReasoningOption[];
   tool_call?: boolean;
   // false means the model has a FIXED sampling temperature and rejects a
@@ -248,8 +247,8 @@ export interface GenerationConfig {
 
 export interface GenerationControlCapabilities {
   /** Present iff the model exposes a reasoning-effort knob (explicit
-   *  `reasoning_options` entry, or a reasoning:true model with no explicit
-   *  options — the low/medium/high fallback the task spec calls for). */
+   *  `reasoning_options` entry. Absent when the model publishes no real
+   *  effort values (we never fabricate them). */
   reasoningEffort?: { values: string[] };
   /** True iff the model accepts a client-supplied temperature (models.dev
    *  `temperature:false` means FIXED — e.g. gpt-5.6-sol — hide the control). */
@@ -263,7 +262,6 @@ export interface GenerationControlCapabilities {
   maxOutputTokens?: { ceiling: number };
 }
 
-const FALLBACK_REASONING_EFFORT_VALUES = ['low', 'medium', 'high'];
 
 /** Pure capability derivation — NEVER a per-model id lookup table. */
 export function generationControlCapabilities(
@@ -271,12 +269,14 @@ export function generationControlCapabilities(
 ): GenerationControlCapabilities {
   if (!model) return { temperature: false, topP: false };
 
+  // Only expose an effort control when the model publishes REAL effort values
+  // in models.dev's `reasoning_options` — never fabricate one. A reasoning:true
+  // model with no `reasoning_options` effort entry has no client-settable effort
+  // knob, so we show nothing rather than a made-up low/medium/high set.
   const effortOption = model.reasoning_options?.find((option) => option.type === 'effort');
   const reasoningEffort = effortOption?.values?.length
     ? { values: effortOption.values }
-    : model.reasoning
-      ? { values: FALLBACK_REASONING_EFFORT_VALUES }
-      : undefined;
+    : undefined;
 
   const temperature = model.temperature === true;
   const ceiling = model.limit?.output;

@@ -584,6 +584,33 @@ authorize that action.
 
 ---
 
+### 2026-07-18 — session `connectors-discover-flag` (completion)
+
+Completed the additive Discover integration-catalog SDK restoration as a separate,
+per-project experimental connector marketplace. Existing Easy Connect remains intact
+and default; `connectors_api_discover` is available but off by default. Pipedream
+appears only as separately labelled OAuth alternatives. Runtime and type snapshots
+contain additions only; no current export was removed or renamed.
+
+**TDD and live evidence:** the focused contract/UI run passed **46 / 0** and the
+focused API/catalog/router run passed **56 / 0**. An authenticated local project
+round-tripped the flag false -> true -> false, queried live HubSpot catalogue and
+surface endpoints, and resolved MCP, CLI, REST, and official Postman variants with
+source-derived bearer auth. The official HubSpot Postman repository materialized as
+an active connector with **1,223 actions**, `authSecret: credential`, and no stored
+credential; live Pipedream HubSpot search returned OAuth records only. ke2e coverage
+passed at **409 / 497 routes**.
+
+**Final SDK gates after rebasing onto current `origin/main`:** typecheck exited 0;
+the full SDK suite reported **1128 pass / 0 fail** across 84 files with 5029
+assertions; and the packed install smoke built, packed, installed, imported, and
+constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
 ### 2026-07-13 — session `session-base-branches` (completion)
 
 Completed the additive session branch-environment surface in implementation
@@ -1164,3 +1191,17 @@ snapshots re-recorded — diff is additive only (`verifyGatewayProvider`,
 
 **Shippable to production: YES** for the SDK surface. apps/api route + apps/web
 UI land in the same PR (#4990); see that PR for backend/frontend evidence.
+
+---
+
+### 2026-07-18 — session `connectors-discover-flag` (claim)
+
+Claimed the user-directed restoration of the additive Discover integration-catalog
+SDK surface as a separate, per-project experimental connector marketplace. Existing
+Easy Connect remains unchanged; Discover is explicit opt-in and Pipedream entries
+remain separate OAuth-only alternatives. The prior additive SDK names are restored
+without removing or renaming any current export. Implementation will finish with
+focused RED -> GREEN coverage, full SDK typecheck/test/packed-install gates, real
+local browser/API proof, and the repository merge/deploy/live-dev lifecycle.
+
+**Status:** IN PROGRESS.

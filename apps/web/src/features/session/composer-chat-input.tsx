@@ -476,6 +476,7 @@ export function ComposerChatInput({
         toolbarSlot={toolbarSlot}
         cardClassName={cardClassName}
         sessionId={sessionId}
+      projectId={projectId}
         providers={providers}
         onFileSearch={onFileSearch}
         agents={local.agent.list}

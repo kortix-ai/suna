@@ -45,6 +45,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     experimental: {
       agent_tunnel: false,
       marketplace: false,
+      connectors_api_discover: false,
       agentmail_email: false,
       meet: false,
       llm_gateway: true,
@@ -367,6 +368,7 @@ describe('envelopes', () => {
     expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
       'agent_tunnel',
       'marketplace',
+      'connectors_api_discover',
       'agentmail_email',
       'meet',
       'llm_gateway',

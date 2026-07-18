@@ -20,6 +20,7 @@ describe('isExperimentalFeatureKey', () => {
   test('accepts known keys, rejects others', () => {
     expect(isExperimentalFeatureKey('apps')).toBe(false);
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
+    expect(isExperimentalFeatureKey('connectors_api_discover')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
@@ -85,6 +86,22 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
       resolveExperimentalFeature(
         { experimental: { unified_model_picker: false } },
         'unified_model_picker',
+      ),
+    ).toBe(false);
+  });
+
+  test('connectors API Discover is explicit opt-in', () => {
+    expect(resolveExperimentalFeature({}, 'connectors_api_discover')).toBe(false);
+    expect(
+      resolveExperimentalFeature(
+        { experimental: { connectors_api_discover: true } },
+        'connectors_api_discover',
+      ),
+    ).toBe(true);
+    expect(
+      resolveExperimentalFeature(
+        { experimental: { connectors_api_discover: false } },
+        'connectors_api_discover',
       ),
     ).toBe(false);
   });
