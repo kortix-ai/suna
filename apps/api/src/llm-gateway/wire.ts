@@ -237,17 +237,81 @@ function messagesRoute(path: string) {
   });
 }
 
+// The reasoning_options entry shape — three real forms models.dev emits
+// (effort/toggle/budget_tokens; see @kortix/llm-catalog's
+// CatalogReasoningOption for the full field-by-field rationale). All fields
+// but `type` optional so one schema covers all three without a oneOf.
+const GatewayModelReasoningOptionSchema = z
+  .object({
+    type: z.string(),
+    values: z.array(z.string()).optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+  })
+  .openapi('GatewayModelReasoningOption');
+
+const GatewayModelCostTierSchema = z
+  .object({
+    input: z.number().optional(),
+    output: z.number().optional(),
+    cache_read: z.number().optional(),
+    cache_write: z.number().optional(),
+    tier: z.object({ type: z.string(), size: z.number() }).optional(),
+  })
+  .openapi('GatewayModelCostTier');
+
+const GatewayModelCostSchema = z
+  .object({
+    input: z.number().optional(),
+    output: z.number().optional(),
+    cache_read: z.number().optional(),
+    cache_write: z.number().optional(),
+    tiers: z.array(GatewayModelCostTierSchema).optional(),
+    context_over_200k: GatewayModelCostTierSchema.optional(),
+  })
+  .openapi('GatewayModelCost');
+
+const GatewayModelModalitiesSchema = z
+  .object({
+    input: z.array(z.string()).optional(),
+    output: z.array(z.string()).optional(),
+  })
+  .openapi('GatewayModelModalities');
+
+// Documents the ACTUAL served shape (see catalog-models.ts's `GatewayModel`)
+// — this used to lag behind reality (no `provider`, no reasoning_options/
+// cost/modalities/structured_output/knowledge/limit.input), so the published
+// OpenAPI contract didn't match what GET /v1/models actually returns.
 const GatewayModelSchema = z
   .object({
     name: z.string(),
     released: z.string().nullable().optional(),
     release_date: z.string().nullable().optional(),
     family: z.string().optional(),
+    // The REAL upstream provider this model resolves against ('anthropic',
+    // 'openai', 'codex', 'kortix', ...) — every gateway model is registered
+    // under the single synthetic `kortix` opencode provider, so this is the
+    // field a client groups/labels by instead of parsing the wire model id.
+    provider: z.string().optional(),
     reasoning: z.boolean().optional(),
+    reasoning_options: z.array(GatewayModelReasoningOptionSchema).optional(),
     tool_call: z.boolean().optional(),
     attachment: z.boolean().optional(),
     temperature: z.boolean().optional(),
-    limit: z.object({ context: z.number().optional(), output: z.number().optional() }).optional(),
+    structured_output: z.boolean().optional(),
+    knowledge: z.string().optional(),
+    description: z.string().optional(),
+    open_weights: z.boolean().optional(),
+    last_updated: z.string().optional(),
+    modalities: GatewayModelModalitiesSchema.optional(),
+    cost: GatewayModelCostSchema.optional(),
+    limit: z
+      .object({
+        context: z.number().optional(),
+        input: z.number().optional(),
+        output: z.number().optional(),
+      })
+      .optional(),
   })
   .openapi('GatewayModel');
 
@@ -259,7 +323,9 @@ const ModelsResponseSchema = z
         'claude-sonnet-4-5': {
           name: 'Claude Sonnet 4.5',
           family: 'claude',
+          provider: 'anthropic',
           reasoning: true,
+          reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
           tool_call: true,
           attachment: true,
           temperature: true,
