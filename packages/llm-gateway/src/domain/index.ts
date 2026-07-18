@@ -9,6 +9,7 @@ export type {
   ModelFallbackCondition,
   ModelFallbackPolicy,
   ModelFallbackPolicyMatch,
+  ModelGenerationDefaults,
   ModelRouteInput,
   ModelRoutePlan,
 } from './routing';

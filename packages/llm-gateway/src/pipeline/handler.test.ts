@@ -937,6 +937,60 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
   });
 });
 
+describe("gateway.chatCompletions — generation-defaults injection", () => {
+  test("injects the route's generationDefaults into the upstream body when the client didn't set them", async () => {
+    let upstreamBody: any;
+    const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test",
+        primaryModel: input.requestedModel,
+        generationDefaults: { temperature: 0.3, reasoningEffort: "high", maxOutputTokens: 999 },
+      }),
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }, {
+      fetchImpl: async (_url, init) => {
+        upstreamBody = JSON.parse(String(init!.body));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "ok" } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+    expect(res.status).toBe(200);
+    expect(upstreamBody.temperature).toBe(0.3);
+    expect(upstreamBody.reasoning_effort).toBe("high");
+    expect(upstreamBody.max_tokens).toBe(999);
+  });
+
+  test("an explicit client value always wins over the route's generationDefaults", async () => {
+    let upstreamBody: any;
+    const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test",
+        primaryModel: input.requestedModel,
+        generationDefaults: { temperature: 0.3 },
+      }),
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }, {
+      fetchImpl: async (_url, init) => {
+        upstreamBody = JSON.parse(String(init!.body));
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "ok" } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","temperature":0.99,"messages":[{"role":"user","content":"hi"}]}',
+    });
+    expect(res.status).toBe(200);
+    expect(upstreamBody.temperature).toBe(0.99);
+  });
+});
+
 // Regression coverage for the empty-completion bug: an upstream 200 with
 // syntactically valid but empty choices/content (seen from OpenRouter/z-ai) must
 // be treated as a failed candidate — failed over to the next one, and only

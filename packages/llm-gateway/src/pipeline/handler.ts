@@ -22,6 +22,7 @@ import {
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
 import { type RoutedUpstreamCandidate, runFailover } from './failover';
+import { applyGenerationDefaults } from './generation-defaults';
 import { type StreamProbeResult, probeStream, relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -410,6 +411,13 @@ export async function handleChatCompletions(
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
+  // Project/account-configured per-model generation defaults (reasoning
+  // effort, temperature, top_p, max output tokens) — injected here, once,
+  // before ANY client/candidate sees the body, so every downstream client
+  // (opencode, SDK, direct chat/completions, anthropic-messages) gets them
+  // identically. Only fills fields the client didn't already set — see
+  // applyGenerationDefaults's doc comment.
+  body = applyGenerationDefaults(body, route?.generationDefaults);
   step('body_parsed', {
     model: requestedModel,
     routedModel,

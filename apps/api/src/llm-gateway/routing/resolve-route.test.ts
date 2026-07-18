@@ -140,3 +140,64 @@ describe('gateway control-plane route resolver', () => {
     expect(noFallback.policyId).toBe('project:default');
   });
 });
+
+describe('gateway control-plane route resolver — generation-defaults clamping', () => {
+  const genPrincipal = { ...principal, projectId: 'p1' };
+
+  const reasoningModel = {
+    id: 'reasoning-model',
+    name: 'Reasoning Model',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+    temperature: false,
+    limit: { output: 4096 },
+  };
+
+  function resolverFor(modelGenerationConfig: Record<string, unknown>) {
+    return createGatewayRouteResolver({
+      defaultModel: 'model-default',
+      visionModel: 'model-vision',
+      policies: [],
+      supportsImage: () => true,
+      getProjectPolicy: async () => ({
+        visionModel: null,
+        defaultFallback: null,
+        rules: [],
+        modelGenerationConfig: modelGenerationConfig as never,
+      }),
+      catalogModelFor: (model) => (model === 'reasoning-model' ? (reasoningModel as never) : undefined),
+    });
+  }
+
+  test('attaches a clamped generationDefaults for the resolved primary model', async () => {
+    const resolveRoute = resolverFor({
+      'reasoning-model': { reasoningEffort: 'high', maxOutputTokens: 999_999 },
+    });
+    const route = await resolveRoute(genPrincipal, {
+      requestedModel: 'reasoning-model',
+      requires: { imageInput: false },
+    });
+    // maxOutputTokens is clamped to the model's limit.output (4096).
+    expect(route.generationDefaults).toEqual({ reasoningEffort: 'high', maxOutputTokens: 4096 });
+  });
+
+  test('drops a capability the resolved model does not support (temperature:false)', async () => {
+    const resolveRoute = resolverFor({
+      'reasoning-model': { temperature: 1.5, topP: 0.9 },
+    });
+    const route = await resolveRoute(genPrincipal, {
+      requestedModel: 'reasoning-model',
+      requires: { imageInput: false },
+    });
+    expect(route.generationDefaults).toBeUndefined();
+  });
+
+  test('no configured entry for the resolved model → no generationDefaults', async () => {
+    const resolveRoute = resolverFor({ 'other-model': { temperature: 0.5 } });
+    const route = await resolveRoute(genPrincipal, {
+      requestedModel: 'reasoning-model',
+      requires: { imageInput: false },
+    });
+    expect(route.generationDefaults).toBeUndefined();
+  });
+});

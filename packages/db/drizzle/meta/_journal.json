@@ -29,6 +29,13 @@
       "when": 1784375548825,
       "tag": "20260718115228_account_model_preferences_project_id",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784393153201,
+      "tag": "20260718164553_add_project_model_generation_config",
+      "breakpoints": true
     }
   ]
 }

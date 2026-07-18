@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { gatewayModelCatalog } from './catalog-models';
+import { catalogModelForWireModel, gatewayModelCatalog } from './catalog-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
@@ -29,7 +29,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 
   test('project catalog advertises the GPT-5.6 Codex family', () => {
     expect(full['codex/gpt-5.6-sol']).toMatchObject({
-      name: 'GPT-5.6-Sol (ChatGPT)',
+      name: 'GPT-5.6 Sol (ChatGPT)',
       reasoning: true,
       tool_call: true,
     });
@@ -81,5 +81,36 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
 
   test('free-tier catalog is its own memoized singleton', () => {
     expect(gatewayModelCatalog('proj', { freeManagedOnly: true })).toBe(freeFull);
+  });
+});
+
+describe('catalogModelForWireModel — generation-controls capability lookup', () => {
+  test('resolves a BYOK provider/model id to its live catalog capability record', () => {
+    const model = catalogModelForWireModel('openai/gpt-5.6-sol');
+    expect(model?.reasoning).toBe(true);
+    expect(model?.temperature).toBe(false);
+    expect(model?.reasoning_options?.[0]?.values).toContain('xhigh');
+  });
+
+  test('resolves a codex/<id> wire model via the underlying openai/<id> catalog entry', () => {
+    const model = catalogModelForWireModel('codex/gpt-5.6-sol');
+    expect(model?.reasoning).toBe(true);
+    expect(model?.temperature).toBe(false);
+  });
+
+  test('resolves a managed bare id (borrowing capabilities from pricingRef when available)', () => {
+    const model = catalogModelForWireModel('claude-opus-4.8');
+    expect(model).toBeDefined();
+    expect(model?.reasoning).toBe(true);
+  });
+
+  test('resolves the synthetic auto model to a permissive capability record', () => {
+    const model = catalogModelForWireModel('auto');
+    expect(model?.tool_call).toBe(true);
+    expect(model?.temperature).toBe(true);
+  });
+
+  test('returns undefined for a completely unknown wire model', () => {
+    expect(catalogModelForWireModel('nonexistent-provider/nonexistent-model')).toBeUndefined();
   });
 });

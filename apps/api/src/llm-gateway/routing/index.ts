@@ -1,6 +1,6 @@
 import type { ModelRouteInput, ModelRoutePlan, AuthedPrincipal } from '@kortix/llm-gateway';
 import { config } from '../../config';
-import { gatewayModelCatalog } from '../models/catalog-models';
+import { catalogModelForWireModel, gatewayModelCatalog } from '../models/catalog-models';
 import { createGatewayRouteResolver } from './resolve-route';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 
@@ -15,6 +15,7 @@ const resolver = createGatewayRouteResolver({
     return routingCatalog()[wire]?.attachment === true;
   },
   getProjectPolicy: getProjectRoutingPolicy,
+  catalogModelFor: (model) => catalogModelForWireModel(model),
 });
 
 export function resolveGatewayRoute(

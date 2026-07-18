@@ -40,6 +40,8 @@
  */
 
 import {
+  type CatalogCost,
+  type CatalogReasoningOption,
   type ProviderAuthRequirement,
   CATALOG as catalog,
   primaryAuthEnvVars,
@@ -66,8 +68,17 @@ export interface LlmProviderModel {
    */
   attachment?: boolean;
   reasoning?: boolean;
+  /** Present iff the model exposes a tunable reasoning-effort knob — see
+   *  `@kortix/llm-catalog`'s `generationControlCapabilities`, the single
+   *  source of truth the generation-controls panel derives its
+   *  show/hide + valid-values from. Never hardcode a per-model list. */
+  reasoning_options?: CatalogReasoningOption[];
   tool_call?: boolean;
-  limit?: { context?: number; output?: number };
+  /** false means FIXED temperature (e.g. gpt-5.6-sol) — the generation-
+   *  controls panel must hide the temperature (and top_p) slider entirely. */
+  temperature?: boolean;
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: CatalogCost;
 }
 
 export interface LlmProviderEntry {

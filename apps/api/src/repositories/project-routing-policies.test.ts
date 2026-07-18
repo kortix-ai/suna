@@ -43,6 +43,25 @@ test('reads current routing policy from the shared DB on every request', async (
     visionModel: 'glm-5.2',
     defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
     rules: [],
+    modelGenerationConfig: {},
   });
   expect(selectCalls).toBe(2);
+});
+
+test('round-trips a stored modelGenerationConfig blob verbatim', async () => {
+  selectRows = [
+    {
+      visionModel: null,
+      defaultFallbackModels: null,
+      defaultFallbackOn: null,
+      rules: [],
+      modelGenerationConfig: {
+        'openai/gpt-5.6-sol': { reasoningEffort: 'high', maxOutputTokens: 4096 },
+      },
+    },
+  ];
+  const policy = await getProjectRoutingPolicy('gen-config-project');
+  expect(policy?.modelGenerationConfig).toEqual({
+    'openai/gpt-5.6-sol': { reasoningEffort: 'high', maxOutputTokens: 4096 },
+  });
 });

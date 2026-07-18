@@ -161,6 +161,41 @@ export function isProviderAuthSatisfied(
   );
 }
 
+// One entry of models.dev's `reasoning_options` array. Today only the
+// `'effort'` type is emitted (a model-specific enum of effort labels, e.g.
+// gpt-5.6-sol's `["none","low","medium","high","xhigh","max"]`) — typed as a
+// widened `string` (not a literal union) so a new `type` models.dev adds
+// later round-trips through the catalog without a type change here.
+export interface CatalogReasoningOption {
+  type: string;
+  values: string[];
+}
+
+// A single price tier (models.dev's `cost.tiers[]` / `cost.context_over_200k`
+// shape) — an alternate per-token price that applies once some threshold
+// (currently always a context-size breakpoint) is crossed.
+export interface CatalogCostTier {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tier?: { type: string; size: number };
+}
+
+export interface CatalogCost {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tiers?: CatalogCostTier[];
+  context_over_200k?: CatalogCostTier;
+}
+
+export interface CatalogModalities {
+  input?: string[];
+  output?: string[];
+}
+
 export interface CatalogModel {
   id: string;
   name: string;
@@ -170,9 +205,132 @@ export interface CatalogModel {
   // Single source of truth — consumers derive flags from these, never hardcode.
   attachment?: boolean; // image / file input (vision)
   reasoning?: boolean;
+  // Present only for reasoning-capable models that expose a tunable knob —
+  // `[{type:'effort', values:[...]}]` today. A reasoning model with NO
+  // entry here (reasoning:true, reasoning_options absent/empty) still
+  // supports reasoning but doesn't publish a client-settable enum —
+  // generationControlCapabilities below falls back to a generic
+  // low/medium/high set for that case, per models.dev's own convention for
+  // "reasoning but unconfigurable" models.
+  reasoning_options?: CatalogReasoningOption[];
   tool_call?: boolean;
+  // false means the model has a FIXED sampling temperature and rejects a
+  // client-supplied one (e.g. gpt-5.6-sol) — never show/send a temperature
+  // control for such a model.
   temperature?: boolean;
-  limit?: { context?: number; output?: number };
+  structured_output?: boolean;
+  // Training data cutoff, models.dev's free-text field (e.g. "2026-02-16").
+  knowledge?: string;
+  // Model family/lineage grouping (e.g. "gpt-sol", "claude-4", "o").
+  family?: string;
+  modalities?: CatalogModalities;
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: CatalogCost;
+}
+
+// ─── Generation controls — capability-gated, single source of truth ────────
+//
+// The one place that decides "which generation knobs does this model
+// support, and what are their valid ranges" — consumed by BOTH the web UI
+// (to show/hide/bound a control) and the gateway resolution layer (to decide
+// which configured per-model default is safe to inject, and how to clamp
+// it). Never hardcode a per-model exception outside this function; extend
+// the capability derivation here instead so every consumer stays in sync.
+
+/** Generic per-model generation defaults a project can configure. Extensible
+ *  without a schema/migration change — see packages/db's jsonb column. */
+export interface GenerationConfig {
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
+export interface GenerationControlCapabilities {
+  /** Present iff the model exposes a reasoning-effort knob (explicit
+   *  `reasoning_options` entry, or a reasoning:true model with no explicit
+   *  options — the low/medium/high fallback the task spec calls for). */
+  reasoningEffort?: { values: string[] };
+  /** True iff the model accepts a client-supplied temperature (models.dev
+   *  `temperature:false` means FIXED — e.g. gpt-5.6-sol — hide the control). */
+  temperature: boolean;
+  /** top_p has no distinct models.dev flag — gated on the same standard-
+   *  sampling capability as temperature (documented heuristic: models that
+   *  reject a custom temperature reject a custom top_p too). */
+  topP: boolean;
+  /** Present iff the model declares a positive max output-token window —
+   *  the ceiling a "max output tokens" control must clamp to. */
+  maxOutputTokens?: { ceiling: number };
+}
+
+const FALLBACK_REASONING_EFFORT_VALUES = ['low', 'medium', 'high'];
+
+/** Pure capability derivation — NEVER a per-model id lookup table. */
+export function generationControlCapabilities(
+  model: CatalogModel | undefined | null,
+): GenerationControlCapabilities {
+  if (!model) return { temperature: false, topP: false };
+
+  const effortOption = model.reasoning_options?.find((option) => option.type === 'effort');
+  const reasoningEffort = effortOption?.values?.length
+    ? { values: effortOption.values }
+    : model.reasoning
+      ? { values: FALLBACK_REASONING_EFFORT_VALUES }
+      : undefined;
+
+  const temperature = model.temperature === true;
+  const ceiling = model.limit?.output;
+  const maxOutputTokens =
+    typeof ceiling === 'number' && ceiling > 0 ? { ceiling } : undefined;
+
+  return {
+    reasoningEffort,
+    temperature,
+    topP: temperature,
+    maxOutputTokens,
+  };
+}
+
+/**
+ * Drop/clamp every field of a (possibly user- or client-supplied)
+ * `GenerationConfig` against what `model` actually supports — the single
+ * gate BOTH the routing-policy write path (persistence) and the gateway
+ * resolution-layer injection path (see apps/api's routing/resolve-route.ts)
+ * must run a value through before it's trusted. A field the model doesn't
+ * support is silently dropped (never a validation error) so a model swap
+ * doesn't require the caller to also scrub unrelated config.
+ */
+export function clampGenerationConfig(
+  config: GenerationConfig | null | undefined,
+  model: CatalogModel | undefined | null,
+): GenerationConfig {
+  if (!config) return {};
+  const caps = generationControlCapabilities(model);
+  const out: GenerationConfig = {};
+
+  if (
+    typeof config.reasoningEffort === 'string' &&
+    caps.reasoningEffort?.values.includes(config.reasoningEffort)
+  ) {
+    out.reasoningEffort = config.reasoningEffort;
+  }
+  if (typeof config.temperature === 'number' && caps.temperature && Number.isFinite(config.temperature)) {
+    out.temperature = Math.min(2, Math.max(0, config.temperature));
+  }
+  if (typeof config.topP === 'number' && caps.topP && Number.isFinite(config.topP)) {
+    out.topP = Math.min(1, Math.max(0, config.topP));
+  }
+  if (
+    typeof config.maxOutputTokens === 'number' &&
+    caps.maxOutputTokens &&
+    Number.isFinite(config.maxOutputTokens)
+  ) {
+    out.maxOutputTokens = Math.min(
+      caps.maxOutputTokens.ceiling,
+      Math.max(1, Math.floor(config.maxOutputTokens)),
+    );
+  }
+  return out;
 }
 
 interface CatalogProvider {
