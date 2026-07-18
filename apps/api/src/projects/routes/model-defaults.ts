@@ -52,7 +52,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const accountId = loaded.row.accountId as string;
-    const defaults = await getAccountModelDefaults(accountId);
+    const defaults = await getAccountModelDefaults(accountId, projectId);
     const projectDefault = defaults.projects[projectId] ?? null;
     return c.json({
       // The platform default is the synthetic `auto` (the gateway resolves it).
@@ -102,7 +102,15 @@ projectsApp.openapi(
     }
 
     const scopeKey = scope === "project" ? projectId : scope === "agent" ? agentName! : "";
-    await upsertAccountModelPreference({ accountId, scope, scopeKey, model, updatedBy: userId });
+    await upsertAccountModelPreference({
+      accountId,
+      scope,
+      scopeKey,
+      // agent-scope pins are project-scoped — see repositories/model-preferences.ts.
+      projectId: scope === "agent" ? projectId : undefined,
+      model,
+      updatedBy: userId,
+    });
     invalidateAccountModelDefaults(accountId);
     return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined, model });
   },
@@ -140,7 +148,12 @@ projectsApp.openapi(
       return c.json({ error: "agentName is required for scope=agent", code: "agent_name_required" }, 400);
     }
     const scopeKey = scope === "project" ? projectId : scope === "agent" ? agentName : "";
-    await deleteAccountModelPreference({ accountId, scope, scopeKey });
+    await deleteAccountModelPreference({
+      accountId,
+      scope,
+      scopeKey,
+      projectId: scope === "agent" ? projectId : undefined,
+    });
     invalidateAccountModelDefaults(accountId);
     return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
   },

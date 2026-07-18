@@ -31,14 +31,23 @@ import { resolveCandidates } from './resolve-candidates';
 const PREFS_TTL_MS = 30_000;
 const SESSION_AGENT_TTL_MS = 60_000;
 
+// Keyed by `${accountId}:${projectId ?? ''}` — agent-scope defaults are now
+// project-scoped (see repositories/model-preferences.ts), so the same
+// account can have DIFFERENT effective agent pins per project and the cache
+// must not conflate them.
 const prefsCache = new Map<string, { value: AccountModelDefaults; expiresAt: number }>();
 const sessionAgentCache = new Map<string, { agentName: string | null; expiresAt: number }>();
 
-async function cachedAccountDefaults(accountId: string): Promise<AccountModelDefaults> {
-  const cached = prefsCache.get(accountId);
+function prefsCacheKey(accountId: string, projectId?: string): string {
+  return `${accountId}:${projectId ?? ''}`;
+}
+
+async function cachedAccountDefaults(accountId: string, projectId?: string): Promise<AccountModelDefaults> {
+  const key = prefsCacheKey(accountId, projectId);
+  const cached = prefsCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
-  const value = await getAccountModelDefaults(accountId);
-  prefsCache.set(accountId, { value, expiresAt: Date.now() + PREFS_TTL_MS });
+  const value = await getAccountModelDefaults(accountId, projectId);
+  prefsCache.set(key, { value, expiresAt: Date.now() + PREFS_TTL_MS });
   return value;
 }
 
@@ -69,9 +78,16 @@ async function cachedSessionAgent(sessionId: string): Promise<string | null> {
   return agentName;
 }
 
-/** Drop a caller's prefs cache so a just-changed default takes effect immediately. */
+/** Drop a caller's prefs cache so a just-changed default takes effect immediately.
+ *  Clears every project-keyed cache entry for the account (the prefs cache
+ *  key is `${accountId}:${projectId}` — see prefsCacheKey), since a write
+ *  from one project (e.g. account/project scope) can also change what a
+ *  DIFFERENT project's principals resolve. */
 export function invalidateAccountModelDefaults(accountId: string): void {
-  prefsCache.delete(accountId);
+  const prefix = `${accountId}:`;
+  for (const key of prefsCache.keys()) {
+    if (key.startsWith(prefix)) prefsCache.delete(key);
+  }
 }
 
 /**
@@ -100,7 +116,7 @@ async function connectedByokFallback(projectId: string | undefined): Promise<str
 export async function resolveDefaultModelForPrincipal(
   principal: AuthedPrincipal,
 ): Promise<string | undefined> {
-  const defaults = await cachedAccountDefaults(principal.accountId);
+  const defaults = await cachedAccountDefaults(principal.accountId, principal.projectId);
   const hasAgentDefaults = Object.keys(defaults.agents).length > 0;
   const projectDefault = principal.projectId ? defaults.projects[principal.projectId] : undefined;
   // Fast path: nothing configured for this account/project → the platform default
@@ -214,7 +230,7 @@ export async function resolveEffectiveModel(params: {
     });
     if (servable) return { model: toWireModel(params.explicit), source: 'explicit' };
   }
-  const defaults = await getAccountModelDefaults(params.accountId);
+  const defaults = await getAccountModelDefaults(params.accountId, params.projectId);
   const chain = chooseEffectiveModel({
     agentDefault: params.agentName ? defaults.agents[params.agentName] : null,
     projectDefault: defaults.projects[params.projectId],
