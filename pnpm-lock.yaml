@@ -1110,7 +1110,13 @@ importers:
       recharts:
         specifier: ^3.2.1
         version: 3.9.2(@types/react@19.1.17)(react-dom@19.1.0)(react-is@19.2.7)(react@19.1.0)(redux@5.0.1)
+      rehype-katex:
+        specifier: ^7.0.1
+        version: 7.0.1
       rehype-sanitize:
+        specifier: ^6.0.0
+        version: 6.0.0
+      remark-math:
         specifier: ^6.0.0
         version: 6.0.0
       server-only:
