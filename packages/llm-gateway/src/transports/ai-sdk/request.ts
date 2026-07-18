@@ -436,6 +436,14 @@ const REASONING_EFFORT_BUDGET_TOKENS: Record<string, number> = {
   low: 2048,
   medium: 8192,
   high: 16000,
+  // Above 'high' but below 'max' — some newer Claude/Bedrock reasoning
+  // models (see packages/llm-catalog's generated catalog reasoning_options,
+  // e.g. claude-opus-4-8's `['low','medium','high','xhigh','max']`) expose a
+  // fifth effort tier between the two. Without an entry here, selecting
+  // 'xhigh' silently produced NO thinking budget at all (falls through every
+  // check in resolveAnthropicThinkingBudget/clampGenerationConfig's
+  // reasoningEffort branch).
+  xhigh: 24000,
   max: 32000,
 };
 
