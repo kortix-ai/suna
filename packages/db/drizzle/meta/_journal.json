@@ -29,6 +29,13 @@
       "when": 1784375548825,
       "tag": "20260718115228_account_model_preferences_project_id",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784397972005,
+      "tag": "20260718180612_acp_session_envelopes",
+      "breakpoints": true
     }
   ]
 }
