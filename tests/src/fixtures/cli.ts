@@ -25,19 +25,19 @@
  * The fixture is pure helpers (no ke2e flow plumbing) so flows stay declarative;
  * it returns the captured { exitCode, stdout, stderr } for the flow to assert on.
  */
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
-import { loadEnv } from "../core/env";
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve, join } from 'node:path';
+import { loadEnv } from '../core/env';
 
 /** Repo root resolved from this file (tests/src/fixtures → ../../..). */
-const REPO_ROOT = resolve(import.meta.dir, "../../..");
+const REPO_ROOT = resolve(import.meta.dir, '../../..');
 /** CLI source entry — invoked via `bun run` so a stale binary can't mislead. */
-const CLI_ENTRY = resolve(REPO_ROOT, "apps/cli/src/index.ts");
+const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
 /** ke2e target origin without a trailing `/v1` (the CLI re-adds it). */
 function targetApiBase(): string {
-  return loadEnv().apiUrl.replace(/\/v1$/, "");
+  return loadEnv().apiUrl.replace(/\/v1$/, '');
 }
 
 export interface CliResult {
@@ -66,39 +66,46 @@ export interface CliRunOptions {
  */
 export class CliSandbox {
   /** The isolated working directory (where scaffolds land). */
-  readonly cwd: string;
+  cwd: string;
   /** Private CLI config file path (KORTIX_CONFIG_FILE). */
   readonly configFile: string;
   /** Private HOME so nothing leaks to the real user dir. */
   readonly home: string;
   private disposed = false;
 
-  constructor(label = "cli") {
+  constructor(label = 'cli') {
     const root = mkdtempSync(join(tmpdir(), `ke2e-${label}-`));
-    this.home = join(root, "home");
-    this.cwd = join(root, "work");
+    this.home = join(root, 'home');
+    this.cwd = join(root, 'work');
     mkdirSync(this.home, { recursive: true });
     mkdirSync(this.cwd, { recursive: true });
-    this.configFile = join(this.home, ".config", "kortix", "config.json");
+    this.configFile = join(this.home, '.config', 'kortix', 'config.json');
+  }
+
+  /** Move subsequent commands and path helpers into a scaffolded child dir. */
+  enter(rel: string): void {
+    const next = resolve(this.cwd, rel);
+    if (!next.startsWith(`${this.cwd}/`)) throw new Error(`refusing to leave CLI sandbox: ${rel}`);
+    this.cwd = next;
   }
 
   /** The hermetic env every invocation runs under. */
   baseEnv(): Record<string, string> {
     return {
       // Pass through PATH (git + bun must resolve) and a few innocuous vars.
-      PATH: process.env.PATH ?? "",
+      PATH: process.env.PATH ?? '',
       HOME: this.home,
       // Make the CLI deterministic + non-interactive-friendly.
       KORTIX_CONFIG_FILE: this.configFile,
       KORTIX_DEFAULT_API_BASE: targetApiBase(),
       // A stable git identity so `create`/`ship` commits don't fail on a
       // machine without a configured user.
-      GIT_AUTHOR_NAME: "ke2e",
-      GIT_AUTHOR_EMAIL: "ke2e@kortix.test",
-      GIT_COMMITTER_NAME: "ke2e",
-      GIT_COMMITTER_EMAIL: "ke2e@kortix.test",
+      GIT_AUTHOR_NAME: 'ke2e',
+      GIT_AUTHOR_EMAIL: 'ke2e@kortix.test',
+      GIT_COMMITTER_NAME: 'ke2e',
+      GIT_COMMITTER_EMAIL: 'ke2e@kortix.test',
       // Force non-TTY so prompt-driven branches take their headless path.
-      CI: "1",
+      CI: '1',
     };
   }
 
@@ -106,7 +113,7 @@ export class CliSandbox {
   readConfig(): any | null {
     if (!existsSync(this.configFile)) return null;
     try {
-      return JSON.parse(readFileSync(this.configFile, "utf8"));
+      return JSON.parse(readFileSync(this.configFile, 'utf8'));
     } catch {
       return null;
     }
@@ -116,12 +123,12 @@ export class CliSandbox {
   isLoggedIn(): boolean {
     const cfg = this.readConfig();
     const host = cfg?.hosts?.[cfg?.active];
-    return typeof host?.token === "string" && host.token.length > 0;
+    return typeof host?.token === 'string' && host.token.length > 0;
   }
 
   /** Read a scaffolded file relative to the sandbox cwd. */
   readFile(rel: string): string {
-    return readFileSync(join(this.cwd, rel), "utf8");
+    return readFileSync(join(this.cwd, rel), 'utf8');
   }
 
   /** Whether a path (file or dir) exists relative to the sandbox cwd. */
@@ -132,18 +139,18 @@ export class CliSandbox {
   /** Write a file relative to the sandbox cwd (e.g. to set up a fixture state). */
   writeFile(rel: string, content: string): void {
     const p = join(this.cwd, rel);
-    mkdirSync(resolve(p, ".."), { recursive: true });
-    writeFileSync(p, content, "utf8");
+    mkdirSync(resolve(p, '..'), { recursive: true });
+    writeFileSync(p, content, 'utf8');
   }
 
   /** Run the CLI with the given argv. Captures exit code + decoded streams. */
   async run(args: string[], opts: CliRunOptions = {}): Promise<CliResult> {
-    const proc = Bun.spawn(["bun", "run", CLI_ENTRY, ...args], {
+    const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, ...args], {
       cwd: opts.cwd ?? this.cwd,
       env: { ...this.baseEnv(), ...(opts.env ?? {}) },
-      stdin: opts.stdin != null ? new TextEncoder().encode(opts.stdin) : "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
+      stdin: opts.stdin != null ? new TextEncoder().encode(opts.stdin) : 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
     });
 
     const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -175,7 +182,7 @@ export class CliSandbox {
    * pass the returned `kortix_pat_…` secret here.
    */
   async login(pat: string): Promise<CliResult> {
-    return this.run(["login", "--token", pat]);
+    return this.run(['login', '--token', pat]);
   }
 
   /** Tear down the temp dirs. Best-effort; safe to call twice. */
@@ -183,7 +190,7 @@ export class CliSandbox {
     if (this.disposed) return;
     this.disposed = true;
     try {
-      rmSync(resolve(this.home, ".."), { recursive: true, force: true });
+      rmSync(resolve(this.home, '..'), { recursive: true, force: true });
     } catch {
       /* best-effort */
     }
@@ -216,16 +223,16 @@ export async function browserLogin(
   pat: string,
   opts: { badState?: boolean } = {},
 ): Promise<CliResult> {
-  const proc = Bun.spawn(["bun", "run", CLI_ENTRY, "login"], {
+  const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, 'login'], {
     cwd: sb.cwd,
     env: { ...sb.baseEnv() },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
 
   const decoder = new TextDecoder();
-  let stdoutBuf = "";
+  let stdoutBuf = '';
   let callbackUrl: string | null = null;
   let state: string | null = null;
   let port: string | null = null;
@@ -251,9 +258,12 @@ export async function browserLogin(
     // Simulate the dashboard POSTing the minted token to the loopback callback.
     try {
       await fetch(`http://127.0.0.1:${port}/callback`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ state: opts.badState ? `${state}-wrong` : state, token: pat }),
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          state: opts.badState ? `${state}-wrong` : state,
+          token: pat,
+        }),
       });
     } catch {
       /* the CLI will time out → non-zero exit, asserted by caller */
@@ -270,7 +280,7 @@ export async function browserLogin(
   // Drain the rest of stdout from the SAME reader — the stream is already
   // locked by getReader() above, so re-wrapping proc.stdout would throw
   // "ReadableStream has already been used".
-  let restStdout = "";
+  let restStdout = '';
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -281,10 +291,7 @@ export async function browserLogin(
     /* stream closed when the process was killed */
   }
   reader.releaseLock();
-  const [stderr, exitCode] = await Promise.all([
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
   clearTimeout(killer);
 
   const stdout = stdoutBuf + restStdout;

@@ -2,86 +2,94 @@
  * Billing — account state + the REAL subscribe flow (inline checkout confirmed
  * with a Stripe test card). Maps to spec §20 (BILL-1, BILL-3). Gated on `stripe`.
  */
-import { flow } from "../core/flow";
-import { subscribe } from "../fixtures/billing";
+import { flow } from '../core/flow';
+import { subscribe } from '../fixtures/billing';
 
 flow(
-  "BILL-1",
+  'BILL-1',
   {
-    domain: "billing",
-    tags: ["smoke"],
-    routes: ["GET /v1/billing/account-state", "GET /v1/billing/account-state/minimal"],
+    domain: 'billing',
+    tags: ['smoke'],
+    routes: ['GET /v1/billing/account-state', 'GET /v1/billing/account-state/minimal'],
   },
   async (ctx) => {
-    await ctx.step("OWNER reads account state", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state");
+    await ctx.step('OWNER reads account state', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state');
       r.status(200);
     });
-    await ctx.step("OWNER reads the minimal account-state variant → 200", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state/minimal");
+    await ctx.step('OWNER reads the minimal account-state variant → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state/minimal');
       r.status(200);
     });
   },
 );
 
 flow(
-  "BILL-12",
+  'BILL-12',
   {
-    domain: "billing",
-    routes: ["GET /v1/billing/account-state"],
+    domain: 'billing',
+    routes: ['GET /v1/billing/account-state'],
   },
   async (ctx) => {
-    await ctx.step("fresh personal account is repaired to free tier with usable credits", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/billing/account-state");
-      r.status(200)
-        .body()
-        .has("$.subscription.tier_key", "free")
-        .has("$.tier.name", "free")
-        .has("$.tier.monthly_credits", 5)
-        .has("$.credits.total", 5)
-        .has("$.credits.monthly", 5)
-        .has("$.credits.can_run", true);
-    });
+    await ctx.step(
+      'fresh personal account is repaired to free tier with usable credits',
+      async () => {
+        const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/billing/account-state');
+        r.status(200)
+          .body()
+          .has('$.subscription.tier_key', 'free')
+          .has('$.tier.name', 'free')
+          .has('$.tier.monthly_credits', 2)
+          .has('$.credits.total', 2)
+          .has('$.credits.monthly', 2)
+          .has('$.credits.can_run', true);
+      },
+    );
   },
 );
 
 flow(
-  "BILL-13",
+  'BILL-13',
   {
-    domain: "billing",
+    domain: 'billing',
     serial: true,
     global: true,
-    routes: ["POST /v1/billing/cron/free-tier-rotation"],
+    requires: ['internalCron'],
+    routes: ['POST /v1/billing/cron/free-tier-rotation'],
   },
   async (ctx) => {
-    await ctx.step("free-tier rotation cron route is wired to the reset service", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/cron/free-tier-rotation", {});
-      r.status(200).body().exists("$.processed").exists("$.skipped").exists("$.errors");
+    await ctx.step('free-tier rotation cron route is wired to the reset service', async () => {
+      const r = await ctx.client
+        .withBearer(ctx.env.internalServiceKey!, 'INTERNAL_CRON')
+        .post('/v1/billing/cron/free-tier-rotation', {});
+      r.status(200).body().exists('$.processed').exists('$.skipped').exists('$.errors');
     });
   },
 );
 
 flow(
-  "BILL-3",
+  'BILL-3',
   {
-    domain: "billing",
-    requires: ["funded"],
+    domain: 'billing',
+    requires: ['funded'],
     serial: true,
     timeoutMs: 120_000,
     routes: [
-      "POST /v1/billing/create-inline-checkout",
-      "POST /v1/billing/confirm-inline-checkout",
-      "GET /v1/billing/account-state",
+      'POST /v1/billing/create-inline-checkout',
+      'POST /v1/billing/confirm-inline-checkout',
+      'GET /v1/billing/account-state',
     ],
   },
   async (ctx) => {
     // Subscribe a fresh team account the real way → credits granted.
     const team = await ctx.fixtures.team();
-    await ctx.step("inline checkout + confirm with test card → active", async () => {
-      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id, "pro");
+    await ctx.step('inline checkout + confirm with test card → active', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id, 'pro');
     });
-    await ctx.step("account-state reflects an active paid subscription", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state", { query: { account_id: team.id } });
+    await ctx.step('account-state reflects an active paid subscription', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/billing/account-state', { query: { account_id: team.id } });
       r.status(200);
     });
   },
@@ -96,49 +104,54 @@ flow(
  * (nothing to sync) or 400.
  */
 flow(
-  "BILL-4",
+  'BILL-4',
   {
-    domain: "billing",
+    domain: 'billing',
     routes: [
-      "POST /v1/billing/cancel-subscription",
-      "POST /v1/billing/reactivate-subscription",
-      "POST /v1/billing/schedule-downgrade",
-      "POST /v1/billing/cancel-scheduled-change",
-      "POST /v1/billing/sync-subscription",
-      "GET /v1/billing/proration-preview",
+      'POST /v1/billing/cancel-subscription',
+      'POST /v1/billing/reactivate-subscription',
+      'POST /v1/billing/schedule-downgrade',
+      'POST /v1/billing/cancel-scheduled-change',
+      'POST /v1/billing/sync-subscription',
+      'GET /v1/billing/proration-preview',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
 
-    await ctx.step("cancel on a sub-less account → no subscription", async () => {
-      const r = await owner.post("/v1/billing/cancel-subscription", { account_id: team.id });
+    await ctx.step('cancel on a sub-less account → no subscription', async () => {
+      const r = await owner.post('/v1/billing/cancel-subscription', { account_id: team.id });
       r.status([400, 404, 409]);
     });
-    await ctx.step("reactivate on a sub-less account → no subscription", async () => {
-      const r = await owner.post("/v1/billing/reactivate-subscription", { account_id: team.id });
+    await ctx.step('reactivate on a sub-less account → no subscription', async () => {
+      const r = await owner.post('/v1/billing/reactivate-subscription', { account_id: team.id });
       r.status([400, 404, 409]);
     });
-    await ctx.step("schedule-downgrade with no active sub → rejected", async () => {
-      const r = await owner.post("/v1/billing/schedule-downgrade", { account_id: team.id, target_tier_key: "pro" });
+    await ctx.step('schedule-downgrade with no active sub → rejected', async () => {
+      const r = await owner.post('/v1/billing/schedule-downgrade', {
+        account_id: team.id,
+        target_tier_key: 'pro',
+      });
       r.status([400, 404, 409]);
     });
-    await ctx.step("cancel-scheduled-change with nothing scheduled → rejected", async () => {
-      const r = await owner.post("/v1/billing/cancel-scheduled-change", { account_id: team.id });
+    await ctx.step('cancel-scheduled-change with nothing scheduled → rejected', async () => {
+      const r = await owner.post('/v1/billing/cancel-scheduled-change', { account_id: team.id });
       r.status([200, 400, 404, 409]);
     });
-    await ctx.step("sync-subscription reconciles (no-op) → ok or no-sub", async () => {
-      const r = await owner.post("/v1/billing/sync-subscription", { account_id: team.id });
+    await ctx.step('sync-subscription reconciles (no-op) → ok or no-sub', async () => {
+      const r = await owner.post('/v1/billing/sync-subscription', { account_id: team.id });
       r.status([200, 400, 404, 409]);
     });
-    await ctx.step("proration-preview requires new_price_id → 400", async () => {
-      const r = await owner.get("/v1/billing/proration-preview", { query: { account_id: team.id } });
+    await ctx.step('proration-preview requires new_price_id → 400', async () => {
+      const r = await owner.get('/v1/billing/proration-preview', {
+        query: { account_id: team.id },
+      });
       r.status(400);
     });
-    await ctx.step("proration-preview with a price but no active sub → rejected", async () => {
-      const r = await owner.get("/v1/billing/proration-preview", {
-        query: { account_id: team.id, new_price_id: "price_nonexistent" },
+    await ctx.step('proration-preview with a price but no active sub → rejected', async () => {
+      const r = await owner.get('/v1/billing/proration-preview', {
+        query: { account_id: team.id, new_price_id: 'price_nonexistent' },
       });
       r.status([400, 404, 409]);
     });
@@ -150,19 +163,23 @@ flow(
  * resolver rejects a non-member with 403 before any Stripe logic runs.
  */
 flow(
-  "BILL-4b",
+  'BILL-4b',
   {
-    domain: "billing",
-    routes: ["POST /v1/billing/cancel-subscription", "POST /v1/billing/sync-seat-quantity"],
+    domain: 'billing',
+    routes: ['POST /v1/billing/cancel-subscription', 'POST /v1/billing/sync-seat-quantity'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step("NONMEMBER cancel on a team they don't belong to → 403", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/cancel-subscription", { account_id: team.id });
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post('/v1/billing/cancel-subscription', { account_id: team.id });
       r.status(403);
     });
-    await ctx.step("NONMEMBER sync-seat-quantity → 403", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/sync-seat-quantity", { account_id: team.id });
+    await ctx.step('NONMEMBER sync-seat-quantity → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post('/v1/billing/sync-seat-quantity', { account_id: team.id });
       r.status(403);
     });
   },
@@ -179,41 +196,44 @@ flow(
  * fires before any Stripe interaction, mirroring BILL-4b's non-member 403.
  */
 flow(
-  "BILL-9",
+  'BILL-9',
   {
-    domain: "billing",
+    domain: 'billing',
     routes: [
-      "POST /v1/billing/create-per-seat-checkout",
-      "POST /v1/billing/cancel-subscription",
-      "POST /v1/billing/purchase-credits",
+      'POST /v1/billing/create-per-seat-checkout',
+      'POST /v1/billing/cancel-subscription',
+      'POST /v1/billing/purchase-credits',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const member = await team.addMember("member");
+    const member = await team.addMember('member');
     const asMember = ctx.client.as(member);
 
-    await ctx.step("MEMBER cannot start a team subscription checkout → 403", async () => {
-      const r = await asMember.post("/v1/billing/create-per-seat-checkout", {
+    await ctx.step('MEMBER cannot start a team subscription checkout → 403', async () => {
+      const r = await asMember.post('/v1/billing/create-per-seat-checkout', {
         account_id: team.id,
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
       });
       r.status(403);
     });
-    await ctx.step("MEMBER cannot cancel the subscription → 403", async () => {
-      const r = await asMember.post("/v1/billing/cancel-subscription", { account_id: team.id });
+    await ctx.step('MEMBER cannot cancel the subscription → 403', async () => {
+      const r = await asMember.post('/v1/billing/cancel-subscription', { account_id: team.id });
       r.status(403);
     });
-    await ctx.step("MEMBER cannot buy credits → 403", async () => {
-      const r = await asMember.post("/v1/billing/purchase-credits", { account_id: team.id, amount: 10 });
-      r.status(403);
-    });
-    await ctx.step("ANON cannot start a team subscription checkout → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/create-per-seat-checkout", {
+    await ctx.step('MEMBER cannot buy credits → 403', async () => {
+      const r = await asMember.post('/v1/billing/purchase-credits', {
         account_id: team.id,
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
+        amount: 10,
+      });
+      r.status(403);
+    });
+    await ctx.step('ANON cannot start a team subscription checkout → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/create-per-seat-checkout', {
+        account_id: team.id,
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
       });
       r.status(401);
     });
@@ -228,20 +248,20 @@ flow(
  * returns ok with a "skipped:*" status (or 400 on failure). Neither fakes a sub.
  */
 flow(
-  "BILL-10",
+  'BILL-10',
   {
-    domain: "billing",
-    routes: ["POST /v1/billing/sync-seat-quantity", "POST /v1/billing/claim-per-seat"],
+    domain: 'billing',
+    routes: ['POST /v1/billing/sync-seat-quantity', 'POST /v1/billing/claim-per-seat'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step("sync-seat-quantity on a seat-less account → ok or rejected", async () => {
-      const r = await owner.post("/v1/billing/sync-seat-quantity", { account_id: team.id });
+    await ctx.step('sync-seat-quantity on a seat-less account → ok or rejected', async () => {
+      const r = await owner.post('/v1/billing/sync-seat-quantity', { account_id: team.id });
       r.status([200, 400, 404, 409]);
     });
-    await ctx.step("claim-per-seat on a non-legacy account → skipped", async () => {
-      const r = await owner.post("/v1/billing/claim-per-seat", { account_id: team.id });
+    await ctx.step('claim-per-seat on a non-legacy account → skipped', async () => {
+      const r = await owner.post('/v1/billing/claim-per-seat', { account_id: team.id });
       r.status([200, 400]);
     });
   },
@@ -255,42 +275,42 @@ flow(
  * Gated on `stripe` so credential-less targets self-skip.
  */
 flow(
-  "BILL-3b",
+  'BILL-3b',
   {
-    domain: "billing",
+    domain: 'billing',
     serial: true,
-    requires: ["stripe"],
+    requires: ['stripe'],
     timeoutMs: 60_000,
     routes: [
-      "POST /v1/billing/create-checkout-session",
-      "POST /v1/billing/create-per-seat-checkout",
-      "POST /v1/billing/create-portal-session",
+      'POST /v1/billing/create-checkout-session',
+      'POST /v1/billing/create-per-seat-checkout',
+      'POST /v1/billing/create-portal-session',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step("create-checkout-session → Stripe URL or rejection", async () => {
-      const r = await owner.post("/v1/billing/create-checkout-session", {
+    await ctx.step('create-checkout-session → Stripe URL or rejection', async () => {
+      const r = await owner.post('/v1/billing/create-checkout-session', {
         account_id: team.id,
-        tier_key: "pro",
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
+        tier_key: 'pro',
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
       });
       r.status([200, 400, 500]);
     });
-    await ctx.step("create-per-seat-checkout → Stripe URL or rejection", async () => {
-      const r = await owner.post("/v1/billing/create-per-seat-checkout", {
+    await ctx.step('create-per-seat-checkout → Stripe URL or rejection', async () => {
+      const r = await owner.post('/v1/billing/create-per-seat-checkout', {
         account_id: team.id,
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
+        success_url: 'https://example.com/ok',
+        cancel_url: 'https://example.com/cancel',
       });
       r.status([200, 400, 500]);
     });
-    await ctx.step("create-portal-session → Stripe portal URL or rejection", async () => {
-      const r = await owner.post("/v1/billing/create-portal-session", {
+    await ctx.step('create-portal-session → Stripe portal URL or rejection', async () => {
+      const r = await owner.post('/v1/billing/create-portal-session', {
         account_id: team.id,
-        return_url: "https://example.com/return",
+        return_url: 'https://example.com/return',
       });
       r.status([200, 400, 500]);
     });
@@ -303,29 +323,32 @@ flow(
  * hard 400 (input validation, before any Stripe call). Gated on `stripe`.
  */
 flow(
-  "BILL-11",
+  'BILL-11',
   {
-    domain: "billing",
-    requires: ["stripe"],
-    routes: ["GET /v1/billing/checkout-session/:sessionId", "POST /v1/billing/confirm-checkout-session"],
+    domain: 'billing',
+    requires: ['stripe'],
+    routes: [
+      'GET /v1/billing/checkout-session/:sessionId',
+      'POST /v1/billing/confirm-checkout-session',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    await ctx.step("lookup an unknown checkout session → 4xx", async () => {
-      const r = await owner.get("/v1/billing/checkout-session/:sessionId", {
-        params: { sessionId: "cs_test_does_not_exist" },
+    await ctx.step('lookup an unknown checkout session → 4xx', async () => {
+      const r = await owner.get('/v1/billing/checkout-session/:sessionId', {
+        params: { sessionId: 'cs_test_does_not_exist' },
       });
       r.status([400, 404, 500]);
     });
-    await ctx.step("confirm without session_id → 400", async () => {
-      const r = await owner.post("/v1/billing/confirm-checkout-session", { account_id: team.id });
+    await ctx.step('confirm without session_id → 400', async () => {
+      const r = await owner.post('/v1/billing/confirm-checkout-session', { account_id: team.id });
       r.status(400);
     });
-    await ctx.step("confirm an unknown session id → rejected", async () => {
-      const r = await owner.post("/v1/billing/confirm-checkout-session", {
+    await ctx.step('confirm an unknown session id → rejected', async () => {
+      const r = await owner.post('/v1/billing/confirm-checkout-session', {
         account_id: team.id,
-        session_id: "cs_test_does_not_exist",
+        session_id: 'cs_test_does_not_exist',
       });
       r.status([400, 404, 500]);
     });
@@ -342,41 +365,41 @@ flow(
  * behave identically. ANON drives these — they must NOT require a session.
  */
 flow(
-  "BILL-8",
+  'BILL-8',
   {
-    domain: "billing",
+    domain: 'billing',
     routes: [
-      "POST /v1/billing/webhooks/stripe",
-      "POST /v1/billing/webhook/stripe",
-      "POST /v1/billing/webhooks/revenuecat",
-      "POST /v1/billing/webhook/revenuecat",
+      'POST /v1/billing/webhooks/stripe',
+      'POST /v1/billing/webhook/stripe',
+      'POST /v1/billing/webhooks/revenuecat',
+      'POST /v1/billing/webhook/revenuecat',
     ],
   },
   async (ctx) => {
     const anon = ctx.client.as(ctx.P.ANON);
-    const fakeEvent = { id: "evt_ke2e", type: "ping", data: { object: {} } };
+    const fakeEvent = { id: 'evt_ke2e', type: 'ping', data: { object: {} } };
 
-    await ctx.step("stripe webhook, no Stripe-Signature → 400 missing sig", async () => {
-      const r = await anon.post("/v1/billing/webhooks/stripe", fakeEvent);
+    await ctx.step('stripe webhook, no Stripe-Signature → 400 missing sig', async () => {
+      const r = await anon.post('/v1/billing/webhooks/stripe', fakeEvent);
       r.status(400);
     });
-    await ctx.step("stripe webhook (mirror /webhook), no sig → 400", async () => {
-      const r = await anon.post("/v1/billing/webhook/stripe", fakeEvent);
+    await ctx.step('stripe webhook (mirror /webhook), no sig → 400', async () => {
+      const r = await anon.post('/v1/billing/webhook/stripe', fakeEvent);
       r.status(400);
     });
-    await ctx.step("stripe webhook, garbage signature → rejected (sig invalid)", async () => {
-      const r = await anon.post("/v1/billing/webhooks/stripe", fakeEvent, {
-        headers: { "stripe-signature": "t=1,v1=deadbeef" },
+    await ctx.step('stripe webhook, garbage signature → rejected (sig invalid)', async () => {
+      const r = await anon.post('/v1/billing/webhooks/stripe', fakeEvent, {
+        headers: { 'stripe-signature': 't=1,v1=deadbeef' },
       });
       r.status([400, 500]);
     });
-    await ctx.step("revenuecat webhook, no Bearer → 401 (or 500 if unconfigured)", async () => {
-      const r = await anon.post("/v1/billing/webhooks/revenuecat", fakeEvent);
+    await ctx.step('revenuecat webhook, no Bearer → 401 (or 500 if unconfigured)', async () => {
+      const r = await anon.post('/v1/billing/webhooks/revenuecat', fakeEvent);
       r.status([401, 500]);
     });
-    await ctx.step("revenuecat webhook (mirror /webhook), bad Bearer → 401", async () => {
-      const r = await anon.post("/v1/billing/webhook/revenuecat", fakeEvent, {
-        headers: { authorization: "Bearer ke2e-wrong-token" },
+    await ctx.step('revenuecat webhook (mirror /webhook), bad Bearer → 401', async () => {
+      const r = await anon.post('/v1/billing/webhook/revenuecat', fakeEvent, {
+        headers: { authorization: 'Bearer ke2e-wrong-token' },
       });
       r.status([401, 500]);
     });
@@ -392,45 +415,47 @@ flow(
  * mirror mount. ANON must be rejected (401) from the authed deletion routes.
  */
 flow(
-  "DEL-2",
+  'DEL-2',
   {
-    domain: "billing",
+    domain: 'billing',
     routes: [
-      "POST /v1/account/request-deletion",
-      "POST /v1/account/cancel-deletion",
-      "GET /v1/billing/account/deletion-status",
-      "POST /v1/billing/account/request-deletion",
-      "POST /v1/billing/account/cancel-deletion",
+      'POST /v1/account/request-deletion',
+      'POST /v1/account/cancel-deletion',
+      'GET /v1/billing/account/deletion-status',
+      'POST /v1/billing/account/request-deletion',
+      'POST /v1/billing/account/cancel-deletion',
     ],
   },
   async (ctx) => {
     // Throwaway user whose only account is its own personal account.
-    const team = await ctx.fixtures.team();
-    const victim = await team.addMember("member");
+    const victim = await ctx.fixtures.user({ label: 'DEL-2' });
     const asVictim = ctx.client.as(victim);
 
-    await ctx.step("ANON cannot read deletion status → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/account/deletion-status");
+    await ctx.step('ANON cannot read deletion status → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/billing/account/deletion-status');
       r.status(401);
     });
-    await ctx.step("throwaway user schedules deletion (/account mount) → 200", async () => {
-      const r = await asVictim.post("/v1/account/request-deletion", { reason: "ke2e" });
+    await ctx.step('throwaway user schedules deletion (/account mount) → 200', async () => {
+      const r = await asVictim.post('/v1/account/request-deletion', { reason: 'ke2e' });
       r.status(200);
     });
-    await ctx.step("deletion-status (billing mirror mount) reflects the pending request", async () => {
-      const r = await asVictim.get("/v1/billing/account/deletion-status");
-      r.status(200);
-    });
-    await ctx.step("requesting again while pending → 400 (already exists)", async () => {
-      const r = await asVictim.post("/v1/account/request-deletion", { reason: "again" });
+    await ctx.step(
+      'deletion-status (billing mirror mount) reflects the pending request',
+      async () => {
+        const r = await asVictim.get('/v1/billing/account/deletion-status');
+        r.status(200);
+      },
+    );
+    await ctx.step('requesting again while pending → 400 (already exists)', async () => {
+      const r = await asVictim.post('/v1/account/request-deletion', { reason: 'again' });
       r.status([400, 409]);
     });
-    await ctx.step("throwaway user cancels the deletion → 200", async () => {
-      const r = await asVictim.post("/v1/account/cancel-deletion", {});
+    await ctx.step('throwaway user cancels the deletion → 200', async () => {
+      const r = await asVictim.post('/v1/account/cancel-deletion', {});
       r.status(200);
     });
-    await ctx.step("cancel again with nothing pending → 400 (no active request)", async () => {
-      const r = await asVictim.post("/v1/account/cancel-deletion", {});
+    await ctx.step('cancel again with nothing pending → 400 (no active request)', async () => {
+      const r = await asVictim.post('/v1/account/cancel-deletion', {});
       r.status([400, 404]);
     });
   },
@@ -442,22 +467,26 @@ flow(
  * the mirror cancel). Confirms the mirror mount is fully wired, not just the status read.
  */
 flow(
-  "DEL-2b",
+  'DEL-2b',
   {
-    domain: "billing",
-    routes: ["POST /v1/billing/account/request-deletion", "POST /v1/billing/account/cancel-deletion"],
+    domain: 'billing',
+    routes: [
+      'POST /v1/billing/account/request-deletion',
+      'POST /v1/billing/account/cancel-deletion',
+    ],
   },
   async (ctx) => {
-    const team = await ctx.fixtures.team();
-    const victim = await team.addMember("member");
+    const victim = await ctx.fixtures.user({ label: 'DEL-2b' });
     const asVictim = ctx.client.as(victim);
 
-    await ctx.step("schedule deletion via billing mirror mount → 200", async () => {
-      const r = await asVictim.post("/v1/billing/account/request-deletion", { reason: "ke2e-mirror" });
+    await ctx.step('schedule deletion via billing mirror mount → 200', async () => {
+      const r = await asVictim.post('/v1/billing/account/request-deletion', {
+        reason: 'ke2e-mirror',
+      });
       r.status(200);
     });
-    await ctx.step("cancel deletion via billing mirror mount → 200", async () => {
-      const r = await asVictim.post("/v1/billing/account/cancel-deletion", {});
+    await ctx.step('cancel deletion via billing mirror mount → 200', async () => {
+      const r = await asVictim.post('/v1/billing/account/cancel-deletion', {});
       r.status(200);
     });
   },
