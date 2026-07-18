@@ -53,11 +53,80 @@ import {
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
+import {
+  type ConnectorAuthDiscovery,
+  discoverHttpAuthChallenge,
+  discoverOpenApiAuth,
+  discoverPostmanAuth,
+  mergeAuthDiscoveries,
+} from './auth-discovery';
 import type { HttpRouteSpec, NormalizedAction } from './types';
 
 export interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+const EMPTY_AUTH_DISCOVERY: ConnectorAuthDiscovery = {
+  status: 'none', recommended: null, candidates: [], warnings: [], totalRequests: 0,
+};
+
+export async function discoverDraftConnectorAuth(
+  projectId: string,
+  draft: Record<string, unknown>,
+): Promise<ConnectorAuthDiscovery> {
+  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  if (!row) throw new Error('project not found');
+  return discoverConnectorAuthFromSource(await withProjectGitAuth(row), draft);
+}
+
+async function discoverConnectorAuthFromSource(
+  project: GitBackedProject,
+  draft: Record<string, unknown>,
+): Promise<ConnectorAuthDiscovery> {
+  const provider = typeof draft.provider === 'string' ? draft.provider.toLowerCase() : '';
+  if (provider === 'pipedream' || provider === 'channel' || provider === 'computer') {
+    return EMPTY_AUTH_DISCOVERY;
+  }
+  const spec = typeof draft.spec === 'string' ? draft.spec.trim() : '';
+  if (provider === 'openapi') {
+    return spec ? discoverOpenApiAuth(await loadSpecDoc(project, spec), spec) : EMPTY_AUTH_DISCOVERY;
+  }
+  if (provider === 'postman') {
+    if (!spec) return EMPTY_AUTH_DISCOVERY;
+    const documents = await resolvePostmanSource(spec, (source) => loadSourceText(project, source), {
+      githubDefaultBranch: resolveGithubDefaultBranch,
+      postmanApiKey: config.POSTMAN_API_KEY,
+      resolveWorkspace: resolvePostmanWorkspace,
+    });
+    return mergeAuthDiscoveries(documents.map((document) =>
+      document.kind === 'openapi'
+        ? discoverOpenApiAuth(document.doc, document.source)
+        : discoverPostmanAuth(document.doc, document.source),
+    ));
+  }
+  const endpoint = provider === 'mcp'
+    ? draft.url
+    : provider === 'graphql'
+      ? draft.endpoint
+      : provider === 'http'
+        ? draft.baseUrl
+        : null;
+  if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
+  assertAllowedSourceAddress(endpoint);
+  const response = await safeEgressFetch(endpoint, provider === 'mcp' || provider === 'graphql'
+    ? {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: provider === 'mcp' ? 'application/json, text/event-stream' : 'application/json',
+        },
+        body: provider === 'mcp'
+          ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
+          : JSON.stringify({ query: 'query{__typename}' }),
+      }
+    : { method: 'HEAD', headers: { Accept: 'application/json, */*' } });
+  return discoverHttpAuthChallenge(response.headers.get('www-authenticate'), `${provider} endpoint`);
 }
 
 /**
@@ -224,8 +293,28 @@ export async function syncProjectConnectors(
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
   let synced = 0;
-  for (const spec of specs) {
+  for (const sourceSpec of specs) {
     try {
+      let spec = sourceSpec;
+      if (sourceSpec.authAuto) {
+        try {
+          const discovery = await discoverConnectorAuthFromSource(
+            gitProject,
+            sourceSpec as unknown as Record<string, unknown>,
+          );
+          if (discovery.recommended) {
+            spec = { ...sourceSpec, auth: { ...discovery.recommended, secret: null } };
+          }
+          if (discovery.status === 'unsupported') {
+            errors.push({
+              slug: sourceSpec.slug,
+              error: `auth discovery: ${discovery.warnings[0] ?? 'source authentication is not supported'}`,
+            });
+          }
+        } catch (error) {
+          errors.push({ slug: sourceSpec.slug, error: `auth discovery: ${(error as Error).message}` });
+        }
+      }
       const ex = existingBySlug.get(spec.slug);
       // Cheap reconcile: when the connector's catalog-affecting fields are
       // unchanged (hash match) and it last materialized cleanly, skip the
@@ -242,7 +331,7 @@ export async function syncProjectConnectors(
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
     } catch (e) {
-      errors.push({ slug: spec.slug, error: (e as Error).message });
+      errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
   }
 

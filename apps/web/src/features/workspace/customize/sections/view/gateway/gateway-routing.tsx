@@ -1,6 +1,14 @@
 'use client';
 
-import { ArrowDown, ArrowUp, Plus, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +38,8 @@ import type {
 } from '@kortix/sdk/projects-client';
 import { useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
+
+import { GenerationControlsPanel } from './generation-controls';
 
 const MAX_FALLBACKS = 8;
 const MAX_RULES = 20;
@@ -95,6 +105,31 @@ export function validateRoutingDraft(
   return null;
 }
 
+/**
+ * The deduped, order-stable set of model wire ids the routing draft
+ * references: the resolved primary, the vision override, the default
+ * fallback chain, and every per-model rule's primary + fallback chain.
+ * Feeds the debounced routing-policy/preview availability check so a user
+ * can't unknowingly save a chain that routes to a disconnected provider.
+ */
+export function collectPreviewTargets(
+  policy: Pick<GatewayProjectRoutingPolicy, 'visionModel' | 'defaultFallback' | 'rules'>,
+  primaryModel: string | null,
+): string[] {
+  const targets = new Set<string>();
+  const track = (model: string | null | undefined) => {
+    if (model && model !== 'auto') targets.add(model);
+  };
+  track(primaryModel);
+  track(policy.visionModel);
+  if (policy.defaultFallback) policy.defaultFallback.models.forEach(track);
+  for (const rule of policy.rules) {
+    track(rule.model);
+    rule.fallbackModels.forEach(track);
+  }
+  return [...targets];
+}
+
 function clonePolicy(policy: GatewayProjectRoutingPolicy): GatewayProjectRoutingPolicy {
   return {
     ...policy,
@@ -102,18 +137,19 @@ function clonePolicy(policy: GatewayProjectRoutingPolicy): GatewayProjectRouting
       ? { ...policy.defaultFallback, models: [...policy.defaultFallback.models] }
       : null,
     rules: policy.rules.map((rule) => ({ ...rule, fallbackModels: [...rule.fallbackModels] })),
+    modelGenerationConfig: { ...(policy.modelGenerationConfig ?? {}) },
   };
 }
 
 export function editablePolicySignature(policy: GatewayProjectRoutingPolicy): string {
   // The shared header owns defaultModel. A successful header change refetches
-  // this document, but must not replace unsaved fallback edits in this screen.
-  // Vision stays in the signature because it remains a backwards-compatible
-  // field that another client could still update even though this UI hides it.
+  // this document, but must not replace unsaved fallback (or vision) edits
+  // made on this screen.
   return JSON.stringify({
     visionModel: policy.visionModel,
     defaultFallback: policy.defaultFallback,
     rules: policy.rules,
+    modelGenerationConfig: policy.modelGenerationConfig ?? {},
   });
 }
 
@@ -155,6 +191,19 @@ function RoutingModelSelector({
   );
 }
 
+/** Warns inline when the routing-policy preview reports a model's provider isn't connected. */
+function AvailabilityBadge({ available }: { available: boolean | undefined }) {
+  if (available !== false) return null;
+  return (
+    <Hint label="This model's provider isn't connected for this project — requests routed here fail over immediately">
+      <Badge variant="warning" size="xs" className="shrink-0 gap-1">
+        <AlertTriangle className="size-3" />
+        Not connected
+      </Badge>
+    </Hint>
+  );
+}
+
 function ConditionSelect({
   value,
   onChange,
@@ -191,12 +240,14 @@ function ChainEditor({
   models,
   onChange,
   disabled,
+  availability,
 }: {
   primary: string | null;
   chain: GatewayFallbackChain;
   models: RoutingModel[];
   onChange: (chain: GatewayFallbackChain) => void;
   disabled?: boolean;
+  availability?: Record<string, boolean>;
 }) {
   const unavailable = [primary ?? '', ...chain.models];
   const canAdd = models.some((model) => !unavailable.includes(modelKeyToWire(model)));
@@ -244,6 +295,7 @@ function ChainEditor({
                   disabled={disabled}
                 />
               </div>
+              <AvailabilityBadge available={availability?.[model]} />
               <Hint label="Move up">
                 <Button
                   type="button"
@@ -332,7 +384,9 @@ export function GatewayRouting({
   const [fallbackMode, setFallbackMode] = useState<FallbackMode>('inherit');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [availability, setAvailability] = useState<Record<string, boolean>>({});
   const hydratedPolicySignature = useRef<string | null>(null);
+  const previewRequestId = useRef(0);
 
   useEffect(() => {
     if (!routing.data?.project) return;
@@ -345,6 +399,50 @@ export function GatewayRouting({
     setDraft(clonePolicy(routing.data.project));
     setFallbackMode(fallbackModeForPolicy(routing.data.project.defaultFallback));
   }, [routing.data]);
+
+  // Debounced availability preview: whenever the draft's referenced models
+  // change, ask the gateway which of them currently have a connected
+  // provider so the chain editor can flag a dead fallback before save.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: routing.preview's mutateAsync is a stable handle from useGatewayRoutingPolicy and shouldn't retrigger this debounce.
+  useEffect(() => {
+    if (!draft || !routing.data) {
+      setAvailability({});
+      return;
+    }
+    const projectDefaultWire = modelDefaults.projectDefault
+      ? modelKeyToWire(modelDefaults.projectDefault)
+      : null;
+    const primary = projectDefaultWire ?? routing.data.effective.defaultModel;
+    const targets = collectPreviewTargets(draft, primary);
+    if (targets.length === 0) {
+      setAvailability({});
+      return;
+    }
+    const requestId = ++previewRequestId.current;
+    const timer = setTimeout(() => {
+      Promise.all(
+        targets.map(async (model) => {
+          try {
+            const result = await routing.preview.mutateAsync({
+              requestedModel: model,
+              imageInput: false,
+            });
+            const match = result.models.find((entry) => entry.model === model);
+            // Fail open: an unresolved lookup shouldn't paint an unrelated model as broken.
+            return [model, match?.available ?? true] as const;
+          } catch {
+            // A preview request failure (network, auth) isn't evidence the
+            // provider is disconnected — don't surface a false warning.
+            return [model, true] as const;
+          }
+        }),
+      ).then((entries) => {
+        if (previewRequestId.current !== requestId) return; // superseded by a newer edit
+        setAvailability(Object.fromEntries(entries));
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draft, routing.data, modelDefaults.projectDefault]);
 
   const models = useMemo(() => {
     const byWire = new Map<string, RoutingModel>();
@@ -409,8 +507,10 @@ export function GatewayRouting({
     projectDefaultPending ||
     modelDefaults.isLoading;
   const editableState = (policy: GatewayProjectRoutingPolicy) => ({
+    visionModel: policy.visionModel,
     defaultFallback: policy.defaultFallback,
     rules: policy.rules,
+    modelGenerationConfig: policy.modelGenerationConfig ?? {},
   });
   const dirty =
     JSON.stringify(editableState(draft)) !== JSON.stringify(editableState(routing.data.project));
@@ -516,6 +616,7 @@ export function GatewayRouting({
                 chain={draft.defaultFallback}
                 models={models}
                 disabled={controlsDisabled}
+                availability={availability}
                 onChange={(defaultFallback) => setDraft({ ...draft, defaultFallback })}
               />
             ) : fallbackMode === 'inherit' ? (
@@ -535,6 +636,67 @@ export function GatewayRouting({
                 </p>
               </div>
             )}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <Label>Vision model</Label>
+          <div className="bg-popover overflow-hidden rounded-md border">
+            <div className="flex flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium">Image-input override</p>
+                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                  Requests that include an image are routed here instead of the default chain.
+                </p>
+              </div>
+              <div className="flex w-full items-center gap-2 sm:w-56">
+                <div className="min-w-0 flex-1">
+                  <RoutingModelSelector
+                    value={draft.visionModel}
+                    models={models}
+                    disabled={controlsDisabled}
+                    unsetLabel="Inherit platform"
+                    onChange={(visionModel) => setDraft({ ...draft, visionModel })}
+                  />
+                </div>
+                <AvailabilityBadge
+                  available={draft.visionModel ? availability[draft.visionModel] : undefined}
+                />
+              </div>
+            </div>
+            {!draft.visionModel ? (
+              <div className="border-t px-4 py-4">
+                <p className="text-muted-foreground text-xs">Current inherited vision model</p>
+                <p className="mt-1 truncate font-mono text-xs">
+                  {routing.data.effective.visionModel}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <Label>Generation defaults</Label>
+          <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
+            <p className="text-muted-foreground text-xs text-pretty">
+              Applied to every request for <span className="font-mono">{primaryModel}</span> that
+              doesn't already set the parameter — a session's own value always wins. Controls shown
+              here are gated by what this model actually supports.
+            </p>
+            <GenerationControlsPanel
+              model={primaryModel}
+              value={draft.modelGenerationConfig?.[primaryModel]}
+              disabled={controlsDisabled}
+              onChange={(next) =>
+                setDraft({
+                  ...draft,
+                  modelGenerationConfig: {
+                    ...draft.modelGenerationConfig,
+                    [primaryModel]: next,
+                  },
+                })
+              }
+            />
           </div>
         </section>
 
@@ -583,6 +745,7 @@ export function GatewayRouting({
                           onChange={(model) => model && setRule(index, { ...rule, model })}
                         />
                       </div>
+                      <AvailabilityBadge available={availability[rule.model]} />
                       {writable ? (
                         <Hint label="Remove override">
                           <Button
@@ -608,6 +771,7 @@ export function GatewayRouting({
                       chain={{ models: rule.fallbackModels, fallbackOn: rule.fallbackOn }}
                       models={models}
                       disabled={controlsDisabled}
+                      availability={availability}
                       onChange={(chain) =>
                         setRule(index, {
                           ...rule,
@@ -623,9 +787,7 @@ export function GatewayRouting({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={
-                      controlsDisabled || !newRuleModel || draft.rules.length >= MAX_RULES
-                    }
+                    disabled={controlsDisabled || !newRuleModel || draft.rules.length >= MAX_RULES}
                     onClick={() =>
                       newRuleModel &&
                       setDraft({

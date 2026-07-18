@@ -109,6 +109,7 @@
     "disconnectEmail",
     "disconnectGitHubApp",
     "disconnectSlack",
+    "discoverConnectorAuth",
     "discoverLocalSandbox",
     "dropClientForUrl",
     "dropPublicClientForUrl",
@@ -166,6 +167,7 @@
     "getDefaultAccountState",
     "getDiagnostics",
     "getDirectory",
+    "getDiscoverIntegration",
     "getEmailInstallation",
     "getEmailMode",
     "getFileWithDir",
@@ -314,6 +316,7 @@
     "listConnectors",
     "listCredentialEvents",
     "listCredentials",
+    "listDiscoverIntegrations",
     "listEnv",
     "listFeaturedMarketplaces",
     "listFields",
@@ -526,7 +529,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./react": [
     "BillingError",
@@ -963,6 +967,7 @@
     "detachGroupFromProject",
     "disconnectEmail",
     "disconnectSlack",
+    "discoverConnectorAuth",
     "exportAccountAudit",
     "fetchAccountStateWithToken",
     "fetchAccountsWithToken",
@@ -986,6 +991,7 @@
     "getConnectorConfig",
     "getConnectorPolicies",
     "getDefaultAccountState",
+    "getDiscoverIntegration",
     "getEmailInstallation",
     "getEmailMode",
     "getGatewayBreakdown",
@@ -1047,6 +1053,7 @@
     "listChannelBindings",
     "listConnectionProfiles",
     "listConnectors",
+    "listDiscoverIntegrations",
     "listFeaturedMarketplaces",
     "listGatewayLogs",
     "listGitHubInstallations",
@@ -1164,7 +1171,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./feature-flags": [
     "featureFlags",

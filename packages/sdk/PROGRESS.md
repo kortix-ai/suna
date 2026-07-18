@@ -533,6 +533,35 @@ claim is closed.
 
 **Status:** IN PROGRESS.
 
+---
+
+### 2026-07-18 — session `connectors-discover-flag` (completion)
+
+Completed the additive Discover integration-catalog SDK restoration as a separate,
+per-project experimental connector marketplace. Existing Easy Connect remains intact
+and default; `connectors_api_discover` is available but off by default. Pipedream
+appears only as separately labelled OAuth alternatives. Runtime and type snapshots
+contain additions only; no current export was removed or renamed.
+
+**TDD and live evidence:** the focused contract/UI run passed **46 / 0** and the
+focused API/catalog/router run passed **56 / 0**. An authenticated local project
+round-tripped the flag false -> true -> false, queried live HubSpot catalogue and
+surface endpoints, and resolved MCP, CLI, REST, and official Postman variants with
+source-derived bearer auth. The official HubSpot Postman repository materialized as
+an active connector with **1,223 actions**, `authSecret: credential`, and no stored
+credential; live Pipedream HubSpot search returned OAuth records only. ke2e coverage
+passed at **409 / 497 routes**.
+
+**Final SDK gates after rebasing onto current `origin/main`:** typecheck exited 0;
+the full SDK suite reported **1128 pass / 0 fail** across 84 files with 5029
+assertions; and the packed install smoke built, packed, installed, imported, and
+constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
 ### 2026-07-13 — session `session-base-branches` (completion)
 
 Completed the additive session branch-environment surface in implementation
@@ -920,3 +949,76 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for this explicitly requested rollback. The two
 skips are the pre-existing browser-bundle tests that require a bundle build.
+
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (claim)
+
+Claimed the user-directed source-agnostic connector authentication discovery
+work. Postman, OpenAPI, and every other supported connector source will preserve
+usable authentication metadata, normalize it into one additive typed contract,
+and prefill connector setup while leaving secret values and interactive consent
+to the user. Existing connector draft fields and provider behavior remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and
+finish with the full SDK typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (completion)
+
+Completed the additive connector authentication discovery surface. The SDK now
+exposes typed candidates and `project(id).connectors.auth.discover(input)`, while
+connector creation keeps omitted auth as auto-detect and explicit `none` as a
+durable opt-out. No exported name was removed or renamed.
+
+**TDD and live evidence:** the focused API/parser/discovery run passed **101 / 0**.
+The real HubSpot Postman-managed repository detected bearer auth across **1,223**
+operations; authenticated connector creation synced **1 / 0 errors** and
+materialized **1,223 actions** with `authSecret: credential` and `secretSet: false`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1120 pass / 2 skip / 0 fail** across 84 files with 5005
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-18 — session `gateway-provider-key-verify` (completion)
+
+Self-contained addition (not part of the Now chain — outside its own PR/plan):
+`verifyGatewayProvider(projectId, providerId)` client fn +
+`GatewayProviderVerifyResult`/`GatewayProviderVerifyStatus` types, backing a new
+`POST /projects/:id/gateway/providers/:providerId/verify` endpoint that runs one
+cheap live completion through a connected BYOK provider's credential and
+classifies it `verified`/`invalid`/`unknown`/`not_connected` (closes the LLM
+provider UI's "Connected ≠ proven working" gap). No exported name renamed or
+removed — additive only.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1122 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. Public-surface
+snapshots re-recorded — diff is additive only (`verifyGatewayProvider`,
+`GatewayProviderVerifyResult`, `GatewayProviderVerifyStatus`).
+
+**Shippable to production: YES** for the SDK surface. apps/api route + apps/web
+UI land in the same PR (#4990); see that PR for backend/frontend evidence.
+
+---
+
+### 2026-07-18 — session `connectors-discover-flag` (claim)
+
+Claimed the user-directed restoration of the additive Discover integration-catalog
+SDK surface as a separate, per-project experimental connector marketplace. Existing
+Easy Connect remains unchanged; Discover is explicit opt-in and Pipedream entries
+remain separate OAuth-only alternatives. The prior additive SDK names are restored
+without removing or renaming any current export. Implementation will finish with
+focused RED -> GREEN coverage, full SDK typecheck/test/packed-install gates, real
+local browser/API proof, and the repository merge/deploy/live-dev lifecycle.
+
+**Status:** IN PROGRESS.

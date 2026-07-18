@@ -40,6 +40,9 @@
  */
 
 import {
+  type CatalogCost,
+  type CatalogModalities,
+  type CatalogReasoningOption,
   type ProviderAuthRequirement,
   CATALOG as catalog,
   primaryAuthEnvVars,
@@ -55,6 +58,40 @@ export interface LlmProviderModel {
    * field; the field is exposed so the UI can render a "released X ago" hint.
    */
   released: string | null;
+  /**
+   * Capability + limit flags mirrored verbatim from models.dev — present on
+   * both the baked seed (`catalog.generated.json`) and the live
+   * `/llm-catalog/providers` fetch (see `@kortix/llm-catalog`'s
+   * `CatalogModel`, the shape both ultimately originate from). Optional
+   * because the synthetic `codex`/`kortix` provider entries built in this
+   * section (`utils.ts`'s `buildCodexProvider`, `use-connected-providers.ts`'s
+   * `kortixProvider`) only set what the opencode provider snapshot exposes.
+   */
+  description?: string;
+  attachment?: boolean;
+  reasoning?: boolean;
+  /** Present iff the model exposes a tunable reasoning-effort knob — see
+   *  `@kortix/llm-catalog`'s `generationControlCapabilities`, the single
+   *  source of truth the generation-controls panel derives its
+   *  show/hide + valid-values from. Never hardcode a per-model list. */
+  reasoning_options?: CatalogReasoningOption[];
+  tool_call?: boolean;
+  /** false means FIXED temperature (e.g. gpt-5.6-sol) — the generation-
+   *  controls panel must hide the temperature (and top_p) slider entirely. */
+  temperature?: boolean;
+  structured_output?: boolean;
+  // Two real models.dev shapes: a plain boolean, or an object naming the
+  // response field the interleaved content arrives on (e.g.
+  // {field:'reasoning_content'}) — the large majority. Mirrors
+  // `@kortix/llm-catalog`'s `CatalogModel.interleaved`.
+  interleaved?: boolean | { field?: string };
+  open_weights?: boolean;
+  knowledge?: string;
+  last_updated?: string;
+  family?: string;
+  modalities?: CatalogModalities;
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: CatalogCost;
 }
 
 export interface LlmProviderEntry {

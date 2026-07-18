@@ -42,9 +42,10 @@ function SupportPageContent() {
   useEffect(() => {
     const section = searchParams.get('section');
     if (section === 'account-delete' && accountDeleteRef.current) {
-      setTimeout(() => {
+      const id = setTimeout(() => {
         accountDeleteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
+      return () => clearTimeout(id);
     }
   }, [searchParams]);
 

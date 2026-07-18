@@ -10,7 +10,12 @@ import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
-import { buildProjectSeedFiles, buildProjectSeedFilesFromItem, normalizeMarketplaceItems } from '../seed-files';
+import {
+  buildProjectSeedFiles,
+  buildProjectSeedFilesFromItem,
+  defaultAgentFromSeedFiles,
+  normalizeMarketplaceItems,
+} from '../seed-files';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -589,6 +594,23 @@ projectsApp.openapi(
         });
       }
       seeded = true;
+
+      // Mirror the seeded manifest's declared default agent into
+      // project.metadata (see defaultAgentFromSeedFiles in ../seed-files.ts)
+      // so session creation resolves it from birth instead of falling back
+      // to the non-binding 'default' sentinel — see
+      // llm-gateway/resolution/default-model.ts's cachedSessionAgent for the
+      // defense-in-depth fallback that also covers pre-existing/CLI-created
+      // projects where this mirror is still stale.
+      const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
+      if (seededDefaultAgent) {
+        row.metadata = { ...((row.metadata as Record<string, unknown> | null) ?? {}), default_agent: seededDefaultAgent };
+        await db
+          .update(projects)
+          .set({ metadata: row.metadata, updatedAt: new Date() })
+          .where(eq(projects.projectId, row.projectId))
+          .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+      }
     } catch (error) {
       try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
       await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});

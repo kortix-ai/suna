@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { shouldAutoResumeStoppedSandbox } from './preview';
+import { longTurnTimeoutResponse, shouldAutoResumeStoppedSandbox } from './preview';
 
 // The data-path proxy may only wake a stopped box on ACTIVE user traffic to the
 // OpenCode daemon (port 8000, principal). Everything else must still 503 so we
@@ -27,5 +27,36 @@ describe('shouldAutoResumeStoppedSandbox', () => {
     expect(shouldAutoResumeStoppedSandbox('archived', 8000, 'principal')).toBe(false);
     expect(shouldAutoResumeStoppedSandbox('active', 8000, 'principal')).toBe(false);
     expect(shouldAutoResumeStoppedSandbox('provisioning', 8000, 'principal')).toBe(false);
+  });
+});
+
+// A long reasoning+tool turn on the blocking `POST /session/:id/message` path
+// can legitimately outrun the proxy's retry budget while the sandbox is
+// perfectly healthy. That must surface as a distinct, honest signal — never
+// the generic "sandbox unreachable" 502 (which implies the box is dead and
+// invites the caller to retry the exact same non-idempotent request).
+describe('longTurnTimeoutResponse', () => {
+  test('reports 504 with a distinct machine-readable code, not a generic 502', async () => {
+    const res = longTurnTimeoutResponse('');
+    expect(res.status).toBe(504);
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe('LONG_TURN_PROXY_TIMEOUT');
+    expect(body.error).toMatch(/prompt_async/);
+  });
+
+  test('is never cached — a retry must always re-evaluate the upstream', () => {
+    const res = longTurnTimeoutResponse('');
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  test('reflects CORS origin like every other proxy response', () => {
+    const res = longTurnTimeoutResponse('https://app.kortix.ai');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
+    expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+  });
+
+  test('omits CORS headers when there is no Origin', () => {
+    const res = longTurnTimeoutResponse('');
+    expect(res.headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });

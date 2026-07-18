@@ -350,6 +350,11 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       low: 2048,
       medium: 8192,
       high: 16000,
+      // 'xhigh' sits above 'high' and below 'max' — some newer Claude/Bedrock
+      // reasoning models expose it as a fifth effort tier (see
+      // packages/llm-catalog's generated catalog reasoning_options). 24000 <
+      // the 30976 clamp ceiling below, so it passes through unclamped.
+      xhigh: 24000,
       // 'max' maps to a 32000 budget, but with no explicit max_tokens the
       // thinking default IS 32000 too — the clamp (budgetTokens < maxOutputTokens)
       // brings it down to max(1024, 32000-1024) = 30976.

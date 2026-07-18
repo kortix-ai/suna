@@ -3,12 +3,20 @@ export type { ProviderKind, UpstreamDescriptor } from './descriptor';
 export type { TokenCounts, UsageEvent } from './usage';
 export type { GatewayTrace } from './trace';
 export type { AuthorizeResult, GatewayHooks } from './hooks';
-export type { ModelInfo, ModelCatalog } from './catalog';
+export type {
+  ModelInfo,
+  ModelCatalog,
+  ModelReasoningOption,
+  ModelCost,
+  ModelCostTier,
+  ModelModalities,
+} from './catalog';
 export type { GatewayConfig } from './config';
 export type {
   ModelFallbackCondition,
   ModelFallbackPolicy,
   ModelFallbackPolicyMatch,
+  ModelGenerationDefaults,
   ModelRouteInput,
   ModelRoutePlan,
 } from './routing';

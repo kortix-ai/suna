@@ -80,6 +80,16 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => false,
   },
   {
+    key: 'connectors_api_discover',
+    name: 'Connectors API Discover',
+    description:
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
+    stability: 'experimental',
+    available: () => true,
+    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    platformDefault: () => false,
+  },
+  {
     key: 'agentmail_email',
     name: 'AgentMail Email',
     description:

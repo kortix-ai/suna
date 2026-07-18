@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const PROJECT_ROUTING_MAX_FALLBACKS = 8;
 export const PROJECT_ROUTING_MAX_RULES = 20;
+// A generous but finite cap — this is a per-project config document, not an
+// arbitrary key-value store. Well above any real project's distinct
+// configured-model count; exists only to bound the jsonb payload size.
+export const PROJECT_ROUTING_MAX_GENERATION_CONFIG_MODELS = 100;
 
 const modelId = z.string().trim().min(1).max(128).refine(
   (value) => value !== "auto" && value !== "kortix/auto",
@@ -20,12 +24,42 @@ const rule = z.object({
   fallbackOn,
 });
 
+// Generic per-model generation-parameter defaults — deliberately loose
+// (every field optional, no cross-field validation) so a new control added
+// later to `@kortix/llm-catalog`'s `GenerationConfig` only needs a shape
+// change here, never a migration. Capability gating/clamping (never store a
+// temperature for a temperature:false model, clamp reasoning_effort to the
+// model's own reasoning_options, clamp maxOutputTokens to limit.output)
+// happens at the WRITE handler (gateway.ts's routing-policy PUT), which runs
+// every entry through `@kortix/llm-catalog`'s `clampGenerationConfig` before
+// it ever reaches this schema's caller — this schema only enforces shape and
+// basic bounds, not model-aware semantics (this module doesn't have catalog
+// access, and shouldn't: see project-policy.test.ts for the split).
+const generationConfigEntry = z.object({
+  reasoningEffort: z.string().trim().min(1).max(64).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  maxOutputTokens: z.number().int().min(1).max(10_000_000).optional(),
+});
+export type GenerationConfigEntry = z.infer<typeof generationConfigEntry>;
+
+const generationConfig = z
+  .record(modelId, generationConfigEntry)
+  .refine(
+    (value) => Object.keys(value).length <= PROJECT_ROUTING_MAX_GENERATION_CONFIG_MODELS,
+    `at most ${PROJECT_ROUTING_MAX_GENERATION_CONFIG_MODELS} models may have a configured generation config`,
+  );
+
 export const projectRoutingPolicyInputSchema = z
   .object({
     defaultModel: modelId.nullable(),
     visionModel: modelId.nullable(),
     defaultFallback: fallback.nullable(),
     rules: z.array(rule).max(PROJECT_ROUTING_MAX_RULES),
+    // Optional + defaulted so every EXISTING caller (native routing-policy
+    // PUT payloads written before this field existed) keeps working
+    // unchanged — additive, not a breaking schema change.
+    modelGenerationConfig: generationConfig.default({}),
   })
   .superRefine((policy, ctx) => {
     const validateChain = (
@@ -86,6 +120,7 @@ export type ProjectRoutingFallback = NonNullable<
   ProjectRoutingPolicyInput["defaultFallback"]
 >;
 export type ProjectRoutingRule = ProjectRoutingPolicyInput["rules"][number];
+export type ProjectModelGenerationConfig = ProjectRoutingPolicyInput["modelGenerationConfig"];
 
 export function parseProjectRoutingPolicyInput(
   value: unknown,

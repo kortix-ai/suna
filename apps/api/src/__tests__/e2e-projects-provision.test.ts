@@ -24,6 +24,7 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
+let updatedProjectSets: any[];
 let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
@@ -308,7 +309,23 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
+    update: (table: unknown) => ({
+      set: (values: any) => ({
+        where: () => {
+          if (table === projects) updatedProjectSets.push(values);
+          // Real drizzle's UPDATE builder is thenable at every chain step
+          // (a caller may `.catch()` it directly without `.returning()` —
+          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // the several other `.where(...).catch(() => {})` call sites this
+          // mirrors), so this stub must be too: a real Promise (which
+          // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
+          // callers that chain it.
+          const result: any = Promise.resolve([]);
+          result.returning = async () => [];
+          return result;
+        },
+      }),
+    }),
     delete: () => ({ where: async () => {} }),
   },
 }));
@@ -331,6 +348,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
   beforeEach(() => {
     setTestAuth();
     insertedProject = null;
+    updatedProjectSets = [];
     grantedProjectRole = null;
     seedFilePaths = [];
     seedBaseFilePaths = [];
@@ -480,6 +498,15 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
+
+    // The bug this route fix closes: the base template's kortix.yaml declares
+    // `default_agent: kortix`, but project.metadata.default_agent was never
+    // mirrored from it — so every session silently stored the non-binding
+    // 'default' sentinel and any agent-scope model pin set on 'kortix' was
+    // never applied (see llm-gateway/resolution/default-model.ts). Provision
+    // must now stamp the mirror at creation time.
+    expect(updatedProjectSets).toHaveLength(1);
+    expect(updatedProjectSets[0]).toMatchObject({ metadata: { default_agent: 'kortix' } });
   });
 
   test('returns 503 when managed git is not configured', async () => {

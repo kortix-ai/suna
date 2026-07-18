@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import {
   useCreateGatewayKey,
   useGatewayKeys,
@@ -49,9 +50,12 @@ function fmtDate(s: string | null): string {
 export function GatewayKeys({
   projectId,
   canWrite = false,
+  onViewModels,
 }: {
   projectId: string;
   canWrite?: boolean;
+  /** Jump to the Providers/Models tab from the reveal dialog's reference panel. */
+  onViewModels?: () => void;
 }) {
   const { data, isError } = useGatewayKeys(projectId);
   const createKey = useCreateGatewayKey(projectId);
@@ -223,6 +227,14 @@ export function GatewayKeys({
         <RevealKeyDialog
           created={created}
           gatewayUrl={data?.gateway_url ?? null}
+          onViewModels={
+            onViewModels
+              ? () => {
+                  setCreated(null);
+                  onViewModels();
+                }
+              : undefined
+          }
           onClose={() => setCreated(null)}
         />
       )}
@@ -259,14 +271,15 @@ export function GatewayKeys({
 function RevealKeyDialog({
   created,
   gatewayUrl,
+  onViewModels,
   onClose,
 }: {
   created: CreatedGatewayKey;
   /** Env-correct public gateway origin (dev vs prod); falls back to prod. */
   gatewayUrl: string | null;
+  onViewModels?: () => void;
   onClose: () => void;
 }) {
-  const base = gatewayUrl ?? 'https://gateway.kortix.com';
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard.writeText(created.secret_key);
@@ -275,12 +288,12 @@ function RevealKeyDialog({
   };
   return (
     <Modal open onOpenChange={(n) => (n ? undefined : onClose())}>
-      <ModalContent className="sm:max-w-md">
+      <ModalContent className="sm:max-w-xl">
         <ModalHeader>
           <ModalTitle>Copy your key</ModalTitle>
           <ModalDescription>{created.name}</ModalDescription>
         </ModalHeader>
-        <ModalBody className="space-y-3">
+        <ModalBody className="max-h-[70vh] space-y-3 overflow-y-auto">
           <InfoBanner tone="warning" title="Shown once">
             This is the only time the full key is displayed. Store it somewhere safe.
           </InfoBanner>
@@ -305,14 +318,11 @@ function RevealKeyDialog({
               </Button>
             </Hint>
           </div>
-          <div>
-            <div className="text-muted-foreground mb-1.5 text-xs font-medium">Use it</div>
-            <pre className="bg-muted/30 text-foreground overflow-x-auto rounded-md border p-3 font-mono text-xs leading-relaxed">
-              {`curl ${base}/v1/chat/completions \\
-  -H "Authorization: Bearer ${created.secret_key}" \\
-  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hello"}]}'`}
-            </pre>
-          </div>
+          <GatewayApiReference
+            apiKey={created.secret_key}
+            gatewayUrl={gatewayUrl}
+            onViewModels={onViewModels}
+          />
         </ModalBody>
         <ModalFooter>
           <Button onClick={onClose}>Done</Button>

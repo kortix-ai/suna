@@ -161,6 +161,58 @@ export function isProviderAuthSatisfied(
   );
 }
 
+// One entry of models.dev's `reasoning_options` array. models.dev emits
+// THREE real shapes today (verified against the live api.json, 2026-07):
+//   - `{type:'effort', values:[...]}`       — a model-specific enum of effort
+//     labels (e.g. gpt-5.6-sol's `["none","low","medium","high","xhigh","max"]`).
+//     ~1522 models.
+//   - `{type:'toggle'}`                     — reasoning is a plain on/off
+//     switch, no enum/range. ~925 models.
+//   - `{type:'budget_tokens', min?, max?}`  — a raw thinking-token budget
+//     range, no discrete values. ~498 models, INCLUDING mainline Anthropic
+//     (claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-1 and dated
+//     variants all carry ONLY this shape — no `effort` entry at all).
+// `values`/`min`/`max` are all OPTIONAL on one shared interface (rather than a
+// strict discriminated union) so a 4th `type` models.dev adds later still
+// round-trips through the catalog without a type change here — this mirrors
+// the file's existing "never invent a literal union for an upstream enum"
+// convention. MUST ingest every shape faithfully — filtering to
+// `Array.isArray(values)` used to silently drop the toggle/budget_tokens
+// shapes (57.8% of all models with reasoning_options, including every
+// mainline Claude model). See `generationControlCapabilities` below for how
+// each shape maps to a UI control.
+export interface CatalogReasoningOption {
+  type: string;
+  values?: string[];
+  min?: number;
+  max?: number;
+}
+
+// A single price tier (models.dev's `cost.tiers[]` / `cost.context_over_200k`
+// shape) — an alternate per-token price that applies once some threshold
+// (currently always a context-size breakpoint) is crossed.
+export interface CatalogCostTier {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tier?: { type: string; size: number };
+}
+
+export interface CatalogCost {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tiers?: CatalogCostTier[];
+  context_over_200k?: CatalogCostTier;
+}
+
+export interface CatalogModalities {
+  input?: string[];
+  output?: string[];
+}
+
 export interface CatalogModel {
   id: string;
   name: string;
@@ -168,11 +220,184 @@ export interface CatalogModel {
   // Capabilities mirrored from models.dev by
   // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
   // Single source of truth — consumers derive flags from these, never hardcode.
+  // Free-text blurb models.dev publishes for the model (e.g. picker tooltips).
+  description?: string;
   attachment?: boolean; // image / file input (vision)
   reasoning?: boolean;
+  // Present only for reasoning-capable models that expose a tunable knob —
+  // `[{type:'effort', values:[...]}]` today. A reasoning model with NO
+  // entry here (reasoning:true, reasoning_options absent/empty) still
+  // supports reasoning but doesn't publish a client-settable effort enum —
+  // generationControlCapabilities below then exposes NO effort control for it
+  // (we never fabricate effort values that models.dev doesn't advertise).
+  reasoning_options?: CatalogReasoningOption[];
   tool_call?: boolean;
+  // false means the model has a FIXED sampling temperature and rejects a
+  // client-supplied one (e.g. gpt-5.6-sol) — never show/send a temperature
+  // control for such a model.
   temperature?: boolean;
-  limit?: { context?: number; output?: number };
+  structured_output?: boolean;
+  // True when the model interleaves reasoning with tool calls (models.dev's
+  // `interleaved` flag) — some reasoning models can emit a tool call mid
+  // chain-of-thought rather than only after it completes. models.dev emits
+  // TWO shapes for this field (verified against the live api.json,
+  // 2026-07): a plain `boolean` (~34 models) AND an object like
+  // `{field:'reasoning_content'}` naming the response field the interleaved
+  // content arrives on (~623 models — the large majority). Filtering to
+  // `typeof === 'boolean'` used to silently drop the object shape entirely;
+  // both are ingested verbatim now.
+  interleaved?: boolean | { field?: string };
+  // True when the model's weights are publicly released (open-weights model,
+  // e.g. a self-hostable Llama/DeepSeek/Qwen checkpoint) vs. a closed API-only
+  // model. models.dev's `open_weights` field, mirrored verbatim.
+  open_weights?: boolean;
+  // Training data cutoff, models.dev's free-text field (e.g. "2026-02-16").
+  knowledge?: string;
+  // When models.dev last refreshed this model's own entry (distinct from
+  // `released`, the model's original release date).
+  last_updated?: string;
+  // Model family/lineage grouping (e.g. "gpt-sol", "claude-4", "o").
+  family?: string;
+  modalities?: CatalogModalities;
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: CatalogCost;
+}
+
+// ─── Generation controls — capability-gated, single source of truth ────────
+//
+// The one place that decides "which generation knobs does this model
+// support, and what are their valid ranges" — consumed by BOTH the web UI
+// (to show/hide/bound a control) and the gateway resolution layer (to decide
+// which configured per-model default is safe to inject, and how to clamp
+// it). Never hardcode a per-model exception outside this function; extend
+// the capability derivation here instead so every consumer stays in sync.
+
+/** Generic per-model generation defaults a project can configure. Extensible
+ *  without a schema/migration change — see packages/db's jsonb column. */
+export interface GenerationConfig {
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
+export interface GenerationControlCapabilities {
+  /**
+   * Present iff the model publishes a REAL reasoning_options knob — from
+   * EITHER an `effort` entry (its exact `values`) OR a `budget_tokens` entry
+   * (a synthesized standard low/medium/high tier set — `budget_tokens` has no
+   * discrete values of its own, but it IS a real published knob, e.g. every
+   * mainline Claude model, which the transport maps via
+   * `resolveAnthropicThinkingBudget`/`REASONING_EFFORT_BUDGET_TOKENS`
+   * — so exposing an effort-style control for it is not fabrication the way
+   * inventing one for a bare `reasoning:true` model with NO reasoning_options
+   * at all would be). A `toggle` entry gets no control here (on/off is not an
+   * effort enum) but does not crash — see the `toggle` branch below. Absent
+   * entirely when the model publishes no real reasoning_options at all (we
+   * never fabricate one out of thin air).
+   */
+  reasoningEffort?: { values: string[] };
+  /** True iff the model accepts a client-supplied temperature (models.dev
+   *  `temperature:false` means FIXED — e.g. gpt-5.6-sol — hide the control). */
+  temperature: boolean;
+  /** top_p has no distinct models.dev flag — gated on the same standard-
+   *  sampling capability as temperature (documented heuristic: models that
+   *  reject a custom temperature reject a custom top_p too). */
+  topP: boolean;
+  /** Present iff the model declares a positive max output-token window —
+   *  the ceiling a "max output tokens" control must clamp to. */
+  maxOutputTokens?: { ceiling: number };
+}
+
+// The standard effort tiers synthesized for a `budget_tokens`-shaped
+// reasoning_options entry (no discrete `values` of its own to mirror). Chosen
+// to match `REASONING_EFFORT_BUDGET_TOKENS`'s well-known low/medium/high keys
+// (packages/llm-gateway/src/transports/ai-sdk/request.ts) so every value this
+// control can offer resolves to a real thinking-token budget downstream —
+// never an effort label the transport wouldn't know what to do with.
+const BUDGET_TOKENS_EFFORT_TIERS = ['low', 'medium', 'high'] as const;
+
+/** Pure capability derivation — NEVER a per-model id lookup table. */
+export function generationControlCapabilities(
+  model: CatalogModel | undefined | null,
+): GenerationControlCapabilities {
+  if (!model) return { temperature: false, topP: false };
+
+  // Only expose an effort control when the model publishes a REAL
+  // reasoning_options entry — never fabricate one for a model that publishes
+  // none. Two shapes yield a control (see the field doc above): `effort`
+  // (its own exact values) and `budget_tokens` (synthesized standard tiers —
+  // it has no discrete values, but it's a real published knob, e.g. every
+  // mainline Claude model). A `toggle` entry matches neither branch below and
+  // falls through to `undefined` — deliberately: on/off isn't an effort enum,
+  // and there's no separate toggle-control surface wired today, so this is
+  // the "don't crash, don't fabricate" no-op for it.
+  const effortOption = model.reasoning_options?.find((option) => option.type === 'effort');
+  const budgetTokensOption = model.reasoning_options?.find(
+    (option) => option.type === 'budget_tokens',
+  );
+  const reasoningEffort = effortOption?.values?.length
+    ? { values: effortOption.values }
+    : budgetTokensOption
+      ? { values: [...BUDGET_TOKENS_EFFORT_TIERS] }
+      : undefined;
+
+  const temperature = model.temperature === true;
+  const ceiling = model.limit?.output;
+  const maxOutputTokens = typeof ceiling === 'number' && ceiling > 0 ? { ceiling } : undefined;
+
+  return {
+    reasoningEffort,
+    temperature,
+    topP: temperature,
+    maxOutputTokens,
+  };
+}
+
+/**
+ * Drop/clamp every field of a (possibly user- or client-supplied)
+ * `GenerationConfig` against what `model` actually supports — the single
+ * gate BOTH the routing-policy write path (persistence) and the gateway
+ * resolution-layer injection path (see apps/api's routing/resolve-route.ts)
+ * must run a value through before it's trusted. A field the model doesn't
+ * support is silently dropped (never a validation error) so a model swap
+ * doesn't require the caller to also scrub unrelated config.
+ */
+export function clampGenerationConfig(
+  config: GenerationConfig | null | undefined,
+  model: CatalogModel | undefined | null,
+): GenerationConfig {
+  if (!config) return {};
+  const caps = generationControlCapabilities(model);
+  const out: GenerationConfig = {};
+
+  if (
+    typeof config.reasoningEffort === 'string' &&
+    caps.reasoningEffort?.values.includes(config.reasoningEffort)
+  ) {
+    out.reasoningEffort = config.reasoningEffort;
+  }
+  if (
+    typeof config.temperature === 'number' &&
+    caps.temperature &&
+    Number.isFinite(config.temperature)
+  ) {
+    out.temperature = Math.min(2, Math.max(0, config.temperature));
+  }
+  if (typeof config.topP === 'number' && caps.topP && Number.isFinite(config.topP)) {
+    out.topP = Math.min(1, Math.max(0, config.topP));
+  }
+  if (
+    typeof config.maxOutputTokens === 'number' &&
+    caps.maxOutputTokens &&
+    Number.isFinite(config.maxOutputTokens)
+  ) {
+    out.maxOutputTokens = Math.min(
+      caps.maxOutputTokens.ceiling,
+      Math.max(1, Math.floor(config.maxOutputTokens)),
+    );
+  }
+  return out;
 }
 
 interface CatalogProvider {
@@ -207,6 +432,12 @@ export interface ManagedModel {
   //   'openrouter'   → OpenRouter openai-compatible chat completions
   transport: 'bedrock' | 'openrouter';
   // models.dev id for live pricing — upstream ids don't always match the catalog.
+  // Must be the model's REAL models.dev id (dashes, e.g. `claude-opus-4-8`) —
+  // Kortix's own managed `id` above is dotted for display (`claude-opus-4.8`)
+  // but models.dev never uses dots in a Claude id. See
+  // `pricingRefLookupCandidates` below, which normalizes dot→dash as a safety
+  // net for consumers, but this field itself should always be the correct
+  // dashed id so pricing/capability lookups hit on the first try.
   pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
@@ -226,6 +457,26 @@ export interface ManagedModel {
   openrouterProvider?: Record<string, unknown>;
 }
 
+// A managed model's `pricingRef` is supposed to be the model's real
+// models.dev id, but Kortix's own display id is dotted (`claude-opus-4.8`)
+// while models.dev Claude ids are dashed (`claude-opus-4-8`) — a mismatch
+// here silently misses the models.dev lookup and falls back to a permissive
+// synthetic capability record (no reasoning_options, temperature always
+// true), which is wrong for real models. Consumers doing a `provider/model`
+// lookup by `pricingRef` should try these candidates in order rather than
+// a single exact match, so a dotted/dashed slip degrades gracefully instead
+// of silently losing real capability data.
+export function pricingRefLookupCandidates(pricingRef: string): string[] {
+  const slash = pricingRef.indexOf('/');
+  if (slash <= 0) return [pricingRef];
+  const providerId = pricingRef.slice(0, slash);
+  const modelId = pricingRef.slice(slash + 1);
+  const candidates = [pricingRef];
+  const dashed = `${providerId}/${modelId.replace(/\./g, '-')}`;
+  if (dashed !== pricingRef) candidates.push(dashed);
+  return candidates;
+}
+
 // Managed model ids are single-segment (no `provider/` prefix). They are served
 // to opencode under the `kortix` provider, so opencode references them as
 // `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
@@ -243,7 +494,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     name: 'Claude Opus 4.8',
     upstreamModelId: 'us.anthropic.claude-opus-4-8',
     transport: 'bedrock',
-    pricingRef: 'anthropic/claude-opus-4.8',
+    pricingRef: 'anthropic/claude-opus-4-8',
     tier: 'flagship',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -253,7 +504,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     name: 'Claude Sonnet 4.6',
     upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
     transport: 'bedrock',
-    pricingRef: 'anthropic/claude-sonnet-4.6',
+    pricingRef: 'anthropic/claude-sonnet-4-6',
     tier: 'balanced',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -439,8 +690,10 @@ export const PROVIDER_LABELS: Record<string, string> = {
   v0: 'v0',
   wandb: 'W&B',
   baseten: 'Baseten',
-  minimax: 'Moonshot',
-  'minimax-cn': 'Moonshot',
+  // MiniMax is its own distinct BYOK provider (minimax.io / minimaxi.com) —
+  // not Moonshot. Was mislabeled 'Moonshot' for both regional variants.
+  minimax: 'MiniMax',
+  'minimax-cn': 'MiniMax',
   siliconflow: 'SiliconFlow',
   'siliconflow-cn': 'SiliconFlow',
   zhipuai: 'ZhipuAI',

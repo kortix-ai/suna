@@ -45,6 +45,9 @@ mock.module('../shared/supabase', () => ({
 mock.module('../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async ({ accountId }: { accountId?: string }) =>
     accountId === 'acct-1',
+  // No project-scoped PATs in this suite — stub so the real module's shape
+  // stays satisfied for anything that imports it.
+  resolveSandboxProjectId: async () => null,
 }));
 
 mock.module('../shared/auth-audit', () => ({

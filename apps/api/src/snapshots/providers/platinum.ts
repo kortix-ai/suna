@@ -47,17 +47,34 @@ export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
 /**
  * Retry only stale-context (staging disturbed before the S3 upload — API restart
  * mid-build / tmp sweep) and transient transport (S3 PUT / gateway). A real build
- * failure ('template … build failed') or activate timeout is NOT retried — that's
- * a genuine error, not something a fresh stage would fix.
+ * failure ('template … build failed') is NOT retried — that's a genuine error,
+ * not something a fresh stage would fix.
+ *
+ * One activate-timeout shape IS retried: `waitForActive` throwing "did not
+ * become ready (last state: missing)" means the template NEVER appeared via
+ * `GET /v1/templates` for the entire ACTIVATE_DEADLINE_MS poll window — not
+ * "building", not "failed", just never registered at all. That is distinct
+ * from an explicit 'failed' state (a genuine build error, never retried here)
+ * and points at a registration-pipeline flake on Platinum's side rather than a
+ * real build problem with this content. Verified empirically during a
+ * 2026-07-18 dev incident: a `from-build` registration silently never
+ * produced a template (stuck ~15min on `state: missing`, dev sandbox_id
+ * 5771eb57-b0be-4579-8e33-93776a66f4fe), while a fresh build attempt for a
+ * different content hash minutes later succeeded on its very first try — so a
+ * same-process retry is a real, bounded (BUILD_ATTEMPTS) mitigation, not a
+ * blind retry-forever. A build that reaches any OTHER observed state
+ * ('building', 'pending', …) before failing is a real failure and still
+ * excluded, same as 'failed'.
  */
-function isRetryablePlatinumBuildError(err: unknown): boolean {
+export function isRetryablePlatinumBuildError(err: unknown): boolean {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
     m.includes('does not exist') || m.includes('staging incomplete') || m.includes('scaffold') ||
     m.includes('no such file') || m.includes('s3 upload') || m.includes('tar build context') ||
     m.includes('timeout') || m.includes('timed out') || m.includes('econnreset') ||
     m.includes('econnrefused') || m.includes('network') || m.includes('gateway') ||
-    m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
+    m.includes(' 502') || m.includes(' 503') || m.includes(' 504') ||
+    m.includes('last state: missing')
   );
 }
 

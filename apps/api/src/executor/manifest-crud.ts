@@ -69,7 +69,8 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   } else if (d.provider === 'channel') {
     if (d.platform) entry.platform = d.platform;
   }
-  if (d.auth && d.auth.type && d.auth.type !== 'none') {
+  // Omitted means auto-detect; explicit none must remain a durable opt-out.
+  if (d.auth && d.auth.type) {
     const auth: Record<string, unknown> = { type: d.auth.type };
     if (d.auth.type === 'custom') {
       if (d.auth.in && d.auth.in !== 'header') auth.in = d.auth.in;

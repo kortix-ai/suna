@@ -168,11 +168,27 @@ export interface GatewayRoutingRule {
   fallbackOn: GatewayFallbackCondition;
 }
 
+/** Per-model generation-parameter defaults (reasoning effort, temperature,
+ *  top_p, max output tokens) — a generic blob, extensible without a schema
+ *  change. Every field is capability-gated per model on the server; see
+ *  `@kortix/llm-catalog`'s `generationControlCapabilities`/
+ *  `clampGenerationConfig`, the single source of truth the generation-
+ *  controls panel derives its show/hide + valid-range rules from. */
+export interface GatewayModelGenerationConfig {
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
 export interface GatewayProjectRoutingPolicy {
   defaultModel: string | null;
   visionModel: string | null;
   defaultFallback: GatewayFallbackChain | null;
   rules: GatewayRoutingRule[];
+  /** Optional for back-compat with callers built before this field existed —
+   *  the server defaults it to `{}` when omitted. */
+  modelGenerationConfig?: Record<string, GatewayModelGenerationConfig>;
 }
 
 export interface GatewayRoutingPolicyDocument {
@@ -374,6 +390,11 @@ export interface GatewayPlaygroundResult {
   output?: string;
   input_tokens?: number;
   output_tokens?: number;
+  /** Final (post-markup) cost in USD, present only when the request succeeded. */
+  cost?: number;
+  /** The concrete upstream model the requested id resolved to. */
+  resolved_model?: string;
+  provider?: string;
   error?: string;
 }
 
@@ -381,17 +402,56 @@ export interface GatewayPlaygroundResponse {
   results: GatewayPlaygroundResult[];
 }
 
-/** Run one prompt against up to 6 models side by side (a model-comparison playground). */
+/** Run one prompt against up to 6 models side by side (a model-comparison playground).
+ *  `generationConfig`, when given, is a per-model map of generation-parameter
+ *  overrides (reasoning effort, temperature, top_p, max output tokens) applied
+ *  ONLY to that model's call — capability-gated + clamped server-side against
+ *  the model's live catalog entry, same as the persisted routing-policy config. */
 export async function runGatewayPlayground(
   projectId: string,
   prompt: string,
   models: string[],
+  system?: string,
+  generationConfig?: Record<string, GatewayModelGenerationConfig>,
 ): Promise<GatewayPlaygroundResponse> {
   return unwrap(
     await backendApi.post<GatewayPlaygroundResponse>(`/projects/${projectId}/gateway/playground`, {
       prompt,
       models,
+      ...(system ? { system } : {}),
+      ...(generationConfig && Object.keys(generationConfig).length ? { generationConfig } : {}),
     }),
     'Gateway request failed',
+  );
+}
+
+/**
+ * Whether a connected provider's credential actually works — "Connected"
+ * only means a secret row exists (see api-key-connect-form.tsx); this makes
+ * one cheap live check through the gateway and classifies the result.
+ * `not_connected` means no key is configured at all; `unknown` covers every
+ * inconclusive outcome (timeout, rate limit, unrelated resolution failure) —
+ * never collapsed into `invalid`, which is reserved for a confirmed
+ * provider-side credential rejection.
+ */
+export type GatewayProviderVerifyStatus = 'verified' | 'invalid' | 'unknown' | 'not_connected';
+
+export interface GatewayProviderVerifyResult {
+  status: GatewayProviderVerifyStatus;
+  message: string;
+  checked_at: string;
+}
+
+/** Verify a connected provider's credential with one cheap live completion. */
+export async function verifyGatewayProvider(
+  projectId: string,
+  providerId: string,
+): Promise<GatewayProviderVerifyResult> {
+  return unwrap(
+    await backendApi.post<GatewayProviderVerifyResult>(
+      `/projects/${projectId}/gateway/providers/${encodeURIComponent(providerId)}/verify`,
+      {},
+    ),
+    'Gateway provider verification failed',
   );
 }

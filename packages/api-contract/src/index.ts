@@ -47,6 +47,7 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
 export const ExperimentalFeatureMapSchema = z.object({
   agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
+  connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
   meet: z.boolean(),
   llm_gateway: z.boolean(),

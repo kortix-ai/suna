@@ -184,6 +184,73 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
   });
 });
 
+// Regression coverage for the agent-model-pin project-scoping fix: agent
+// defaults are now project-scoped (repositories/model-preferences.ts), so
+// the 30s prefs cache here (keyed by accountId alone, pre-fix) must be keyed
+// by (accountId, projectId) too — otherwise the FIRST project to resolve
+// `auto` on an account would poison the cache for every OTHER project on
+// that same account for up to 30s.
+describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, project)', () => {
+  test('the principal\'s projectId is threaded through to getAccountModelDefaults', async () => {
+    await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(modelPreferencesModule.getAccountModelDefaults).toHaveBeenCalledWith(
+      PRINCIPAL_BASE.accountId,
+      'proj-a',
+    );
+  });
+
+  test('two projects on the SAME account never share a cached agent default', async () => {
+    const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
+    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {
+      const agents: Record<string, string> = projectId && byProject[projectId] ? { kortix: byProject[projectId] } : {};
+      return { account: null, agents, projects: {} };
+    });
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'kortix',
+      opencodeModel: null,
+      projectDefaultAgent: null,
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'x' }];
+
+    const resultA = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      projectId: 'proj-a',
+      sessionId: 'sess-a',
+      freeModelsOnly: false,
+    });
+    const resultB = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      projectId: 'proj-b',
+      sessionId: 'sess-b',
+      freeModelsOnly: false,
+    });
+
+    expect(resultA).toBe('anthropic/claude-opus-4.8');
+    expect(resultB).toBe('openai/gpt-5.5');
+  });
+
+  test('invalidateAccountModelDefaults(accountId) clears every project-keyed cache entry for that account', async () => {
+    let call = 0;
+    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => {
+      call += 1;
+      return { account: call === 1 ? 'before/model' : 'after/model', agents: {}, projects: {} };
+    });
+    resolveCandidatesImpl = async () => [{ provider: 'x' }];
+
+    const first = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(first).toBe('before/model');
+    // Still cached — a second call within the TTL must NOT hit getAccountModelDefaults again.
+    const cached = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(cached).toBe('before/model');
+    expect(call).toBe(1);
+
+    invalidateAccountModelDefaults(PRINCIPAL_BASE.accountId);
+    const afterInvalidate = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(afterInvalidate).toBe('after/model');
+    expect(call).toBe(2);
+  });
+});
+
 describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at generation time', () => {
   test('nothing configured → undefined (fast path, unchanged — never touches resolveCandidates)', async () => {
     const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
@@ -216,5 +283,110 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
 
     const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
     expect(result).toBeUndefined();
+  });
+});
+
+// Regression coverage for the "agent-scope model pins silently never apply"
+// bug: session creation stores the non-binding 'default' sentinel in
+// project_sessions.agent_name whenever project.metadata.default_agent wasn't
+// populated at the time (common — e.g. a brand-new project whose kortix.yaml
+// declares `default_agent: kortix` but whose DB metadata mirror never learned
+// it). Before this fix, resolveDefaultModelForPrincipal looked up
+// `agentDefaults['default']` — which never matches a pin set on the real
+// agent name ('kortix') — and silently fell through to the project/account/
+// platform default instead of the pinned (possibly pricier / provider-
+// mismatched) model, with no error anywhere. cachedSessionAgent now resolves
+// the sentinel to the project's declared default agent (getSessionAgentContext's
+// projectDefaultAgent, mirroring kortix.yaml/PUT-default-agent) before doing
+// the agentDefaults lookup.
+describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a session stuck on the "default" sentinel', () => {
+  test('THE BUG: session.agent_name is the sentinel, but the project declares "kortix" as its default agent and "kortix" has a pin → the pin applies', async () => {
+    accountDefaults = {
+      account: null,
+      agents: { kortix: 'anthropic/claude-opus-4.8' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'default',
+      opencodeModel: null,
+      projectDefaultAgent: 'kortix',
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'anthropic' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-pin-applies',
+      freeModelsOnly: false,
+    });
+
+    expect(result).toBe('anthropic/claude-opus-4.8');
+  });
+
+  test('an explicit (non-sentinel) session agent still wins over the project default, even when both have pins', async () => {
+    accountDefaults = {
+      account: null,
+      agents: { kortix: 'anthropic/claude-opus-4.8', 'release-bot': 'openai/gpt-5.5' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'release-bot',
+      opencodeModel: null,
+      projectDefaultAgent: 'kortix',
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-explicit-wins',
+      freeModelsOnly: false,
+    });
+
+    expect(result).toBe('openai/gpt-5.5');
+  });
+
+  test('sentinel with no project default configured falls through to project/account/platform (unchanged pre-existing behavior)', async () => {
+    accountDefaults = {
+      account: 'openai/gpt-5.5',
+      agents: { kortix: 'anthropic/claude-opus-4.8' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'default',
+      opencodeModel: null,
+      projectDefaultAgent: null,
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-no-project-default',
+      freeModelsOnly: false,
+    });
+
+    // No agent pin matched (neither 'default' nor any resolved name) → falls
+    // through to the account default.
+    expect(result).toBe('openai/gpt-5.5');
+  });
+
+  test('sentinel resolves to a project default that has NO pin of its own → still falls through to account default', async () => {
+    accountDefaults = {
+      account: 'openai/gpt-5.5',
+      agents: { 'some-other-agent': 'anthropic/claude-opus-4.8' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'default',
+      opencodeModel: null,
+      projectDefaultAgent: 'kortix',
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-project-default-no-pin',
+      freeModelsOnly: false,
+    });
+
+    expect(result).toBe('openai/gpt-5.5');
   });
 });
