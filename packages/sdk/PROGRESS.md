@@ -958,3 +958,26 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
 and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-18 — session `gateway-provider-key-verify` (completion)
+
+Self-contained addition (not part of the Now chain — outside its own PR/plan):
+`verifyGatewayProvider(projectId, providerId)` client fn +
+`GatewayProviderVerifyResult`/`GatewayProviderVerifyStatus` types, backing a new
+`POST /projects/:id/gateway/providers/:providerId/verify` endpoint that runs one
+cheap live completion through a connected BYOK provider's credential and
+classifies it `verified`/`invalid`/`unknown`/`not_connected` (closes the LLM
+provider UI's "Connected ≠ proven working" gap). No exported name renamed or
+removed — additive only.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1122 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. Public-surface
+snapshots re-recorded — diff is additive only (`verifyGatewayProvider`,
+`GatewayProviderVerifyResult`, `GatewayProviderVerifyStatus`).
+
+**Shippable to production: YES** for the SDK surface. apps/api route + apps/web
+UI land in the same PR (#4990); see that PR for backend/frontend evidence.
