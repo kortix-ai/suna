@@ -380,6 +380,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) =>
           P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
+        auth: {
+          discover: (...a: DropFirst<Parameters<typeof P.discoverConnectorAuth>>) =>
+            P.discoverConnectorAuth(projectId, ...a),
+        },
         setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
           P.setConnectorName(projectId, ...a),
         setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 491,
+  "count": 492,
   "routes": [
     {
       "method": "GET",
@@ -765,6 +765,10 @@
     {
       "method": "PUT",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/sensitive"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors/auth-discovery"
     },
     {
       "method": "POST",

@@ -136,6 +136,8 @@ export interface ConnectorSpec {
   spec: string | null;
   // ── shared ──
   auth: ConnectorAuthSpec;
+  /** Omitted auth is auto-detected for direct providers; explicit none opts out. */
+  authAuto?: boolean;
   policies: ConnectorPolicySpec[];
 }
 
@@ -236,7 +238,7 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     if (spec.spec) entry.spec = spec.spec;
   }
 
-  if (spec.auth.type !== 'none') {
+  if (spec.authAuto === false || spec.auth.type !== 'none') {
     const auth: Record<string, unknown> = { type: spec.auth.type };
     if (spec.auth.type === 'custom') {
       if (spec.auth.in !== 'header') auth.in = spec.auth.in;
@@ -273,6 +275,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     platform: spec.platform,
     spec: spec.spec,
     auth: spec.auth,
+    authAuto: spec.authAuto ?? false,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -358,7 +361,14 @@ function parseConnectorEntry(entry: unknown, index: number, filename: string = M
 
   return {
     ok: true,
-    spec: { ...providerParsed.value, auth: authParsed.value, policies: policiesParsed.value },
+    spec: {
+      ...providerParsed.value,
+      auth: authParsed.value,
+      authAuto:
+        (row.auth === undefined || row.auth === null) &&
+        provider !== 'pipedream' && provider !== 'channel' && provider !== 'computer',
+      policies: policiesParsed.value,
+    },
   };
 }
 
@@ -428,7 +438,8 @@ function parseAuth(
   raw: unknown,
   filename: string = MANIFEST_FILENAME,
 ): { ok: true; value: ConnectorAuthSpec } | ParseErr {
-  // No auth table → none (pipedream authenticates via its connected account).
+  // The caller records whether omission means auto-detect. Platform providers
+  // still use none because their install owns authentication.
   if (raw === undefined || raw === null) return { ok: true, value: { ...NO_AUTH } };
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     return err(slug, '[connectors.auth] must be a table', filename);
