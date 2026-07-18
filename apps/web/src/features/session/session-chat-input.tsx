@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
 import { resolveComposerResetOnSend } from './composer-reset';
 import {
@@ -1222,7 +1222,7 @@ export interface SessionChatInputProps {
   escCount?: number;
 }
 
-export function SessionChatInput({
+function SessionChatInputImpl({
   onSend,
   isBusy = false,
   queuedMessages,
@@ -2481,3 +2481,12 @@ export function SessionChatInput({
     </div>
   );
 }
+
+/**
+ * Memoized so the input subtree doesn't re-render on every streaming token.
+ * `SessionChat` passes hooked-up (`useCallback`/`useMemo`) props for exactly
+ * this reason — see the "Stable props for <SessionChatInput>" block in
+ * session-chat.tsx. If a new inline arrow/object/array literal prop is added
+ * to a `<SessionChatInput>` call site, this memo silently stops helping.
+ */
+export const SessionChatInput = memo(SessionChatInputImpl);

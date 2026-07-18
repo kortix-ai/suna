@@ -2028,7 +2028,7 @@ function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
-  const { openPreview } = useFilePreviewStore();
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   const command = (input.command as string) || (streamingInput.command as string) || '';
   const path =
@@ -2841,7 +2841,7 @@ function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const morphInstructions =
     (input.instructions as string) || (streamingInput.instructions as string) || '';
   const hasDiff = before !== '' || after !== '';
-  const { openPreview } = useFilePreviewStore();
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   return (
     <BasicTool
@@ -2896,7 +2896,7 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // loading (ToolRunningContext is false) and no filename was received.
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
-  const { openPreview } = useFilePreviewStore();
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   return (
     <BasicTool
@@ -2964,7 +2964,7 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const metadata = partMetadata(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
-  const { openPreview } = useFilePreviewStore();
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   const files = useMemo(() => {
     const raw = metadata.files;
@@ -3151,7 +3151,7 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
-  const { openPreview } = useFilePreviewStore();
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
   const { toDisplayPath } = useOcFileOpen();
 
   const args: string[] = [];

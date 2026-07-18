@@ -36,7 +36,7 @@ import { createPortal } from 'react-dom';
 
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import { ConnectProviderDialog } from '@/features/session/model-selector';
+import { ConnectProviderDialog, type ModelDefaultControls } from '@/features/session/model-selector';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -3420,7 +3420,9 @@ export function SessionChat({
   }, [selectionPopup]);
 
   // ---- KortixComputer side panel ----
-  const { isSidePanelOpen, setIsSidePanelOpen, openFileInComputer } = useKortixComputerStore();
+  const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
+  const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
+  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   const handleTogglePanel = useCallback(() => {
     setIsSidePanelOpen(!isSidePanelOpen);
@@ -4897,6 +4899,129 @@ export function SessionChat({
     };
   }, [session?.parentID, parentSessionData, pathname, router]);
 
+  // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
+  // prop below must keep referential identity across renders that don't
+  // actually change it — otherwise the memo is defeated on every streaming
+  // token). Bodies are verbatim copies of what used to be inlined in the JSX. ----
+  const handleSendWithDraftClear = useCallback(
+    async (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
+      await handleSend(text, files, mentions);
+      if (failedStartDraft) {
+        clearStartStash(sessionId);
+        usePendingFilesStore.getState().consumePendingFiles();
+        setFailedStartDraft(null);
+      }
+    },
+    [handleSend, failedStartDraft, sessionId],
+  );
+
+  const chatPrefill = useMemo(
+    () =>
+      failedStartDraft
+        ? {
+            text: failedStartDraft.text,
+            files: failedStartDraft.files,
+            id: failedStartDraft.id,
+            mode: 'merge' as const,
+          }
+        : null,
+    [failedStartDraft],
+  );
+
+  const handleAgentChange = useCallback(
+    (name: string | null | undefined) => local.agent.set(name ?? undefined),
+    [local.agent],
+  );
+
+  const handleModelChange = useCallback(
+    (m: ModelKey | null) => local.model.set(m ?? undefined, { recent: true }),
+    [local.model],
+  );
+
+  const chatModelDefaultControls: ModelDefaultControls = useMemo(
+    () => ({
+      agentName: lockedAgentName ?? local.agent.current?.name,
+      onSetAccountDefault: (m) => {
+        void local.model.defaults.setAccountDefault(m);
+      },
+      onSetAgentDefault:
+        lockedAgentName || local.agent.current
+          ? (m) => {
+              const name = lockedAgentName ?? local.agent.current?.name;
+              if (name) void local.model.defaults.setAgentDefault(name, m);
+            }
+          : undefined,
+      onSetProjectDefault: (m) => {
+        void local.model.defaults.setProjectDefault(m);
+      },
+    }),
+    [lockedAgentName, local.agent, local.model.defaults],
+  );
+
+  const handleVariantChange = useCallback(
+    (v: string | null | undefined) => local.model.variant.set(v ?? undefined),
+    [local.model.variant],
+  );
+
+  const handleContextClick = useCallback(() => setContextModalOpen(true), []);
+
+  const handleCustomAnswer = useCallback((text: string) => {
+    questionPromptRef.current?.submitCustomAnswer(text);
+  }, []);
+
+  const handleQuestionAction = useCallback(() => {
+    questionPromptRef.current?.performAction();
+  }, []);
+
+  const chatCommands = useMemo(() => commands || [], [commands]);
+
+  const chatInputSlot = useMemo(
+    () => (
+      <>
+        {/* Connector actions a policy gated for approval — pauses the run
+            until the human decides. Self-hides when nothing's pending. */}
+        <SessionApprovalPrompt />
+        {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
+            the turn is blocked inside the runtime and resumes the moment
+            a reply lands. Self-hides when nothing's pending. */}
+        <SessionPermissionPrompt
+          sessionId={sessionId}
+          permissions={pendingPermissions}
+          onReply={handlePermissionReply}
+        />
+        {renderedQuestion ? (
+          <div
+            className={cn(
+              'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+              questionPromptVisible
+                ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+            )}
+          >
+            <QuestionPrompt
+              key={renderedQuestion.id}
+              ref={questionPromptRef}
+              request={renderedQuestion}
+              onReply={handleQuestionReply}
+              onReject={handleQuestionReject}
+              onActionChange={handleQuestionActionChange}
+            />
+          </div>
+        ) : null}
+      </>
+    ),
+    [
+      sessionId,
+      pendingPermissions,
+      handlePermissionReply,
+      renderedQuestion,
+      questionPromptVisible,
+      handleQuestionReply,
+      handleQuestionReject,
+      handleQuestionActionChange,
+    ],
+  );
+
   // ============================================================================
   // Loading / Not-found states
   // ============================================================================
@@ -5259,24 +5384,8 @@ export function SessionChat({
       {/* Input — hidden in read-only mode (sub-session modal) */}
       {!readOnly && (
         <SessionChatInput
-          onSend={async (text, files, mentions) => {
-            await handleSend(text, files, mentions);
-            if (failedStartDraft) {
-              clearStartStash(sessionId);
-              usePendingFilesStore.getState().consumePendingFiles();
-              setFailedStartDraft(null);
-            }
-          }}
-          prefill={
-            failedStartDraft
-              ? {
-                  text: failedStartDraft.text,
-                  files: failedStartDraft.files,
-                  id: failedStartDraft.id,
-                  mode: 'merge',
-                }
-              : null
-          }
+          onSend={handleSendWithDraftClear}
+          prefill={chatPrefill}
           isBusy={isBusy}
           queuedMessages={queuedMessages}
           onQueueMessage={handleQueueMessage}
@@ -5285,32 +5394,17 @@ export function SessionChat({
           escCount={escCount}
           agents={local.agent.list}
           selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
           agentSelectorLocked={!!lockedAgentName}
-          commands={commands || []}
+          commands={chatCommands}
           onCommand={handleCommand}
           models={local.model.list}
           selectedModel={local.model.currentKey ?? null}
-          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-          modelDefaultControls={{
-            agentName: lockedAgentName ?? local.agent.current?.name,
-            onSetAccountDefault: (m) => {
-              void local.model.defaults.setAccountDefault(m);
-            },
-            onSetAgentDefault:
-              lockedAgentName || local.agent.current
-                ? (m) => {
-                    const name = lockedAgentName ?? local.agent.current?.name;
-                    if (name) void local.model.defaults.setAgentDefault(name, m);
-                  }
-                : undefined,
-            onSetProjectDefault: (m) => {
-              void local.model.defaults.setProjectDefault(m);
-            },
-          }}
+          onModelChange={handleModelChange}
+          modelDefaultControls={chatModelDefaultControls}
           variants={local.model.variant.list}
           selectedVariant={local.model.variant.current ?? null}
-          onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
+          onVariantChange={handleVariantChange}
           messages={messages}
           sessionId={sessionId}
           onFileSearch={handleFileSearch}
@@ -5318,7 +5412,7 @@ export function SessionChat({
           modelRequired
           modelsLoading={providersLoading}
           threadContext={threadContext}
-          onContextClick={() => setContextModalOpen(true)}
+          onContextClick={handleContextClick}
           replyTo={replyTo}
           onClearReply={handleClearReply}
           // Only lock the input into question-answer mode while the session is
@@ -5332,48 +5426,11 @@ export function SessionChat({
           // actually paused on the decision (isBusy), so a stale card can't
           // swallow the composer on an idle session.
           lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-          onCustomAnswer={(text) => {
-            questionPromptRef.current?.submitCustomAnswer(text);
-          }}
+          onCustomAnswer={handleCustomAnswer}
           questionButtonLabel={renderedQuestion ? questionAction.label : null}
           questionCanAct={questionAction.canAct}
-          onQuestionAction={() => {
-            questionPromptRef.current?.performAction();
-          }}
-          inputSlot={
-            <>
-              {/* Connector actions a policy gated for approval — pauses the run
-                  until the human decides. Self-hides when nothing's pending. */}
-              <SessionApprovalPrompt />
-              {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
-                  the turn is blocked inside the runtime and resumes the moment
-                  a reply lands. Self-hides when nothing's pending. */}
-              <SessionPermissionPrompt
-                sessionId={sessionId}
-                permissions={pendingPermissions}
-                onReply={handlePermissionReply}
-              />
-              {renderedQuestion ? (
-                <div
-                  className={cn(
-                    'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                    questionPromptVisible
-                      ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
-                      : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
-                  )}
-                >
-                  <QuestionPrompt
-                    key={renderedQuestion.id}
-                    ref={questionPromptRef}
-                    request={renderedQuestion}
-                    onReply={handleQuestionReply}
-                    onReject={handleQuestionReject}
-                    onActionChange={handleQuestionActionChange}
-                  />
-                </div>
-              ) : null}
-            </>
-          }
+          onQuestionAction={handleQuestionAction}
+          inputSlot={chatInputSlot}
         />
       )}
     </div>
