@@ -518,6 +518,49 @@ Restore is the inverse: stop the stack, restore `volumes/db/data` (whole-
 directory approach) or `psql < backup.sql` against a fresh instance (logical
 approach), then start.
 
+### Backup & disaster recovery (enterprise)
+
+For a production / enterprise deployment, "we have backups" is not a
+finished answer — an untested backup is a liability. State and verify four
+things explicitly:
+
+- **RPO (data-loss window).** With only the on-box Postgres data directory,
+  a box that dies between backups loses everything since the last backup.
+  Pick a cadence and state it: a daily `pg_dump` (logical, ~24h RPO) is the
+  floor; for tighter RPO use a host-level block snapshot of the instance
+  directory on a schedule (EBS snapshots, your VPS provider's volume
+  snapshots, or a `cron` + `rsync`/`tar` to a separate host). The whole-
+  directory `tar` approach above requires `kortix self-host stop` (brief
+  downtime); the `pg_dump` logical approach does not.
+- **RTO (recovery-time objective).** A fresh box: provision → `kortix
+  self-host init` → restore `.env` + `volumes/db/data` (or `psql <
+  backup.sql`) → `kortix self-host start`. State how long that takes on
+  YOUR box and practice it once (below).
+- **`.env` is the root of trust.** Lose `volumes/db/data` and you lose
+  data; lose `.env` and you lose the ability to ever authenticate or
+  decrypt existing data even after a DB restore — `SUPABASE_JWT_SECRET`
+  and `SAML_PRIVATE_KEY` in particular pin all issued sessions and SSO
+  trust. Back `.env` up **separately** (not just inside the instance
+  directory snapshot), at a provider/secrets vault with independent
+  durability, and treat it as a credential.
+- **Restore drill (run once before going live, then ~quarterly).** An
+  untested restore procedure is not a restore procedure. On a throwaway
+  box:
+  1. `kortix self-host init` a fresh instance with the SAME domain (or a
+     test domain) — do NOT start it yet.
+  2. Restore the backed-up `.env` over the freshly-generated one (so JWT
+     keys match the restored DB).
+  3. Restore data: `psql < backup.sql` (logical) against the running
+     `supabase-db`, or `kortix self-host stop` then replace
+     `volumes/db/data` (whole-directory).
+  4. `kortix self-host start`; verify sign-in with an existing account
+     works (proves JWT keys + DB are consistent) and one project/session
+     loads (proves Storage + DB rows).
+  5. Record how long steps 1-4 took — that's your real RTO.
+
+A deployment is not enterprise-ready until the restore drill has succeeded
+at least once against a backup taken from the production instance.
+
 ## Uninstalling / starting over
 
 `kortix self-host uninstall` is the full, clean teardown for one instance: it
