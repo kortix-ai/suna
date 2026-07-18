@@ -2,7 +2,7 @@
 
 /** Canonical ACP-only Kortix project-session lifecycle hook. */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
 import {
@@ -87,6 +87,46 @@ export interface SendState { pending: string | null; sendError: KortixSendError 
 export function sendStateOnStart(text: string): SendState { return { pending: text, sendError: null }; }
 export function sendStateOnError(error: unknown): SendState { return { pending: null, sendError: classifySendError(error) }; }
 
+/**
+ * Pure phase decision for `useSession`. The load-bearing rule: once the ACP
+ * session has EVER been ready (`acpReady` is sticky-true — see
+ * `AcpSession`), a later terminal ACP error (a failed `session/prompt`
+ * against a hibernated sandbox, a dropped stream) keeps the phase `'ready'`.
+ * Hosts key their whole layout off the phase — flipping it mid-session used
+ * to swap a live transcript's side panel back to the "Kortix Session is
+ * starting" boot loader on the first failed send. Mid-session failures are
+ * the chat surface's job to present (inline error rows, reconnect pills) and
+ * the runtime-recovery loop's job to heal — never a layout regression to
+ * boot chrome. A terminal ACP error BEFORE first readiness (dead sandbox at
+ * bootstrap) is still a real `'error'`.
+ */
+export function computeSessionPhase(input: {
+  /** `/start` reported a terminal stage (`failed`/`stopped`). */
+  stageTerminal: boolean;
+  startError: boolean;
+  protocolError: boolean;
+  switched: boolean;
+  acpReady: boolean;
+  /** `acp.errorInfo?.terminal` — a failure retrying cannot fix on its own. */
+  acpErrorTerminal: boolean;
+}): SessionPhase {
+  if (input.stageTerminal || input.startError || input.protocolError) return 'error';
+  if (input.acpErrorTerminal && !input.acpReady) return 'error';
+  return input.switched && input.acpReady ? 'ready' : 'starting';
+}
+
+/** Backoff schedule for the dead-runtime recovery loop (`useSession`): the
+ *  first re-`/start` fires near-immediately (matching what a hard refresh
+ *  would do), then doubles from 2s, capped at 8s; `null` after
+ *  `MAX_RUNTIME_RECOVERIES` attempts means give up and leave the terminal
+ *  error to the host's retry affordances. */
+export const MAX_RUNTIME_RECOVERIES = 5;
+export function runtimeRecoveryDelayMs(attempt: number): number | null {
+  if (attempt >= MAX_RUNTIME_RECOVERIES) return null;
+  if (attempt === 0) return 500;
+  return Math.min(2_000 * 2 ** (attempt - 1), 8_000);
+}
+
 export interface UseSessionOptions {
   waitMs?: number;
   replayStartStash?: boolean;
@@ -125,14 +165,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const terminal = stage === 'failed' || stage === 'stopped';
   const protocolError = startReady && startData?.runtime_protocol !== 'acp';
 
-  const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
+  // Keyed on `external_id` (the CONTAINER), not `sandbox_id` (the durable DB
+  // row): a hibernated sandbox resumed by the recovery loop below keeps its
+  // row id but comes back as a new container — keying on the row id left the
+  // runtime URL pointed at the dead container after every resume.
+  const [switchedExternalId, setSwitchedExternalId] = useState<string | null>(null);
   useEffect(() => {
-    if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
+    if (!startReady || !sandbox?.external_id || switchedExternalId === sandbox.external_id) return;
     setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id, sandbox.sandbox_id, projectId, sessionId);
-    setSwitchedSandboxId(sandbox.sandbox_id);
-  }, [sandbox, startReady, switchedSandboxId]);
+    setSwitchedExternalId(sandbox.external_id);
+  }, [sandbox, startReady, switchedExternalId]);
   useEffect(() => () => setCurrentRuntime(null), []);
-  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox && switchedExternalId === sandbox.external_id;
   useEffect(() => {
     if (!switched) return;
     setSandboxStatus('connected');
@@ -147,9 +191,47 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled: switched && !protocolError,
   });
   const runtimePhase = useRuntimePhase();
-  const phase: SessionPhase = terminal || startError || protocolError || acp.error
-    ? 'error'
-    : switched && acp.ready ? 'ready' : 'starting';
+  const phase: SessionPhase = computeSessionPhase({
+    stageTerminal: terminal,
+    startError: !!startError,
+    protocolError,
+    switched,
+    acpReady: acp.ready,
+    acpErrorTerminal: !!acp.errorInfo?.terminal,
+  });
+
+  // ── Dead-runtime auto-recovery ─────────────────────────────────────────
+  // The start query stops polling forever once `stage === 'ready'` (see its
+  // refetchInterval), so a sandbox that dies AFTER that — idle hibernation,
+  // container eviction — is invisible to it: the ACP layer starts failing
+  // terminally ("failed to resolve container IP … Is the Sandbox started?")
+  // while `/start` still claims ready, and nothing would ever resume the
+  // box. A hard refresh fixed it because its fresh `/start` POST hits the
+  // backend's idempotent provision/resume path — so do exactly that here:
+  // on a terminal ACP error while start reports ready, re-issue `/start`
+  // and re-arm the ACP connection (`acp.retry()` re-runs bootstrap after a
+  // failure). Each still-failing retry patches a NEW `errorInfo` object,
+  // which re-fires this effect into its next backoff step; a bootstrap that
+  // finally succeeds clears the error and resets the attempt counter.
+  const recoveryAttemptsRef = useRef(0);
+  const acpErrorInfo = acp.errorInfo;
+  const acpReady = acp.ready;
+  const retryAcp = acp.retry;
+  const refetchStart = start.refetch;
+  useEffect(() => {
+    if (!acpErrorInfo?.terminal) {
+      if (!acpErrorInfo && acpReady) recoveryAttemptsRef.current = 0;
+      return;
+    }
+    if (!startReady) return;
+    const delay = runtimeRecoveryDelayMs(recoveryAttemptsRef.current);
+    if (delay == null) return;
+    const timer = setTimeout(() => {
+      recoveryAttemptsRef.current += 1;
+      void refetchStart().finally(() => retryAcp());
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [acpErrorInfo, acpReady, startReady, refetchStart, retryAcp]);
 
   return {
     projectId,

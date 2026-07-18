@@ -394,7 +394,13 @@ export default function ProjectSessionPage() {
         sessionId={session.runtimeId ?? sessionId}
         projectId={projectId}
         projectSessionId={sessionId}
-        bootStage={session.phase === 'ready' ? null : startStage}
+        // Boot chrome is for BOOT only: once the ACP session has ever been
+        // ready this mount (`acp.ready` is sticky-true), the panel never
+        // regresses to the "Kortix Session is starting" loader — a
+        // mid-session failure (hibernated sandbox, dropped stream) is
+        // surfaced by the chat and healed by useSession's runtime-recovery
+        // loop, with the action panel staying put.
+        bootStage={session.phase === 'ready' || session.acp.ready ? null : startStage}
         acpItems={acpItems}
         isSessionBusy={session.acp?.busy ?? false}
       >

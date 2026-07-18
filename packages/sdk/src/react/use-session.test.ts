@@ -4,6 +4,8 @@ import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions
 import { SessionStartError } from '../core/rest/projects-client';
 import {
   classifySendError,
+  computeSessionPhase,
+  runtimeRecoveryDelayMs,
   sendStateOnError,
   sendStateOnStart,
   shouldRetrySessionStart,
@@ -86,5 +88,57 @@ describe('shouldRetrySessionStart', () => {
 
   test('does not retry a stale 404', () => {
     expect(shouldRetrySessionStart(0, startError(404), 'stale')).toBe(false);
+  });
+});
+
+describe('computeSessionPhase', () => {
+  const base = {
+    stageTerminal: false,
+    startError: false,
+    protocolError: false,
+    switched: true,
+    acpReady: true,
+    acpErrorTerminal: false,
+  };
+
+  test('healthy switched+ready session is ready', () => {
+    expect(computeSessionPhase(base)).toBe('ready');
+  });
+
+  test('a terminal ACP error on an ALREADY-READY session keeps phase ready — a failed send must never collapse the layout back to the boot loader', () => {
+    expect(computeSessionPhase({ ...base, acpErrorTerminal: true })).toBe('ready');
+  });
+
+  test('a terminal ACP error before the session ever became ready is an error (dead sandbox at bootstrap)', () => {
+    expect(computeSessionPhase({ ...base, acpReady: false, acpErrorTerminal: true })).toBe('error');
+  });
+
+  test('a NON-terminal ACP hiccup before ready keeps the session starting (the client retries on its own)', () => {
+    expect(computeSessionPhase({ ...base, acpReady: false })).toBe('starting');
+  });
+
+  test('terminal stage / start error / protocol error always win', () => {
+    expect(computeSessionPhase({ ...base, stageTerminal: true })).toBe('error');
+    expect(computeSessionPhase({ ...base, startError: true })).toBe('error');
+    expect(computeSessionPhase({ ...base, protocolError: true })).toBe('error');
+  });
+
+  test('not switched yet is starting', () => {
+    expect(computeSessionPhase({ ...base, switched: false })).toBe('starting');
+  });
+});
+
+describe('runtimeRecoveryDelayMs', () => {
+  test('first recovery fires almost immediately, then backs off, capped', () => {
+    expect(runtimeRecoveryDelayMs(0)).toBe(500);
+    expect(runtimeRecoveryDelayMs(1)).toBe(2_000);
+    expect(runtimeRecoveryDelayMs(2)).toBe(4_000);
+    expect(runtimeRecoveryDelayMs(3)).toBe(8_000);
+    expect(runtimeRecoveryDelayMs(4)).toBe(8_000);
+  });
+
+  test('gives up (null) after the attempt cap', () => {
+    expect(runtimeRecoveryDelayMs(5)).toBeNull();
+    expect(runtimeRecoveryDelayMs(99)).toBeNull();
   });
 });

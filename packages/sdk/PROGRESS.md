@@ -1070,3 +1070,39 @@ Companion web fix (same bug cluster, `apps/web`): session page now enables
 so nothing sent the stashed first message) and passes `boundAgentName` to
 `InstantSessionShell` (locks the shell agent picker to the session's bound
 agent instead of a phantom selection).
+
+## Session log — 2026-07-18: ACP tool-part normalization + dead-runtime recovery
+
+Two SDK changes shipped alongside the web ACP transcript stepper rework:
+
+**`src/acp/tool-part.ts`** (tests in `tool-part.test.ts`): tool inputs gain a
+canonical `filePath` alias (Claude Code sends snake_case `file_path`; ACP
+`locations[]` is the fallback) so `getToolInfo` subtitles resolve for every
+host; structured `rawOutput` surfaces its human-readable key
+(`formatted_output`/`stdout`/`stderr`/…) instead of a JSON dump; the Kortix
+sandbox process-wrapper plumbing (`Chunk ID:`/`Wall time:`/`Process running
+with session ID`/`Original token count:`/bare `Output:`) is stripped from
+output text — an empty remainder is the honest "no output"; diff/terminal
+content blocks no longer flatten into output text.
+
+**`src/react/use-session.ts`** (TDD, tests in `use-session.test.ts`): phase
+decision extracted to pure `computeSessionPhase` — a terminal ACP error on an
+ALREADY-ready session keeps phase `'ready'` (a failed send must never collapse
+a host layout back to boot chrome); terminal-before-ready stays `'error'`.
+New dead-runtime recovery loop: a terminal ACP error while `/start` reports
+ready re-issues the idempotent `/start` (resume) and re-arms the ACP
+connection, backoff 500ms→8s via `runtimeRecoveryDelayMs`, capped at
+`MAX_RUNTIME_RECOVERIES`(5). Runtime switch is keyed on `external_id` (the
+container) instead of `sandbox_id` (the durable row) so a resumed container
+re-points the runtime URL.
+
+Gates: typecheck ✅ · test 1230/0 (95 files) ✅ · smoke:install ✅.
+
+Known-open (backend, `apps/api`, NOT addressed here): a session can wedge at
+`/start` `stage: starting / reason: acp_starting` while the sandbox daemon
+reports `runtimeReady: true, acp_ready: true` — `inspectSandboxRuntime`
+(`src/projects/runtime-inspection.ts`) fails internally (swallowed by its
+`catch`) even though the same daemon health endpoint answers 200 via the
+`/v1/p/` proxy. Repro'd live on session `fa33a4ba…` (project `c1adc7d4…`).
+The SDK recovery loop keeps such a session on honest boot chrome but cannot
+heal it client-side.
