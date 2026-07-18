@@ -32,6 +32,9 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'daytona',
   'platinum',
   'e2b',
+  // EXPERIMENTAL — same-machine Docker containers, see
+  // apps/api/src/platform/providers/local-docker.ts.
+  'local-docker',
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
@@ -3080,6 +3083,12 @@ export const accountSsoProviders = kortixSchema.table(
      *  so admins skip manual mapping and just attach project roles. Off by
      *  default — providers keep the explicit-mapping behavior. */
     autoProvisionGroups: boolean('auto_provision_groups').default(false).notNull(),
+    /** When true, the unified auth flow refuses password/email-code logins for
+     *  this provider's primaryDomain — /access/check-email answers mode='sso'
+     *  and the web auth actions turn the request away, so the IdP is the only
+     *  door. Off by default: pre-SSO password accounts keep working until the
+     *  org explicitly flips enforcement. */
+    enforceSso: boolean('enforce_sso').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -3234,6 +3243,7 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   'pipedream',
   'mcp',
   'openapi',
+  'postman',
   'graphql',
   'http',
   // Chat platforms (Slack, later Telegram/Teams) as first-class connectors. The

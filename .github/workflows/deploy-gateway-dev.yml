@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
@@ -77,8 +78,10 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      # --version stamps KORTIX_VERSION into the task-def (parity with the API
+      # roll) so the gateway's /health/live reports the computed dev version.
       - name: Roll the dev ECS gateway service onto the freshly-built image
-        run: bash infra/scripts/ecs-deploy.sh dev "kortix/kortix-gateway:${{ needs.build.outputs.tag }}" --service gateway
+        run: bash infra/scripts/ecs-deploy.sh dev "kortix/kortix-gateway:${{ needs.build.outputs.tag }}" --service gateway --version "${{ needs.build.outputs.version }}"
 
   deploy:
     name: Deploy gateway to dev (GitOps)

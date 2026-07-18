@@ -1,16 +1,16 @@
 // Projects — project CRUD, detail, experimental features, warm pool, onboarding.
 
-import { backendApi, type ApiClientOptions } from "../../http/api-client";
-import type { SandboxProviderName } from "../platform-client/types";
+import { type ApiClientOptions, backendApi } from '../../http/api-client';
+import type { SandboxProviderName } from '../platform-client/types';
 import {
-  normalizeServerBackendBase,
-  serverTokenGet,
-  unwrap,
   type ProjectFileEntry,
   type ProjectGitConnection,
   type ProjectRole,
   type ServerTokenOptions,
-} from "./shared";
+  normalizeServerBackendBase,
+  serverTokenGet,
+  unwrap,
+} from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features).
  *  NOTE: this mirror is now complete against the authoritative registry —
@@ -18,21 +18,21 @@ import {
  *  (`packages/api-contract/src/index.ts`). Keep both in sync when either
  *  side adds a key. See PROGRESS.md Discovered-this-session (DISC-07). */
 export type ExperimentalFeatureKey =
-  | "agent_tunnel"
-  | "marketplace"
-  | "agentmail_email"
-  | "meet"
-  | "llm_gateway"
-  | "review_center"
-  | "experimental_harnesses"
-  | "unified_model_picker";
+  | 'agent_tunnel'
+  | 'marketplace'
+  | 'agentmail_email'
+  | 'meet'
+  | 'llm_gateway'
+  | 'review_center'
+  | 'experimental_harnesses'
+  | 'unified_model_picker';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
   key: ExperimentalFeatureKey;
   name: string;
   description: string;
-  stability: "experimental" | "beta";
+  stability: 'experimental' | 'beta';
   /** Platform supports it (operator env). When false the UI hides the toggle. */
   available: boolean;
   /** Effective per-project state (the switch position). */
@@ -48,7 +48,7 @@ export interface KortixProject {
   repo_url: string;
   default_branch: string;
   manifest_path: string;
-  status: "active" | "archived";
+  status: 'active' | 'archived';
   metadata: Record<string, unknown>;
   last_opened_at: string | null;
   created_at: string;
@@ -77,35 +77,35 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   runtime_configs: Array<{
     runtime: string;
-    harness: "claude" | "codex" | "opencode" | "pi";
+    harness: 'claude' | 'codex' | 'opencode' | 'pi';
     config_dir: string;
     path: string;
     raw: string | null;
   }>;
   runtime_config_raw: string | null;
   runtime_default_agent: string | null;
-  agent_source: "native" | "declarative";
+  agent_source: 'native' | 'declarative';
   /** @deprecated Use agent_source. */
-  agent_discovery: "runtime" | "declarative";
+  agent_discovery: 'runtime' | 'declarative';
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
-    source?: "runtime" | "opencode" | "kortix.toml" | "kortix.yaml";
+    source?: 'runtime' | 'opencode' | 'kortix.toml' | 'kortix.yaml';
     enabled?: boolean;
     /** kortix.yaml v3 runtime profile selected by this logical agent. */
     runtime?: string | null;
     /** ACP harness resolved by the single runtime compiler entrypoint. */
-    harness?: "claude" | "codex" | "opencode" | "pi" | null;
+    harness?: 'claude' | 'codex' | 'opencode' | 'pi' | null;
     native_agent?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  Runtime-discovered agents (not governed by `agents:`). */
     scope?: {
-      env: string[] | "all";
-      connectors: string[] | "all";
-      kortix_cli: string[] | "all";
+      env: string[] | 'all';
+      connectors: string[] | 'all';
+      kortix_cli: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
@@ -150,7 +150,7 @@ export interface CreateProjectRepoInput {
   installation_id?: string;
   private?: boolean;
   description?: string;
-  starter_template?: "general-knowledge-worker" | "minimal";
+  starter_template?: 'general-knowledge-worker' | 'minimal';
 }
 
 export interface ProvisionProjectInput {
@@ -158,7 +158,7 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
-  starter_template?: "general-knowledge-worker" | "minimal";
+  starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
   /** Clone a `registry:project` marketplace item instead of the blank
    *  starter — e.g. `"kortix-projects:support-agent-kit"`. Implies
@@ -175,21 +175,16 @@ export interface RepoCollaboratorInvite {
 }
 
 export async function listProjects() {
-  return unwrap(await backendApi.get<KortixProject[]>("/projects"));
+  return unwrap(await backendApi.get<KortixProject[]>('/projects'));
 }
 
 export async function listProjectsForAccount(accountId?: string) {
-  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : "";
+  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
   return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
 }
 
-export async function getProject(
-  projectId: string,
-  options?: ApiClientOptions,
-) {
-  return unwrap(
-    await backendApi.get<KortixProject>(`/projects/${projectId}`, options),
-  );
+export async function getProject(projectId: string, options?: ApiClientOptions) {
+  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`, options));
 }
 
 /**
@@ -199,13 +194,13 @@ export async function getProject(
 export async function inviteRepoCollaborator(
   projectId: string,
   githubUsername: string,
-  permission: "read" | "write" = "write",
+  permission: 'read' | 'write' = 'write',
 ) {
   return unwrap(
-    await backendApi.post<RepoCollaboratorInvite>(
-      `/projects/${projectId}/git/collaborators`,
-      { github_username: githubUsername, permission },
-    ),
+    await backendApi.post<RepoCollaboratorInvite>(`/projects/${projectId}/git/collaborators`, {
+      github_username: githubUsername,
+      permission,
+    }),
   );
 }
 
@@ -229,11 +224,10 @@ export async function validateProjectManifest(
   raw: string,
 ): Promise<ManifestValidationResult> {
   return unwrap(
-    await backendApi.post<ManifestValidationResult>(
-      `/projects/${projectId}/manifest/validate`,
-      { raw },
-    ),
-    "Failed to validate manifest",
+    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, {
+      raw,
+    }),
+    'Failed to validate manifest',
   );
 }
 
@@ -248,15 +242,10 @@ export interface ProjectGitToken {
  * `kortix ship` without persisting credentials in git config). Throws (409)
  * for BYO projects — they push with the user's own git remote auth.
  */
-export async function getProjectGitToken(
-  projectId: string,
-): Promise<ProjectGitToken> {
+export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
   return unwrap(
-    await backendApi.post<ProjectGitToken>(
-      `/projects/${projectId}/git-token`,
-      {},
-    ),
-    "Failed to mint git token",
+    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    'Failed to mint git token',
   );
 }
 
@@ -264,17 +253,12 @@ export async function getProjectGitToken(
 export function isManagedGithubProject(project: {
   metadata?: Record<string, unknown> | null;
 }): boolean {
-  const git = (
-    project.metadata as
-      { git?: { provider?: string; managed?: boolean } } | undefined
-  )?.git;
-  return git?.provider === "github" && git?.managed === true;
+  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)
+    ?.git;
+  return git?.provider === 'github' && git?.managed === true;
 }
 
-export async function getProjectDetail(
-  projectId: string,
-  options?: ApiClientOptions,
-) {
+export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
       showErrors: false,
@@ -283,45 +267,70 @@ export async function getProjectDetail(
   );
 }
 
-export async function getProjectLlmCatalog(
-  projectId: string,
-  options?: ApiClientOptions,
-) {
+export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(
-      `/projects/${projectId}/llm-catalog`,
-      {
-        showErrors: false,
-        ...options,
-      },
-    ),
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+      showErrors: false,
+      ...options,
+    }),
   );
 }
 
-/** Compact connection-aware catalog for interactive model selectors. */
-export async function getProjectModelPicker(
-  projectId: string,
-  options?: ApiClientOptions,
-) {
+/**
+ * Load the compact, connection-aware catalog intended for interactive model
+ * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
+ * runtime models.dev projection used to configure OpenCode sandboxes.
+ */
+export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(
-      `/projects/${projectId}/model-picker`,
-      {
-        showErrors: false,
-        ...options,
-      },
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
+/** One provider row from the live, server-refreshed models.dev catalog. */
+export interface ProjectLlmCatalogProvider {
+  id: string;
+  name: string;
+  env?: string[];
+  doc?: string | null;
+  api?: string | null;
+  npm?: string | null;
+  models: Array<{ id: string; name: string; released: string | null }>;
+}
+
+export interface ProjectLlmCatalogProvidersResponse {
+  source: string;
+  fetched_at: string;
+  provider_count: number;
+  model_count: number;
+  providers: ProjectLlmCatalogProvider[];
+}
+
+/**
+ * The PROVIDER-level rows of the live runtime catalog — id/name/env/doc per
+ * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
+ * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
+ * native (non-gateway) projects too — see the route's doc comment
+ * (apps/api/src/projects/routes/r4.ts, `/llm-catalog/providers`).
+ */
+export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogProvidersResponse>(
+      `/projects/${projectId}/llm-catalog/providers`,
+      { showErrors: false, ...options },
     ),
   );
 }
 
 export async function createProject(input: ProjectInput) {
-  return unwrap(await backendApi.post<KortixProject>("/projects", input));
+  return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(
-    await backendApi.post<KortixProject>("/projects/create-repo", input),
-  );
+  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
 }
 
 /**
@@ -331,20 +340,41 @@ export async function createProjectRepo(input: CreateProjectRepoInput) {
  */
 export async function provisionProject(input: ProvisionProjectInput) {
   return unwrap(
-    await backendApi.post<KortixProject>("/projects/provision", {
+    await backendApi.post<KortixProject>('/projects/provision', {
       seed_starter: true,
       ...input,
     }),
   );
 }
 
-export async function updateProject(
-  projectId: string,
-  input: Partial<ProjectInput>,
-) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}`, input),
-  );
+export interface ManagedGitStatus {
+  configured: boolean;
+  provider: string;
+}
+
+/**
+ * Whether the managed-git "Create project" path (provisionProject/POST
+ * /projects/provision) is usable on this server. Lets the create-project UI
+ * pre-check and disable/annotate that option instead of letting the user hit
+ * a 503 — self-host deployments with no MANAGED_GIT_* configured are the
+ * primary case (the BYO-repo import path stays available regardless).
+ * `showErrors: false` — a failure here is a soft "assume unavailable", not
+ * something that should ever surface as a toast of its own.
+ */
+export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
+  try {
+    return unwrap(
+      await backendApi.get<ManagedGitStatus>('/projects/managed-git/status', {
+        showErrors: false,
+      }),
+    );
+  } catch {
+    return { configured: false, provider: 'github' };
+  }
+}
+
+export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
 }
 
 /** Toggle an experimental feature for a project (Customize → Settings →
@@ -356,13 +386,10 @@ export async function updateExperimentalFeature(
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(
-      `/projects/${projectId}/experimental`,
-      {
-        feature,
-        enabled,
-      },
-    ),
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
+      feature,
+      enabled,
+    }),
   );
 }
 
@@ -374,12 +401,9 @@ export async function updateProjectSandboxProvider(
   provider: SandboxProviderName | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(
-      `/projects/${projectId}/sandbox-provider`,
-      {
-        provider,
-      },
-    ),
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {
+      provider,
+    }),
   );
 }
 
@@ -393,29 +417,17 @@ export async function updateTemplateWarmPool(
   projectId: string,
   input: { slug: string; enabled?: boolean; size?: number },
 ) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(
-      `/projects/${projectId}/warm-pool`,
-      input,
-    ),
-  );
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
 }
 
-export async function setProjectOnboardingComplete(
-  projectId: string,
-  completed: boolean,
-) {
+export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, {
-      completed,
-    }),
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
   );
 }
 
 export async function archiveProject(projectId: string) {
-  return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`),
-  );
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
 }
 
 // ── Server-side explicit-token variants ──────────────────────────────────────
@@ -438,7 +450,8 @@ export async function fetchProjectsForAccountWithToken(
 }
 
 export type ProvisionProjectWithTokenResult =
-  { ok: true; project: KortixProject } | { ok: false; limitReached: boolean };
+  | { ok: true; project: KortixProject }
+  | { ok: false; limitReached: boolean };
 
 /**
  * Server-side / explicit-token variant of {@link provisionProject}. Mirrors
@@ -450,23 +463,20 @@ export async function provisionProjectWithToken(
   opts: ServerTokenOptions,
   input: ProvisionProjectInput,
 ): Promise<ProvisionProjectWithTokenResult> {
-  if (!opts.backendUrl || !opts.accessToken)
-    return { ok: false, limitReached: false };
+  if (!opts.backendUrl || !opts.accessToken) return { ok: false, limitReached: false };
   const base = normalizeServerBackendBase(opts.backendUrl);
   try {
     const res = await fetch(`${base}/v1/projects/provision`, {
-      method: "POST",
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({ seed_starter: true, ...input }),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000),
     });
     if (res.ok) {
-      const project = (await res
-        .json()
-        .catch(() => null)) as KortixProject | null;
+      const project = (await res.json().catch(() => null)) as KortixProject | null;
       // A 200 whose body doesn't actually carry a project_id is not a usable
       // success — report it as not-ok instead of handing the caller a project
       // it can't build a `/projects/{id}` path from.
@@ -474,13 +484,8 @@ export async function provisionProjectWithToken(
       return { ok: true, project };
     }
     if (res.status === 403) {
-      const body = (await res.json().catch(() => null)) as {
-        code?: string;
-      } | null;
-      return {
-        ok: false,
-        limitReached: body?.code === "project_limit_reached",
-      };
+      const body = (await res.json().catch(() => null)) as { code?: string } | null;
+      return { ok: false, limitReached: body?.code === 'project_limit_reached' };
     }
     return { ok: false, limitReached: false };
   } catch {

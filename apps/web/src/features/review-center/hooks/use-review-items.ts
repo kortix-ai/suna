@@ -95,5 +95,17 @@ export function useResolveReviewApproval() {
     mutationFn: ({ executionId, decision }) =>
       resolveApproval(projectId, executionId, decision, 'once'),
     onSuccess: invalidate,
+    // Every call site (review-center-connected.tsx) passes its own call-time
+    // `onError` to `resolve.mutate(vars, { onError })` and shows a specific
+    // toast. Without this no-op, TanStack Query's `defaultMutationOptions()`
+    // merge falls back to the QueryClient's global default mutation
+    // `onError` (apps/web/src/app/react-query-provider.tsx), which ALSO
+    // fires — producing a second, generic "Failed to perform action:
+    // <message>" toast alongside the intended one. Same fix, same reasoning,
+    // as `resolveApprovalMutationOptions` in session-audit-shared.tsx, which
+    // this hook mirrors (same underlying `resolveApproval` action/endpoint —
+    // a stale inbox row can 404 with "not found" if it was already resolved
+    // elsewhere before the poll caught up).
+    onError: () => {},
   });
 }

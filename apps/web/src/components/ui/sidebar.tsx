@@ -59,6 +59,14 @@ function useSidebar() {
   return context;
 }
 
+/** Same context as `useSidebar`, but returns `null` outside a
+ *  `SidebarProvider` instead of throwing. For callers that can genuinely
+ *  render on both sides of the boundary — e.g. the Easy panel, which also
+ *  mounts on /debug/tools with no provider at all. */
+function useOptionalSidebar() {
+  return React.useContext(SidebarContext);
+}
+
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -805,5 +813,6 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
+  useOptionalSidebar,
   useSidebar,
 };

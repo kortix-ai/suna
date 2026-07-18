@@ -4,11 +4,12 @@ import { InteractiveDemoSection } from '@/components/home/interactive-demo-secti
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/features/icon/icon';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import { ArrowUpRight, Code2, Monitor, Smartphone, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type SurfaceId = 'web' | 'slack' | 'teams' | 'mobile' | 'cli' | 'sdk';
 
@@ -30,8 +31,8 @@ const SURFACES: Surface[] = [
 /* ── shared bits ─────────────────────────────────────────────────────────── */
 
 function MonoLine({ line }: { line: string }) {
-  const slash = line.indexOf('//');
-  const hash = line.indexOf('#');
+  const slash = line.search(/\s\/\//);
+  const hash = line.search(/\s#/);
   const idxs = [slash, hash].filter((i) => i >= 0);
   const ci = idxs.length ? Math.min(...idxs) : -1;
   if (ci >= 0) {
@@ -191,10 +192,13 @@ function MobileSurface() {
 }
 
 const CLI_LINES = [
+  `$ ${KORTIX_CLI_INSTALL_COMMAND}`,
+  '✓ Kortix CLI installed  # one-time setup',
+  '',
   '$ kortix init acme-ops',
   '✓ Initialized Kortix project "acme-ops"  # everything is files',
   '',
-  '$ kortix run "draft the renewal for Acme"',
+  '$ kortix sessions new --prompt "draft the renewal for Acme"',
   '✓ session/renewal-acme · sandbox booted   # isolated branch',
   '→ change request opened: sales/renewals/acme.md',
   '',
@@ -231,7 +235,18 @@ function SurfacePanel({ surface }: { surface: SurfaceId }) {
     case 'mobile':
       return <MobileSurface />;
     case 'cli':
-      return <CodeWindow title="kortix — terminal" lines={CLI_LINES} />;
+      return (
+        <div className="relative h-full">
+          <CodeWindow title="kortix — terminal" lines={CLI_LINES} />
+          <Link
+            href="/#cli"
+            className="border-border bg-card/90 text-foreground hover:bg-foreground/[0.04] absolute right-4 bottom-4 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium shadow-sm backdrop-blur transition-colors duration-fast"
+          >
+            Get started with the CLI
+            <ArrowUpRight className="size-3.5" />
+          </Link>
+        </div>
+      );
     case 'sdk':
       return (
         <div className="relative h-full">
@@ -250,6 +265,19 @@ function SurfacePanel({ surface }: { surface: SurfaceId }) {
 
 export function HeroSurfaces() {
   const [active, setActive] = useState<SurfaceId>('web');
+
+  useEffect(() => {
+    const syncSurfaceFromHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (SURFACES.some((surface) => surface.id === hash)) {
+        setActive(hash as SurfaceId);
+      }
+    };
+
+    syncSurfaceFromHash();
+    window.addEventListener('hashchange', syncSurfaceFromHash);
+    return () => window.removeEventListener('hashchange', syncSurfaceFromHash);
+  }, []);
 
   return (
     <div className="w-full">

@@ -273,6 +273,7 @@ mock.module('../projects/github', () => ({
     return { name: branch, protected: false };
   },
   listInstallationRepositories: async () => [],
+  listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,

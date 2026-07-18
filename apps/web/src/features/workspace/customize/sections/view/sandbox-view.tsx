@@ -67,6 +67,7 @@ const TEMPLATE_SKELETON_ROWS = [
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
+  layer: 'Kortix runtime layer failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
   provider: 'Sandbox provider error',
@@ -162,7 +163,14 @@ function formatBuildDuration(startedAt: string, finishedAt: string | null): stri
   return `${hours}h`;
 }
 
-function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
+export function BuildRow({
+  build,
+  providerMode,
+}: {
+  build: ProjectSnapshotBuild;
+  /** Only reveal the resolved provider when the project has explicitly pinned one. */
+  providerMode: SandboxProviderMode;
+}) {
   const status = BUILD_STATUS_TILE[build.status];
   const { Icon } = status;
   const duration = formatBuildDuration(build.started_at, build.finished_at);
@@ -183,7 +191,7 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
           <Badge variant={status.badgeVariant} size="xs">
             {status.label}
           </Badge>
-          <ProviderBadge provider={build.provider} />
+          {providerMode === 'pinned' ? <ProviderBadge provider={build.provider} /> : null}
         </div>
         <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
           <span className="truncate font-mono">{build.snapshot_name}</span>
@@ -709,7 +717,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
                   ) : (
                     <ul className="space-y-2">
                       {builds.slice(0, 10).map((b) => (
-                        <BuildRow key={b.build_id} build={b} />
+                        <BuildRow key={b.build_id} build={b} providerMode={providerMode} />
                       ))}
                     </ul>
                   )}

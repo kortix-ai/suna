@@ -1,7 +1,7 @@
 /**
  * Integration test (real local DB) for the authorization ENGINE (authorizeV2).
  *
- * Proves the model an enterprise (essentia-inc) relies on, end to end against a
+ * Proves the model an enterprise (acme-inc) relies on, end to end against a
  * fully ISOLATED account + project seeded here and torn down after:
  *   - deny-by-default (a plain member with no grant is denied)
  *   - built-in project roles (member ⊂ editor ⊂ manager)

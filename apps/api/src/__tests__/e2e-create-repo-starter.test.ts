@@ -100,8 +100,23 @@ function getTestAuth() {
   return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'starter@example.test' };
 }
 
+// This repo's local `.env` (loaded automatically by `bun test`) sets real
+// MANAGED_GIT_GITHUB_*/KORTIX_GITHUB_APP_* values for interactive dev use.
+// The "GitHub App installation" scenarios below assert the pure App-only
+// not-connected state (no managed-git PAT fallback, see
+// serializeGitHubInstallations) — left in place, the real dev values would
+// silently make every account look PAT-connected. Same convention as
+// unit-github-app-isconfigured.test.ts / unit-github-owner-type-routing.test.ts.
+const MANAGED_GIT_ENV_KEYS = [
+  'MANAGED_GIT_GITHUB_OWNER',
+  'MANAGED_GIT_GITHUB_INSTALL_ID',
+  'MANAGED_GIT_GITHUB_TOKEN',
+] as const;
+for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
+
 function resetState() {
   setTestAuth();
+  for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
   fileShaCalls = [];
   commitCalls = [];
@@ -263,6 +278,10 @@ mock.module('../projects/github', () => ({
         description: null,
       }]
     : [],
+  // Not exercised by this file's scenarios (App installations only, no
+  // managed-git PAT fallback here) — stubbed so the mocked module still
+  // satisfies github-repositories.ts's named import.
+  listOwnerRepositories: async () => [],
   listRepositoryBranches: async ({ owner, repo }: { owner: string; repo: string }) => [
     { name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main', protected: true },
     { name: 'dev', protected: false },

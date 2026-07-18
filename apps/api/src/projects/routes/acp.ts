@@ -2,6 +2,7 @@ import { acpSessionEnvelopes, sessionSandboxes } from '@kortix/db';
 import type { SseBlock } from '@kortix/sdk/acp';
 import { and, asc, eq, gt } from 'drizzle-orm';
 
+import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { isAcpPromptEnvelope } from '../lib/acp-envelope';
@@ -22,7 +23,7 @@ async function resolveAcpTarget(c: any) {
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return null;
   const [sandbox] = await db
-    .select({ externalId: sessionSandboxes.externalId })
+    .select({ externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider })
     .from(sessionSandboxes)
     .where(and(
       eq(sessionSandboxes.projectId, projectId),
@@ -39,6 +40,7 @@ async function resolveAcpTarget(c: any) {
     runtimeId: sessionId,
     harness: health?.acpHarness ?? null,
     externalId: sandbox.externalId,
+    provider: sandbox.provider as ProviderName,
     endpoint,
   };
 }
@@ -126,6 +128,7 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
           serviceKey: target.endpoint.serviceKey,
           previewUrl: target.endpoint.url,
           providerHeaders: target.endpoint.headers,
+          providerName: target.provider,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

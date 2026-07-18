@@ -10,8 +10,12 @@
 #
 # Flip a backend live WITHOUT redeploying code:
 #   wrangler secret put / or set the plain-text var ACTIVE_BACKEND in the dash,
-#   e.g. wrangler deploy --env prod --var ACTIVE_BACKEND:ecs-fargate
-# Values: "eks" (default, EKS) or "ecs-fargate" (the ECS Fargate fallback).
+#   e.g. wrangler deploy --env prod --var ACTIVE_BACKEND:eks
+# Values: "ecs-fargate" (ECS Fargate — the ACTIVE prod/dev backend since
+# PR #4683) or "eks" (the EKS standby). Both backends are deployed on every
+# release/dev push so the flip is always safe. Verify with the `X-Backend`
+# response header. The live Worker var is the runtime source of truth; keep
+# these checked-in defaults in sync with it.
 
 main = "worker.mjs"
 compatibility_date = "2026-06-01"
@@ -27,10 +31,12 @@ routes = [
 ]
 
 [env.prod.vars]
-# EKS (eu-west-2, colocated with the Supabase DB) is the active backend; ECS
-# Fargate is the warm standby. Flip with `--var ACTIVE_BACKEND:ecs-fargate`
-# (instant, reversible). Both kept current by CI. The gateway has its OWN toggle
-# (GATEWAY_ACTIVE_BACKEND) so it flips independently of the API.
+# ECS Fargate (eu-west-2) is the ACTIVE prod backend (since PR #4683); EKS is
+# the warm standby. Flip with `--var ACTIVE_BACKEND:eks` (instant, reversible).
+# Both backends are deployed on every release by deploy-prod.yml, which also
+# verifies the live version on the public hosts before anything announces. The
+# gateway has its OWN toggle (GATEWAY_ACTIVE_BACKEND) so it flips independently
+# of the API.
 ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://api-ecs-fargate.kortix.com"
@@ -49,7 +55,12 @@ routes = [
 ]
 
 [env.staging.vars]
-ACTIVE_BACKEND = "ecs-fargate"
+# STAGING IS EKS-ACTIVE (unlike prod/dev): deploy-staging.yml's wire-cloudflare
+# job re-deploys this Worker via the REST API on EVERY staging rollout and
+# re-asserts ACTIVE_BACKEND=eks — so that is the live truth, and any other
+# value set here or by hand gets clobbered on the next staging deploy. Flip
+# staging to ECS by changing BOTH the wire-cloudflare bindings and this default.
+ACTIVE_BACKEND = "eks"
 BACKEND_EKS = "https://staging-api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://staging-api-ecs-fargate.kortix.com"
 GATEWAY_ACTIVE_BACKEND = "ecs-fargate"

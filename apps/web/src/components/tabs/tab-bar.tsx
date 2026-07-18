@@ -34,7 +34,7 @@ import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
 import { useSyncStore } from '@/stores/runtime-sync-store';
 import { useRuntimeSessions } from '@/hooks/runtime/use-runtime-sessions';
 import { childMapByParent } from '@/ui';
-import { getFileIcon } from '@/features/files/components/file-icon';
+import { getFileIcon } from '@/features/project-files';
 import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {
   Tooltip,

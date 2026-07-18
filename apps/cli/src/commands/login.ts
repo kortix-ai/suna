@@ -1,7 +1,14 @@
 import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
-import { DEFAULT_API_BASE, authFileLocation, loadAuthForHost, saveAuthForHost } from '../api/auth.ts';
+import {
+  DEFAULT_API_BASE,
+  authFileLocation,
+  loadAuthForHost,
+  saveAuthForHost,
+} from '../api/auth.ts';
+import { startCallbackServer } from '../api/browser-auth.ts';
+import { ApiError, createApiClient } from '../api/client.ts';
 import {
   DEFAULT_HOST_NAME,
   activeHostName,
@@ -9,12 +16,10 @@ import {
   setActiveAccount,
   validateHostName,
 } from '../api/config.ts';
-import { ApiError, createApiClient } from '../api/client.ts';
-import { startCallbackServer } from '../api/browser-auth.ts';
+import type { MeResponse } from '../api/types.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { webDashboardUrl } from '../web-url.ts';
-import type { MeResponse } from '../api/types.ts';
 
 const HELP = help`Usage: kortix login [options]
 
@@ -89,7 +94,7 @@ export async function runLogin(argv: string[]): Promise<number> {
   }
 
   // Resolve which host we're logging into.
-  let hostName = flags.host ?? activeHostName() ?? DEFAULT_HOST_NAME;
+  const hostName = flags.host ?? activeHostName() ?? DEFAULT_HOST_NAME;
   try {
     validateHostName(hostName);
   } catch (err) {
@@ -100,8 +105,7 @@ export async function runLogin(argv: string[]): Promise<number> {
   // Pick the API base URL with this priority:
   //   --api flag → existing host's URL → KORTIX_API_URL env → default
   const existing = getHost(hostName);
-  const apiBase =
-    flags.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+  const apiBase = flags.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
 
   // If this host already has a working token + caller didn't pass
   // --token or --api, treat that as a no-op login.
@@ -115,7 +119,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const token = flags.token ?? (await browserLogin(apiBase));
+  const token = flags.token ?? (await browserLogin(apiBase, existing?.dashboard_url));
   if (!token) return 1;
 
   if (!token.startsWith('kortix_pat_')) {
@@ -155,10 +159,7 @@ export async function runLogin(argv: string[]): Promise<number> {
   // Persist the active account's display fields (and reconcile any default
   // project) so the context block + `accounts ls` read correctly offline.
   if (primary) {
-    setActiveAccount(
-      { id: primary.account_id, slug: primary.slug, name: primary.name },
-      hostName,
-    );
+    setActiveAccount({ id: primary.account_id, slug: primary.slug, name: primary.name }, hostName);
   }
 
   process.stdout.write(
@@ -191,7 +192,7 @@ export async function runLogin(argv: string[]): Promise<number> {
  * the dashboard to POST the freshly-minted PAT back. Returns the token
  * or null on failure.
  */
-async function browserLogin(apiBase: string): Promise<string | null> {
+async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<string | null> {
   let session;
   try {
     session = await startCallbackServer();
@@ -202,7 +203,7 @@ async function browserLogin(apiBase: string): Promise<string | null> {
     return null;
   }
 
-  const dashUrl = webDashboardUrl(apiBase);
+  const dashUrl = webDashboardUrl(apiBase, dashboardUrl);
   const deviceLabel = encodeURIComponent(safeHostname());
   const url =
     `${dashUrl}/cli/authorize` +

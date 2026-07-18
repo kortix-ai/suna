@@ -155,6 +155,23 @@ describe('loadLocalManifest', () => {
     expect(m!.env.optional).toEqual(['BAR']);
   });
 
+  test('validates a loaded v2 YAML manifest using its on-disk format', () => {
+    writeFileSync(
+      join(dir, 'kortix.yaml'),
+      [
+        'kortix_version: 2',
+        'default_agent: kortix',
+        'agents:',
+        '  kortix:',
+        '    enabled: true',
+        '',
+      ].join('\n'),
+    );
+    const m = loadLocalManifest(dir);
+    expect(m).not.toBeNull();
+    expect(lintManifest(m!.data, m!.format).errors).toEqual([]);
+  });
+
   test('prefers kortix.yaml when both files exist', () => {
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n[project]\nname = "from-toml"\n`);
     writeFileSync(join(dir, 'kortix.yaml'), `kortix_version: 1\nproject:\n  name: from-yaml\n`);

@@ -139,6 +139,17 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
 // TurnErrorDisplay — simple inline error card (matches SolidJS reference)
 // ============================================================================
 
+/** The LLM gateway's structured error fields, when the failure carries them —
+ *  mirrors `GatewayErrorDetails`/`KortixSendError['gateway']` from the SDK,
+ *  restated here so this component doesn't need a type-only SDK import for a
+ *  handful of optional strings. */
+interface TurnErrorGatewayDetails {
+  provider?: string;
+  code?: string;
+  suggestion?: string;
+  requestId?: string;
+}
+
 interface TurnErrorDisplayProps {
   /**
    * Plain-text error — for turn-level errors derived directly from
@@ -147,6 +158,13 @@ interface TurnErrorDisplayProps {
    * when `error` is also provided.
    */
   errorText?: string;
+  /**
+   * The gateway's structured fields for `errorText` (from
+   * `getTurnErrorDetails()`) — provider/suggestion/request_id computed
+   * server-side by `gatewayErrorBody()`. Ignored when `error` is also
+   * provided (its own `.gateway` wins).
+   */
+  errorDetails?: TurnErrorGatewayDetails | null;
   /**
    * Typed send failure from the SDK's `classifySendError` (send/command/reply
    * catch paths). When present, billing-vs-runtime routing reads `.kind`
@@ -163,9 +181,12 @@ interface TurnErrorDisplayProps {
  * Abort errors (user-initiated stops) get a minimal, lowkey treatment —
  * just muted text, no border/background card.
  */
-export function TurnErrorDisplay({ errorText, error, className }: TurnErrorDisplayProps) {
+export function TurnErrorDisplay({ errorText, errorDetails, error, className }: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
   if (!text) return null;
+  // `error.gateway` (send-failure path) wins over the `errorDetails` prop
+  // (turn-level path) — only one is ever populated for a given render.
+  const gateway = error?.gateway ?? errorDetails ?? undefined;
 
   // Abort/cancelled → tiny muted note, no card
   if (isAbortError(text)) {
@@ -202,7 +223,12 @@ export function TurnErrorDisplay({ errorText, error, className }: TurnErrorDispl
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
-  // Real errors → full card
+  // Real errors → full card. When the failure carries the gateway's
+  // structured envelope (provider/suggestion/request_id), render those too —
+  // otherwise this is just the provider's own raw error text with no clue
+  // which provider it came from or what to actually do about it (the bug
+  // behind a user seeing a bare "Unsupported parameter: max_tokens..." string).
+  const suggestion = gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
   return (
     <div
       className={cn(
@@ -213,9 +239,22 @@ export function TurnErrorDisplay({ errorText, error, className }: TurnErrorDispl
       )}
     >
       <AlertCircle className="size-3.5 mt-0.5 flex-shrink-0 text-muted-foreground/70" />
-      <p className="text-xs text-muted-foreground break-words min-w-0">
-        {text}
-      </p>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground break-words">
+          {gateway?.provider && (
+            <span className="font-medium text-foreground/80">{gateway.provider}: </span>
+          )}
+          {text}
+        </p>
+        {suggestion && (
+          <p className="mt-1 text-xs text-muted-foreground/70 break-words">{suggestion}</p>
+        )}
+        {gateway?.requestId && (
+          <p className="mt-1 text-[10px] text-muted-foreground/50 font-mono break-all">
+            {gateway.requestId}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

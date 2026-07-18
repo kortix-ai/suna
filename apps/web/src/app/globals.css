@@ -535,6 +535,48 @@
   }
 }
 
+/* Elevation — the Kortix shadow ladder.
+   Must live in @theme (not :root) or the shadow-* utilities silently keep
+   Tailwind's stock bottom-only values. Each step layers three shadows:
+   1. a tight contact shadow that grounds the surface,
+   2. a directional depth layer with negative spread (clean, no side bleed),
+   3. a 0-offset ambient halo so the shadow reads softly on all four sides.
+   Colors use light-dark(): the browser switches on color-scheme, so dark mode
+   needs no separate ladder and `dark:shadow-*` overrides are never needed.
+   Tinted shadows (shadow-black/10, shadow-kortix-base/20) keep working. */
+@theme {
+  --shadow-2xs:
+    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.16)),
+    0 0 3px 0 light-dark(oklch(0 0 0 / 0.02), oklch(0 0 0 / 0.1));
+  --shadow-xs:
+    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.18)),
+    0 0 4px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.12));
+  --shadow-sm:
+    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.2)),
+    0 2px 4px -1px light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.16)),
+    0 0 6px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.12));
+  --shadow:
+    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.2)),
+    0 2px 6px -1px light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.18)),
+    0 0 8px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.12));
+  --shadow-md:
+    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.22)),
+    0 4px 10px -2px light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.2)),
+    0 0 12px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.14));
+  --shadow-lg:
+    0 1px 3px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.24)),
+    0 8px 20px -4px light-dark(oklch(0 0 0 / 0.06), oklch(0 0 0 / 0.24)),
+    0 0 16px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.14));
+  --shadow-xl:
+    0 2px 4px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.26)),
+    0 14px 28px -6px light-dark(oklch(0 0 0 / 0.08), oklch(0 0 0 / 0.3)),
+    0 0 22px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.16));
+  --shadow-2xl:
+    0 2px 6px 0 light-dark(oklch(0 0 0 / 0.06), oklch(0 0 0 / 0.28)),
+    0 24px 48px -10px light-dark(oklch(0 0 0 / 0.1), oklch(0 0 0 / 0.36)),
+    0 0 30px 0 light-dark(oklch(0 0 0 / 0.06), oklch(0 0 0 / 0.18));
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.1448 0 0);
@@ -570,21 +612,6 @@
   --sidebar-ring: oklch(0.709 0 0);
 
   --radius: 0.625rem;
-
-  --shadow-x: 0px;
-  --shadow-y: 1px;
-  --shadow-blur: 2px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.04;
-
-  --shadow-color: hsl(from var(--color-gray-900) h s l / 8%);
-
-  --shadow-sm:
-    0 1px 2px 0 hsl(from var(--color-gray-900) h s l / 6%), 0 2px 8px 0 var(--shadow-color);
-  --shadow-md:
-    0 2px 4px 0 hsl(from var(--color-gray-900) h s l / 7%), 0 6px 16px 0 var(--shadow-color);
-  --shadow-lg:
-    0 4px 8px 0 hsl(from var(--color-gray-900) h s l / 8%), 0 12px 28px -2px var(--shadow-color);
 
   --tracking-normal: 0em;
   --spacing: 0.23rem;
@@ -644,21 +671,6 @@
   --sidebar-ring: oklch(0.5555 0 0);
 
   --radius: 0.625rem;
-
-  --shadow-x: 0px;
-  --shadow-y: 1px;
-  --shadow-blur: 2px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.04;
-
-  --shadow-color: hsl(from var(--color-gray-900) h s l / 8%);
-
-  --shadow-sm:
-    0 1px 2px 0 hsl(from var(--color-gray-900) h s l / 6%), 0 2px 8px 0 var(--shadow-color);
-  --shadow-md:
-    0 2px 4px 0 hsl(from var(--color-gray-900) h s l / 7%), 0 6px 16px 0 var(--shadow-color);
-  --shadow-lg:
-    0 4px 8px 0 hsl(from var(--color-gray-900) h s l / 8%), 0 12px 28px -2px var(--shadow-color);
 
   --kortix-base: var(--color-ring);
   --kortix-blue: oklch(0.652 0.177 252.624);

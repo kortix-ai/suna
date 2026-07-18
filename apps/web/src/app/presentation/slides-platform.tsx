@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
   ArrowRight,
@@ -96,15 +97,12 @@ function LetterBg({ seed = 3382 }: { seed?: number }) {
 
 /** Copy-style hero install chip (static). */
 function InstallChip() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="bg-card flex w-full max-w-xl min-w-0 items-center gap-4 rounded-sm border p-3 px-5">
       <div className="flex min-w-0 flex-1 gap-3 overflow-hidden">
         <span className="text-foreground shrink-0 font-mono text-sm">$ </span>
         <span className="text-foreground min-w-0 truncate font-mono text-sm">
-          {tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextCurlFsSLHttpsKortix8ac787c7',
-          )}
+          {KORTIX_CLI_INSTALL_COMMAND}
         </span>
       </div>
       <Copy className="text-muted-foreground size-4 shrink-0" />

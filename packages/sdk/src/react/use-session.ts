@@ -12,6 +12,7 @@ import {
   startProjectSession,
 } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
+import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
 import { setRuntimeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
 import type { Session } from '../runtime/wire-types';
@@ -35,6 +36,19 @@ export interface KortixSendError {
   kind: KortixSendErrorKind;
   message: string;
   billing?: BillingError;
+  /**
+   * Present when `kind === 'runtime-error'` and the failure carries the LLM
+   * gateway's structured error envelope (provider/code/suggestion/...) — see
+   * `extractGatewayErrorDetails`. Lets a host render WHICH provider failed and
+   * WHAT to do about it instead of only the provider's raw error text.
+   */
+  gateway?: {
+    provider?: string;
+    code?: string;
+    suggestion?: string;
+    upstreamStatus?: number;
+    requestId?: string;
+  };
   cause: unknown;
 }
 
@@ -48,7 +62,25 @@ export function classifySendError(error: unknown): KortixSendError {
       return { kind: 'billing', message: parsed.message, billing: parsed, cause: error };
     }
   }
-  return { kind: 'runtime-error', message: error instanceof Error ? error.message : 'The runtime request failed.', cause: error };
+  const gateway = extractGatewayErrorDetails(error);
+  return {
+    kind: 'runtime-error',
+    // Prefer the gateway's own message (already human-written server-side per
+    // status/cause) over the bare runtime-error text when present.
+    message: gateway?.message || (error instanceof Error ? error.message : 'The runtime request failed.'),
+    ...(gateway
+      ? {
+          gateway: {
+            provider: gateway.provider,
+            code: gateway.code,
+            suggestion: gateway.suggestion,
+            upstreamStatus: gateway.upstreamStatus,
+            requestId: gateway.requestId,
+          },
+        }
+      : {}),
+    cause: error,
+  };
 }
 
 export interface SendState { pending: string | null; sendError: KortixSendError | null }

@@ -32,6 +32,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
+import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -118,6 +119,7 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
   mcp: Boxes,
   openapi: Globe,
+  postman: Globe,
   graphql: Globe,
   http: Globe,
   channel: MessageSquare,
@@ -138,6 +140,7 @@ function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
+  if (p === 'postman') return 'Postman';
   return p.toUpperCase();
 }
 
@@ -2768,10 +2771,16 @@ function AddAppPanel({
   canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
+  // false) — hide the "Easy connect" tab outright instead of round-tripping
+  // to /connect-status just to disable it. Custom (OpenAPI/GraphQL/MCP/HTTP)
+  // and Channels don't depend on Pipedream, so they're unaffected.
+  const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
     queryFn: getConnectStatus,
     staleTime: 5 * 60_000,
+    enabled: connectorsEnabled,
   });
   if (!canWrite) {
     return (
@@ -2784,7 +2793,10 @@ function AddAppPanel({
       </div>
     );
   }
-  const easyConnectDisabled = connectStatus.data?.configured === false;
+  const easyConnectHidden = !connectorsEnabled;
+  // Live-configured flag lagging the deploy-time env flag (rare) still gets
+  // the softer disabled-with-hint treatment instead of vanishing outright.
+  const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
   const easyConnectLabel = tI18nHardcoded.raw(
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
@@ -2795,7 +2807,7 @@ function AddAppPanel({
       </header>
       <Tabs defaultValue={easyConnectDisabled ? 'channels' : 'apps'}>
         <TabsList type="underline">
-          {easyConnectDisabled ? (
+          {easyConnectHidden ? null : easyConnectDisabled ? (
             <Hint
               label={tI18nHardcoded.raw(
                 'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
@@ -3246,6 +3258,7 @@ function ConnectorConfigFields({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="openapi">OpenAPI</SelectItem>
+              <SelectItem value="postman">Postman</SelectItem>
               <SelectItem value="graphql">GraphQL</SelectItem>
               <SelectItem value="mcp">MCP</SelectItem>
               <SelectItem value="http">HTTP</SelectItem>
@@ -3276,22 +3289,29 @@ function ConnectorConfigFields({
           </Select>
         </div>
       )}
-      {p === 'openapi' && (
+      {(p === 'openapi' || p === 'postman') && (
         <Field>
           <FieldLabel htmlFor="connector-spec">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
-            )}
+            {p === 'postman'
+              ? 'Collection, repository, or workspace'
+              : tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
+                )}
           </FieldLabel>
           <Input
             id="connector-spec"
             value={draft.spec ?? ''}
             onChange={(e) => set({ spec: e.target.value })}
-            placeholder="https://…/openapi.json"
+            placeholder={p === 'postman' ? 'https://github.com/… or collection.json' : 'https://…/openapi.json'}
             variant="popover"
             disabled={readOnly}
             required
           />
+          {p === 'postman' ? (
+            <FieldDescription>
+              Supports Collection v2 JSON, Postman-managed Git repositories, and configured public workspaces.
+            </FieldDescription>
+          ) : null}
         </Field>
       )}
       {p === 'graphql' && (
@@ -3444,6 +3464,7 @@ function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): bo
   if (d.auth?.type === 'custom' && !d.auth.name?.trim()) return false;
   if (d.provider === 'mcp') return !!d.url?.trim();
   if (d.provider === 'openapi') return !!d.spec?.trim();
+  if (d.provider === 'postman') return !!d.spec?.trim();
   if (d.provider === 'graphql') return !!d.endpoint?.trim();
   if (d.provider === 'http') return !!d.baseUrl?.trim();
   if (d.provider === 'channel') {

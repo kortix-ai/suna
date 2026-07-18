@@ -9,6 +9,7 @@ import { runCr } from './commands/cr.ts';
 import { runEnv } from './commands/env.ts';
 import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
+import { runGateway } from './commands/gateway.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
@@ -16,6 +17,7 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
+import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -128,12 +130,30 @@ const TIERS: readonly CommandTier[] = [
         commands: [
           { name: 'agents', args: '<subcommand>', blurb: 'Set which model each agent runs on' },
           {
+            name: 'gateway',
+            args: '<subcommand>',
+            blurb: 'Configure the LLM gateway: routing, budgets, keys, usage, logs, test',
+          },
+          {
             name: 'connectors',
             args: '<subcommand>',
             blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
           },
-          { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
-          { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
+          {
+            name: 'secrets',
+            args: '<subcommand>',
+            blurb: 'Manage project secrets (project-scoped)',
+          },
+          {
+            name: 'providers',
+            args: '<subcommand>',
+            blurb: 'Connect LLM providers (API key or OAuth) for this project',
+          },
+          {
+            name: 'env',
+            args: '<subcommand>',
+            blurb: 'Pull/push project secrets as a dotenv file',
+          },
           {
             name: 'channels',
             args: '<subcommand>',
@@ -164,13 +184,21 @@ const TIERS: readonly CommandTier[] = [
       {
         title: 'Sessions & work',
         commands: [
-          { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
+          {
+            name: 'sessions',
+            args: '<subcommand>',
+            blurb: 'List, create, restart project sessions',
+          },
           {
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
-          { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
+          {
+            name: 'files',
+            args: '<subcommand>',
+            blurb: 'Browse repo files, commits, branches, diffs',
+          },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
         ],
@@ -191,7 +219,8 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'grants',
             args: '<subcommand>',
-            blurb: "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
+            blurb:
+              "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
           },
         ],
       },
@@ -331,8 +360,14 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));
   }
+  if (argv[0] === 'providers') {
+    return runProviders(argv.slice(1));
+  }
   if (argv[0] === 'agents') {
     return runAgents(argv.slice(1));
+  }
+  if (argv[0] === 'gateway') {
+    return runGateway(argv.slice(1));
   }
   if (argv[0] === 'self-host') {
     return runSelfHost(argv.slice(1));
@@ -429,7 +464,9 @@ const KNOWN_COMMANDS = [
   'triggers',
   'connectors',
   'secrets',
+  'providers',
   'env',
+  'gateway',
   'channels',
   'sandboxes',
   'marketplace',
@@ -471,7 +508,11 @@ function closestCommand(input: string): string | undefined {
     const distance = editDistance(needle, name);
     // The distance cap alone lets tiny inputs match anything short ("us" →
     // "cr"), so also require most of the input to survive the edit.
-    if (distance <= 2 && distance < needle.length && (best === undefined || distance < best.distance)) {
+    if (
+      distance <= 2 &&
+      distance < needle.length &&
+      (best === undefined || distance < best.distance)
+    ) {
       best = { name, distance };
     }
   }

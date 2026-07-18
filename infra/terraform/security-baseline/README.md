@@ -6,22 +6,34 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 ## What it manages
 - IAM account password policy (DCF-68 / DCF-350)
 - CloudTrail KMS CMK + multi-region trail + log-file validation + S3 data events (DCF-54 / DCF-478 / DCF-406)
-- GuardDuty detectors, us-west-2 + us-east-1 (DCF-87)
+- GuardDuty detectors with 15-minute finding publication and managed EC2/EKS/ECS
+  Runtime Monitoring agents in all 17 opted-in commercial regions (DCF-87)
+- Regional GuardDuty EventBridge rules forwarding every finding to the existing
+  central operations alert topic (DCF-87)
+- Cross-region EventBridge alerting for every successful AWS root-account
+  console login, delivered to the confirmed operations topic (DCF-90)
+- EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
 - VPC Flow Logs delivery role + log group (DCF-406)
 - IAM groups, attachments, memberships + 2 customer-managed policies (DCF-776)
+- Weekly SSM security-patch installation and reboot-if-needed for every current
+  and replacement dev/prod EKS worker, serialized one node at a time
+  (DCF-152 / DCF-677)
+- Regional ALB/WAF/alarm and backup-failure monitoring is isolated in the
+  sibling `compliance-monitoring` stack and state.
 
 ## Applied via CLI (not in this stack — by design)
-These were one-time or region-spanning and live outside the stack; documented
+These were one-time resource cleanup/remediation actions and live outside the stack; documented
 in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
-- GuardDuty in the other 15 regions
 - Deletion of 15 empty regional default VPCs
 - Per-VPC flow logs, default-SG stripping, and NACL deny (22/3389) for the 5 us-west-2 VPCs
 - S3 per-bucket versioning / TLS-deny policy / access-logging
-- ALB CloudWatch alarms + WAFv2 WebACL (app-tier; candidates to fold into the `ecs-api` module)
-  - WebACL `kortix-alb-waf` (REGIONAL, us-west-2) is associated with BOTH `kortix-prod-alb`
-    and `kortix-dev-alb`, and fronts `api(-prod)/dev-api.kortix.com` behind Cloudflare.
+- The WAFv2 WebACL definitions themselves. This stack discovers all ALBs and
+  manages their associations, but reads the existing regional
+  `kortix-alb-waf` WebACLs as data sources.
+  - WebACL `kortix-alb-waf` exists in us-west-2 and eu-west-2 and is associated
+    with every current ALB in those regions.
   - DO NOT block on the `*_BODY` managed sub-rules: this is an API that legitimately carries
     arbitrary user/agent payloads (prompts full of code, file paths like `/etc/passwd`, IPs
     like `127.0.0.1`, git binary thin-packs, bodies well over 8 KB). On 2026-06-04 the

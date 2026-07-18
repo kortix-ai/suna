@@ -1,5 +1,4 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
-import type { ManagedModel } from '../models/managed-models';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
@@ -9,9 +8,63 @@ import {
   CODEX_USER_AGENT,
   type CodexCredential,
 } from '../credentials/codex';
+import type { ManagedModel } from '../models/managed-models';
 
 export function bedrockBaseUrl(): string {
   return `https://bedrock-runtime.${config.AWS_BEDROCK_REGION || 'us-west-2'}.amazonaws.com`;
+}
+
+// Default region for a project's BYOK Bedrock connection when it hasn't set
+// its own AWS_REGION secret. Deliberately separate from AWS_BEDROCK_REGION's
+// 'us-west-2' default above — that constant belongs to the CLOUD-ONLY managed
+// path (Kortix's own AWS account/region choice); a BYOK project's default is
+// its own, unrelated decision. us-east-1 is Bedrock's broadest-availability
+// region (new models/cross-region inference profiles land there first).
+const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
+
+/**
+ * Bedrock runtime endpoint for a project's OWN region (BYOK), as opposed to
+ * `bedrockBaseUrl()` above which is the CLOUD-ONLY managed path's endpoint
+ * (Kortix's own AWS_BEDROCK_REGION config). Takes the region as a parameter —
+ * never reads config — because the BYOK region is per-PROJECT (the project's
+ * own AWS_REGION secret, resolved by resolve-candidates.ts, which has the
+ * project context this module doesn't), not a deployment-wide setting.
+ */
+export function bedrockByokBaseUrl(region: string | null | undefined): string {
+  const trimmed = region?.trim();
+  return `https://bedrock-runtime.${trimmed || DEFAULT_BEDROCK_BYOK_REGION}.amazonaws.com`;
+}
+
+// Bedrock cross-region ("global") inference profiles prepend a geography code
+// to the base model id so a single logical model can route across multiple
+// AWS regions — e.g. `us.anthropic.claude-sonnet-4-20250514-v1:0` instead of
+// the base `anthropic.claude-sonnet-4-20250514-v1:0` (see AWS's "cross-region
+// inference" docs; the same base model can also appear as `eu.` or `apac.`).
+// The models.dev catalog only ever carries the base (unprefixed) id, so a
+// pricing lookup keyed by the prefixed id silently misses and produces a $0
+// upstream-cost hint. This list is intentionally exhaustive over AWS's
+// published prefixes, not just the first path segment before a dot, so it
+// never mis-strips a legitimate base id that happens to start with one of
+// these codes (there is no `us.*` or `eu.*` Bedrock model family today, but
+// checking the known set instead of "any leading `xx.`" keeps that true).
+const BEDROCK_INFERENCE_PROFILE_PREFIXES = ['us-gov', 'us', 'eu', 'apac'] as const;
+
+/**
+ * Strip a Bedrock cross-region inference-profile prefix (`us.`, `eu.`,
+ * `apac.`, `us-gov.`) from a model id, for PRICING lookups only — never for
+ * the id actually sent to the Bedrock InvokeModel API, which still needs the
+ * full profile id to route correctly. Bedrock-scoped: only ever call this for
+ * `kind === 'bedrock'` descriptors; other providers' ids never carry these
+ * prefixes and shouldn't be run through this heuristic.
+ */
+export function stripBedrockInferenceProfilePrefix(modelId: string): string {
+  for (const prefix of BEDROCK_INFERENCE_PROFILE_PREFIXES) {
+    const withDot = `${prefix}.`;
+    if (modelId.startsWith(withDot) && modelId.length > withDot.length) {
+      return modelId.slice(withDot.length);
+    }
+  }
+  return modelId;
 }
 
 export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | undefined {
@@ -21,6 +74,7 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
     inputPerMillion: p.inputPer1M,
     outputPerMillion: p.outputPer1M,
     cachedInputPerMillion: p.cacheReadPer1M,
+    cacheWritePerMillion: p.cacheWritePer1M,
   };
 }
 
@@ -47,12 +101,27 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
+  // NOTE — this is the MANAGED (Kortix-credits) Bedrock path, reached only when
+  // KORTIX_MANAGED_PROVIDER_ENABLED is on: it uses KORTIX'S OWN shared AWS
+  // credentials and bills the user's Kortix credits. It is NOT "how Bedrock
+  // works." Bedrock is ALSO a standalone BYOK provider (like OpenRouter) — a
+  // project connecting its OWN Bedrock API key gets a `kind:'bedrock'`
+  // descriptor via the normal BYOK path (resolveCatalogUpstream('amazon-bedrock')
+  // → resolveCandidates), fully independent of this managed flag. This managed
+  // descriptor and the BYOK one share the same bedrock transport; they differ
+  // only in whose credentials + billing they carry. See memory:
+  // managed-provider-vs-standalone-byok.
+  //
   // Managed Bedrock = Claude via the Anthropic InvokeModel/anthropic-payload transport.
   return {
     provider: 'bedrock',
     kind: 'bedrock',
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
+    // Region for the AI-SDK engine's Bedrock provider (bearer-token auth still
+    // comes from apiKey; region only picks the endpoint host). Ignored by the
+    // native path, which bakes the region into baseUrl.
+    region: config.AWS_BEDROCK_REGION || 'us-west-2',
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
@@ -61,6 +130,12 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
+  // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
+  // on a deployment with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts),
+  // so this only ever reaches a real ManagedModel when the flag is on — but
+  // guard here too so neither AWS_BEDROCK_API_KEY nor OPENROUTER_API_KEY is
+  // ever read for managed routing if some future caller reaches this directly.
+  if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   const d =
     managed.transport === 'openrouter'
       ? openRouterManagedDescriptor(managed)

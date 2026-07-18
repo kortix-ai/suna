@@ -50,15 +50,20 @@ import {
 import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { type QuestionInfo } from '../../channels/slack-webhook';
+import type { QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { teamsChannelEnabled } from '../../channels/teams-auth';
+import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
-import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
-import { relayTurnAnswer, relayTurnEnd, relayTurnQuestion, relayTurnStep } from '../../channels/turn-relay';
+import {
+  relayTurnAnswer,
+  relayTurnEnd,
+  relayTurnQuestion,
+  relayTurnStep,
+} from '../../channels/turn-relay';
 import { config } from '../../config';
 import { upsertProfileCredential } from '../../executor/credentials';
 import { reconcileChannelConnectors } from '../../executor/sync';
@@ -67,6 +72,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
+import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -80,7 +86,6 @@ import {
 } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
-import { listProjectSecretsSnapshot } from '../secrets';
 import {
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
@@ -109,6 +114,7 @@ import {
   upsertTriggerInManifest,
   withTriggersPaused,
 } from '../lib/triggers';
+import { listProjectSecretsSnapshot } from '../secrets';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
@@ -984,7 +990,14 @@ projectsApp.openapi(
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
-    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl, appName: config.TEAMS_APP_NAME, botName: config.TEAMS_APP_NAME }));
+    return c.json(
+      buildTeamsManifest({
+        appId: mode.appId,
+        baseUrl,
+        appName: config.TEAMS_APP_NAME,
+        botName: config.TEAMS_APP_NAME,
+      }),
+    );
   },
 );
 
@@ -1014,16 +1027,23 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const tenantId = body.tenant_id?.trim();
-    const isGuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    const isGuid = (v: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
     if (!tenantId || (!isGuid(tenantId) && !isDomain(tenantId))) {
-      return c.json({ error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' }, 400);
+      return c.json(
+        { error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' },
+        400,
+      );
     }
 
     const appId = body.app_id?.trim() || null;
     const appPassword = body.app_password?.trim() || null;
     if ((appId && !appPassword) || (!appId && appPassword)) {
-      return c.json({ error: 'app_id and app_password must be provided together for a bring-your-own bot' }, 400);
+      return c.json(
+        { error: 'app_id and app_password must be provided together for a bring-your-own bot' },
+        400,
+      );
     }
     if (appId && !isGuid(appId)) {
       return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
@@ -1073,7 +1093,10 @@ projectsApp.openapi(
       query: z.object({ url: z.string() }),
     },
     responses: {
-      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      200: {
+        description: 'File bytes',
+        content: { 'application/octet-stream': { schema: z.any() } },
+      },
       ...errors(400, 404),
     },
   }),
@@ -1100,7 +1123,10 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(), 'Consent card sent'),
+      200: json(
+        z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
+        'Consent card sent',
+      ),
       ...errors(400, 404),
     },
   }),
@@ -1108,6 +1134,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -2231,6 +2258,47 @@ projectsApp.openapi(
   },
 );
 
+// GET /v1/projects/:projectId/llm-catalog/providers
+// The PROVIDER-level rows the connect modal needs (id, name, auth-relevant
+// env vars, docs URL) — /llm-catalog above only ever serialized MODEL-level
+// entries (Record<"provider/model", GatewayModel>), so the web connect modal
+// (apps/web/src/lib/llm-providers.ts) fell back to piggybacking on
+// @kortix/llm-catalog's BAKED catalog.generated.json snapshot as its only
+// source, which nothing in CI refreshes (models.dev moves; this doesn't).
+// This route serves the SAME live, 24h-refreshed, atomic-last-known-good
+// runtimeModelCatalog every other gateway/model endpoint already reads —
+// literally the `Catalog` shape @kortix/llm-catalog exports, so the web
+// client can feed it through the exact same toEntry()/order() it already
+// has, no reshaping.
+//
+// Deliberately NOT gated by projectLlmGatewayEnabled unlike /llm-catalog and
+// /model-picker above: the BYOK provider connect modal (which env vars to
+// collect, which providers show "connected") is meaningful for EVERY
+// project, including native (non-gateway) ones — that's the majority of
+// projects and exactly the surface the connect modal serves. Non-secret
+// model metadata; scoped to project auth only for consistency with the
+// other catalog routes, not because it needs to be secret.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/llm-catalog/providers',
+    tags: ['projects'],
+    summary: 'GET /:projectId/llm-catalog/providers',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    return c.json(runtimeModelCatalog.snapshot());
+  },
+);
+
 // ─── Default model preferences (account-scoped) ─────────────────────────────
 // The gateway is the source of truth for the default model: a request for the
 // synthetic `auto` resolves server-side to the per-agent default → account
@@ -2264,8 +2332,8 @@ projectsApp.openapi(
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId);
     const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-        : false;
+      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
+      : false;
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
     // authoritative per-request resolution still happens in the gateway.

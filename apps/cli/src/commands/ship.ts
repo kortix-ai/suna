@@ -95,7 +95,7 @@ interface ShipFlags {
 }
 
 interface ProvisionResponse extends ProjectSummary {
-  push_token: string;
+  push_token: string | null;
   repo_id: string;
 }
 
@@ -245,7 +245,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
   if (!manifest) return { ok: true, env: empty };
 
   if (!flags.noVerify) {
-    const { errors, warnings } = lintManifest(manifest.data);
+    const { errors, warnings } = lintManifest(manifest.data, manifest.format);
     for (const w of warnings) process.stdout.write(`  ${status.warn(w)}\n`);
     if (errors.length > 0) {
       process.stderr.write(
@@ -358,7 +358,7 @@ async function ensureProjectEnv(
 interface ShipConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   authSecret: string | null;
   secretSet: boolean;
@@ -634,6 +634,16 @@ async function shipFirstTime(
     const target = resolveProvisionShipGitTarget(prov);
     repoUrl = target.repoUrl;
     pushToken = prov.push_token;
+    // Older/self-hosted provision responses may omit an exportable token even
+    // though the managed project can mint a repo-scoped App token afterward.
+    // Heal that boundary before attempting git push; never fall back to a
+    // server-global PAT.
+    if (!pushToken) {
+      const tok = await client.post<GitTokenResponse>(
+        `/projects/${project.project_id}/git-token`,
+      );
+      pushToken = tok.push_token;
+    }
     setOrigin(repoUrl);
   }
 

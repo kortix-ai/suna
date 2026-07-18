@@ -11,8 +11,8 @@ same thing with bigger numbers and `min_capacity >= 2`".
 - ECS cluster (Container Insights optional) + Fargate service, on `FARGATE` or
   `FARGATE_SPOT` (`use_fargate_spot`, good for dev).
 - ALB in public subnets; tasks in private subnets (SG locks tasks to ALB only).
-- HTTPS listener when `certificate_arn` is set (HTTP→HTTPS redirect); plain HTTP
-  otherwise.
+- HTTPS-only listener backed by the required `certificate_arn`; no HTTP listener
+  or redirect is exposed.
 - Target-tracking autoscaling: CPU (`cpu_target`) + memory (`memory_target`),
   between `min_capacity` and `max_capacity`.
 - Rolling deploys with the ECS **deployment circuit breaker** (auto-rollback on

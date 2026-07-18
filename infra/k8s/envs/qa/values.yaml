@@ -23,6 +23,7 @@ ingress:
   host: qa.kortix.com
   # *.kortix.com wildcard ACM cert in us-west-2 (covers qa.kortix.com).
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755
+  wafAclArn: arn:aws:wafv2:us-west-2:935064898258:regional/webacl/kortix-alb-waf/4a81aadc-31ad-470a-a10c-3606de61cf65
   cloudflareProxied: true
   albGroup: kortix-qa-portal
   # Internal tool: lock the ALB to Cloudflare IP ranges so it's only reachable

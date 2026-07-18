@@ -1,0 +1,146 @@
+---
+title: "How we analyze why deals are won and lost"
+description: The win-loss agent we run on Kortix — a weekly cron reads every HubSpot deal closed-won or closed-lost since the last run and posts the patterns by segment, competitor, price, and stage of death to Slack.
+date: "2026-05-16"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+template: win-loss-analysis
+---
+
+Every closed deal is a data point about why customers choose us or choose
+someone else, but the reason usually lives in one line of a HubSpot field,
+written by a rep in a hurry between calls. Read one at a time, those lines say
+nothing. Read across a hundred deals a quarter, they say exactly where we're
+strong, where a competitor is beating us, and where our own pipeline quietly
+falls apart.
+
+We run a win-loss analysis agent on Kortix that reads closed deals from
+HubSpot every week and posts the patterns to our sales Slack channel. It only
+reads deal data; the single output is the Slack post. This is how we watch our
+own win rate.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron</Fact>
+  <Fact label="Connected systems">HubSpot · Slack</Fact>
+  <Fact label="Mode">Read-only · one Slack post per week</Fact>
+</KeyFacts>
+
+## The problem
+
+Close reasons and competitor mentions get logged in HubSpot because the CRM
+asks for them, not because anyone reads them back. A closed-lost deal gets a
+one-line reason and maybe a competitor field, then disappears into the pipeline
+history. Nobody aggregates it, so the same loss pattern — a competitor
+consistently winning on price in one segment, a deal category that reliably
+dies at the same stage — can repeat for two quarters before a sales leader
+notices it by gut feel in a QBR.
+
+The common approaches don't fix this. A win-rate number on a dashboard tells
+you the score changed, not why. A quarterly deal-review deck is thorough but
+looks back three months too late to change this week's playbook. And nobody
+wants to be the person who reads two hundred close-reason fields by hand every
+Monday.
+
+## What we built
+
+On Kortix, a weekly cron triggers an agent. It spawns a fresh session (a cloud
+sandbox) with read-only access to HubSpot, pulls every deal closed-won or
+closed-lost since the last run, and breaks the outcomes down by segment,
+competitor, price band, and the stage where lost deals actually die. It
+synthesizes the patterns into themes and concrete recommendations, and posts
+the summary to Slack. It writes nothing back to HubSpot.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly cron">
+
+A **cron trigger** fires the agent once a week. Each firing spawns a fresh
+**session** in its own sandbox. One week maps to one run on one disposable
+machine, so the analysis is recomputed from HubSpot's current state every
+time and nothing carries over between runs.
+
+</Step>
+<Step title="Give the agent the analysis rules">
+
+How we break down a win or a loss lives as a **skill** that travels with the
+agent: which fields hold the close reason and the competitor, how to band
+deal sizes, how to bucket segments, and what turns a pile of one-line reasons
+into a small number of real themes rather than a hundred unique snippets.
+
+</Step>
+<Step title="Connect HubSpot read-only">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches
+the model, the agent reads:
+
+- **Closed-won and closed-lost deals** — every deal that closed since the
+  last run, with amount, segment, and the stage it moved through.
+- **Close reasons and competitor fields** — the specific HubSpot properties a
+  rep fills in at close, read verbatim.
+- **Stage history** — where a lost deal was sitting before it died, not just
+  that it died.
+- **Posts to Slack** — the one weekly summary of themes and recommendations.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** on HubSpot. It has no write access to any deal,
+contact, or company record, so it cannot change a stage, a close reason, or an
+amount. Its only output is the Slack post. Credentials are encrypted in the
+Secrets Manager and injected at runtime, never shown to the model or written
+to logs.
+
+</Step>
+<Step title="Post the themes and recommendations">
+
+With that in place, each week brings one Slack post: win rate and loss count
+for the period, the breakdown by segment, competitor, and price, the stage
+where deals most often die, and a short list of themes with a recommendation
+attached to each. The sales team reads it and decides what to change. Nothing
+is written back to HubSpot automatically.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** spawns a fresh session with a read-only **connector** into
+  HubSpot. The breakdown rules live as a **skill**. The agent reads every
+  closed deal and writes nothing but the Slack post.
+</Callout>
+
+## Guardrails
+
+The agent reads every closed deal in HubSpot, so its access is scoped and
+one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only HubSpot, and only the Slack post leaves the sandbox.
+- **Scoped secrets.** The HubSpot credential is encrypted in the Secrets
+  Manager and injected into the sandbox at runtime, never exposed to the model
+  or the logs.
+- **Read-only.** The connector into HubSpot is read-only. The agent cannot
+  change a deal's stage, close reason, competitor field, or amount; it can
+  only report on what's already there.
+- **Report only.** The agent never contacts a rep, a prospect, or a lost deal.
+  It surfaces the pattern; a human decides what to do about it.
+- **Everything is code.** The agent's breakdown rules, skill, and HubSpot
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every week" label="Closed deals rescored from HubSpot's current state" />
+  <Stat value="Read-only" label="Nothing written back to any HubSpot deal" />
+  <Stat value="4 cuts" label="Segment, competitor, price, and stage of death in one post" />
+</StatGrid>
+
+Win-loss reasons that used to sit unread in a HubSpot field now arrive as one
+weekly summary in the channel where the sales team already works, with the
+themes named and a recommendation attached to each. The agent only reads;
+the people decide what to change in the playbook.

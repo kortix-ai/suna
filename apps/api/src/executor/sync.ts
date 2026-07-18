@@ -22,6 +22,8 @@ import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveExperimentalFeature } from '../experimental/features';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { safeEgressFetch } from '../shared/ssrf-guard';
+import { config } from '../config';
 import {
   type ConnectorSpec,
   extractConnectors,
@@ -46,8 +48,10 @@ import {
   normalizeMcp,
   normalizeOpenApi,
   normalizePipedream,
+  normalizePostmanCollection,
 } from './normalize';
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
+import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
 import type { HttpRouteSpec, NormalizedAction } from './types';
 
@@ -432,18 +436,19 @@ async function upsertConnector(
       .delete(executorConnectorActions)
       .where(eq(executorConnectorActions.connectorId, connectorId));
     if (catalog.actions.length > 0) {
-      await db.insert(executorConnectorActions).values(
-        catalog.actions.map((a) => ({
-          connectorId: connectorId!,
-          path: a.path,
-          name: a.name,
-          description: a.description,
-          inputSchema: a.inputSchema,
-          outputSchema: a.outputSchema,
-          risk: a.risk,
-          binding: a.binding as unknown as Record<string, unknown>,
-        })),
-      );
+      const rows = catalog.actions.map((a) => ({
+        connectorId: connectorId!,
+        path: a.path,
+        name: a.name,
+        description: a.description,
+        inputSchema: a.inputSchema,
+        outputSchema: a.outputSchema,
+        risk: a.risk,
+        binding: a.binding as unknown as Record<string, unknown>,
+      }));
+      for (let offset = 0; offset < rows.length; offset += 500) {
+        await db.insert(executorConnectorActions).values(rows.slice(offset, offset + 500));
+      }
     }
   }
 
@@ -486,6 +491,23 @@ export async function resolveCatalog(
         }
         return { actions: normalizeOpenApi(doc), server };
       }
+      case 'postman': {
+        const documents = await resolvePostmanSource(
+          spec.spec!,
+          (source) => loadSourceText(project, source),
+          {
+            githubDefaultBranch: resolveGithubDefaultBranch,
+            postmanApiKey: config.POSTMAN_API_KEY,
+            resolveWorkspace: resolvePostmanWorkspace,
+            onWarning: (warning) => console.warn(`[executor] ${spec.slug}: ${warning}`),
+          },
+        );
+        const actions = normalizePostmanDocuments(documents);
+        if (actions.length > 10_000) {
+          throw new Error(`Postman source produced ${actions.length} actions; limit is 10000`);
+        }
+        return { actions, server: null };
+      }
       case 'http': {
         const routes = await loadHttpRoutes(project, spec.spec);
         return { actions: normalizeHttp(routes), server: spec.baseUrl };
@@ -524,10 +546,14 @@ export async function resolveCatalog(
 }
 
 async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any> {
+  return parseSpecDocument(await loadSourceText(project, spec), spec);
+}
+
+async function loadSourceText(project: GitBackedProject, spec: string): Promise<string> {
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
     assertAllowedSourceAddress(spec);
-    const res = await fetch(spec, {
+    const res = await safeEgressFetch(spec, {
       // Signal we accept either form; servers that content-negotiate may hand
       // back JSON, but we parse whatever comes regardless.
       headers: { accept: 'application/json, application/yaml, text/yaml, text/plain, */*' },
@@ -539,7 +565,84 @@ async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any
   } else {
     raw = await readRepoFile(project, spec, project.defaultBranch);
   }
-  return parseSpecDocument(raw, spec);
+  return raw;
+}
+
+async function resolveGithubDefaultBranch(owner: string, repo: string): Promise<string> {
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  assertAllowedSourceAddress(url);
+  const response = await safeEgressFetch(url, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Kortix-Postman-Importer' },
+  });
+  if (!response.ok) throw new Error(`failed to inspect GitHub repository: HTTP ${response.status}`);
+  const body = await response.json() as { default_branch?: unknown };
+  if (typeof body.default_branch !== 'string' || !body.default_branch) {
+    throw new Error('GitHub repository response has no default_branch');
+  }
+  return body.default_branch;
+}
+
+function sourceSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+async function postmanApiJson(path: string, apiKey: string): Promise<any> {
+  const url = `https://api.getpostman.com${path}`;
+  assertAllowedSourceAddress(url);
+  const response = await safeEgressFetch(url, {
+    headers: { Accept: 'application/json', 'X-Api-Key': apiKey },
+  });
+  if (!response.ok) throw new Error(`Postman API ${path} failed: HTTP ${response.status}`);
+  return response.json();
+}
+
+async function resolvePostmanWorkspace(url: string, apiKey: string): Promise<PostmanSourceDocument[]> {
+  const parsed = new URL(url);
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  const requestedSlug = parts[1] ?? parts[0] ?? '';
+  const listed = await postmanApiJson('/workspaces?type=public', apiKey);
+  const workspaces = Array.isArray(listed?.workspaces) ? listed.workspaces : [];
+  const workspace = workspaces.find((entry: any) =>
+    entry && (entry.id === requestedSlug || sourceSlug(String(entry.name ?? '')) === requestedSlug),
+  );
+  if (!workspace?.id) {
+    throw new Error(`POSTMAN_API_KEY cannot access public workspace "${requestedSlug}"; export a collection or use its synchronized Git repository`);
+  }
+  const detail = await postmanApiJson(`/workspaces/${encodeURIComponent(String(workspace.id))}`, apiKey);
+  const collections = Array.isArray(detail?.workspace?.collections) ? detail.workspace.collections : [];
+  const documents = await Promise.all(collections.map(async (entry: any) => {
+    const uid = String(entry?.uid ?? entry?.id ?? '');
+    if (!uid) throw new Error('Postman workspace contains a collection without an id');
+    const response = await postmanApiJson(`/collections/${encodeURIComponent(uid)}`, apiKey);
+    const doc = response?.collection;
+    if (!doc) throw new Error(`Postman API returned no collection for ${uid}`);
+    return {
+      namespace: sourceSlug(String(entry?.name ?? uid)).replace(/-/g, '_') || 'collection',
+      kind: 'postman' as const,
+      source: `postman:${uid}`,
+      doc,
+    };
+  }));
+  return documents.sort((a, b) => a.namespace.localeCompare(b.namespace));
+}
+
+/** Pure multi-document catalog mapper, exported for contract tests. */
+export function normalizePostmanDocuments(documents: PostmanSourceDocument[]): NormalizedAction[] {
+  const multi = documents.length > 1;
+  const actions: NormalizedAction[] = [];
+  const seen = new Map<string, number>();
+  for (const document of documents) {
+    const normalized = document.kind === 'openapi'
+      ? normalizeOpenApi(document.doc)
+      : normalizePostmanCollection(document.doc).actions;
+    for (const action of normalized) {
+      const basePath = multi ? `${document.namespace}.${action.path}` : action.path;
+      const count = seen.get(basePath) ?? 0;
+      seen.set(basePath, count + 1);
+      actions.push({ ...action, path: count ? `${basePath}_${count + 1}` : basePath });
+    }
+  }
+  return actions;
 }
 
 async function loadHttpRoutes(
@@ -549,7 +652,7 @@ async function loadHttpRoutes(
   if (!spec) return [];
   if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
   const raw = /^https?:\/\//i.test(spec)
-    ? await (await fetch(spec)).text()
+    ? await (await safeEgressFetch(spec)).text()
     : await readRepoFile(project, spec, project.defaultBranch);
   const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
@@ -559,7 +662,7 @@ async function loadHttpRoutes(
 async function introspectGraphql(endpoint: string): Promise<any> {
   assertAllowedSourceAddress(endpoint);
   const query = `query{__schema{queryType{name} mutationType{name} types{name fields{name description args{name type{kind name ofType{name}}} type{name ofType{name}}}}}}`;
-  const res = await fetch(endpoint, {
+  const res = await safeEgressFetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -601,7 +704,7 @@ async function reconcileProjectPolicies(
 
 async function listMcpTools(url: string): Promise<any[]> {
   assertAllowedSourceAddress(url);
-  const res = await fetch(url, {
+  const res = await safeEgressFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),

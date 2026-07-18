@@ -18,6 +18,8 @@ export type SnapshotErrorCategory =
   | 'quota'
   /** User's Dockerfile / build steps failed (RUN, COPY, apt-get, npm…). Fixable by an agent. */
   | 'dockerfile'
+  /** A step in the KORTIX-INJECTED runtime layer failed. Platform's fault, not the repo's. */
+  | 'layer'
   /** Kortix callback URL (KORTIX_URL) unreachable — usually a down dev tunnel. */
   | 'tunnel'
   /** Daytona transport / gateway / socket blip — transient provider infra. */
@@ -77,6 +79,24 @@ const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
     category: 'provider',
     test: /daytona|snapshot with name .* not found|socket connection|idle connection|socket hang up|bad gateway|\bgateway\b|\b50[234]\b|econnreset|econnrefused|etimedout|\beof\b|network error/i,
   },
+  // A step in the KORTIX-INJECTED runtime layer failed — the user's Dockerfile is
+  // fine and an agent "fixing" it can only make things worse. MUST outrank
+  // 'dockerfile', whose generic patterns ('apt-get', 'did not complete
+  // successfully', 'non-zero code') match these too — that miscategorization is
+  // exactly what dispatched an agent to repair a CORRECT Dockerfile after the
+  // floor's pip tried to uninstall a dpkg-owned numpy.
+  //
+  // Markers are the ones that can only plausibly come from our own layer: the
+  // pyfloor venv path, dpkg-vs-pip ownership conflicts, and an apt-less base
+  // (our floor assumes Debian-family; the user's own FROM may not be).
+  // Caveat: a user Dockerfile that itself pip-installs over a dpkg-owned package
+  // can produce the same dpkg-conflict text and land here. We accept that — the
+  // hint points at the platform and the failure is one a human should read either
+  // way, which beats dispatching an agent at a Dockerfile that is not broken.
+  {
+    category: 'layer',
+    test: /\/opt\/kortix\/pyfloor|record file not found|installed by debian|externally-managed-environment|apt-get: (not found|command not found)|apt-get: No such file/i,
+  },
   // The user's Dockerfile / build steps failed.
   {
     category: 'dockerfile',
@@ -104,6 +124,11 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
     title: 'Dockerfile build failed',
     hint: 'A step in the project Dockerfile failed. An agent can inspect the build error and fix the Dockerfile.',
     fixableByAgent: true,
+  },
+  layer: {
+    title: 'Kortix runtime layer failed',
+    hint: 'A step in the Kortix runtime layer that gets appended to every image (the Python package floor or the apt floor) failed against this base image — your Dockerfile is not the cause, and editing it will not help. This is a platform issue: retry the build, and report it if it persists.',
+    fixableByAgent: false,
   },
   git: {
     title: 'Repository access failed',

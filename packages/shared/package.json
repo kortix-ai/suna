@@ -10,7 +10,8 @@
     "./utils": "./src/utils/index.ts",
     "./constants": "./src/constants/upload-limits.ts",
     "./runtime-versions": "./src/runtime-versions.ts",
-    "./harnesses": "./src/harnesses.ts"
+    "./harnesses": "./src/harnesses.ts",
+    "./sandbox": "./src/sandbox/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

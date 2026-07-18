@@ -48,7 +48,18 @@ export interface SseErrorFrame {
  *  openai-compat upstreams) report a mid-stream upstream failure as a 200 stream
  *  carrying `data: {"error":{"message":"Upstream idle timeout exceeded",...}}` —
  *  the HTTP layer never sees a failure, so without parsing for this the gateway
- *  books a dead turn as a success. */
+ *  books a dead turn as a success.
+ *
+ *  Anthropic's own streaming error event uses a DIFFERENT convention for the
+ *  same idea: `data: {"type":"error","error":{"type":"overloaded_error"|
+ *  "rate_limit_error"|"authentication_error"|..., "message":"..."}}` — the
+ *  classifying field is `error.type`, not `error.code`. Without reading it, an
+ *  Anthropic-backed candidate that dies mid-stream always produced `code:
+ *  undefined`, so a transient `overloaded_error` (safe to retry) was
+ *  indistinguishable from an `authentication_error` (dead credential) by the
+ *  time it reached the caller. `error.code` (OpenAI/OpenRouter convention) is
+ *  tried first; `error.type` is only a fallback so it can never shadow a real
+ *  `code` on an OpenAI-shaped frame that happens to also carry a `type`. */
 export function sseErrorFrame(buffer: string): SseErrorFrame | null {
   for (const line of buffer.split('\n')) {
     if (!line.startsWith('data:')) continue;
@@ -58,11 +69,17 @@ export function sseErrorFrame(buffer: string): SseErrorFrame | null {
       const chunk = JSON.parse(payload) as { error?: unknown };
       const error = chunk.error;
       if (!error || typeof error !== 'object') continue;
-      const { message, code } = error as { message?: unknown; code?: unknown };
+      const { message, code, type } = error as { message?: unknown; code?: unknown; type?: unknown };
       if (typeof message === 'string' && message.length > 0) {
+        const resolvedCode =
+          typeof code === 'string' || typeof code === 'number'
+            ? code
+            : typeof type === 'string' && type.length > 0
+              ? type
+              : undefined;
         return {
           message,
-          ...(typeof code === 'string' || typeof code === 'number' ? { code } : {}),
+          ...(resolvedCode !== undefined ? { code: resolvedCode } : {}),
         };
       }
     } catch {

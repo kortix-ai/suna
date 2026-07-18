@@ -72,12 +72,6 @@ variable "api_secrets" {
   default     = {}
 }
 
-variable "enable_https" {
-  description = "Create the ACM cert + HTTPS listener (needs the Cloudflare token for DNS validation). false = HTTP-only ALB, e.g. for parallel validation."
-  type        = bool
-  default     = true
-}
-
 variable "manage_dns" {
   description = "Manage the staging Cloudflare origin records (CNAME -> ALB). Default false — records are created out-of-band so the apply needs no Cloudflare creds."
   type        = bool

@@ -27,13 +27,38 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     llm.get('/health', (c) =>
       c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
     );
-    llm.post('/chat/completions', async (c) =>
+    const chat = async (c: import('hono').Context) =>
       gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
-      }),
-    );
-    llm.get('/models', (c) => gateway.listModels(c.req.header('authorization')));
+        // `c.req.raw` is the underlying standard Request — its `.signal` fires
+        // when the client disconnects, so the gateway can stop reading (and
+        // billing for) upstream tokens no one is listening for anymore.
+        signal: c.req.raw.signal,
+      });
+    const models = (c: import('hono').Context) => gateway.listModels(c.req.header('authorization'));
+    const messages = async (c: import('hono').Context) =>
+      gateway.messages({
+        authorization: c.req.header('authorization'),
+        rawBody: await c.req.text(),
+      });
+    llm.post('/chat/completions', chat);
+    llm.get('/models', models);
+    // Anthropic-Messages-compatible ingress: a client speaking the Anthropic
+    // Messages API shape (`{model, system, messages, tools, max_tokens,
+    // stream}`) hits the same in-process pipeline as `/chat/completions` —
+    // `gateway.messages` translates request/response/SSE at the edges only.
+    llm.post('/messages', messages);
+    // OpenAI-style clients (opencode's `kortix` provider among them) treat the
+    // base URL as an OpenAI ORIGIN and append `/v1/chat/completions` — so the
+    // in-process mount must also serve the `/v1/...`-prefixed shape, exactly
+    // like the standalone gateway pod does. Without this, a self-host whose
+    // public URL points at the API directly (tunnel/local mode, no Caddy
+    // /v1/llm* split) 404s every completion call. Same reasoning applies to
+    // the Anthropic-shaped `/v1/messages` variant.
+    llm.post('/v1/chat/completions', chat);
+    llm.get('/v1/models', models);
+    llm.post('/v1/messages', messages);
     app.route('/v1/llm', llm);
   }
 

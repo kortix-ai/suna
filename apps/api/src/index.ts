@@ -678,6 +678,12 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   mountLlmGateway(app);
 }
 
+// OpenRouter-parity read endpoints, scoped to the authenticated account.
+import { generationApp } from './router/routes/generation';
+import { usageApp } from './router/routes/usage';
+app.route('/v1/generation', generationApp); // GET /v1/generation?id=<requestId> — single gateway-call forensics
+app.route('/v1/usage', usageApp);       // GET /v1/usage[?start&end&group_by] — account usage rollup
+
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
@@ -960,6 +966,12 @@ async function startReplicaServices() {
   // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
   await import('./platform/services/runtime-settings')
     .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
+  // Warm the managed-GitHub-App config cache too — so a self-host instance
+  // whose operator just ran the in-app GitHub App setup flow (rather than
+  // `.env`) gets its DB-stored creds from request #1, not after a 30s TTL.
+  await import('./platform/services/managed-github-app')
+    .then((m) => m.refreshManagedGithubAppConfig())
     .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and

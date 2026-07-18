@@ -1,0 +1,156 @@
+---
+title: "How we audit our SaaS spend for waste"
+description: The SaaS spend audit agent we run on Kortix — reconciles recurring card and bank charges against our subscription register every week and flags duplicate tools, unused seats, price hikes, and shadow IT, recommending only — it never touches a subscription.
+date: "2026-04-15"
+author: team
+tags:
+  - Finance
+  - Case Study
+  - Enterprise
+template: saas-spend-audit
+---
+
+SaaS spend sprawls quietly. A team trials a tool and keeps paying for it after
+the trial ends. Two teams buy overlapping products without knowing it. A vendor
+raises its price and the invoice just changes. A card gets charged for
+something that was never logged anywhere. None of this shows up until someone
+sits down with a spreadsheet and a list of bank transactions, which happens
+rarely because it's tedious and the spreadsheet is usually stale by then.
+
+We run a SaaS spend audit agent on Kortix that reconciles our card and bank
+charges against our subscription register every week and posts what it finds
+to Slack. It never touches a subscription — it only ever recommends. This is
+how we keep our SaaS spend honest.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron</Fact>
+  <Fact label="Connected systems">Plaid · Google Sheets · Slack</Fact>
+  <Fact label="Mode">Read-only · recommend-only · never cancels</Fact>
+</KeyFacts>
+
+## The problem
+
+The two records that would catch SaaS waste — what's actually being charged
+and what's supposed to be — live in different places and drift apart. The bank
+feed shows every recurring charge; the subscription register shows what
+finance thinks it's paying for. A tool bought on a personal card during a
+trial never makes it into the register. A price increase shows up as a bigger
+number on the same line, easy to miss next to a hundred other charges.
+
+A quarterly spend review catches some of this, but it's a point-in-time
+snapshot done by hand, and three months is a long time for a duplicate tool or
+a stale renewal to keep charging. Anything faster than quarterly means someone
+doing the same manual comparison every week, which doesn't happen because
+nobody has a spare afternoon every week.
+
+## What we built
+
+On Kortix, a weekly **cron** re-prompts a persistent agent **session**. It
+reads recurring card and bank charges from Plaid, reads the subscription
+register we keep in Google Sheets, and reconciles the two: duplicate or
+overlapping tools, seats that look unused, price hikes since the last time it
+checked, renewals coming up soon, and shadow IT — charges with no matching row
+in the register at all. It posts what it finds to Slack, remembering what it
+already flagged so the same unresolved item doesn't repeat every week.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly, reusable session">
+
+A **cron trigger** fires every week, but unlike a one-shot daily check this
+agent runs in a **reusable session** — the same session is re-prompted each
+week rather than starting fresh. That's what lets it remember which
+subscriptions it has already flagged and what it recommended last time, so a
+duplicate tool that's still unresolved gets one line in the digest, not a new
+alert every Monday.
+
+</Step>
+<Step title="Give the agent the audit rules">
+
+What counts as a duplicate, an unused seat, a meaningful price hike, or a
+renewal worth flagging lives as a **skill** that travels with the agent. It
+defines the matching logic between a bank charge and a register row, the
+threshold for a price change worth reporting, and the format of a
+recommendation. When we tune a threshold, it's a change to the skill, not a
+one-off instruction.
+
+</Step>
+<Step title="Connect the systems read-only">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches
+the model, the agent reads:
+
+- **Recurring charges from Plaid** — the card and bank feed, grouped into
+  recurring merchants over a trailing window.
+- **The subscription register from Google Sheets** — what finance believes
+  we're paying for, and at what price.
+- **Posts to Slack** — the weekly digest of findings, new and still-open.
+
+It has no write access to Plaid or the register. It cannot add a line, remove
+one, or change a price in either system.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's only actions are reading two systems and posting to Slack. It
+**recommends** cancellations, downgrades, and consolidations — it never
+cancels, pauses, downgrades, or otherwise modifies a subscription or a payment
+method itself. That decision, and the click that executes it, stays with a
+person. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Post the weekly digest">
+
+Each week's message lists what's new — a fresh shadow-IT charge, a price that
+just moved, a renewal coming up — and what's still open from a prior week,
+without repeating anything unchanged. Every line carries the evidence (the
+charge, the register row, or the absence of one) and a suggested action. The
+finance team reads it and decides what to actually cancel or renegotiate.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** re-prompts a persistent **session** that reconciles Plaid
+  against a Google Sheet register through read-only **connectors**. The audit
+  rules live as a **skill**, a **ledger** tracks what's already been flagged,
+  and the agent only ever recommends — a person owns every cancellation.
+</Callout>
+
+## Guardrails
+
+Reconciling spend means reading two financial records, so the boundaries are
+explicit:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Plaid and the register it's scoped to, and only the Slack digest
+  leaves the sandbox.
+- **Scoped secrets.** The Plaid access token and Sheets credentials are
+  encrypted in the Secrets Manager and injected into the sandbox at runtime,
+  never exposed to the model or the logs.
+- **Recommend-only.** The agent has no write access to Plaid, no billing API,
+  and no way to cancel, downgrade, or pause a subscription. Its entire output
+  is a Slack message with a suggested action; a human does anything that
+  changes a subscription.
+- **No repeat noise.** A ledger persists across weeks, so an unresolved
+  finding gets one entry, not a new alert every run — only new or changed
+  waste is reported as new.
+- **Everything is code.** The agent's persona, its audit rules, and its
+  per-system permissions are files in the repo, versioned and changed through
+  a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every week" label="Charges reconciled against the register on schedule" />
+  <Stat value="Recommend-only" label="Nothing is ever cancelled or changed automatically" />
+  <Stat value="5 waste signals" label="Duplicates, unused seats, price hikes, renewals, shadow IT" />
+</StatGrid>
+
+The comparison that used to require someone opening a spreadsheet next to a
+bank statement now runs every week without anyone starting it, and only
+reports what's new or unresolved. The agent reads the charges and the
+register; the finance team decides which recommendation to act on.

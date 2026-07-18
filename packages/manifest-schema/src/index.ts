@@ -688,7 +688,7 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
     } else {
       seenSlugs.add(slug);
     }
-    // The runtime caps sandbox-template slugs at 64 chars (apps/api dockerfile-layer
+    // The runtime caps sandbox-template slugs at 64 chars (@kortix/shared/sandbox
     // SLUG_RE) — a longer slug parses here but is silently dropped at sync, so warn.
     if (slug && SLUG_RE.test(slug) && slug.length > 64) {
       issues.push({
@@ -1057,11 +1057,11 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         });
       }
     }
-    if (provider === 'openapi' && typeof entry.spec !== 'string') {
+    if ((provider === 'openapi' || provider === 'postman') && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
         message:
-          'openapi connectors need a `spec` (URL or repo path); without it the connector fails to materialize.',
+          `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
         severity: 'warning',
       });
     }
@@ -1150,10 +1150,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
-        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
           issues.push({
             path: `${where}.auth.type`,
-            message: 'auth.type "oauth1" is only supported for openapi/http connectors.',
+            message: 'auth.type "oauth1" is only supported for openapi/postman/http connectors.',
             severity: 'error',
           });
         }

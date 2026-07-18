@@ -92,8 +92,29 @@ function capabilitiesOf(
   };
 }
 
+// Model-level capability lookup for descriptor-building code (BYOK resolution),
+// as opposed to the list-shaped `gatewayModelsAll` above which serves the
+// models API. Single source of truth for "does this model reject a
+// non-default temperature / is it a reasoning model" so transports never need
+// to hardcode a model-id list — see UpstreamDescriptor.reasoning/temperature.
+export function capabilitiesForModel(
+  providerId: string,
+  modelId: string,
+  catalog: Catalog = runtimeModelCatalog.snapshot(),
+): { reasoning: boolean; temperature: boolean } {
+  const provider = catalog.providers.find((p) => p.id === providerId);
+  const model = provider?.models.find((m) => m.id === modelId);
+  const caps = capabilitiesOf(model);
+  return { reasoning: !!caps.reasoning, temperature: !!caps.temperature };
+}
+
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
+  // RUNTIME_MANAGED_MODELS is already empty when KORTIX_MANAGED_PROVIDER_ENABLED
+  // is off (managed-models.ts) — the loop below is a no-op in that case. AUTO is
+  // "smart routing" over the managed lineup specifically, so it's meaningless
+  // (and confusing in the picker) without it: skip it too on a self-host.
+  if (RUNTIME_MANAGED_MODELS.length === 0) return out;
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
   // its default target so OpenCode sizes conversations the same.

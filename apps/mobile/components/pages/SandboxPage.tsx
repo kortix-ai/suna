@@ -97,6 +97,7 @@ const STATUS_STYLE: Record<ProjectSnapshotStatus, { label: string; color: string
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   dockerfile: 'Dockerfile build failed',
+  layer: 'Kortix runtime layer failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
   provider: 'Sandbox provider error',

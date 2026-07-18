@@ -5,7 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { getBackend, hasBackend, type GitScope } from '../git-backends';
+import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
@@ -315,6 +315,34 @@ projectsApp.openapi(
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },
+);
+
+// GET /v1/projects/managed-git/status
+// Lets the frontend pre-check whether the managed-git "Create project" path
+// (POST /provision) is usable BEFORE the user hits its 503, so the create UI
+// can disable/annotate that option instead of surfacing a raw server error.
+// Self-host deployments with no MANAGED_GIT_* configured are the primary
+// case — the BYO-repo import path (POST / and /create-repo) stays available
+// regardless.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/managed-git/status',
+    tags: ['projects'],
+    summary: 'GET /managed-git/status',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ configured: z.boolean(), provider: z.string() }),
+        'Whether the managed-git provider is configured on this server',
+      ),
+    },
+  }),
+  async (c: any) => {
+    const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
+    const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
+    return c.json({ configured, provider });
+  },
 );
 
 // POST /v1/projects/provision
@@ -732,7 +760,12 @@ projectsApp.openapi(
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
 
@@ -760,7 +793,12 @@ projectsApp.openapi(
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner = rows.length === 0 && managedGithubToken() ? managedGithubOwner() : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
 },
 );
 

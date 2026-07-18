@@ -911,3 +911,138 @@ no commits by Jay's standing rule; W0 pre-merge fixes already in this working tr
   - `tests/e2e/specs/16-model-picker.spec.ts` (new): written, `playwright test --list` validated (registers as 1 test, no collisions — 31 total across 13 files), NOT run live — same status as spec 15 (dev stack + real harness sandbox unavailable in this environment). Flags a fresh project with both `unified_model_picker` and `experimental_harnesses` via `PATCH /projects/{id}/experimental`, then asserts: exactly one `model-picker-trigger` (zero legacy testids) for the default opencode agent; the same after switching to Claude, plus an `Experimental` badge and a `Not connected` group; picking a model changes the trigger's pill text.
   - Gates: `packages/api-contract` `bun test` 35/35. `apps/api` `tsc --noEmit` exit 0 (test suite env-blocked, see Discovered). `packages/sdk` `bun test --isolate` 1158/1158 (unchanged — the `ExperimentalFeatureKey` union addition is a pure type widening, no new runtime test needed), `tsc --noEmit` + examples exit 0, `smoke:install` passed, snapshots byte-unchanged. `apps/web` `bun test --isolate` 1246/1246 (up from a pre-task baseline this session didn't separately record, but zero failures across all 148 files including `acp-session-perf.test.tsx`), `tsc --noEmit` exit 0. `tests/` (e2e package) `tsc --noEmit` exit 0. Full report: `sdd/ws5-p0-c-report.md`.
 - **WS5-P1-b**: `core/rest/projects-client/acp-permission-policy.ts` (new) + `react/use-permission-policy.ts` (new) — the SDK client + hook consuming Task WS5-P1-a's `GET`/`PUT /projects/:projectId/acp/permission-policy` route. Confirmed first (per the task brief's own instruction) that `@kortix/sdk` does NOT depend on `@kortix/api-contract` (absent from `package.json` `dependencies`/`peerDependencies`) — so `AcpPermissionPolicy`/`AcpPermissionAutoApprove`/`AcpPermissionToolDecision` plus `ACP_PERMISSION_POLICY_MAX_TOOLS`(128)/`_MAX_KEY_LENGTH`(256) are hand-mirrored from `packages/api-contract/src/index.ts`, with an SoT comment pointing back at it — same posture as every other hand-mirrored contract type in this client tier. Client fns (`getAcpPermissionPolicy`, `putAcpPermissionPolicy`) follow the `secrets.ts`/`composer-capabilities.ts` sibling shape exactly: thin `backendApi.get`/`.put` + `unwrap`, no client-side validation (server is the sole validator; a client-side echo of the zod rules would drift). The hook (`usePermissionPolicy(projectId)` → `{policy, isLoading, setAutoApprove(mode), rememberToolDecision(tool, decision), ...query}`) does NOT delegate to `useMutation` — searched every `react/*.ts` hook in this package for an existing `onMutate`/`onError` snapshot-rollback mutation to mirror (`use-project-secrets.ts`, `use-gateway-routing-policy.ts`, `use-runtime-sessions/sessions.ts` — none track a pre-mutation snapshot for manual restore, they only `setQueryData` post-`onSuccess`) — so per the brief's own fallback instruction, kept it simple: a local `persist()` helper does `queryClient.setQueryData(queryKey, next)` (optimistic) → `await putAcpPermissionPolicy(...)` → `setQueryData(queryKey, saved)` (reconcile with the server's own response) on success, or `queryClient.invalidateQueries({queryKey})` (discard the optimistic value via refetch, not a hand-tracked previous snapshot) + rethrow on failure. **Rollback semantics: refetch-on-error, not manual snapshot-restore** — documented inline in the hook's own doc comment so P1-c doesn't have to rediscover it. `rememberToolDecision` client-side-guards both caps BEFORE touching the cache or the network (rejects locally with no `setQueryData` call and no PUT) — a >256-char tool name, or a brand-new tool that would push the map past 128 entries; updating an *already-present* tool is always allowed even at the 128 cap since it doesn't grow the count. `policy` defaults to `{autoApprove:'none', toolDecisions:{}}` (mirroring the GET route's own absent-policy default) both while loading and before any write. TDD: RED confirmed twice — (1) a temporarily-wrong REST path made the client `toContain` assertions fail for the right reason, then reverted; (2) temporarily stripping the two cap-guard branches made exactly the 2 guard tests fail (`rejects.toThrow(/256/)` / `/128/`) with the rest green, then restored. Hook test uses a small in-memory `Map`-backed mock of `useQuery`/`useQueryClient` (keyed by `JSON.stringify(queryKey)`) rather than the identity-config mock the sibling hook tests use (`use-project-secrets.test.ts`'s `useQuery: (config) => config` pattern) — this hook is genuinely stateful (reads+writes the cache across two calls within one `persist()`), which the identity mock can't represent; real `globalThis.fetch` is still mocked (same idiom as `secrets.test.ts`) so the actual `putAcpPermissionPolicy` network round-trip inside `persist()` is exercised, not stubbed out. Barrel-exported: `acp-permission-policy.ts` added to `core/rest/projects-client/index.ts`'s `export *` list; `usePermissionPolicy`/`permissionPolicyKey` added to `react/index.ts`'s named export list (mirroring `useGatewayRoutingPolicy`/`gatewayRoutingPolicyKey`'s line). Snapshots re-recorded — additions only, confirmed via `git diff`: 10 new names in `public-surface.snapshot.json` (2 constants × 2 entry points, `getAcpPermissionPolicy` × 2, `putAcpPermissionPolicy` × 2, `permissionPolicyKey`, `usePermissionPolicy`), 16 in `public-type-surface.snapshot.json` (adds the 3 type names too); the type-surface regen needs the DIFFERENT env var `UPDATE_TYPE_SURFACE_SNAPSHOT=1` (not `UPDATE_SURFACE_SNAPSHOT`, which only covers the runtime snapshot — easy to miss, noting it here). `apps/web` untouched (P1-c's job). Suite 1158→1179/0 (8 client + 13 hook tests). Typecheck (`tsc --noEmit` + examples) exit 0. `smoke:install` passed. Full report: `sdd/ws5-p1-b-report.md`.
+
+---
+
+### 2026-07-15 — session `self-host-e2e-snapshot-fix`
+
+Accepted the intentionally additive public SDK surface introduced by the generic
+self-host GitHub App/PAT and managed-git clients. The runtime snapshot gained 12
+entries and the type-level snapshot gained 24 entries across the canonical root
+and compatibility subpaths; no exported name was removed or renamed.
+
+**RED evidence:** the focused public-surface guards failed 2 / 2 and reported only
+additions for `GitHubApp*`, `ManagedGitStatus`, and their client functions.
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1092 pass / 2 skip / 0 fail** across
+80 files with 4943 assertions; `pnpm --filter @kortix/sdk run smoke:install`
+built, packed, installed, imported, and constructed `@kortix/sdk` successfully.
+The exact self-host fast E2E also reported **24 pass / 0 fail**.
+
+**Shippable to production: YES** — the public additions are deliberate,
+snapshot-locked, install-verified, and the self-host CLI contract is green.
+
+- 2026-07-17 — additive: `PtyMutationOptions` + `ptyMutationOverrides`, `useCreatePty`/`useUpdatePty` accept optional `onError` so hosts can keep pty errors out of global toasts (web terminal UX). Surface snapshot re-recorded (adds only).
+
+---
+
+### 2026-07-17 — session `postman-connectors` (claim)
+
+Claimed the additive Postman connector surface within the user-directed
+end-to-end Postman ingestion rollout. The SDK scope is deliberately narrow: add
+`postman` to existing connector provider unions and preserve the current
+`ConnectorDraftInput` API. No exported name is renamed or removed. Design and
+execution plan: `docs/specs/2026-07-17-postman-connectors.md` and
+`docs/plans/2026-07-17-postman-connectors.md`.
+
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `postman-connectors` (completion)
+
+Completed the additive Postman connector provider contract. The published SDK
+now accepts and reports `postman` anywhere the existing connector surfaces
+accept a provider, without renaming or removing an exported symbol.
+
+**TDD evidence:** the focused connector contract initially rejected `postman`,
+then passed after the provider union was widened. **Final SDK gates:**
+`pnpm --filter @kortix/sdk typecheck` exited 0; `pnpm --filter @kortix/sdk test`
+reported **1113 pass / 0 fail** across 82 files with 4995 assertions; and
+`pnpm --filter @kortix/sdk smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the SDK change is additive, its complete
+runtime and type-level public surfaces remain snapshot-locked, and the packed
+consumer install path is verified. The enclosing API/CLI/UI Postman rollout
+retains its own merge, deploy, and live-dev gates.
+
+**Post-rebase gate addendum:** after rebasing onto `origin/main` at
+`bcb2a2afa`, the SDK typecheck remained green; the full suite reported
+**1121 pass / 0 fail** across 84 files with 5005 assertions; and the packed
+install smoke again passed. **Shippable to production: YES.**
+
+---
+
+### 2026-07-17 — session `discover-marketplace` (claim)
+
+Claimed the additive Discover integration-catalog SDK surface for the user-directed
+unified marketplace rollout. The SDK will expose integrations.sh catalog records and
+their executable variants, while Pipedream entries remain separate, explicitly
+labelled OAuth-only alternatives. Existing connector APIs and exported names remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and finish
+with typecheck, full-suite, and packed-install smoke evidence.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `discover-marketplace` (completion)
+
+Completed the additive Discover catalogue SDK surface. The published client now
+exposes typed integrations.sh list/detail calls plus
+`project(id).connectors.discover.{list,detail}`. Pipedream remains a separate
+existing catalogue surface and its app contract is narrowed to the OAuth-only
+records returned by the API. Runtime and type snapshots contain additions only;
+no exported name was removed or renamed.
+
+**TDD and live evidence:** the focused API/Postman/SDK/UI run passed **96 tests / 0
+failures**. A real authenticated local flow searched HubSpot through the Discover
+API, resolved its direct MCP/docs/CLI/Postman variants, verified the official
+Postman repository requires bearer auth, and materialized **1,223 actions** with
+zero sync errors. The live Pipedream search returned only `authType: oauth`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1121 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository merge, Deploy
+Dev, and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (claim)
+
+Claimed the user-directed rollback of the additive Discover catalogue SDK surface
+while preserving the earlier first-class Postman connector provider contract. The
+rollback removes only the integrations.sh list/detail APIs and facade bindings that
+shipped in PR #4920. Full SDK typecheck, suite, and packed-install smoke gates are
+required before completion.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (completion)
+
+Completed the user-directed rollback of the Discover catalogue SDK surface from
+PR #4920. The earlier first-class Postman provider remains accepted by connector
+drafts and responses; only the integrations.sh list/detail functions and
+`project(id).connectors.discover` facade binding were removed.
+
+**Focused evidence:** executor/Postman tests passed **68 / 0**; the restored
+Connectors/Channels source regression passed **6 / 0**; API typecheck exited 0;
+and the ke2e coverage gate passed at **405 / 493 routes** with the two Discover
+routes absent.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1119 pass / 2 skip / 0 fail** across 84 files with 4999
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for this explicitly requested rollback. The two
+skips are the pre-existing browser-bundle tests that require a bundle build.

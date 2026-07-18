@@ -4,9 +4,16 @@ import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  type EmailFlowMode,
+  SIGNUPS_CLOSED_MESSAGE,
+  SSO_REQUIRED_MESSAGE,
+  resolveEmailFlowMode,
+} from '@/lib/auth/unified-auth-flow';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -77,123 +84,86 @@ function emailRedirectUrl({
   return url.toString();
 }
 
-export async function signIn(prevState: any, formData: FormData) {
-  const email = formData.get('email') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
-  const origin = formData.get('origin') as string;
-  const acceptedTerms = formData.get('acceptedTerms') === 'true';
-  const isDesktopApp = formData.get('isDesktopApp') === 'true';
-  const mobileState = mobileCallbackState(formData);
-
-  if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
-  }
-
-  const supabase = await createClient();
-  const normalizedEmail = email.trim().toLowerCase();
-
-  // Use magic link (passwordless) authentication
-  // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
-  // For web, use standard origin (https://kortix.com/auth/callback)
-  // Include email in redirect URL so it's available if the link expires
-  let emailRedirectTo: string;
-  if (isDesktopApp && origin.startsWith('kortix://')) {
-    // Match mobile implementation - simple protocol URL with optional terms_accepted
-    const params = new URLSearchParams();
-    if (acceptedTerms) {
-      params.set('terms_accepted', 'true');
-    }
-    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
-  } else {
-    emailRedirectTo = emailRedirectUrl({
-      origin,
-      returnUrl,
-      email: normalizedEmail,
-      acceptedTerms,
-      mobileState,
-    });
-  }
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      emailRedirectTo,
-      shouldCreateUser: true, // Auto-create account if doesn't exist
-    },
-  });
-
-  if (error) {
-    return { message: error.message || 'Could not send magic link' };
-  }
-
-  // Return success message - user needs to check email
-  return {
-    success: true,
-    message: 'Check your email for a magic link to sign in',
-    email: email.trim().toLowerCase(),
-  };
-}
-
-export async function signUp(prevState: any, formData: FormData) {
-  const origin = formData.get('origin') as string;
-  const email = formData.get('email') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
-  const acceptedTerms = formData.get('acceptedTerms') === 'true';
-  const referralCode = formData.get('referralCode') as string | undefined;
-  const isDesktopApp = formData.get('isDesktopApp') === 'true';
-  const mobileState = mobileCallbackState(formData);
-
-  if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
-  }
-
-  if (!acceptedTerms) {
-    return { message: 'Please accept the terms and conditions' };
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  // Check access control — if signups are closed and email isn't allowlisted, block
-  let shouldCreateUser = true;
+/**
+ * Ask the API how this email should proceed through the flow: 'signin' when
+ * the account exists, 'signup' when it may register, 'closed' when signups
+ * are off and the address isn't allowlisted, 'unknown' when the API can't
+ * say (unreachable, rate-limited, or an older build without `mode`).
+ *
+ * The visitor's IP is forwarded so the API's per-IP rate limit lands on the
+ * actual client rather than pooling every visitor into the web server's
+ * single outbound address.
+ */
+async function checkEmailFlowMode(email: string): Promise<EmailFlowMode> {
   try {
     const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
+    const requestHeaders = await headers();
+    const forwardedFor = requestHeaders.get('x-forwarded-for') || requestHeaders.get('x-real-ip');
     const res = await fetch(`${backendUrl}/access/check-email`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: normalizedEmail }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
+      },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(4_000),
     });
-    if (res.ok) {
-      const data = await res.json();
-      shouldCreateUser = data.allowed;
-    }
-    // If fetch fails, fail-open (allow signup)
+    if (!res.ok) return 'unknown';
+    return resolveEmailFlowMode(await res.json());
   } catch {
-    // Fail open — allow signup if access control service is unreachable
+    // Fail open — 'unknown' routes through the adaptive signup action, which
+    // signs in existing users and registers new ones.
+    return 'unknown';
+  }
+}
+
+/**
+ * The unified flow's existence resolution. Never exposed as a raw endpoint to
+ * the browser beyond this server action; the API behind it is rate-limited
+ * per IP and returns a flow directive, not a bare "exists" flag.
+ */
+export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowMode }> {
+  if (!email || !email.includes('@')) return { mode: 'unknown' };
+  return { mode: await checkEmailFlowMode(email.trim().toLowerCase()) };
+}
+
+/**
+ * Send the sign-in/sign-up email code — ONE action for both cases. GoTrue's
+ * OTP with `shouldCreateUser: true` already treats new and existing addresses
+ * identically, so the only gate is access control: a brand-new address while
+ * signups are closed is turned away before any email goes out (previously the
+ * "sign in" tab skipped this check entirely and quietly created accounts).
+ */
+export async function sendEmailCode(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const origin = formData.get('origin') as string;
+  const acceptedTerms = formData.get('acceptedTerms') === 'true';
+  const referralCode = formData.get('referralCode') as string | undefined;
+  const mobileState = mobileCallbackState(formData);
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
   }
 
-  if (!shouldCreateUser) {
-    return { signupClosed: true, message: 'Signups are currently closed. Request access below.' };
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const flowMode = await checkEmailFlowMode(normalizedEmail);
+  if (flowMode === 'closed') {
+    return { code: 'signups_closed', message: SIGNUPS_CLOSED_MESSAGE };
+  }
+  if (flowMode === 'sso') {
+    return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
   }
 
   const supabase = await createClient();
-
-  // Use magic link (passwordless) authentication - auto-creates account
-  let emailRedirectTo: string;
-  if (isDesktopApp && origin.startsWith('kortix://')) {
-    const params = new URLSearchParams();
-    if (acceptedTerms) {
-      params.set('terms_accepted', 'true');
-    }
-    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
-  } else {
-    emailRedirectTo = emailRedirectUrl({
-      origin,
-      returnUrl,
-      email: normalizedEmail,
-      acceptedTerms,
-      mobileState,
-    });
-  }
+  const emailRedirectTo = emailRedirectUrl({
+    origin,
+    returnUrl,
+    email: normalizedEmail,
+    acceptedTerms,
+    mobileState,
+  });
 
   const { error } = await supabase.auth.signInWithOtp({
     email: normalizedEmail,
@@ -209,13 +179,13 @@ export async function signUp(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not send magic link' };
+    return { message: error.message || 'Could not send the code' };
   }
 
   return {
     success: true,
-    message: 'Check your email for a magic link to complete sign up',
-    email: email.trim().toLowerCase(),
+    message: 'Check your email for a sign-in code',
+    email: normalizedEmail,
   };
 }
 
@@ -303,108 +273,6 @@ export async function resetPassword(prevState: any, formData: FormData) {
   };
 }
 
-export async function resendMagicLink(prevState: any, formData: FormData) {
-  const email = formData.get('email') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
-  const origin = formData.get('origin') as string;
-  const acceptedTerms = formData.get('acceptedTerms') === 'true';
-  const isDesktopApp = formData.get('isDesktopApp') === 'true';
-  const mobileState = mobileCallbackState(formData);
-
-  if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
-  }
-
-  const supabase = await createClient();
-  const normalizedEmail = email.trim().toLowerCase();
-
-  // Use magic link (passwordless) authentication
-  // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
-  // For web, use standard origin (https://kortix.com/auth/callback)
-  // Include email in redirect URL so it's available if the link expires
-  let emailRedirectTo: string;
-  if (isDesktopApp && origin.startsWith('kortix://')) {
-    // Match mobile implementation - simple protocol URL with optional terms_accepted
-    const params = new URLSearchParams();
-    if (acceptedTerms) {
-      params.set('terms_accepted', 'true');
-    }
-    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
-  } else {
-    emailRedirectTo = emailRedirectUrl({
-      origin,
-      returnUrl,
-      email: normalizedEmail,
-      acceptedTerms,
-      mobileState,
-    });
-  }
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      emailRedirectTo,
-      shouldCreateUser: true, // Auto-create account if doesn't exist
-    },
-  });
-
-  if (error) {
-    return { message: error.message || 'Could not send magic link' };
-  }
-
-  // Return success message - user needs to check email
-  return {
-    success: true,
-    message: 'Check your email for a magic link to sign in',
-    email: email.trim().toLowerCase(),
-  };
-}
-
-export async function sendOtpCode(prevState: any, formData: FormData) {
-  const email = formData.get('email') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
-  const origin = formData.get('origin') as string;
-  const isDesktopApp = formData.get('isDesktopApp') === 'true';
-  const mobileState = mobileCallbackState(formData);
-
-  if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
-  }
-
-  const supabase = await createClient();
-  const normalizedEmail = email.trim().toLowerCase();
-
-  let emailRedirectTo: string;
-  if (isDesktopApp && origin.startsWith('kortix://')) {
-    emailRedirectTo = 'kortix://auth/callback';
-  } else {
-    emailRedirectTo = emailRedirectUrl({
-      origin,
-      returnUrl,
-      email: normalizedEmail,
-      mobileState,
-    });
-  }
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      emailRedirectTo,
-      shouldCreateUser: true,
-    },
-  });
-
-  if (error) {
-    return { message: error.message || 'Could not send verification code' };
-  }
-
-  return {
-    success: true,
-    message: 'Check your email for a 6-digit verification code',
-    email: normalizedEmail,
-  };
-}
-
 export async function signInWithPassword(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
@@ -420,6 +288,15 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
     return { message: 'Password must be at least 6 characters' };
   }
 
+  // SSO enforcement: when the domain's org has flipped `enforce_sso`, the
+  // password door is closed even for pre-SSO password accounts — the IdP is
+  // the only way in. Fail-open ('unknown') keeps logins working if the API is
+  // briefly unreachable; the UI hides the password path independently.
+  const flowMode = await checkEmailFlowMode(email.trim().toLowerCase());
+  if (flowMode === 'sso') {
+    return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -428,7 +305,15 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Invalid email or password' };
+    // Thread GoTrue's error code through so the flow — which already resolved
+    // that this account exists — can say "wrong password" instead of the
+    // deliberately ambiguous "Invalid login credentials".
+    const code =
+      (error as { code?: string }).code ||
+      (error.message?.toLowerCase().includes('invalid login credentials')
+        ? 'invalid_credentials'
+        : null);
+    return { message: error.message || 'Invalid email or password', code };
   }
 
   // Determine if new user (for analytics)
@@ -485,6 +370,18 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: 'Passwords do not match' };
   }
 
+  // Access control gate — same rule the email-code path enforces: a brand-new
+  // address while signups are closed never reaches GoTrue, and an SSO-enforced
+  // domain never gets a password identity created. Existing accounts resolve
+  // to 'signin' and pass straight through to the sign-in attempt.
+  const flowMode = await checkEmailFlowMode(email);
+  if (flowMode === 'closed') {
+    return { code: 'signups_closed', message: SIGNUPS_CLOSED_MESSAGE };
+  }
+  if (flowMode === 'sso') {
+    return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
+  }
+
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
     origin,
@@ -527,7 +424,13 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       };
     }
     if (alreadyExists) {
-      return { message: 'An account with this email already exists. Try signing in instead.' };
+      // The signup attempt just proved the account exists AND the password is
+      // wrong — hand the client a structured code so it can flip the step to
+      // sign-in with honest "wrong password" copy.
+      return {
+        code: 'existing_account_wrong_password',
+        message: 'An account with this email already exists. Try signing in instead.',
+      };
     }
     return { message: signInError.message || 'Account created but could not sign in' };
   }

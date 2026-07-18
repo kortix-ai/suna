@@ -1,0 +1,5 @@
+aws_region = "us-west-2"
+domain     = "kortix.example.com"
+
+# Optional — leave unset to manage DNS yourself (see the public_ip output).
+# route53_zone_id = "Z0123456789ABCDEFGHIJ"

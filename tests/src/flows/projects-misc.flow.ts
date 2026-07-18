@@ -225,8 +225,8 @@ flow(
 );
 
 // PROJ-16 — turn-question relay. A normal user token authorizes via project
-// read; the relay then validates the body before touching any sandbox, so a
-// missing session_id → 400 and a missing questions[] → 400. We assert the
+// read; the relay validates session_id first, then scopes it to the project,
+// then validates questions. A missing id is 400; an unknown id is 404. We assert the
 // no-session negative so it runs locally without a live OpenCode session.
 flow(
   "PROJ-16",
@@ -239,11 +239,11 @@ flow(
         .post("/v1/projects/:projectId/turn-question", { questions: [{ question: "q?" }] }, { params: { projectId: p.id } });
       r.status(400);
     });
-    await ctx.step("missing questions → 400", async () => {
+    await ctx.step("unknown session takes precedence over missing questions → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/turn-question", { session_id: "bogus" }, { params: { projectId: p.id } });
-      r.status(400);
+      r.status(404);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -255,7 +255,8 @@ flow(
 );
 
 // PROJ-17 — turn-stream relay. Same auth model as turn-question; the body gate
-// requires both session_id and text (400 otherwise). Asserting the negative
+// requires session_id first, then scopes it to the project before interpreting
+// the event payload. Asserting the negative
 // keeps this local (no funded session required).
 flow(
   "PROJ-17",
@@ -268,13 +269,13 @@ flow(
         .post("/v1/projects/:projectId/turn-stream", { kind: "step" }, { params: { projectId: p.id } });
       r.status(400);
     });
-    await ctx.step("session_id without text → 400", async () => {
+    await ctx.step("unknown session takes precedence over missing text → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/turn-stream", { session_id: "bogus" }, { params: { projectId: p.id } });
-      r.status(400);
+      r.status(404);
     });
-    await ctx.step("kind=turn_end needs no text; no live stream → ok:false", async () => {
+    await ctx.step("kind=turn_end with an unknown session → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
@@ -282,7 +283,7 @@ flow(
           { session_id: "bogus", kind: "turn_end", status: "idle" },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.ok", false);
+      r.status(404);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -348,14 +349,14 @@ flow(
       r.status(400);
     });
 
-    await ctx.step("a member with no project grant cannot read/write the config → 404", async () => {
+    await ctx.step("a member with no project grant cannot read/write the config → 403", async () => {
       const bare = await team.addMember("member");
       const r = await ctx.client
         .as(bare)
         .get("/v1/projects/:projectId/agents/:agentName/config", {
           params: { projectId: project.id, agentName: "kortix" },
         });
-      r.status(404);
+      r.status(403);
     });
   },
 );

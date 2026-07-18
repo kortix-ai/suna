@@ -1,0 +1,163 @@
+---
+title: "How we get ahead of contract renewals"
+description: The renewal manager we run on Kortix — a daily cron that surfaces every account 90, 60, and 30 days from renewal, preps a packet on usage and value delivered, drafts outreach, and flags at-risk accounts for the owner to review.
+date: "2026-05-28"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+template: renewal-manager
+---
+
+Renewals used to surface the way most bad news does — late. An account owner
+would open HubSpot, notice a contract expiring in three weeks, and start from
+zero: pull the usage numbers, remember what shipped since the last check-in,
+guess at expansion room, and write the outreach the same afternoon. The
+accounts that renewed smoothly were the ones an owner happened to remember to
+check. The ones that churned quietly were usually the ones nobody looked at
+until it was too late to do anything but apologize.
+
+We run a renewal manager agent on Kortix that watches every HubSpot deal's
+renewal date and gets ahead of it — at 90, 60, and 30 days out — with a packet
+already built and outreach already drafted. It never sends anything and never
+touches price. It hands the account owner a head start instead of a deadline.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">HubSpot · Google Calendar · Slack · Email</Fact>
+  <Fact label="Mode">Prep + draft only · account owner sends</Fact>
+</KeyFacts>
+
+## The problem
+
+A renewal date sitting on a HubSpot deal is just a date. It doesn't say
+whether the account is healthy, whether the team has actually used what they
+bought, whether there's a natural expansion to raise, or whether the deal has
+gone quiet in a way that should worry someone. That context lives scattered
+across old notes, a memory of the last QBR, and whatever the owner can
+reconstruct under time pressure.
+
+The common fallback is a calendar reminder or a pipeline report sorted by
+close date — a flat list with no prep behind it. By the time an owner opens the
+account, the renewal is close, the packet doesn't exist yet, and the outreach
+gets written in a rush instead of shaped around what the account actually
+needs to hear.
+
+## What we built
+
+On Kortix, a daily cron triggers an agent that reads every HubSpot deal's
+renewal date and surfaces the ones crossing 90, 60, or 30 days out. For each
+one, it builds a renewal packet — usage and value delivered since the last
+renewal, and one or two concrete expansion ideas — checks Google Calendar to
+see whether a renewal conversation is already on the books, and drafts the
+outreach email. Anything that looks stalled, quiet, or shrinking gets flagged
+separately as at-risk. The packet and the draft wait for the account owner;
+nothing goes out on its own.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox with no memory of yesterday's run — the deal
+list and every signal are re-read from HubSpot itself, and a property on each
+deal record marks which renewal window it's already been surfaced for, so the
+same account doesn't get a duplicate packet every day it sits inside 90 days.
+
+</Step>
+<Step title="Give the agent the renewal playbook">
+
+What belongs in a renewal packet, how to read usage and engagement as a
+health signal, what counts as at-risk, and how the team phrases renewal
+outreach live as a **skill** that travels with the agent. When we learn what
+actually moves a renewal, we update the skill and every account benefits from
+it the next day.
+
+</Step>
+<Step title="Connect HubSpot and Google Calendar">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches
+the model, the agent:
+
+- **Reads deals from HubSpot** — renewal dates, contract value, stage history,
+  notes, and past activity, to find every account crossing a 90/60/30-day
+  window and to spot the ones going quiet.
+- **Reads Google Calendar** — read-only, to check whether a renewal or QBR
+  conversation is already scheduled near the renewal date, so the outreach can
+  reference it instead of duplicating it.
+- **Writes back to HubSpot** only the window it last surfaced for each deal —
+  never the stage, the amount, or anything a rep would use to track the actual
+  negotiation.
+
+</Step>
+<Step title="Post to Slack, draft to email">
+
+Two channels, two purposes: a **Slack** post to the account owner with the
+day's renewal radar and any at-risk flags, and an **email** draft — the
+renewal packet and the outreach copy — held for that owner to open, edit, and
+send.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent preps and drafts; it never contacts a customer and never touches
+price. It cannot send the outreach email, and it cannot apply, offer, or even
+suggest a specific discount — pricing conversations stay with the account
+owner. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Hand off the packet">
+
+With that in place, an account owner opens Slack to a ranked list of what's
+coming up and what looks at-risk, and opens their inbox to a drafted email
+already carrying the usage story, what's been delivered, and an expansion idea
+worth raising. They read it, edit it to fit the relationship, and send it
+themselves.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a session with read connectors into HubSpot and
+  Google Calendar. The renewal playbook lives as a **skill**. The agent preps
+  the packet and drafts the outreach; the account owner reviews, edits, and
+  sends.
+</Callout>
+
+## Guardrails
+
+The agent touches revenue-relevant accounts, so what it can do is narrow and
+explicit:
+
+- **Prep and draft only.** The agent never sends the renewal outreach and
+  never creates or moves a calendar event. The email is a draft in the owner's
+  inbox until the owner sends it.
+- **No pricing decisions.** The agent never applies, offers, or proposes a
+  specific discount or credit. Anything touching price is a conversation for
+  the account owner, not a line in a draft.
+- **Scoped writes.** The only thing the agent writes back to HubSpot is which
+  renewal window a deal has been surfaced for — never the deal stage, the
+  amount, or the pipeline.
+- **Isolation.** Every run happens in its own microVM sandbox. Credentials for
+  HubSpot and Google Calendar are encrypted in the Secrets Manager and injected
+  at runtime, never exposed to the model or the logs.
+- **Everything is code.** The renewal playbook, the at-risk criteria, and the
+  per-system permissions are files in the repo, versioned and changed through
+  a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="90/60/30" label="Days out a renewal first gets a packet, not a deadline" />
+  <Stat value="Every day" label="Renewal list and at-risk flags recomputed from live HubSpot data" />
+  <Stat value="0 sent" label="Outreach and discounts the agent sends or applies on its own" />
+</StatGrid>
+
+Renewals that used to start with a blank page now start with a packet already
+built and a draft already written, so the account owner's first move is a
+review, not a scramble. The agent watches every deal and does the prep work;
+the person still decides what to say and when to send it.

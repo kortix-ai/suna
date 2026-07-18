@@ -5,10 +5,28 @@ import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
+import { getProvider, type ProviderName } from '../../platform/providers';
 import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
+
+/**
+ * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
+ * mirrors session-sandbox.ts's boot-time computation (see that file and
+ * `local-docker.ts`'s `sandboxFacingApiOrigin()`). Every hot env-push call
+ * site here recomputes the LLM-gateway base URL from scratch (a project's
+ * gateway opt-in can toggle, or secrets can rotate, mid-session), so it must
+ * ask the OWNING provider for its origin the same way the boot path does —
+ * otherwise a same-machine provider's boot-time fix is silently undone by the
+ * very next prompt or gateway-mode toggle, which re-pushes the generic public
+ * origin over the daemon's `/kortix/env` and re-breaks connectivity.
+ */
+export function llmGatewayBaseUrlForProvider(providerName: ProviderName): string {
+  const origin = getProvider(providerName).sandboxFacingApiOrigin?.() ?? config.KORTIX_URL;
+  return resolveLlmGatewayBaseUrl(origin);
+}
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -154,6 +172,10 @@ export async function syncSandboxEnvForPrompt(args: {
   serviceKey: string | null;
   previewUrl: string;
   providerHeaders: Record<string, string>;
+  /** The provider this sandbox actually runs on (`SandboxRecord.provider` at
+   *  the call site) — needed to resolve the LLM-gateway base URL onto the
+   *  RIGHT origin for a same-machine provider. */
+  providerName: ProviderName;
 }): Promise<void> {
   if (!args.serviceKey) return;
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
@@ -166,7 +188,7 @@ export async function syncSandboxEnvForPrompt(args: {
     snapshot,
     refreshModels: true,
     llmGatewayEnabled,
-    llmGatewayBaseUrl: llmGatewayEnabled ? resolveLlmGatewayBaseUrl() : undefined,
+    llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
   // The ACP daemon recycles only idle processes and starts the selected harness
@@ -234,6 +256,7 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
       .select({
         externalId: sessionSandboxes.externalId,
         sessionId: sessionSandboxes.sessionId,
+        provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
       })
       .from(sessionSandboxes)
@@ -242,7 +265,9 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
     if (targets.length === 0) return;
 
-    const llmGatewayBaseUrl = resolveLlmGatewayBaseUrl();
+    // Computed PER ROW (not once, hoisted) — a project's active sandboxes can
+    // span more than one provider (mid-migration, failover), and each needs
+    // the base URL resolved onto ITS OWN provider's origin.
     await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
       const rowConfig = (row.config || {}) as Record<string, unknown>;
       const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
@@ -262,7 +287,7 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
           snapshot,
           refreshModels: true,
           llmGatewayEnabled: enabled,
-          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrl : undefined,
+          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
           llmGatewayDenyEnv: enabled ? nativeProviderEnvNames().join(',') : '',
         });
         await markSandboxLlmGatewayMode(row.sessionId, enabled);
@@ -310,15 +335,6 @@ async function markSandboxLlmGatewayMode(
       updatedAt: new Date(),
     })
     .where(eq(sessionSandboxes.sessionId, sessionId));
-}
-
-function resolveLlmGatewayBaseUrl(): string {
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  return (
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`)
-  );
 }
 
 function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {

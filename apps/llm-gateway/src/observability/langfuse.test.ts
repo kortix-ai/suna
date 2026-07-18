@@ -21,7 +21,7 @@ function trace(over: Partial<GatewayTrace> = {}): GatewayTrace {
     latencyMs: 12,
     attempts: 1,
     candidatesTried: ['openrouter'],
-    usage: { promptTokens: 10, completionTokens: 5, cachedTokens: 2 },
+    usage: { promptTokens: 10, completionTokens: 5, cachedTokens: 2, cacheWriteTokens: 0 },
     upstreamCost: 0.01,
     finalCost: 0.02,
     request: { a: 1 },

@@ -3,15 +3,21 @@
 import { AlertCircle, CheckCircle2, Plug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { isConnectorsEnabled } from '@/lib/config';
 
 /**
  * Post-OAuth landing for connector 1-click connect (Pipedream). The connect
  * flow redirects here with `?connected=true` or `?error=true` once the user
  * authorizes the app. The connection is already finalized server-side — this
  * page just confirms it so the tab isn't a dead end.
+ *
+ * Self-host without Pipedream configured never initiates this OAuth flow, so
+ * this route should never legitimately be hit there — but guard it anyway
+ * (a stale bookmark/link) by bouncing to /projects instead of confirming a
+ * "connection" for a feature that isn't enabled.
  */
 export default function ConnectorsPage() {
   return (
@@ -25,9 +31,17 @@ function ConnectorResult() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useSearchParams();
+  const connectorsEnabled = isConnectorsEnabled();
+
+  useEffect(() => {
+    if (!connectorsEnabled) router.replace('/projects');
+  }, [connectorsEnabled, router]);
+
   const ok = params.get('connected') === 'true';
   const failed = params.get('error') === 'true';
   const state: 'connected' | 'error' = failed && !ok ? 'error' : 'connected';
+
+  if (!connectorsEnabled) return null;
 
   const Icon = state === 'connected' ? CheckCircle2 : AlertCircle;
 

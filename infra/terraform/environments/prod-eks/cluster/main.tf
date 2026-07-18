@@ -7,7 +7,7 @@
 # against a cluster that does not exist yet. It builds:
 #   - an isolated VPC (own /16, 3 AZ, NAT per AZ) — does NOT touch the ECS VPC,
 #   - the EKS control plane + managed node group (modules/eks/cluster),
-#   - the ACM cert for api-eks.kortix.com (validated via Cloudflare DNS),
+#   - ACM certs for the API and gateway EKS origins (validated via Cloudflare DNS),
 #   - the app's IRSA role (reads the SAME Secrets Manager bundle ECS uses),
 #   - the GitHub Actions OIDC deploy role + its EKS access entry.
 #
@@ -100,6 +100,20 @@ module "eks" {
 module "acm" {
   source      = "../../../modules/acm-cloudflare"
   domain_name = local.domain
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
+# Dedicated origin certificate for the EKS LLM gateway. The public
+# gateway.kortix.com hostname belongs to the Cloudflare router; the router
+# reaches this cluster through gateway-eks.kortix.com under Full (strict) TLS.
+module "acm_gateway" {
+  source      = "../../../modules/acm-cloudflare"
+  domain_name = var.gateway_domain
   zone_id     = var.cloudflare_zone_id
   tags        = local.tags
   providers = {

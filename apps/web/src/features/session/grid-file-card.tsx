@@ -1,8 +1,12 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { FileThumbnail } from '@/features/files/components/file-thumbnail';
-import { getFileIcon } from '@/features/files/components/file-icon';
+import { sandboxExplorerSource } from '@/features/files/sandbox-explorer-source';
+import {
+  FileExplorerSourceProvider,
+  FileThumbnail,
+  getFileIcon,
+} from '@/features/project-files';
 
 interface GridFileCardProps {
   filePath: string;
@@ -36,13 +40,16 @@ export function GridFileCard({
         className,
       )}
     >
-      {/* Thumbnail area */}
-      <FileThumbnail
-        filePath={filePath}
-        fileName={fileName}
-        className="h-[100px]"
-        deferPreview={deferPreview}
-      />
+      {/* Thumbnail area — cards render in chat, outside any explorer surface,
+          so they carry their own sandbox source for the live preview. */}
+      <FileExplorerSourceProvider value={sandboxExplorerSource}>
+        <FileThumbnail
+          filePath={filePath}
+          fileName={fileName}
+          className="h-[100px]"
+          deferPreview={deferPreview}
+        />
+      </FileExplorerSourceProvider>
 
       {/* Name area */}
       <div className="px-2.5 py-2 border-t border-border/30 h-[38px] flex items-center">

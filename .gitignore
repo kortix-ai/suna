@@ -130,6 +130,16 @@ infra/terraform/**/.terraform.lock.hcl
 infra/terraform/**/*.tfstate
 infra/terraform/**/*.tfstate.*
 infra/terraform/**/*.tfvars
+self-host/terraform/**/.terraform/
+self-host/terraform/**/.terraform.lock.hcl
+self-host/terraform/**/*.tfstate
+self-host/terraform/**/*.tfstate.*
+self-host/terraform/**/*.tfvars
+infra/deployments/**/.terraform/
+infra/deployments/**/.terraform.lock.hcl
+infra/deployments/**/*.tfstate
+infra/deployments/**/*.tfstate.*
+infra/deployments/**/*.tfvars
 .cursor
 
 apps/mobile/.env.example

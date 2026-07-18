@@ -5,7 +5,8 @@ name: drata-compliance-as-code
 # Drata, gating on test severity. Supports SOC 2 (CC) — shifts infra
 # compliance left so misconfigs are caught in CI before they reach AWS.
 #
-# The pipeline FAILS if any test at or above `minimumSeverity` fails.
+# The pipeline FAILS on critical findings. Lower-severity findings remain
+# visible in Drata and are reviewed against docs/compliance/IAC-SCANNER-EXCEPTIONS.md.
 # Auth: the pipeline key lives in repo secret DRATA_IAC_PIPELINE_KEY
 # (never committed — referenced only via ${{ secrets.* }}).
 
@@ -20,12 +21,56 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      results_run_id:
+        description: "Optional prior Drata scan ID to print sanitized finding details"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  drata-iac-results:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
+    name: sanitized-finding-details
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print finding details
+        if: ${{ inputs.results_run_id != '' }}
+        env:
+          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
+          RUN_ID: ${{ inputs.results_run_id }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DRATA_API_TOKEN}" \
+            --header "Content-Type: application/json" \
+            "https://public-api.drata.com/public/workspaces/1/pipelines/results?runId=${RUN_ID}" \
+            | jq --compact-output '. as $result |
+              ($result.designGaps[] | {
+                excluded: false,
+                severity,
+                testId,
+                fileName,
+                lineNumber,
+                description,
+                currentValue,
+                preferredValue,
+                resourceMetadata
+              }), ($result.excludedFindings[] | {
+                excluded: true,
+                severity,
+                testId,
+                fileName,
+                lineNumber,
+                description,
+                currentValue,
+                preferredValue,
+                resourceMetadata
+              })'
+
   drata-iac-scan:
     name: compliance-as-code-action
     runs-on: ubuntu-latest
@@ -41,4 +86,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # Unexcluded critical findings fail. The current lower-severity
+          # findings are documented architecture decisions or parser false
+          # positives and remain visible for periodic review.
           minimumSeverity: "CRITICAL"
+          verboseLogging: true

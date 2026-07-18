@@ -78,7 +78,7 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
       new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     return () => {
       globalThis.fetch = originalFetch;
     };
@@ -174,10 +174,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   test('503 and 504 are also retried on GET', async () => {
     configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
     for (const status of [503, 504]) {
-      const stub = stubFetchSequence([
-        { status },
-        { status: 200, body: { ok: true } },
-      ]);
+      const stub = stubFetchSequence([{ status }, { status: 200, body: { ok: true } }]);
       try {
         const res = await backendApi.get('/projects/abc/sessions/s1/audit');
         expect(res.success).toBe(true);
@@ -238,6 +235,67 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
       expect(stub.attemptCount()).toBe(1);
     } finally {
       stub.restore();
+    }
+  });
+});
+
+describe('account_mfa_required 403 → kortix:mfa-required browser event', () => {
+  function stubFetch403(body: Record<string, unknown>) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(body), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  function stubWindow() {
+    const dispatched: string[] = [];
+    const g = globalThis as { window?: unknown };
+    const original = g.window;
+    g.window = {
+      dispatchEvent: (e: { type: string }) => {
+        dispatched.push(e.type);
+        return true;
+      },
+    };
+    return {
+      dispatched,
+      restore: () => {
+        if (original === undefined) delete g.window;
+        else g.window = original;
+      },
+    };
+  }
+
+  test('the coded MFA denial dispatches the step-up event', async () => {
+    configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
+    const restoreFetch = stubFetch403({ error: 'mfa needed', code: 'account_mfa_required' });
+    const win = stubWindow();
+    try {
+      const res = await backendApi.get('/accounts/abc/iam/groups');
+      expect(res.success).toBe(false);
+      expect(win.dispatched).toContain('kortix:mfa-required');
+    } finally {
+      win.restore();
+      restoreFetch();
+    }
+  });
+
+  test('an ordinary 403 dispatches nothing', async () => {
+    configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
+    const restoreFetch = stubFetch403({ error: "You don't have permission to create projects." });
+    const win = stubWindow();
+    try {
+      const res = await backendApi.get('/accounts/abc/iam/groups');
+      expect(res.success).toBe(false);
+      expect(win.dispatched.length).toBe(0);
+    } finally {
+      win.restore();
+      restoreFetch();
     }
   });
 });

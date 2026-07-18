@@ -5,8 +5,8 @@ import { makeOpenApiApp, json } from '../openapi';
 import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
 import { llm } from './routes/llm';
-import { proxy } from './routes/proxy';
 import { anthropic } from './routes/anthropic';
+import { proxy } from './routes/proxy';
 
 const router = makeOpenApiApp();
 

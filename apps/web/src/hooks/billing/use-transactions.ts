@@ -46,7 +46,8 @@ export interface TransactionsSummary {
 export function useTransactions(
   limit: number = 50,
   offset: number = 0,
-  typeFilter?: string | string[]
+  typeFilter?: string | string[],
+  options?: { enabled?: boolean },
 ) {
   const accountId = useBillingAccountId();
   const normalizedTypeFilter = Array.isArray(typeFilter)
@@ -61,6 +62,11 @@ export function useTransactions(
       normalizedTypeFilter,
       { accountId: accountId ?? null },
     ],
+    // Billing-disabled deployments (e.g. self-host with
+    // KORTIX_BILLING_INTERNAL_ENABLED=false) have no ledger to fetch — the
+    // endpoint 404s "Billing is not enabled". Callers pass `enabled: false` to
+    // skip the request entirely rather than surfacing that raw error.
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),

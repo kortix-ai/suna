@@ -1,0 +1,155 @@
+---
+title: "How we keep deals moving"
+description: The pipeline-hygiene agent we run on Kortix — it scans HubSpot every day for stale deals, missing next steps, deals stalled in a stage, and overdue tasks, nudges the owning rep in Slack, and escalates the worst offenders to their manager.
+date: "2026-05-06"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+template: pipeline-hygiene
+---
+
+A pipeline decays quietly. A deal goes a week without a call or an email and
+nobody notices. A rep forecasts a close date and never sets one. A deal sits in
+"Proposal Sent" for a month past when it should have moved. A follow-up task
+comes due and slides by unflagged. None of this shows up in a stage-by-stage
+pipeline report — the deal is still "open," still counted, still apparently
+fine.
+
+We run a pipeline-hygiene agent on Kortix that reads HubSpot every day and
+flags exactly this: deals gone quiet, missing next steps and close dates,
+deals stuck in their current stage, and tasks past due. It nudges the owning
+rep in Slack and escalates the worst of the day to their manager. It is
+read-mostly — it flags and it nudges, and it never touches a deal's stage,
+owner, or amount.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="CRM">HubSpot</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Mode">Read-mostly · nudge + flag only</Fact>
+</KeyFacts>
+
+## The problem
+
+This is a different problem than dirty CRM data. Duplicate contacts and
+missing job titles are a data-quality issue; a deal that hasn't moved in
+three weeks is a process issue — the pipeline itself is not doing what it's
+supposed to do, which is progress toward a close. A stage-by-stage pipeline
+report can't tell the difference between a deal that's actively advancing and
+one that's been quietly parked, because both show up the same way: "open,"
+sitting in a stage, counting toward the forecast.
+
+The usual fix is the weekly pipeline review, where a manager scrolls every
+open deal looking for the ones that have gone stale. By the time that meeting
+happens, a deal that went quiet on Monday has already lost a week, and the
+review only catches what someone remembers to ask about. Reps are heads-down
+selling, not auditing their own deal hygiene, and a next-step field or a close
+date left blank rarely gets attention until forecast time, when it's too late
+to fix cheaply.
+
+## What we built
+
+A daily cron triggers an agent that spawns a fresh, isolated session with
+read-mostly access to HubSpot. It pulls every open deal, checks it against
+four hygiene rules — no logged activity in the configured window, a missing
+next step or close date, no stage movement past the configured window, and any
+overdue task tied to the deal — and flags what it finds. It nudges each
+owning rep in Slack with exactly what needs attention on their deals, and
+separately escalates the day's worst offenders to the sales manager's channel.
+It never changes a deal's stage, reassigns its owner, or edits its amount.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox — one day, one run, nothing carried over. The
+pipeline is re-scanned from its current state every morning.
+
+</Step>
+<Step title="Give the agent the hygiene rules">
+
+What counts as stale, stalled, or overdue lives as a **skill** that travels
+with the agent: the no-activity window, the stage-stall window, what a
+missing next step or close date looks like, and how the day's worst offenders
+are chosen for escalation. When the team's definition of "stuck" changes, the
+rule changes, not the agent's judgment call.
+
+</Step>
+<Step title="Connect HubSpot read-mostly">
+
+Through a scoped **connector**, brokered server-side so no raw token reaches
+the model, the agent reads deals, stage history, activities, and tasks, and
+writes only a hygiene flag back onto the deal — no other field:
+
+- **Deals and stage history** — current stage, amount, close date, next step,
+  and how long the deal has sat in its current stage.
+- **Activities** — calls, emails, meetings, and notes logged against each
+  deal, to determine staleness.
+- **Tasks** — open tasks tied to each deal and whether they're past due.
+- **Posts to Slack** — a nudge to the owning rep and an escalation to the
+  manager's channel.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-mostly**. The only write it ever makes to HubSpot is an
+internal hygiene flag on the deal — never the stage, never the owner, never
+the amount. It cannot reassign a deal, advance it, or touch the number tied to
+it, no matter what the data suggests. Credentials are encrypted in the secrets
+manager and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Nudge the rep, escalate the worst">
+
+Each flagged deal gets a Slack nudge to its owning rep: what's wrong and what
+to do about it — log an activity, set a next step, move the deal, or clear the
+overdue task. At the end of the run, the deals in the worst shape — several
+rules tripped at once, largest amount at risk, longest gone quiet — get
+escalated to the sales manager's Slack channel. The rep and the manager decide
+what happens next; the agent only reports.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a session with read-mostly **connector** access to
+  HubSpot. The hygiene rules live as a **skill**. The agent flags stale,
+  incomplete, stalled, and overdue deals, nudges the rep, escalates the worst
+  to the manager, and never changes a deal's stage, owner, or amount.
+</Callout>
+
+## Guardrails
+
+Reading and flagging every open deal every day is a trust question, so the
+agent's access is narrow and one-directional in the ways that matter:
+
+- **Isolation.** Every run happens in its own microVM sandbox. Only the
+  hygiene flag write and the Slack messages leave the sandbox.
+- **Scoped secrets.** The HubSpot credential is encrypted in the secrets
+  manager and injected into the sandbox at runtime, never exposed to the model
+  or the logs.
+- **Read-mostly.** The agent's only write to HubSpot is an internal hygiene
+  flag on the deal. It never changes a deal's stage, reassigns its owner, or
+  edits its amount — those decisions stay with the rep and the manager.
+- **Nudge and flag only.** The agent's output is a Slack message or a flag; it
+  never takes an action on a rep's behalf.
+- **Everything is code.** The staleness window, the stage-stall window, and
+  the escalation criteria are files in the repo, versioned and changed through
+  a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="Open pipeline re-checked against the current HubSpot state" />
+  <Stat value="4 rules" label="Stale, missing fields, stalled stage, and overdue tasks in one pass" />
+  <Stat value="Read-mostly" label="Stage, owner, and amount are never touched by the agent" />
+</StatGrid>
+
+The deals that used to sit quietly until the next pipeline review now surface
+the same day they go stale, with a nudge to the rep who owns them and an
+escalation for the ones a manager should already be watching. The agent only
+flags and nudges; the rep and the manager still decide what moves.

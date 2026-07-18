@@ -44,7 +44,10 @@ describe('account page gates each IAM surface behind the entitlement', () => {
   });
 
   test('identity section: sso/scim entitlement or upsell (cards no longer just hidden)', () => {
-    expect(pageSource).toMatch(/enterpriseIdentityEnabled \? \(\s*<>\s*<SsoCard/);
+    // A short "why connect both" explainer sits above the two cards — allow
+    // it between the entitlement check and <SsoCard> while still asserting
+    // SsoCard renders before ScimCard.
+    expect(pageSource).toMatch(/enterpriseIdentityEnabled \? \([\s\S]*?<SsoCard[\s\S]*?<ScimCard/);
     expect(pageSource).toContain('<EnterpriseUpsell feature="identity" />');
   });
 
@@ -69,13 +72,33 @@ describe('account page rail groups the enterprise surfaces', () => {
     expect(settingsStart).toBeGreaterThan(-1);
     const settingsEnd = pageSource.indexOf('</motion.div>', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
-    for (const moved of ['SsoCard', 'ScimCard', 'EnterpriseDemoCard', 'PatPolicyCard']) {
+    // The connection cards (and the tokens-tab cards) still live only on
+    // their own sections — SsoCard/ScimCard never move into Settings.
+    for (const moved of ['SsoCard', 'ScimCard', 'PatPolicyCard']) {
       expect(settingsBody).not.toContain(moved);
     }
   });
 
-  test('demo toggle stays outside the entitlement gate on the identity section', () => {
-    expect(pageSource).toMatch(/<EnterpriseDemoCard[\s\S]*?\/>\s*\{entitlementsLoading/);
+  test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
+    const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
+    const identityEnd = pageSource.indexOf('</motion.div>', identityStart);
+    const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
+    const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
+    expect(identityBody).not.toContain('EnterpriseDemoCard');
+
+    const settingsEnd = pageSource.indexOf('</motion.div>', settingsStart);
+    const settingsBody = pageSource.slice(settingsStart, settingsEnd);
+    expect(settingsBody).toContain('EnterpriseDemoCard');
+    // Placed above Danger zone, not at the top — tucked away.
+    const demoIdx = settingsBody.indexOf('EnterpriseDemoCard');
+    const dangerIdx = settingsBody.indexOf('Danger zone');
+    expect(demoIdx).toBeGreaterThan(-1);
+    expect(dangerIdx).toBeGreaterThan(-1);
+    expect(demoIdx).toBeLessThan(dangerIdx);
+  });
+
+  test('the demo card + upsell are skipped entirely when a self-host Enterprise license already forces entitlements on', () => {
+    expect(pageSource).toContain('accountStateQuery.data?.enterprise_license_available');
   });
 
   test('tokens section carries the PAT policy and service accounts cards', () => {

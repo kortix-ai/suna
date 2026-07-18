@@ -23,7 +23,13 @@ import {
   listSessionsNeedingInput,
   resolveApproval,
 } from '@kortix/sdk/projects-client';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type QueryClient,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 /**
@@ -116,10 +122,33 @@ export function useSessionAudit(
   });
 }
 
-/** Approve/deny mutation that invalidates the shared audit query on settle. */
-export function useResolveApproval(projectId: string | undefined, sessionId: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
+/**
+ * Mutation options for approve/deny, extracted out of `useResolveApproval` so
+ * this is directly testable without rendering a component (see
+ * `session-audit-shared.test.ts`).
+ *
+ * Every call site (`SessionApprovalPrompt`, `SessionAuditPanel`,
+ * `SessionPendingApprovalsIndicator`) passes its own call-time `onError` to
+ * `resolve.mutate(vars, { onError })` and shows a specific, actionable toast
+ * (e.g. "Failed to resolve approval"). Without a hook-level `onError` here,
+ * TanStack Query's `defaultMutationOptions()` merge falls back to the
+ * QueryClient's global default mutation `onError`
+ * (`apps/web/src/app/react-query-provider.tsx`) — which ALSO fires, in
+ * addition to (not instead of) the call-time one. That produced a confusing
+ * SECOND toast — the generic "Failed to perform action: <message>" — anytime
+ * a resolve failed, most visibly when the target execution had already been
+ * resolved elsewhere (the resolve endpoint can be hit with zero browsers
+ * open, and the audit poll can lag a few seconds behind), which 404s with a
+ * bare "not found". The no-op `onError` below opts this mutation out of the
+ * global default, matching the same pattern already used by
+ * `useAbortOpenCodeSession` — every consumer already owns its own error UX.
+ */
+export function resolveApprovalMutationOptions(
+  projectId: string | undefined,
+  sessionId: string | undefined,
+  queryClient: QueryClient,
+) {
+  return {
     mutationFn: ({
       executionId,
       decision,
@@ -132,10 +161,22 @@ export function useResolveApproval(projectId: string | undefined, sessionId: str
       if (!projectId) throw new Error('No project in context');
       return resolveApproval(projectId, executionId, decision, scope);
     },
+    // See the jsdoc above `useResolveApproval` — opts out of the global
+    // default mutation `onError` so it doesn't double-toast alongside each
+    // call site's own, more specific error handling.
+    onError: () => {},
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: sessionAuditKey(projectId, sessionId) });
     },
-  });
+  };
+}
+
+/** Approve/deny mutation that invalidates the shared audit query on settle —
+ *  see `resolveApprovalMutationOptions` above for why it opts out of the
+ *  global default mutation `onError`. */
+export function useResolveApproval(projectId: string | undefined, sessionId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation(resolveApprovalMutationOptions(projectId, sessionId, queryClient));
 }
 
 export function riskTone(risk: string | null): 'destructive' | 'warning' | 'muted' {
