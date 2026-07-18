@@ -57,6 +57,7 @@ import {
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
@@ -1146,6 +1147,9 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   /** Session ID — used for message queue, todo chip, and mention filtering */
   sessionId?: string;
+  /** Project ID — lets the reasoning-effort control read/write this
+   *  project's per-model generation config (see reasoning-effort-selector.tsx). */
+  projectId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
   /**
@@ -1246,6 +1250,7 @@ export function SessionChatInput({
   onVariantChange,
   messages,
   sessionId,
+  projectId,
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
@@ -2359,6 +2364,13 @@ export function SessionChatInput({
                   onSelect={onVariantChange}
                 />
               )}
+              {/* Reasoning-effort control — independent of the legacy opencode
+                  variant list above. Renders nothing unless the selected
+                  model actually exposes a reasoning_options effort knob (see
+                  reasoning-effort-selector.tsx for why this is capability-
+                  gated off the live catalog rather than the empty variant
+                  list models.dev models never populate). */}
+              <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
             </div>
 
             {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
