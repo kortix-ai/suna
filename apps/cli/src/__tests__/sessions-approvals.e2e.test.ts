@@ -24,6 +24,7 @@ let dir = '';
 let server: ReturnType<typeof Bun.serve> | null = null;
 let acpReplies: unknown[] = [];
 let pendingEnvelopes: unknown[] = [];
+let ordinalCounter = 0;
 let stdoutChunks: string[] = [];
 let stderrChunks: string[] = [];
 const savedEnv: Record<string, string | undefined> = {};
@@ -58,6 +59,7 @@ describe('sessions pending/approve/answer', () => {
     dir = mkdtempSync(join(tmpdir(), 'kortix-approvals-'));
     acpReplies = [];
     pendingEnvelopes = [];
+    ordinalCounter = 0;
     stdoutChunks = [];
     stderrChunks = [];
 
@@ -120,11 +122,23 @@ describe('sessions pending/approve/answer', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  // Mint a fresh ordinal per envelope. Deriving it from
+  // `pendingEnvelopes.length` looked equivalent but never was: in
+  // `pendingEnvelopes = [permission('a'), permission('b')]` both calls run
+  // before the assignment, so both envelopes got streamEventId 1 — and the
+  // SDK reducer dedupes rows by `${direction}:${streamEventId}`, silently
+  // dropping every envelope after the first.
+  function nextOrdinal() {
+    ordinalCounter += 1;
+    return ordinalCounter;
+  }
+
   function permission(id: string) {
+    const ordinal = nextOrdinal();
     return {
-      ordinal: pendingEnvelopes.length + 1,
+      ordinal,
       direction: 'agent_to_client',
-      streamEventId: pendingEnvelopes.length + 1,
+      streamEventId: ordinal,
       envelope: {
         jsonrpc: '2.0',
         id,
@@ -144,10 +158,11 @@ describe('sessions pending/approve/answer', () => {
   }
 
   function question(id: string) {
+    const ordinal = nextOrdinal();
     return {
-      ordinal: pendingEnvelopes.length + 1,
+      ordinal,
       direction: 'agent_to_client',
-      streamEventId: pendingEnvelopes.length + 1,
+      streamEventId: ordinal,
       envelope: {
         jsonrpc: '2.0',
         id,
