@@ -141,7 +141,11 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         },
         async project(o) {
           const name = o?.name ?? `e2e-${runId}-tproj-${rand()}`;
-          const id = await provisionProject(adminClient, { name, account_id: accountId });
+          const id = await provisionProject(adminClient, {
+            name,
+            account_id: accountId,
+            ...(o?.seed ? { seed_starter: true } : {}),
+          });
           stack.push('project', id);
           return { id, name } as CreatedProject;
         },

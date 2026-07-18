@@ -94,40 +94,50 @@ flow(
   "PROJ-18",
   {
     domain: "projects",
-    // `stripe` ⇒ the target enforces billing, so a free account is capped at 1
+    // `stripe` ⇒ the target enforces billing, so a free account is capped at 3
     // project; `managedGit` ⇒ managed provisioning is available to reach the cap.
     requires: ["managedGit", "stripe"],
     serial: true,
     routes: ["GET /v1/projects", "POST /v1/projects/provision"],
   },
   async (ctx) => {
-    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 1.
+    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 3.
     const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects");
     list.status(200);
     const existing = list.json<any[]>()?.length ?? 0;
 
-    if (existing === 0) {
-      await ctx.step("free account: 1st project allowed (201)", async () => {
-        const r = await ctx.client
+    for (let index = existing; index < 3; index += 1) {
+      await ctx.step(`free account: project ${index + 1} of 3 allowed (201)`, async () => {
+        let r = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .post("/v1/projects/provision", { name: ctx.fixtures.name("free-1") });
-        // 502 = managed git host transiently unavailable (see PROJ-3).
-        r.status([201, 502]);
-        if (r.statusCode === 201) ctx.track("project", r.json<any>().project_id);
+          .post("/v1/projects/provision", {
+            name: ctx.fixtures.name(`free-${index + 1}`),
+          });
+        // The managed Git host can return a transient 502. Retry the same quota
+        // slot before deciding the contract failed; only a real 201 advances it.
+        for (let attempt = 1; r.statusCode === 502 && attempt < 4; attempt += 1) {
+          await Bun.sleep(2_000 * attempt);
+          r = await ctx.client
+            .as(ctx.P.NONMEMBER)
+            .post("/v1/projects/provision", {
+              name: ctx.fixtures.name(`free-${index + 1}-retry-${attempt}`),
+            });
+        }
+        r.status(201).body().exists("$.project_id");
+        ctx.track("project", r.json<any>().project_id);
       });
     }
 
-    await ctx.step("free account: 2nd project rejected (403 project_limit_reached)", async () => {
+    await ctx.step("free account: 4th project rejected (403 project_limit_reached)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2") });
-      // The quota gate returns 403 BEFORE any repo is provisioned, so the only
-      // non-403 outcome is a 502 from a failed 1st-project create above (no
-      // project exists to count) — tolerated, not a limit regression.
-      r.status([403, 502]);
-      if (r.statusCode === 403) {
-        r.body().has("$.code", "project_limit_reached").exists("$.limit");
-      }
+        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-4") });
+      // The quota gate runs before any repository is provisioned.
+      r.status(403)
+        .body()
+        .has("$.code", "project_limit_reached")
+        .has("$.limit", 3)
+        .has("$.count", 3);
     });
   },
 );

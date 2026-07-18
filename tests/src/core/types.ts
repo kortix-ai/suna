@@ -59,7 +59,7 @@ export interface TeamFixture {
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Provision a project owned by this team account. */
-  project(opts?: { name?: string }): Promise<CreatedProject>;
+  project(opts?: { name?: string; seed?: boolean }): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */

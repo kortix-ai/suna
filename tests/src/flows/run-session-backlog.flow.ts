@@ -46,7 +46,9 @@ async function waitForSessionReady(
         {
           params: { projectId, sessionId },
           query: { wait_ms: '8000' },
-          timeoutMs: 12_000,
+          // The server may hold the request for the full 8s wait window, and
+          // Cloudflare/ECS transit can add several more seconds under load.
+          timeoutMs: 25_000,
         },
       );
       r.status(200);
@@ -117,6 +119,39 @@ async function createOcConversation(ctx: FlowContext, sandboxId: string): Promis
   const id = ready!.json<any>()?.id;
   if (!id) throw new Error(`OpenCode session create returned no id: ${ready!.text()}`);
   return id;
+}
+
+function hasAssistantOutput(messages: unknown): boolean {
+  return (
+    Array.isArray(messages) &&
+    messages.some((message: any) => {
+      if (message?.info?.role !== 'assistant') return false;
+      if (message?.info?.error) return true;
+      return Array.isArray(message?.parts) && message.parts.length > 0;
+    })
+  );
+}
+
+async function waitForAssistantOutput(
+  ctx: FlowContext,
+  sandboxId: string,
+  ocId: string,
+  timeoutMs = 240_000,
+): Promise<any[]> {
+  return waitFor(
+    async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(ocPath(sandboxId, `/session/${ocId}/message`));
+      return r.statusCode === 200 ? r.json<any[]>() : [];
+    },
+    {
+      until: hasAssistantOutput,
+      timeoutMs,
+      intervalMs: 4_000,
+      description: `observable assistant output in OpenCode session ${ocId}`,
+    },
+  );
 }
 
 // ─── RUN-1: create an OpenCode conversation through the proxy ─────────────────
@@ -196,22 +231,10 @@ flow(
       r.status([200, 202, 204]);
     });
     await ctx.step('a message/part appears in the conversation within ~3min', async () => {
-      // Structural, NOT content: assert that the agent produced at least one
-      // message (the SSE deltas are mirrored into the message list).
-      await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (msgs) => Array.isArray(msgs) && msgs.length > 0,
-          timeoutMs: 180_000,
-          intervalMs: 4_000,
-          description: `at least one message in OpenCode session ${ocId}`,
-        },
-      );
+      // A user message and empty assistant placeholder appear immediately.
+      // Require an assistant part (or an explicit assistant error) so this
+      // proves execution progressed beyond request acceptance.
+      await waitForAssistantOutput(ctx, sandboxId, ocId, 180_000);
     });
   },
 );
@@ -688,28 +711,26 @@ flow(
     const path = `ke2e-file-${Date.now()}.txt`;
     const content = 'ke2e live file crud';
 
-    await ctx.step('create/write a file in the sandbox → 200', async () => {
-      // The daemon file routes are mounted under the proxy; the create/write
-      // verb is a PUT/POST to the file endpoint. We accept the family of success
-      // codes the daemon returns.
+    await ctx.step('upload a file into the sandbox workspace → 200', async () => {
+      // The daemon owns writes through multipart POST /file/upload. A raw PUT
+      // /file is not a write contract and falls through to the OpenCode SPA.
+      const form = new FormData();
+      form.append('path', '.');
+      form.append('file', new File([content], path, { type: 'text/plain' }));
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .request('PUT', ocPath(sandboxId, `/file?path=${encodeURIComponent(path)}`), {
-          body: content,
-          raw: true,
-        });
-      r.status([200, 201, 204]);
+        .request('POST', ocPath(sandboxId, '/file/upload'), { body: form });
+      r.status(200).body().has('$[0].size', content.length);
     });
     await ctx.step('read it back → 200 with the content', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
-      r.status([200, 204]);
-      if (r.statusCode === 200 && r.text()) {
-        // Structural: the written bytes round-trip (not an LLM assertion).
-        const seen = r.text().includes(content);
-        void seen;
-      }
+      r.status(200)
+        .body()
+        .has('$.type', 'text')
+        .has('$.content', content)
+        .has('$.size', content.length);
     });
     await ctx.step('list the directory → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/file?path=.'));
@@ -741,6 +762,7 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
       'GET /v1/projects/:projectId/snapshots',
       'POST /v1/projects/:projectId/change-requests',
       'GET /v1/projects/:projectId/change-requests/:crId/merge-preview',
@@ -769,7 +791,14 @@ flow(
               Array.isArray(templates) &&
               templates.some(
                 (t: any) =>
-                  t?.ready === true || t?.status === 'ready' || t?.provider_state === 'active',
+                  t?.ready === true ||
+                  t?.status === 'ready' ||
+                  t?.provider_state === 'active' ||
+                  (Array.isArray(t?.provider_coverage) &&
+                    t.provider_coverage.some(
+                      (provider: any) =>
+                        provider?.launch_ready === true || provider?.status === 'ready',
+                    )),
               )
             );
           },
@@ -789,35 +818,43 @@ flow(
       sandboxId = String(sandbox.external_id ?? sandbox.externalId);
     });
 
-    await ctx.step('agent produces output (a message appears)', async () => {
+    const goldenPath = `golden-e2e-${Date.now()}.md`;
+    const goldenMarker = `golden-e2e-${crypto.randomUUID()}`;
+    await ctx.step('agent writes the requested file and produces output', async () => {
       const ocId = await createOcConversation(ctx, sandboxId);
       await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
         parts: [
-          { type: 'text', text: 'Create README.md with a one-line description and commit it.' },
+          {
+            type: 'text',
+            text: `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change.`,
+          },
         ],
       });
-      await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (m) => Array.isArray(m) && m.length > 0,
-          timeoutMs: 240_000,
-          intervalMs: 5_000,
-          description: 'agent produced at least one message',
-        },
-      );
+      await waitForAssistantOutput(ctx, sandboxId, ocId);
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
+      file
+        .status(200)
+        .body()
+        .matches('$.content', new RegExp(`^${goldenMarker}\\n?$`));
+    });
+
+    await ctx.step("commit and push the agent's workspace change", async () => {
+      const committed = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+          { message: 'Add golden end-to-end fixture' },
+          { params: { projectId: project.id, sessionId: session.id } },
+        );
+      committed.status(200).body().has('$.pushed', true);
     });
 
     let crId = '';
     await ctx.step('open a change request from the session branch → 201', async () => {
-      // The agent commit is async + LLM-bound: a message appearing doesn't mean
-      // it has committed yet. A CR can only open once the branch has a diff vs
-      // base, so poll the open until it succeeds (the agent committed) — retrying
-      // the 400 "no diff" for a few minutes — then skip if it never commits.
+      // The host commit-push invalidates the mirror immediately, but tolerate
+      // a brief provider-ref propagation window before asserting the CR.
       const r = await waitFor(
         async () => {
           const resp = await ctx.client
@@ -827,8 +864,10 @@ flow(
               { head_ref: session.id, title: ctx.fixtures.name('golden-cr') },
               { params: { projectId: project.id } },
             );
-          // 400 = branch has no committable diff yet; keep waiting.
-          return resp.statusCode === 400 ? null : resp;
+          // The branch can be unknown briefly (400), or exist without being
+          // ahead of base yet (422 CR_HEAD_NOT_AHEAD). Both mean the async
+          // agent commit is not observable yet, so keep polling.
+          return resp.statusCode === 400 || resp.statusCode === 422 ? null : resp;
         },
         {
           until: (resp) => Boolean(resp),
@@ -836,11 +875,11 @@ flow(
           intervalMs: 6_000,
           description: `session branch ${session.id} has a committable diff (agent committed)`,
         },
-      ).catch(() => null);
+      );
 
-      if (!r) ctx.skip('agent produced no committable diff within 4min — nothing to merge');
-      r!.status(201);
-      crId = r!.json<any>()?.change_request?.id ?? r!.json<any>()?.id ?? '';
+      if (!r) throw new Error('change request did not become observable');
+      r.status(201);
+      crId = r.json<any>()?.change_request?.id ?? r.json<any>()?.cr_id ?? r.json<any>()?.id ?? '';
       if (crId) ctx.track('change-request', crId, { projectId: project.id });
     });
 
