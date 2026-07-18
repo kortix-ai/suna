@@ -1046,3 +1046,27 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for this explicitly requested rollback. The two
 skips are the pre-existing browser-bundle tests that require a bundle build.
+
+## Session log — 2026-07-18: ACP session reconnect hardening (bugfix)
+
+Live-repro'd (Playwright vs port 13200): a reloaded session page re-sends
+`initialize` to the still-running harness process; codex-acp rejects it
+(`-32603` / `data.details: "Already initialized"`) and bootstrap went terminal,
+bricking the session. If the process HAD restarted, `session/load` failed
+("no rollout found for thread id …") with the same terminal outcome.
+
+Fix (`src/acp/session.ts` `runBootstrap`, TDD, 3 new tests in
+`session.test.ts`):
+- `initialize` rejection matching "Already initialized" (AcpRpcError) is
+  treated as a healthy process — proceed to `session/load`, keep
+  capabilities/agentInfo/authMethods already reduced from transcript history.
+- `session/load` AcpRpcError falls back to `session/new` (the durable identity
+  is the Kortix session + envelope log; the ACP session id is re-mintable per
+  the runtime design). Transport errors still abort bootstrap for retry.
+
+Gates: typecheck ✅ · test 1214/0 (95 files) ✅ · smoke:install ✅.
+Companion web fix (same bug cluster, `apps/web`): session page now enables
+`replayStartStash` (the ACP chat replaced SessionChat's pending-prompt effect,
+so nothing sent the stashed first message) and passes `boundAgentName` to
+`InstantSessionShell` (locks the shell agent picker to the session's bound
+agent instead of a phantom selection).

@@ -162,7 +162,109 @@ async function waitUntil(condition: () => boolean, { timeout = 2000, interval = 
   }
 }
 
+/** Wraps `makeSessionFetchMock` so every `initialize` POST answers the
+ *  JSON-RPC error a live harness process returns when a reconnecting client
+ *  re-sends the handshake (codex-acp: `-32603` / `data.details:
+ *  "Already initialized"`). Everything else passes through. */
+function makeAlreadyInitializedFetchMock({ transcript = [] as unknown[] } = {}) {
+  const base = makeSessionFetchMock({ transcript });
+
+  const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (init?.method === 'POST') {
+      const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+      if (body.method === 'initialize') {
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          error: { code: -32603, message: 'Internal error', data: { details: 'Already initialized' } },
+        });
+      }
+    }
+    return base.fetch(input, init);
+  };
+
+  return { ...base, fetch: fetchImpl as unknown as typeof fetch };
+}
+
 describe('AcpSession', () => {
+  test('bootstrap tolerates "Already initialized" from a live harness process (reload/reconnect)', async () => {
+    const fetchMock = makeAlreadyInitializedFetchMock();
+    const session = createAcpSession({
+      endpoint: 'https://api.test/acp/s1',
+      acpSessionId: 'acp-existing-1',
+      fetch: fetchMock.fetch,
+      scheduleFlush: (f) => f(),
+    });
+
+    session.connect();
+    await waitUntil(() => session.getSnapshot().ready);
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.error).toBeNull();
+    expect(snapshot.connection).toBe('open');
+    expect(snapshot.acpSessionId).toBe('acp-existing-1');
+    expect(fetchMock.calls('session/load')).toHaveLength(1);
+  });
+
+  test('bootstrap falls back to session/new when session/load is rejected (harness lost the thread)', async () => {
+    const base = makeSessionFetchMock();
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        if (body.method === 'session/load') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            error: { code: -32603, message: 'Internal error', data: { details: 'no rollout found for thread id acp-lost-1' } },
+          });
+        }
+      }
+      return base.fetch(input, init);
+    };
+    const session = createAcpSession({
+      endpoint: 'https://api.test/acp/s1',
+      acpSessionId: 'acp-lost-1',
+      fetch: fetchImpl as unknown as typeof fetch,
+      scheduleFlush: (f) => f(),
+    });
+
+    session.connect();
+    await waitUntil(() => session.getSnapshot().ready);
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.error).toBeNull();
+    expect(snapshot.acpSessionId).toBe('acp-new-1');
+    expect(base.calls('session/new')).toHaveLength(1);
+  });
+
+  test('a genuine initialize RPC error still fails bootstrap', async () => {
+    const base = makeSessionFetchMock();
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        if (body.method === 'initialize') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            error: { code: -32600, message: 'Unsupported protocol version' },
+          });
+        }
+      }
+      return base.fetch(input, init);
+    };
+    const session = createAcpSession({
+      endpoint: 'https://api.test/acp/s1',
+      fetch: fetchImpl as unknown as typeof fetch,
+      scheduleFlush: (f) => f(),
+    });
+
+    session.connect();
+    await waitUntil(() => session.getSnapshot().error !== null);
+
+    expect(session.getSnapshot().ready).toBe(false);
+    expect(base.calls('session/new')).toHaveLength(0);
+  });
+
   test('connect is idempotent — one stream, one bootstrap', async () => {
     const fetchMock = makeSessionFetchMock();
     const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });

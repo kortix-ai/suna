@@ -92,10 +92,16 @@ export default function ProjectSessionPage() {
   // server-resolved ACP runtime), the sandbox switch, the SSE stream, readiness
   // seeding (no client health poll), and the canonical id. Gated on the billing
   // check so a no-plan account never spins on a sandbox that won't provision.
-  // replayStartStash:false — the web has its own pending-prompt hand-off (below).
+  // replayStartStash:true — the SDK replay is the ONLY sender of the stashed
+  // first message. The home composer / instant shell / configure-thread all
+  // stash under this route session id, and `useAcpSession` sends it once the
+  // ACP session bootstraps. (The old `false` relied on SessionChat's
+  // pending-prompt effect, which the ACP chat surface replaced — with it off,
+  // the first message rotted in sessionStorage and the transcript stayed on
+  // the empty state.)
   const session = useSession(projectId, sessionId, {
     enabled: !!user && !billingGatePending && !noPlan,
-    replayStartStash: false,
+    replayStartStash: true,
     chatEngine: false,
   });
   const acpItems = useMemo(() => projectAcpChatItems(session.acp.envelopes), [session.acp.envelopes]);
@@ -179,11 +185,10 @@ export default function ProjectSessionPage() {
     let fresh = false;
     let pending = false;
     if (typeof window !== 'undefined') {
-      // Was two raw legacy-key checks — now that every producer stashes
-      // canonically under the route id (see the `migrateStash` call below),
-      // `readStartStash` is the one check that still sees a stash from any of
-      // them (canonical or legacy shape) without knowing which key it lives
-      // under.
+      // Every producer (home composer, instant shell, configure-thread)
+      // stashes canonically under the route session id; `readStartStash` sees
+      // canonical and legacy shapes alike without knowing which key it lives
+      // under. The SDK replay (`replayStartStash: true` above) consumes it.
       pending = !!readStartStash(sessionId)?.prompt;
       fresh = pending || isSessionFresh(sessionId);
     }
@@ -367,6 +372,7 @@ export default function ProjectSessionPage() {
                 projectId={projectId}
                 sessionId={sessionId}
                 stage={authLoading || !user ? 'provisioning' : startStage}
+                boundAgentName={session.agentName}
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (

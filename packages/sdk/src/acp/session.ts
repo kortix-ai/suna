@@ -136,6 +136,19 @@ function isLocalRespondEcho(row: AcpStoredEnvelope): boolean {
   return 'id' in envelope && !('method' in envelope) && ('result' in envelope || 'error' in envelope);
 }
 
+/** A repeat `initialize` against a still-running harness process — codex-acp
+ *  answers `-32603` with `data.details: "Already initialized"`; other
+ *  adapters put the phrase in the message. A healthy-process signal, not a
+ *  bootstrap failure. */
+function isAlreadyInitializedError(error: unknown): boolean {
+  if (!(error instanceof AcpRpcError)) return false;
+  const details =
+    typeof error.data === 'object' && error.data !== null
+      ? String((error.data as Record<string, unknown>).details ?? '')
+      : '';
+  return /already initialized/i.test(details) || /already initialized/i.test(error.message);
+}
+
 function toSessionError(kind: AcpSessionError['kind'], error: unknown): AcpSessionError {
   if (error instanceof AcpRpcError) {
     return { kind: 'rpc', message: error.message, code: error.code, terminal: kind === 'bootstrap' };
@@ -449,15 +462,42 @@ export class AcpSession {
     try {
       const history = await this.client.transcript();
       this.enqueueHistory(history.envelopes);
-      const initialized = await this.client.initialize({
-        protocolVersion: this.options.protocolVersion ?? 1,
-        clientCapabilities: this.options.clientCapabilities ?? { auth: { _meta: { gateway: true } } },
-        clientInfo: this.options.clientInfo ?? DEFAULT_CLIENT_INFO,
-      });
+      // A reload/reconnect reaches a harness process that already completed
+      // its handshake; codex-acp (and other adapters) reject the repeat
+      // `initialize` with `-32603` / "Already initialized". That is a healthy
+      // process, not a failed bootstrap — proceed to `session/load` and keep
+      // the capabilities/agentInfo already reduced from the persisted
+      // transcript's original `initialize` result.
+      let initialized: Awaited<ReturnType<AcpClient['initialize']>> | null = null;
+      try {
+        initialized = await this.client.initialize({
+          protocolVersion: this.options.protocolVersion ?? 1,
+          clientCapabilities: this.options.clientCapabilities ?? { auth: { _meta: { gateway: true } } },
+          clientInfo: this.options.clientInfo ?? DEFAULT_CLIENT_INFO,
+        });
+      } catch (error) {
+        if (!isAlreadyInitializedError(error)) throw error;
+      }
       let id = this.options.acpSessionId ?? this.createdSessionId;
-      const result = id
-        ? await this.client.loadSession({ sessionId: id, cwd: this.cwd(), mcpServers: [] })
-        : await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
+      let result: Awaited<ReturnType<AcpClient['loadSession']>>;
+      if (id) {
+        try {
+          result = await this.client.loadSession({ sessionId: id, cwd: this.cwd(), mcpServers: [] });
+        } catch (error) {
+          // The harness could not resume this ACP session (process restarted,
+          // rollout/thread state gone — e.g. codex-acp's "no rollout found
+          // for thread id …"). The DURABLE identity is the Kortix session and
+          // its platform-persisted envelope log, not the harness-native ACP
+          // session id — so mint a fresh one and continue instead of bricking
+          // the session. Only RPC rejections take this path; transport
+          // failures still abort bootstrap for the retry loop.
+          if (!(error instanceof AcpRpcError)) throw error;
+          id = null;
+          result = await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
+        }
+      } else {
+        result = await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
+      }
       if (!id) {
         if (!result.sessionId) throw new Error('ACP session/new returned no sessionId');
         id = result.sessionId;
@@ -478,9 +518,12 @@ export class AcpSession {
         error: this.snapshot.error?.kind === 'bootstrap' ? null : this.snapshot.error,
         acpSessionId: id,
         configOptions: result.configOptions ?? [],
-        capabilities: initialized.agentCapabilities ?? {},
-        agentInfo: initialized.agentInfo ?? null,
-        authMethods: initialized.authMethods ?? [],
+        // On a skipped re-initialize ("Already initialized"), keep whatever
+        // the persisted transcript's original `initialize` result already
+        // populated on the snapshot instead of blanking it.
+        capabilities: initialized?.agentCapabilities ?? this.snapshot.capabilities,
+        agentInfo: initialized?.agentInfo ?? this.snapshot.agentInfo,
+        authMethods: initialized?.authMethods ?? this.snapshot.authMethods,
       });
     } catch (error) {
       const sessionError = toSessionError('bootstrap', error);
