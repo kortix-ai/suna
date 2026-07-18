@@ -38,3 +38,8 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # Historical version of this file (commit 791a47c8) whose comment quoted the
 # flagged value before being reworded — same self-reference as 619d83ee.
 791a47c8930ef3a8d2daa30f971e4d48535274bc:.gitleaksignore:generic-api-key:29
+
+# False positive: the generic-api-key rule matched the `key:` field of an ACP
+# turn-group assertion whose VALUE is the literal group key 'reasoning-thought-1'
+# (a deterministic grouping id in the test, not a credential). Reviewed 2026-07-18.
+ad5076c2d7c6a488349e8283afc39e6c3caaff54:apps/web/src/features/session/acp-turn-grouping.test.ts:generic-api-key:122

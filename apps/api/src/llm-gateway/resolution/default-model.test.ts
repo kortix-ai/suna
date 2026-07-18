@@ -207,7 +207,7 @@ describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account
     });
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'kortix',
-      opencodeModel: null,
+      model: null,
       projectDefaultAgent: null,
     }));
     resolveCandidatesImpl = async () => [{ provider: 'x' }];

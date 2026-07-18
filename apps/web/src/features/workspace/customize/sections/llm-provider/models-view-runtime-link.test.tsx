@@ -13,6 +13,7 @@ GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
 const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const ReactModule = await import('react');
 
 // `ModelsView` and its children (`ManageConnectionModal` in particular) call
 // raw `useQuery`/`useMutation`/`useQueryClient` directly — no
@@ -46,7 +47,6 @@ mock.module('@kortix/sdk/react', () => ({
 // against and throws "Invalid URL", same stub `runtime-view.test.tsx` uses.
 mock.module('next/image', () => ({
   default: (props: Record<string, unknown>) => {
-    const ReactModule = require('react');
     const { src, alt, ...rest } = props;
     return ReactModule.createElement('img', { src, alt, ...rest });
   },

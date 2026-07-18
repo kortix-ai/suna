@@ -16,6 +16,8 @@ GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
 const { cleanup, fireEvent, render, screen, within } = await import('@testing-library/react');
+const ReactModule = await import('react');
+const { readFileSync } = await import('node:fs');
 
 // `RuntimeView` calls raw `useQuery`/`useMutation`/`useQueryClient` directly
 // (same as the `RuntimeProfilesEditor` it was extracted from) — there is no
@@ -78,7 +80,6 @@ mock.module('@/lib/use-project-can', () => ({
 // browser-chrome dependency this DOM-free-by-default harness stubs out.
 mock.module('next/image', () => ({
   default: (props: Record<string, unknown>) => {
-    const ReactModule = require('react');
     const { src, alt, ...rest } = props;
     return ReactModule.createElement('img', { src, alt, ...rest });
   },
@@ -405,8 +406,6 @@ describe('RuntimeView — guided connect -> model flow (WS5-P2-b)', () => {
 // that jointly make the guard hold: the component still emitting the exact
 // transform-driving utility combo, and the stylesheet still neutralizing it.
 describe('RuntimeView — reduced motion (WS5-P6-a)', () => {
-  const { readFileSync } = require('node:fs') as typeof import('node:fs');
-
   test('the row entrance animation is the transform-driving animate-in/slide-in-from-bottom combo', () => {
     const src = readFileSync(
       'src/features/workspace/customize/sections/view/runtime-view.tsx',
