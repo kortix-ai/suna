@@ -952,7 +952,7 @@ function operatorFallbackFor(model: string) {
 async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
   const [stored, defaults] = await Promise.all([
     getProjectRoutingPolicy(ctx.projectId),
-    getAccountModelDefaults(ctx.accountId),
+    getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
   const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
@@ -1056,7 +1056,7 @@ projectsApp.openapi(
         code: 'invalid_routing_policy',
       }, 400);
     }
-    const defaults = await getAccountModelDefaults(loaded.row.accountId);
+    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary = policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json({
@@ -1131,7 +1131,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const body = await c.req.json();
-    const defaults = await getAccountModelDefaults(loaded.row.accountId);
+    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
       ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
       : false;
