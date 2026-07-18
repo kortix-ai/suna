@@ -218,3 +218,108 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
     expect(result).toBeUndefined();
   });
 });
+
+// Regression coverage for the "agent-scope model pins silently never apply"
+// bug: session creation stores the non-binding 'default' sentinel in
+// project_sessions.agent_name whenever project.metadata.default_agent wasn't
+// populated at the time (common — e.g. a brand-new project whose kortix.yaml
+// declares `default_agent: kortix` but whose DB metadata mirror never learned
+// it). Before this fix, resolveDefaultModelForPrincipal looked up
+// `agentDefaults['default']` — which never matches a pin set on the real
+// agent name ('kortix') — and silently fell through to the project/account/
+// platform default instead of the pinned (possibly pricier / provider-
+// mismatched) model, with no error anywhere. cachedSessionAgent now resolves
+// the sentinel to the project's declared default agent (getSessionAgentContext's
+// projectDefaultAgent, mirroring kortix.yaml/PUT-default-agent) before doing
+// the agentDefaults lookup.
+describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a session stuck on the "default" sentinel', () => {
+  test('THE BUG: session.agent_name is the sentinel, but the project declares "kortix" as its default agent and "kortix" has a pin → the pin applies', async () => {
+    accountDefaults = {
+      account: null,
+      agents: { kortix: 'anthropic/claude-opus-4.8' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'default',
+      opencodeModel: null,
+      projectDefaultAgent: 'kortix',
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'anthropic' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-pin-applies',
+      freeModelsOnly: false,
+    });
+
+    expect(result).toBe('anthropic/claude-opus-4.8');
+  });
+
+  test('an explicit (non-sentinel) session agent still wins over the project default, even when both have pins', async () => {
+    accountDefaults = {
+      account: null,
+      agents: { kortix: 'anthropic/claude-opus-4.8', 'release-bot': 'openai/gpt-5.5' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'release-bot',
+      opencodeModel: null,
+      projectDefaultAgent: 'kortix',
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-explicit-wins',
+      freeModelsOnly: false,
+    });
+
+    expect(result).toBe('openai/gpt-5.5');
+  });
+
+  test('sentinel with no project default configured falls through to project/account/platform (unchanged pre-existing behavior)', async () => {
+    accountDefaults = {
+      account: 'openai/gpt-5.5',
+      agents: { kortix: 'anthropic/claude-opus-4.8' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'default',
+      opencodeModel: null,
+      projectDefaultAgent: null,
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-no-project-default',
+      freeModelsOnly: false,
+    });
+
+    // No agent pin matched (neither 'default' nor any resolved name) → falls
+    // through to the account default.
+    expect(result).toBe('openai/gpt-5.5');
+  });
+
+  test('sentinel resolves to a project default that has NO pin of its own → still falls through to account default', async () => {
+    accountDefaults = {
+      account: 'openai/gpt-5.5',
+      agents: { 'some-other-agent': 'anthropic/claude-opus-4.8' },
+      projects: {},
+    };
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'default',
+      opencodeModel: null,
+      projectDefaultAgent: 'kortix',
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+
+    const result = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      sessionId: 'sess-project-default-no-pin',
+      freeModelsOnly: false,
+    });
+
+    expect(result).toBe('openai/gpt-5.5');
+  });
+});
