@@ -44,6 +44,7 @@ describe('envVarPlaceholder', () => {
     id: 'anthropic',
     label: 'Anthropic',
     envVars: ['ANTHROPIC_API_KEY'],
+    authRequirement: { methods: [{ envVars: ['ANTHROPIC_API_KEY'] }] },
     helpUrl: null,
     hint: '',
     models: [],

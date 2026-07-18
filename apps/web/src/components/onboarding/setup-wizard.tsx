@@ -31,9 +31,6 @@ import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { useServerStore } from '@/stores/server-store';
-import { setEnv } from '@kortix/sdk/opencode-client';
-import { setModelDefault } from '@kortix/sdk/projects-client';
 import {
   ArrowLeft,
   BookOpen,

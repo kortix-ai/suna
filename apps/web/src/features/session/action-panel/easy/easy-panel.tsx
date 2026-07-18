@@ -32,7 +32,7 @@ import {
   useIsSidePanelOpen,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
@@ -148,7 +148,7 @@ export const EasyPanel = memo(function EasyPanel({
   // session. Progress redirects attention to it instead of claiming to be
   // working or done. Same filter the header's needs-input chip uses (see
   // `use-deliverable-readiness.ts`), extracted once into `pendingInputCount`.
-  const waitingOnUser = useOpenCodePendingStore(
+  const waitingOnUser = useRuntimePendingStore(
     (s) => pendingInputCount(s.permissions, s.questions, sessionId) > 0,
   );
 

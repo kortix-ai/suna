@@ -18,7 +18,7 @@ import {
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
+import { useRuntimeFileOpen } from '@/features/session/use-runtime-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getDirectory, getFilename } from '@/ui';
 import { FileIcon, Folder } from 'lucide-react';
@@ -39,7 +39,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const directory = filePath ? getDirectory(filePath) : undefined;
   const ext = filename.split('.').pop() || '';
   const { openPreview } = useFilePreviewStore();
-  const { toDisplayPath } = useOcFileOpen();
+  const { toDisplayPath } = useRuntimeFileOpen();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 

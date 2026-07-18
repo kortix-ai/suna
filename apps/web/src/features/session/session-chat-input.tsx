@@ -10,7 +10,7 @@ import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { getFileIcon } from '@/features/files/components/file-icon';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { normalizeProviderList } from '@/hooks/runtime/provider-selection';
 import type {

@@ -4931,13 +4931,13 @@ ToolRegistry.register('presentation-gen', PresentationGenTool);
 // Uses ShowContentRenderer from file-renderers/ as the single source of truth
 // for content rendering. This component only handles the card chrome + Open in Tab.
 
-import type { ShowCarouselItem } from '@/components/file-renderers/show-content-renderer';
+import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
   SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowContentRenderer,
   showDomain,
-} from '@/components/file-renderers/show-content-renderer';
+} from '@/features/file-renderers/show-content-renderer';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 
 const SHOW_BORDER_STYLES: Record<string, string> = {

@@ -8,7 +8,7 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import {
   Cpu,
   ExternalLink,
@@ -36,7 +36,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const childMessages = useSyncStore((s) => s.getMessages(childSessionId ?? ''));
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];

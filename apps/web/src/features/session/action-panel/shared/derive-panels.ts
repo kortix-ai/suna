@@ -14,7 +14,7 @@
  */
 
 import type { ToolPart } from '@/ui';
-import { toWorkspaceRelative } from '@/features/files/api/opencode-files';
+import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
