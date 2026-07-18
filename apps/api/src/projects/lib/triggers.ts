@@ -22,7 +22,6 @@ import {
 import {
   type GitTriggerSessionMode,
   type GitTriggerSpec,
-  KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
   type ParsedManifest,
   loadProjectTriggers,
@@ -1274,6 +1273,16 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
 }
 
 /**
+ * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
+ * default — same name `@kortix/starter`'s `base` template seeds (see
+ * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
+ * `agents.kortix`). Keeping the two in sync means a blank managed-git project
+ * (provisioned WITHOUT `seed_starter:true`, so no kortix.yaml ever lands on
+ * disk) self-heals into the exact shape a seeded one would already have.
+ */
+const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
+
+/**
  * Read the project's manifest. If the manifest doesn't exist yet (brand-new
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
@@ -1287,12 +1296,45 @@ export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedMa
   // whatever manifestPath is configured (defaults to `kortix`'s stem) rather
   // than trusting a stale/legacy `.toml` value literally, so format and path
   // stay in sync on commit.
+  //
+  // MUST be kortix_version 2, not KNOWN_SCHEMA_VERSION (which deliberately
+  // stays pinned at 1 — see its own doc comment in ../triggers.ts). Every
+  // project created through POST /projects/provision (seeded or not) is
+  // stamped `metadata.require_declared_agents: true` and reads/writes
+  // through the v2-only agent-config API (`applyAgentBlockV2`/
+  // `applyDefaultAgentV2` in ./agent-config-v2.ts hard-refuse a v1
+  // manifest). A blank project (no `seed_starter`, so no kortix.yaml ever
+  // got pushed) synthesizing v1 here meant every agent-config write 400'd
+  // with "upgrade to kortix_version 2" before it could ever commit a real
+  // manifest — a self-inflicted catch-22 that left the project permanently
+  // un-declarable (AGENT_NOT_DECLARED on every session-create) short of a
+  // force-pushed kortix.yaml or a full re-provision with `seed_starter:true`.
+  //
+  // Also pre-declare ONE default agent (not just bump the version number):
+  // a v2 manifest must have `agents` non-empty AND `default_agent` resolving
+  // to a declared, enabled entry in the SAME write (validateAgentsV2 /
+  // validateDefaultAgentV2 in @kortix/manifest-schema), so a caller can't
+  // bootstrap the very first agent from a genuinely empty v2 shell either —
+  // declaring the agent needs `default_agent` already set, and setting
+  // `default_agent` needs the agent already declared. Seeding both together
+  // here (mirroring exactly what `seed_starter` would have committed) breaks
+  // that cycle: a session can start immediately even with zero writes, and
+  // any subsequent agent-config PUT is a normal upsert against an
+  // already-valid v2 manifest.
   return {
-    schemaVersion: KNOWN_SCHEMA_VERSION,
+    schemaVersion: 2,
     raw: {
       project: { name: project.name, description: '' },
-      runtime: { root: '.opencode' },
       env: { required: [], optional: [] },
+      default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
+      agents: {
+        [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
+          connectors: 'all',
+          secrets: 'all',
+          kortix_cli: 'all',
+          skills: 'all',
+        },
+      },
     },
     format: 'yaml',
     path: manifestCandidatePaths(project.manifestPath)[0].path,
