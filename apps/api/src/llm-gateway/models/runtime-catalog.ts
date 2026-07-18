@@ -27,9 +27,13 @@ interface ModelsDevModel extends CatalogModel {
 // field set exactly — the baked snapshot and this live path must never
 // diverge in SHAPE, only in freshness (see that script's header comment).
 const PASSTHROUGH_MODEL_FIELDS = [
+  'description',
   'reasoning_options',
   'structured_output',
+  'interleaved',
+  'open_weights',
   'knowledge',
+  'last_updated',
   'family',
   'modalities',
   'cost',

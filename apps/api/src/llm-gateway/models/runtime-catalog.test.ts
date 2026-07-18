@@ -62,6 +62,65 @@ describe('runtime model catalog', () => {
     });
   });
 
+  // The live refresh path (normalizeCatalog) must mirror the SAME field set as
+  // the baked-snapshot enrich script (apps/web/scripts/
+  // enrich-llm-catalog-capabilities.ts) — a live/baked shape drift silently
+  // loses data for whichever path a deployment happens to be serving from.
+  test('mirrors the full enriched field set from a live models.dev-shaped response', async () => {
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      sourceUrl: 'https://catalog.test/api.json',
+      fetchImpl: async () => new Response(JSON.stringify({
+        anthropic: {
+          id: 'anthropic',
+          name: 'Anthropic',
+          env: ['ANTHROPIC_API_KEY'],
+          api: 'https://api.anthropic.com/v1',
+          npm: '@ai-sdk/anthropic',
+          models: {
+            'claude-opus-4-8': {
+              id: 'claude-opus-4-8',
+              name: 'Claude Opus 4.8',
+              description: 'Top Claude Opus tier',
+              release_date: '2026-05-28',
+              last_updated: '2026-05-28',
+              reasoning: true,
+              reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+              tool_call: true,
+              attachment: true,
+              temperature: false,
+              structured_output: true,
+              interleaved: true,
+              open_weights: false,
+              knowledge: '2026-01',
+              family: 'claude-opus',
+              modalities: { input: ['text', 'image'], output: ['text'] },
+              limit: { context: 1_000_000, input: 900_000, output: 128_000 },
+              cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+            },
+          },
+        },
+      }), { status: 200 }),
+    });
+
+    expect(await catalog.refresh()).toBe(true);
+    const model = catalog.snapshot().providers[0]?.models[0];
+    expect(model).toMatchObject({
+      id: 'claude-opus-4-8',
+      description: 'Top Claude Opus tier',
+      last_updated: '2026-05-28',
+      structured_output: true,
+      interleaved: true,
+      open_weights: false,
+      knowledge: '2026-01',
+      family: 'claude-opus',
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      limit: { context: 1_000_000, input: 900_000, output: 128_000 },
+      cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+    });
+  });
+
   test('keeps the last known catalog when the API is unavailable', async () => {
     const catalog = createRuntimeModelCatalog({
       seed,

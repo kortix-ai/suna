@@ -22,6 +22,11 @@ type LooseModel =
       release_date?: string;
       family?: string;
       cost?: { input?: number; output?: number };
+      // The REAL upstream provider this model resolves against — see
+      // `FlatModel.provider` below. Absent on plain opencode `Model` values
+      // (which don't carry it); present on every gateway-served model.
+      provider?: string;
+      reasoning_options?: Array<{ type: string; values: string[] }>;
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -57,7 +62,25 @@ export interface FlatModel {
   };
   /** Provider source (env, api, config, custom) */
   providerSource?: string;
+  /**
+   * The REAL upstream provider this model resolves against ('anthropic',
+   * 'openai', 'codex', 'kortix', ...) — carried explicitly off the gateway's
+   * served model so the picker never has to recover it by string-splitting
+   * `modelID`. Every gateway model is registered under `providerID: 'kortix'`;
+   * this is the field that identifies who ACTUALLY serves it. Undefined for
+   * providers/models predating this field.
+   */
+  provider?: string;
+  /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
+   *  the model exposes one. */
+  reasoningOptions?: Array<{ type: string; values: string[] }>;
 }
+
+// The two Kortix-gateway-specific fields (`provider`, `reasoning_options`)
+// exist only on the loose/synthetic branch of `LooseModel`, never on
+// opencode's own canonical `Model` type — read them via this narrow shape
+// rather than widening `LooseModel`'s member access rules or reaching for `any`.
+type WithGatewayFields = { provider?: string; reasoning_options?: Array<{ type: string; values: string[] }> };
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
@@ -104,6 +127,8 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
             }
           : undefined,
         providerSource: p.source,
+        provider: (model as WithGatewayFields).provider,
+        reasoningOptions: (model as WithGatewayFields).reasoning_options,
       });
     }
   }

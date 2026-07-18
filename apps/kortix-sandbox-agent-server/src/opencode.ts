@@ -362,13 +362,52 @@ export async function refreshGatewayCatalogFile(opts: {
 // model and the cheap `small_model`.
 const DEFAULT_KORTIX_MODEL = 'kortix/auto'
 
+// One `reasoning_options` entry (models.dev's shape, mirrored — see
+// @kortix/llm-catalog's CatalogReasoningOption). Present iff the model
+// exposes a tunable reasoning-effort knob; this is the PRIORITY field the
+// chat runtime/composer's effort control reads off the model opencode
+// registers, so it must survive the full gateway -> opencode hop intact.
+type KortixReasoningOption = { type: string; values: string[] }
+
+type KortixCostTier = {
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write?: number
+  tier?: { type: string; size: number }
+}
+
+type KortixCost = {
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write?: number
+  tiers?: KortixCostTier[]
+  context_over_200k?: KortixCostTier
+}
+
+type KortixModalities = { input?: string[]; output?: string[] }
+
 type KortixGatewayModel = {
   name: string
+  // The REAL upstream provider this model resolves against ('anthropic',
+  // 'openai', 'codex', 'kortix', ...). Every model here is registered under
+  // the single synthetic `kortix` opencode provider (see buildKortixProvider
+  // below) — this is what the web picker groups/brands by instead of
+  // string-splitting the wire model id (see model-selector.tsx's
+  // pickerGroupId / use-model-store.ts's subProviderOf).
+  provider?: string
   reasoning?: boolean
+  reasoning_options?: KortixReasoningOption[]
   tool_call?: boolean
   attachment?: boolean
   temperature?: boolean
-  limit?: { context?: number; output?: number }
+  structured_output?: boolean
+  knowledge?: string
+  family?: string
+  modalities?: KortixModalities
+  limit?: { context?: number; input?: number; output?: number }
+  cost?: KortixCost
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
@@ -376,6 +415,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   // fallback is used (gateway + baked catalog both unreachable at boot).
   auto: {
     name: 'Auto',
+    provider: 'kortix',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -384,6 +424,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'claude-opus-4.8': {
     name: 'Claude Opus 4.8',
+    provider: 'kortix',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -392,6 +433,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'claude-sonnet-4.6': {
     name: 'Claude Sonnet 4.6',
+    provider: 'kortix',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -402,6 +444,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   // opts into). Bare id = Kortix-managed; text-only, so no attachment.
   'glm-5.2': {
     name: 'GLM 5.2',
+    provider: 'kortix',
     reasoning: true,
     tool_call: true,
     attachment: false,
@@ -410,6 +453,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
+    provider: 'openai',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -423,6 +467,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'google/gemini-3.5-flash': {
     name: 'Gemini 3.5 Flash',
+    provider: 'google',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -431,6 +476,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'google/gemini-3.1-pro-preview': {
     name: 'Gemini 3.1 Pro',
+    provider: 'google',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -439,6 +485,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'deepseek/deepseek-v4-flash': {
     name: 'DeepSeek V4 Flash',
+    provider: 'deepseek',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -447,6 +494,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'deepseek/deepseek-v4-pro': {
     name: 'DeepSeek V4 Pro',
+    provider: 'deepseek',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -455,6 +503,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'minimax/minimax-m3': {
     name: 'MiniMax M3',
+    provider: 'minimax',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -463,6 +512,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'moonshotai/kimi-k2.6': {
     name: 'Kimi K2.6',
+    provider: 'moonshotai',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -471,6 +521,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'z-ai/glm-5.1': {
     name: 'GLM 5.1',
+    provider: 'z-ai',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -479,6 +530,7 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'x-ai/grok-4.3': {
     name: 'Grok 4.3',
+    provider: 'x-ai',
     reasoning: true,
     tool_call: true,
     attachment: true,

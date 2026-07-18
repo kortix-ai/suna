@@ -7,9 +7,10 @@
  * models.dev's api.json carries far more per-model data than Kortix's
  * `CatalogModel` (packages/llm-catalog/src/index.ts) used to mirror — it used
  * to drop `reasoning_options`, `cost` (+ tiers/cache/context_over_200k),
- * `structured_output`, `knowledge`, `family`, and the full `modalities`
- * object, keeping only id/name/released/attachment/reasoning(bool)/tool_call/
- * temperature/limit{context,output}. Those dropped fields are exactly what
+ * `structured_output`, `knowledge`, `family`, `description`, `interleaved`,
+ * `open_weights`, `last_updated`, and the full `modalities` object, keeping
+ * only id/name/released/attachment/reasoning(bool)/tool_call/temperature/
+ * limit{context,output}. Those dropped fields are exactly what
  * the per-model generation-controls panel (apps/web's gateway routing +
  * playground UI) needs to capability-gate a control ("does this model expose
  * a tunable reasoning effort, and what are the valid values?") and what the
@@ -66,6 +67,7 @@ interface ModelsDevCost {
 interface ModelsDevModel {
   id?: string;
   name?: string;
+  description?: string;
   released?: string | null;
   release_date?: string | null;
   attachment?: boolean;
@@ -73,8 +75,11 @@ interface ModelsDevModel {
   reasoning_options?: ModelsDevReasoningOption[];
   tool_call?: boolean;
   structured_output?: boolean;
+  interleaved?: boolean;
+  open_weights?: boolean;
   temperature?: boolean;
   knowledge?: string;
+  last_updated?: string;
   family?: string;
   modalities?: { input?: string[]; output?: string[] };
   limit?: { context?: number; input?: number; output?: number };
@@ -152,6 +157,7 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
   return {
     id: model.id || modelKey,
     name: model.name || model.id || modelKey,
+    ...(typeof model.description === 'string' ? { description: model.description } : {}),
     released: model.released ?? model.release_date ?? null,
     attachment: model.attachment,
     reasoning: model.reasoning,
@@ -160,8 +166,11 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
     ...(typeof model.structured_output === 'boolean'
       ? { structured_output: model.structured_output }
       : {}),
+    ...(typeof model.interleaved === 'boolean' ? { interleaved: model.interleaved } : {}),
+    ...(typeof model.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
     temperature: model.temperature,
     ...(typeof model.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
+    ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
     ...(typeof model.family === 'string' ? { family: model.family } : {}),
     ...(modalities ? { modalities } : {}),
     ...(limit ? { limit } : {}),

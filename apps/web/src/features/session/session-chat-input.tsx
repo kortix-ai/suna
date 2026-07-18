@@ -117,6 +117,22 @@ export interface FlatModel {
   free?: boolean;
   /** Provider source (env, api, config, custom) */
   providerSource?: string;
+  /**
+   * The REAL upstream provider this model resolves against ('anthropic',
+   * 'openai', 'codex', 'kortix', ...) — carried explicitly off the gateway's
+   * served model (`GatewayModel.provider`, apps/api's catalog-models.ts) so
+   * the picker never has to recover it by string-splitting `modelID`. Every
+   * gateway model is registered under `providerID: 'kortix'`; this is the
+   * field that identifies who ACTUALLY serves it. Falls back to undefined
+   * for providers/models predating this field (e.g. a stale baked catalog on
+   * an old sandbox image) — consumers should still fall back to splitting
+   * `modelID` in that case.
+   */
+  provider?: string;
+  /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
+   *  the model exposes one — same shape the composer's effort selector reads
+   *  off the baked/live catalog, threaded onto the live per-session model too. */
+  reasoningOptions?: Array<{ type: string; values: string[] }>;
 }
 
 function catalogModelFor(providerID: string, modelID: string) {
@@ -178,6 +194,10 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
           : undefined,
         free: (model as any).free === true,
         providerSource: (p as any).source,
+        provider: typeof (model as any).provider === 'string' ? (model as any).provider : undefined,
+        reasoningOptions: Array.isArray((model as any).reasoning_options)
+          ? (model as any).reasoning_options
+          : undefined,
       });
     }
   }

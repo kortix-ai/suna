@@ -203,6 +203,8 @@ export interface CatalogModel {
   // Capabilities mirrored from models.dev by
   // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
   // Single source of truth — consumers derive flags from these, never hardcode.
+  // Free-text blurb models.dev publishes for the model (e.g. picker tooltips).
+  description?: string;
   attachment?: boolean; // image / file input (vision)
   reasoning?: boolean;
   // Present only for reasoning-capable models that expose a tunable knob —
@@ -218,8 +220,19 @@ export interface CatalogModel {
   // control for such a model.
   temperature?: boolean;
   structured_output?: boolean;
+  // True when the model interleaves reasoning with tool calls (models.dev's
+  // `interleaved` flag) — some reasoning models can emit a tool call mid
+  // chain-of-thought rather than only after it completes.
+  interleaved?: boolean;
+  // True when the model's weights are publicly released (open-weights model,
+  // e.g. a self-hostable Llama/DeepSeek/Qwen checkpoint) vs. a closed API-only
+  // model. models.dev's `open_weights` field, mirrored verbatim.
+  open_weights?: boolean;
   // Training data cutoff, models.dev's free-text field (e.g. "2026-02-16").
   knowledge?: string;
+  // When models.dev last refreshed this model's own entry (distinct from
+  // `released`, the model's original release date).
+  last_updated?: string;
   // Model family/lineage grouping (e.g. "gpt-sol", "claude-4", "o").
   family?: string;
   modalities?: CatalogModalities;

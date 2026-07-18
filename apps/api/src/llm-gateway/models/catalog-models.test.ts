@@ -55,6 +55,45 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(anthropic?.release_date).toBe(anthropic?.released);
   });
 
+  // Regression coverage for the "every provider shows as Kortix" picker bug:
+  // every served model MUST carry the REAL upstream provider id explicitly,
+  // never leaving the client to string-split the wire model id (fragile —
+  // see model-selector.tsx's pickerGroupId / use-model-store.ts's subProviderOf).
+  test('every served model carries an explicit `provider` field', () => {
+    // BYOK catalog entries brand as their real upstream provider.
+    expect(full['anthropic/claude-opus-4-8']?.provider).toBe('anthropic');
+    // Managed models (and AUTO) brand as `kortix`.
+    expect(full.auto?.provider).toBe('kortix');
+    expect(full['claude-opus-4.8']?.provider).toBe('kortix');
+    expect(full['glm-5.2']?.provider).toBe('kortix');
+    // Codex (ChatGPT subscription) models brand as their own `codex` provider,
+    // distinct from the raw `openai` BYOK provider.
+    expect(full['codex/gpt-5.6-sol']?.provider).toBe('codex');
+
+    const missingProvider = Object.entries(full)
+      .filter(([, m]) => typeof m.provider !== 'string' || m.provider.length === 0)
+      .map(([id]) => id);
+    expect(missingProvider).toEqual([]);
+  });
+
+  test('served catalog carries the full useful models.dev field set (nothing dropped before opencode)', () => {
+    // A real reasoning model with a tunable effort knob must carry
+    // reasoning_options through — the chat runtime's priority field.
+    const opus = full['anthropic/claude-opus-4-8'];
+    expect(opus?.reasoning_options?.[0]?.type).toBe('effort');
+    expect(opus?.reasoning_options?.[0]?.values?.length).toBeGreaterThan(0);
+    expect(opus?.cost).toBeDefined();
+    expect(typeof opus?.cost?.input).toBe('number');
+    expect(opus?.modalities?.input).toContain('image');
+    expect(typeof opus?.structured_output).toBe('boolean');
+    expect(typeof opus?.knowledge).toBe('string');
+
+    // Codex models carry the same enriched field set (previously hand-built
+    // without reasoning_options/cost/modalities/structured_output/knowledge).
+    const codexModel = full['codex/gpt-5.6-sol'];
+    expect(codexModel?.reasoning_options?.[0]?.values).toContain('xhigh');
+  });
+
   test('catalog is a memoized singleton (built once, not per call)', () => {
     expect(gatewayModelCatalog('proj')).toBe(full);
   });
