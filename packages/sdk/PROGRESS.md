@@ -981,3 +981,17 @@ snapshots re-recorded — diff is additive only (`verifyGatewayProvider`,
 
 **Shippable to production: YES** for the SDK surface. apps/api route + apps/web
 UI land in the same PR (#4990); see that PR for backend/frontend evidence.
+
+---
+
+### 2026-07-18 — session `connectors-discover-flag` (claim)
+
+Claimed the user-directed restoration of the additive Discover integration-catalog
+SDK surface as a separate, per-project experimental connector marketplace. Existing
+Easy Connect remains unchanged; Discover is explicit opt-in and Pipedream entries
+remain separate OAuth-only alternatives. The prior additive SDK names are restored
+without removing or renaming any current export. Implementation will finish with
+focused RED -> GREEN coverage, full SDK typecheck/test/packed-install gates, real
+local browser/API proof, and the repository merge/deploy/live-dev lifecycle.
+
+**Status:** IN PROGRESS.
