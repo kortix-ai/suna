@@ -2092,22 +2092,20 @@ async function ensurePort(
 
 function composeHasRunningServices(instance: string): boolean {
   if (!existsSync(composePath(instance)) || !existsSync(envPath(instance))) return false;
+  // `docker compose ps` reparses the entire generated stack and can take long
+  // enough to hit the CLI/test timeout even when this project has no
+  // containers. Compose already labels every container with the project name,
+  // so a bounded `docker ps` label lookup is the exact, cheaper question here:
+  // "does this instance currently have at least one running container?"
   const result = spawnSync(
     'docker',
     [
-      'compose',
-      '--project-name',
-      composeProject(instance),
-      '--env-file',
-      envPath(instance),
-      '-f',
-      composePath(instance),
       'ps',
-      '--services',
+      '--quiet',
       '--filter',
-      'status=running',
+      `label=com.docker.compose.project=${composeProject(instance)}`,
     ],
-    { cwd: instanceDir(instance), encoding: 'utf8' },
+    { cwd: instanceDir(instance), encoding: 'utf8', timeout: 3_000 },
   );
   return result.status === 0 && result.stdout.trim().length > 0;
 }

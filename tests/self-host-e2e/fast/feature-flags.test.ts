@@ -41,6 +41,7 @@ describe('self-host feature-flag matrix (fast, no Docker)', () => {
   // if they genuinely want it back — see the default-off assertion above.
   test('re-enabling the landing page is a plain `env set`, no dedicated flag', async () => {
     await sandbox.run(['init', '--yes']);
+    expect(sandbox.instance).not.toBe('default');
     expect(sandbox.readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
 
     const { code } = await sandbox.run(['env', 'set', 'KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false']);
