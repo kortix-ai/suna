@@ -30,6 +30,7 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewayOtelConfigs,
   // Kortix tables
   projects,
   projectGitConnections,

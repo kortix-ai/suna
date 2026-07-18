@@ -1931,6 +1931,29 @@ export const gatewayBudgets = kortixSchema.table(
   ],
 );
 
+/**
+ * Per-project OTLP trace-export config — "connect any tool" for the gateway's
+ * gen_ai.* spans (Langfuse/Datadog/Honeycomb/Braintrust/etc, anything OTLP).
+ * One row per project (PK = project_id, upsert-only, mirrors
+ * project_llm_routing_policies). `headersEnc` holds the auth header(s) in the
+ * same `key1=value1,key2=value2` shape as OTEL_EXPORTER_OTLP_HEADERS, AES-GCM
+ * encrypted with the project's derived key (see projects/secrets.ts) — never
+ * stored or returned in plaintext. `endpoint` is a destination URL, not a
+ * secret, so it stays plaintext (consistent with how webhook URLs are stored
+ * elsewhere).
+ */
+export const gatewayOtelConfigs = kortixSchema.table('gateway_otel_configs', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').default(false).notNull(),
+  endpoint: text('endpoint'),
+  headersEnc: text('headers_enc'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ─── Billing / Credits ─────────────────────────────────────────────────────
 
 export const billingCustomers = kortixSchema.table(

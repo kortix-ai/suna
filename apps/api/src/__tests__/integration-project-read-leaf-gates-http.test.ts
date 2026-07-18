@@ -100,6 +100,7 @@ const CASES: Case[] = [
   { name: 'gateway sessions (per-session spend)', leaf: PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ, path: () => `/v1/projects/${PROJECT}/gateway/sessions` },
   { name: 'gateway breakdown', leaf: PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ, path: () => `/v1/projects/${PROJECT}/gateway/breakdown` },
   { name: 'gateway budgets', leaf: PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ, path: () => `/v1/projects/${PROJECT}/gateway/budgets` },
+  { name: 'gateway otel config', leaf: PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ, path: () => `/v1/projects/${PROJECT}/gateway/otel` },
   { name: 'project sessions list', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions` },
   { name: 'project session detail', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}` },
   { name: 'project session transcript', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/transcript` },

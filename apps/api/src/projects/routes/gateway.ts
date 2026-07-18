@@ -30,6 +30,12 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import {
+  deleteProjectOtelConfig,
+  getProjectOtelConfigSummary,
+  setProjectOtelConfig,
+} from '../../repositories/gateway-otel-config';
+import { assertSafeEgressUrl, UnsafeEgressError } from '../../shared/ssrf-guard';
 
 async function canDo(c: any, projectId: string, accountId: string, action: string): Promise<boolean> {
   const verdict = await authorize(
@@ -47,6 +53,8 @@ const canSetBudget = (c: any, projectId: string, accountId: string) =>
   canDo(c, projectId, accountId, PROJECT_ACTIONS.PROJECT_GATEWAY_BUDGET_SET);
 const canManageKeys = (c: any, projectId: string, accountId: string) =>
   canDo(c, projectId, accountId, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE);
+const canManageOtel = (c: any, projectId: string, accountId: string) =>
+  canDo(c, projectId, accountId, PROJECT_ACTIONS.PROJECT_GATEWAY_OTEL_MANAGE);
 
 const LIST_LIMIT_DEFAULT = 50;
 const LIST_LIMIT_MAX = 100;
@@ -786,6 +794,163 @@ projectsApp.openapi(
     }
     const ok = await revokeGatewayKey(projectId, keyId);
     return c.json({ ok });
+  },
+);
+
+// ─── Observability / export (OTLP traces — "connect any tool") ─────────────
+//
+// A project can point the gateway's per-call gen_ai.* OTel spans at their own
+// OTLP-compatible backend (Langfuse / Datadog / Honeycomb / Braintrust /
+// Portkey / anything OTLP) instead of relying on an operator-set env var. See
+// repositories/gateway-otel-config.ts and lib/otel.ts (emitOtelSpan's
+// `override` param) for how this actually exports.
+
+const HEADER_NAME_REGEX = /^[A-Za-z0-9-]{1,64}$/;
+const MAX_HEADER_COUNT = 8;
+const MAX_HEADER_VALUE_LENGTH = 4096;
+
+/** Validate a caller-supplied header map before it's ever encrypted/stored —
+ *  bounded count/size (this rides on every gateway call) and header-token
+ *  charset only (RFC 7230 field-name shape) so it can't smuggle a CRLF or
+ *  otherwise corrupt the outbound request. */
+function validateOtelHeaders(headers: unknown): { ok: true; value: Record<string, string> } | { ok: false; error: string } {
+  if (headers === null || headers === undefined) return { ok: true, value: {} };
+  if (typeof headers !== 'object' || Array.isArray(headers)) {
+    return { ok: false, error: 'headers must be an object of header name to value' };
+  }
+  const entries = Object.entries(headers as Record<string, unknown>);
+  if (entries.length > MAX_HEADER_COUNT) {
+    return { ok: false, error: `at most ${MAX_HEADER_COUNT} headers are supported` };
+  }
+  const out: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (!HEADER_NAME_REGEX.test(key)) {
+      return { ok: false, error: `invalid header name: ${key}` };
+    }
+    if (typeof value !== 'string' || !value.trim() || value.length > MAX_HEADER_VALUE_LENGTH) {
+      return { ok: false, error: `invalid value for header: ${key}` };
+    }
+    if (/[\r\n]/.test(value)) {
+      return { ok: false, error: `header value must not contain line breaks: ${key}` };
+    }
+    out[key] = value.trim();
+  }
+  return { ok: true, value: out };
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/gateway/otel',
+    tags: ['gateway'],
+    summary: 'GET /:projectId/gateway/otel',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Project OTLP export config (display-safe)'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+
+    const summary = await getProjectOtelConfigSummary(projectId);
+    return c.json({
+      enabled: summary.enabled,
+      endpoint: summary.endpoint,
+      has_headers: summary.hasHeaders,
+      updated_at: summary.updatedAt,
+      capabilities: { write: await canManageOtel(c, projectId, loaded.row.accountId) },
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/gateway/otel',
+    tags: ['gateway'],
+    summary: 'PUT /:projectId/gateway/otel',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              enabled: z.boolean(),
+              endpoint: z.string().url().max(2048).nullable(),
+              // Omitted = leave the stored headers untouched (e.g. flipping
+              // `enabled` without re-entering a token). null/{} clears them.
+              headers: z.record(z.string(), z.string()).nullable().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 200: json(z.any(), 'OTLP export config saved'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canManageOtel(c, projectId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to manage observability export' }, 403);
+    }
+
+    const body = await c.req.json();
+    const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : null;
+    if (endpoint) {
+      try {
+        await assertSafeEgressUrl(endpoint);
+      } catch (err) {
+        const message = err instanceof UnsafeEgressError ? err.message : 'Invalid endpoint URL';
+        return c.json({ error: `Invalid OTLP endpoint: ${message}` }, 400);
+      }
+    } else if (body.enabled) {
+      return c.json({ error: 'An endpoint is required to enable export' }, 400);
+    }
+
+    const headersResult = validateOtelHeaders(body.headers);
+    if (!headersResult.ok) return c.json({ error: headersResult.error }, 400);
+
+    await setProjectOtelConfig({
+      projectId,
+      updatedBy: c.get('userId'),
+      enabled: Boolean(body.enabled),
+      endpoint,
+      headers: body.headers === undefined ? undefined : headersResult.value,
+    });
+
+    const summary = await getProjectOtelConfigSummary(projectId);
+    return c.json({
+      enabled: summary.enabled,
+      endpoint: summary.endpoint,
+      has_headers: summary.hasHeaders,
+      updated_at: summary.updatedAt,
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/gateway/otel',
+    tags: ['gateway'],
+    summary: 'DELETE /:projectId/gateway/otel',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OTLP export config removed'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canManageOtel(c, projectId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to manage observability export' }, 403);
+    }
+    await deleteProjectOtelConfig(projectId);
+    return c.json({ ok: true });
   },
 );
 

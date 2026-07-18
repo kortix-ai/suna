@@ -367,6 +367,49 @@ export async function revokeGatewayKey(
   );
 }
 
+// ─── Observability / export (OTLP traces — "connect any tool") ─────────────
+
+export interface GatewayOtelConfig {
+  enabled: boolean;
+  endpoint: string | null;
+  /** Never the decrypted header value — only whether one is stored. */
+  has_headers: boolean;
+  updated_at: string | null;
+  capabilities?: { write: boolean };
+}
+
+export interface SetGatewayOtelConfigInput {
+  enabled: boolean;
+  endpoint: string | null;
+  /** Omit to leave previously stored headers untouched (e.g. toggling
+   *  `enabled` only). Pass `{}` to clear them. */
+  headers?: Record<string, string> | null;
+}
+
+export async function getGatewayOtelConfig(projectId: string): Promise<GatewayOtelConfig> {
+  return unwrap(
+    await backendApi.get<GatewayOtelConfig>(`/projects/${projectId}/gateway/otel`),
+    'Gateway request failed',
+  );
+}
+
+export async function setGatewayOtelConfig(
+  projectId: string,
+  input: SetGatewayOtelConfigInput,
+): Promise<GatewayOtelConfig> {
+  return unwrap(
+    await backendApi.put<GatewayOtelConfig>(`/projects/${projectId}/gateway/otel`, input),
+    'Gateway request failed',
+  );
+}
+
+export async function deleteGatewayOtelConfig(projectId: string): Promise<{ ok: boolean }> {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/otel`),
+    'Gateway request failed',
+  );
+}
+
 export interface GatewayPlaygroundResult {
   model: string;
   ok: boolean;

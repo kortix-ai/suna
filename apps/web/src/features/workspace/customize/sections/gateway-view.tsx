@@ -24,6 +24,7 @@ import { ProjectProviderModal } from '@/features/workspace/customize/sections/ll
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
+import { GatewayObservability } from '@/features/workspace/customize/sections/view/gateway/gateway-observability';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
@@ -34,13 +35,21 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
-type LlmTab = 'providers' | 'routing' | 'overview' | 'logs' | 'budgets' | 'keys';
+type LlmTab =
+  | 'providers'
+  | 'routing'
+  | 'overview'
+  | 'logs'
+  | 'observability'
+  | 'budgets'
+  | 'keys';
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'providers', label: 'Providers' },
   { id: 'routing', label: 'Routing' },
   { id: 'overview', label: 'Overview' },
   { id: 'logs', label: 'Logs' },
+  { id: 'observability', label: 'Observability' },
   { id: 'budgets', label: 'Budgets' },
   { id: 'keys', label: 'API keys' },
 ];
@@ -147,6 +156,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />
+      </TabsContent>
+      <TabsContent value="observability" className="min-h-0 overflow-y-auto">
+        <GatewayObservability projectId={projectId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="budgets" className="min-h-0 overflow-y-auto">
         <GatewayBudgets projectId={projectId} canWrite={canWrite} />

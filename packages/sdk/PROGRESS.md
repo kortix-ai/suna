@@ -920,3 +920,33 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for this explicitly requested rollback. The two
 skips are the pre-existing browser-bundle tests that require a bundle build.
+
+---
+
+### 2026-07-18 — session `gateway-otel-observability` (completion)
+
+Small, self-contained additive change (not a Now-chain task): three new
+`platform/projects-client/gateway.ts` functions — `getGatewayOtelConfig`,
+`setGatewayOtelConfig`, `deleteGatewayOtelConfig` — for the gateway's new
+per-project OTLP trace-export config (the Observability tab's "connect any
+tool" surface: Langfuse/Datadog/Honeycomb/Braintrust/anything OTLP). Follows
+the standard recipe: REST function in `platform/projects-client/gateway.ts` +
+colocated test + barrel re-export. No facade binding needed — `apps/web`
+already consumes the gateway surface directly via
+`@kortix/sdk/projects-client`, matching every other gateway function
+(`getGatewayBudgets`, `createGatewayKey`, etc.).
+
+**TDD:** wrote the RED test first (import of the three not-yet-exported
+functions), watched it fail with `SyntaxError: Export named ... not found`,
+implemented, watched it pass.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+SDK suite reported **1123 pass / 2 skip / 0 fail** across 84 files with 5010
+assertions (both public-surface snapshots re-recorded — additive only, no
+export removed/renamed); and `pnpm --filter @kortix/sdk run smoke:install`
+built, packed, installed, and imported `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. The backend route
+(`PUT/GET/DELETE /projects/:id/gateway/otel`), the storage/encryption, and the
+`apps/web` Observability tab are part of the same PR — see the PR description
+for their own verification.

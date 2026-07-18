@@ -3,20 +3,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  type SetGatewayBudgetInput,
+  type SetGatewayOtelConfigInput,
   createGatewayKey,
   deleteGatewayBudget,
+  deleteGatewayOtelConfig,
   getGatewayBreakdown,
   getGatewayBudgets,
   getGatewayErrors,
   getGatewayKeys,
   getGatewayLog,
+  getGatewayOtelConfig,
   getGatewayOverview,
   getGatewaySeries,
   getGatewaySessions,
   listGatewayLogs,
   revokeGatewayKey,
   setGatewayBudget,
-  type SetGatewayBudgetInput,
+  setGatewayOtelConfig,
 } from '@/lib/projects-gateway-client';
 
 export function useGatewayOverview(projectId: string | undefined, days = 30) {
@@ -128,5 +132,30 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
   return useMutation({
     mutationFn: (keyId: string) => revokeGatewayKey(projectId!, keyId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-keys', projectId] }),
+  });
+}
+
+export function useGatewayOtelConfig(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-gateway-otel', projectId],
+    queryFn: () => getGatewayOtelConfig(projectId!),
+    enabled: !!projectId,
+    staleTime: 15_000,
+  });
+}
+
+export function useSetGatewayOtelConfig(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetGatewayOtelConfigInput) => setGatewayOtelConfig(projectId!, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-otel', projectId] }),
+  });
+}
+
+export function useDeleteGatewayOtelConfig(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => deleteGatewayOtelConfig(projectId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-otel', projectId] }),
   });
 }

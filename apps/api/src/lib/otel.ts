@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { getRequestContext } from './request-context';
+import { safeEgressFetch } from '../shared/ssrf-guard';
 
 type OTelSpanKind = 'INTERNAL' | 'SERVER' | 'CLIENT';
 
@@ -26,18 +27,28 @@ function otlpTraceEndpoint() {
   return `${base.replace(/\/+$/, '')}/v1/traces`;
 }
 
-function parseOtelHeaders(): Record<string, string> {
-  const raw = process.env.OTEL_EXPORTER_OTLP_HEADERS?.trim();
-  if (!raw) return {};
+/**
+ * Parse the `key1=value1,key2=value2` header shape used by the standard
+ * OTEL_EXPORTER_OTLP_HEADERS env var — and reused verbatim for a per-project
+ * OTLP exporter config (see repositories/gateway-otel-config.ts) so operators
+ * and project owners write headers in exactly the same format.
+ */
+export function parseHeaderString(raw: string | undefined | null): Record<string, string> {
+  const trimmed = raw?.trim();
+  if (!trimmed) return {};
 
   const headers: Record<string, string> = {};
-  for (const part of raw.split(',')) {
+  for (const part of trimmed.split(',')) {
     const [key, ...rest] = part.split('=');
     const name = key?.trim();
     const value = rest.join('=').trim();
     if (name && value) headers[name] = value;
   }
   return headers;
+}
+
+function parseOtelHeaders(): Record<string, string> {
+  return parseHeaderString(process.env.OTEL_EXPORTER_OTLP_HEADERS);
 }
 
 function randomSpanId() {
@@ -68,12 +79,28 @@ function toOtelAttributes(attributes: Record<string, unknown>) {
     .filter((item): item is { key: string; value: Record<string, unknown> } => Boolean(item));
 }
 
-export function isOtelTraceExporterConfigured() {
-  return Boolean(otlpTraceEndpoint());
+/**
+ * A caller-supplied exporter destination that wins over the operator's env
+ * config for THIS span — how a per-project OTLP config (Observability tab)
+ * routes gen_ai spans to a user's own Langfuse/Datadog/Honeycomb/Braintrust/etc
+ * without an operator env var. `headers` REPLACES (never merges with)
+ * OTEL_EXPORTER_OTLP_HEADERS: the operator's own exporter auth must never leak
+ * to a project-chosen destination.
+ */
+export interface OtelExporterOverride {
+  endpoint: string;
+  headers?: Record<string, string>;
 }
 
-export async function emitOtelSpan(input: OTelSpanInput): Promise<boolean> {
-  const endpoint = otlpTraceEndpoint();
+export function isOtelTraceExporterConfigured(override?: OtelExporterOverride | null): boolean {
+  return Boolean(override?.endpoint) || Boolean(otlpTraceEndpoint());
+}
+
+export async function emitOtelSpan(
+  input: OTelSpanInput,
+  override?: OtelExporterOverride | null,
+): Promise<boolean> {
+  const endpoint = override?.endpoint || otlpTraceEndpoint();
   const ctx = getRequestContext();
   if (!endpoint || !ctx) return false;
 
@@ -123,14 +150,24 @@ export async function emitOtelSpan(input: OTelSpanInput): Promise<boolean> {
   };
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...parseOtelHeaders(),
-      },
-      body: JSON.stringify(body),
-    });
+    // A project-configured destination (`override`) is caller-influenced — a
+    // project owner can point it anywhere — so it goes through the same SSRF
+    // egress guard as audit-webhook delivery (https-only, DNS-resolved,
+    // private/link-local/cloud-metadata ranges blocked, redirects
+    // re-validated per hop). The operator's own env-configured endpoint is
+    // trusted infrastructure config, same trust level as DATABASE_URL, and
+    // keeps using a plain fetch.
+    const response = override
+      ? await safeEgressFetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(override.headers ?? {}) },
+          body: JSON.stringify(body),
+        })
+      : await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...parseOtelHeaders() },
+          body: JSON.stringify(body),
+        });
     return response.ok;
   } catch (error) {
     console.warn('[otel] span export failed:', error instanceof Error ? error.message : error);

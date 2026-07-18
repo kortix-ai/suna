@@ -92,6 +92,7 @@ export const PROJECT_ACTIONS = {
   PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
   PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
   PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
+  PROJECT_GATEWAY_OTEL_MANAGE: 'project.gateway.otel.manage',
 
   // ── Per-capability leaf actions (IAM v1) ────────────────────────────────
   // Each project feature gets its own read/write leaf so a custom role can
