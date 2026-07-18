@@ -57,9 +57,9 @@ describe('generationControlCapabilities', () => {
     expect(caps.topP).toBe(false);
   });
 
-  test('a reasoning:true model with no reasoning_options falls back to low/medium/high', () => {
+  test('a reasoning:true model with no reasoning_options exposes NO effort control (never fabricated)', () => {
     const caps = generationControlCapabilities(REASONING_NO_OPTIONS);
-    expect(caps.reasoningEffort).toEqual({ values: ['low', 'medium', 'high'] });
+    expect(caps.reasoningEffort).toBeUndefined();
   });
 
   test('reasoning:false / absent → no reasoningEffort control at all', () => {
@@ -151,5 +151,30 @@ describe('clampGenerationConfig', () => {
       REASONING_FIXED_TEMP,
     );
     expect(out).toEqual({ reasoningEffort: 'high', maxOutputTokens: 50_000 });
+  });
+});
+
+describe('generationControlCapabilities — effort only from real reasoning_options', () => {
+  test('exposes effort values ONLY from a real models.dev reasoning_options entry', () => {
+    const caps = generationControlCapabilities({
+      id: 'openai/gpt-5.6-sol', name: 'GPT-5.6 Sol', reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+      temperature: false,
+    } as CatalogModel);
+    expect(caps.reasoningEffort?.values).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  test('exposes NO effort control for a reasoning:true model with no reasoning_options (never fabricated)', () => {
+    const caps = generationControlCapabilities({
+      id: 'x/thinks-but-no-knob', name: 'Thinks', reasoning: true, temperature: true,
+    } as CatalogModel);
+    expect(caps.reasoningEffort).toBeUndefined();
+  });
+
+  test('exposes NO effort control for a non-reasoning model', () => {
+    const caps = generationControlCapabilities({
+      id: 'x/plain', name: 'Plain', reasoning: false, temperature: true,
+    } as CatalogModel);
+    expect(caps.reasoningEffort).toBeUndefined();
   });
 });
