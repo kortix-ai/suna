@@ -76,12 +76,10 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   }, []);
 
   const goNext = useCallback(() => {
-    setIndex((i) => {
-      const next = Math.min(count - 1, i + 1);
-      setMode(next >= count - 1 ? 'live' : 'manual');
-      return next;
-    });
-  }, [count]);
+    const next = Math.min(count - 1, index + 1);
+    setMode(next >= count - 1 ? 'live' : 'manual');
+    setIndex(next);
+  }, [count, index]);
 
   // Scrubbing to the end re-arms live-follow; anywhere else pins manual.
   const handleScrub = useCallback(

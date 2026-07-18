@@ -1,6 +1,7 @@
 'use client';
 
 import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
+import { truncate as sharedTruncate } from '@/lib/utils/string';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -23,8 +24,7 @@ type Diag = {
 const EMPTY = '—';
 
 function truncate(value: string, max: number): string {
-  if (!value) return EMPTY;
-  return value.length > max ? `${value.slice(0, max)}…` : value;
+  return value ? sharedTruncate(value, max) : EMPTY;
 }
 
 export function SystemFaultView({

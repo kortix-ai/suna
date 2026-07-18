@@ -295,6 +295,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
     useEffect(() => {
       let mounted = true;
+      let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
 
       const renderChart = async () => {
         if (!chart.trim()) {
@@ -439,12 +440,12 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           setRenderedContent(result.svg);
 
           // Clean up any potential error text or elements that might have been added to the DOM
-          setTimeout(cleanupMermaidErrors, 100);
+          cleanupTimer = setTimeout(cleanupMermaidErrors, 100);
         } catch (err) {
           console.error('❌ Mermaid rendering error:', err);
 
           // Clean up any error elements that might have been added to the DOM
-          setTimeout(cleanupMermaidErrors, 50);
+          cleanupTimer = setTimeout(cleanupMermaidErrors, 50);
 
           if (mounted) {
             const errorMessage =
@@ -476,6 +477,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
       return () => {
         mounted = false;
+        if (cleanupTimer) clearTimeout(cleanupTimer);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chartHash]);

@@ -1,5 +1,6 @@
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { referralsApi } from '@/lib/api/referrals';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -71,22 +72,20 @@ export function useValidateReferralCode() {
 export function useCopyReferralLink() {
   const { data: referralData } = useReferralCode();
 
-  const copyToClipboard = async () => {
+  const copyLink = async () => {
     if (!referralData?.referral_url) {
       errorToast('Referral link not available');
       return;
     }
 
-    try {
-      await navigator.clipboard.writeText(referralData.referral_url);
+    if (await copyToClipboard(referralData.referral_url)) {
       successToast('Referral link copied to clipboard!');
-    } catch (error) {
-      console.error('Failed to copy referral link:', error);
+    } else {
       errorToast('Failed to copy referral link');
     }
   };
 
-  return { copyToClipboard, referralUrl: referralData?.referral_url };
+  return { copyToClipboard: copyLink, referralUrl: referralData?.referral_url };
 }
 
 export function useSendReferralEmails() {

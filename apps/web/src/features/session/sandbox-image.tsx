@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
@@ -53,40 +53,29 @@ export function SandboxImage({ src, alt = 'Image', className, preview }: Sandbox
 	);
 
 	// Convert base64 to blob URL (same pattern as tool-renderers.tsx)
-	const blobUrlRef = useRef<string | null>(null);
-	const blobUrl = useMemo(() => {
-		// Revoke previous blob URL when data changes
-		if (blobUrlRef.current) {
-			URL.revokeObjectURL(blobUrlRef.current);
-			blobUrlRef.current = null;
-		}
-		if (fileContentData?.encoding === 'base64' && fileContentData?.content) {
-			const binary = atob(fileContentData.content);
-			const bytes = new Uint8Array(binary.length);
-			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-			const blob = new Blob([bytes], { type: fileContentData.mimeType || 'image/png' });
-			const url = URL.createObjectURL(blob);
-			blobUrlRef.current = url;
-			return url;
-		}
-		return null;
-	}, [fileContentData]);
-
-	// Cleanup blob URL on unmount
+	const [blobUrl, setBlobUrl] = useState<string | null>(null);
+	const hasBase64 = fileContentData?.encoding === 'base64' && !!fileContentData?.content;
 	useEffect(() => {
+		if (!(fileContentData?.encoding === 'base64' && fileContentData.content)) {
+			setBlobUrl(null);
+			return;
+		}
+		const binary = atob(fileContentData.content);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		const blob = new Blob([bytes], { type: fileContentData.mimeType || 'image/png' });
+		const url = URL.createObjectURL(blob);
+		setBlobUrl(url);
 		return () => {
-			if (blobUrlRef.current) {
-				URL.revokeObjectURL(blobUrlRef.current);
-				blobUrlRef.current = null;
-			}
+			URL.revokeObjectURL(url);
 		};
-	}, []);
+	}, [fileContentData]);
 
 	// Priority: blob URL from sandbox fetch > original src (if already a valid URL)
 	const resolvedSrc = isLocalPath ? blobUrl : src;
 
 	// Loading state — show skeleton while fetching from sandbox
-	if (isLocalPath && isLoading) {
+	if (isLocalPath && (isLoading || (hasBase64 && !blobUrl))) {
 		return (
 			<div className={cn('animate-pulse bg-muted/40 rounded', className)} style={{ minHeight: 80, minWidth: 80 }} />
 		);

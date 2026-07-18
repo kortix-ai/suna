@@ -23,6 +23,7 @@ import type {
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/utils/file-utils';
 import type { AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
@@ -50,7 +51,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AGENT_GROUP_ORDER, shouldGroupAgentsByHarness } from './agent-selector-helpers';
 import { extractClipboardFiles } from './clipboard-files';
 import {
@@ -58,12 +59,12 @@ import {
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
-import { resolveComposerResetOnSend } from './composer-reset';
 import {
   COMPOSER_PILL_ACTIVE_CLASS,
   COMPOSER_PILL_DISABLED_CLASS,
   COMPOSER_PILL_TRIGGER_CLASS,
 } from './composer-pill';
+import { resolveComposerResetOnSend } from './composer-reset';
 import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -632,25 +633,6 @@ export type AttachedFile =
       isImage: boolean;
     };
 
-function isImageFile(file: File): boolean {
-  if (file.type.startsWith('image/')) return true;
-  // Fallback: check extension for when MIME type is missing (e.g. pasted files)
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  return [
-    'jpg',
-    'jpeg',
-    'png',
-    'gif',
-    'webp',
-    'svg',
-    'bmp',
-    'ico',
-    'heic',
-    'heif',
-    'avif',
-  ].includes(ext);
-}
-
 // ============================================================================
 // Attachment Preview Strip — grid-style file cards
 // ============================================================================
@@ -820,8 +802,10 @@ function AttachmentPreview({
             </div>
             {/* Remove button */}
             <button
+              type="button"
               onClick={() => onRemove(i)}
               className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
+              aria-label={`Remove ${name}`}
             >
               <X className="h-3 w-3" />
             </button>
@@ -1377,7 +1361,7 @@ export interface SessionChatInputProps {
   mentionSessions?: Session[];
 }
 
-export function SessionChatInput({
+function SessionChatInputImpl({
   onSend,
   isBusy = false,
   queuedMessages,
@@ -2401,7 +2385,7 @@ export function SessionChatInput({
                   className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
                   {lockForApproval ? (
-                    <div className="absolute inset-0 text-kortix-yellow">
+                    <div className="text-kortix-yellow absolute inset-0">
                       Approve or deny the action above to continue…
                     </div>
                   ) : lockForQuestion ? (
@@ -2473,6 +2457,7 @@ export function SessionChatInput({
                   }
                 }}
                 placeholder=""
+                aria-label="Message input"
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
@@ -2692,3 +2677,12 @@ export function SessionChatInput({
     </div>
   );
 }
+
+/**
+ * Memoized so the input subtree doesn't re-render on every streaming token.
+ * `SessionChat` passes hooked-up (`useCallback`/`useMemo`) props for exactly
+ * this reason — see the "Stable props for <SessionChatInput>" block in
+ * session-chat.tsx. If a new inline arrow/object/array literal prop is added
+ * to a `<SessionChatInput>` call site, this memo silently stops helping.
+ */
+export const SessionChatInput = memo(SessionChatInputImpl);

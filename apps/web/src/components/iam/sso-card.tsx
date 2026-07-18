@@ -8,6 +8,7 @@
 
 import { getEnv } from '@/lib/env-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, Copy, Plus, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
@@ -53,11 +54,10 @@ import {
 
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 
-async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
-  try {
-    await navigator.clipboard.writeText(value);
+async function copyValue(value: string, successMsg = 'Copied to clipboard') {
+  if (await copyToClipboard(value)) {
     successToast(successMsg);
-  } catch {
+  } else {
     errorToast('Copy failed — select and copy manually');
   }
 }
@@ -87,7 +87,7 @@ function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }
               variant="outline"
               size="icon"
               aria-label="Copy Identifier (Entity ID)"
-              onClick={() => copyToClipboard(urls.entityId, 'Entity ID copied')}
+              onClick={() => copyValue(urls.entityId, 'Entity ID copied')}
             >
               <Copy className="size-3.5 shrink-0" />
             </Button>
@@ -103,7 +103,7 @@ function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }
               variant="outline"
               size="icon"
               aria-label="Copy Reply URL (ACS)"
-              onClick={() => copyToClipboard(urls.acsUrl, 'Reply URL copied')}
+              onClick={() => copyValue(urls.acsUrl, 'Reply URL copied')}
             >
               <Copy className="size-3.5 shrink-0" />
             </Button>

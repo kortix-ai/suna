@@ -148,3 +148,25 @@ export function getFileUrl(_sandboxId: string | undefined, path: string): string
 export function getFilename(filepath: string): string {
     return filepath.split('/').pop() || 'file';
 }
+
+/**
+ * Detect whether a File is an image, falling back to extension sniffing
+ * for cases where the MIME type is missing (e.g. pasted files).
+ */
+export function isImageFile(file: File): boolean {
+    if (file.type.startsWith('image/')) return true;
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    return [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp',
+        'svg',
+        'bmp',
+        'ico',
+        'heic',
+        'heif',
+        'avif',
+    ].includes(ext);
+}

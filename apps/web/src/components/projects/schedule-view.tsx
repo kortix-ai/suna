@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -225,15 +226,14 @@ function generateSecret(): string {
   return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
-async function copyToClipboard(value: string, label = 'Copied'): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(value);
+async function copyValue(value: string, label = 'Copied'): Promise<boolean> {
+  const ok = await copyToClipboard(value);
+  if (ok) {
     successToast(label);
-    return true;
-  } catch {
+  } else {
     errorToast('Copy failed — select and copy manually');
-    return false;
   }
+  return ok;
 }
 
 type TriggerKind = 'cron' | 'webhook';
@@ -968,7 +968,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             variant="ghost"
             size="sm"
             className="h-7 gap-1 px-2 text-xs"
-            onClick={() => void copyToClipboard(url, 'Webhook URL copied')}
+            onClick={() => void copyValue(url, 'Webhook URL copied')}
           >
             <Copy className="size-3 shrink-0" />
             Copy
@@ -998,7 +998,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             variant="ghost"
             size="sm"
             className="h-7 gap-1 px-2 text-xs"
-            onClick={() => void copyToClipboard(curl, 'cURL copied')}
+            onClick={() => void copyValue(curl, 'cURL copied')}
           >
             <Copy className="size-3 shrink-0" />
             Copy
