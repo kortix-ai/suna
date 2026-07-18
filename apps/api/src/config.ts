@@ -340,32 +340,6 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET:    optStr,
-  // Stateless LiteLLM translation sidecar (see packages/llm-gateway's
-  // GatewayConfig.translationSidecar): when set, the openai-compat/custom
-  // upstream candidates route through this sidecar instead of calling the
-  // provider directly, so param-quirk translation (e.g. OpenAI's max_tokens ->
-  // max_completion_tokens) is owned by LiteLLM's community-maintained tables
-  // instead of ours. Empty = current direct behavior — required for old
-  // self-host boxes and a gradual rollout. The sidecar itself holds no
-  // credentials; the resolved upstream key/base travel per-request. Base URL
-  // only — e.g. http://litellm:4000 in self-host, unset in cloud today (see
-  // the PR's cloud-rollout note; this is a code-path + env wire-up only).
-  LLM_TRANSLATION_SIDECAR_URL: optStr,
-  // Bearer token for the sidecar's OWN master-key auth (LiteLLM's
-  // `general_settings.master_key`) — never the upstream provider key, which
-  // travels in the request body instead. Optional only because a sidecar can
-  // technically run with no master key; self-host always sets one (see
-  // kortix-compose.yml).
-  LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: optStr,
-  // Transport engine for upstream LLM calls. 'native' (default) uses the
-  // hand-written per-provider transports (optionally fronted by the LiteLLM
-  // translation sidecar above). 'ai-sdk' routes replaceable providers
-  // (openai-compat / anthropic / bedrock) through the Vercel AI SDK provider
-  // packages, which own the provider quirks, adapting back to the same
-  // OpenAI-compatible /v1/llm contract. Codex (openai-responses) always stays
-  // native. Flag-gated for a proven, staged rollout and, ultimately, retiring
-  // the sidecar.
-  LLM_TRANSPORT_ENGINE:        optStrDefault('native'),
   // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
   // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
   // service-specific credential for bedrock.amazonaws.com.
@@ -829,9 +803,6 @@ export const config = {
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
-  LLM_TRANSLATION_SIDECAR_URL: env.LLM_TRANSLATION_SIDECAR_URL,
-  LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: env.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN,
-  LLM_TRANSPORT_ENGINE: env.LLM_TRANSPORT_ENGINE,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
   AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,

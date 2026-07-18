@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { randomBytes, createHmac, generateKeyPairSync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { totalmem } from 'node:os';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, removeHost, upsertHost, type Host } from '../api/config.ts';
@@ -56,26 +55,6 @@ const DEFAULT_API_URL = 'http://localhost:13738';
 const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
 const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
-// Stateless LiteLLM translation sidecar (see packages/llm-gateway's
-// GatewayConfig.translationSidecar). Third-party infra, not a Kortix release
-// artifact — pinned by tag@digest here (like every Supabase vendor image),
-// not tracked to KORTIX_VERSION/channel: bumping it is a deliberate, reviewed
-// change to this file, same rationale as kortix-updater's docker:...-cli pin
-// below. Digest resolved 2026-07 from the ghcr.io/berriai/litellm registry.
-const DEFAULT_LITELLM_IMAGE =
-  'ghcr.io/berriai/litellm:main-stable@sha256:9ef6f45bc0104940571765e610c52a1d761b5ec85efcd193795281086ee61277';
-// Measured live (docker stats, idle, no traffic): ~1.0 GiB resident for the
-// image above — well over the ~500MB budget a translation-only sidecar
-// "should" cost. Rather than silently taxing every self-host box with that,
-// the service (and the flag that turns it on) defaults ON only when the HOST
-// has enough headroom to not even notice it; smaller boxes stay on the
-// existing direct/hotfix path until an operator opts in explicitly
-// (`kortix self-host env set LLM_TRANSLATION_SIDECAR_ENABLED=true`).
-const LLM_TRANSLATION_SIDECAR_MIN_RAM_BYTES = 16 * 1024 ** 3;
-
-function defaultTranslationSidecarEnabled(): boolean {
-  return totalmem() >= LLM_TRANSLATION_SIDECAR_MIN_RAM_BYTES;
-}
 // Shown whenever an instance is (or is being configured) NOT reachable via a
 // public domain — self-host is VPS-first, and the Cloudflare tunnel is an
 // evaluation convenience, not the recommended production setup.
@@ -206,19 +185,6 @@ interface SelfHostEnv {
   // spread in defaultEnv() (see shared-runtime-defaults.ts), not a literal
   // here, so TS can't see them as named properties.
   GATEWAY_INTERNAL_TOKEN: string;
-  // Stateless LiteLLM translation sidecar — see DEFAULT_LITELLM_IMAGE above
-  // and the `litellm` service in assets/kortix-compose.yml.
-  LITELLM_IMAGE: string;
-  LITELLM_MASTER_KEY: string;
-  // 'true'/'false' — whether the `litellm` Compose service is included at all
-  // (see RenderComposeOptions.translationSidecarConfigured) and whether
-  // kortix-api gets LLM_TRANSLATION_SIDECAR_URL pointed at it. Defaults per
-  // defaultTranslationSidecarEnabled() (host RAM), operator-overridable via
-  // `env set`.
-  LLM_TRANSLATION_SIDECAR_ENABLED: string;
-  // Recomputed from LLM_TRANSLATION_SIDECAR_ENABLED on every render (see
-  // normalizeFullSupabaseEnv) — never hand-set independently of the flag.
-  LLM_TRANSLATION_SIDECAR_URL: string;
   OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
   SUPABASE_JWT_SECRET: string;
@@ -1089,9 +1055,6 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`  ${C.dim}  api      ${C.reset}${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
-  if (env.LLM_TRANSLATION_SIDECAR_ENABLED === 'true') {
-    process.stdout.write(`  ${C.dim}  litellm  ${C.reset}${env.LITELLM_IMAGE}${C.dim} (translation sidecar — pinned independently, not tracked by channel)${C.reset}\n`);
-  }
   process.stdout.write('\n');
   process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (current channel) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
   return 0;
@@ -1389,11 +1352,9 @@ function refuseUpdaterManagedKeyMessage(key: string): string {
 function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readonly string[]): number {
   const domainConfigured = Boolean(env.KORTIX_DOMAIN?.trim());
   const tunnelActive = reachabilityMode(env) === 'tunnel';
-  const translationSidecarActive = env.LLM_TRANSLATION_SIDECAR_ENABLED === 'true';
   const services = servicesForKeys(keys).filter((service) => {
     if (service === 'caddy') return domainConfigured;
     if (service === 'cloudflared') return tunnelActive;
-    if (service === 'litellm') return translationSidecarActive;
     return true;
   });
   if (services.length === 0) {
@@ -1494,7 +1455,6 @@ function freshTokenFor(key: string): string {
     case 'INTERNAL_SERVICE_KEY':
     case 'API_KEY_SECRET':
     case 'TUNNEL_SIGNING_SECRET':
-    case 'LITELLM_MASTER_KEY':
       return token(32);
     case 'S3_PROTOCOL_ACCESS_KEY_ID':
       return token(16);
@@ -2246,12 +2206,6 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${tag}`,
     GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${tag}`,
     GATEWAY_INTERNAL_TOKEN: token(32),
-    LITELLM_IMAGE: DEFAULT_LITELLM_IMAGE,
-    LITELLM_MASTER_KEY: token(32),
-    LLM_TRANSLATION_SIDECAR_ENABLED: defaultTranslationSidecarEnabled() ? 'true' : 'false',
-    // Recomputed in normalizeFullSupabaseEnv() from the flag above; this
-    // initial value only matters before that first normalize pass.
-    LLM_TRANSLATION_SIDECAR_URL: '',
     OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: token(32),
     SUPABASE_JWT_SECRET: jwtSecret,
@@ -2365,7 +2319,6 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
       namedTunnelConfigured: namedTunnelConfigured(env),
       localDockerConfigured: sandboxProviders(env).includes('local-docker'),
-      translationSidecarConfigured: env.LLM_TRANSLATION_SIDECAR_ENABLED === 'true',
     }),
     { encoding: 'utf8', mode: 0o600 },
   );
@@ -2469,14 +2422,6 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
-
-  // Stateless LiteLLM translation sidecar: the URL kortix-api actually uses is
-  // always DERIVED from the enabled flag, never set independently — so
-  // flipping LLM_TRANSLATION_SIDECAR_ENABLED via `env set` (or an upgrade
-  // recomputing this on every render) can never leave the URL pointed at a
-  // `litellm` service that renderFullDockerCompose() has omitted from the
-  // Compose file (see RenderComposeOptions.translationSidecarConfigured).
-  env.LLM_TRANSLATION_SIDECAR_URL = env.LLM_TRANSLATION_SIDECAR_ENABLED === 'true' ? 'http://litellm:4000' : '';
 
   // Always recomputed (never `||=`) — see the KORTIX_INSTANCE_DIR field's doc
   // comment on SelfHostEnv. Unconditional on purpose: if the instance
