@@ -375,6 +375,7 @@ export default function ProjectSessionPage() {
         projectSessionId={sessionId}
         bootStage={session.phase === 'ready' ? null : startStage}
         acpItems={acpItems}
+        isSessionBusy={session.acp?.busy ?? false}
       >
         <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
       </SessionLayout>
