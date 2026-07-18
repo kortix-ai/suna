@@ -31,6 +31,18 @@ describe('MINIMAL_FALLBACK_MODELS capability metadata', () => {
     expect(missing).toEqual([])
   })
 
+  // Regression: the grok fallback entry's `provider` field used to be
+  // 'x-ai' (a hyphenated id that has no PROVIDER_LABELS entry), while
+  // @kortix/llm-catalog's PROVIDER_LABELS and the served /v1/models catalog
+  // (catalog-models.ts) both key xAI as 'xai' (models.dev's real, hyphen-
+  // free provider id). The mismatch made pickerGroupLabel miss the lookup
+  // and fall back to the raw (always "Kortix") providerName for this one
+  // fallback-only entry — reintroducing the "every provider = Kortix" bug
+  // for exactly the models served when the gateway catalog fetch fails.
+  test('grok fallback entry carries `provider: "xai"`, matching PROVIDER_LABELS + gatewayModelsAll', () => {
+    expect(MINIMAL_FALLBACK_MODELS['x-ai/grok-4.3']?.provider).toBe('xai')
+  })
+
   test('withModelLimits preserves the `provider` field while backfilling limits', () => {
     const withLimits = withModelLimits({
       'anthropic/claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', provider: 'anthropic' },

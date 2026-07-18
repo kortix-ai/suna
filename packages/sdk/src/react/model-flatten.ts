@@ -26,7 +26,10 @@ type LooseModel =
       // `FlatModel.provider` below. Absent on plain opencode `Model` values
       // (which don't carry it); present on every gateway-served model.
       provider?: string;
-      reasoning_options?: Array<{ type: string; values: string[] }>;
+      reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+      description?: string;
+      open_weights?: boolean;
+      last_updated?: string;
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -73,14 +76,28 @@ export interface FlatModel {
   provider?: string;
   /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
    *  the model exposes one. */
-  reasoningOptions?: Array<{ type: string; values: string[] }>;
+  reasoningOptions?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  /** Free-text blurb models.dev publishes for the model. */
+  description?: string;
+  /** True when the model's weights are publicly released (open-weights) vs.
+   *  closed API-only. models.dev's `open_weights` field, mirrored. */
+  openWeights?: boolean;
+  /** When models.dev last refreshed this model's own entry. */
+  lastUpdated?: string;
 }
 
-// The two Kortix-gateway-specific fields (`provider`, `reasoning_options`)
-// exist only on the loose/synthetic branch of `LooseModel`, never on
-// opencode's own canonical `Model` type — read them via this narrow shape
-// rather than widening `LooseModel`'s member access rules or reaching for `any`.
-type WithGatewayFields = { provider?: string; reasoning_options?: Array<{ type: string; values: string[] }> };
+// The gateway-specific fields (`provider`, `reasoning_options`,
+// `description`, `open_weights`, `last_updated`) exist only on the
+// loose/synthetic branch of `LooseModel`, never on opencode's own canonical
+// `Model` type — read them via this narrow shape rather than widening
+// `LooseModel`'s member access rules or reaching for `any`.
+type WithGatewayFields = {
+  provider?: string;
+  reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  description?: string;
+  open_weights?: boolean;
+  last_updated?: string;
+};
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
@@ -129,6 +146,9 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         providerSource: p.source,
         provider: (model as WithGatewayFields).provider,
         reasoningOptions: (model as WithGatewayFields).reasoning_options,
+        description: (model as WithGatewayFields).description,
+        openWeights: (model as WithGatewayFields).open_weights,
+        lastUpdated: (model as WithGatewayFields).last_updated,
       });
     }
   }

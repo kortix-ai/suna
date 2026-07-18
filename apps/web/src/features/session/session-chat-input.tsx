@@ -132,7 +132,14 @@ export interface FlatModel {
   /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
    *  the model exposes one — same shape the composer's effort selector reads
    *  off the baked/live catalog, threaded onto the live per-session model too. */
-  reasoningOptions?: Array<{ type: string; values: string[] }>;
+  reasoningOptions?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  /** Free-text blurb models.dev publishes for the model. */
+  description?: string;
+  /** True when the model's weights are publicly released (open-weights) vs.
+   *  closed API-only. models.dev's `open_weights` field, mirrored. */
+  openWeights?: boolean;
+  /** When models.dev last refreshed this model's own entry. */
+  lastUpdated?: string;
 }
 
 function catalogModelFor(providerID: string, modelID: string) {
@@ -198,6 +205,12 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         reasoningOptions: Array.isArray((model as any).reasoning_options)
           ? (model as any).reasoning_options
           : undefined,
+        description:
+          typeof (model as any).description === 'string' ? (model as any).description : undefined,
+        openWeights:
+          typeof (model as any).open_weights === 'boolean' ? (model as any).open_weights : undefined,
+        lastUpdated:
+          typeof (model as any).last_updated === 'string' ? (model as any).last_updated : undefined,
       });
     }
   }

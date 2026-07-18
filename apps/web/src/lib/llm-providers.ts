@@ -80,7 +80,11 @@ export interface LlmProviderModel {
    *  controls panel must hide the temperature (and top_p) slider entirely. */
   temperature?: boolean;
   structured_output?: boolean;
-  interleaved?: boolean;
+  // Two real models.dev shapes: a plain boolean, or an object naming the
+  // response field the interleaved content arrives on (e.g.
+  // {field:'reasoning_content'}) — the large majority. Mirrors
+  // `@kortix/llm-catalog`'s `CatalogModel.interleaved`.
+  interleaved?: boolean | { field?: string };
   open_weights?: boolean;
   knowledge?: string;
   last_updated?: string;

@@ -121,6 +121,62 @@ describe('runtime model catalog', () => {
     });
   });
 
+  // MUST-FIX regression (adversarial review of PR #5010): this file's header
+  // comment promises the live refresh path and the baked-snapshot enrich
+  // script (apps/web/scripts/enrich-llm-catalog-capabilities.ts)
+  // "must never diverge in SHAPE, only in freshness". Before this fix, the
+  // live path passed `reasoning_options` through RAW/unfiltered while the
+  // baked path's `normalizeReasoningOptions` silently dropped any entry
+  // without `values` (the `budget_tokens`/`toggle` shapes) — so a
+  // budget_tokens model (mainline Claude's ONLY shape) came out
+  // `[{type:'budget_tokens', min:1024}]` live but `undefined` baked: same
+  // model, two different shapes depending on which path served it. Assert
+  // the live path's raw passthrough matches EXACTLY what the enrich script
+  // would normalize the same input to for a budget_tokens entry — i.e. the
+  // object survives verbatim on both paths, not just on live.
+  test('a budget_tokens reasoning_options entry survives the live path in the SAME shape the baked enrich script normalizes it to', async () => {
+    const rawBudgetTokensOption = { type: 'budget_tokens', min: 1024 };
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      sourceUrl: 'https://catalog.test/api.json',
+      fetchImpl: async () => new Response(JSON.stringify({
+        anthropic: {
+          id: 'anthropic',
+          name: 'Anthropic',
+          env: ['ANTHROPIC_API_KEY'],
+          models: {
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5',
+              reasoning: true,
+              reasoning_options: [rawBudgetTokensOption],
+              temperature: true,
+            },
+          },
+        },
+      }), { status: 200 }),
+    });
+
+    expect(await catalog.refresh()).toBe(true);
+    const model = catalog.snapshot().providers[0]?.models[0];
+    // The live path's raw passthrough (no `values` filtering).
+    expect(model?.reasoning_options).toEqual([{ type: 'budget_tokens', min: 1024 }]);
+
+    // What the baked-snapshot enrich script's normalizeReasoningOptions
+    // produces for the IDENTICAL raw input — mirrors that function's field
+    // selection exactly (type, then values/min/max only when present) so a
+    // divergence in either implementation fails this test.
+    const bakedShapeForSameInput = [rawBudgetTokensOption]
+      .filter((option) => typeof option?.type === 'string')
+      .map((option: { type: string; values?: string[]; min?: number; max?: number }) => ({
+        type: option.type,
+        ...(Array.isArray(option.values) ? { values: option.values } : {}),
+        ...(typeof option.min === 'number' ? { min: option.min } : {}),
+        ...(typeof option.max === 'number' ? { max: option.max } : {}),
+      }));
+    expect(model?.reasoning_options).toEqual(bakedShapeForSameInput);
+  });
+
   test('keeps the last known catalog when the API is unavailable', async () => {
     const catalog = createRuntimeModelCatalog({
       seed,

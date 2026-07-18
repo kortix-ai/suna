@@ -94,6 +94,30 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(codexModel?.reasoning_options?.[0]?.values).toContain('xhigh');
   });
 
+  // MUST-FIX regression (adversarial review of PR #5010): description,
+  // open_weights, and last_updated used to stop at LlmProviderModel (the web
+  // catalog module) and never reach the served GatewayModel — dropped
+  // silently between the catalog layer and what opencode/the client actually
+  // see, despite the PR's "full trace" claim.
+  test('served catalog threads description/open_weights/last_updated through (not just reasoning_options/cost/modalities)', () => {
+    const opus = full['anthropic/claude-opus-4-8'];
+    expect(typeof opus?.description).toBe('string');
+    expect((opus?.description ?? '').length).toBeGreaterThan(0);
+    expect(typeof opus?.open_weights).toBe('boolean');
+    expect(typeof opus?.last_updated).toBe('string');
+  });
+
+  // MUST-FIX regression (adversarial review of PR #5010): mainline Claude
+  // models publish ONLY a `budget_tokens` reasoning_options entry (no
+  // `effort` entry at all) — the old normalizeReasoningOptions dropped any
+  // entry without `values`, so this field silently vanished by the time it
+  // reached opencode for exactly the models most likely to be selected.
+  test('a budget_tokens-only Claude model (claude-haiku-4-5) still carries reasoning_options through to the served catalog', () => {
+    const haiku = full['anthropic/claude-haiku-4-5'];
+    expect(haiku).toBeDefined();
+    expect(haiku?.reasoning_options).toEqual([{ type: 'budget_tokens', min: 1024 }]);
+  });
+
   test('catalog is a memoized singleton (built once, not per call)', () => {
     expect(gatewayModelCatalog('proj')).toBe(full);
   });

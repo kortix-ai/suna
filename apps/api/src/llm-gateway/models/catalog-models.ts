@@ -47,6 +47,15 @@ interface GatewayModel {
   modalities?: CatalogModalities;
   limit?: { context?: number; input?: number; output?: number };
   cost?: CatalogCost;
+  // Free-text blurb models.dev publishes for the model. Threaded through
+  // alongside the rest of the enriched field set — was previously dropped
+  // between LlmProviderModel (the web catalog) and this served shape.
+  description?: string;
+  // True when the model's weights are publicly released (open-weights) vs.
+  // closed API-only. models.dev's `open_weights` field, mirrored verbatim.
+  open_weights?: boolean;
+  // When models.dev last refreshed this model's own entry.
+  last_updated?: string;
 }
 
 function modelsById(catalog: Catalog): Map<string, CatalogModel> {
@@ -128,6 +137,9 @@ function capabilitiesOf(
       ...(typeof model.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
       ...(model.modalities ? { modalities: model.modalities } : {}),
       ...(model.cost ? { cost: model.cost } : {}),
+      ...(typeof model.description === 'string' ? { description: model.description } : {}),
+      ...(typeof model.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
+      ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
       limit: servedLimit(model.limit),
     };
   }
@@ -312,6 +324,9 @@ export function gatewayCodexModels(
       ...(typeof model?.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
       ...(model?.modalities ? { modalities: model.modalities } : {}),
       ...(model?.cost ? { cost: model.cost } : {}),
+      ...(typeof model?.description === 'string' ? { description: model.description } : {}),
+      ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
+      ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
       limit: servedLimit(model?.limit),
     };
   }

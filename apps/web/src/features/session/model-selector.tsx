@@ -485,7 +485,16 @@ export function ModelSelector({
                             selectedModel?.modelID === model.modelID;
 
                           const isFree = shouldShowFreeTag(model);
-                          const modelKey = { providerID: model.providerID, modelID: model.modelID };
+                          // `.provider` (the real upstream, when the gateway
+                          // serves it) makes isVisible's connection-gating
+                          // check the correct sub-provider instead of falling
+                          // back to string-splitting modelID — see
+                          // use-model-store.ts's subProviderOf.
+                          const modelKey = {
+                            providerID: model.providerID,
+                            modelID: model.modelID,
+                            provider: model.provider,
+                          };
                           // "Latest" models are always shown; older ones get an
                           // activation switch so they can be pinned into the picker.
                           const isLatestModel = modelStore.isLatest(modelKey);

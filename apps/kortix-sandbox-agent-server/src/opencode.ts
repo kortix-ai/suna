@@ -367,7 +367,10 @@ const DEFAULT_KORTIX_MODEL = 'kortix/auto'
 // exposes a tunable reasoning-effort knob; this is the PRIORITY field the
 // chat runtime/composer's effort control reads off the model opencode
 // registers, so it must survive the full gateway -> opencode hop intact.
-type KortixReasoningOption = { type: string; values: string[] }
+// Three real shapes — `effort` (values), `toggle` (neither), `budget_tokens`
+// (min/max, no values — mainline Anthropic's shape) — all fields but `type`
+// optional so every shape survives the hop unmodified.
+type KortixReasoningOption = { type: string; values?: string[]; min?: number; max?: number }
 
 type KortixCostTier = {
   input?: number
@@ -408,6 +411,12 @@ type KortixGatewayModel = {
   modalities?: KortixModalities
   limit?: { context?: number; input?: number; output?: number }
   cost?: KortixCost
+  // Free-text blurb models.dev publishes for the model. Threaded through
+  // like the rest of the enriched field set (was previously dropped between
+  // the web catalog and the served/fallback gateway shapes).
+  description?: string
+  open_weights?: boolean
+  last_updated?: string
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
@@ -530,7 +539,14 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   },
   'x-ai/grok-4.3': {
     name: 'Grok 4.3',
-    provider: 'x-ai',
+    // models.dev's real provider id is 'xai' (no hyphen) — matches
+    // @kortix/llm-catalog's PROVIDER_LABELS key and gatewayModelsAll's
+    // `provider` field. The model-id PREFIX here ('x-ai/...') is just this
+    // fallback table's own key convention and is left alone; only the
+    // `provider` value (what the picker actually groups/labels by) must
+    // match models.dev's real id or the picker mislabels/falls back to
+    // "Kortix" for this entry.
+    provider: 'xai',
     reasoning: true,
     tool_call: true,
     attachment: true,

@@ -1,10 +1,15 @@
 // One entry of models.dev's `reasoning_options` (mirrors
 // `@kortix/llm-catalog`'s `CatalogReasoningOption` — duplicated rather than
 // imported so this package stays dependency-free of `@kortix/llm-catalog`;
-// keep the shape identical).
+// keep the shape identical). Three real shapes: `effort` (values), `toggle`
+// (neither), `budget_tokens` (min/max, no values — this is mainline
+// Anthropic's shape). All fields but `type` are optional so every shape
+// round-trips through this type without narrowing.
 export interface ModelReasoningOption {
   type: string;
-  values: string[];
+  values?: string[];
+  min?: number;
+  max?: number;
 }
 
 export interface ModelCostTier {
@@ -55,6 +60,16 @@ export interface ModelInfo {
   modalities?: ModelModalities;
   limit?: { context?: number; input?: number; output?: number };
   cost?: ModelCost;
+  // Free-text blurb models.dev publishes for the model (e.g. picker
+  // tooltips). Threaded end-to-end alongside the other capability fields —
+  // never stop at the catalog layer.
+  description?: string;
+  // True when the model's weights are publicly released (open-weights model)
+  // vs. a closed API-only model. models.dev's `open_weights` field, mirrored.
+  open_weights?: boolean;
+  // When models.dev last refreshed this model's own entry (distinct from
+  // `released`, the model's original release date).
+  last_updated?: string;
 }
 
 export type ModelCatalog = Record<string, ModelInfo>;

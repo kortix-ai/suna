@@ -42,9 +42,16 @@ const OUTPUT_PATH = fileURLToPath(
   new URL('../../../packages/llm-catalog/src/catalog.generated.json', import.meta.url),
 );
 
+// models.dev emits THREE shapes here (verified live, 2026-07):
+// {type:'effort', values:[...]}, {type:'toggle'} (no values), and
+// {type:'budget_tokens', min?, max?} (no values — INCLUDING mainline
+// Anthropic: claude-sonnet-4-5/claude-haiku-4-5/claude-opus-4-1 all carry
+// ONLY this shape). All three must round-trip — see normalizeReasoningOptions.
 interface ModelsDevReasoningOption {
   type?: string;
   values?: string[];
+  min?: number;
+  max?: number;
 }
 
 interface ModelsDevCostTier {
@@ -75,7 +82,11 @@ interface ModelsDevModel {
   reasoning_options?: ModelsDevReasoningOption[];
   tool_call?: boolean;
   structured_output?: boolean;
-  interleaved?: boolean;
+  // Two real shapes: a plain boolean (~34 models) or an object naming the
+  // response field the interleaved content arrives on, e.g.
+  // {field:'reasoning_content'} (~623 models — the large majority). Both
+  // must round-trip — see normalizeModel below.
+  interleaved?: boolean | { field?: string };
   open_weights?: boolean;
   temperature?: boolean;
   knowledge?: string;
@@ -127,11 +138,24 @@ function normalizeCost(cost: ModelsDevCost | undefined) {
   return Object.keys(out).length ? out : undefined;
 }
 
+// Ingest EVERY real reasoning_options shape faithfully — `effort` (values),
+// `toggle` (no extra fields), and `budget_tokens` (min/max, no values).
+// Requiring `Array.isArray(option.values)` used to silently drop the toggle
+// and budget_tokens shapes (57.8% of all models with reasoning_options,
+// including every mainline Claude model — see the module header comment).
+// The only requirement to keep an entry is a real `type` string; every other
+// field is carried through only when present, so a shape gains nothing it
+// didn't actually publish.
 function normalizeReasoningOptions(options: ModelsDevReasoningOption[] | undefined) {
   if (!Array.isArray(options) || options.length === 0) return undefined;
   const normalized = options
-    .filter((option) => typeof option?.type === 'string' && Array.isArray(option.values))
-    .map((option) => ({ type: option.type as string, values: option.values as string[] }));
+    .filter((option) => typeof option?.type === 'string')
+    .map((option) => ({
+      type: option.type as string,
+      ...(Array.isArray(option.values) ? { values: option.values } : {}),
+      ...(typeof option.min === 'number' ? { min: option.min } : {}),
+      ...(typeof option.max === 'number' ? { max: option.max } : {}),
+    }));
   return normalized.length ? normalized : undefined;
 }
 
@@ -166,7 +190,12 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
     ...(typeof model.structured_output === 'boolean'
       ? { structured_output: model.structured_output }
       : {}),
-    ...(typeof model.interleaved === 'boolean' ? { interleaved: model.interleaved } : {}),
+    // Both real shapes survive verbatim — a plain boolean or an object like
+    // {field:'reasoning_content'} (see the ModelsDevModel field doc above).
+    ...(typeof model.interleaved === 'boolean' ||
+    (model.interleaved && typeof model.interleaved === 'object')
+      ? { interleaved: model.interleaved }
+      : {}),
     ...(typeof model.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
     temperature: model.temperature,
     ...(typeof model.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
