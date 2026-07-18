@@ -55,6 +55,19 @@ export interface LlmProviderModel {
    * field; the field is exposed so the UI can render a "released X ago" hint.
    */
   released: string | null;
+  /**
+   * Capability + limit flags mirrored verbatim from models.dev — present on
+   * both the baked seed (`catalog.generated.json`) and the live
+   * `/llm-catalog/providers` fetch (see `@kortix/llm-catalog`'s
+   * `CatalogModel`, the shape both ultimately originate from). Optional
+   * because the synthetic `codex`/`kortix` provider entries built in this
+   * section (`utils.ts`'s `buildCodexProvider`, `use-connected-providers.ts`'s
+   * `kortixProvider`) only set what the opencode provider snapshot exposes.
+   */
+  attachment?: boolean;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  limit?: { context?: number; output?: number };
 }
 
 export interface LlmProviderEntry {
