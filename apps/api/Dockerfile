@@ -23,6 +23,14 @@ WORKDIR /agent
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+# Drop the two workspace-only devDeps (@kortix/sdk, @kortix/shared) before the
+# frozen install: they are `workspace:*` links resolvable only inside the pnpm
+# monorepo, and this build context is a single isolated app, so bun would fail
+# with "Workspace dependency not found". They are consumed solely by the
+# integration tests, which never enter the compiled binary (src/main.ts graph
+# only) and are excluded from the build typecheck (tsconfig.build.json). The
+# committed bun.lock already reflects the stripped dependency set.
+RUN bun -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const k of ['@kortix/sdk','@kortix/shared'])delete (p.devDependencies||{})[k];fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 RUN bun install --frozen-lockfile
 
 COPY apps/kortix-sandbox-agent-server/ ./
