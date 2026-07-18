@@ -26,7 +26,11 @@ const Hero = () => {
 
   return (
     <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:py-36">
-      <div className="pointer-events-none absolute inset-0 z-0 mask-y-to-95%" aria-hidden>
+      <div
+        className="pointer-events-none absolute inset-0 z-0 mask-y-to-95%"
+        aria-hidden
+        data-a11y-decorative
+      >
         <KortixLetterField seed={3382} />
       </div>
       <div className="inset-0 z-0 hidden mask-t-from-70% lg:absolute">
