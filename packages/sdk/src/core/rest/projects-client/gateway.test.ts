@@ -98,11 +98,39 @@ test('getGatewayKeys returns the keys list', async () => {
 test('runGatewayPlayground posts prompt + models and returns per-model results', async () => {
   nextResponse = {
     status: 200,
-    body: { results: [{ model: 'gpt-4o', ok: true, latency_ms: 120, output: 'hi' }] },
+    body: {
+      results: [
+        {
+          model: 'gpt-4o',
+          ok: true,
+          latency_ms: 120,
+          output: 'hi',
+          input_tokens: 5,
+          output_tokens: 2,
+          cost: 0.0012,
+          resolved_model: 'gpt-4o-2026-01-01',
+          provider: 'openrouter',
+        },
+      ],
+    },
   };
   const result = await runGatewayPlayground('P1', 'Say hi', ['gpt-4o', 'claude-3']);
   expect(last().url).toContain('/projects/P1/gateway/playground');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ prompt: 'Say hi', models: ['gpt-4o', 'claude-3'] });
   expect(result.results[0]?.model).toBe('gpt-4o');
+  expect(result.results[0]?.cost).toBe(0.0012);
+  expect(result.results[0]?.resolved_model).toBe('gpt-4o-2026-01-01');
+});
+
+test('runGatewayPlayground includes an optional system prompt in the request body', async () => {
+  nextResponse = { status: 200, body: { results: [] } };
+  await runGatewayPlayground('P1', 'Say hi', ['gpt-4o'], 'Be terse.');
+  expect(last().body).toEqual({ prompt: 'Say hi', models: ['gpt-4o'], system: 'Be terse.' });
+});
+
+test('runGatewayPlayground omits system from the body when not provided', async () => {
+  nextResponse = { status: 200, body: { results: [] } };
+  await runGatewayPlayground('P1', 'Say hi', ['gpt-4o']);
+  expect(last().body).toEqual({ prompt: 'Say hi', models: ['gpt-4o'] });
 });

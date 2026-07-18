@@ -804,6 +804,7 @@ projectsApp.openapi(
             schema: z.object({
               prompt: z.string().min(1).max(8000),
               models: z.array(z.string()).min(1).max(6),
+              system: z.string().max(4000).optional(),
             }),
           },
         },
@@ -826,6 +827,7 @@ projectsApp.openapi(
     const body = await c.req.json();
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
     const models: string[] = Array.isArray(body.models) ? body.models.slice(0, 6) : [];
+    const system = typeof body.system === 'string' && body.system.trim() ? body.system : undefined;
     if (!prompt || models.length === 0) {
       return c.json({ error: 'prompt and models are required' }, 400);
     }
@@ -842,7 +844,10 @@ projectsApp.openapi(
         const requestId = crypto.randomUUID();
         const request = {
           model,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            ...(system ? [{ role: 'system', content: system }] : []),
+            { role: 'user', content: prompt },
+          ],
           stream: false,
           max_tokens: 512,
         };
@@ -927,6 +932,9 @@ projectsApp.openapi(
             output: data?.choices?.[0]?.message?.content ?? '',
             input_tokens: promptTokens,
             output_tokens: completionTokens,
+            cost: finalCost,
+            resolved_model: resolvedModel,
+            provider: descriptor.provider,
           };
         } catch (err) {
           return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };

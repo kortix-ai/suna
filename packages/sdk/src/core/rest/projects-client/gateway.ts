@@ -374,6 +374,11 @@ export interface GatewayPlaygroundResult {
   output?: string;
   input_tokens?: number;
   output_tokens?: number;
+  /** Final (post-markup) cost in USD, present only when the request succeeded. */
+  cost?: number;
+  /** The concrete upstream model the requested id resolved to. */
+  resolved_model?: string;
+  provider?: string;
   error?: string;
 }
 
@@ -386,11 +391,13 @@ export async function runGatewayPlayground(
   projectId: string,
   prompt: string,
   models: string[],
+  system?: string,
 ): Promise<GatewayPlaygroundResponse> {
   return unwrap(
     await backendApi.post<GatewayPlaygroundResponse>(`/projects/${projectId}/gateway/playground`, {
       prompt,
       models,
+      ...(system ? { system } : {}),
     }),
     'Gateway request failed',
   );
