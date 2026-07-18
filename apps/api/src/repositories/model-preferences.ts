@@ -1,4 +1,4 @@
-import { accountModelPreferences, projectSessions } from '@kortix/db';
+import { accountModelPreferences, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 
@@ -118,18 +118,39 @@ export async function deleteAccountModelPreference(params: {
  * The agent + per-session model a gateway principal's session is bound to.
  * `principal.sessionId === sandbox_id === project_sessions.session_id` (the PK)
  * by construction, so we look up the row by that key.
+ *
+ * Also carries the owning project's `metadata.default_agent` mirror
+ * (`projectDefaultAgent`) so callers can resolve the non-binding `'default'`
+ * sentinel to the project's actually-declared default agent — see
+ * `chooseEffectiveAgent` (llm-gateway/resolution/effective.ts) and its use in
+ * default-model.ts's `cachedSessionAgent`. A session's `agent_name` column
+ * lands on the `'default'` sentinel whenever session creation didn't resolve a
+ * concrete name (see `createProjectSession` in projects/lib/sessions.ts), most
+ * commonly because `project.metadata.default_agent` wasn't populated even
+ * though the project's kortix.yaml declares one — without this fallback, an
+ * agent-scope model pin keyed by that declared name is silently never applied.
  */
 export async function getSessionAgentContext(
   sessionId: string,
-): Promise<{ agentName: string; opencodeModel: string | null } | null> {
+): Promise<{ agentName: string; opencodeModel: string | null; projectDefaultAgent: string | null } | null> {
   const [row] = await db
-    .select({ agentName: projectSessions.agentName, metadata: projectSessions.metadata })
+    .select({
+      agentName: projectSessions.agentName,
+      metadata: projectSessions.metadata,
+      projectMetadata: projects.metadata,
+    })
     .from(projectSessions)
+    .leftJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row) return null;
   const metadata = row.metadata as Record<string, unknown> | null;
   const opencodeModel =
     metadata && typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
-  return { agentName: row.agentName, opencodeModel };
+  const projectMetadata = row.projectMetadata as Record<string, unknown> | null;
+  const projectDefaultAgent =
+    projectMetadata && typeof projectMetadata.default_agent === 'string' && projectMetadata.default_agent.trim()
+      ? projectMetadata.default_agent.trim()
+      : null;
+  return { agentName: row.agentName, opencodeModel, projectDefaultAgent };
 }
