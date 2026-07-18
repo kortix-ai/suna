@@ -33,14 +33,6 @@ function makeHooks(over: Partial<GatewayHooks> = {}): GatewayHooks {
   };
 }
 
-function okFetch(data: unknown): FetchImpl {
-  return async () =>
-    new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-}
-
 describe('gateway.messages (Anthropic Messages ingress)', () => {
   test('401 without a bearer token, in the Anthropic error envelope (not the OpenAI-compat one)', async () => {
     const res = await createGateway(makeHooks(), { retry: fastRetry }).messages({

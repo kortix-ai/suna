@@ -9,7 +9,6 @@ import { guardAgainstUnhandledResultRejections, mapToolCalls, toTransportError }
 import {
   aiSdkFamilyFor,
   clampMaxOutputTokensForBedrock,
-  isCodexDescriptor,
   needsResponsesApi,
   openRouterCostMetadataExtractor,
   resolveAiModel,
