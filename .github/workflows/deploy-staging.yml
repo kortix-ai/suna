@@ -138,11 +138,26 @@ jobs:
             exit 1
           fi
 
-          base="$(aws secretsmanager get-secret-value \
-            --secret-id kortix-dev-env \
-            --region "$AWS_REGION" \
-            --query SecretString \
-            --output text)"
+          # Preserve staging-only integrations (Stripe, managed Git, alerting,
+          # and any future operator-managed keys) across rollouts. Rebuilding
+          # this payload from kortix-dev-env silently replaces those values
+          # with dev credentials on every deploy. The dev bundle is only a
+          # first-creation bootstrap; an existing staging bundle is canonical.
+          if aws secretsmanager describe-secret --secret-id kortix-staging-env --region "$AWS_REGION" >/dev/null 2>&1; then
+            staging_secret_exists=true
+            base="$(aws secretsmanager get-secret-value \
+              --secret-id kortix-staging-env \
+              --region "$AWS_REGION" \
+              --query SecretString \
+              --output text)"
+          else
+            staging_secret_exists=false
+            base="$(aws secretsmanager get-secret-value \
+              --secret-id kortix-dev-env \
+              --region "$AWS_REGION" \
+              --query SecretString \
+              --output text)"
+          fi
 
           payload="$(jq -cn \
             --argjson base "$base" \
@@ -171,7 +186,7 @@ jobs:
               KORTIX_WARM_SNAPSHOT_ENABLED: "false"
             }')"
 
-          if aws secretsmanager describe-secret --secret-id kortix-staging-env --region "$AWS_REGION" >/dev/null 2>&1; then
+          if [ "$staging_secret_exists" = true ]; then
             aws secretsmanager put-secret-value \
               --secret-id kortix-staging-env \
               --region "$AWS_REGION" \
