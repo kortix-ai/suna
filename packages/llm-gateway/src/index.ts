@@ -4,7 +4,7 @@ export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-respons
 export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
-export type { CallUpstreamOptions, FetchImpl, TransportEngine } from './http';
+export type { CallUpstreamOptions, FetchImpl } from './http';
 
 export {
   CircuitBreaker,
@@ -38,9 +38,6 @@ export type { CostBreakdown, TokenUsage } from './usage';
 
 export { extractUsageFromJson, extractUsageFromSseBuffer } from './usage';
 export type { ExtractedUsage } from './usage';
-
-export { buildUpstreamRequest } from './transports';
-export type { UpstreamRequest } from './transports';
 
 export {
   anthropicMessagesToChat,
@@ -76,7 +73,6 @@ export type {
   ModelInfo,
   ProviderKind,
   TokenCounts,
-  TranslationSidecarConfig,
   UpstreamDescriptor,
   UsageEvent,
 } from './domain';

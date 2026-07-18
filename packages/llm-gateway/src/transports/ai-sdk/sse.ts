@@ -113,9 +113,26 @@ export function openAiSseFromFullStream(
   const delta = (d: Record<string, unknown>, finishReason: string | null = null): Uint8Array =>
     sse({ ...base, choices: [{ index: 0, delta: d, finish_reason: finishReason }] });
 
+  // Grabbed ONCE and shared between `start()`'s consumption loop and
+  // `cancel()` below — `for await...of` on `fullStream` directly would call
+  // `fullStream[Symbol.asyncIterator]()` internally too, but a SEPARATE call
+  // to it from `cancel()` would hand back a different, independent iterator
+  // for most async-iterable implementations (including a ReadableStream-
+  // backed one, which typically mints a fresh reader per
+  // `getReader()`/iterator call) — cancelling THAT one would do nothing to
+  // the one `start()` is actually still awaiting.
+  const iterator = fullStream[Symbol.asyncIterator]();
+  // Set by `cancel()` (the downstream/client side gave up) — once true, the
+  // controller is no longer writable (enqueue/close on an already-cancelled
+  // ReadableStream throws), so the rest of `start()`'s loop and its terminal
+  // finish/usage/[DONE] frames below must become no-ops instead of crashing.
+  let cancelled = false;
+
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      const emit = (bytes: Uint8Array): void => controller.enqueue(bytes);
+      const emit = (bytes: Uint8Array): void => {
+        if (!cancelled) controller.enqueue(bytes);
+      };
       let usage: LanguageModelUsage | undefined;
       let finishReason: FinishReason | undefined;
       // Cost (when present) only ever arrives on `finish-step` — the `finish`
@@ -126,7 +143,10 @@ export function openAiSseFromFullStream(
       // seen is the authoritative one, same as `usage`/`finishReason` above.
       let providerMetadata: ProviderMetadata | undefined;
       try {
-        for await (const part of fullStream) {
+        for (;;) {
+          const next = await iterator.next();
+          if (next.done) break;
+          const part = next.value;
           switch (part.type) {
             case 'text-delta': {
               if (!roleSent) {
@@ -221,17 +241,37 @@ export function openAiSseFromFullStream(
               // Emit the OpenAI-shaped error frame the gateway probe detects so it
               // fails over / surfaces the real cause instead of a blank stop.
               const err = part.error;
+              // `@ai-sdk/openai`/`@ai-sdk/openai-compatible`'s OWN in-band
+              // streaming error frame (OpenAI's `data: {"error":{"message":...,
+              // "type":...,"code":...}}` convention) is enqueued as a PLAIN
+              // OBJECT, never an `Error` instance — `{message, type, param,
+              // code}` straight from the parsed upstream JSON (see those
+              // packages' chat-completions stream transform). Anthropic/Bedrock
+              // provider errors, by contrast, ARE genuine `Error`/AISDKError
+              // instances. Both shapes carry a `.message` string; check for that
+              // structurally rather than assuming one specific class.
+              const errObj =
+                err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
               const message =
-                err instanceof Error ? err.message : typeof err === 'string' ? err : 'Upstream error';
+                err instanceof Error
+                  ? err.message
+                  : typeof err === 'string'
+                    ? err
+                    : typeof errObj?.message === 'string'
+                      ? errObj.message
+                      : 'Upstream error';
               // Some provider errors (AWS credential/SigV4 failures, an AI-SDK
               // error class without a `.statusCode`) never carry a numeric code —
               // fall back to classifying the message itself so a terminal auth
               // failure is still recognizable as one downstream, same as
               // toTransportError (index.ts) does for the non-streaming path.
+              const rawCode = errObj?.statusCode ?? errObj?.code;
               const code =
-                (err as { statusCode?: number; code?: string })?.statusCode ??
-                (err as { code?: string })?.code ??
-                (looksLikeTerminalAuthFailure(message) ? 401 : undefined);
+                typeof rawCode === 'number' || typeof rawCode === 'string'
+                  ? rawCode
+                  : looksLikeTerminalAuthFailure(message)
+                    ? 401
+                    : undefined;
               emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
               break;
             }
@@ -249,7 +289,10 @@ export function openAiSseFromFullStream(
 
       // Terminal finish chunk + usage-only chunk (OpenAI include_usage semantics)
       // + [DONE]. The usage chunk carries `model` so the SSE usage extractor books
-      // the right model even if no content chunk did.
+      // the right model even if no content chunk did. Skipped entirely once
+      // cancelled — the controller is no longer writable, and there's no
+      // client left to receive a synthetic finish/[DONE] anyway.
+      if (cancelled) return;
       emit(delta({}, mapFinishReason(finishReason)));
       emit(
         sse({
@@ -260,6 +303,22 @@ export function openAiSseFromFullStream(
       );
       emit(enc.encode('data: [DONE]\n\n'));
       controller.close();
+    },
+    // The downstream consumer (pipeline/streaming.ts's relayStream) cancels
+    // its reader the moment the INBOUND client disconnects — without this
+    // handler that cancellation was a no-op as far as the actual upstream
+    // call was concerned: `start()`'s consumption loop kept running in the
+    // background, silently draining (and paying for) tokens from a real
+    // provider connection with no one left listening. Propagating the
+    // cancellation onto the SAME iterator `start()` is awaiting (see the
+    // shared `iterator` above) lets it unwind its underlying resource —
+    // for the AI SDK's own ReadableStream-backed `fullStream`, that means
+    // cancelling the reader on the actual upstream HTTP response body,
+    // exactly like the retired native transport's direct
+    // `upstreamBody.getReader().cancel()` did.
+    async cancel(reason) {
+      cancelled = true;
+      await iterator.return?.(reason);
     },
   });
 }

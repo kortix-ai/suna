@@ -436,13 +436,35 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
 
-  // Managed GitHub repos (Kortix-provisioned, under the managed org). Two
-  // server-side credential models:
-  //   - PAT  (MANAGED_GIT_GITHUB_TOKEN): the "one server-side key" model — used
-  //     directly (org-wide; never leaves the API).
-  //   - App  (installation): mint a token scoped to THIS repo only (least
-  //     privilege) so a project's sandbox can never touch another managed repo.
+  // Managed GitHub repos (Kortix-provisioned, under the managed org). Prefer a
+  // short-lived App installation token scoped to THIS repo whenever the App is
+  // available. A configured PAT remains the internal fallback for self-hosted
+  // installs that deliberately use the one-server-key model, but it is never
+  // exported by the API/CLI push-token boundary.
   if (remote.provider === 'github' && remote.managed) {
+    const installId = remote.installationId ?? managedGithubInstallId();
+    if (installId && isGithubAppConfigured()) {
+      const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
+      try {
+        const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
+        return {
+          auth: {
+            token: token.token,
+            source: 'app_installation',
+            owner: remote.repoOwner ?? undefined,
+            ownerType: 'Organization',
+            installationId: installId,
+          },
+          authSource: 'app_installation',
+        };
+      } catch (err) {
+        console.warn(
+          `[projects] failed to mint managed GitHub installation token for ${project.projectId}; falling back to the server PAT if configured:`,
+          err,
+        );
+      }
+    }
+
     const pat = managedGithubToken();
     if (pat) {
       return {
@@ -450,25 +472,7 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         authSource: 'pat',
       };
     }
-    const installId = remote.installationId ?? managedGithubInstallId();
-    if (!installId) return { authSource: 'none' };
-    const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
-    try {
-      const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
-      return {
-        auth: {
-          token: token.token,
-          source: 'app_installation',
-          owner: remote.repoOwner ?? undefined,
-          ownerType: 'Organization',
-          installationId: installId,
-        },
-        authSource: 'app_installation',
-      };
-    } catch (err) {
-      console.warn(`[projects] failed to mint managed GitHub token for ${project.projectId}:`, err);
-      return { authSource: 'none' };
-    }
+    return { authSource: 'none' };
   }
 
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {

@@ -4,7 +4,20 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { type MetadataExtractor, createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { LanguageModel } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
-import { resolveTransportKind } from '../route-kind';
+import { isGenuineOpenAiUpstream, resolveTransportKind } from '../route-kind';
+
+// Every AI SDK provider factory (createOpenAI/createAnthropic/
+// createAmazonBedrock/createOpenAICompatible) accepts an optional `fetch`
+// override of exactly this call shape (their own `FetchFunction` type,
+// re-declared here rather than imported from the transitive
+// `@ai-sdk/provider-utils` package this workspace doesn't depend on directly,
+// and deliberately NOT `typeof globalThis.fetch` — Bun's ambient fetch type
+// carries extra members like `preconnect` a plain adapter function can't
+// satisfy) — used to inject a test double (see call-upstream.ts's
+// `fetchImpl`/CallUpstreamOptions) or a future production middleware
+// (request logging, a proxy) without any provider package needing its own
+// bespoke escape hatch.
+export type AiSdkFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 // Which AI SDK provider package a descriptor maps to. Prefer the models.dev
 // `npm` field (verbatim from the live catalog, #4893); fall back to the transport
@@ -35,6 +48,18 @@ export function aiSdkFamilyFor(descriptor: UpstreamDescriptor): AiSdkFamily {
   // branch below), not the generic openai-compatible provider, which has no
   // Responses surface at all.
   if (isCodexDescriptor(descriptor)) return 'openai';
+  // A genuine api.openai.com descriptor that predates (or is missing) npm
+  // threading must still resolve to the real `@ai-sdk/openai` package, not
+  // the generic openai-compatible one — the latter has no `.responses()`
+  // surface at all, which would silently strand a reasoning-model + tools
+  // request on chat/completions (`needsResponsesApi`'s whole reason for
+  // existing — see route-kind.ts) with no way to ever reach it. Mirrors the
+  // SAME `isGenuineOpenAiUpstream`/`descriptor.provider === 'openai'` signal
+  // `resolveTransportKind` itself already keys off of, so the routing
+  // decision and the provider-package choice can never disagree.
+  if (descriptor.provider === 'openai' || isGenuineOpenAiUpstream(descriptor.baseUrl)) {
+    return 'openai';
+  }
   // Fall back to the transport kind. `openai-compat`/`custom` → the generic
   // OpenAI-compatible provider (the safe default for any /v1/chat/completions
   // upstream, e.g. OpenRouter). anthropic/bedrock map to their native packages.
@@ -173,18 +198,36 @@ export function openRouterCostMetadataExtractor(): MetadataExtractor {
 // family, to decide chat.completions vs Responses (needsResponsesApi) — every
 // other family ignores it; defaults to `{}` so existing non-openai call sites
 // (and tests) that never pass a body keep working unchanged.
+//
+// `opts.fetch` overrides the HTTP call every provider package makes
+// internally — threaded from `callUpstream`'s own `fetchImpl` (see
+// http/call-upstream.ts and ai-sdk/index.ts's `callUpstreamViaAiSdk`) so a
+// caller providing a custom fetch (production middleware, or a test double)
+// gets it honored on the SOLE dispatch path exactly like the retired native
+// transport's `fetchImpl` did. `opts.extraHeaders` merges on top of
+// `descriptor.headers` — used to carry the `x-kortix-request-id` correlation
+// header the native transport used to attach in `callUpstream` itself.
 export function resolveAiModel(
   descriptor: UpstreamDescriptor,
   body: Record<string, unknown> = {},
+  opts: { fetch?: AiSdkFetch; extraHeaders?: Record<string, string> } = {},
 ): LanguageModel {
   const modelId = descriptor.resolvedModel || '';
   const baseURL = descriptor.baseUrl ? trimTrailingSlash(descriptor.baseUrl) : undefined;
-  const headers = descriptor.headers;
+  const headers = { ...descriptor.headers, ...opts.extraHeaders };
+  // Each provider factory's `fetch` prop is typed as its own `FetchFunction`
+  // (`typeof globalThis.fetch`) which, under this workspace's Bun ambient
+  // types, requires a `preconnect` member no plain adapter function has.
+  // `AiSdkFetch`'s narrower call-shape type is what this module's own API
+  // surface exposes (see its doc comment) — cast at the one point it crosses
+  // into the SDK's stricter ambient type; every provider here only ever
+  // *calls* `fetch(input, init)`, never touches `.preconnect`.
+  const fetch = opts.fetch as typeof globalThis.fetch | undefined;
   const family = aiSdkFamilyFor(descriptor);
 
   switch (family) {
     case 'openai': {
-      const provider = createOpenAI({ baseURL, apiKey: descriptor.apiKey, headers });
+      const provider = createOpenAI({ baseURL, apiKey: descriptor.apiKey, headers, fetch });
       // OpenAI's /v1/chat/completions rejects function tools alongside a live
       // reasoning_effort on reasoning models (gpt-5.x, o-series) — see
       // route-kind.ts's big comment for the live-confirmed error. /v1/responses
@@ -199,7 +242,7 @@ export function resolveAiModel(
         : provider.chat(modelId);
     }
     case 'anthropic': {
-      const provider = createAnthropic({ baseURL, apiKey: descriptor.apiKey, headers });
+      const provider = createAnthropic({ baseURL, apiKey: descriptor.apiKey, headers, fetch });
       return provider(anthropicModelName(modelId));
     }
     case 'bedrock': {
@@ -211,6 +254,7 @@ export function resolveAiModel(
         apiKey: descriptor.apiKey,
         region: descriptor.region || process.env.AWS_REGION || 'us-east-1',
         headers,
+        fetch,
       });
       return provider(modelId);
     }
@@ -221,6 +265,7 @@ export function resolveAiModel(
         baseURL: baseURL || '',
         apiKey: descriptor.apiKey,
         headers,
+        fetch,
         // Belt-and-suspenders (mirrors openai-compat/index.ts's
         // ensureStreamUsageForGenuineOpenAi): most modern openai-compatible
         // upstreams already send a usage-bearing trailing chunk without this,

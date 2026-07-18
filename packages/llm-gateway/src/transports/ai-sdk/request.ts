@@ -9,11 +9,24 @@ import {
 import { reasoningEffort as reasoningEffortFromBody } from '../route-kind';
 import type { AiSdkFamily } from './model';
 
+// `system` normally collapses to a plain string, but the anthropic/bedrock
+// prompt-caching port below (applyAnthropicPromptCaching) needs to attach a
+// `providerOptions` cache breakpoint to the system prompt itself — the only
+// way to do that is to hand `streamText`/`generateText` a `SystemModelMessage`
+// object instead of a bare string (see "ai"'s `Instructions` type: `string |
+// SystemModelMessage | Array<SystemModelMessage>` — confirmed in
+// node_modules/ai/dist/index.d.ts).
+export type AiSdkSystemInstruction = {
+  role: 'system';
+  content: string;
+  providerOptions?: Record<string, Record<string, JSONValue>>;
+};
+
 // Everything the AI-SDK engine needs to drive `streamText`/`generateText`,
 // derived once from the incoming OpenAI chat.completions body. The AI SDK owns
 // per-provider quirks from here on (endpoint, param names, tool translation).
 export interface AiSdkCallArgs {
-  system?: string;
+  system?: string | AiSdkSystemInstruction;
   messages: ModelMessage[];
   tools?: ToolSet;
   toolChoice?: ToolChoice<ToolSet>;
@@ -381,6 +394,184 @@ function responseFormatFromBody(body: Record<string, unknown>): AiSdkResponseFor
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Anthropic / Bedrock extended-thinking + prompt-caching parity fix.
+//
+// The now-deleted native anthropic/bedrock transports (readable on origin/main
+// via `git show origin/main:packages/llm-gateway/src/transports/anthropic/request.ts`
+// and `.../bedrock/request.ts`) translated a client's `reasoning_effort` (or a
+// raw Anthropic-shaped `body.thinking`) into Anthropic extended thinking,
+// bumped `max_tokens` to fit the thinking budget, and applied prompt-cache
+// breakpoints to the system prompt, the last tool definition, and the last
+// message. None of that existed on the ai-sdk engine: the generic
+// `reasoningEffort` merge below (see `providerOptionsKeyFor` /
+// `mergeProviderOptions` above) previously ran for EVERY family including
+// anthropic/bedrock, writing `providerOptions.anthropic.reasoningEffort` — a
+// field @ai-sdk/anthropic's zod schema (`anthropicLanguageModelOptions` in
+// node_modules/@ai-sdk/anthropic/dist/index.d.ts) does not define, so it was
+// silently stripped and thinking never actually turned on. Prompt caching had
+// no equivalent at all. Ported below, with the exact field names verified
+// against the installed package internals rather than assumed:
+//
+//  - @ai-sdk/anthropic (dist/index.d.ts's `anthropicLanguageModelOptions`,
+//    dist/index.js's `CacheControlValidator`/`getCacheControl`): thinking is
+//    `providerOptions.anthropic.thinking = {type:'enabled', budgetTokens}`;
+//    caching is `providerOptions.anthropic.cacheControl = {type:'ephemeral'}`,
+//    read PER message/part/tool, not once globally.
+//  - @ai-sdk/amazon-bedrock (dist/index.d.ts's
+//    `amazonBedrockLanguageModelChatOptions`, dist/index.js): thinking is
+//    `providerOptions.bedrock.reasoningConfig = {type:'enabled', budgetTokens}`.
+//    Caching is NOT `cacheControl` — model.ts's `resolveAiModel` builds the
+//    bedrock family via `createAmazonBedrock(...)`, i.e. AWS's own Converse
+//    API, not the Anthropic-shaped InvokeModel path native's bedrock
+//    transport used — so its cache primitive is a separate `cachePoint`
+//    content block: `providerOptions.bedrock.cachePoint = {type:'default'}`
+//    (dist/index.js's `getCachePoint`/`pushCachePoint`). Bedrock's own
+//    `prepareTools` (the Converse `toolConfig` builder) never reads a
+//    function tool's `providerOptions` at all, so there is no per-tool cache
+//    breakpoint available on this SDK version for Bedrock — only system +
+//    last-message caching apply there; last-tool caching is anthropic-only.
+const REASONING_EFFORT_BUDGET_TOKENS: Record<string, number> = {
+  minimal: 1024,
+  low: 2048,
+  medium: 8192,
+  high: 16000,
+  max: 32000,
+};
+
+// Mirrors native's DEFAULT_MAX_TOKENS_WITH_THINKING: both providers require
+// budgetTokens to be strictly less than max output tokens, so a thinking
+// request with no explicit max_tokens needs a much bigger default ceiling
+// than the plain 4096 used for non-thinking anthropic/bedrock requests.
+const DEFAULT_MAX_TOKENS_WITH_THINKING = 32_000;
+
+interface ResolvedThinkingBudget {
+  budgetTokens: number;
+}
+
+// Client-supplied `reasoning_effort` (OpenAI/opencode-shaped), an OpenAI
+// Responses-style `reasoning.effort`/`reasoning.budget_tokens`/`.max_tokens`,
+// or a raw Anthropic-shaped `body.thinking:{type:'enabled',budget_tokens}`
+// block — resolved into a thinking-token budget for the anthropic/bedrock
+// families. Ported field-for-field (including the budget table) from the
+// deleted native anthropic transport's `translateThinking` +
+// `REASONING_EFFORT_BUDGET_TOKENS`. Like native: an explicit `body.thinking`
+// object that ISN'T the `{type:'enabled', budget_tokens>0}` shape (e.g.
+// `{type:'disabled'}`) returns "no thinking" WITHOUT falling through to the
+// reasoning/effort checks below — an explicit disable must win.
+function resolveAnthropicThinkingBudget(
+  body: Record<string, unknown>,
+  reasoningEffort: string | undefined,
+): ResolvedThinkingBudget | undefined {
+  const rawThinking = body.thinking;
+  if (rawThinking && typeof rawThinking === 'object') {
+    const budget = (rawThinking as { budget_tokens?: unknown }).budget_tokens;
+    const type = (rawThinking as { type?: unknown }).type;
+    if (type === 'enabled' && typeof budget === 'number' && budget > 0) {
+      return { budgetTokens: budget };
+    }
+    return undefined;
+  }
+
+  const reasoning = body.reasoning;
+  if (reasoning && typeof reasoning === 'object') {
+    const explicit =
+      (reasoning as { budget_tokens?: unknown }).budget_tokens ??
+      (reasoning as { max_tokens?: unknown }).max_tokens;
+    if (typeof explicit === 'number' && explicit > 0) return { budgetTokens: explicit };
+    const effort = (reasoning as { effort?: unknown }).effort;
+    if (typeof effort === 'string' && REASONING_EFFORT_BUDGET_TOKENS[effort] != null) {
+      return { budgetTokens: REASONING_EFFORT_BUDGET_TOKENS[effort] };
+    }
+  }
+
+  if (
+    typeof reasoningEffort === 'string' &&
+    REASONING_EFFORT_BUDGET_TOKENS[reasoningEffort] != null
+  ) {
+    return { budgetTokens: REASONING_EFFORT_BUDGET_TOKENS[reasoningEffort] };
+  }
+
+  return undefined;
+}
+
+const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
+const BEDROCK_CACHE_POINT = { type: 'default' } as const;
+
+function withProviderOption(
+  existing: Record<string, Record<string, JSONValue>> | undefined,
+  key: string,
+  fields: Record<string, JSONValue>,
+): Record<string, Record<string, JSONValue>> {
+  return { ...existing, [key]: { ...existing?.[key], ...fields } };
+}
+
+// Port of native's `applyPromptCaching`. Marks the system prompt, the last
+// tool definition (anthropic only — see the file-level comment above), and
+// the last message with a cache breakpoint. Native applied this
+// unconditionally to every anthropic/bedrock request regardless of size —
+// mirrored here the same way rather than gated on request size.
+function applyAnthropicPromptCaching(
+  system: string | AiSdkSystemInstruction | undefined,
+  messages: ModelMessage[],
+  tools: ToolSet | undefined,
+  family: 'anthropic' | 'bedrock',
+): { system: string | AiSdkSystemInstruction | undefined; tools: ToolSet | undefined } {
+  const cacheFields: Record<string, JSONValue> =
+    family === 'anthropic'
+      ? { cacheControl: ANTHROPIC_CACHE_CONTROL }
+      : { cachePoint: BEDROCK_CACHE_POINT };
+
+  let nextSystem = system;
+  if (typeof system === 'string' && system) {
+    nextSystem = {
+      role: 'system',
+      content: system,
+      providerOptions: withProviderOption(undefined, family, cacheFields),
+    };
+  } else if (system && typeof system === 'object') {
+    nextSystem = {
+      ...system,
+      providerOptions: withProviderOption(system.providerOptions, family, cacheFields),
+    };
+  }
+
+  let nextTools = tools;
+  if (family === 'anthropic' && tools) {
+    const names = Object.keys(tools);
+    const lastName = names[names.length - 1];
+    if (lastName) {
+      const lastTool = tools[lastName];
+      nextTools = {
+        ...tools,
+        [lastName]: {
+          ...lastTool,
+          providerOptions: withProviderOption(
+            lastTool.providerOptions as Record<string, Record<string, JSONValue>> | undefined,
+            family,
+            cacheFields,
+          ),
+        },
+      } as ToolSet;
+    }
+  }
+
+  if (messages.length) {
+    const lastIndex = messages.length - 1;
+    const lastMessage = messages[lastIndex];
+    messages[lastIndex] = {
+      ...lastMessage,
+      providerOptions: withProviderOption(
+        lastMessage.providerOptions as Record<string, Record<string, JSONValue>> | undefined,
+        family,
+        cacheFields,
+      ),
+    } as ModelMessage;
+  }
+
+  return { system: nextSystem, tools: nextTools };
+}
+
 export function buildAiSdkArgs(
   body: Record<string, unknown>,
   family: AiSdkFamily,
@@ -398,18 +589,11 @@ export function buildAiSdkArgs(
     providerName?: string;
   } = {},
 ): AiSdkCallArgs {
-  const { system, messages } = toModelMessages(body.messages);
+  const { system: systemText, messages } = toModelMessages(body.messages);
   const tools = toToolSet(body.tools);
   const toolChoice = tools ? toToolChoice(body.tool_choice) : undefined;
 
-  const maxTokens =
-    (typeof body.max_tokens === 'number' ? body.max_tokens : undefined) ??
-    (typeof body.max_completion_tokens === 'number' ? body.max_completion_tokens : undefined) ??
-    (family === 'anthropic' || family === 'bedrock' ? 4096 : undefined);
-
-  const stop = body.stop;
-  const stopSequences =
-    typeof stop === 'string' ? [stop] : Array.isArray(stop) ? (stop as string[]) : undefined;
+  const isAnthropicOrBedrock = family === 'anthropic' || family === 'bedrock';
 
   const providerOptionsKey = providerOptionsKeyFor(family, opts.providerName);
   const providerOptions: Record<string, Record<string, unknown>> = {};
@@ -419,11 +603,59 @@ export function buildAiSdkArgs(
   // callers (opencode) send directly — same helper route-kind.ts uses to make
   // the identical decision for the native transport.
   const reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
-  if (typeof reasoningEffort === 'string') {
+
+  // anthropic/bedrock never read a bare `reasoningEffort` providerOptions key
+  // (see the file-level comment above `resolveAnthropicThinkingBudget`) — for
+  // those two families reasoning_effort/thinking is translated into a real
+  // thinking budget further below instead.
+  if (typeof reasoningEffort === 'string' && !isAnthropicOrBedrock) {
     // The AI SDK's OpenAI provider strips temperature and other unsupported params
     // for reasoning models on its own — we only forward the effort. openai-compatible
     // upstreams (OpenRouter) accept the same field under the provider namespace.
     mergeProviderOptions(providerOptions, providerOptionsKey, { reasoningEffort });
+  }
+
+  const thinkingBudget = isAnthropicOrBedrock
+    ? resolveAnthropicThinkingBudget(body, reasoningEffort)
+    : undefined;
+
+  const explicitMaxTokens =
+    (typeof body.max_tokens === 'number' ? body.max_tokens : undefined) ??
+    (typeof body.max_completion_tokens === 'number' ? body.max_completion_tokens : undefined);
+
+  const maxTokens =
+    explicitMaxTokens ??
+    (isAnthropicOrBedrock ? (thinkingBudget ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096) : undefined);
+
+  if (thinkingBudget && typeof maxTokens === 'number') {
+    // Anthropic/Bedrock both reject budgetTokens >= max output tokens —
+    // clamp instead of 400ing on a client-set combination that doesn't leave
+    // room for the answer (identical clamp to native's translateThinking).
+    const clampedBudgetTokens = Math.min(
+      thinkingBudget.budgetTokens,
+      Math.max(1024, maxTokens - 1024),
+    );
+    if (family === 'anthropic') {
+      mergeProviderOptions(providerOptions, 'anthropic', {
+        thinking: { type: 'enabled', budgetTokens: clampedBudgetTokens },
+      });
+    } else {
+      mergeProviderOptions(providerOptions, 'bedrock', {
+        reasoningConfig: { type: 'enabled', budgetTokens: clampedBudgetTokens },
+      });
+    }
+  }
+
+  const stop = body.stop;
+  const stopSequences =
+    typeof stop === 'string' ? [stop] : Array.isArray(stop) ? (stop as string[]) : undefined;
+
+  let system: string | AiSdkSystemInstruction | undefined = systemText;
+  let cacheableTools = tools;
+  if (isAnthropicOrBedrock) {
+    const cached = applyAnthropicPromptCaching(system, messages, tools, family);
+    system = cached.system;
+    cacheableTools = cached.tools;
   }
 
   const responseFormat = RESPONSE_FORMAT_FAMILIES.has(family)
@@ -454,7 +686,7 @@ export function buildAiSdkArgs(
   return {
     system,
     messages,
-    tools,
+    tools: cacheableTools,
     toolChoice,
     temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
     topP: typeof body.top_p === 'number' ? body.top_p : undefined,

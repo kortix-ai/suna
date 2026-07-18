@@ -22,13 +22,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
-      translationSidecar: config.LLM_TRANSLATION_SIDECAR_URL
-        ? {
-            url: config.LLM_TRANSLATION_SIDECAR_URL,
-            authToken: config.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN || undefined,
-          }
-        : undefined,
-      transportEngine: config.LLM_TRANSPORT_ENGINE === 'ai-sdk' ? 'ai-sdk' : 'native',
     });
     const llm = new Hono();
     llm.get('/health', (c) =>
