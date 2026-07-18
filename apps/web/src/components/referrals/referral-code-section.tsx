@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Copy, Share2, Check } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
@@ -20,14 +21,12 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
   const t = useTranslations('settings.referrals');
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+  const handleCopy = async (text: string) => {
+    if (await copyToClipboard(text)) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
       toast.success(t('linkCopied'));
-    } catch (error) {
-      console.error('Failed to copy:', error);
+    } else {
       toast.error('Failed to copy');
     }
   };
@@ -48,7 +47,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
         }
       }
     } else {
-      copyToClipboard(referralCode.referral_url);
+      handleCopy(referralCode.referral_url);
     }
   };
 
@@ -80,7 +79,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
             />
             <div
               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => copyToClipboard(referralCode?.referral_url || '')}
+              onClick={() => handleCopy(referralCode?.referral_url || '')}
             >
               {copiedLink ? (
                 <Check className="h-4 w-4" />

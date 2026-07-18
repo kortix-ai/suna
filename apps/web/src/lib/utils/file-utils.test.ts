@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getFileType } from './file-utils';
+import { getFileType, isImageFile } from './file-utils';
 
 describe('getFileType', () => {
   test('maps document/data extensions to their viewer categories', () => {
@@ -25,5 +25,19 @@ describe('getFileType', () => {
   test('uses only the last extension segment', () => {
     expect(getFileType('export.backup.csv')).toBe('csv');
     expect(getFileType('v1.2.3.pdf')).toBe('pdf');
+  });
+});
+
+describe('isImageFile', () => {
+  test('accepts files with an image MIME type', () => {
+    expect(isImageFile(new File([], 'photo.jpg', { type: 'image/jpeg' }))).toBe(true);
+  });
+
+  test('falls back to extension sniffing when the MIME type is missing', () => {
+    expect(isImageFile(new File([], 'a.heic', { type: '' }))).toBe(true);
+  });
+
+  test('rejects non-image files', () => {
+    expect(isImageFile(new File([], 'notes.txt', { type: 'text/plain' }))).toBe(false);
   });
 });

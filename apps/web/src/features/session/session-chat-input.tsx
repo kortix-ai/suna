@@ -23,6 +23,7 @@ import {
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
@@ -527,25 +528,6 @@ export type AttachedFile =
       mime: string;
       isImage: boolean;
     };
-
-function isImageFile(file: File): boolean {
-  if (file.type.startsWith('image/')) return true;
-  // Fallback: check extension for when MIME type is missing (e.g. pasted files)
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  return [
-    'jpg',
-    'jpeg',
-    'png',
-    'gif',
-    'webp',
-    'svg',
-    'bmp',
-    'ico',
-    'heic',
-    'heif',
-    'avif',
-  ].includes(ext);
-}
 
 // ============================================================================
 // Attachment Preview Strip — grid-style file cards
