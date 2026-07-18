@@ -41,7 +41,7 @@ export default defineConfig({
       // grammars, notation transformers); only swap the palette.
       ...rehypeCodeDefaultOptions,
       // Intentionally mirrors SHIKI_THEME_LIGHT / SHIKI_THEME_DARK in
-      // doc-markdown.tsx so docs code matches the app's markdown renderer.
+      // unified-markdown.tsx so docs code matches the app's markdown renderer.
       themes: { light: 'slack-ochin', dark: 'plastic' },
     },
   },

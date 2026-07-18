@@ -23,6 +23,7 @@ import {
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
@@ -42,7 +43,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   mergeFailedSubmissionFiles,
@@ -529,25 +530,6 @@ export type AttachedFile =
       isImage: boolean;
     };
 
-function isImageFile(file: File): boolean {
-  if (file.type.startsWith('image/')) return true;
-  // Fallback: check extension for when MIME type is missing (e.g. pasted files)
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  return [
-    'jpg',
-    'jpeg',
-    'png',
-    'gif',
-    'webp',
-    'svg',
-    'bmp',
-    'ico',
-    'heic',
-    'heif',
-    'avif',
-  ].includes(ext);
-}
-
 // ============================================================================
 // Attachment Preview Strip — grid-style file cards
 // ============================================================================
@@ -717,8 +699,10 @@ function AttachmentPreview({
             </div>
             {/* Remove button */}
             <button
+              type="button"
               onClick={() => onRemove(i)}
               className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
+              aria-label={`Remove ${name}`}
             >
               <X className="h-3 w-3" />
             </button>
@@ -1226,7 +1210,7 @@ export interface SessionChatInputProps {
   escCount?: number;
 }
 
-export function SessionChatInput({
+function SessionChatInputImpl({
   onSend,
   isBusy = false,
   queuedMessages,
@@ -2296,6 +2280,7 @@ export function SessionChatInput({
                   }
                 }}
                 placeholder=""
+                aria-label="Message input"
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
@@ -2327,6 +2312,7 @@ export function SessionChatInput({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                    aria-label="Attach files"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
@@ -2487,3 +2473,12 @@ export function SessionChatInput({
     </div>
   );
 }
+
+/**
+ * Memoized so the input subtree doesn't re-render on every streaming token.
+ * `SessionChat` passes hooked-up (`useCallback`/`useMemo`) props for exactly
+ * this reason — see the "Stable props for <SessionChatInput>" block in
+ * session-chat.tsx. If a new inline arrow/object/array literal prop is added
+ * to a `<SessionChatInput>` call site, this memo silently stops helping.
+ */
+export const SessionChatInput = memo(SessionChatInputImpl);

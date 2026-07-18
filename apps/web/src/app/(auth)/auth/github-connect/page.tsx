@@ -19,6 +19,8 @@ export default function GitHubConnectPopup() {
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
+    let disposed = false;
+    let closeTimer: ReturnType<typeof setTimeout> | null = null;
     const supabase = createClient();
     const post = (message: ConnectMessage) => {
       try {
@@ -46,11 +48,13 @@ export default function GitHubConnectPopup() {
           setStatus('processing');
           // Allow Supabase a moment to consume the redirect into a session.
           await new Promise((r) => setTimeout(r, 600));
+          if (disposed) return;
           const {
             data: { session },
             error,
           } = await supabase.auth.getSession();
           if (error) throw error;
+          if (disposed) return;
           if (!session?.provider_token) {
             throw new Error('GitHub did not return an access token. Try again.');
           }
@@ -71,12 +75,13 @@ export default function GitHubConnectPopup() {
             // best-effort; opener fetches /user too
           }
 
+          if (disposed) return;
           post({
             type: 'github-connect-success',
             provider_token: session.provider_token,
             github_login: githubLogin,
           });
-          setTimeout(() => window.close(), 200);
+          closeTimer = setTimeout(() => window.close(), 200);
           return;
         }
 
@@ -96,15 +101,21 @@ export default function GitHubConnectPopup() {
         });
         if (signInError) throw signInError;
       } catch (err) {
+        if (disposed) return;
         const message = (err as Error).message || 'Failed to connect GitHub';
         setStatus('error');
         setErrorMessage(message);
         post({ type: 'github-connect-error', message });
-        setTimeout(() => window.close(), 2200);
+        closeTimer = setTimeout(() => window.close(), 2200);
       }
     };
 
     handle();
+
+    return () => {
+      disposed = true;
+      if (closeTimer) clearTimeout(closeTimer);
+    };
   }, []);
 
   return (
