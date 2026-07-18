@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { GatewayResolutionError } from '@kortix/llm-gateway';
 
 import { ApiUnavailableError, type FetchLike, createApiClient } from './api-client';
 
@@ -43,6 +44,51 @@ describe('ApiClient', () => {
       'm',
     );
     expect(result).toHaveLength(2);
+  });
+
+  test('resolveUpstream re-throws a typed GatewayResolutionError from the body (not a 5xx ApiUnavailableError)', async () => {
+    // The API catches GatewayResolutionError in /resolve-upstream and returns
+    // it in a 200 body. The client must reconstruct the typed error so the
+    // pipeline's dispatch loop surfaces a clean 400 — and must NOT treat it as
+    // a 5xx (which would retry 3x and lose the actionable suggestion).
+    const c = client(async () =>
+      jsonResponse({
+        candidates: [],
+        resolutionError: {
+          code: 'provider_not_connected',
+          message: 'Connect Codex to use this model.',
+          suggestion: 'Connect your ChatGPT/Codex account in project settings, then retry.',
+        },
+      }),
+    );
+    await expect(c.resolveUpstream(principal, 'codex/gpt-5.6-sol')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'provider_not_connected',
+      message: 'Connect Codex to use this model.',
+      suggestion: 'Connect your ChatGPT/Codex account in project settings, then retry.',
+    });
+    await expect(c.resolveUpstream(principal, 'codex/gpt-5.6-sol')).rejects.toBeInstanceOf(
+      GatewayResolutionError,
+    );
+  });
+
+  test('resolveUpstream does NOT retry a resolutionError response (expected 4xx outcome, not a transient 5xx)', async () => {
+    let calls = 0;
+    const c = client(async () => {
+      calls += 1;
+      return jsonResponse({
+        candidates: [],
+        resolutionError: {
+          code: 'provider_not_connected',
+          message: 'Connect Codex to use this model.',
+          suggestion: 'Connect your ChatGPT/Codex account in project settings, then retry.',
+        },
+      });
+    });
+    await expect(c.resolveUpstream(principal, 'codex/gpt-5.6-sol')).rejects.toBeInstanceOf(
+      GatewayResolutionError,
+    );
+    expect(calls).toBe(1);
   });
 
   test('resolveRoute obtains the model plan from the API control plane', async () => {

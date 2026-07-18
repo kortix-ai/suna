@@ -4,6 +4,7 @@ import type {
   ModelRouteInput,
   UsageEvent,
 } from '@kortix/llm-gateway';
+import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { logger } from '../lib/logger';
@@ -62,11 +63,36 @@ export function createInternalGatewayRoutes() {
 
   app.post('/resolve-upstream', async (c) => {
     const { principal, model } = await c.req.json();
-    const candidates = await resolveCandidates(
-      principal as AuthedPrincipal,
-      typeof model === 'string' ? model : '',
-    );
-    return c.json({ candidates });
+    try {
+      const candidates = await resolveCandidates(
+        principal as AuthedPrincipal,
+        typeof model === 'string' ? model : '',
+      );
+      return c.json({ candidates });
+    } catch (err) {
+      // resolveCandidates throws a GatewayResolutionError (instead of returning
+      // []) when it can pin down WHY there's no upstream — provider_not_connected
+      // ("Connect Codex to use this model."), plan_upgrade_required, expired
+      // Codex OAuth, model_disabled_on_deployment, model_not_found. These are
+      // EXPECTED, user-facing resolution outcomes the gateway pipeline is
+      // designed to catch and surface as a clean 400 with an actionable
+      // suggestion (see packages/llm-gateway/src/pipeline/handler.ts's dispatch
+      // loop, which treats a thrown GatewayResolutionError as "no candidates,
+      // with a reason"). Letting it propagate here would (a) turn an expected
+      // 4xx into a 500 to the gateway pod, (b) get captured to Sentry/Better
+      // Stack Errors as an unhandled exception (the "Connect Codex" spike,
+      // incident 991624588), and (c) be retried 3x by the api-client. Instead,
+      // return the typed error in a 200 body so the api-client can re-throw it
+      // as a GatewayResolutionError and the in-process hook contract holds.
+      if (err instanceof GatewayResolutionError) {
+        logger.warn(`[gateway-internal] resolution failed for "${model}": ${err.code} — ${err.message}`);
+        return c.json({
+          candidates: [],
+          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion },
+        });
+      }
+      throw err;
+    }
   });
 
   app.post('/resolve-route', async (c) => {
