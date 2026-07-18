@@ -19,6 +19,22 @@ interface ModelsDevModel extends CatalogModel {
   release_date?: string | null;
 }
 
+// Passed straight through from models.dev — no transformation needed, unlike
+// `released`/`release_date` above. Kept as its own list (rather than
+// spreading `model` wholesale) so a stray upstream field never leaks into
+// the normalized `Catalog` shape @kortix/llm-catalog's `CatalogModel`
+// declares. Mirrors apps/web/scripts/enrich-llm-catalog-capabilities.ts's
+// field set exactly — the baked snapshot and this live path must never
+// diverge in SHAPE, only in freshness (see that script's header comment).
+const PASSTHROUGH_MODEL_FIELDS = [
+  'reasoning_options',
+  'structured_output',
+  'knowledge',
+  'family',
+  'modalities',
+  'cost',
+] as const;
+
 interface ModelsDevProvider {
   id?: string;
   name?: string;
@@ -65,16 +81,23 @@ function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt:
   for (const [providerKey, provider] of Object.entries(data)) {
     if (!provider || typeof provider !== 'object') continue;
     const id = provider.id || providerKey;
-    const models = Object.entries(provider.models ?? {}).map(([modelKey, model]) => ({
-      id: model.id || modelKey,
-      name: model.name || model.id || modelKey,
-      released: model.released ?? model.release_date ?? null,
-      attachment: model.attachment,
-      reasoning: model.reasoning,
-      tool_call: model.tool_call,
-      temperature: model.temperature,
-      limit: model.limit,
-    }));
+    const models = Object.entries(provider.models ?? {}).map(([modelKey, model]) => {
+      const passthrough: Record<string, unknown> = {};
+      for (const field of PASSTHROUGH_MODEL_FIELDS) {
+        if (model[field] !== undefined) passthrough[field] = model[field];
+      }
+      return {
+        id: model.id || modelKey,
+        name: model.name || model.id || modelKey,
+        released: model.released ?? model.release_date ?? null,
+        attachment: model.attachment,
+        reasoning: model.reasoning,
+        tool_call: model.tool_call,
+        temperature: model.temperature,
+        limit: model.limit,
+        ...passthrough,
+      } as CatalogModel;
+    });
     modelCount += models.length;
     providers.push({
       id,

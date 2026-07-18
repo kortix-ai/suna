@@ -38,4 +38,5 @@ export {
   type CreatedGatewayKey,
   type GatewayPlaygroundResult,
   type GatewayPlaygroundResponse,
+  type GatewayModelGenerationConfig,
 } from '@kortix/sdk/projects-client';

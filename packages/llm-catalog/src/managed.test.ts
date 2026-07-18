@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CATALOG,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
   getManagedModel,
   isManagedModelId,
+  pricingRefLookupCandidates,
 } from "./index";
 
 describe("managed catalog", () => {
@@ -40,6 +42,30 @@ describe("managed catalog", () => {
         `${m.id} needs a pricing ref`,
       ).toBeGreaterThan(0);
       expect(["bedrock", "openrouter"]).toContain(m.transport);
+    }
+  });
+
+  // MUST-FIX regression (adversarial review of PR #4995): claude-opus-4.8 and
+  // claude-sonnet-4.6's `pricingRef` used to be the DOTTED display id
+  // ('anthropic/claude-opus-4.8'), which never matches models.dev's DASHED
+  // catalog id ('claude-opus-4-8') — every consumer's pricing/capability
+  // lookup by `pricingRef` silently missed and fell back to a permissive
+  // synthetic record. Guard the SOURCE OF TRUTH directly for the Claude
+  // (bedrock-transport) managed models specifically — unlike glm-5.2/
+  // qwen3.7-max/deepseek-*, whose `pricingRef` is DELIBERATELY unresolvable
+  // on models.dev under a matching provider id (z-ai≠zhipuai, qwen≠alibaba —
+  // see the `vision`/`limit` doc comment above), Claude's pricingRef SHOULD
+  // always resolve since `anthropic` is a real models.dev provider id.
+  test('Claude managed models pricingRef resolves to a real live catalog entry', () => {
+    const byRef = new Map<string, unknown>();
+    for (const provider of CATALOG.providers) {
+      for (const model of provider.models) byRef.set(`${provider.id}/${model.id}`, model);
+    }
+    for (const m of MANAGED_MODELS.filter((m) => m.transport === 'bedrock')) {
+      const hit = pricingRefLookupCandidates(m.pricingRef).some((ref) => byRef.has(ref));
+      expect(hit, `${m.id}'s pricingRef "${m.pricingRef}" should resolve on models.dev`).toBe(
+        true,
+      );
     }
   });
 

@@ -39,6 +39,8 @@ import type {
 import { useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { GenerationControlsPanel } from './generation-controls';
+
 const MAX_FALLBACKS = 8;
 const MAX_RULES = 20;
 
@@ -135,6 +137,7 @@ function clonePolicy(policy: GatewayProjectRoutingPolicy): GatewayProjectRouting
       ? { ...policy.defaultFallback, models: [...policy.defaultFallback.models] }
       : null,
     rules: policy.rules.map((rule) => ({ ...rule, fallbackModels: [...rule.fallbackModels] })),
+    modelGenerationConfig: { ...(policy.modelGenerationConfig ?? {}) },
   };
 }
 
@@ -146,6 +149,7 @@ export function editablePolicySignature(policy: GatewayProjectRoutingPolicy): st
     visionModel: policy.visionModel,
     defaultFallback: policy.defaultFallback,
     rules: policy.rules,
+    modelGenerationConfig: policy.modelGenerationConfig ?? {},
   });
 }
 
@@ -506,6 +510,7 @@ export function GatewayRouting({
     visionModel: policy.visionModel,
     defaultFallback: policy.defaultFallback,
     rules: policy.rules,
+    modelGenerationConfig: policy.modelGenerationConfig ?? {},
   });
   const dirty =
     JSON.stringify(editableState(draft)) !== JSON.stringify(editableState(routing.data.project));
@@ -667,6 +672,31 @@ export function GatewayRouting({
                 </p>
               </div>
             ) : null}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <Label>Generation defaults</Label>
+          <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
+            <p className="text-muted-foreground text-xs text-pretty">
+              Applied to every request for <span className="font-mono">{primaryModel}</span> that
+              doesn't already set the parameter — a session's own value always wins. Controls shown
+              here are gated by what this model actually supports.
+            </p>
+            <GenerationControlsPanel
+              model={primaryModel}
+              value={draft.modelGenerationConfig?.[primaryModel]}
+              disabled={controlsDisabled}
+              onChange={(next) =>
+                setDraft({
+                  ...draft,
+                  modelGenerationConfig: {
+                    ...draft.modelGenerationConfig,
+                    [primaryModel]: next,
+                  },
+                })
+              }
+            />
           </div>
         </section>
 

@@ -410,6 +410,26 @@ export async function handleChatCompletions(
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
+  // Prefer the host's own per-candidate resolver; fall back to treating the
+  // (legacy, primary-only) `route.generationDefaults` as good for
+  // `primaryModel` alone and nothing else — matches what the gateway did
+  // before per-candidate re-validation existed, for a host/test that hasn't
+  // migrated to `generationDefaultsForModel` yet. A real host (apps/api's
+  // routing/resolve-route.ts) always supplies `generationDefaultsForModel`.
+  const generationDefaultsForModel =
+    route?.generationDefaultsForModel ??
+    ((model: string) => (model === routedModel ? route?.generationDefaults : undefined));
+  // Project/account-configured per-model generation defaults (reasoning
+  // effort, temperature, top_p, max output tokens) are DELIBERATELY NOT
+  // injected here. `body`/`payload` stay the raw client request through the
+  // whole dispatch loop below — each candidate the failover loop tries gets
+  // its OWN freshly-clamped defaults via `route?.generationDefaultsForModel`
+  // (passed into `runFailover`), because a fallback candidate can have
+  // different capabilities (temperature support, reasoning_options, output
+  // ceiling) than `routedModel`. Baking primary-model defaults in once, up
+  // front, would forward them unrevalidated to every fallback too. Only
+  // fills fields the client didn't already set — see
+  // `applyGenerationDefaults`'s doc comment.
   step('body_parsed', {
     model: requestedModel,
     routedModel,
@@ -579,6 +599,11 @@ export async function handleChatCompletions(
   let attempts = 0;
   let nonStreamBody: unknown;
   let streamProbe: StreamProbeResult | null = null;
+  // The actual payload sent to the currently-chosen candidate (its OWN
+  // freshly-clamped generation defaults, not necessarily the primary
+  // model's — see runFailover's `dispatchedPayload`). Used for tracing so
+  // the captured "request" reflects what really reached the wire.
+  let dispatchedPayload: Record<string, unknown> = payload;
   // The real upstream error behind an empty stream, if a candidate returned one
   // (see the error-frame branch below). Surfaced in place of the generic
   // empty-completion 502 when every candidate ends up producing nothing usable.
@@ -696,6 +721,7 @@ export async function handleChatCompletions(
       capturedRequest: capture(payload),
       fallbackOn,
       signal: req.signal,
+      generationDefaultsForModel,
     });
 
     if (result.kind === 'response') {
@@ -710,11 +736,13 @@ export async function handleChatCompletions(
       tried: triedThisRound,
       modelsTried: modelsTriedThisRound,
       attempts: attemptsThisRound,
+      dispatchedPayload: dispatchedPayloadThisRound,
     } = result.value;
     tried = [...tried, ...triedThisRound];
     modelsTried = [...modelsTried, ...modelsTriedThisRound]
       .filter((model, index, all) => all.indexOf(model) === index);
     attempts += attemptsThisRound;
+    dispatchedPayload = dispatchedPayloadThisRound;
     const { descriptor: chosenDescriptor, routeModel: chosenRouteModel } = chosen;
 
     if (!streaming) {
@@ -943,7 +971,10 @@ export async function handleChatCompletions(
       usage: counts,
       upstreamCost,
       finalCost,
-      request: capture(payload),
+      // The candidate that actually WON, not the raw pre-dispatch payload —
+      // reflects that candidate's own freshly-clamped generation defaults
+      // (see the dispatch loop's `dispatchedPayload` assignment above).
+      request: capture(dispatchedPayload),
       response: capture(response),
       metadata: traceMetadata,
     });
