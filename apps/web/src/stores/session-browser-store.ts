@@ -40,6 +40,10 @@ export interface SessionFileOpenRequest {
   path: string;
   line?: number;
   nonce: number;
+  /** Epoch ms the request was made. Lets a consumer that mounts as a RESULT
+   *  of the request (mobile drawer, Easy detail) distinguish a just-fired
+   *  request from a stale leftover. */
+  requestedAt: number;
 }
 
 interface SessionBrowserState {
@@ -71,6 +75,12 @@ interface SessionBrowserState {
   requestFileOpenSilently: (sessionId: string, path: string, line?: number) => void;
 
   /**
+   * Remove a delivered (or discarded) file-open request. Nonce-guarded so a
+   * newer request that raced in is never destroyed by a late consumer.
+   */
+  consumeFileOpen: (sessionId: string, nonce: number) => void;
+
+  /**
    * The panel-store key of the session whose layout is currently visible —
    * i.e. the Runtime `chatSessionId` the {@link SessionLayout} keys its panel
    * by. NOT the Kortix session id in the URL (those differ). Registered by the
@@ -80,6 +90,13 @@ interface SessionBrowserState {
   activeSessionId: string | null;
   setActiveSessionId: (id: string | null) => void;
 }
+
+// Monotonic across ALL sessions and independent of `fileOpenBySession`'s
+// current contents — nonces must keep increasing even after `consumeFileOpen`
+// deletes an entry, otherwise the next request for that session would
+// restart from 1 and could collide with a nonce a consumer already observed
+// (and deleted) via `consumeFileOpen`, silently swallowing the new request.
+let nextFileOpenNonce = 1;
 
 export const useSessionBrowserStore = create<SessionBrowserState>()(
   persist(
@@ -114,7 +131,8 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
             [sessionId]: {
               path,
               line,
-              nonce: (state.fileOpenBySession[sessionId]?.nonce ?? 0) + 1,
+              nonce: nextFileOpenNonce++,
+              requestedAt: Date.now(),
             },
           },
         })),
@@ -126,10 +144,19 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
             [sessionId]: {
               path,
               line,
-              nonce: (state.fileOpenBySession[sessionId]?.nonce ?? 0) + 1,
+              nonce: nextFileOpenNonce++,
+              requestedAt: Date.now(),
             },
           },
         })),
+
+      consumeFileOpen: (sessionId, nonce) =>
+        set((state) => {
+          if (state.fileOpenBySession[sessionId]?.nonce !== nonce) return {};
+          const next = { ...state.fileOpenBySession };
+          delete next[sessionId];
+          return { fileOpenBySession: next };
+        }),
     }),
     {
       name: 'kortix-session-browser',

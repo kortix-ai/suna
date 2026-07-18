@@ -20,6 +20,7 @@ import {
   looksLikeFilePath,
   looksLikeUrl,
   normalizeLanguage,
+  sandboxFileHref,
   shikiWasmAvailable,
 } from '@/components/markdown/unified-markdown-utils';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
@@ -344,6 +345,43 @@ function KaTeXBlock({ math }: { math: string }) {
 const INLINE_CODE =
   'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
 
+const MARKDOWN_LINK_CLASS = cn(
+  'font-medium text-kortix-blue',
+  'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
+  'transition-colors hover:decoration-kortix-blue',
+  '[overflow-wrap:anywhere]',
+);
+
+// A markdown link whose target is a sandbox file (`[report.xlsx](/workspace/…)`).
+// The href is same-origin, so next/link would navigate to a nonexistent route —
+// route the click into the file-open channel instead, exactly like a clicked
+// backtick path. `openPreview` picks the surface: active session → side panel,
+// no session (docs pages etc.) → preview modal.
+function SandboxFileLink({ path, children }: { path: string; children?: React.ReactNode }) {
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
+  const open = () => openPreview(path);
+  return (
+    <a
+      role="button"
+      tabIndex={0}
+      title={`Click to preview ${path}`}
+      className={cn(MARKDOWN_LINK_CLASS, 'cursor-pointer')}
+      onClick={(e) => {
+        e.preventDefault();
+        open();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 // Inline code that becomes a link (URLs) or opens a file preview (absolute paths).
 function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const openPreview = useFilePreviewStore((s) => s.openPreview);
@@ -519,15 +557,14 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             );
           }
 
+          const filePath = sandboxFileHref(href);
+          if (filePath) {
+            return <SandboxFileLink path={filePath}>{children}</SandboxFileLink>;
+          }
+
           const resolvedHref = proxy(href) ?? href ?? '#';
           const isHash = resolvedHref.startsWith('#');
           const isExternal = !isInternalUrl(resolvedHref);
-          const linkClass = cn(
-            'font-medium text-kortix-blue',
-            'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
-            'transition-colors hover:decoration-kortix-blue',
-            '[overflow-wrap:anywhere]',
-          );
 
           // A malformed absolute href (e.g. `http://:` from an unsubstituted
           // `${HOST}:${PORT}` template in content) must not reach next/link —
@@ -536,7 +573,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             return (
               <a
                 href={resolvedHref}
-                className={linkClass}
+                className={MARKDOWN_LINK_CLASS}
                 {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
               >
                 {children}
@@ -548,7 +585,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             <Link
               href={resolvedHref}
               onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-              className={linkClass}
+              className={MARKDOWN_LINK_CLASS}
               {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
             >
               {children}

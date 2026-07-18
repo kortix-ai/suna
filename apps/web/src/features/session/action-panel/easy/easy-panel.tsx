@@ -71,6 +71,7 @@ import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
+import { useChatFileOpenRequest } from './use-chat-file-open-request';
 
 /** The path's last segment — used only to decide whether the path hint in
  *  "Ask for changes" would just repeat the display name (W12). */
@@ -304,14 +305,15 @@ export const EasyPanel = memo(function EasyPanel({
    * `source` is telemetry-only (W5): where the open was triggered from — a
    * row click ('row', the default), the payoff effect ('auto'), the ready
    * chip's consume effect ('chip'), a prev/next nav closure ('nav'), or the
-   * header/palette "Open Browser" quick-view ('quick'). Never read for
-   * behavior, only reported alongside `deliverable_opened`.
+   * header/palette "Open Browser" quick-view ('quick'), a chat file-path/link
+   * click ('chat'). Never read for behavior, only reported alongside
+   * `deliverable_opened`.
    */
   const handleOpenOutput = useCallback(
     (
       output: OutputItem,
       siblings?: OutputItem[],
-      source: 'row' | 'auto' | 'chip' | 'nav' | 'quick' = 'row',
+      source: 'row' | 'auto' | 'chip' | 'nav' | 'quick' | 'chat' = 'row',
     ) => {
       // The human title, when the output carries one (W3) — never the raw
       // filename in a spot the user reads as the thing's name.
@@ -416,6 +418,21 @@ export const EasyPanel = memo(function EasyPanel({
     },
     [sessionId, getServiceUrl, closeDetail, openDetail, setPanelSplit],
   );
+
+  // Chat file clicks (backtick paths, markdown /workspace links) land here in
+  // Easy mode — open the same FilePreview detail an Outputs row opens.
+  // Advanced mode's consumer is SessionFilesExplorer; Easy never mounts it.
+  const openChatFile = useCallback(
+    (path: string) => {
+      handleOpenOutput(
+        { callID: 'chat-link', kind: 'file', name: basenameOf(path), path },
+        [],
+        'chat',
+      );
+    },
+    [handleOpenOutput],
+  );
+  useChatFileOpenRequest(sessionId, openChatFile);
 
   const outcome = useMemo(
     () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),
