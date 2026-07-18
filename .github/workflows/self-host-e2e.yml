@@ -77,7 +77,14 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Fast self-host CLI tests (no Docker)
-        run: bun test tests/self-host-e2e/fast/
+        # --timeout 30000: every test in this suite spawns the real CLI binary
+        # (cold bun + TypeScript startup) at least once, often twice (init +
+        # env set). On a loaded ubuntu-latest runner that legitimately exceeds
+        # bun's 5s default — seen as a flaky 5001ms timeout on
+        # "re-enabling the landing page is a plain env set" that blocked the
+        # v0.10.11 release PR. 30s is generous (the whole 40-test suite runs
+        # in ~22s) and won't mask a real hang.
+        run: bun test --timeout 30000 tests/self-host-e2e/fast/
 
   # Tier 2 — unchanged heavyweight full-stack e2e. Nightly + manual only.
   full-e2e:
