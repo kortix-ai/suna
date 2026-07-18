@@ -10,6 +10,7 @@ import {
   revokeGatewayKey,
   runGatewayPlayground,
   setGatewayBudget,
+  verifyGatewayProvider,
 } from './gateway';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -133,4 +134,28 @@ test('runGatewayPlayground omits system from the body when not provided', async 
   nextResponse = { status: 200, body: { results: [] } };
   await runGatewayPlayground('P1', 'Say hi', ['gpt-4o']);
   expect(last().body).toEqual({ prompt: 'Say hi', models: ['gpt-4o'] });
+});
+
+test('verifyGatewayProvider posts to the provider verify endpoint and returns the classification', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      status: 'verified',
+      message: 'The provider accepted the key.',
+      checked_at: '2026-07-18T00:00:00Z',
+    },
+  };
+  const result = await verifyGatewayProvider('P1', 'openai');
+  expect(last().url).toContain('/projects/P1/gateway/providers/openai/verify');
+  expect(last().method).toBe('POST');
+  expect(result.status).toBe('verified');
+});
+
+test('verifyGatewayProvider URL-encodes the provider id', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 'unknown', message: 'x', checked_at: '2026-07-18T00:00:00Z' },
+  };
+  await verifyGatewayProvider('P1', 'weird/id');
+  expect(last().url).toContain('/projects/P1/gateway/providers/weird%2Fid/verify');
 });

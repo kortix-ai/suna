@@ -9,7 +9,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, Copy, Plus, TriangleAlert } from 'lucide-react';
+import { Check, ChevronLeft, Copy, Info, Plus, TriangleAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useState } from 'react';
@@ -284,6 +284,18 @@ export function CustomProviderForm({
             {error}
           </InfoBanner>
         )}
+
+        {/* GAP C2 — a custom provider's traffic goes straight to `baseURL`
+            (see buildCustomProviderSnippet's `options.baseURL`), never through
+            the Kortix gateway — so it never appears in gateway logs, never
+            counts against gateway budgets, and never participates in routing
+            policy/fallback. Disclosed here since nothing else in this flow
+            says so. */}
+        <InfoBanner tone="warning" icon={Info}>
+          Requests to a custom provider go straight to its own endpoint — they don&apos;t pass
+          through the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or
+          routing.
+        </InfoBanner>
       </form>
     </div>
   );
@@ -334,6 +346,11 @@ function CustomProviderSnippetView({
             'componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow',
           )
         )}
+      </InfoBanner>
+
+      <InfoBanner tone="warning" icon={Info}>
+        This provider talks directly to its own endpoint, bypassing the Kortix gateway — no budgets,
+        logs, or routing apply to it.
       </InfoBanner>
 
       <div className="bg-popover overflow-hidden rounded-md border">

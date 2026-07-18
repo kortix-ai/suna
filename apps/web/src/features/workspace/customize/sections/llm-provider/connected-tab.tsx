@@ -5,18 +5,46 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
-import { deleteProjectSecret } from '@kortix/sdk/projects-client';
+import { cn } from '@/lib/utils';
+import {
+  deleteProjectSecret,
+  type GatewayProviderVerifyResult,
+  verifyGatewayProvider,
+} from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, Unplug } from 'lucide-react';
+import { Plug, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
 import { providerCredentialSummary } from './utils';
+
+// GAP C1 — "Connected" only means a secret row exists in project_secrets; it
+// never proves the key actually works. This row action calls the gateway's
+// cheap one-request verify endpoint (POST .../gateway/providers/:id/verify)
+// on demand and renders the classification inline — never on mount, so
+// connecting stays exactly as fast/cheap as it is today and verification is
+// purely opt-in. Not offered for `codex` (a ChatGPT OAuth subscription, not
+// an API key — no catalog model exists to ping it against) or managed rows
+// (no BYOK credential to verify).
+function verifyAffordanceIcon(status: GatewayProviderVerifyResult['status'] | undefined) {
+  if (status === 'verified') return { Icon: ShieldCheck, className: 'text-kortix-green' };
+  if (status === 'invalid' || status === 'not_connected') {
+    return { Icon: ShieldAlert, className: 'text-kortix-red' };
+  }
+  if (status === 'unknown') return { Icon: ShieldQuestion, className: 'text-kortix-yellow' };
+  return { Icon: ShieldQuestion, className: 'text-muted-foreground/40' };
+}
+
+function verifyAffordanceLabel(result: GatewayProviderVerifyResult | undefined): string {
+  if (!result) return 'Verify this key works';
+  if (result.status === 'verified') return 'Verified — the provider accepted the key';
+  return result.message || 'Verify this key works';
+}
 
 export function ConnectedTab({
   projectId,
@@ -34,6 +62,25 @@ export function ConnectedTab({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [verifyResults, setVerifyResults] = useState<Record<string, GatewayProviderVerifyResult>>(
+    {},
+  );
+
+  const verify = useMutation({
+    mutationFn: (provider: LlmProviderEntry) => verifyGatewayProvider(projectId, provider.id),
+    onSuccess: (result, provider) => {
+      setVerifyResults((current) => ({ ...current, [provider.id]: result }));
+      if (result.status === 'verified') {
+        successToast(`${provider.label} key verified`);
+      } else if (result.status === 'invalid' || result.status === 'not_connected') {
+        errorToast(result.message || `${provider.label} key rejected`);
+      } else {
+        warningToast(result.message || `Couldn't verify ${provider.label}`);
+      }
+    },
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : "Couldn't verify — try again"),
+  });
 
   const disconnect = useMutation({
     mutationFn: async (provider: LlmProviderEntry) => {
@@ -121,6 +168,12 @@ export function ConnectedTab({
       <ul className="space-y-2 px-5 pt-3 pb-4">
         {filtered.map((provider) => {
           const busy = disconnect.isPending && disconnect.variables?.id === provider.id;
+          const verifyBusy = verify.isPending && verify.variables?.id === provider.id;
+          const verifyResult = verifyResults[provider.id];
+          const verifyOffered = !provider.managed && provider.id !== 'codex';
+          const { Icon: VerifyIcon, className: verifyIconClassName } = verifyAffordanceIcon(
+            verifyResult?.status,
+          );
           return (
             <li
               key={provider.id}
@@ -144,6 +197,25 @@ export function ConnectedTab({
                     : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
                 </p>
               </div>
+              {verifyOffered && (
+                <Hint label={verifyAffordanceLabel(verifyResult)}>
+                  <Button
+                    type="button"
+                    onClick={() => verify.mutate(provider)}
+                    disabled={verify.isPending}
+                    variant="ghost"
+                    size="icon-sm"
+                    className={cn('hover:text-foreground shrink-0', verifyIconClassName)}
+                    aria-label="Verify key"
+                  >
+                    {verifyBusy ? (
+                      <Loading className="size-3.5 shrink-0" />
+                    ) : (
+                      <VerifyIcon className="size-3.5 shrink-0" />
+                    )}
+                  </Button>
+                </Hint>
+              )}
               {canWrite && !provider.managed && (
                 <Hint label="Disconnect">
                   <Button
