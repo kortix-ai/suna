@@ -460,6 +460,8 @@
     "GatewayPlaygroundResponse",
     "GatewayPlaygroundResult",
     "GatewayProjectRoutingPolicy",
+    "GatewayProviderVerifyResult",
+    "GatewayProviderVerifyStatus",
     "GatewayRoutePreview",
     "GatewayRoutePreviewInput",
     "GatewayRoutingPolicyDocument",
@@ -2331,7 +2333,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./react": [
     "ActorType",
@@ -4339,6 +4342,8 @@
     "GatewayPlaygroundResponse",
     "GatewayPlaygroundResult",
     "GatewayProjectRoutingPolicy",
+    "GatewayProviderVerifyResult",
+    "GatewayProviderVerifyStatus",
     "GatewayRoutePreview",
     "GatewayRoutePreviewInput",
     "GatewayRoutingPolicyDocument",
@@ -4756,7 +4761,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./feature-flags": [
     "FeatureFlags",

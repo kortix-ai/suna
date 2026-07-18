@@ -92,6 +92,7 @@ flow(
       'POST /v1/projects/:projectId/gateway/keys',
       'DELETE /v1/projects/:projectId/gateway/keys/:keyId',
       'POST /v1/projects/:projectId/gateway/playground',
+      'POST /v1/projects/:projectId/gateway/providers/:providerId/verify',
     ],
   },
   async (ctx) => {
@@ -148,6 +149,17 @@ flow(
       const r = await owner.post('/v1/projects/:projectId/gateway/playground', {}, { params });
       r.status([400, 403]);
     });
+    await ctx.step(
+      'gateway provider verify reports not_connected for an unconnected provider, no upstream call',
+      async () => {
+        const r = await owner.post(
+          '/v1/projects/:projectId/gateway/providers/:providerId/verify',
+          {},
+          { params: { ...params, providerId: 'openai' } },
+        );
+        r.status([200, 403]);
+      },
+    );
   },
 );
 

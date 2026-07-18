@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 492,
+  "count": 493,
   "routes": [
     {
       "method": "GET",
@@ -1305,6 +1305,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/gateway/playground"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/providers/:providerId/verify"
     },
     {
       "method": "DELETE",

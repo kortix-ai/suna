@@ -527,7 +527,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./react": [
     "BillingError",
@@ -1166,7 +1167,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./feature-flags": [
     "featureFlags",
