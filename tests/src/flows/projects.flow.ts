@@ -69,7 +69,7 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(200).body().has("$.project_id", p.id);
+      r.status(200).body().has("$.project.project_id", p.id);
     });
   }
 });

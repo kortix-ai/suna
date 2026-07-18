@@ -24,6 +24,7 @@ import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
 import { provisionMatrix, synthUser, type Provisioned } from './principals';
 import { provisionProject } from './provision';
+import { grantEphemeralPlatformAdmin } from './platform-admin';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -74,6 +75,25 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   const runId = (globalThis as any).__KE2E_RUN_ID__ ?? 'run';
   const provisioned: Provisioned = await provisionMatrix(env, runId);
   const owner = provisioned.principals.OWNER;
+  let revokePlatformAdmin: (() => Promise<void>) | null = null;
+
+  // Release QA needs a real, short-lived Supabase identity for the platform
+  // admin success paths. A server API key is not a human identity and cannot
+  // satisfy requireAdmin. Keep OWNER non-admin so every negative boundary
+  // assertion remains honest; synthesize a dedicated principal instead.
+  if (env.capabilities.database && env.target !== 'prod') {
+    const platformAdmin = await synthUser(env, 'PLATFORM-ADMIN', runId);
+    provisioned.supabaseUserIds.push(platformAdmin.user.id);
+    try {
+      revokePlatformAdmin = await grantEphemeralPlatformAdmin(env, platformAdmin.user.id);
+    } catch (err) {
+      await adminDeleteUser(env, platformAdmin.user.id);
+      throw err;
+    }
+    env.adminToken = platformAdmin.jwt;
+    env.capabilities.admin = true;
+    log.step(`provision: run-scoped platform admin ${platformAdmin.user.id} active`);
+  }
   const adminClient = new Client(env.apiUrl).as(owner as Identity);
   // Users synthesized mid-run (team members) — deleted in teardownAll.
   const extraUserIds: string[] = [];
@@ -200,6 +220,13 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     makeFixtures: fixturesFor,
     async teardownAll() {
       await sharedStack.teardown();
+      if (revokePlatformAdmin) {
+        try {
+          await revokePlatformAdmin();
+        } catch (err) {
+          log.warn(`teardown platform admin role failed: ${(err as Error)?.message ?? err}`);
+        }
+      }
       for (const acct of provisioned.runAccountIds) {
         try {
           // delete-immediately resolves the caller's account; account_id in body
