@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 492,
+  "count": 491,
   "routes": [
     {
       "method": "GET",
@@ -1721,10 +1721,6 @@
     {
       "method": "POST",
       "path": "/v1/router/image-search"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/router/messages"
     },
     {
       "method": "GET",

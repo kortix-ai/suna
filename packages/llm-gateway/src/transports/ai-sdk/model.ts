@@ -1,9 +1,10 @@
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createOpenAICompatible, type MetadataExtractor } from '@ai-sdk/openai-compatible';
+import { type MetadataExtractor, createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { LanguageModel } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
+import { resolveTransportKind } from '../route-kind';
 
 // Which AI SDK provider package a descriptor maps to. Prefer the models.dev
 // `npm` field (verbatim from the live catalog, #4893); fall back to the transport
@@ -14,11 +15,26 @@ const OPENAI_NPM = '@ai-sdk/openai';
 const ANTHROPIC_NPM = '@ai-sdk/anthropic';
 const BEDROCK_NPM = '@ai-sdk/amazon-bedrock';
 
+// Codex descriptors (apps/api's descriptors.ts `codexDescriptor`) never carry a
+// models.dev `npm` field — they're built by hand for the ChatGPT OAuth backend,
+// not resolved from the catalog — so they're identified by shape instead:
+// `kind: 'openai-responses'` (nothing else uses that kind) or, redundantly,
+// `provider: 'openai-codex'`. Either is sufficient on its own; checking both
+// costs nothing and survives either field changing independently.
+export function isCodexDescriptor(descriptor: UpstreamDescriptor): boolean {
+  return descriptor.provider === 'openai-codex' || descriptor.kind === 'openai-responses';
+}
+
 export function aiSdkFamilyFor(descriptor: UpstreamDescriptor): AiSdkFamily {
   const npm = descriptor.npm;
   if (npm === OPENAI_NPM) return 'openai';
   if (npm === ANTHROPIC_NPM) return 'anthropic';
   if (npm === BEDROCK_NPM) return 'bedrock';
+  // Codex speaks the same OpenAI Responses API as genuine OpenAI — route it
+  // through the `@ai-sdk/openai` package (resolveAiModel's `.responses()`
+  // branch below), not the generic openai-compatible provider, which has no
+  // Responses surface at all.
+  if (isCodexDescriptor(descriptor)) return 'openai';
   // Fall back to the transport kind. `openai-compat`/`custom` → the generic
   // OpenAI-compatible provider (the safe default for any /v1/chat/completions
   // upstream, e.g. OpenRouter). anthropic/bedrock map to their native packages.
@@ -32,10 +48,27 @@ export function aiSdkFamilyFor(descriptor: UpstreamDescriptor): AiSdkFamily {
   }
 }
 
-// AI-SDK-native model families the engine can serve. `openai-responses` (Codex)
-// is intentionally excluded — it keeps the native transport regardless of engine.
-export function isAiSdkServable(descriptor: UpstreamDescriptor): boolean {
-  return descriptor.kind !== 'openai-responses';
+// Every descriptor kind the gateway resolves is now servable by the ai-sdk
+// engine, including Codex/openai-responses — resolveAiModel's `needsResponsesApi`
+// check (below) drives those through the AI SDK's own `.responses()` model
+// instead of falling through to the native openai-responses transport.
+export function isAiSdkServable(_descriptor: UpstreamDescriptor): boolean {
+  return true;
+}
+
+// Whether this call must go out over OpenAI's /v1/responses instead of
+// /v1/chat/completions — exactly the same predicate `resolveTransportKind`
+// (route-kind.ts) uses to pick the native openai-responses transport: a
+// genuine-OpenAI reasoning model with function tools and a live reasoning
+// effort, or a Codex descriptor (which route-kind.ts also resolves to
+// 'openai-responses', since that's already `descriptor.kind`). Reusing the
+// exact same function keeps the two engines' routing decisions identical by
+// construction instead of by two hand-kept copies of the predicate.
+export function needsResponsesApi(
+  body: Record<string, unknown>,
+  descriptor: UpstreamDescriptor,
+): boolean {
+  return resolveTransportKind(body, descriptor) === 'openai-responses';
 }
 
 function trimTrailingSlash(url: string): string {
@@ -136,8 +169,14 @@ export function openRouterCostMetadataExtractor(): MetadataExtractor {
 // Build the AI SDK language model for this descriptor. The provider package owns
 // every provider-specific wire quirk (endpoint shape, param names, tool schema
 // translation, prompt caching, SSE decoding) — we only supply credentials, base
-// URL, and the resolved model id.
-export function resolveAiModel(descriptor: UpstreamDescriptor): LanguageModel {
+// URL, and the resolved model id. `body` is only consulted for the 'openai'
+// family, to decide chat.completions vs Responses (needsResponsesApi) — every
+// other family ignores it; defaults to `{}` so existing non-openai call sites
+// (and tests) that never pass a body keep working unchanged.
+export function resolveAiModel(
+  descriptor: UpstreamDescriptor,
+  body: Record<string, unknown> = {},
+): LanguageModel {
   const modelId = descriptor.resolvedModel || '';
   const baseURL = descriptor.baseUrl ? trimTrailingSlash(descriptor.baseUrl) : undefined;
   const headers = descriptor.headers;
@@ -146,12 +185,18 @@ export function resolveAiModel(descriptor: UpstreamDescriptor): LanguageModel {
   switch (family) {
     case 'openai': {
       const provider = createOpenAI({ baseURL, apiKey: descriptor.apiKey, headers });
-      // Use the Responses API, not chat.completions. OpenAI's reasoning models
-      // (gpt-5.x, o-series) reject function tools alongside reasoning_effort on
-      // /v1/chat/completions — the SDK injects reasoning_effort for them, so a
-      // real gpt-5.6 tool-call turn 400s there. /v1/responses supports reasoning
-      // + tools together, and the adapter output is identical either way.
-      return provider.responses(modelId);
+      // OpenAI's /v1/chat/completions rejects function tools alongside a live
+      // reasoning_effort on reasoning models (gpt-5.x, o-series) — see
+      // route-kind.ts's big comment for the live-confirmed error. /v1/responses
+      // supports reasoning + tools together, so ONLY that exact broken
+      // combination (plus Codex, which is Responses-only end to end) uses
+      // `.responses()` here; every other openai-family call keeps using
+      // `.chat()` — the better-trodden, narrower-surface path — exactly like
+      // the native transports keep genuine reasoning-only or tool-only traffic
+      // on openai-compat instead of moving everything to Responses.
+      return needsResponsesApi(body, descriptor)
+        ? provider.responses(modelId)
+        : provider.chat(modelId);
     }
     case 'anthropic': {
       const provider = createAnthropic({ baseURL, apiKey: descriptor.apiKey, headers });
@@ -182,6 +227,19 @@ export function resolveAiModel(descriptor: UpstreamDescriptor): LanguageModel {
         // but requesting it explicitly is the documented, correct way and
         // costs nothing when the upstream already does it by default.
         includeUsage: true,
+        // Native forwards a client's `response_format:{type:'json_schema',...}`
+        // verbatim regardless of what the upstream actually supports — this
+        // package instead SILENTLY drops the schema (downgrading to plain
+        // `json_object`) unless told the upstream supports Structured
+        // Outputs (see request.ts's buildResponseFormatOutput comment, and
+        // @ai-sdk/openai-compatible's getArgs:
+        // `supportsStructuredOutputs === true && schema != null`).
+        // Forced true here so an openai-compatible upstream (OpenRouter,
+        // Groq, self-hosted...) that DOES support it isn't silently
+        // downgraded — matches native's assume-it-works passthrough; an
+        // upstream that genuinely doesn't support it 400s the same way
+        // native's verbatim forward would have.
+        supportsStructuredOutputs: true,
         ...(isOpenRouter
           ? {
               transformRequestBody: withOpenRouterUsageInclude,

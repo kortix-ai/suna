@@ -88,6 +88,37 @@ flow(
 );
 
 flow(
+  "GW-7",
+  {
+    domain: "llm-gateway",
+    routes: ["POST /v1/messages", "POST /v1/llm/messages", "POST /v1/openai/messages"],
+  },
+  async (ctx) => {
+    // Standalone gateway pod: the same Anthropic-Messages ingress as GW-6,
+    // mounted under the chat.completions alias namespaces (bare /v1, /v1/llm,
+    // /v1/openai) instead of the in-process API's /v1/llm/* mount.
+    const gw = new Client(ctx.env.gatewayUrl);
+    const body = {
+      model: "claude-sonnet-4-6",
+      max_tokens: 64,
+      messages: [{ role: "user", content: "ping" }],
+    };
+    await ctx.step("ANON cannot call /v1/messages", async () => {
+      const r = await gw.as(ctx.P.ANON).post("/v1/messages", body);
+      r.status([401, 403]);
+    });
+    await ctx.step("ANON cannot call /v1/llm/messages alias", async () => {
+      const r = await gw.as(ctx.P.ANON).post("/v1/llm/messages", body);
+      r.status([401, 403]);
+    });
+    await ctx.step("ANON cannot call /v1/openai/messages alias", async () => {
+      const r = await gw.as(ctx.P.ANON).post("/v1/openai/messages", body);
+      r.status([401, 403]);
+    });
+  },
+);
+
+flow(
   "GW-4",
   {
     domain: "llm-gateway",

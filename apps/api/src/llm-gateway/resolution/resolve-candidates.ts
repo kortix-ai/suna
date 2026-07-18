@@ -12,7 +12,13 @@ import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import { resolveGatewayRoute } from '../routing';
-import { bedrockByokBaseUrl, codexDescriptor, livePricing, managedCandidates } from './descriptors';
+import {
+  bedrockByokBaseUrl,
+  codexDescriptor,
+  livePricing,
+  managedCandidates,
+  stripBedrockInferenceProfilePrefix,
+} from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 
@@ -169,7 +175,16 @@ export async function resolveCandidates(
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
         resolvedModel: resolvedModelId,
-        pricing: livePricing(resolvedModelId),
+        // Bedrock-only: the id used to INVOKE stays the full cross-region
+        // inference-profile id (resolvedModel above) — only the id used to
+        // LOOK UP pricing gets the geography prefix stripped, since the
+        // models.dev catalog only knows the base model id. See
+        // stripBedrockInferenceProfilePrefix's doc comment.
+        pricing: livePricing(
+          byok.kind === 'bedrock'
+            ? stripBedrockInferenceProfilePrefix(resolvedModelId)
+            : resolvedModelId,
+        ),
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,
       };

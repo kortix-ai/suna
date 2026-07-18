@@ -59,6 +59,35 @@ locals {
     ManagedBy = "kortix-compliance"
     Control   = "DCF-86"
   }
+  # Drata's AWS connection assumes this account-local role. Keep its SNS
+  # subscription inspection permission explicit and read-only.
+  drata_autopilot_role_arn = "arn:aws:iam::${local.account_id}:role/DrataAutopilotRole"
+}
+
+data "aws_iam_policy_document" "drata_sns_inspection" {
+  statement {
+    sid = "ReadAlertTopicSubscriptions"
+    actions = [
+      "sns:GetTopicAttributes",
+      "sns:GetSubscriptionAttributes",
+      "sns:ListSubscriptions",
+      "sns:ListSubscriptionsByTopic",
+      "sns:ListTopics",
+    ]
+    resources = [data.aws_sns_topic.usw2_alerts.arn, data.aws_sns_topic.euw2_alerts.arn]
+  }
+
+  statement {
+    sid       = "ListTopicsForInspection"
+    actions   = ["sns:ListSubscriptions", "sns:ListTopics"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "drata_sns_inspection" {
+  name   = "DrataSNSSubscriptionInspection"
+  role   = "DrataAutopilotRole"
+  policy = data.aws_iam_policy_document.drata_sns_inspection.json
 }
 
 resource "aws_wafv2_web_acl_association" "usw2" {
@@ -224,6 +253,16 @@ resource "aws_cloudwatch_metric_alarm" "euw2_instance_cpu" {
 
 data "aws_iam_policy_document" "usw2_alerts" {
   statement {
+    sid       = "AllowDrataSubscriptionInspection"
+    actions   = ["SNS:GetTopicAttributes", "SNS:ListSubscriptionsByTopic"]
+    resources = [data.aws_sns_topic.usw2_alerts.arn]
+    principals {
+      type        = "AWS"
+      identifiers = [local.drata_autopilot_role_arn]
+    }
+  }
+
+  statement {
     sid       = "TopicOwnerAdministration"
     actions   = ["SNS:GetTopicAttributes", "SNS:SetTopicAttributes", "SNS:AddPermission", "SNS:RemovePermission", "SNS:DeleteTopic", "SNS:Subscribe", "SNS:ListSubscriptionsByTopic", "SNS:Publish"]
     resources = [data.aws_sns_topic.usw2_alerts.arn]
@@ -264,6 +303,16 @@ data "aws_iam_policy_document" "usw2_alerts" {
 
 data "aws_iam_policy_document" "euw2_alerts" {
   provider = aws.euw2
+  statement {
+    sid       = "AllowDrataSubscriptionInspection"
+    actions   = ["SNS:GetTopicAttributes", "SNS:ListSubscriptionsByTopic"]
+    resources = [data.aws_sns_topic.euw2_alerts.arn]
+    principals {
+      type        = "AWS"
+      identifiers = [local.drata_autopilot_role_arn]
+    }
+  }
+
   statement {
     sid       = "TopicOwnerAdministration"
     actions   = ["SNS:GetTopicAttributes", "SNS:SetTopicAttributes", "SNS:AddPermission", "SNS:RemovePermission", "SNS:DeleteTopic", "SNS:Subscribe", "SNS:ListSubscriptionsByTopic", "SNS:Publish"]

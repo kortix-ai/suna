@@ -1,0 +1,151 @@
+---
+title: "How we answer HR policy questions automatically"
+description: The HR-policy helpdesk agent we run on Kortix — connected to Gmail, our Notion policy library, and Slack. Every 15 minutes it reads new questions from the HR inbox, answers strictly from documented policy, and drafts a reply for HR to send — escalating anything ambiguous, legal, personal, or compensation-related to Slack instead of answering it.
+date: "2026-06-27"
+author: team
+tags:
+  - HR
+  - Case Study
+  - Enterprise
+template: hr-policy-qa
+---
+
+The same handful of policy questions land in the HR inbox every week — how much
+PTO carries over, what the remote-work policy actually allows, how the expense
+limit works for a conference, when parental leave starts accruing. The answers
+are documented, sitting in a Notion policy library the whole company can already
+read. But finding the right page, quoting it accurately, and drafting a reply
+takes a person's attention away from the HR work that actually needs a person: the
+exception request, the accommodation, the sensitive conversation.
+
+We run an HR-policy helpdesk agent on Kortix that reads the inbox every 15
+minutes, answers what's documented, and hands off everything else. It never
+sends an email itself and it never decides a policy question the library doesn't
+already answer — it drafts, or it escalates, and a human takes it from there.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every 15 minutes</Fact>
+  <Fact label="Connected systems">Gmail · Notion · Slack</Fact>
+  <Fact label="Mode">Fresh session · drafts only · escalates the rest</Fact>
+</KeyFacts>
+
+## The problem
+
+HR policy questions are high-volume and low-variance — most of them are already
+answered, word for word, somewhere in the policy library. But the inbox doesn't
+know that. Every question waits in the same queue whether it's "how many sick
+days do I have" or "I need to discuss a medical accommodation," and someone has
+to open each thread to find out which one it is before they can even start
+answering.
+
+A canned FAQ page only helps the employee who thinks to check it. A shared doc
+link in an auto-reply doesn't parse the actual question or point at the specific
+section that answers it. And routing everything to a person means the easy,
+already-documented questions compete for the same attention as the ones that
+genuinely need HR's judgment — the legal questions, the personal situations, the
+comp conversations — which is exactly backwards.
+
+## What we built
+
+On Kortix, a cron fires every 15 minutes and spawns a fresh session with
+read-only access to the HR Gmail inbox and the Notion policy library, plus a
+channel into Slack. It reads new questions, classifies each one, and for
+anything the library documents, searches for the exact policy section and drafts
+a grounded reply as a Gmail draft — never sent automatically. Anything ambiguous,
+legal, personal, or compensation-related gets posted to the HR Slack channel
+instead, with the question and the reason it needs a person, and the agent does
+not attempt an answer.
+
+## How it works
+
+<Steps>
+<Step title="Run every 15 minutes, fresh each time">
+
+A **cron trigger** fires every 15 minutes. Each firing spawns a fresh
+**session** in its own sandbox with no memory of the last run. The agent relies
+on Gmail's own labels — not its own memory — to know which threads it has
+already handled, so nothing is reprocessed and nothing is missed between runs.
+
+</Step>
+<Step title="Give the agent the triage and answering rules">
+
+How to tell a documented question from one that needs HR lives as a **skill**
+that travels with the agent: what counts as "answerable from policy," the exact
+bar for escalating (ambiguous, legal, personal, or compensation-related), and
+how to draft a reply that quotes or closely paraphrases the source text instead
+of paraphrasing loosely.
+
+</Step>
+<Step title="Connect the inbox, the library, and the escalation channel">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent reads and writes:
+
+- **New questions from Gmail** — the HR inbox, read for unlabeled threads and
+  written to only as a draft, never a send.
+- **Policy from Notion** — the documented policy library, read-only, searched
+  for the specific page that answers each question.
+- **Escalations to Slack** — the HR channel, where anything outside documented
+  policy gets posted with the question and the reason it needs a person.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent answers **only** what the policy library documents — it never
+infers, extends, or guesses at a policy that isn't written down, and it never
+makes an exception. It never sends an email; every answer is a Gmail draft
+for HR to review and send. Anything legal, personal, or compensation-related is
+escalated to Slack without an attempted answer, every time.
+
+</Step>
+<Step title="Draft, escalate, and label">
+
+With that in place, every 15 minutes the inbox gets worked: documented questions
+get a cited, drafted reply waiting in Gmail; everything else lands in the HR
+Slack channel with the question and why it was escalated. Each thread is labeled
+so the next run leaves it alone. HR reviews the drafts, sends what's right, and
+handles the escalations directly.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A 15-minute **cron** spawns a fresh session with read-only access to Gmail and
+  Notion and a channel into Slack. The triage and answering rules live as a
+  **skill**. The agent drafts from documented policy or escalates — it never
+  sends and it never makes a policy call the library hasn't already made.
+</Callout>
+
+## Guardrails
+
+The agent touches an employee's inbox and the company's policy record, so its
+access is scoped and every output is held for a person:
+
+- **Answer from documented policy only.** The agent never invents, infers, or
+  extends a policy beyond what's written in the Notion library. If the library
+  doesn't clearly cover the question, it escalates instead of guessing.
+- **Drafts only, never sends.** Every reply the agent writes is a Gmail draft.
+  HR reviews and sends it; the agent has no send authority.
+- **No exceptions, ever.** The agent cannot grant, waive, or bend a policy —
+  that judgment call belongs to HR, not the agent.
+- **Hard escalation triggers.** Anything ambiguous, legal in nature, about an
+  individual's personal situation, or related to compensation is routed to Slack
+  for a human, with no attempted answer.
+- **Read-only into the policy library.** The agent never edits a Notion page.
+- **Scoped secrets.** Gmail and Notion access is brokered through connectors,
+  never exposed to the model or written to logs.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every 15 min" label="Inbox checked against the current policy library" />
+  <Stat value="Drafts only" label="Every reply is a Gmail draft; HR sends it" />
+  <Stat value="0 exceptions" label="Ambiguous, legal, personal, and comp questions always escalate" />
+</StatGrid>
+
+The routine policy questions that used to sit in the queue behind everything
+else now get a cited, ready-to-send draft within 15 minutes, quoting the exact
+policy that answers them. The questions that actually need HR's judgment show up
+in Slack immediately, with nothing guessed at in between. The agent reads and
+drafts; HR decides and sends.

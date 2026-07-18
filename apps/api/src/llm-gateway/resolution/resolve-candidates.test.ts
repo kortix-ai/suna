@@ -56,6 +56,14 @@ const resolveCodexCredential = mock(async () => {
 });
 mock.module('../credentials/codex', () => ({ resolveCodexCredential, CodexRefreshError }));
 
+// Captures every id `livePricing` is called with, in call order — lets tests
+// assert resolveCandidates strips the Bedrock cross-region inference-profile
+// prefix (`us.`/`eu.`/`apac.`/`us-gov.`) before the PRICING lookup while
+// still keeping the full profile id as `resolvedModel` (the id actually sent
+// upstream). Mirrors the real stripBedrockInferenceProfilePrefix (descriptors.ts)
+// closely enough to exercise the call site; the prefix-stripping logic itself
+// is unit-tested directly in descriptors.test.ts.
+let livePricingCalls: string[] = [];
 mock.module('./descriptors', () => ({
   codexDescriptor: (credential: { access: string }, model: string) => ({
     provider: 'openai-codex',
@@ -66,7 +74,12 @@ mock.module('./descriptors', () => ({
     markup: 0,
     resolvedModel: model,
   }),
-  livePricing: () => undefined,
+  livePricing: (modelId: string) => {
+    livePricingCalls.push(modelId);
+    return undefined;
+  },
+  stripBedrockInferenceProfilePrefix: (modelId: string) =>
+    modelId.replace(/^(us-gov|us|eu|apac)\.(?=.)/, ''),
   managedCandidates: (managed: { id: string }) => [
     {
       provider: 'kortix-managed',
@@ -132,6 +145,7 @@ beforeEach(() => {
   runtimeManagedModel = undefined;
   knownManagedModelId = null;
   capabilities = { reasoning: false, temperature: true };
+  livePricingCalls = [];
   getAccountTier.mockClear();
   getCachedAccountTier.mockClear();
   getProjectSecretValue.mockClear();
@@ -228,6 +242,38 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     });
   });
 
+  // Regression coverage for the $0 upstream-cost-hint bug: models.dev only
+  // catalogs the BASE Bedrock model id, never the cross-region
+  // inference-profile id the user actually requests — so the PRICING lookup
+  // must strip the `us./eu./apac./us-gov.` prefix while `resolvedModel` (what
+  // actually gets invoked) keeps the full profile id untouched.
+  test('BYOK Bedrock: pricing lookup strips the cross-region inference-profile prefix, resolvedModel keeps it', async () => {
+    catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
+    secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: 'eu-west-1' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'amazon-bedrock/us.anthropic.claude-opus-4-8');
+
+    expect(candidates[0]).toMatchObject({ resolvedModel: 'us.anthropic.claude-opus-4-8' });
+    expect(livePricingCalls).toEqual(['anthropic.claude-opus-4-8']);
+  });
+
+  test('BYOK non-Bedrock provider: pricing lookup is never run through the Bedrock prefix-strip', async () => {
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecret = 'sk-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+
+    expect(livePricingCalls).toEqual(['claude-sonnet-4.6']);
+  });
+
   test('Bedrock with no project key connected: provider_not_connected (never a silent managed fallback)', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
     secretsByName = { AWS_BEARER_TOKEN_BEDROCK: null };
@@ -283,6 +329,49 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     await expect(
       resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6'),
     ).rejects.toMatchObject({ code: 'provider_not_connected' });
+  });
+
+  // Regression coverage (2026-07-17 live defect report): a BYOK OpenRouter
+  // call to a model NOT individually catalogued by models.dev — e.g.
+  // OpenRouter's dynamic/no-catalog-price auto-router, `openrouter/
+  // openrouter/fusion` — 502ed with an "Invalid URL" upstream error,
+  // consistent with the resolved descriptor's `baseUrl` ending up empty for
+  // that call. Root-caused: it does NOT (provider-registry.ts's
+  // `resolveCatalogUpstream` resolves `baseUrl` from the PROVIDER, keyed by
+  // `providerId` only — its signature carries no model parameter at all, so
+  // it structurally cannot special-case "is this exact model individually
+  // catalogued" — see provider-registry.test.ts's sibling regression test).
+  // This test pins the OTHER half of that claim from resolveCandidates' own
+  // side: for a model id that is CLEARLY not any real catalog entry, under a
+  // connected BYOK provider, the resulting descriptor still carries the
+  // provider's real (non-empty) baseUrl — resolveCandidates never drops,
+  // nulls, or otherwise special-cases baseUrl based on the requested model
+  // id. Live re-verified against dev (2026-07-17): both the in-process
+  // gateway and the standalone gateway pod reach OpenRouter and bill
+  // non-zero upstream cost for the exact real-world case
+  // (`openrouter/openrouter/fusion`), streaming and non-streaming alike.
+  test("BYOK OpenRouter: a model id models.dev has never heard of still resolves the connected provider's real baseUrl", async () => {
+    catalogUpstream = {
+      baseUrl: 'https://openrouter.ai/api/v1',
+      envVar: 'OPENROUTER_API_KEY',
+      kind: 'openai-compat',
+    };
+    resolvedSecret = 'sk-or-user-key';
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(
+      p,
+      'openrouter/definitely-not-a-real-catalog-model-xyz-123',
+    );
+
+    expect(candidates[0]).toMatchObject({
+      provider: 'openrouter',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-or-user-key',
+      resolvedModel: 'definitely-not-a-real-catalog-model-xyz-123',
+    });
+    expect(candidates[0].baseUrl).toBeTruthy();
   });
 });
 
