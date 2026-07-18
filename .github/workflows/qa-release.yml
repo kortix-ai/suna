@@ -18,6 +18,10 @@ on:
         description: "Staging frontend URL"
         required: false
         type: string
+      gateway_base_url:
+        description: "Staging LLM gateway origin without /v1"
+        required: false
+        type: string
       dast_target_url:
         description: "Staging DAST target origin without /v1"
         required: false
@@ -47,15 +51,16 @@ jobs:
       QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
       API_BASE_URL_INPUT: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
       WEB_BASE_URL_INPUT: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
+      GATEWAY_BASE_URL_INPUT: ${{ inputs.gateway_base_url || vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
       DAST_TARGET_URL_INPUT: ${{ inputs.dast_target_url || vars.QA_DAST_TARGET_URL }}
       PENTEST_TARGET_URL_INPUT: ${{ inputs.pentest_target_url || vars.QA_PENTEST_TARGET_URL }}
       KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
       KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-      KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
-      KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
-      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
-      KE2E_ADMIN_TOKEN: ${{ secrets.KE2E_ADMIN_TOKEN }}
-      KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+      KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      KE2E_ADMIN_TOKEN: ${{ secrets.STAGING_KORTIX_ADMIN_API_KEY }}
+      KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
       KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
       # staging.kortix.com sits behind Vercel deployment protection (SSO); the
@@ -76,6 +81,7 @@ jobs:
           set -euo pipefail
           api="${API_BASE_URL_INPUT%/}"
           web="${WEB_BASE_URL_INPUT%/}"
+          gateway="${GATEWAY_BASE_URL_INPUT%/}"
           dast="${DAST_TARGET_URL_INPUT:-}"
           pentest="${PENTEST_TARGET_URL_INPUT:-}"
           if [ -z "$dast" ] && [ -n "$api" ]; then
@@ -84,13 +90,13 @@ jobs:
           if [ -z "$pentest" ] && [ -n "$api" ]; then
             pentest="${api%/v1}"
           fi
-          if [ -z "$api" ] || [ -z "$web" ] || [ -z "$dast" ] || [ -z "$pentest" ]; then
-            echo "::error::Release QA requires QA_API_BASE_URL, QA_WEB_BASE_URL, QA_DAST_TARGET_URL, and QA_PENTEST_TARGET_URL (or matching workflow inputs)."
+          if [ -z "$api" ] || [ -z "$web" ] || [ -z "$gateway" ] || [ -z "$dast" ] || [ -z "$pentest" ]; then
+            echo "::error::Release QA requires staging API, web, gateway, DAST, and pentest targets."
             exit 1
           fi
-          case "$dast $pentest" in
+          case "$gateway $dast $pentest" in
             *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
-              echo "::error::Refusing to run DAST/pentest against production-looking target: dast=$dast pentest=$pentest"
+              echo "::error::Refusing production-looking release targets: gateway=$gateway dast=$dast pentest=$pentest"
               exit 1
               ;;
           esac
@@ -99,6 +105,8 @@ jobs:
             echo "KE2E_API_URL=$api"
             echo "BASE_URL=$api"
             echo "E2E_BASE_URL=$web"
+            echo "KE2E_GATEWAY_URL=$gateway"
+            echo "KE2E_TARGET=staging"
             echo "TARGET_URL=$dast"
             echo "PENTEST_TARGET_URL=$pentest"
             echo "PENTEST_LIVE_CONFIRM=ci"
@@ -106,6 +114,7 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Release API target: $api"
           echo "Release web target: $web"
+          echo "Release gateway target: $gateway"
           echo "Release DAST target: $dast"
           echo "Release pentest target: $pentest"
 
