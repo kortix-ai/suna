@@ -538,8 +538,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.previewGatewayRoute(projectId, input),
         },
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
-        playground: (prompt: string, models: string[]) =>
-          P.runGatewayPlayground(projectId, prompt, models),
+        playground: (prompt: string, models: string[], system?: string) =>
+          P.runGatewayPlayground(projectId, prompt, models, system),
       },
 
       /** Slack + email + Meet channel integrations. */

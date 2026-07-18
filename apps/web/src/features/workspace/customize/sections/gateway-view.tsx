@@ -26,6 +26,7 @@ import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gat
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
+import { GatewayPlayground } from '@/features/workspace/customize/sections/view/gateway/gateway-playground';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
@@ -36,11 +37,20 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
-type LlmTab = 'providers' | 'routing' | 'overview' | 'logs' | 'budgets' | 'keys' | 'api';
+type LlmTab =
+  | 'providers'
+  | 'routing'
+  | 'playground'
+  | 'overview'
+  | 'logs'
+  | 'budgets'
+  | 'keys'
+  | 'api';
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'providers', label: 'Providers' },
   { id: 'routing', label: 'Routing' },
+  { id: 'playground', label: 'Playground' },
   { id: 'overview', label: 'Overview' },
   { id: 'logs', label: 'Logs' },
   { id: 'budgets', label: 'Budgets' },
@@ -153,6 +163,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           canWrite={canWrite}
           projectDefaultPending={modelDefaults.isUpdating}
         />
+      </TabsContent>
+      <TabsContent value="playground" className="min-h-0 overflow-y-auto">
+        <GatewayPlayground projectId={projectId} />
       </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />
