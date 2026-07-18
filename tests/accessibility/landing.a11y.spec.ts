@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from '@playwright/test';
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
@@ -32,10 +32,19 @@ function contrastNodeCount(violations: Violation[]): number {
 }
 
 test.describe('Accessibility — axe-core', () => {
-  test('landing page has no structural serious or critical violations', async ({ page }, testInfo) => {
+  test('landing page has no structural serious or critical violations', async ({
+    page,
+  }, testInfo) => {
     await page.goto('/', { waitUntil: 'networkidle' });
 
-    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    const decorativeArtwork = page.locator('[data-a11y-decorative]');
+    await expect(decorativeArtwork).toHaveCount(1);
+    await expect(decorativeArtwork).toHaveAttribute('aria-hidden', 'true');
+
+    const results = await new AxeBuilder({ page })
+      .withTags(WCAG_TAGS)
+      .exclude('[data-a11y-decorative]')
+      .analyze();
     await testInfo.attach('axe-results.json', {
       body: JSON.stringify(results.violations, null, 2),
       contentType: 'application/json',
@@ -51,8 +60,7 @@ test.describe('Accessibility — axe-core', () => {
     });
     expect(
       contrast,
-      `color-contrast debt is ${contrast} nodes, above the tracked ceiling of ${CONTRAST_CEILING}. ` +
-        `Either fix the new low-contrast text or lower/raise A11Y_CONTRAST_MAX deliberately as the design debt is paid down.`,
+      `color-contrast debt is ${contrast} nodes, above the tracked ceiling of ${CONTRAST_CEILING}. Either fix the new low-contrast text or lower/raise A11Y_CONTRAST_MAX deliberately as the design debt is paid down.`,
     ).toBeLessThanOrEqual(CONTRAST_CEILING);
   });
 
