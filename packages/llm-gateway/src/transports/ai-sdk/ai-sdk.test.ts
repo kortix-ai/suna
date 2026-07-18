@@ -301,11 +301,11 @@ describe('ai-sdk request conversion', () => {
     });
   });
 
-  it('defaults maxOutputTokens for anthropic/bedrock, maps reasoning_effort + tool_choice', () => {
+  it('defaults maxOutputTokens for anthropic/bedrock (non-thinking), maps reasoning_effort + tool_choice', () => {
+    // No reasoning_effort/thinking here — plain 4096 default, no thinking bump.
     const anthropic = buildAiSdkArgs(
       {
         messages: [],
-        reasoning_effort: 'high',
         tools: [{ function: { name: 't', parameters: {} } }],
         tool_choice: 'required',
       },
@@ -321,6 +321,194 @@ describe('ai-sdk request conversion', () => {
     );
     expect(openai.maxOutputTokens).toBe(2000);
     expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+  });
+});
+
+// Regression coverage for the PR #4943 review finding: the deleted native
+// anthropic/bedrock transports translated reasoning_effort/raw `thinking`
+// into real Anthropic extended thinking and applied prompt-cache
+// breakpoints; the ai-sdk engine had neither. See request.ts's
+// `resolveAnthropicThinkingBudget` / `applyAnthropicPromptCaching` for the
+// ported implementation and the exact @ai-sdk/anthropic +
+// @ai-sdk/amazon-bedrock field names it's built against.
+describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () => {
+  it('anthropic: reasoning_effort maps to providerOptions.anthropic.thinking (not reasoningEffort) and bumps maxOutputTokens', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
+    expect(args.providerOptions).toMatchObject({
+      anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } },
+    });
+    // The bogus flat key from the generic (openai-shaped) path must never appear.
+    expect((args.providerOptions as any)?.anthropic?.reasoningEffort).toBeUndefined();
+    // No explicit max_tokens + thinking active → bumped to the thinking default,
+    // not the plain 4096 non-thinking default (mirrors native's
+    // DEFAULT_MAX_TOKENS_WITH_THINKING so budgetTokens < maxOutputTokens holds).
+    expect(args.maxOutputTokens).toBe(32000);
+  });
+
+  it('anthropic: every reasoning_effort level maps to the ported native budget table', () => {
+    const table: Record<string, number> = {
+      minimal: 1024,
+      low: 2048,
+      medium: 8192,
+      high: 16000,
+      // 'max' maps to a 32000 budget, but with no explicit max_tokens the
+      // thinking default IS 32000 too — the clamp (budgetTokens < maxOutputTokens)
+      // brings it down to max(1024, 32000-1024) = 30976.
+      max: 30976,
+    };
+    for (const [effort, budgetTokens] of Object.entries(table)) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'anthropic');
+      expect((args.providerOptions as any)?.anthropic?.thinking).toEqual({
+        type: 'enabled',
+        budgetTokens,
+      });
+    }
+  });
+
+  it('anthropic: clamps budgetTokens below an explicit small max_tokens instead of leaving it >= max_tokens', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
+      'anthropic',
+    );
+    expect(args.maxOutputTokens).toBe(2000);
+    // max(1024, 2000-1024) = 1024 < the max-effort 32000 budget → clamped to 1024.
+    expect((args.providerOptions as any)?.anthropic?.thinking).toEqual({
+      type: 'enabled',
+      budgetTokens: 1024,
+    });
+  });
+
+  it('anthropic: a raw Anthropic-shaped body.thinking passes through verbatim', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },
+      'anthropic',
+    );
+    expect(args.providerOptions).toMatchObject({
+      anthropic: { thinking: { type: 'enabled', budgetTokens: 5000 } },
+    });
+    expect(args.maxOutputTokens).toBe(32000);
+  });
+
+  it('anthropic: an explicit body.thinking:{type:"disabled"} does not fall through to reasoning_effort', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], thinking: { type: 'disabled' }, reasoning_effort: 'high' },
+      'anthropic',
+    );
+    expect((args.providerOptions as any)?.anthropic?.thinking).toBeUndefined();
+    // Non-thinking default, not the thinking-bumped one.
+    expect(args.maxOutputTokens).toBe(4096);
+  });
+
+  it('bedrock: reasoning_effort maps to providerOptions.bedrock.reasoningConfig, never providerOptions.anthropic', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'medium' }, 'bedrock');
+    expect(args.providerOptions).toMatchObject({
+      bedrock: { reasoningConfig: { type: 'enabled', budgetTokens: 8192 } },
+    });
+    expect(args.providerOptions).not.toHaveProperty('anthropic');
+    expect((args.providerOptions as any)?.bedrock?.reasoningEffort).toBeUndefined();
+    expect(args.maxOutputTokens).toBe(32000);
+  });
+
+  it('does not set thinking/reasoningConfig or bump maxOutputTokens for openai/openai-compatible families', () => {
+    const openai = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai');
+    expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+    expect(openai.maxOutputTokens).toBeUndefined();
+
+    const openrouter = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'high' },
+      'openai-compatible',
+      { providerName: 'openrouter' },
+    );
+    expect(openrouter.providerOptions).toEqual({ openrouter: { reasoningEffort: 'high' } });
+    expect(openrouter.maxOutputTokens).toBeUndefined();
+  });
+});
+
+describe('ai-sdk anthropic/bedrock prompt caching (ported from native)', () => {
+  it('anthropic: attaches cacheControl to the system prompt, the last tool, and the last message', () => {
+    const args = buildAiSdkArgs(
+      {
+        messages: [
+          { role: 'system', content: 'be brief' },
+          { role: 'user', content: 'first' },
+          { role: 'user', content: 'last' },
+        ],
+        tools: [
+          { function: { name: 'first_tool', parameters: {} } },
+          { function: { name: 'last_tool', parameters: {} } },
+        ],
+      },
+      'anthropic',
+    );
+
+    expect(args.system).toEqual({
+      role: 'system',
+      content: 'be brief',
+      providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+    });
+
+    const toolNames = Object.keys(args.tools ?? {});
+    expect(toolNames).toEqual(['first_tool', 'last_tool']);
+    expect((args.tools as any)?.first_tool?.providerOptions).toBeUndefined();
+    expect((args.tools as any)?.last_tool?.providerOptions).toEqual({
+      anthropic: { cacheControl: { type: 'ephemeral' } },
+    });
+
+    expect(args.messages[0]).not.toHaveProperty('providerOptions');
+    expect(args.messages[args.messages.length - 1]).toMatchObject({
+      providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+    });
+  });
+
+  it('bedrock: attaches cachePoint (not cacheControl) to the system prompt and the last message; tools are untouched', () => {
+    // @ai-sdk/amazon-bedrock talks AWS's Converse API, whose cache primitive
+    // is a `cachePoint` content block — NOT Anthropic's `cacheControl` — and
+    // its tool-config builder never reads a function tool's providerOptions
+    // at all (verified against node_modules/@ai-sdk/amazon-bedrock/dist/index.js).
+    const args = buildAiSdkArgs(
+      {
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [{ function: { name: 'only_tool', parameters: {} } }],
+      },
+      'bedrock',
+    );
+
+    expect(args.system).toBeUndefined();
+    expect((args.tools as any)?.only_tool?.providerOptions).toBeUndefined();
+    expect(args.messages[0]).toMatchObject({
+      providerOptions: { bedrock: { cachePoint: { type: 'default' } } },
+    });
+
+    const withSystem = buildAiSdkArgs(
+      {
+        messages: [
+          { role: 'system', content: 'ctx' },
+          { role: 'user', content: 'hi' },
+        ],
+      },
+      'bedrock',
+    );
+    expect(withSystem.system).toEqual({
+      role: 'system',
+      content: 'ctx',
+      providerOptions: { bedrock: { cachePoint: { type: 'default' } } },
+    });
+  });
+
+  it('never attaches cacheControl/cachePoint providerOptions for openai/openai-compatible families', () => {
+    const openai = buildAiSdkArgs(
+      {
+        messages: [
+          { role: 'system', content: 'ctx' },
+          { role: 'user', content: 'hi' },
+        ],
+        tools: [{ function: { name: 't', parameters: {} } }],
+      },
+      'openai',
+    );
+    expect(openai.system).toBe('ctx');
+    expect(openai.messages[openai.messages.length - 1]).not.toHaveProperty('providerOptions');
+    expect((openai.tools as any)?.t?.providerOptions).toBeUndefined();
   });
 });
 
