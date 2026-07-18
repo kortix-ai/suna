@@ -16,10 +16,29 @@ describe('catalogModelForGateway — client-side capability lookup', () => {
     expect(model?.temperature).toBe(false);
   });
 
-  test('resolves a managed bare id with a permissive synthetic fallback', () => {
+  // MUST-FIX regression (adversarial review of PR #4995): `claude-opus-4.8`'s
+  // `pricingRef` used to be the DOTTED display id ('anthropic/claude-opus-4.8'),
+  // which never matches models.dev's DASHED catalog id ('claude-opus-4-8') —
+  // so this lookup silently missed and fell back to the permissive synthetic
+  // record below (temperature:true, no reasoning_options). It must now hit
+  // the model's REAL catalog entry: temperature:false, and reasoning_options
+  // including the newer 'xhigh'/'max' tiers.
+  test('resolves claude-opus-4.8 to its REAL catalog entry, not the synthetic fallback', () => {
     const model = catalogModelForGateway('claude-opus-4.8');
     expect(model).toBeDefined();
+    expect(model?.id).toBe('claude-opus-4-8');
     expect(model?.reasoning).toBe(true);
+    expect(model?.temperature).toBe(false);
+    expect(model?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  test('resolves claude-sonnet-4.6 to its REAL catalog entry, not the synthetic fallback', () => {
+    const model = catalogModelForGateway('claude-sonnet-4.6');
+    expect(model).toBeDefined();
+    expect(model?.id).toBe('claude-sonnet-4-6');
+    expect(model?.reasoning).toBe(true);
+    expect(model?.temperature).toBe(true);
+    expect(model?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'max']);
   });
 
   test('resolves the synthetic auto model', () => {

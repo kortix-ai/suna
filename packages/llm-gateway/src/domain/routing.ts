@@ -37,11 +37,27 @@ export interface ModelRoutePlan {
   primaryModel: string;
   fallbackModels?: readonly string[];
   fallbackOn?: ModelFallbackCondition;
-  /** Applied only to fields the incoming request body doesn't already set —
-   *  see `applyGenerationDefaults`. Keyed to `primaryModel` (fallback
-   *  candidates run through their OWN descriptor's capabilities via the
-   *  transport, unaffected by this — see the doc comment above). */
+  /** `generationDefaultsForModel(primaryModel)` — kept for callers/tests that
+   *  only care about the primary model. The actual dispatch loop
+   *  (`runFailover`) does NOT trust this for fallback candidates; it
+   *  re-derives fresh, per-candidate defaults via `generationDefaultsForModel`
+   *  below, because a failover candidate can have different capabilities
+   *  (temperature support, reasoning_options, output-token ceiling) than
+   *  `primaryModel`. */
   generationDefaults?: ModelGenerationDefaults;
+  /**
+   * Re-derive `ModelGenerationDefaults` for an ARBITRARY model, not just
+   * `primaryModel` — called once per candidate inside the failover loop
+   * (`runFailover`) so a turn that fails over to a fallback model gets that
+   * model's OWN clamped defaults instead of the primary model's stale,
+   * unrevalidated ones (e.g. injecting `temperature` into a request that's
+   * about to hit a temperature:false fallback, or a `reasoning_effort` the
+   * fallback's `reasoning_options` doesn't list). The host/control plane
+   * supplies this (apps/api's routing/resolve-route.ts); the gateway itself
+   * has no catalog/capability knowledge of its own. Optional so a host or
+   * test that doesn't configure generation defaults at all can omit it.
+   */
+  generationDefaultsForModel?: (model: string) => ModelGenerationDefaults | undefined;
 }
 
 /** Declarative exact-match fallback policy consumed by the generic policy engine. */

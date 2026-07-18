@@ -26,6 +26,8 @@ describe('gateway control-plane route resolver', () => {
       primaryModel: 'model-default',
       fallbackModels: ['model-fallback'],
       fallbackOn: 'any-error',
+      generationDefaults: undefined,
+      generationDefaultsForModel: expect.any(Function),
     });
   });
 
@@ -42,6 +44,8 @@ describe('gateway control-plane route resolver', () => {
       primaryModel: 'explicit-model',
       fallbackModels: [],
       fallbackOn: 'transient',
+      generationDefaults: undefined,
+      generationDefaultsForModel: expect.any(Function),
     });
   });
 
@@ -84,6 +88,8 @@ describe('gateway control-plane route resolver', () => {
       primaryModel: 'explicit-primary',
       fallbackModels: ['specific-fallback'],
       fallbackOn: 'transient',
+      generationDefaults: undefined,
+      generationDefaultsForModel: expect.any(Function),
     });
 
     expect(await projectResolver({ ...principal, projectId: 'p1' }, {
@@ -94,6 +100,8 @@ describe('gateway control-plane route resolver', () => {
       primaryModel: 'unmatched-primary',
       fallbackModels: [],
       fallbackOn: 'transient',
+      generationDefaults: undefined,
+      generationDefaultsForModel: expect.any(Function),
     });
   });
 
@@ -122,6 +130,8 @@ describe('gateway control-plane route resolver', () => {
       primaryModel: 'project-default',
       fallbackModels: ['project-fallback'],
       fallbackOn: 'any-error',
+      generationDefaults: undefined,
+      generationDefaultsForModel: expect.any(Function),
     });
 
     const vision = await projectResolver(
@@ -199,5 +209,61 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
       requires: { imageInput: false },
     });
     expect(route.generationDefaults).toBeUndefined();
+  });
+
+  // MUST-FIX regression (adversarial review of PR #4995): `generationDefaults`
+  // alone only ever covers `primaryModel` — a failover candidate needs its OWN
+  // freshly-clamped defaults, re-derived against ITS OWN capabilities, not the
+  // primary's. `generationDefaultsForModel` is what the gateway's failover
+  // loop (packages/llm-gateway's runFailover) actually calls per candidate.
+  test('generationDefaultsForModel re-clamps per model, a fallback never gets the primary\'s values', async () => {
+    const tempModel = {
+      id: 'temp-model',
+      name: 'Temperature Model',
+      reasoning: false,
+      temperature: true,
+      limit: { output: 8192 },
+    };
+    const resolveRoute = createGatewayRouteResolver({
+      defaultModel: 'model-default',
+      visionModel: 'model-vision',
+      policies: [],
+      supportsImage: () => true,
+      getProjectPolicy: async () => ({
+        visionModel: null,
+        defaultFallback: null,
+        rules: [],
+        modelGenerationConfig: {
+          'temp-model': { temperature: 0.9, maxOutputTokens: 999_999 },
+          'reasoning-model': { reasoningEffort: 'high', temperature: 0.9 },
+        } as never,
+      }),
+      catalogModelFor: (model) =>
+        model === 'reasoning-model'
+          ? (reasoningModel as never)
+          : model === 'temp-model'
+            ? (tempModel as never)
+            : undefined,
+    });
+    const route = await resolveRoute(genPrincipal, {
+      requestedModel: 'temp-model',
+      requires: { imageInput: false },
+    });
+    expect(route.generationDefaultsForModel).toBeDefined();
+    // The primary model (temp-model) — accepts temperature, clamps
+    // maxOutputTokens to its own 8192 ceiling.
+    expect(route.generationDefaultsForModel?.('temp-model')).toEqual({
+      temperature: 0.9,
+      maxOutputTokens: 8192,
+    });
+    // A DIFFERENT (e.g. failover) model — temperature:false, so its
+    // configured temperature is dropped; reasoningEffort survives because
+    // this model supports it. Never the primary's clamp result.
+    expect(route.generationDefaultsForModel?.('reasoning-model')).toEqual({
+      reasoningEffort: 'high',
+    });
+    // A model with no configured entry at all → undefined, not a leak of
+    // some other model's defaults.
+    expect(route.generationDefaultsForModel?.('unconfigured-model')).toBeUndefined();
   });
 });

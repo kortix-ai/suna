@@ -77,11 +77,13 @@ export function createGatewayRouteResolver(
       primaryModel = projectPolicy?.visionModel || options.visionModel;
     }
 
-    const generationDefaults = generationDefaultsFor(
-      primaryModel,
-      projectPolicy?.modelGenerationConfig,
-      catalogModelFor,
-    );
+    // Bound once per request (not per candidate) — cheap (a config lookup +
+    // a catalog map lookup), and gives every candidate in the failover loop
+    // its OWN freshly-clamped defaults instead of trusting the primary
+    // model's. See `ModelRoutePlan.generationDefaultsForModel`'s doc comment.
+    const generationDefaultsForModel = (model: string): ModelGenerationDefaults | undefined =>
+      generationDefaultsFor(model, projectPolicy?.modelGenerationConfig, catalogModelFor);
+    const generationDefaults = generationDefaultsForModel(primaryModel);
 
     const exactRule = projectPolicy?.rules.find((rule) => rule.model === primaryModel);
     if (exactRule) {
@@ -91,6 +93,7 @@ export function createGatewayRouteResolver(
         fallbackModels: exactRule.fallbackModels,
         fallbackOn: exactRule.fallbackOn,
         generationDefaults,
+        generationDefaultsForModel,
       };
     }
 
@@ -101,6 +104,7 @@ export function createGatewayRouteResolver(
         fallbackModels: projectPolicy.defaultFallback.models,
         fallbackOn: projectPolicy.defaultFallback.fallbackOn,
         generationDefaults,
+        generationDefaultsForModel,
       };
     }
 
@@ -112,6 +116,7 @@ export function createGatewayRouteResolver(
         fallbackModels: [],
         fallbackOn: 'transient',
         generationDefaults,
+        generationDefaultsForModel,
       };
     }
 
@@ -121,6 +126,7 @@ export function createGatewayRouteResolver(
       fallbackModels: policy.fallbackModels,
       fallbackOn: policy.fallbackOn,
       generationDefaults,
+      generationDefaultsForModel,
     };
   };
 }

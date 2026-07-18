@@ -989,6 +989,66 @@ describe("gateway.chatCompletions — generation-defaults injection", () => {
     expect(res.status).toBe(200);
     expect(upstreamBody.temperature).toBe(0.99);
   });
+
+  // MUST-FIX regression (adversarial review of PR #4995): generation defaults
+  // used to be resolved ONCE against `primaryModel` and baked into the body
+  // before the failover loop ever ran — so a turn that failed over to a
+  // fallback model with DIFFERENT capabilities (e.g. temperature:false, a
+  // different reasoning_effort) still carried the primary's stale,
+  // unrevalidated values. `generationDefaultsForModel` is called fresh for
+  // EACH candidate the dispatch loop actually tries.
+  test('failover re-validates generation defaults against the SERVING candidate, not the primary', async () => {
+    const bodies: Record<string, any> = {};
+    const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: 'test-failover-defaults',
+        primaryModel: input.requestedModel,
+        fallbackModels: ['fallback'],
+        fallbackOn: 'any-error',
+        // Simulates a host (apps/api's resolve-route.ts) that clamps
+        // per-model: "primary" accepts temperature, "fallback" is a
+        // temperature:false reasoning model that only accepts an effort.
+        generationDefaultsForModel: (model: string) =>
+          model === 'primary'
+            ? { temperature: 0.7, maxOutputTokens: 500 }
+            : { reasoningEffort: 'high' },
+      }),
+      resolveUpstream: async (_p, model) => [{
+        ...managed,
+        provider: model,
+        baseUrl: `https://${model}.test/v1`,
+        resolvedModel: model,
+      }],
+    });
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+    }, {
+      fetchImpl: async (url, init) => {
+        const target = String(url).includes('primary.test') ? 'primary' : 'fallback';
+        bodies[target] = JSON.parse(String(init!.body));
+        return target === 'primary'
+          ? new Response('down', { status: 500 })
+          : new Response(JSON.stringify({
+              choices: [{ message: { content: 'ok' } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
+            }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"primary","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    // The primary attempt got ITS OWN defaults.
+    expect(bodies.primary.temperature).toBe(0.7);
+    expect(bodies.primary.max_tokens).toBe(500);
+    expect(bodies.primary.reasoning_effort).toBeUndefined();
+    // The fallback attempt got the FALLBACK's defaults — never the
+    // primary's stale temperature/max_tokens leaking across candidates.
+    expect(bodies.fallback.reasoning_effort).toBe('high');
+    expect(bodies.fallback.temperature).toBeUndefined();
+    expect(bodies.fallback.max_tokens).toBeUndefined();
+  });
 });
 
 // Regression coverage for the empty-completion bug: an upstream 200 with

@@ -365,6 +365,12 @@ export interface ManagedModel {
   //   'openrouter'   → OpenRouter openai-compatible chat completions
   transport: 'bedrock' | 'openrouter';
   // models.dev id for live pricing — upstream ids don't always match the catalog.
+  // Must be the model's REAL models.dev id (dashes, e.g. `claude-opus-4-8`) —
+  // Kortix's own managed `id` above is dotted for display (`claude-opus-4.8`)
+  // but models.dev never uses dots in a Claude id. See
+  // `pricingRefLookupCandidates` below, which normalizes dot→dash as a safety
+  // net for consumers, but this field itself should always be the correct
+  // dashed id so pricing/capability lookups hit on the first try.
   pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
@@ -384,6 +390,26 @@ export interface ManagedModel {
   openrouterProvider?: Record<string, unknown>;
 }
 
+// A managed model's `pricingRef` is supposed to be the model's real
+// models.dev id, but Kortix's own display id is dotted (`claude-opus-4.8`)
+// while models.dev Claude ids are dashed (`claude-opus-4-8`) — a mismatch
+// here silently misses the models.dev lookup and falls back to a permissive
+// synthetic capability record (no reasoning_options, temperature always
+// true), which is wrong for real models. Consumers doing a `provider/model`
+// lookup by `pricingRef` should try these candidates in order rather than
+// a single exact match, so a dotted/dashed slip degrades gracefully instead
+// of silently losing real capability data.
+export function pricingRefLookupCandidates(pricingRef: string): string[] {
+  const slash = pricingRef.indexOf('/');
+  if (slash <= 0) return [pricingRef];
+  const providerId = pricingRef.slice(0, slash);
+  const modelId = pricingRef.slice(slash + 1);
+  const candidates = [pricingRef];
+  const dashed = `${providerId}/${modelId.replace(/\./g, '-')}`;
+  if (dashed !== pricingRef) candidates.push(dashed);
+  return candidates;
+}
+
 // Managed model ids are single-segment (no `provider/` prefix). They are served
 // to opencode under the `kortix` provider, so opencode references them as
 // `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
@@ -401,7 +427,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     name: 'Claude Opus 4.8',
     upstreamModelId: 'us.anthropic.claude-opus-4-8',
     transport: 'bedrock',
-    pricingRef: 'anthropic/claude-opus-4.8',
+    pricingRef: 'anthropic/claude-opus-4-8',
     tier: 'flagship',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
@@ -411,7 +437,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     name: 'Claude Sonnet 4.6',
     upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
     transport: 'bedrock',
-    pricingRef: 'anthropic/claude-sonnet-4.6',
+    pricingRef: 'anthropic/claude-sonnet-4-6',
     tier: 'balanced',
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },

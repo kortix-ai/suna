@@ -31,7 +31,11 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { LLM_PROVIDER_BY_ID, type LlmProviderModel } from '@/lib/llm-providers';
-import { generationControlCapabilities, getManagedModel } from '@kortix/llm-catalog';
+import {
+  generationControlCapabilities,
+  getManagedModel,
+  pricingRefLookupCandidates,
+} from '@kortix/llm-catalog';
 import type { GatewayModelGenerationConfig } from '@kortix/sdk/projects-client';
 
 /** See the module doc comment — this is the client-side mirror of
@@ -52,10 +56,14 @@ export function catalogModelForGateway(wireModel: string): LlmProviderModel | un
   }
   const managed = getManagedModel(wireModel);
   if (managed) {
-    const refSlash = managed.pricingRef.indexOf('/');
-    if (refSlash > 0) {
-      const byRef = LLM_PROVIDER_BY_ID.get(managed.pricingRef.slice(0, refSlash))?.models.find(
-        (m) => m.id === managed.pricingRef.slice(refSlash + 1),
+    // Try dot/dash id variants (see `pricingRefLookupCandidates`) so a
+    // dotted-vs-dashed slip in `pricingRef` degrades gracefully instead of
+    // silently losing real capability data.
+    for (const ref of pricingRefLookupCandidates(managed.pricingRef)) {
+      const refSlash = ref.indexOf('/');
+      if (refSlash <= 0) continue;
+      const byRef = LLM_PROVIDER_BY_ID.get(ref.slice(0, refSlash))?.models.find(
+        (m) => m.id === ref.slice(refSlash + 1),
       );
       if (byRef) return byRef;
     }

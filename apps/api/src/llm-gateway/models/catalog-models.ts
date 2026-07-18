@@ -3,6 +3,7 @@ import {
   type Catalog,
   type CatalogModel,
   getManagedModel,
+  pricingRefLookupCandidates,
 } from "@kortix/llm-catalog";
 import { resolveCatalogUpstream } from './provider-registry';
 import { codexModelIds } from "./codex-models";
@@ -140,7 +141,13 @@ export function catalogModelForWireModel(
     // their own id, but `pricingRef` (used for live pricing lookup) usually
     // IS a real models.dev id — reuse it here so e.g. claude-opus-4.8 gets
     // Claude's real reasoning_options instead of the generic fallback.
-    const byPricingRef = modelsById(catalog).get(managed.pricingRef);
+    // Try dot/dash id variants (see `pricingRefLookupCandidates`) so a
+    // dotted-vs-dashed slip in `pricingRef` degrades gracefully instead of
+    // silently losing real capability data.
+    const catalogById = modelsById(catalog);
+    const byPricingRef = pricingRefLookupCandidates(managed.pricingRef)
+      .map((ref) => catalogById.get(ref))
+      .find((entry): entry is CatalogModel => entry !== undefined);
     if (byPricingRef) return byPricingRef;
     // No models.dev entry to borrow from — synthesize a minimal capability
     // record from what managedModels() below already asserts about every
