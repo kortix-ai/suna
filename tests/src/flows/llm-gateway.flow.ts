@@ -148,6 +148,10 @@ flow(
         },
       ],
     };
+    // The stored/read-back project policy always carries the per-model
+    // generation-config map (defaults to {} when unset), so the round-trip
+    // assertions compare against the policy plus that field.
+    const savedProject = { ...policy, modelGenerationConfig: {} };
 
     await ctx.step('inherited routing policy is readable', async () => {
       const r = await ctx.client
@@ -194,14 +198,14 @@ flow(
       saved
         .status(200)
         .body()
-        .has('$.project', policy)
+        .has('$.project', savedProject)
         .has('$.effective.defaultModel', 'codex/gpt-5.6-sol')
         .has('$.effective.defaultFallback.models', ['glm-5.2']);
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/gateway/routing-policy', { params });
-      read.status(200).body().has('$.project', policy);
+      read.status(200).body().has('$.project', savedProject);
     });
 
     await ctx.step('preview resolves ordered default and exact-model routes', async () => {
@@ -254,7 +258,7 @@ flow(
       const read = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/gateway/routing-policy', { params });
-      read.status(200).body().has('$.project', policy);
+      read.status(200).body().has('$.project', savedProject);
     });
 
     await ctx.step('project access boundaries are enforced', async () => {
