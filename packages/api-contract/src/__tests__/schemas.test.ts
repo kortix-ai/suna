@@ -362,6 +362,7 @@ describe('envelopes', () => {
     expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
       'agent_tunnel',
       'marketplace',
+      'connectors_api_discover',
       'agentmail_email',
       'meet',
       'llm_gateway',
