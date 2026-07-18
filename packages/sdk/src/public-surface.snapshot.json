@@ -120,6 +120,7 @@
     "disconnectEmail",
     "disconnectGitHubApp",
     "disconnectSlack",
+    "discoverConnectorAuth",
     "discoverLocalSandbox",
     "enableAcpRuntimeProfiles",
     "ensurePmSession",
@@ -545,7 +546,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./react": [
     "BillingError",
@@ -939,6 +941,7 @@
     "disconnectEmail",
     "disconnectSlack",
     "enableAcpRuntimeProfiles",
+    "discoverConnectorAuth",
     "exportAccountAudit",
     "fetchAccountStateWithToken",
     "fetchAccountsWithToken",
@@ -1148,7 +1151,8 @@
     "upsertProjectGitCredential",
     "upsertProjectSecret",
     "validateProjectManifest",
-    "validateToken"
+    "validateToken",
+    "verifyGatewayProvider"
   ],
   "./feature-flags": [
     "featureFlags",

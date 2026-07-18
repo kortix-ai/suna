@@ -95,13 +95,13 @@ function cacheKey(previewSandboxId: string, userId: string): string {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Resolve the real session sandbox uuid + owning account from a
+ * Resolve the real session sandbox uuid + owning account/project from a
  * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
  * the Daytona-side externalId string.
  */
 async function resolveSandboxRef(
   previewSandboxId: string,
-): Promise<{ sandboxId: string; accountId: string } | null> {
+): Promise<{ sandboxId: string; accountId: string; projectId: string } | null> {
   const idCondition = UUID_RE.test(previewSandboxId)
     ? or(
         eq(sessionSandboxes.externalId, previewSandboxId),
@@ -110,12 +110,32 @@ async function resolveSandboxRef(
     : eq(sessionSandboxes.externalId, previewSandboxId);
 
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, accountId: sessionSandboxes.accountId })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      accountId: sessionSandboxes.accountId,
+      projectId: sessionSandboxes.projectId,
+    })
     .from(sessionSandboxes)
     .where(idCondition)
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * Resolve the project a sandbox belongs to, given the same `previewSandboxId`
+ * form the proxy path carries (uuid or Daytona externalId). Used by the
+ * project-scoped-PAT gate in middleware/auth.ts to decide whether a project
+ * PAT may reach `/v1/p/{sandboxId}/...` — it may, only for a sandbox whose
+ * `session_sandboxes.project_id` matches the token's own project. One indexed
+ * lookup (sandbox_id is the PK; external_id and project_id are both indexed),
+ * so this is cheap enough for the auth hot path. Returns null when the
+ * sandbox row can't be found — callers must treat that as "deny", not
+ * "unscoped ok".
+ */
+export async function resolveSandboxProjectId(previewSandboxId: string): Promise<string | null> {
+  const ref = await resolveSandboxRef(previewSandboxId);
+  return ref?.projectId ?? null;
 }
 
 async function isAccountMember(userId: string, accountId: string): Promise<boolean> {

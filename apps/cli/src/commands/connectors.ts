@@ -94,7 +94,8 @@ Add options (provider-specific):
   --endpoint <url>         GraphQL endpoint (provider=graphql).
   --base-url <url>         HTTP base URL (provider=http).
   --spec <url|path>        OpenAPI/Postman/GraphQL/HTTP spec or source ref.
-  --auth-type <t>          none|bearer|basic|custom.
+  --auth-type <t>          Manual override: none|bearer|basic|custom|oauth1.
+                           Omit to auto-detect from the source; none opts out.
   --credential <mode>      shared (the only mode).
 
 Global:
@@ -175,11 +176,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.spec) draft.spec = f.spec;
         if (f.credential) draft.credential = f.credential;
         if (f.authType) draft.auth = { type: f.authType };
-        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, draft);
+        const resp = await ctx.client.post<{
+          ok: boolean;
+          sync?: unknown;
+          authDiscovery?: { status: string; recommended?: { type?: string } | null };
+        }>(`${ex}/connectors`, draft);
         if (json) { emitJson(resp); return 0; }
         process.stdout.write(
           `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.yaml on main + synced)${C.reset}\n` +
-            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors link ${slug}${C.reset}${C.dim} or ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
+            (resp.authDiscovery?.recommended?.type
+              ? `  ${C.dim}Authentication: ${C.reset}${resp.authDiscovery.recommended.type}${C.dim} (auto-detected; set the credential next)${C.reset}\n`
+              : '') +
+            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
         );
         return 0;
       }
@@ -493,7 +501,8 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
     appendArrayBlock('connectors', fields);
     process.stdout.write(
       `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
-        `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}, then set auth: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}${C.dim} / ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
+        `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
+        `  ${C.dim}Then set the credential with ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
     );
     return 0;
   } catch (err) {

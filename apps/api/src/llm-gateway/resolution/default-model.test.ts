@@ -184,6 +184,73 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
   });
 });
 
+// Regression coverage for the agent-model-pin project-scoping fix: agent
+// defaults are now project-scoped (repositories/model-preferences.ts), so
+// the 30s prefs cache here (keyed by accountId alone, pre-fix) must be keyed
+// by (accountId, projectId) too — otherwise the FIRST project to resolve
+// `auto` on an account would poison the cache for every OTHER project on
+// that same account for up to 30s.
+describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, project)', () => {
+  test('the principal\'s projectId is threaded through to getAccountModelDefaults', async () => {
+    await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(modelPreferencesModule.getAccountModelDefaults).toHaveBeenCalledWith(
+      PRINCIPAL_BASE.accountId,
+      'proj-a',
+    );
+  });
+
+  test('two projects on the SAME account never share a cached agent default', async () => {
+    const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
+    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {
+      const agents: Record<string, string> = projectId && byProject[projectId] ? { kortix: byProject[projectId] } : {};
+      return { account: null, agents, projects: {} };
+    });
+    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
+      agentName: 'kortix',
+      opencodeModel: null,
+      projectDefaultAgent: null,
+    }));
+    resolveCandidatesImpl = async () => [{ provider: 'x' }];
+
+    const resultA = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      projectId: 'proj-a',
+      sessionId: 'sess-a',
+      freeModelsOnly: false,
+    });
+    const resultB = await resolveDefaultModelForPrincipal({
+      ...PRINCIPAL_BASE,
+      projectId: 'proj-b',
+      sessionId: 'sess-b',
+      freeModelsOnly: false,
+    });
+
+    expect(resultA).toBe('anthropic/claude-opus-4.8');
+    expect(resultB).toBe('openai/gpt-5.5');
+  });
+
+  test('invalidateAccountModelDefaults(accountId) clears every project-keyed cache entry for that account', async () => {
+    let call = 0;
+    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => {
+      call += 1;
+      return { account: call === 1 ? 'before/model' : 'after/model', agents: {}, projects: {} };
+    });
+    resolveCandidatesImpl = async () => [{ provider: 'x' }];
+
+    const first = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(first).toBe('before/model');
+    // Still cached — a second call within the TTL must NOT hit getAccountModelDefaults again.
+    const cached = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(cached).toBe('before/model');
+    expect(call).toBe(1);
+
+    invalidateAccountModelDefaults(PRINCIPAL_BASE.accountId);
+    const afterInvalidate = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    expect(afterInvalidate).toBe('after/model');
+    expect(call).toBe(2);
+  });
+});
+
 describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at generation time', () => {
   test('nothing configured → undefined (fast path, unchanged — never touches resolveCandidates)', async () => {
     const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });

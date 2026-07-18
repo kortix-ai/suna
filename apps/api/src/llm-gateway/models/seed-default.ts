@@ -27,7 +27,7 @@ export async function seedProjectDefaultModelOnConnect(params: {
     const flagshipRef = flagshipRefForEnvVar(params.secretName);
     if (!flagshipRef) return; // not a known provider credential (e.g. codex auth)
 
-    const defaults = await getAccountModelDefaults(params.accountId);
+    const defaults = await getAccountModelDefaults(params.accountId, params.projectId);
     if (defaults.account || defaults.projects[params.projectId]) return; // already chosen
 
     const servable = await isModelServableForAccount({

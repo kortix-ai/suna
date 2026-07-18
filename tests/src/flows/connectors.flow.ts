@@ -2,7 +2,7 @@
  * Connectors (executor) — catalog, project connector admin, policies,
  * credentials, call gateway. Connectors are project-wide visible (no
  * per-connector sharing/agent-scope — retired 2026-07-06, see
- * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12, 13).
+ * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12-14).
  */
 import { flow } from "../core/flow";
 
@@ -191,6 +191,43 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .put("/v1/executor/projects/:projectId/connectors/:slug/credential-mode", { mode: "shared" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(403);
+    });
+  },
+);
+
+flow(
+  "CONN-14",
+  {
+    domain: "connectors",
+    routes: ["POST /v1/executor/projects/:projectId/connectors/auth-discovery"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+
+    await ctx.step("source with no location returns an empty discovery", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/executor/projects/:projectId/connectors/auth-discovery",
+          { provider: "openapi" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200)
+        .body()
+        .has("$.status", "none")
+        .has("$.recommended", null)
+        .has("$.totalRequests", 0);
+    });
+
+    await ctx.step("NONMEMBER cannot inspect connector authentication", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/executor/projects/:projectId/connectors/auth-discovery",
+          { provider: "openapi" },
+          { params: { projectId: p.id } },
+        );
       r.status(403);
     });
   },

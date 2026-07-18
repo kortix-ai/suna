@@ -2238,7 +2238,7 @@ projectsApp.openapi(
       : false;
     const [secrets, defaults, routing] = await Promise.all([
       listProjectSecretsSnapshot(projectId).catch(() => ({ names: [] as string[] })),
-      getAccountModelDefaults(accountId),
+      getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
     const requiredModels = [
@@ -2330,7 +2330,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
-    const defaults = await getAccountModelDefaults(ownerAccountId);
+    const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
     const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
       ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
       : false;
@@ -2437,6 +2437,8 @@ projectsApp.openapi(
       scope,
       // agent → agent name; project → the project id; account → '' (in the repo).
       scopeKey: scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined,
+      // agent-scope pins are project-scoped — see repositories/model-preferences.ts.
+      projectId: scope === 'agent' ? projectId : undefined,
       model,
       updatedBy: userId,
     });
@@ -2502,7 +2504,12 @@ projectsApp.openapi(
       );
     }
     const scopeKey = scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined;
-    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey });
+    await deleteAccountModelPreference({
+      accountId: ownerAccountId,
+      scope,
+      scopeKey,
+      projectId: scope === 'agent' ? projectId : undefined,
+    });
     invalidateAccountModelDefaults(ownerAccountId);
     return c.json({ ok: true, scope, agentName: scope === 'agent' ? agentName : undefined });
   },

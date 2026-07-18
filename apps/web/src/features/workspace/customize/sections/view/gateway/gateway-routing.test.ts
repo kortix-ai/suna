@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  collectPreviewTargets,
   editablePolicySignature,
   fallbackModeForPolicy,
   moveFallback,
@@ -80,11 +81,65 @@ describe('gateway routing editor helpers', () => {
     ).toContain('at least one');
   });
 
-  test('uses the shared model selector and removes vision and route-preview configuration', () => {
+  test('uses the shared model selector', () => {
     expect(routingSource).toContain("from '@/features/session/model-selector'");
     expect(routingSource).toContain('<ModelSelector');
-    expect(routingSource).not.toContain('Vision model');
-    expect(routingSource).not.toContain('Route preview');
+  });
+
+  test('renders an editable vision model override saved through the same routing policy', () => {
+    expect(routingSource).toContain('Vision model');
+    expect(routingSource).toContain('draft.visionModel');
+    expect(routingSource).toContain('unsetLabel="Inherit platform"');
+    expect(routingSource).toContain(
+      'onChange={(visionModel) => setDraft({ ...draft, visionModel })}',
+    );
+    // Included in the dirty-check so an edit here enables Save, and shipped
+    // in the same `routing.set.mutate({ ...draft, ... })` payload as the
+    // fallback chain and rules.
+    expect(routingSource).toContain('visionModel: policy.visionModel');
+  });
+
+  test('debounces a routing-policy/preview availability check and surfaces per-entry feedback', () => {
+    expect(routingSource).toContain('routing.preview.mutateAsync');
+    expect(routingSource).toContain('setTimeout');
+    expect(routingSource).toContain('AvailabilityBadge');
+    expect(routingSource).toContain('Not connected');
+  });
+
+  test('collects a deduped preview target list across the primary, vision override, default chain, and rule chains', () => {
+    expect(
+      collectPreviewTargets(
+        {
+          visionModel: 'anthropic/claude-sonnet-4.6',
+          defaultFallback: { models: ['glm-5.2', 'auto'], fallbackOn: 'transient' },
+          rules: [
+            { model: 'codex/gpt-5.6-sol', fallbackModels: ['glm-5.2'], fallbackOn: 'transient' },
+          ],
+        },
+        'anthropic/claude-opus-4.8',
+      ),
+    ).toEqual([
+      'anthropic/claude-opus-4.8',
+      'anthropic/claude-sonnet-4.6',
+      'glm-5.2',
+      'codex/gpt-5.6-sol',
+    ]);
+  });
+
+  test('preview targets skip null/auto entries and dedupe repeats', () => {
+    expect(
+      collectPreviewTargets({ visionModel: null, defaultFallback: null, rules: [] }, null),
+    ).toEqual([]);
+    expect(
+      collectPreviewTargets(
+        {
+          visionModel: 'glm-5.2',
+          defaultFallback: { models: ['glm-5.2'], fallbackOn: 'transient' },
+          rules: [],
+        },
+        'glm-5.2',
+      ),
+    ).toEqual(['glm-5.2']);
   });
 
   test('the header selector reads and writes the project default scope', () => {
@@ -109,9 +164,9 @@ describe('gateway routing editor helpers', () => {
       defaultFallback: { models: ['glm-5.2'], fallbackOn: 'transient' as const },
       rules: [],
     };
-    expect(
-      editablePolicySignature({ ...policy, defaultModel: 'anthropic/claude-opus-4.8' }),
-    ).toBe(editablePolicySignature(policy));
+    expect(editablePolicySignature({ ...policy, defaultModel: 'anthropic/claude-opus-4.8' })).toBe(
+      editablePolicySignature(policy),
+    );
     expect(
       editablePolicySignature({
         ...policy,

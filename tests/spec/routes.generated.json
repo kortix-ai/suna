@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 491,
+  "count": 493,
   "routes": [
     {
       "method": "GET",
@@ -768,6 +768,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
       "path": "/v1/executor/projects/:projectId/connectors/sync"
     },
     {
@@ -1301,6 +1305,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/gateway/playground"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/providers/:providerId/verify"
     },
     {
       "method": "DELETE",

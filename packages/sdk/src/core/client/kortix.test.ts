@@ -312,6 +312,13 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
 });
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
+  await kortix.project('PID123').connectors.auth.discover({
+    slug: 'hubspot', provider: 'postman',
+    spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  });
+  expect(last().url).toContain('/executor/projects/PID123/connectors/auth-discovery');
+  expect(last().method).toBe('POST');
+
   await kortix.project('PID123').connectors.setName('slack-1', 'My Slack');
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/name');
 

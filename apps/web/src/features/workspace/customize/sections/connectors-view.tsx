@@ -95,10 +95,12 @@ import {
   type AdminConnector,
   type ConnectorAction,
   type ConnectorConfig,
+  type ConnectorAuthDiscovery,
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   createConnector,
+  discoverConnectorAuth,
   deleteConnector,
   getConnectStatus,
   getConnectorConfig,
@@ -3249,7 +3251,12 @@ function ConnectorConfigFields({
                       ? 'slack'
                       : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
                     : undefined,
-                auth: provider === 'channel' ? { type: 'none' } : draft.auth,
+                auth:
+                  provider === 'channel'
+                    ? { type: 'none' }
+                    : p === 'channel'
+                      ? undefined
+                      : draft.auth,
               });
             }}
           >
@@ -3417,17 +3424,22 @@ function ConnectorConfigFields({
           <Field>
             <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
             <Select
-              value={draft.auth?.type ?? 'none'}
+              value={draft.auth?.type ?? 'auto'}
               disabled={readOnly}
-              onValueChange={(v) => setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' })}
+              onValueChange={(v) => {
+                if (v === 'auto') set({ auth: undefined });
+                else setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1' });
+              }}
             >
               <SelectTrigger id="connector-auth" className="w-full" variant="popover">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="auto">Auto-detect</SelectItem>
                 <SelectItem value="none">None</SelectItem>
                 <SelectItem value="bearer">Bearer</SelectItem>
                 <SelectItem value="basic">Basic</SelectItem>
+                <SelectItem value="oauth1">OAuth 1.0</SelectItem>
                 <SelectItem value="custom">
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCustomHeader1e0e82ed',
@@ -3435,6 +3447,9 @@ function ConnectorConfigFields({
                 </SelectItem>
               </SelectContent>
             </Select>
+            <FieldDescription>
+              Auto-detect reads authentication metadata from the source. Choose None to opt out.
+            </FieldDescription>
           </Field>
           {draft.auth?.type === 'custom' && (
             <Field>
@@ -3486,8 +3501,12 @@ export function CustomConnectorForm({
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
     provider: 'openapi',
-    auth: { type: 'none' },
   });
+  const [discoveryDraft, setDiscoveryDraft] = useState(draft);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDiscoveryDraft(draft), 400);
+    return () => window.clearTimeout(timer);
+  }, [draft]);
   useEffect(() => {
     if (!emailChannelEnabled && draft.provider === 'channel' && draft.platform === 'email') {
       setDraft((current) => ({ ...current, platform: 'slack' }));
@@ -3501,6 +3520,17 @@ export function CustomConnectorForm({
       onAdded(draft.slug);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to add connector'),
+  });
+  const discovery = useQuery<ConnectorAuthDiscovery>({
+    queryKey: ['connector-auth-discovery', projectId, discoveryDraft],
+    queryFn: () => discoverConnectorAuth(projectId, discoveryDraft),
+    enabled:
+      discoveryDraft.auth === undefined &&
+      connectionValid(discoveryDraft, emailChannelEnabled) &&
+      discoveryDraft.provider !== 'channel' &&
+      discoveryDraft.provider !== 'pipedream' &&
+      discoveryDraft.provider !== 'computer',
+    retry: false,
   });
   const authActive = !!draft.auth?.type && draft.auth.type !== 'none';
 
@@ -3519,6 +3549,30 @@ export function CustomConnectorForm({
             slugEditable
             emailChannelEnabled={emailChannelEnabled}
           />
+          {draft.auth === undefined && discovery.isFetching && (
+            <InfoBanner tone="info">Checking the source for authentication settings…</InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.data?.recommended && (
+            <InfoBanner tone="info">
+              Detected {discovery.data.recommended.type} authentication from the source
+              {discovery.data.candidates[0]?.parameterName
+                ? ` (${discovery.data.candidates[0].parameterName})`
+                : ''}. You only need to provide the credential after adding it.
+            </InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.data?.status === 'none' && (
+            <InfoBanner tone="neutral">The source does not advertise authentication.</InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.data?.status === 'unsupported' && (
+            <InfoBanner tone="warning">
+              The source advertises authentication Kortix cannot inject yet. Choose a manual override or None.
+            </InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.error && (
+            <InfoBanner tone="warning">
+              Could not inspect authentication: {(discovery.error as Error).message}
+            </InfoBanner>
+          )}
           {authActive && (
             <InfoBanner tone="info">
               {tI18nHardcoded.raw(

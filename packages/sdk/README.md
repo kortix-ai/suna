@@ -177,6 +177,13 @@ const profile = await project.connectors.profiles.reconcile({
   label: 'Customer data',
   metadata: { tenant_ref: wrapperTenantReference },
 });
+
+// Omit `auth` when creating to apply source-advertised authentication.
+const auth = await project.connectors.auth.discover({
+  slug: 'hubspot',
+  provider: 'postman',
+  spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+});
 await project.connectors.profiles.updateCredential(profile.profile_id, {
   value: shortLivedCapability,
   kind: 'secret',

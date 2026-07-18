@@ -1106,3 +1106,61 @@ reports `runtimeReady: true, acp_ready: true` — `inspectSandboxRuntime`
 `/v1/p/` proxy. Repro'd live on session `fa33a4ba…` (project `c1adc7d4…`).
 The SDK recovery loop keeps such a session on honest boot chrome but cannot
 heal it client-side.
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (claim)
+
+Claimed the user-directed source-agnostic connector authentication discovery
+work. Postman, OpenAPI, and every other supported connector source will preserve
+usable authentication metadata, normalize it into one additive typed contract,
+and prefill connector setup while leaving secret values and interactive consent
+to the user. Existing connector draft fields and provider behavior remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and
+finish with the full SDK typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (completion)
+
+Completed the additive connector authentication discovery surface. The SDK now
+exposes typed candidates and `project(id).connectors.auth.discover(input)`, while
+connector creation keeps omitted auth as auto-detect and explicit `none` as a
+durable opt-out. No exported name was removed or renamed.
+
+**TDD and live evidence:** the focused API/parser/discovery run passed **101 / 0**.
+The real HubSpot Postman-managed repository detected bearer auth across **1,223**
+operations; authenticated connector creation synced **1 / 0 errors** and
+materialized **1,223 actions** with `authSecret: credential` and `secretSet: false`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1120 pass / 2 skip / 0 fail** across 84 files with 5005
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-18 — session `gateway-provider-key-verify` (completion)
+
+Self-contained addition (not part of the Now chain — outside its own PR/plan):
+`verifyGatewayProvider(projectId, providerId)` client fn +
+`GatewayProviderVerifyResult`/`GatewayProviderVerifyStatus` types, backing a new
+`POST /projects/:id/gateway/providers/:providerId/verify` endpoint that runs one
+cheap live completion through a connected BYOK provider's credential and
+classifies it `verified`/`invalid`/`unknown`/`not_connected` (closes the LLM
+provider UI's "Connected ≠ proven working" gap). No exported name renamed or
+removed — additive only.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1122 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. Public-surface
+snapshots re-recorded — diff is additive only (`verifyGatewayProvider`,
+`GatewayProviderVerifyResult`, `GatewayProviderVerifyStatus`).
+
+**Shippable to production: YES** for the SDK surface. apps/api route + apps/web
+UI land in the same PR (#4990); see that PR for backend/frontend evidence.

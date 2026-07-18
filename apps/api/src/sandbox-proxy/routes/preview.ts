@@ -14,7 +14,11 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
-import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
+import {
+  PROXY_RETRY_BUDGET_MS,
+  isLongTurnCompletionRequest,
+  proxyAttemptTimeoutMs,
+} from '../preview-retry-budget';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -207,6 +211,35 @@ function portUnreachableResponse(opts: {
   return new Response(JSON.stringify({ error: reason, port, status }), { status, headers });
 }
 
+// Response for a blocking session-turn (`POST /session/:id/message`) that
+// outran the proxy's retry budget while the upstream was still actively
+// computing — i.e. NOT the "sandbox is unreachable/dead" case portUnreachableResponse
+// describes. Conflating the two is actively misleading: it makes a healthy,
+// still-working sandbox look down, and it invites a naive caller to retry the
+// exact same (non-idempotent — it would resubmit the user's message) request
+// against a connection shape that can never fit it. 504 + a distinct machine
+// code let a caller branch on "this call structurally cannot block for that
+// long over this connection" and switch to `prompt_async` + the `/global/event`
+// SSE stream instead (what the web UI already does). No-store: a retry should
+// always re-evaluate the upstream, never replay a cached verdict.
+export function longTurnTimeoutResponse(origin: string): Response {
+  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+  return new Response(
+    JSON.stringify({
+      error:
+        'Turn is still running and outran this connection’s budget. Blocking POST /session/:id/message ' +
+        'cannot wait out a long reasoning/tool turn (the ALB idle-times a stalled connection); use ' +
+        'prompt_async and consume /global/event (SSE) instead of blocking on this endpoint.',
+      code: 'LONG_TURN_PROXY_TIMEOUT',
+    }),
+    { status: 504, headers },
+  );
+}
+
 // Rewrite an upstream redirect Location so the user stays on the preview.
 // `redirectPrefix` is the URL prefix that maps to this sandbox port:
 //   - subdomain previews (p{port}-{sandbox}.host):  '' (root-relative)
@@ -385,6 +418,12 @@ export async function forwardToSandbox(
   // providers there is no such signal, so the preview proxy never errors the row;
   // liveness is owned by the health-check loop + reconciler, not a port request.
   let sawDeadSignal = false;
+  // A blocking session-turn (`POST /session/:id/message`) whose single attempt
+  // (it gets ~the whole remaining budget, see proxyAttemptTimeoutMs) still hit
+  // the connect-timer. That's a legitimately long-running, healthy turn, not a
+  // stalled connection — see the giveup branch below for why it gets its own
+  // response instead of the generic "sandbox unreachable" one.
+  let sawLongTurnTimeout = false;
 
   // Wall-clock budget so a cold/dead sandbox returns our friendly page BEFORE
   // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
@@ -600,6 +639,21 @@ export async function forwardToSandbox(
         `[PREVIEW] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed for ${sandboxId}:${port}: ${(err as Error).message || err}`,
       );
 
+      // A connect-timer abort on a long-turn completion request means the
+      // upstream was still actively computing when its (near-full-budget)
+      // attempt ran out of room — not that it's stalled or dead. Waking an
+      // already-healthy sandbox is a no-op-but-wasted provider call, and
+      // retrying would resubmit the user's message a second time (this
+      // endpoint isn't idempotent). Stop here and report it honestly instead.
+      if (
+        err instanceof DOMException &&
+        err.name === 'TimeoutError' &&
+        isLongTurnCompletionRequest({ method, path: remainingPath })
+      ) {
+        sawLongTurnTimeout = true;
+        break;
+      }
+
       if (!wakeTriggered) {
         await wakeSandbox(sandboxId);
         wakeTriggered = true;
@@ -609,6 +663,10 @@ export async function forwardToSandbox(
         await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       }
     }
+  }
+
+  if (sawLongTurnTimeout) {
+    return longTurnTimeoutResponse(origin);
   }
 
   // All retries exhausted. Only error the row when the provider CONFIRMED the

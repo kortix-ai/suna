@@ -374,6 +374,11 @@ export interface GatewayPlaygroundResult {
   output?: string;
   input_tokens?: number;
   output_tokens?: number;
+  /** Final (post-markup) cost in USD, present only when the request succeeded. */
+  cost?: number;
+  /** The concrete upstream model the requested id resolved to. */
+  resolved_model?: string;
+  provider?: string;
   error?: string;
 }
 
@@ -386,12 +391,45 @@ export async function runGatewayPlayground(
   projectId: string,
   prompt: string,
   models: string[],
+  system?: string,
 ): Promise<GatewayPlaygroundResponse> {
   return unwrap(
     await backendApi.post<GatewayPlaygroundResponse>(`/projects/${projectId}/gateway/playground`, {
       prompt,
       models,
+      ...(system ? { system } : {}),
     }),
     'Gateway request failed',
+  );
+}
+
+/**
+ * Whether a connected provider's credential actually works — "Connected"
+ * only means a secret row exists (see api-key-connect-form.tsx); this makes
+ * one cheap live check through the gateway and classifies the result.
+ * `not_connected` means no key is configured at all; `unknown` covers every
+ * inconclusive outcome (timeout, rate limit, unrelated resolution failure) —
+ * never collapsed into `invalid`, which is reserved for a confirmed
+ * provider-side credential rejection.
+ */
+export type GatewayProviderVerifyStatus = 'verified' | 'invalid' | 'unknown' | 'not_connected';
+
+export interface GatewayProviderVerifyResult {
+  status: GatewayProviderVerifyStatus;
+  message: string;
+  checked_at: string;
+}
+
+/** Verify a connected provider's credential with one cheap live completion. */
+export async function verifyGatewayProvider(
+  projectId: string,
+  providerId: string,
+): Promise<GatewayProviderVerifyResult> {
+  return unwrap(
+    await backendApi.post<GatewayProviderVerifyResult>(
+      `/projects/${projectId}/gateway/providers/${encodeURIComponent(providerId)}/verify`,
+      {},
+    ),
+    'Gateway provider verification failed',
   );
 }

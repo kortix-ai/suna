@@ -87,7 +87,7 @@ import type {
   ExecutorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { syncProjectConnectors } from './sync';
+import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -935,6 +935,7 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     syncProjectConnectors(projectId, accountId, { force: true }),
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
+  discoverConnectorAuth: discoverDraftConnectorAuth,
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
   setConnectorCredential: (projectId, slug, value) =>
     setConnectorCredentialShared(projectId, slug, value),

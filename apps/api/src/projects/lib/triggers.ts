@@ -8,7 +8,6 @@ import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
-import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
@@ -22,12 +21,12 @@ import {
 import {
   type GitTriggerSessionMode,
   type GitTriggerSpec,
-  KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
   type ParsedManifest,
   loadProjectTriggers,
   readManifest,
   serializeManifest,
+  synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
@@ -1277,26 +1276,30 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
  * Read the project's manifest. If the manifest doesn't exist yet (brand-new
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
+ *
+ * MUST be kortix_version 2, not KNOWN_SCHEMA_VERSION (which deliberately
+ * stays pinned at 1 — see its own doc comment in ../triggers.ts). Every
+ * project created through POST /projects/provision (seeded or not) is
+ * stamped `metadata.require_declared_agents: true` and reads/writes
+ * through the v2-only agent-config API (`applyAgentBlockV2`/
+ * `applyDefaultAgentV2` in ./agent-config-v2.ts hard-refuse a v1
+ * manifest). A blank project (no `seed_starter`, so no kortix.yaml ever
+ * got pushed) synthesizing v1 here meant every agent-config write 400'd
+ * with "upgrade to kortix_version 2" before it could ever commit a real
+ * manifest — a self-inflicted catch-22 that left the project permanently
+ * un-declarable (AGENT_NOT_DECLARED on every session-create) short of a
+ * force-pushed kortix.yaml or a full re-provision with `seed_starter:true`.
+ *
+ * Delegates the actual synthesis to `synthesizeBlankManifest` (../triggers.ts)
+ * — the SAME shape `loadProjectAgents` (../agents.ts) synthesizes on the
+ * session-create read path, so a blank project's declared-agent check passes
+ * with zero writes needed on EITHER path, not just this edit one (see that
+ * function's doc comment for why the two must stay in sync).
  */
-
 export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
   const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
-  // No manifest yet → synthesize a minimal one. Brand-new repos scaffold
-  // kortix.yaml (matching the CLI scaffold); resolve the yaml sibling of
-  // whatever manifestPath is configured (defaults to `kortix`'s stem) rather
-  // than trusting a stale/legacy `.toml` value literally, so format and path
-  // stay in sync on commit.
-  return {
-    schemaVersion: KNOWN_SCHEMA_VERSION,
-    raw: {
-      project: { name: project.name, description: '' },
-      runtime: { root: '.opencode' },
-      env: { required: [], optional: [] },
-    },
-    format: 'yaml',
-    path: manifestCandidatePaths(project.manifestPath)[0].path,
-  };
+  return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath });
 }
 
 /** Insert or replace a trigger by slug inside the manifest's triggers array. */

@@ -42,6 +42,32 @@ export interface ConnectorSyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
+export type DiscoveredAuthScheme =
+  | 'none' | 'bearer' | 'basic' | 'api_key' | 'oauth1' | 'oauth2'
+  | 'openid_connect' | 'mutual_tls' | 'digest' | 'hawk' | 'ntlm'
+  | 'aws_v4' | 'edgegrid' | 'asap' | 'unknown';
+export interface ExecutableConnectorAuth {
+  type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1';
+  in: 'header' | 'query'; name: string | null; prefix: string | null;
+}
+export interface ConnectorAuthCandidate {
+  id: string; source: string; scheme: DiscoveredAuthScheme; label: string;
+  supported: boolean; requestCount: number; totalRequests: number;
+  placement: 'header' | 'query' | 'cookie' | null;
+  parameterName: string | null; prefix: string | null;
+  parameterNames: string[]; variables: string[];
+  oauth?: {
+    authorizationUrl?: string; tokenUrl?: string; refreshUrl?: string;
+    openIdConnectUrl?: string; protectedResourceMetadataUrl?: string; scopes: string[];
+  };
+  executable: ExecutableConnectorAuth | null;
+}
+export interface ConnectorAuthDiscovery {
+  status: 'detected' | 'none' | 'ambiguous' | 'unsupported';
+  recommended: ExecutableConnectorAuth | null;
+  candidates: ConnectorAuthCandidate[]; warnings: string[]; totalRequests: number;
+}
+
 export interface ConnectionProfile {
   profile_id: string;
   connector_alias: string;
@@ -249,9 +275,19 @@ export interface ConnectorDraftInput {
 
 export async function createConnector(projectId: string, draft: ConnectorDraftInput) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; sync?: ConnectorSyncResult }>(
+    await backendApi.post<{
+      ok: boolean; sync?: ConnectorSyncResult; authDiscovery?: ConnectorAuthDiscovery;
+    }>(
       `/executor/projects/${projectId}/connectors`,
       draft,
+    ),
+  );
+}
+
+export async function discoverConnectorAuth(projectId: string, draft: ConnectorDraftInput) {
+  return unwrap(
+    await backendApi.post<ConnectorAuthDiscovery>(
+      `/executor/projects/${projectId}/connectors/auth-discovery`, draft,
     ),
   );
 }

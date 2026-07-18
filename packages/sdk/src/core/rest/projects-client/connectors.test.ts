@@ -3,6 +3,7 @@ import { configureKortix } from '../../http/config';
 import {
   activateConnectionProfile,
   createConnector,
+  discoverConnectorAuth,
   deleteConnector,
   getConnectStatus,
   getConnectorConfig,
@@ -171,6 +172,23 @@ test('createConnector POSTs the draft as the raw body', async () => {
   await createConnector('P1', draft);
   expect(last().url).toContain('/executor/projects/P1/connectors');
   expect(last().url).not.toContain('/connectors/');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual(draft);
+});
+
+test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async () => {
+  const discovery: import('./connectors').ConnectorAuthDiscovery = {
+    status: 'detected',
+    recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
+    candidates: [], warnings: [], totalRequests: 10,
+  };
+  nextResponse = { status: 200, body: discovery };
+  const draft = {
+    slug: 'hubspot', provider: 'postman' as const,
+    spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  };
+  expect(await discoverConnectorAuth('P1', draft)).toEqual(discovery);
+  expect(last().url).toContain('/executor/projects/P1/connectors/auth-discovery');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(draft);
 });

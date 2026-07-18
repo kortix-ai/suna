@@ -152,7 +152,7 @@ projectsApp.openapi(
       userId: loaded.userId,
       accountId,
       projectId,
-      modelDefaults: await getAccountModelDefaults(accountId),
+      modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
         ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
         : false,
@@ -307,7 +307,7 @@ projectsApp.openapi(
       userId: loaded.userId,
       accountId,
       projectId,
-      modelDefaults: await getAccountModelDefaults(accountId),
+      modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
         ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
         : false,

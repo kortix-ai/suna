@@ -237,11 +237,25 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
 
 /**
  * Read + parse a project's manifest, then extract `[[agents]]`. Never throws.
+ *
+ * A project with NO manifest committed yet (a blank managed-git project
+ * provisioned without `seed_starter:true`) is treated as if
+ * `synthesizeBlankManifest` (./triggers.ts) already existed on disk — the
+ * SAME synthesized shape `loadManifestForEdit` (lib/triggers.ts) uses on the
+ * agent-config WRITE path. Without this, the two paths disagreed: a blank
+ * project's agent-config PUT (write path) would succeed against the
+ * synthesized manifest, but session-create (this read path) still saw
+ * `readManifest`'s literal `null` → zero declared agents → every
+ * declared-agent check (`resolveGovernedAgentGrant`) 400'd AGENT_NOT_DECLARED
+ * even though the project "should" already resolve to the synthesized
+ * `kortix` default agent with zero writes. Synthesizing here too closes that
+ * gap — a blank project's very first session-create with no agent forced now
+ * resolves the same declared default the write path already promises.
  */
 export async function loadProjectAgents(project: GitBackedProject): Promise<LoadedAgents> {
+  const { readManifest, synthesizeBlankManifest } = await import('./triggers');
   let manifest: ParsedManifest | null;
   try {
-    const { readManifest } = await import('./triggers');
     manifest = await readManifest(project);
   } catch (err) {
     // The manifest failed to parse before we learned which candidate file it
@@ -258,7 +272,7 @@ export async function loadProjectAgents(project: GitBackedProject): Promise<Load
       defaultAgent: null,
     };
   }
-  if (!manifest) return { specs: [], errors: [], defaultAgent: null };
+  if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
   return extractAgents(manifest);
 }
 

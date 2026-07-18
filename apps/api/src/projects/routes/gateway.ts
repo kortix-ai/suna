@@ -18,6 +18,7 @@ import {
   recordGatewayUsage,
 } from '../../llm-gateway/hooks';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
+import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { config } from '../../config';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
@@ -804,6 +805,7 @@ projectsApp.openapi(
             schema: z.object({
               prompt: z.string().min(1).max(8000),
               models: z.array(z.string()).min(1).max(6),
+              system: z.string().max(4000).optional(),
             }),
           },
         },
@@ -826,6 +828,7 @@ projectsApp.openapi(
     const body = await c.req.json();
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
     const models: string[] = Array.isArray(body.models) ? body.models.slice(0, 6) : [];
+    const system = typeof body.system === 'string' && body.system.trim() ? body.system : undefined;
     if (!prompt || models.length === 0) {
       return c.json({ error: 'prompt and models are required' }, 400);
     }
@@ -842,7 +845,10 @@ projectsApp.openapi(
         const requestId = crypto.randomUUID();
         const request = {
           model,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            ...(system ? [{ role: 'system', content: system }] : []),
+            { role: 'user', content: prompt },
+          ],
           stream: false,
           max_tokens: 512,
         };
@@ -927,6 +933,9 @@ projectsApp.openapi(
             output: data?.choices?.[0]?.message?.content ?? '',
             input_tokens: promptTokens,
             output_tokens: completionTokens,
+            cost: finalCost,
+            resolved_model: resolvedModel,
+            provider: descriptor.provider,
           };
         } catch (err) {
           return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };
@@ -935,6 +944,61 @@ projectsApp.openapi(
     );
 
     return c.json({ results });
+  },
+);
+
+// GAP C1 — "Connected" (a secret row exists) is not the same claim as "the
+// key works". This makes ONE cheap, single-attempt completion through the
+// same resolveCandidates -> callUpstream path a real turn uses and reports
+// verified/invalid/unknown/not_connected — see provider-verify.ts for the
+// full classification rationale. Gated on PROJECT_SECRET_READ (same leaf as
+// GET /secrets): it never exposes the key itself, only whether it works, so
+// any member who can already see that the provider is connected can check
+// whether it's actually usable.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/gateway/providers/{providerId}/verify',
+    tags: ['gateway'],
+    summary: 'POST /:projectId/gateway/providers/:providerId/verify',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), providerId: z.string() }) },
+    responses: { 200: json(z.any(), 'Provider credential verification result'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const providerId = c.req.param('providerId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+    );
+
+    const principal: AuthedPrincipal = {
+      userId: c.get('userId'),
+      accountId: loaded.row.accountId,
+      projectId,
+    };
+    // The ping is a real (if tiny) paid upstream call for a platform-fee-billed
+    // BYOK project — it must respect an already-exceeded project budget like
+    // any other gateway call (see playground's identical guard above). Caught
+    // rather than left to propagate: a budget block is exactly the "couldn't
+    // verify" case this endpoint already models, not a hard failure.
+    try {
+      await assertGatewayBudget(principal);
+    } catch (err) {
+      return c.json({
+        status: 'unknown',
+        message: err instanceof Error ? err.message : 'Project budget exceeded — try again later.',
+        checked_at: new Date().toISOString(),
+      });
+    }
+    const result = await verifyProviderConnection(principal, providerId);
+    return c.json({ ...result, checked_at: new Date().toISOString() });
   },
 );
 
@@ -952,7 +1016,7 @@ function operatorFallbackFor(model: string) {
 async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
   const [stored, defaults] = await Promise.all([
     getProjectRoutingPolicy(ctx.projectId),
-    getAccountModelDefaults(ctx.accountId),
+    getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
   const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
@@ -1056,7 +1120,7 @@ projectsApp.openapi(
         code: 'invalid_routing_policy',
       }, 400);
     }
-    const defaults = await getAccountModelDefaults(loaded.row.accountId);
+    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary = policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json({
@@ -1131,7 +1195,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const body = await c.req.json();
-    const defaults = await getAccountModelDefaults(loaded.row.accountId);
+    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
       ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
       : false;

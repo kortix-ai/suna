@@ -387,6 +387,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) =>
           P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
+        auth: {
+          discover: (...a: DropFirst<Parameters<typeof P.discoverConnectorAuth>>) =>
+            P.discoverConnectorAuth(projectId, ...a),
+        },
         setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
           P.setConnectorName(projectId, ...a),
         setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>
@@ -541,8 +545,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.previewGatewayRoute(projectId, input),
         },
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
-        playground: (prompt: string, models: string[]) =>
-          P.runGatewayPlayground(projectId, prompt, models),
+        playground: (prompt: string, models: string[], system?: string) =>
+          P.runGatewayPlayground(projectId, prompt, models, system),
       },
 
       /** Slack + email + Meet channel integrations. */

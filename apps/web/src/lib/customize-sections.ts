@@ -28,6 +28,7 @@ export type CustomizeSection =
   | 'llm-logs'
   | 'llm-budgets'
   | 'llm-keys'
+  | 'llm-api'
   | 'computers'
   | 'members'
   | 'schedules'
@@ -57,6 +58,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'llm-logs',
   'llm-budgets',
   'llm-keys',
+  'llm-api',
   'computers',
   'members',
   'schedules',

@@ -95,6 +95,9 @@ mock.module('../shared/preview-ownership', () => ({
       ? { userId, sandboxId: SANDBOX_ID, sandboxRole: 'member', scopes: ['*'] }
       : null,
   canAccessSandboxSession: async () => true,
+  // Not exercised by this suite (no project-scoped PATs here) — stub so the
+  // real module's shape stays satisfied for anything that imports it.
+  resolveSandboxProjectId: async () => null,
 }));
 
 const { authenticatePreviewPrincipal, extractPreviewToken } = await import('../sandbox-proxy/preview-auth');

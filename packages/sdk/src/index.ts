@@ -236,6 +236,11 @@ export type {
   ConnectorSharing,
   AdminConnector,
   ConnectorConfig,
+  ConnectorDraftInput,
+  ConnectorAuthDiscovery,
+  ConnectorAuthCandidate,
+  ExecutableConnectorAuth,
+  DiscoveredAuthScheme,
   // Sessions
   ProjectSession,
   ProjectRuntimeSession,

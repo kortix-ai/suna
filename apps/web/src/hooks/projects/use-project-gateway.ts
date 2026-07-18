@@ -15,7 +15,9 @@ import {
   getGatewaySessions,
   listGatewayLogs,
   revokeGatewayKey,
+  runGatewayPlayground,
   setGatewayBudget,
+  type GatewayPlaygroundResponse,
   type SetGatewayBudgetInput,
 } from '@/lib/projects-gateway-client';
 
@@ -128,5 +130,19 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
   return useMutation({
     mutationFn: (keyId: string) => revokeGatewayKey(projectId!, keyId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-keys', projectId] }),
+  });
+}
+
+export interface RunGatewayPlaygroundInput {
+  prompt: string;
+  models: string[];
+  system?: string;
+}
+
+/** Run one prompt across up to 6 models side by side — no cache, always a fresh run. */
+export function useGatewayPlayground(projectId: string | undefined) {
+  return useMutation<GatewayPlaygroundResponse, Error, RunGatewayPlaygroundInput>({
+    mutationFn: ({ prompt, models, system }) =>
+      runGatewayPlayground(projectId!, prompt, models, system),
   });
 }

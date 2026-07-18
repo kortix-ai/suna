@@ -166,6 +166,10 @@ mock.module('../shared/preview-ownership', () => ({
     userId && mockDbSandbox && mockDbMembership
       ? { userId, sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
       : null,
+  // combinedAuth is bypassed in this suite (see above), so no project-scoped
+  // PAT ever reaches this — stub so the real module's shape stays satisfied
+  // for anything that imports it.
+  resolveSandboxProjectId: async () => null,
 }));
 
 // Daytona SDK mock
@@ -1071,6 +1075,103 @@ describe('Preview proxy: retry exhaustion', () => {
     globalThis.fetch = savedFetch;
 
     // Wake should be called only once (not once per retry)
+    expect(mockWakeCalls.length).toBe(1);
+  });
+});
+
+// A blocking session turn (`POST /session/:id/message`) can legitimately run
+// long (reasoning + tool calls) — the upstream never sends response headers
+// until it's fully done. That must NOT be treated like a stalled connection:
+// no wake, no resend of the (non-idempotent) message, and a distinct,
+// honest signal instead of the generic "sandbox unreachable" 502. See
+// preview-retry-budget.ts (proxyAttemptTimeoutMs) and forwardToSandbox's
+// catch block in routes/preview.ts.
+describe('Preview proxy: long-turn completion timeout', () => {
+  test('a connect-timer abort on POST /session/:id/message returns 504 LONG_TURN_PROXY_TIMEOUT — no wake, no resend', async () => {
+    const savedFetch = globalThis.fetch;
+    const origSetTimeout = globalThis.setTimeout;
+    let callCount = 0;
+
+    // Simulate a healthy upstream that is still computing: fetch never
+    // resolves on its own, only rejects once the connect-timer aborts it —
+    // exactly what a real long reasoning/tool turn looks like from the
+    // proxy's perspective (TCP alive, no bytes yet).
+    globalThis.fetch = ((_url: any, init?: RequestInit) => {
+      callCount++;
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        const abortWith = () =>
+          reject((signal as any)?.reason ?? new DOMException('aborted', 'TimeoutError'));
+        if (signal?.aborted) {
+          abortWith();
+          return;
+        }
+        signal?.addEventListener('abort', abortWith);
+      });
+    }) as any;
+    // Fire the connect-timer (and any retry delay) synchronously instead of
+    // waiting out the real ~49.5s budget.
+    globalThis.setTimeout = ((fn: any) => {
+      fn();
+      return 0 as any;
+    }) as any;
+
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/sandbox-long-turn-001/${TEST_PORT}/session/sess-1/message`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'do a long thing' }] }),
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.status).toBe(504);
+    const body = await res.json();
+    expect(body.code).toBe('LONG_TURN_PROXY_TIMEOUT');
+    // Exactly one attempt: the exempted class gets ~the whole budget on
+    // attempt 0, and a timeout there must NOT resend the (non-idempotent)
+    // message — resending would duplicate the user's turn.
+    expect(callCount).toBe(1);
+    // The sandbox is healthy and still working — waking it is both wrong
+    // and wasted (an extra provider call to an already-running box).
+    expect(mockWakeCalls.length).toBe(0);
+  });
+
+  test('an ordinary connect-timer abort (non-message path) still wakes + retries as before', async () => {
+    const savedFetch = globalThis.fetch;
+    const origSetTimeout = globalThis.setTimeout;
+    let callCount = 0;
+    globalThis.fetch = ((_url: any, init?: RequestInit) => {
+      callCount++;
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        const abortWith = () =>
+          reject((signal as any)?.reason ?? new DOMException('aborted', 'TimeoutError'));
+        if (signal?.aborted) {
+          abortWith();
+          return;
+        }
+        signal?.addEventListener('abort', abortWith);
+      });
+    }) as any;
+    globalThis.setTimeout = ((fn: any) => {
+      fn();
+      return 0 as any;
+    }) as any;
+
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/sandbox-long-turn-002/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    // Unchanged prior behavior: a plain GET that never gets bytes is a real
+    // stall, not a long-turn completion — full retry/wake path still applies.
+    expect(res.status).toBe(502);
+    expect(callCount).toBe(4);
     expect(mockWakeCalls.length).toBe(1);
   });
 });
