@@ -511,7 +511,7 @@ function validateRoot(
     issues.push({
       path: 'kortix_version',
       message:
-        `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run \`kortix migrate\`.`,
+        `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml and migrate it to YAML (see the v2→v3 migration guide in packages/manifest-schema/README.md).`,
       severity: 'error',
     });
     return version;

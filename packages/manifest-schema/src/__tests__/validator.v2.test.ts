@@ -199,9 +199,9 @@ describe('validateManifest — kortix_version 2 format gate', () => {
     );
     expect(valid).toBe(false);
     expect(errorPaths).toContain('kortix_version');
-    expect(
-      issues.some((i) => i.path === 'kortix_version' && i.message.includes('kortix.yaml')),
-    ).toBe(true);
+    expect(issues[0].message).toBe(
+      `kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml and migrate it to YAML (see the v2→v3 migration guide in packages/manifest-schema/README.md).`,
+    );
   });
 
   test('kortix_version 1 continues to work in TOML', () => {
