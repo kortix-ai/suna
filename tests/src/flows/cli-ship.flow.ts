@@ -37,10 +37,22 @@
  */
 import { flow } from '../core/flow';
 import { assert } from '../core/expect';
+import { waitFor } from '../core/poll';
 import { CliSandbox } from '../fixtures/cli';
 
 function check(description: string, pass: boolean, expected: unknown, actual: unknown): void {
   assert({ kind: 'cli', description, expected, actual, pass });
+}
+
+function checkExit(
+  description: string,
+  result: { exitCode: number; all: string },
+  expected: number,
+): void {
+  check(description, result.exitCode === expected, expected, {
+    exitCode: result.exitCode,
+    output: result.all.slice(0, 3_000),
+  });
 }
 
 /** Init a Kortix project in the sandbox cwd (with git) so ship has something to push. */
@@ -68,7 +80,7 @@ flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
       'ship -n (managed first-ship) → prints plan, exit 0, NO side effects',
       async () => {
         const r = await sb.run(['ship', '-n', '-y']);
-        check('exit 0', r.exitCode === 0, 0, r.exitCode);
+        checkExit('exit 0', r, 0);
         check('prints a [dry-run] plan', /\[dry-run\]/i.test(r.all), true, r.stdout.slice(0, 300));
         check(
           'plan mentions provision (managed path)',
@@ -127,7 +139,7 @@ flow('SHIP-8', { domain: 'cli', routes: [] }, async (ctx) => {
         check('init exit 0', init.exitCode === 0, 0, init.exitCode);
         sb.enter('ship-guard');
         const r = await sb.run(['ship']);
-        check('exit 1', r.exitCode === 1, 1, r.exitCode);
+        checkExit('exit 1', r, 1);
         check(
           'tells the user to log in',
           /not logged in|kortix login/i.test(r.all),
@@ -160,7 +172,11 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGit'],
-    routes: ['GET /v1/accounts/me', 'POST /v1/projects/provision'],
+    routes: [
+      'GET /v1/accounts/me',
+      'POST /v1/projects/provision',
+      'POST /v1/projects/:projectId/git-token',
+    ],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -177,7 +193,7 @@ flow(
         'ship -y (no origin) → managed provision, link.json + origin set',
         async () => {
           const r = await sb.run(['ship', '-y'], { timeoutMs: 120_000 });
-          check('exit 0', r.exitCode === 0, 0, r.exitCode);
+          checkExit('exit 0', r, 0);
           check(
             'wrote .kortix/link.json',
             sb.exists('.kortix/link.json'),
@@ -324,7 +340,11 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGit'],
-    routes: ['GET /v1/accounts/me', 'POST /v1/projects/provision'],
+    routes: [
+      'GET /v1/accounts/me',
+      'POST /v1/projects/provision',
+      'POST /v1/projects/:projectId/git-token',
+    ],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -355,7 +375,7 @@ flow(
           const r = await sb.run(['ship', '-y', '--origin', 'managed'], {
             timeoutMs: 120_000,
           });
-          check('exit 0', r.exitCode === 0, 0, r.exitCode);
+          checkExit('exit 0', r, 0);
           check(
             'link.json written (managed)',
             sb.exists('.kortix/link.json'),
@@ -402,12 +422,12 @@ flow('SHIP-5', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
         const r = await sb.run(['ship', '-y', '--account', 'ke2e-no-such-account-xyz'], {
           timeoutMs: 60_000,
         });
-        check('exit 1', r.exitCode === 1, 1, r.exitCode);
+        checkExit('exit 1', r, 1);
         check(
           'error names the missing account',
           /no account "ke2e-no-such-account-xyz"/i.test(r.all),
           true,
-          r.stderr.slice(0, 240),
+          r.all.slice(0, 1_000),
         );
         check(
           'no project created (no link.json)',
@@ -449,7 +469,7 @@ flow(
 
       // First ship (managed) to establish the link.
       const first = await sb.run(['ship', '-y'], { timeoutMs: 120_000 });
-      check('first ship exit 0', first.exitCode === 0, 0, first.exitCode);
+      checkExit('first ship exit 0', first, 0);
       check(
         'link.json written',
         sb.exists('.kortix/link.json'),
@@ -469,7 +489,7 @@ flow(
           const r = await sb.run(['ship', '-y', '-m', 'ke2e: ship-6 sync'], {
             timeoutMs: 120_000,
           });
-          check('exit 0', r.exitCode === 0, 0, r.exitCode);
+          checkExit('exit 0', r, 0);
           check(
             'reports a sync (not a new project)',
             /sync|shipped/i.test(r.all),
@@ -511,7 +531,7 @@ flow(
 
       // Establish the link via a first managed ship (clean push of the scaffold).
       const first = await sb.run(['ship', '-y'], { timeoutMs: 120_000 });
-      check('first ship exit 0', first.exitCode === 0, 0, first.exitCode);
+      checkExit('first ship exit 0', first, 0);
       if (sb.exists('.kortix/link.json')) {
         const link = JSON.parse(sb.readFile('.kortix/link.json'));
         if (link.project_id) ctx.track('project', link.project_id);
@@ -568,6 +588,9 @@ flow(
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
       'POST /v1/projects/:projectId/change-requests',
       'GET /v1/projects/:projectId/change-requests',
       'GET /v1/projects/:projectId/change-requests/:crId',
@@ -585,11 +608,62 @@ flow(
     const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-cr9') });
     const project = await ctx.fixtures.project({
       name: ctx.fixtures.name('cli-cr9-proj'),
+      seed: true,
     });
     // A session creates the head branch the CR will propose.
     const session = await ctx.fixtures.session(project, {
       prompt: 'ke2e cr-9 head branch',
     });
+
+    const started = await waitFor(
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions/:sessionId/start',
+            {},
+            {
+              params: { projectId: project.id, sessionId: session.id },
+              query: { wait_ms: '8000' },
+              timeoutMs: 25_000,
+            },
+          );
+        r.status(200);
+        return r.json<any>();
+      },
+      {
+        until: (body) =>
+          body?.stage === 'ready' &&
+          Boolean(body?.sandbox?.external_id ?? body?.sandbox?.externalId),
+        timeoutMs: 300_000,
+        intervalMs: 3_000,
+        description: `CR-9 session runtime ready for ${session.id}`,
+      },
+    );
+    const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
+    const fileName = `ke2e-cr-${Date.now()}.md`;
+    const form = new FormData();
+    form.append('path', '.');
+    form.append(
+      'file',
+      new File(['# CLI change request fixture\n'], fileName, {
+        type: 'text/markdown',
+      }),
+    );
+    const uploaded = await ctx.client
+      .as(ctx.P.OWNER)
+      .request('POST', `/v1/p/${encodeURIComponent(sandboxId)}/8000/file/upload`, {
+        body: form,
+      });
+    uploaded.status(200);
+    const committed = await ctx.client
+      .as(ctx.P.OWNER)
+      .post(
+        '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+        { message: 'Add change request fixture' },
+        { params: { projectId: project.id, sessionId: session.id } },
+      );
+    committed.status(200).body().has('$.committed', true).has('$.pushed', true);
 
     const sb = new CliSandbox('cr9');
     ctx.track('cli-sandbox', sb.cwd);
@@ -603,7 +677,7 @@ flow(
     try {
       await ctx.step('cr ls (empty) → exit 0', async () => {
         const r = await sb.run(['cr', 'ls'], { env: crEnv });
-        check('exit 0', r.exitCode === 0, 0, r.exitCode);
+        checkExit('exit 0', r, 0);
       });
 
       let crNumber = '';
@@ -639,6 +713,15 @@ flow(
           env: crEnv,
         });
         check('reopen exit 0', reopen.exitCode === 0, 0, reopen.exitCode);
+      });
+
+      await ctx.step('cr merge <n> → merged', async () => {
+        if (!crNumber) {
+          check('CR number captured', false, '<number>', crNumber);
+          return;
+        }
+        const merge = await sb.run(['cr', 'merge', crNumber], { env: crEnv });
+        checkExit('merge exit 0', merge, 0);
       });
     } finally {
       sb.dispose();

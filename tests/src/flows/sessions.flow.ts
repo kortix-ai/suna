@@ -15,7 +15,7 @@ flow(
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ seed: true });
     await ctx.step('create session → 201 provisioning', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -59,7 +59,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ seed: true });
     const s = await ctx.fixtures.session(p);
     await ctx.step('get session → 200', async () => {
       const r = await ctx.client
@@ -89,7 +89,7 @@ flow(
     routes: ['POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ seed: true });
     const s = await ctx.fixtures.session(p);
     await ctx.step('unified start reports the runtime readiness stage', async () => {
       const r = await ctx.client
@@ -113,7 +113,7 @@ flow(
     routes: ['DELETE /v1/projects/:projectId/sessions/:sessionId'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ seed: true });
     const s = await ctx.fixtures.session(p);
     await ctx.step('delete session → 200 stopped', async () => {
       const r = await ctx.client
@@ -167,7 +167,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ seed: true });
     const session = await ctx.fixtures.session(project);
     const owner = ctx.client.as(ctx.P.OWNER);
 
@@ -328,7 +328,7 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const p = await team.project();
+    const p = await team.project({ seed: true });
     const editor = await team.addMember('member');
     await team.grantProjectRole(p.id, editor.userId!, 'editor');
     const manager = await team.addMember('member');
@@ -438,7 +438,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/audit'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ seed: true });
     const s = await ctx.fixtures.session(p);
     const owner = ctx.client.as(ctx.P.OWNER);
 
@@ -530,7 +530,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ seed: true });
     const session = await ctx.fixtures.session(project);
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
