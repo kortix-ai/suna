@@ -6,7 +6,10 @@ description: Kortix agents are logical entries in kortix.yaml that route to ACP 
 An agent in Kortix is a logical project entry. It chooses a runtime profile,
 declares governance grants, and optionally points at a harness-native agent name.
 The runtime profile speaks ACP, so the same session UI can drive Claude Code,
-Codex, OpenCode, or another supported harness.
+Codex, OpenCode, or another supported harness. OpenCode is the stable default;
+Claude Code, Codex, and Pi are experimental and gated behind the per-project
+`experimental_harnesses` feature (off by default). See
+[Harnesses](/docs/reference/harnesses).
 
 Harness-native behavior stays in that harness's normal config directory:
 
@@ -46,7 +49,7 @@ v1 projects declare the same grants as an array, `[[agents]]`, with the secrets
 field named `env` instead of `secrets`, and per-field defaults instead of
 deny-all. A v1 project with no `[[agents]]` at all runs in legacy unrestricted
 mode — an agent inherits the launching user's full role. Once `[[agents]]`
-exists, an unlisted agent is default-denied, same as v2.
+exists, an unlisted agent is default-denied, same as v2/v3.
 </Callout>
 
 Every project ships a default agent + the kortix-system skill, so it runs with no

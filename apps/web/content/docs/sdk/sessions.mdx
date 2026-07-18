@@ -100,6 +100,9 @@ await s.send('Refactor the auth module'); // prompt the agent
 await s.abort(); // abort the current run
 ```
 
+`s.send()` resolves with `{ stopReason }` once the ACP prompt turn ends — it's
+the completion signal; use `s.stream()` below for incremental output.
+
 Call `s.ensureReady()` (or `send`/`abort`, which call it internally) before
 `.runtime`, `.previewUrl()`, or `.proxyUrl()` — those throw
 `SessionNotReadyError` if this handle hasn't resolved a runtime yet.
@@ -107,10 +110,12 @@ Call `s.ensureReady()` (or `send`/`abort`, which call it internally) before
 
 ### Streaming events — `s.stream()`
 
-For **live** message / part / event streaming from a non-React host, use
-`s.stream()` — a framework-free facade over the same primitive
+For **live** streaming from a non-React host, use `s.stream()` — a
+framework-free facade over the same primitive
 [`useSession`](/docs/sdk/react#usesessionprojectid-sessionid-options) uses
-internally. It handles connect/reconnect/backoff and a 15s heartbeat watchdog.
+internally. It yields the same [ACP envelopes](/docs/sdk/streaming#the-canonical-stream-is-acp-envelopes)
+`session.stream()` does elsewhere in the SDK — there is no separate chat-event
+shape. It handles connect/reconnect/backoff and a 15s heartbeat watchdog.
 
 ```ts
 const handle = await s.stream({

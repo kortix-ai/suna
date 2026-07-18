@@ -87,7 +87,7 @@ import { getSessionHealth, isRuntimeReady } from '@kortix/sdk';
 
 const result = await getSessionHealth(); // GET /kortix/health, never throws
 if (result.ok && isRuntimeReady(result.health)) {
-  // the runtime is up and OpenCode is ready
+  // the runtime is up and the harness is ready
 }
 ```
 
@@ -230,7 +230,7 @@ older multi-instance registry and server-switching layer were removed, and a
 session's runtime is resolved fresh each time from `current-runtime`. `sync-store`
 exports `useSyncStore` plus the `ascendingId` id generator. **When to use:**
 reading runtime state outside React, or subscribing to raw store slices. In React
-UI, prefer the [hooks](/docs/sdk/react) (`useSessionSync`) — they derive
+UI, prefer the [hooks](/docs/sdk/react) (`useSession`) — they derive
 render-stable views over `sync-store` for you.
 
 ## `@kortix/sdk/turns`
@@ -256,7 +256,7 @@ presentation and pending-request matching), `formatCost`, `formatTokens`,
 / `sortSessions` / `allDescendantIds`. **When to use:** rendering a chat
 transcript, a cost/usage summary, or a session tree outside the shape the React
 hooks already give you — most hosts get this for free through
-[`useSessionSync`](/docs/sdk/react).
+[`useSession`](/docs/sdk/react).
 
 ## `@kortix/sdk/platform-client`
 
@@ -332,9 +332,6 @@ The remaining `@kortix/sdk/*` subpaths are small, mostly internal modules the
 layers above are built from. A normal host doesn't import these directly, but
 they're real, shipped exports:
 
-- **`@kortix/sdk/event-stream`** — `openEventStream`, the framework-free SSE
-  connect/reconnect/coalesce primitive the SDK's live-update plumbing (the
-  React event hooks, and ultimately `sync-store`'s updates) is built on.
 - **`@kortix/sdk/sandbox-connection-store`** — a zustand store tracking sandbox
   health/reconnect bookkeeping (`useSandboxConnectionStore`, `setSandboxStatus`,
   `incrementSandboxFail`, recovery-phase tracking). The one place "sandbox"

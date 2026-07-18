@@ -1,7 +1,14 @@
 ---
 title: Turns
-description: Framework-free turn grouping, part classification, and view-model helpers for building a chat UI on raw session messages.
+description: Framework-free turn grouping, part classification, and view-model helpers for building a chat UI on raw session messages (legacy OpenCode-wire projection).
 ---
+
+<Callout type="warn" title="Legacy projection layer">
+  Turn grouping and part classification operate on the deprecated OpenCode-wire
+  message shapes. They keep older UIs working, but the canonical chat-render
+  path is the ACP envelope reducer and `projectAcpChatItems` — see
+  [ACP](/docs/sdk/acp#projections).
+</Callout>
 
 The turns module is the pure, framework-free engine behind the web and
 mobile chat renderers: grouping raw session messages into **turns**,
@@ -14,7 +21,7 @@ import { classifyPart, classifyTurn, toolInfo, toolViewModel } from '@kortix/sdk
 ```
 
 <Callout>
-  **When to use this.** The [React hooks](/docs/sdk/react) (`useSessionSync`, `useSession`) already
+  **When to use this.** The [React hooks](/docs/sdk/react) (`useSession`) already
   give you a live thread of messages. Reach for the turns helpers when you're **rendering** that
   thread — grouping it into turns, deciding what a tool part means, or building a custom
   message/tool renderer instead of using the reference one in `apps/web`.
@@ -405,6 +412,6 @@ only as a deprecated compatibility alias.
 
 ## Next
 
-- [React hooks](/docs/sdk/react) — `useSessionSync` / `useSession` give you the
+- [React hooks](/docs/sdk/react) — `useSession` gives you the
   live message list this module groups and classifies.
 - [Modules](/docs/sdk/modules) — the other subpath imports.

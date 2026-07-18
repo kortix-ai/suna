@@ -9,7 +9,7 @@ Every session boots inside a Docker container, built in two parts: **your Docker
 
 ```
 ┌─────────────────────────────────────────┐
-│  Kortix runtime layer (auto-injected)   │  ← opencode + kortix-agent + ENTRYPOINT
+│  Kortix runtime layer (auto-injected)   │  ← ACP harness adapters + kortix-agent + ENTRYPOINT
 ├─────────────────────────────────────────┤
 │  Your Dockerfile                        │  ← .kortix/Dockerfile
 └─────────────────────────────────────────┘
@@ -55,13 +55,21 @@ On top of your Dockerfile's final stage, the snapshot builder appends:
 1. `USER root` (the layer needs to install things).
 2. `apt-get install` a system package floor: `ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr python3 python3-dev python3-pip python3-venv texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base texlive-latex-extra texlive-latex-recommended` — CLI/networking basics, a build toolchain, LibreOffice/LaTeX/Pandoc document conversion, OCR, and a Python 3 toolchain.
 3. A Python package floor via `pip install --break-system-packages` with lower-bound (`>=`) version constraints: web/parsing (`beautifulsoup4`, `lxml`, `markdownify`, `markitdown[pptx]`, `requests`), data (`numpy`, `pandas`, `scipy`, `scikit-learn`), PDF/office (`pdf2docx`, `pdf2image`, `pdfplumber`, `pymupdf`, `pypdf`, `pypdfium2`, `python-docx`, `python-pptx`, `openpyxl`, `reportlab`), imaging/browser (`pillow`, `pytesseract`, `playwright`), plotting (`matplotlib`, `plotly`, `seaborn`), and media/transcripts (`youtube-transcript-api`). The build verifies representative imports from that floor before the layer succeeds. This backs the starter's document/data/PDF/presentation skills and is present even if your Dockerfile never touches Python.
-4. `npm install -g opencode-ai@<pinned-version>`, plus the `bun` runtime and `agent-browser` (for the headless-browser tool).
-5. A baked OpenCode tool-dependency cache under `/opt/kortix/` (so the boot-time `bun install` in your config dir is a no-op, not a network round-trip).
+4. Pinned, version-probed installs of every ACP harness adapter — `npm install -g` runs once per package, and the build fails if the binary doesn't land on `PATH` or the probe command errors:
+   - `opencode-ai@<pinned-version>` — the native ACP process; probed with `opencode --version`.
+   - `@agentclientprotocol/claude-agent-acp@<pinned-version>` — probed with `claude-agent-acp --version`.
+   - `@agentclientprotocol/codex-acp@<pinned-version>` — probed with `codex-acp --version`.
+   - `pi-acp@<pinned-version>`, alongside the `@earendil-works/pi-coding-agent@<pinned-version>` CLI it wraps — probed with `pi-acp --help` and `pi --version`.
+
+   All four are baked at build time; a session request never installs or upgrades an adapter (no runtime `npx`/`npm install`). The layer also installs the `bun` runtime and `agent-browser` (for the headless-browser tool).
+5. A baked OpenCode-specific tool-dependency cache under `/opt/kortix/` (so the boot-time `bun install` OpenCode runs in your config dir is a no-op, not a network round-trip). The other three ACP adapters don't use this cache — they have no equivalent config-dir dependency install step.
 6. `COPY` the `kortix-agent` daemon, the `kortix` CLI, and the `kortix-entrypoint` script to `/usr/local/bin/`, plus the `slack-cli` and `executor-sdk` package trees under `/opt/kortix/`.
 7. `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`.
 8. `ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]`.
 
 Everything you installed stays on `PATH`; the layer relocates and removes nothing. The exact package lists above are pinned to a runtime layer version and can change between platform releases — they're the floor guaranteed on every sandbox, not a ceiling on what you can add.
+
+See [Harnesses](/docs/reference/harnesses) for each adapter's stability and authentication, and for the `KORTIX_ACP_<HARNESS>_PATH` / `KORTIX_ACP_<HARNESS>_ARGS` environment variables that let you override an adapter's launch command for controlled testing.
 
 ## Constraints
 
@@ -136,7 +144,7 @@ The spec is **baked into the snapshot**, not set per-session: the provider build
 
 ## Snapshot rebuilds
 
-Snapshots are content-addressed: the platform hashes your Dockerfile's own bytes + the hardware spec + a platform runtime fingerprint (opencode version + `kortix-agent` binary). Unchanged hash reuses the snapshot; otherwise a new one builds. Rebuilds happen on any push that changes the Dockerfile's text, or any change to the `sandbox` spec — pure code commits, and edits to files your Dockerfile `COPY`s in without touching the Dockerfile itself, reuse the snapshot for free (the hash isn't computed over those copied files today).
+Snapshots are content-addressed: the platform hashes your Dockerfile's own bytes + the hardware spec + a platform runtime fingerprint. That fingerprint folds in the pinned version of every ACP adapter (OpenCode, Claude, Codex, Pi), the runtime layer and sandbox version constants, and the `kortix-agent` binary's source alongside the other runtime files it COPYs in (entrypoint script, `kortix` CLI's in-sandbox command surface, `slack-cli`, `executor-sdk`). Unchanged hash reuses the snapshot; otherwise a new one builds — bumping any pinned adapter version rebuilds every project's snapshot. Rebuilds happen on any push that changes the Dockerfile's text, or any change to the `sandbox` spec — pure code commits, and edits to files your Dockerfile `COPY`s in without touching the Dockerfile itself, reuse the snapshot for free (the hash isn't computed over those copied files today).
 
 Builds run on the selected sandbox provider through the same adapter contract: Daytona snapshots, Platinum templates, or E2B templates. The first session on a new content hash triggers an inline build (a few minutes, shown as "preparing image"); later sessions on that provider and content hash hit its cache.
 

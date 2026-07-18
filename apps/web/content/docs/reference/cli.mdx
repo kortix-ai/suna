@@ -177,7 +177,7 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 
 ### Connectors
 
-Integrations agents call as tools (Pipedream apps, MCP servers, Postman collections/workspaces, and OpenAPI/GraphQL/HTTP endpoints) — mirrors the dashboard's Customize → Connectors. Connectors are project-wide visible; the access gate is which agents may call one (`[[agents]].connectors` in `kortix.yaml`, see [Grants](#grants)). `add` / `rm` / `policy set` edit the **local** `kortix.yaml` (the source of truth) — run `kortix ship` to apply, then `sync` to reconcile — unless you pass `--apply`, which skips ship/CR and applies on the cloud project immediately.
+Integrations agents call as tools (Pipedream apps, MCP servers, Postman collections/workspaces, and OpenAPI/GraphQL/HTTP endpoints) — mirrors the dashboard's Customize → Connectors. Connectors are project-wide visible; the access gate is which agents may call one (`agents.<name>.connectors` in `kortix.yaml`; the legacy `kortix.toml` array-of-tables form is `[[agents]].connectors`; see [Grants](#grants)). `add` / `rm` / `policy set` edit the **local** `kortix.yaml` (the source of truth) — run `kortix ship` to apply, then `sync` to reconcile — unless you pass `--apply`, which skips ship/CR and applies on the cloud project immediately.
 
 | Command | Effect |
 | --- | --- |
@@ -322,7 +322,7 @@ Round-trip through the manifest's `triggers:` (v2 `kortix.yaml`) or `[[triggers]
 | `kortix triggers pause` | Deactivate **all** of this project's triggers server-side (crons + webhooks stop auto-running). |
 | `kortix triggers resume` | Re-activate this project's triggers server-side. |
 
-`add` options: `--type <cron\|webhook>` (default `cron`), `--prompt <text>` (required — initial prompt for the spawned session), `--agent <name>` (default: the opencode default), `--cron <expr>` (6-field cron, e.g. `"0 0 9 * * 1-5"`), `--timezone <tz>` (default UTC), `--secret-env <NAME>` (HMAC secret env var, webhook type), `--name <label>` (default: slug), `--disabled` (create it disabled).
+`add` options: `--type <cron\|webhook>` (default `cron`), `--prompt <text>` (required — initial prompt for the spawned session), `--agent <name>` (default: the project's `default_agent`), `--cron <expr>` (6-field cron, e.g. `"0 0 9 * * 1-5"`), `--timezone <tz>` (default UTC), `--secret-env <NAME>` (HMAC secret env var, webhook type), `--name <label>` (default: slug), `--disabled` (create it disabled).
 
 ### Change requests (`cr`)
 
@@ -366,7 +366,7 @@ The agent does not merge its own CR — that's the user's call, in the dashboard
 
 ### Agents
 
-Per-agent settings on the linked project. Today: which model each agent runs on — the dynamic gateway default, applied instantly with no `kortix.yaml` commit. A session that asks for the synthetic `auto` model resolves to this pick, falling back to the project → account → platform default. (The declarative default lives in `kortix.yaml` as `[[agents]].model`.)
+Per-agent settings on the linked project. Today: which model each agent runs on — the dynamic gateway default, applied instantly with no `kortix.yaml` commit. A session that asks for the synthetic `auto` model resolves to this pick, falling back to the project → account → platform default. (`[[agents]].model` is v1-legacy TOML syntax and dead there too — parsed and round-tripped but never applied at runtime; removed outright in v2/v3, where a harness's model lives in its own native config instead. See [`[[agents]]` (v1, legacy)](/docs/reference/manifest#agents-v1-legacy).)
 
 | Command | Effect |
 | --- | --- |
@@ -435,20 +435,9 @@ Options: `--to <who>` (member email or user-id; group id with `--group`), `--exp
 
 | Command | Effect |
 | --- | --- |
-| `kortix init [project-name] [options]` | Prompts for a project name if omitted, then creates that directory and scaffolds it: `kortix.yaml` (the v2 manifest), `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools). Runs the wizard: pick coding agent(s) to wire up (symlinks `.opencode`/`.claude`/`.agents` + `AGENTS.md` into `.kortix/opencode` so skills/agents are shared), pick a starter template, pick marketplace skills to install. Does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
+| `kortix init [project-name] [options]` | Prompts for a project name if omitted, then creates that directory and scaffolds it: `kortix.yaml` (the v3 starter manifest, declaring all four ACP runtime profiles — `.kortix/opencode`, `.claude`, `.codex`, `.pi`) plus each runtime's config dir (OpenCode gets the default `kortix` agent + the `kortix-system` skill + tools; Claude/Codex/Pi get their own native starter files). Runs the wizard: pick the local coding agent(s) to wire up for editing (symlinks `.opencode`/`.claude`/`.agents` + `AGENTS.md` into `.kortix/opencode` so skills/agents are shared) — this is local editor/CLI compatibility only, separate from the `runtimes` profiles above that govern cloud sessions. Does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
 
-`kortix init` options: `--name <project>` (alias for the positional name), `--primary <agent>` (opencode\|claude\|codex\|cursor), `--agents <list>` (comma-separated extras to wire up alongside `--primary`), `--template <minimal\|general-knowledge-worker>` (default `minimal`; `general-knowledge-worker` includes the optional skill pack), `--marketplace <list>` (comma-separated marketplace skills, or `none`; interactive mode opens a preselected picker), `--no-git` (skip `git init`), `-y`/`--yes` (skip prompts — requires a project name).
-
-### Dev
-
-Run OpenCode locally against this project's `.kortix/opencode` config — the same config the cloud sandbox uses — so you can test agents, skills, tools, and runtime config without spinning up a sandbox. Works from anywhere inside the project; no `cd` or `OPENCODE_CONFIG_DIR` needed. Scope: this exercises the OpenCode half of your config only — connectors/executor, triggers, and channels are injected by the platform at session start, so test those against a live session instead.
-
-| Command | Effect |
-| --- | --- |
-| `kortix dev` | Interactive session with your local config. |
-| `kortix dev run --agent <agent> "<prompt>"` | One-shot run of an agent. |
-| `kortix dev debug skill` | List the skills your config discovers. |
-| `kortix dev debug agent <agent>` | Show the resolved agent: model, tools, permissions. |
+`kortix init` options: `--name <project>` (alias for the positional name), `--primary <agent>` (opencode\|claude\|codex\|cursor), `--agents <list>` (comma-separated extras to wire up alongside `--primary`), `--template <general-knowledge-worker\|minimal>` (default `general-knowledge-worker`, the full skill kit; `minimal` is base plumbing only), `--no-git` (skip `git init`), `-y`/`--yes` (skip prompts — requires a project name). Adding marketplace items is not part of `init` — start a session and ask the agent to import one.
 
 ### Ship
 

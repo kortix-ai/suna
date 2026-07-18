@@ -5,7 +5,12 @@ description: An isolated, disposable sandbox VM on a branch named after the sess
 
 A **session** runs the agent in its own isolated sandbox. The platform cuts a
 branch named after the session id, provisions a sandbox VM with the repo cloned
-onto it, and runs [OpenCode](/docs/concepts/agents) inside.
+onto it, and runs the agent's selected [ACP harness](/docs/reference/harnesses)
+(OpenCode, Claude Code, Codex, or Pi) inside. A running session actually has
+three distinct identifiers — the durable Kortix session id, the current
+sandbox's runtime id, and the harness-native ACP session id — kept distinct so
+history stays continuous across restarts; see
+[Session identity](/docs/reference/session-runtime#session-identity).
 
 - **Isolated** — each session has its own VM and branch, so any number run at
   once (yours, teammates', [automations](/docs/concepts/triggers)) without
@@ -19,11 +24,17 @@ onto it, and runs [OpenCode](/docs/concepts/agents) inside.
   **commits and pushes** is portable and recoverable, and only a merged
   [change request](/docs/concepts/change-requests) lands it on the default branch.
 
-Inside the VM the `kortix-agent` daemon clones to `/workspace`, supervises
-OpenCode, and serves a control surface on port 8000 that the dashboard tunnels
-into. A trigger fire is just an ordinary session. Full runtime detail —
-status enum, injected env vars, daemon endpoints — is in
-[Session runtime](/docs/reference/session-runtime).
+The conversation itself is durable independent of the sandbox: the platform
+stores it as an ordered log of raw ACP envelopes, so history survives sandbox
+replacement even though the sandbox's own event buffer is disposable.
+Markdown/HTML/JSONL transcripts are projections of that log, not the source of
+truth. See [Session runtime](/docs/reference/session-runtime).
+
+Inside the VM the `kortix-agent` daemon clones to `/workspace`, supervises the
+harness process and bridges it over ACP, and serves a control surface on port
+8000 that the dashboard tunnels into. A trigger fire is just an ordinary
+session. Full runtime detail — status enum, injected env vars, daemon
+endpoints — is in [Session runtime](/docs/reference/session-runtime).
 
 <Callout type="info" title="Sandbox provider">
 Kortix supports Daytona, Platinum, and E2B Cloud. A project can follow the

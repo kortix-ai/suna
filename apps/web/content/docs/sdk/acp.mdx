@@ -1,0 +1,192 @@
+---
+title: ACP
+description: The Agent Client Protocol layer underneath the facade — AcpClient, the AcpSession store, and transcript projections.
+---
+
+[Agent Client Protocol](https://agentclientprotocol.com) (ACP) is the
+canonical wire protocol between a Kortix session and its harness process —
+every harness (Claude, Codex, OpenCode, …) speaks the same JSON-RPC envelopes
+over the same transport. **Most apps never touch this layer.** Use
+[`s.send()` / `s.abort()` / `s.stream()`](/docs/sdk/sessions#talking-to-the-agent)
+or [`useSession`](/docs/sdk/react#usesessionprojectid-sessionid-options) —
+both already speak ACP for you. This page documents what's underneath: the
+JSON-RPC client, the framework-free session store it powers, and the
+projections that turn a raw envelope log into chat items, usage, and
+exports.
+
+<Callout>
+  For the raw in-sandbox daemon endpoint these clients talk to — routes, status codes, SSE replay —
+  see [ACP bridge](/docs/reference/acp-bridge).
+</Callout>
+
+## `AcpClient` [#acpclient]
+
+`AcpClient` is the JSON-RPC transport: it turns ACP method calls into signed
+HTTP requests and turns the response stream back into typed events. It has
+two constructor modes:
+
+```ts
+import { AcpClient } from '@kortix/sdk';
+
+// Mode 1 — session-scoped API proxy (recommended). The harness is already
+// resolved server-side; you only need the session's ACP endpoint.
+const client = new AcpClient({ endpoint });
+
+// Mode 2 — direct daemon bridge (self-managed sandboxes, tests). Talks
+// straight to a sandbox's /acp/:serverId endpoint.
+const bridge = new AcpClient({
+  baseUrl,
+  serverId: 'main',
+  agent: 'codex', // required on the first POST for a new serverId
+  fetch: signedFetch,
+});
+```
+
+`endpoint` mode is what `AcpSession` and the React hooks use internally —
+prefer it unless you're driving a bare sandbox daemon directly (a test
+harness, or code running inside the platform API itself). Both modes accept
+`fetch` (defaults to the SDK's `authenticatedFetch`), `streamTransport:
+'auto' | 'sse' | 'poll'` (`'auto'` picks SSE where a streaming response body
+exists and durable transcript polling on React Native), and
+`transcriptPollIntervalMs` for the poll transport.
+
+| Method | What |
+| --- | --- |
+| `initialize(params)` | ACP handshake — protocol version, client capabilities/info. First call of a session. |
+| `newSession(params)` | Mints a new ACP session for a working directory (`cwd`). |
+| `loadSession(params)` | Resumes an existing ACP session by id instead of minting a new one. |
+| `prompt(sessionId, prompt)` | Sends a turn; resolves with `{ stopReason }` once the turn ends. |
+| `cancel(sessionId)` | Fire-and-forget `session/cancel` notification for a mid-turn abort. |
+| `request(method, params?)` | Low-level JSON-RPC request for any ACP method not wrapped above. |
+| `notify(method, params?)` | Low-level JSON-RPC notification (no response expected). |
+| `respond(id, result?, error?)` | Answers an agent-originated request (e.g. `session/request_permission`). |
+| `setSessionConfigOption(sessionId, configId, value)` | Updates a session-scoped config option (model, permission mode, …). |
+| `connect(options)` | Opens the live event stream (SSE or poll) and returns an `AcpStreamHandle`. |
+| `transcript(after?, signal?)` | Fetches the persisted envelope log, optionally after a given ordinal. |
+
+Errors surface as `AcpRpcError` (a JSON-RPC error response — has `.code` and
+`.data`; exported from `@kortix/sdk`) or `AcpTransportError` (an HTTP-level
+failure — has `.status` and `.terminal`, distinguishing a permanent failure
+from one worth retrying; exported from `@kortix/sdk/acp`).
+
+### End-to-end flow
+
+The full sequence — `initialize` → `newSession` → `connect` for streamed
+updates → `prompt` → answer a permission request → await the stop reason →
+`cancel` — mirrors the daemon-bridge mode above and is runnable as-is at
+[`packages/sdk/examples/09-acp-bridge.ts`](https://github.com/kortix-ai/suna/blob/main/packages/sdk/examples/09-acp-bridge.ts):
+
+```ts
+await client.initialize({ protocolVersion: 1, clientCapabilities: {} });
+const session = await client.newSession({ cwd: '/workspace' });
+
+const events: AcpStreamEvent[] = [];
+const handle = client.connect({ onEvent: (event) => events.push(event) });
+
+const promptPromise = client.prompt(session.sessionId, [{ type: 'text', text: 'work' }]);
+
+// … wait for a `session/request_permission` event, then:
+await client.respond(permissionRequestId, {
+  outcome: { outcome: 'selected', optionId: 'allow_once' },
+});
+
+const { stopReason } = await promptPromise; // 'end_turn' | 'cancelled' | …
+
+await client.cancel(session.sessionId); // mid-turn abort, if needed
+handle.close();
+```
+
+## `AcpSession` [#acpsession]
+
+`AcpSession` is a framework-free store built on `AcpClient`: it owns
+bootstrap (`initialize` → `session/new`/`session/load`), the live stream,
+envelope batching, and optimistic send/respond/cancel echoes, and exposes a
+single subscribable snapshot. `useSession` and `useAcpSession` are React
+bindings over this store — reach for it directly only outside React (a CLI,
+a server, a non-React host).
+
+The SDK's `runtimeSessionId` option (and `AcpSessionSnapshot.acpSessionId`
+below) holds the **ACP session id** — not the sandbox **runtime id**. See
+[Session identity](/docs/reference/session-runtime#session-identity) for how
+the Kortix session id, runtime id, and ACP session id stay distinct.
+
+```ts
+import { createAcpSession } from '@kortix/sdk/acp';
+
+const session = createAcpSession({
+  endpoint, // session-scoped ACP endpoint
+  acpSessionId: null, // resume an existing ACP session, or omit/null to mint one
+  cwd: '/workspace', // default '/workspace'
+  protocolVersion: 1, // default 1
+});
+
+const unsubscribe = session.subscribe(() => {
+  const snapshot = session.getSnapshot();
+  // render snapshot.chatItems, snapshot.pendingPrompts, …
+});
+
+session.connect();
+await session.send([{ type: 'text', text: 'Refactor the auth module' }]);
+```
+
+Key methods: `connect()` / `close()` (stream lifecycle), `subscribe(listener)`
+/ `getSnapshot()` (the `useSyncExternalStore`-shaped pair the React hooks
+wrap), `send(prompt)`, `cancel()`, `respondPermission(id, optionId?)`,
+`respondQuestion(id, content)`, `rejectQuestion(id)`, and
+`setConfigOption(configId, value)`.
+
+The snapshot (`AcpSessionSnapshot`) carries everything a UI needs to render
+one session:
+
+```ts
+type AcpSessionSnapshot = {
+  envelopes: readonly AcpStoredEnvelope[]; // the raw, ordered envelope log
+  chatItems: readonly AcpChatItem[]; // projected chat-ready items
+  pendingPrompts: AcpPendingPrompts; // open permission/question requests
+  usage: AcpUsageProjection | null; // token/cost totals
+  turnState: AcpTurnState; // busy + pending prompt ids
+  connection: AcpConnectionState; // 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed' | 'failed'
+  ready: boolean;
+  busy: boolean;
+  error: AcpSessionError | null;
+  acpSessionId: string | null;
+  configOptions: AcpSessionConfigOption[];
+  capabilities: Record<string, unknown>; // agent capabilities from initialize()
+  agentInfo: Record<string, unknown> | null;
+  authMethods: Array<Record<string, unknown>>;
+};
+```
+
+## Projections [#projections]
+
+`envelopes` — the raw, ordered ACP JSON-RPC log — is the source of truth.
+Everything else is a pure projection over it, so any host can derive exactly
+the view it needs from the same log:
+
+- **`projectAcpChatItems(rows)`** — the envelope log folded into
+  `AcpChatItem[]`, the shape chat UIs render (`AcpSession.chatItems` is this,
+  kept incrementally up to date).
+- **`projectAcpUsage(rows)`**, **`projectAcpTurnState(rows)`**,
+  **`projectAcpPendingPrompts(rows)`** — token/cost totals, turn busy state,
+  and open permission/question requests, each derived the same way.
+- **`acpTranscriptMarkdown(rows)`** / **`acpTranscriptHtml(rows)`** — a
+  human-readable export, one section per chat item.
+- **`acpTranscriptJsonl(rows)`** — one JSON envelope per line. **Lossless** —
+  the only export format that round-trips the full envelope log, useful for
+  archival or replay.
+
+```ts
+import { projectAcpChatItems, acpTranscriptJsonl } from '@kortix/sdk';
+
+const chatItems = projectAcpChatItems(session.getSnapshot().envelopes);
+const archive = acpTranscriptJsonl(session.getSnapshot().envelopes);
+```
+
+<Callout type="info" title="Deprecated: OpenCode-wire projections">
+  `formatTranscript`, `MessageWithParts`, and `classifyTurn` are the older OpenCode-wire projection
+  stack — kept working for back-compat (session-list previews, `?oc` deep-links, `apps/mobile`) but
+  superseded by the ACP projections on this page. `narrowChatEvent`, from the older event-stream
+  layer, is no longer exported by the SDK at all — treat any reference to it as stale. New code
+  should build on `AcpClient`, `AcpSession`, and the `projectAcp*`/`acpTranscript*` functions
+  above instead.
+</Callout>

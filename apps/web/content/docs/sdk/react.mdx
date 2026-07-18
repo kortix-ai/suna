@@ -41,6 +41,15 @@ That's the whole contract. No event provider to mount, no health poller, no
 "server store" to switch, no sandbox id, no canonical-session resolution —
 `useSession` owns all of it internally.
 
+`useSession` is the batteries-included binding — most chat UIs never need
+anything below it. The underlying pieces are exported too, for hosts that
+want just one of them: `useAcpSession({ projectId, sessionId,
+runtimeSessionId? })` for the raw `AcpSession` store binding without the
+`/start` lifecycle, `useModelPicker({ projectId, agentName })` for the
+harness-aware model picker (see [below](#harness-aware-model-pickers)), and
+`usePermissionPolicy(projectId)` for the persistent, deny-by-default project
+permission policy.
+
 ## `useSession(projectId, sessionId, options?)`
 
 The single hook for an open session. Internally it drives `POST /start` (the
@@ -57,6 +66,11 @@ Call it **once per session view** (like a provider) — it owns the SSE subscrip
 and the `/start` poll for that `(projectId, sessionId)`.
 
 ### Returns
+
+`s.acp` is the same snapshot shape [`AcpSession`](/docs/sdk/acp#acpsession)
+exposes framework-free — see [ACP](/docs/sdk/acp) for what's inside
+`acp.envelopes` and the projections (`projectAcpChatItems` and friends) that
+derive from it.
 
 | field                                | type                                                    | what                                                                                                                      |
 | ------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -334,8 +348,8 @@ global default from the server the first time it resolves.
 ## Lower-level hooks (what `useSession` composes)
 
 <Callout type="warn">
-  **Internal plumbing.** These are the pieces `useSession` wraps — the SSE provider, message sync,
-  native runtime readers, and the runtime-session resolver. A chat-focused host uses `useSession` and
+  **Internal plumbing.** These are the pieces `useSession` wraps — direct ACP transport, native
+  runtime readers, and the runtime-session resolver. A chat-focused host uses `useSession` and
   never touches them. They stay exported for hosts that build **beyond chat** (a full IDE — file
   tree, terminal, git); if you're just rendering a
   conversation, reach for `useSession`.
@@ -343,9 +357,8 @@ global default from the server the first time it resolves.
 
 | hook                                                                                      | composed role                                                                                                                                                                        |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `useSessionSync(sessionId)`                                                               | fetch + live-merge the thread off the sync store                                                                                                                                     |
+| `useAcpSession({ projectId, sessionId, runtimeSessionId })`                               | own the ACP conversation transport directly — bootstrap, live stream, envelope batching, optimistic send/respond/cancel echoes                                                      |
 | `useExecuteRuntimeCommand()`                                                              | run a slash-command                                                                                                                                                                  |
-| `RuntimeEventStreamProvider` / `useRuntimeEventStream()`                                  | open the SSE stream → the stores                                                                                                                                                     |
 | `useCanonicalRuntimeSession({ projectId, sessionId, pinFromStart })`                      | resolve the runtime session id                                                                                                                                                       |
 | `useRuntimePendingStore()`                                                                | the live questions/permissions store                                                                                                                                                 |
 | `useRuntimeReconnect()`                                                                   | the independent liveness probe that detects a mid-session runtime death the SSE heartbeat can't see — polls `getSessionHealth`/`isRuntimeReady` and writes into the connection store |

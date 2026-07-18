@@ -7,6 +7,8 @@
     "self-hosting-architecture",
     "change-requests",
     "session-runtime",
+    "harnesses",
+    "acp-bridge",
     "secrets",
     "triggers",
     "sandbox-image",

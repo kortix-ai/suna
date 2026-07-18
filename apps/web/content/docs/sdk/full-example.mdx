@@ -12,7 +12,7 @@ page.
 ## The complete script
 
 ```ts
-import { ApiError, createKortix, narrowChatEvent } from '@kortix/sdk';
+import { ApiError, createKortix } from '@kortix/sdk';
 
 async function main() {
   // 1. One client, one auth seam. getToken returns your API key
@@ -37,35 +37,29 @@ async function main() {
   //    sandbox. Each ensureReady() call is ONE bounded long-poll — on a
   //    cold boot it throws a typed RUNTIME_UNAVAILABLE ApiError while the
   //    sandbox is still coming up, so retry until it resolves.
-  const { runtimeSessionId } = await retryUntilReady(() => session.ensureReady());
+  await retryUntilReady(() => session.ensureReady());
 
   // 5. Connect the event stream BEFORE sending, so no early events are
-  //    missed. narrowChatEvent() collapses the wire events into a small
-  //    typed union you can switch over.
-  let resolveIdle!: () => void;
-  const idle = new Promise<void>((resolve) => (resolveIdle = resolve));
-
+  //    missed. Every event is an ACP envelope ({ id, envelope }) — the
+  //    canonical shape session.stream() delivers. `session/update`
+  //    notifications carry incremental agent output.
   const stream = await session.stream({
-    onEvent: (event) => {
-      const e = narrowChatEvent(event);
-      if (!e) return;
-      if (e.type === 'message.part.updated') process.stdout.write('.');
-      if (e.type === 'session.error') console.error('\nerror:', e.error);
-      if (e.type === 'session.idle' && e.sessionID === runtimeSessionId) {
-        resolveIdle(); // the turn is finished
-      }
+    onEvent: ({ envelope }) => {
+      if (!('method' in envelope) || envelope.method !== 'session/update') return;
+      const update = (envelope.params as any)?.update;
+      if (update?.content?.type === 'text') process.stdout.write('.');
     },
+    onError: (error) => console.error('\n[ACP stream error]', error),
   });
 
   // 6. Send through ACP. Model and agent selection come from the selected
-  //    runtime profile and its native config.
+  //    runtime profile and its native config. session.send() resolves with
+  //    { stopReason } once the turn ends — no separate "idle" event to wait
+  //    for, unlike the older OpenCode-wire stream.
   await session.send('What files are in this repo?');
-
-  // 7. Wait for the turn to finish — the session.idle event, not a sleep.
-  await idle;
   stream.close();
 
-  // 8. Render the compact server-side transcript.
+  // 7. Render the compact server-side transcript.
   const transcript = await session.transcript();
   for (const message of transcript.messages ?? []) {
     if (message.text) console.log(`\n[${message.role}] ${message.text}`);
@@ -110,9 +104,9 @@ KORTIX_API_KEY=kortix_pat_... npx tsx full-example.ts
 | 1    | One client, one token, one auth seam                        | [Authentication](/docs/sdk/auth)   |
 | 2–3  | The platform REST surface: projects and sessions            | [The client](/docs/sdk/the-client) |
 | 4    | Session readiness — the bridge between platform and runtime | [Sessions](/docs/sdk/sessions)     |
-| 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`          | [Streaming](/docs/sdk/streaming)   |
-| 6    | ACP prompt delivery to the selected runtime                 | [Sessions](/docs/sdk/sessions)     |
-| 8    | Compact server-side transcript export                      | [Sessions](/docs/sdk/sessions)     |
+| 5    | The live ACP envelope stream (`session.stream()`)           | [Streaming](/docs/sdk/streaming)   |
+| 6    | ACP prompt delivery — `session.send()` resolves when the turn ends | [Sessions](/docs/sdk/sessions) |
+| 7    | Compact server-side transcript export                      | [Sessions](/docs/sdk/sessions)     |
 
 ## Going further from here
 
@@ -153,3 +147,10 @@ In-repo, the package ships **runnable examples** covering each of these —
 server wrapper → transcript rendering → files & secrets → CDN `<script>` tag),
 and `packages/sdk/playground/` is a 35-script live-stack test suite you can run
 against your own deployment with `bun run playground/run-all.ts`.
+
+Everything above goes through `createKortix(...).session(...)`, which resolves
+the ACP bridge URL and auth for you. Talking to a bare sandbox daemon's ACP
+bridge directly with `AcpClient` — e.g. from inside the platform API itself,
+or a test harness — is a different, lower-level shape; see
+[`packages/sdk/examples/09-acp-bridge.ts`](https://github.com/kortix-ai/suna/blob/main/packages/sdk/examples/09-acp-bridge.ts)
+for the runnable raw-bridge variant.

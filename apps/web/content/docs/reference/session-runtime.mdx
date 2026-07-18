@@ -35,9 +35,21 @@ An open dashboard, preview, SSE connection, or health poll does **not** create a
 - Creation path depends on the backend: GitHub repos use the GitHub API (read the base tip, create the branch ref); generic git backends push `refs/heads/<base>:refs/heads/<session-id>`.
 - Triggers create their session branch the same way an interactive session does. Nothing writes the default branch directly except a change-request merge.
 
+## Session identity
+
+Three identifiers stay distinct for every running session:
+
+- the **Kortix session id** — durable, survives sandbox replacement;
+- the **runtime id** — the current sandbox allocation, replaced on restart;
+- the **ACP session id** — the harness-native session returned by ACP
+  `session/new` (or selected by `session/load`), scoped to one harness process.
+
+The envelope log keys on all three, which is how a session's history stays
+continuous across sandbox restarts and harness process replacements.
+
 ## What survives
 
-An in-place stop/resume preserves the same provider sandbox identity and its filesystem while dropping RAM and processes; the Kortix entrypoint and OpenCode restart on resume. E2B uses a filesystem-only pause (`keepMemory: false`), and Daytona and Platinum expose the same Kortix lifecycle contract through their native stop/resume primitives. Permanent deletion removes the provider sandbox.
+An in-place stop/resume preserves the same provider sandbox identity and its filesystem while dropping RAM and processes; the Kortix entrypoint and the ACP harness process restart on resume. E2B uses a filesystem-only pause (`keepMemory: false`), and Daytona and Platinum expose the same Kortix lifecycle contract through their native stop/resume primitives. Permanent deletion removes the provider sandbox.
 
 The session branch is the only durable, provider-independent record. Commit and push in small chunks so work survives provider deletion or recovery, and merge a [change request](/docs/reference/change-requests) to land it on the default branch.
 
@@ -107,7 +119,19 @@ The `kortix-agent` binary runs as PID 1's child and fronts the session runtime o
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/proxy/{port}/*` | Reverse-proxy to a port inside the sandbox (its own port is blocked). |
-| `POST /acp/:serverId?agent=<harness>` | ACP JSON-RPC bridge to the selected harness. |
+| `GET /acp/` | List live ACP servers; full contract in [ACP bridge](/docs/reference/acp-bridge). |
+| `POST /acp/:serverId` | One JSON-RPC envelope in; the first `POST` for a new `serverId` must carry `?agent=<harness>`; full contract in [ACP bridge](/docs/reference/acp-bridge). |
+| `GET /acp/:serverId` | SSE stream of agent-originated envelopes, with `Last-Event-ID` replay; full contract in [ACP bridge](/docs/reference/acp-bridge). |
+| `DELETE /acp/:serverId` | Terminate the harness process; idempotent; full contract in [ACP bridge](/docs/reference/acp-bridge). |
 | `*` | Compatibility catch-all reverse-proxy to the runtime daemon (`503` while it boots). |
 
-`/kortix/refresh` is how the dashboard applies an out-of-band change (e.g. a manifest edit committed from a parallel session) without re-provisioning the sandbox.
+`/kortix/refresh` is how the dashboard applies an out-of-band change (e.g. a manifest edit committed from a parallel session) without re-provisioning the sandbox. The `X-Kortix-User-Context` gate described above applies to all four `/acp/*` routes.
+
+## Durable transcript
+
+The source of truth for a session's conversation is an append-only ordered log
+of raw ACP envelopes, stored by the platform per session with direction
+(client-to-agent or agent-to-client), stream sequence, and timestamps. The
+sandbox's own SSE buffer is bounded and disposable; history survives sandbox
+replacement because the platform persists every envelope. Markdown, HTML, and
+JSONL transcripts are projections of this log — JSONL is the lossless export.

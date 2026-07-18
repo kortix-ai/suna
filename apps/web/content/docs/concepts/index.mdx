@@ -15,8 +15,10 @@ default branch only via a merged **[change request](/docs/concepts/change-reques
   imported GitHub, pinned to one branch) plus its manifest.
 - **[Sessions](/docs/concepts/sessions)** — isolated sandbox VMs, each on
   its own branch. Many run at once without interfering.
-- **[Agents](/docs/concepts/agents)** — OpenCode, governed by the manifest's
-  `agents:` map and implemented through `.kortix/opencode/`.
+- **[Agents](/docs/concepts/agents)** — logical entries in kortix.yaml that
+  route to an [ACP harness](/docs/reference/harnesses) runtime (OpenCode by
+  default; Claude Code, Codex, and Pi selectable behind an experimental flag),
+  governed by the manifest's `agents:` map.
 - **[Change requests](/docs/concepts/change-requests)** — the git merge layer
   that lands a branch on the default branch.
 - **[Secrets](/docs/concepts/secrets)** — per-project encrypted values, given to
@@ -39,8 +41,8 @@ default branch only via a merged **[change request](/docs/concepts/change-reques
     Kortix runtime layer, built by the configured sandbox provider.
    Unchanged projects reuse the cached image.
 3. The sandbox provider boots the VM. The `kortix-agent` daemon clones the repo to
-   `/workspace`, fetches git credentials just-in-time, and launches OpenCode.
-   Status → `running`.
+   `/workspace`, fetches git credentials just-in-time, and launches the agent's
+   selected ACP harness process. Status → `running`.
 4. The agent works with [secrets](/docs/concepts/secrets) as env vars,
    committing and pushing to the session branch.
 5. It opens a change request; you review and merge — the only path to the
@@ -65,9 +67,11 @@ a declared, enabled agent. See [Kortix vs runtime config](/docs/reference/config
 Drive any of it from a terminal with the [CLI](/docs/reference/cli) — it controls
 the cloud, it doesn't run the agent locally.
 
-<Callout type="info" title="Legacy kortix.toml">
-Existing projects may still run on `kortix_version: 1` (`kortix.toml`,
-`[[agents]]` as an array of tables, no required `default_agent`). Both formats
-are read by the platform; migrate in-app via "Upgrade to kortix.yaml." See
-[Projects](/docs/concepts/projects).
+<Callout type="info" title="Legacy kortix.toml and kortix.yaml v2">
+`kortix_version: 3` is current. Existing projects may still run on
+`kortix_version: 1` (`kortix.toml`, `[[agents]]` as an array of tables, no
+required `default_agent`) or the legacy `kortix_version: 2` shape — both are
+read by the platform indefinitely; migrate in-app via "Upgrade to
+kortix.yaml." See the [v2 → v3 migration](/docs/reference/manifest#v2-v3-migration)
+flow and [Projects](/docs/concepts/projects).
 </Callout>

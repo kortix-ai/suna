@@ -103,6 +103,7 @@ await s.send('Add a README');
 For a live UI, don't drive the runtime by hand — **one hook runs a session**:
 
 ```tsx
+import { projectAcpChatItems } from '@kortix/sdk';
 import { useSession } from '@kortix/sdk/react';
 
 function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
@@ -110,10 +111,14 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
   if (s.phase !== 'ready') return <Booting stage={s.stage} onRetry={s.retry} />;
   return (
     <>
-      {s.messages.map(({ info, parts }) => (
-        <Message key={info.id} info={info} parts={parts} />
+      {projectAcpChatItems(s.acp.envelopes).map((item, index) => (
+        <Message key={index} item={item} />
       ))}
-      <Composer busy={s.isBusy} onSend={(t) => s.send(t)} onStop={s.cancel} />
+      <Composer
+        busy={s.acp.busy}
+        onSend={(text) => s.acp.send([{ type: 'text', text }])}
+        onStop={s.acp.cancel}
+      />
     </>
   );
 }
@@ -127,7 +132,7 @@ canonical id — no provider to mount, no poller, no server store. See
 
 - [Full example](/docs/sdk/full-example) — zero to a streaming agent reply in one file.
 - [The client](/docs/sdk/the-client) — the full facade surface.
-- [Sessions](/docs/sdk/sessions) — lifecycle, runtime health, previews, and the opencode runtime.
+- [Sessions](/docs/sdk/sessions) — lifecycle, runtime health, previews, and the ACP agent transport.
 - [Streaming](/docs/sdk/streaming) — live events, the readiness handshake, and runtime support.
 - [React hooks](/docs/sdk/react) — live, reactive data for your UI.
 - [Distribution](/docs/sdk/distribution) — npm, CDN bundles, and the stability tiers.
