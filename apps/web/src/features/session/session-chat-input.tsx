@@ -716,8 +716,10 @@ function AttachmentPreview({
             </div>
             {/* Remove button */}
             <button
+              type="button"
               onClick={() => onRemove(i)}
               className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
+              aria-label={`Remove ${name}`}
             >
               <X className="h-3 w-3" />
             </button>
@@ -2297,6 +2299,7 @@ function SessionChatInputImpl({
                   }
                 }}
                 placeholder=""
+                aria-label="Message input"
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
@@ -2328,6 +2331,7 @@ function SessionChatInputImpl({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                    aria-label="Attach files"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>

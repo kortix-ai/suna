@@ -494,20 +494,22 @@ function HighlightMentions({
     <>
       {segments.map((seg, i) =>
         seg.type === 'file' && onFileClick ? (
-          <span
+          <button
             key={i}
-            className={mentionClass}
+            type="button"
+            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
             onClick={(e) => {
               e.stopPropagation();
               onFileClick(seg.text.replace(/^@/, ''));
             }}
           >
             {seg.text}
-          </span>
+          </button>
         ) : seg.type === 'session' ? (
-          <span
+          <button
             key={i}
-            className={mentionClass}
+            type="button"
+            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
             onClick={(e) => {
               e.stopPropagation();
               const raw = seg.text.replace(/^@/, '');
@@ -533,7 +535,7 @@ function HighlightMentions({
             }}
           >
             {seg.text}
-          </span>
+          </button>
         ) : (
           <span
             key={i}
@@ -1603,7 +1605,17 @@ function UserMessageRow({
           'bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border',
           canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
         )}
+        role={canExpand ? 'button' : undefined}
+        tabIndex={canExpand ? 0 : undefined}
+        aria-expanded={canExpand ? expanded : undefined}
         onClick={() => canExpand && setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (!canExpand) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
       >
         {/* Attachment thumbnails (images/PDFs) */}
         {attachments.length > 0 && (
@@ -1674,20 +1686,22 @@ function UserMessageRow({
                   const mentionClass =
                     'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
                   return seg.type === 'file' ? (
-                    <span
+                    <button
                       key={i}
-                      className={mentionClass}
+                      type="button"
+                      className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
                       onClick={(e) => {
                         e.stopPropagation();
                         openFileInComputer(seg.text.replace(/^@/, ''));
                       }}
                     >
                       {seg.text}
-                    </span>
+                    </button>
                   ) : seg.type === 'session' ? (
-                    <span
+                    <button
                       key={i}
-                      className={mentionClass}
+                      type="button"
+                      className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
                       onClick={(e) => {
                         e.stopPropagation();
                         const raw = seg.text.replace(/^@/, '');
@@ -1713,7 +1727,7 @@ function UserMessageRow({
                       }}
                     >
                       {seg.text}
-                    </span>
+                    </button>
                   ) : (
                     <span
                       key={i}

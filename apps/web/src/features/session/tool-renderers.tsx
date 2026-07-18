@@ -406,6 +406,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
             <button
               type="button"
               onClick={handleRefresh}
+              aria-label="Refresh"
               className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground rounded p-1 transition-colors"
             >
               <RefreshCw className={cn('h-3 w-3', isLoading && 'animate-spin')} />
@@ -419,6 +420,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
               type="button"
               disabled={!navigationEnabled || !previewUrl}
               onClick={openInBrowser}
+              aria-label="Open private preview"
               className={cn(
                 'text-muted-foreground/50 rounded p-1 transition-colors',
                 navigationEnabled && previewUrl
@@ -1078,11 +1080,24 @@ export function BasicTool({
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
                 title={trigger.subtitle}
+                role={onSubtitleClick ? 'button' : undefined}
+                tabIndex={onSubtitleClick ? 0 : undefined}
                 onClick={
                   onSubtitleClick
                     ? (e) => {
                         e.stopPropagation();
                         onSubtitleClick();
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  onSubtitleClick
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onSubtitleClick();
+                        }
                       }
                     : undefined
                 }
@@ -1184,7 +1199,19 @@ export function BasicTool({
                         'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                     )}
                     title={trigger.subtitle}
+                    role={onSubtitleClick ? 'button' : undefined}
+                    tabIndex={onSubtitleClick ? 0 : undefined}
                     onClick={onSubtitleClick}
+                    onKeyDown={
+                      onSubtitleClick
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onSubtitleClick();
+                            }
+                          }
+                        : undefined
+                    }
                   >
                     {trigger.subtitle}
                     {trigger.args && trigger.args.length > 0
@@ -3053,9 +3080,18 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   <span
                     className="text-foreground hover:text-primary flex-shrink-0 cursor-pointer truncate font-mono text-xs"
                     title={relPath}
+                    role="button"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (relPath) openPreview(relPath);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (relPath) openPreview(relPath);
+                      }
                     }}
                   >
                     {name}
@@ -3337,7 +3373,19 @@ function ToolListRow({
             ? 'hover:bg-muted/50 cursor-pointer'
             : undefined,
       )}
+      role={onClick && !disabled ? 'button' : undefined}
+      tabIndex={onClick && !disabled ? 0 : undefined}
       onClick={onClick && !disabled ? onClick : undefined}
+      onKeyDown={
+        onClick && !disabled
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       title={title}
     >
       {chevron && (
@@ -3357,11 +3405,24 @@ function ToolListRow({
             'text-foreground flex-shrink-0 font-mono font-medium whitespace-nowrap',
             onNameClick && !disabled && 'hover:text-primary cursor-pointer transition-colors',
           )}
+          role={onNameClick && !disabled ? 'button' : undefined}
+          tabIndex={onNameClick && !disabled ? 0 : undefined}
           onClick={
             onNameClick && !disabled
               ? (e) => {
                   e.stopPropagation();
                   onNameClick();
+                }
+              : undefined
+          }
+          onKeyDown={
+            onNameClick && !disabled
+              ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onNameClick();
+                  }
                 }
               : undefined
           }
@@ -5219,6 +5280,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                 <button
                   type="button"
                   onClick={preview.handleRefresh}
+                  aria-label="Refresh"
                   className="text-muted-foreground/60 hover:bg-muted hover:text-foreground rounded-lg p-1.5 transition-colors"
                 >
                   <RefreshCw className={cn('size-3.5', preview.isLoading && 'animate-spin')} />
@@ -5232,6 +5294,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                   type="button"
                   disabled={!navigationEnabled || !preview.previewUrl}
                   onClick={preview.openInBrowser}
+                  aria-label="Open private preview"
                   className={cn(
                     'text-muted-foreground/60 rounded-lg p-1.5 transition-colors',
                     navigationEnabled && preview.previewUrl
@@ -6727,6 +6790,8 @@ function AgentMessageTool({ part }: ToolProps) {
       <div className={cn('w-full overflow-hidden text-xs', hasSession && 'cursor-pointer')}>
         <div
           className="p-3"
+          role={hasSession || isLong ? 'button' : undefined}
+          tabIndex={hasSession || isLong ? 0 : undefined}
           onClick={() => {
             if (hasSession) {
               setModalOpen(true);
@@ -6734,6 +6799,20 @@ function AgentMessageTool({ part }: ToolProps) {
             }
             if (isLong) setExpanded(!expanded);
           }}
+          onKeyDown={
+            hasSession || isLong
+              ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (hasSession) {
+                      setModalOpen(true);
+                      return;
+                    }
+                    if (isLong) setExpanded(!expanded);
+                  }
+                }
+              : undefined
+          }
         >
           {/* Row 1: icon + task ID + status */}
           <div className="flex items-center gap-2.5">
@@ -7222,6 +7301,7 @@ function SkillTool({ part, forceOpen }: ToolProps) {
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
+                aria-label="Close"
                 className={cn(
                   'flex size-6 items-center justify-center rounded-md',
                   'text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors',
