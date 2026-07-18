@@ -2,6 +2,8 @@ import {
   AUTO_MODEL_ID,
   type Catalog,
   type CatalogModel,
+  getManagedModel,
+  pricingRefLookupCandidates,
 } from "@kortix/llm-catalog";
 import { resolveCatalogUpstream } from './provider-registry';
 import { codexModelIds } from "./codex-models";
@@ -106,6 +108,70 @@ export function capabilitiesForModel(
   const model = provider?.models.find((m) => m.id === modelId);
   const caps = capabilitiesOf(model);
   return { reasoning: !!caps.reasoning, temperature: !!caps.temperature };
+}
+
+// The full catalog capability record (reasoning_options, temperature,
+// limit.output, ...) for a gateway WIRE model id — the lookup
+// `@kortix/llm-catalog`'s generation-controls capability functions
+// (`generationControlCapabilities`/`clampGenerationConfig`) need but
+// `capabilitiesForModel` above doesn't carry (it only ever returned the two
+// booleans transports needed). Single source of truth for "what model does
+// this wire id actually resolve to, capability-wise" — used by the
+// generation-controls UI's server-side clamp (routing/resolve-route.ts) so
+// a configured per-model default is never sent to a model that can't honor
+// it, whether it's a BYOK catalog entry, a `codex/<id>`, or a managed slug.
+export function catalogModelForWireModel(
+  wireModel: string,
+  catalog: Catalog = runtimeModelCatalog.snapshot(),
+): CatalogModel | undefined {
+  if (wireModel.startsWith('codex/')) {
+    return modelsById(catalog).get(`openai/${wireModel.slice('codex/'.length)}`);
+  }
+  const slash = wireModel.indexOf('/');
+  if (slash > 0) {
+    const providerId = wireModel.slice(0, slash);
+    const modelId = wireModel.slice(slash + 1);
+    return catalog.providers
+      .find((provider) => provider.id === providerId)
+      ?.models.find((model) => model.id === modelId);
+  }
+  const managed = getManagedModel(wireModel);
+  if (managed) {
+    // Managed slugs are curated and don't always exist on models.dev under
+    // their own id, but `pricingRef` (used for live pricing lookup) usually
+    // IS a real models.dev id — reuse it here so e.g. claude-opus-4.8 gets
+    // Claude's real reasoning_options instead of the generic fallback.
+    // Try dot/dash id variants (see `pricingRefLookupCandidates`) so a
+    // dotted-vs-dashed slip in `pricingRef` degrades gracefully instead of
+    // silently losing real capability data.
+    const catalogById = modelsById(catalog);
+    const byPricingRef = pricingRefLookupCandidates(managed.pricingRef)
+      .map((ref) => catalogById.get(ref))
+      .find((entry): entry is CatalogModel => entry !== undefined);
+    if (byPricingRef) return byPricingRef;
+    // No models.dev entry to borrow from — synthesize a minimal capability
+    // record from what managedModels() below already asserts about every
+    // managed model (reasoning/tool_call/temperature all true).
+    return {
+      id: managed.id,
+      name: managed.name,
+      reasoning: true,
+      tool_call: true,
+      temperature: true,
+      limit: managed.limit,
+    };
+  }
+  if (wireModel === AUTO_MODEL_ID || wireModel === `kortix/${AUTO_MODEL_ID}`) {
+    return {
+      id: AUTO_MODEL_ID,
+      name: 'Auto',
+      reasoning: false,
+      tool_call: true,
+      temperature: true,
+      limit: { context: 1_000_000, output: 128_000 },
+    };
+  }
+  return undefined;
 }
 
 export function managedModels(): Record<string, GatewayModel> {

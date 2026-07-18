@@ -190,4 +190,29 @@ describe('gateway routing editor helpers', () => {
     expect(routingSource).toContain("queryKey: ['model-defaults', projectId]");
     expect(routingSource).toContain("queryKey: ['project-model-picker', projectId]");
   });
+
+  test('renders a capability-gated generation-controls panel for the resolved primary model', () => {
+    expect(routingSource).toContain(
+      "from './generation-controls'",
+    );
+    expect(routingSource).toContain('<GenerationControlsPanel');
+    expect(routingSource).toContain('draft.modelGenerationConfig?.[primaryModel]');
+  });
+
+  test('modelGenerationConfig is part of the dirty check and the hydration signature', () => {
+    expect(routingSource).toContain('modelGenerationConfig: policy.modelGenerationConfig ?? {}');
+    const policy = {
+      defaultModel: 'codex/gpt-5.6-sol',
+      visionModel: null,
+      defaultFallback: null,
+      rules: [],
+      modelGenerationConfig: {},
+    };
+    expect(
+      editablePolicySignature({
+        ...policy,
+        modelGenerationConfig: { 'codex/gpt-5.6-sol': { temperature: 0.5 } },
+      }),
+    ).not.toBe(editablePolicySignature(policy));
+  });
 });

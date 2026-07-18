@@ -33,6 +33,13 @@
     {
       "idx": 4,
       "version": "7",
+      "when": 1784393153201,
+      "tag": "20260718164553_add_project_model_generation_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
       "when": 1784397972005,
       "tag": "20260718180612_acp_session_envelopes",
       "breakpoints": true

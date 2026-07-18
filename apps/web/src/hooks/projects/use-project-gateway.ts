@@ -3,6 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  type GatewayModelGenerationConfig,
+  type GatewayPlaygroundResponse,
+  type SetGatewayBudgetInput,
   createGatewayKey,
   deleteGatewayBudget,
   getGatewayBreakdown,
@@ -17,8 +20,6 @@ import {
   revokeGatewayKey,
   runGatewayPlayground,
   setGatewayBudget,
-  type GatewayPlaygroundResponse,
-  type SetGatewayBudgetInput,
 } from '@/lib/projects-gateway-client';
 
 export function useGatewayOverview(projectId: string | undefined, days = 30) {
@@ -137,12 +138,15 @@ export interface RunGatewayPlaygroundInput {
   prompt: string;
   models: string[];
   system?: string;
+  /** Per-model generation-parameter overrides for this run only — see
+   *  `runGatewayPlayground`'s doc comment. */
+  generationConfig?: Record<string, GatewayModelGenerationConfig>;
 }
 
 /** Run one prompt across up to 6 models side by side — no cache, always a fresh run. */
 export function useGatewayPlayground(projectId: string | undefined) {
   return useMutation<GatewayPlaygroundResponse, Error, RunGatewayPlaygroundInput>({
-    mutationFn: ({ prompt, models, system }) =>
-      runGatewayPlayground(projectId!, prompt, models, system),
+    mutationFn: ({ prompt, models, system, generationConfig }) =>
+      runGatewayPlayground(projectId!, prompt, models, system, generationConfig),
   });
 }

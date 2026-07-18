@@ -636,6 +636,26 @@ export interface ProjectLlmRoutingRule {
   fallbackOn: 'transient' | 'any-error';
 }
 
+// Per-model generation-parameter defaults a project configures (reasoning
+// effort, temperature, top_p, max output tokens, ...). Deliberately a single
+// generic blob keyed by wire model id rather than one column per param —
+// adding a new control later (e.g. a penalty knob) needs zero migration,
+// only a shape change to `@kortix/llm-catalog`'s `GenerationConfig`. Values
+// are clamped against the model's live catalog capabilities at BOTH the
+// write path (apps/api's routing-policy PUT handler) and the resolution-
+// layer injection path (routing/resolve-route.ts) — this column stores
+// whatever was clamped at write time, but is re-clamped on every read since
+// a model's capabilities (or the catalog itself) can change after the fact.
+export type ProjectModelGenerationConfig = Record<
+  string,
+  {
+    reasoningEffort?: string;
+    temperature?: number;
+    topP?: number;
+    maxOutputTokens?: number;
+  }
+>;
+
 // Project-owned gateway composition. A NULL default_fallback_models inherits
 // the operator policy while [] deliberately disables fallback for `auto`.
 // The project default model remains in account_model_preferences so every
@@ -650,6 +670,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     defaultFallbackModels: jsonb('default_fallback_models').$type<string[] | null>(),
     defaultFallbackOn: text('default_fallback_on'),
     rules: jsonb('rules').default([]).$type<ProjectLlmRoutingRule[]>().notNull(),
+    modelGenerationConfig: jsonb('model_generation_config')
+      .default({})
+      .$type<ProjectModelGenerationConfig>()
+      .notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -662,6 +686,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     check(
       'project_llm_routing_policies_rules_array_check',
       sql`jsonb_typeof(${table.rules}) = 'array'`,
+    ),
+    check(
+      'project_llm_routing_policies_gen_config_object_check',
+      sql`jsonb_typeof(${table.modelGenerationConfig}) = 'object'`,
     ),
   ],
 );

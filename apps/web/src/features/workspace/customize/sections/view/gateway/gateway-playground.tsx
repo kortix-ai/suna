@@ -8,11 +8,13 @@
  * is a single "running" state rather than per-model streaming.
  */
 
-import { AlertTriangle, Clock, Coins, Play, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Clock, Coins, Play, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
@@ -24,12 +26,16 @@ import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useGatewayPlayground } from '@/hooks/projects/use-project-gateway';
 import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
-import type { GatewayPlaygroundResult } from '@/lib/projects-gateway-client';
+import type {
+  GatewayModelGenerationConfig,
+  GatewayPlaygroundResult,
+} from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
 import { useProjectModels } from '@kortix/sdk/react';
 
 import { fmtUsd } from './_metrics';
 import { displayModel } from './_shared';
+import { GenerationControlsPanel } from './generation-controls';
 
 const MAX_MODELS = 6;
 
@@ -131,6 +137,13 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
   const [system, setSystem] = useState('');
   const [showSystem, setShowSystem] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  // Per-model generation-parameter overrides for this run only — never
+  // persisted (unlike the routing section's project-default config). Keyed
+  // by wire model id so removing/re-adding a model keeps its tuning.
+  const [generationConfig, setGenerationConfig] = useState<
+    Record<string, GatewayModelGenerationConfig>
+  >({});
+  const [tunedModel, setTunedModel] = useState<string | null>(null);
 
   const models = useMemo(
     () => catalogModels.filter((model) => modelKeyToWire(model) !== 'auto'),
@@ -145,7 +158,12 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
 
   const run = () => {
     playground.mutate(
-      { prompt: prompt.trim(), models: selected, system: system.trim() || undefined },
+      {
+        prompt: prompt.trim(),
+        models: selected,
+        system: system.trim() || undefined,
+        generationConfig,
+      },
       {
         onError: (error) =>
           errorToast(error instanceof Error ? error.message : 'Playground run failed'),
@@ -214,35 +232,86 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
             </p>
           ) : (
             <ul className="space-y-2">
-              {selected.map((wire, index) => (
-                <li
-                  key={`${wire}-${index}`}
-                  className="bg-popover flex items-center gap-2 rounded-md border px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <PlaygroundModelSelector
-                      value={wire}
-                      models={models}
-                      exclude={selected.filter((_, i) => i !== index)}
-                      disabled={playground.isPending}
-                      onChange={(next) => {
-                        if (!next) return;
-                        setSelected((current) => current.map((m, i) => (i === index ? next : m)));
-                      }}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Remove model"
-                    disabled={playground.isPending}
-                    onClick={() => setSelected((current) => current.filter((_, i) => i !== index))}
+              {selected.map((wire, index) => {
+                const tuned = generationConfig[wire];
+                const tunedCount = tuned ? Object.keys(tuned).length : 0;
+                const open = tunedModel === wire;
+                return (
+                  <li
+                    key={`${wire}-${index}`}
+                    className="bg-popover overflow-hidden rounded-md border"
                   >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </li>
-              ))}
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <PlaygroundModelSelector
+                          value={wire}
+                          models={models}
+                          exclude={selected.filter((_, i) => i !== index)}
+                          disabled={playground.isPending}
+                          onChange={(next) => {
+                            if (!next) return;
+                            setSelected((current) =>
+                              current.map((m, i) => (i === index ? next : m)),
+                            );
+                          }}
+                        />
+                      </div>
+                      <Hint label="Tune generation parameters for this model">
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant={open ? 'secondary' : 'ghost'}
+                          aria-label="Tune generation parameters"
+                          disabled={playground.isPending}
+                          onClick={() => setTunedModel(open ? null : wire)}
+                        >
+                          <SlidersHorizontal className="size-3.5" />
+                        </Button>
+                      </Hint>
+                      {tunedCount > 0 ? (
+                        <Badge variant="secondary" size="xs" className="shrink-0">
+                          {tunedCount}
+                        </Badge>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Remove model"
+                        disabled={playground.isPending}
+                        onClick={() => {
+                          setSelected((current) => current.filter((_, i) => i !== index));
+                          setGenerationConfig((current) => {
+                            if (!(wire in current)) return current;
+                            const { [wire]: _removed, ...rest } = current;
+                            return rest;
+                          });
+                          setTunedModel((current) => (current === wire ? null : current));
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                    <Disclosure variant="outline" open={open}>
+                      <DisclosureContent
+                        variant="outline"
+                        contentClassName="border-border border-t"
+                      >
+                        <div className="px-3 py-4">
+                          <GenerationControlsPanel
+                            model={wire}
+                            value={generationConfig[wire]}
+                            disabled={playground.isPending}
+                            onChange={(next) =>
+                              setGenerationConfig((current) => ({ ...current, [wire]: next }))
+                            }
+                          />
+                        </div>
+                      </DisclosureContent>
+                    </Disclosure>
+                  </li>
+                );
+              })}
             </ul>
           )}
 

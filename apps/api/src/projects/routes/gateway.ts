@@ -2,7 +2,9 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import { calculateCost, callUpstream, GatewayResolutionError, type AuthedPrincipal } from '@kortix/llm-gateway';
+import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
+import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
@@ -806,6 +808,12 @@ projectsApp.openapi(
               prompt: z.string().min(1).max(8000),
               models: z.array(z.string()).min(1).max(6),
               system: z.string().max(4000).optional(),
+              // Per-model generation-parameter overrides for THIS run only —
+              // never persisted. Same shape + same server-side capability
+              // clamp as the persisted routing-policy config (see
+              // clampGenerationConfig below); an unsupported/out-of-range
+              // field for a given model is silently dropped, not rejected.
+              generationConfig: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
             }),
           },
         },
@@ -829,6 +837,10 @@ projectsApp.openapi(
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
     const models: string[] = Array.isArray(body.models) ? body.models.slice(0, 6) : [];
     const system = typeof body.system === 'string' && body.system.trim() ? body.system : undefined;
+    const rawGenerationConfig =
+      body.generationConfig && typeof body.generationConfig === 'object'
+        ? (body.generationConfig as Record<string, unknown>)
+        : {};
     if (!prompt || models.length === 0) {
       return c.json({ error: 'prompt and models are required' }, 400);
     }
@@ -843,14 +855,27 @@ projectsApp.openapi(
     const results = await Promise.all(
       models.map(async (model) => {
         const requestId = crypto.randomUUID();
-        const request = {
+        // Same capability clamp the persisted routing-policy write path
+        // uses — a playground run must never send a param the resolved
+        // model can't honor either. Applied on top of the 512-token
+        // default so an explicit override can raise (or lower) it.
+        const clamped = clampGenerationConfig(
+          rawGenerationConfig[model] as GenerationConfig | undefined,
+          catalogModelForWireModel(model),
+        );
+        const request: Record<string, unknown> = {
           model,
           messages: [
             ...(system ? [{ role: 'system', content: system }] : []),
             { role: 'user', content: prompt },
           ],
           stream: false,
-          max_tokens: 512,
+          max_tokens: clamped.maxOutputTokens ?? 512,
+          ...(clamped.temperature !== undefined ? { temperature: clamped.temperature } : {}),
+          ...(clamped.topP !== undefined ? { top_p: clamped.topP } : {}),
+          ...(clamped.reasoningEffort !== undefined
+            ? { reasoning_effort: clamped.reasoningEffort }
+            : {}),
         };
         try {
           const candidates = await resolveCandidates(principal, model);
@@ -1041,6 +1066,19 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       visionModel: stored?.visionModel ?? null,
       defaultFallback: stored?.defaultFallback ?? null,
       rules: stored?.rules ?? [],
+      // Re-clamped on every READ too (not just trusted from what was stored) —
+      // the live catalog can change after a value was written (a model
+      // losing reasoning_options, temperature support flipping, ...), and
+      // the UI must never render a stale, now-invalid control value as if
+      // it were still honored. Entries that clamp to nothing are dropped.
+      modelGenerationConfig: Object.fromEntries(
+        Object.entries(stored?.modelGenerationConfig ?? {})
+          .map(([model, entry]) => [
+            model,
+            clampGenerationConfig(entry, catalogModelForWireModel(model)),
+          ] as const)
+          .filter(([, clamped]) => Object.keys(clamped).length > 0),
+      ),
     },
     effective: {
       defaultModel: effectiveDefault,
@@ -1128,11 +1166,25 @@ projectsApp.openapi(
         code: 'invalid_routing_policy',
       }, 400);
     }
+    // Clamp every configured entry against the model's LIVE catalog
+    // capabilities before it's ever persisted — never store a temperature
+    // for a temperature:false model, a reasoning effort outside the model's
+    // own reasoning_options, or a max-output-tokens above its limit.output.
+    // An entry that clamps to nothing (every field dropped) is dropped
+    // entirely rather than stored as an empty object.
+    const clampedGenerationConfig = Object.fromEntries(
+      Object.entries(policy.modelGenerationConfig)
+        .map(([model, entry]) => [
+          model,
+          clampGenerationConfig(entry, catalogModelForWireModel(model)),
+        ] as const)
+        .filter(([, clamped]) => Object.keys(clamped).length > 0),
+    );
     await setProjectRoutingPolicy({
       projectId,
       accountId: loaded.row.accountId,
       updatedBy: loaded.userId,
-      policy,
+      policy: { ...policy, modelGenerationConfig: clampedGenerationConfig },
     });
     invalidateAccountModelDefaults(loaded.row.accountId);
     return c.json(await routingPolicyDocument({
