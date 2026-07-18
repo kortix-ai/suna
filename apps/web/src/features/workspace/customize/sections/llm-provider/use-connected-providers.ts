@@ -4,7 +4,7 @@ import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
-import { isProviderAuthSatisfied } from '@kortix/llm-catalog';
+import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -61,11 +61,32 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     if (!kortix || !connectedIds.has('kortix')) return null;
     const models: LlmProviderModel[] = Object.entries(kortix.models ?? {})
       .filter(([id]) => MANAGED_MODEL_ID_SET.has(id))
-      .map(([id, m]) => ({
-        id,
-        name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
-        released: (m as { release_date?: string }).release_date ?? null,
-      }));
+      .map(([id, m]) => {
+        // Best-effort capability/limit passthrough for the "Models in depth"
+        // display (models-tab.tsx / catalog-tab.tsx) — the opencode provider
+        // snapshot mirrors these when it has them; `vision`/`limit` otherwise
+        // fall back to `@kortix/llm-catalog`'s curated managed-model table,
+        // the canonical home for both (see MANAGED_MODELS' doc comment —
+        // managed slugs aren't reliably on models.dev, so this table is
+        // authoritative for them, not a guess).
+        const raw = m as {
+          name?: string;
+          release_date?: string;
+          reasoning?: boolean;
+          tool_call?: boolean;
+          limit?: { context?: number; output?: number };
+        };
+        const managed = getManagedModel(id);
+        return {
+          id,
+          name: (raw.name || id).replace('(latest)', '').trim(),
+          released: raw.release_date ?? null,
+          reasoning: raw.reasoning,
+          tool_call: raw.tool_call,
+          attachment: managed?.vision,
+          limit: raw.limit ?? managed?.limit,
+        };
+      });
     return {
       id: 'kortix',
       label: kortix.name || 'Kortix',
