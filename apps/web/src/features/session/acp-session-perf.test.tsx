@@ -414,7 +414,17 @@ describe('AcpSessionChat — performance proof (Task 19)', () => {
       expect(session.getSnapshot().envelopes.length).toBeGreaterThan(fixture.length - 10);
 
       expect(commits.length).toBeLessThanOrEqual(Math.ceil(fixture.length / 16) + 20);
-      const slow = commits.filter((duration) => duration > 16);
+      // The regression this guards is per-commit render cost scaling with
+      // transcript length (an O(n)-per-flush re-render across ~2k envelopes
+      // lands in the hundreds of ms). The absolute per-commit ceiling is
+      // hardware-dependent: on a dev machine commits max out under ~5ms, but
+      // shared GitHub runners are ~5x slower and pushed most commits past a
+      // hard 16ms line (83 of 141 in the first CI execution). Keep the strict
+      // 60fps frame budget locally; on CI allow the same margin the runner's
+      // slowness costs while staying far below what a real scaling regression
+      // would produce.
+      const frameBudgetMs = process.env.CI ? 64 : 16;
+      const slow = commits.filter((duration) => duration > frameBudgetMs);
       expect(slow.length).toBe(0);
     } finally {
       act(() => {
