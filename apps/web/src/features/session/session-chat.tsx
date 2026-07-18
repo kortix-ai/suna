@@ -5495,6 +5495,7 @@ export function SessionChat({
           onVariantChange={handleVariantChange}
           messages={messages}
           sessionId={sessionId}
+          projectId={projectId}
           onFileSearch={handleFileSearch}
           providers={providers}
           modelRequired

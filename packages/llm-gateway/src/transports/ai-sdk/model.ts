@@ -96,8 +96,18 @@ export function needsResponsesApi(
   return resolveTransportKind(body, descriptor) === 'openai-responses';
 }
 
-function trimTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, '');
+// Strip trailing '/' in linear time. The idiomatic regex form
+// (`url.replace(/\/+$/, '')`) is a polynomial ReDoS on adversarial inputs
+// with many repeated slashes (CodeQL `js/polynomial-redos`, high severity,
+// alert #4731). `descriptor.baseUrl` comes from operator/catalog config, so
+// real exploitability is low — but the call sits on a hot request path, and
+// the linear form is strictly safer with no downside. Mirrors the
+// `stripTrailingSlashes` helper in packages/sdk/src/platform/strings.ts.
+// Exported for direct unit testing.
+export function trimTrailingSlash(url: string): string {
+  let end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return end === url.length ? url : url.slice(0, end);
 }
 
 // Anthropic's REST API rejects models.dev's dotted model-id convention

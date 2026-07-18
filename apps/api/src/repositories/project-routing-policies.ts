@@ -1,5 +1,5 @@
 import { accountModelPreferences, projectLlmRoutingPolicies } from "@kortix/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../shared/db";
 import type {
   ProjectModelGenerationConfig,
@@ -76,6 +76,12 @@ export async function setProjectRoutingPolicy(params: {
             accountModelPreferences.scope,
             accountModelPreferences.scopeKey,
           ],
+          // project-scope default is a project_id-IS-NULL row, so the ON CONFLICT
+          // arbiter must name the GLOBAL partial unique index's predicate (PR #4978
+          // split the old single unique index into two partial indexes). Without
+          // this, Postgres errors "no unique/exclusion constraint matching ON
+          // CONFLICT" and the routing-policy PUT 500s whenever defaultModel is set.
+          targetWhere: sql`project_id is null`,
           set: {
             model: params.policy.defaultModel,
             updatedBy: params.updatedBy,
