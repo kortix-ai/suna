@@ -298,13 +298,11 @@ flow(
 // docs/specs/2026-07-05-agent-first-config-unification.md §2.2). GET reports the
 // agent's full block + the manifest schema version (the UI's v1-vs-v2 branch);
 // PUT replaces the whole block, validating it through the manifest-schema
-// validator before the kortix.yaml commit. A bare provisioned project has no
-// v2 manifest (loadManifestForEdit synthesizes a v1 TOML), so this pins the
-// achievable boundaries: GET degrades cleanly to schema_version 1 / editable
-// false; PUT on that v1 project is refused with a 400 upgrade pointer; the
-// editor-tier gate holds. The v2 happy-path commit needs a project whose
-// kortix.yaml is already v2 — out of reach for a bare repo here (same
-// limitation IAM-31's scope flow documents).
+// validator before the kortix.yaml commit. A bare provisioned project now
+// synthesizes a v2 manifest (synthesizeBlankManifest, kortix_version 2 — see
+// PR #4980), so GET reports schema_version 2 and editable:true. PUT still
+// validates the block shape strictly: a body with unrecognized top-level keys
+// (or a bad enum) is refused with a 400; the editor-tier gate holds.
 flow(
   "PROJ-19",
   {
@@ -318,16 +316,16 @@ flow(
     const team = await ctx.fixtures.team();
     const project = await team.project();
 
-    await ctx.step("GET degrades to schema_version 1 / editable false for a v1 (or empty) manifest", async () => {
+    await ctx.step("GET reports schema_version 2 / editable true for a synthesized blank manifest", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/agents/:agentName/config", {
           params: { projectId: project.id, agentName: "kortix" },
         });
-      r.status(200).body().has("$.editable", false);
+      r.status(200).body().has("$.schema_version", 2).has("$.editable", true);
     });
 
-    await ctx.step("PUT a full block on a v1 project → 400 (v2-only, upgrade pointer)", async () => {
+    await ctx.step("PUT a body with unrecognized top-level keys → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
