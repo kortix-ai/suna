@@ -22,14 +22,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import { useGatewayPlayground } from '@/hooks/projects/use-project-gateway';
+import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
 import type { GatewayPlaygroundResult } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
 import { useProjectModels } from '@kortix/sdk/react';
 
-import { displayModel } from './_shared';
 import { fmtUsd } from './_metrics';
+import { displayModel } from './_shared';
 
 const MAX_MODELS = 6;
 
@@ -89,8 +89,10 @@ export function PlaygroundResultCard({ result }: { result: GatewayPlaygroundResu
       </div>
       <div className="flex-1 space-y-3 px-4 py-4">
         {result.ok ? (
-          <p className="text-foreground max-h-64 overflow-y-auto text-sm whitespace-pre-wrap text-pretty">
-            {result.output?.trim() || <span className="text-muted-foreground">Empty response.</span>}
+          <p className="text-foreground max-h-64 overflow-y-auto text-sm text-pretty whitespace-pre-wrap">
+            {result.output?.trim() || (
+              <span className="text-muted-foreground">Empty response.</span>
+            )}
           </p>
         ) : (
           <InfoBanner tone="destructive" icon={AlertTriangle} title="Request failed">
@@ -136,7 +138,8 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
   );
 
   const canAddMore =
-    selected.length < MAX_MODELS && models.some((model) => !selected.includes(modelKeyToWire(model)));
+    selected.length < MAX_MODELS &&
+    models.some((model) => !selected.includes(modelKeyToWire(model)));
   const canRun = prompt.trim().length > 0 && selected.length > 0 && !playground.isPending;
   const results = playground.data?.results ?? null;
 
