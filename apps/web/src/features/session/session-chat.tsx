@@ -5370,6 +5370,7 @@ export function SessionChat({
           onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
           messages={messages}
           sessionId={sessionId}
+          projectId={projectId}
           onFileSearch={handleFileSearch}
           providers={providers}
           modelRequired
