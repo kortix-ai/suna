@@ -1610,6 +1610,7 @@ function UserMessageRow({
         aria-expanded={canExpand ? expanded : undefined}
         onClick={() => canExpand && setExpanded(!expanded)}
         onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
           if (!canExpand) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
