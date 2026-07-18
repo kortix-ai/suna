@@ -298,8 +298,8 @@ describe('full self-host Docker distribution', () => {
     expect(frontendTest).not.toContain('bun');
   });
 
-  test('embeds the Caddyfile, updater script, and litellm config as runtime assets', () => {
-    expect(Object.keys(kortixRuntimeAssets).sort()).toEqual(['Caddyfile', 'litellm-config.yaml', 'updater.sh']);
+  test('embeds the Caddyfile and updater script as runtime assets', () => {
+    expect(Object.keys(kortixRuntimeAssets).sort()).toEqual(['Caddyfile', 'updater.sh']);
     expect(kortixRuntimeAssets.Caddyfile).toContain('{$KORTIX_DOMAIN}');
     expect(kortixRuntimeAssets.Caddyfile).toContain('{$KORTIX_API_DOMAIN}');
     expect(kortixRuntimeAssets['updater.sh']).toContain('docker compose');
@@ -377,56 +377,6 @@ describe('full self-host Docker distribution', () => {
       .map(([, service]) => (service.mem_limit ? toMb(service.mem_limit) : 0))
       .reduce((a, b) => a + b, 0);
     expect(totalCeilingMb).toBeLessThan(8 * 1024);
-  });
-
-  test('stateless LiteLLM translation sidecar: omitted entirely by default, present + correctly shaped when enabled', () => {
-    type ServiceShape = {
-      image?: string;
-      ports?: string[];
-      environment?: Record<string, string>;
-      mem_limit?: string;
-      mem_reservation?: string;
-      logging?: { driver?: string; options?: Record<string, string> };
-    };
-
-    // Default (translationSidecarConfigured unset): omitted entirely, same
-    // "not merely stopped" posture as caddy/cloudflared without their flags.
-    const off = parse(renderFullDockerCompose('kortix-default')) as { services: Record<string, ServiceShape> };
-    expect(off.services).not.toHaveProperty('litellm');
-
-    const on = parse(
-      renderFullDockerCompose('kortix-default', { translationSidecarConfigured: true }),
-    ) as { services: Record<string, ServiceShape> };
-    const litellm = on.services.litellm;
-    expect(litellm).toBeDefined();
-
-    // Pinned by tag@digest (third-party infra, not a Kortix release artifact).
-    expect(litellm?.image).toBe('${LITELLM_IMAGE}');
-
-    // Internal network only — no host port publishing. kortix-api is the only caller.
-    expect(litellm?.ports ?? []).toEqual([]);
-
-    // Owns only its own master-key auth — no upstream provider credentials,
-    // no DB connection string, nothing else.
-    expect(litellm?.environment).toEqual({ LITELLM_MASTER_KEY: '${LITELLM_MASTER_KEY}' });
-
-    // Sensible memory ceiling — applied uniformly via MEM_LIMITS, not
-    // hand-written into the YAML (same mechanism as every other service).
-    expect(litellm?.mem_limit).toBe('1536m');
-    expect(litellm?.mem_reservation).toBe('1024m');
-
-    // Bounded, rotated logs — applied uniformly (applyLogging()).
-    expect(litellm?.logging?.driver).toBe('json-file');
-    expect(litellm?.logging?.options?.['max-size']).toBe('10m');
-  });
-
-  test('kortix-api always carries the LLM_TRANSLATION_SIDECAR_URL/AUTH_TOKEN template vars — the enable/disable happens in .env, not in the Compose template', () => {
-    const document = parse(renderFullDockerCompose('kortix-default')) as {
-      services: Record<string, { environment?: Record<string, string> }>;
-    };
-    const apiEnv = document.services['kortix-api']?.environment ?? {};
-    expect(apiEnv.LLM_TRANSLATION_SIDECAR_URL).toBe('${LLM_TRANSLATION_SIDECAR_URL}');
-    expect(apiEnv.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN).toBe('${LITELLM_MASTER_KEY}');
   });
 
   test('kortix-updater image is pinned by digest, never :latest or a bare floating :cli tag', () => {

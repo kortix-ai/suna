@@ -1,7 +1,26 @@
 import type { ProviderKind, UpstreamDescriptor } from '../domain';
-import { isGenuineOpenAiUpstream } from './openai-compat';
 
 type Json = Record<string, unknown>;
+
+const GENUINE_OPENAI_HOSTNAME = 'api.openai.com';
+
+// True only for the real OpenAI API host, never for an OpenAI-COMPATIBLE
+// upstream (OpenRouter, Groq, self-hosted vLLM/LiteLLM/Ollama, "custom", etc.)
+// even though those share `kind: 'openai-compat'`. Checked on the resolved
+// base URL rather than `descriptor.provider` so it stays correct even if a
+// future catalog entry mislabels the provider id.
+//
+// Relocated here (2026-07-18, native-transport deletion) from the now-removed
+// transports/openai-compat/index.ts — this predicate's only remaining
+// consumer is `resolveTransportKind` below, which the ai-sdk engine's
+// `needsResponsesApi` (transports/ai-sdk/model.ts) drives.
+export function isGenuineOpenAiUpstream(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === GENUINE_OPENAI_HOSTNAME;
+  } catch {
+    return false;
+  }
+}
 
 function hasFunctionTools(body: Json): boolean {
   return Array.isArray(body.tools) && body.tools.length > 0;
@@ -34,17 +53,16 @@ export function reasoningEffort(body: Json): string | undefined {
  * (observed live against api.openai.com — BYOK gpt-5.5/gpt-5.6 agent sessions
  * on essentia.kortix.cloud, session 21c6cfd0-5157-4e78-9d26-4198656b1a81).
  *
- * The openai-responses transport (./openai-responses) already speaks the
- * Responses API end to end (messages→input, tools, tool_choice,
- * reasoning_effort, streaming + non-streaming translation back to the
- * OpenAI-chat wire shape) — it was wired ONLY to the ChatGPT/Codex OAuth path
- * (`descriptor.provider === 'openai-codex'`, chosen directly in
- * apps/api/.../descriptors.ts codexDescriptor), but none of its request/
- * response translation actually depends on that credential type. Reused here
- * verbatim for genuine BYOK/managed OpenAI traffic rather than standing up a
- * second translator, or (the smaller-looking but wrong fix) forcing
- * `reasoning_effort` to 'none' and silently degrading reasoning quality for
- * every tool-using request.
+ * This function is a pure ROUTING PREDICATE — it decides whether a request
+ * needs OpenAI's Responses API instead of chat/completions; it does not
+ * itself speak either wire protocol. The ai-sdk engine (transports/ai-sdk/
+ * model.ts's `needsResponsesApi`, which calls this verbatim) is the sole
+ * consumer: when this returns `'openai-responses'`, it builds a `.responses()`
+ * LanguageModel instead of `.chat()` rather than forcing `reasoning_effort` to
+ * 'none' and silently degrading reasoning quality for every tool-using
+ * request. (A hand-written native openai-responses transport used to serve
+ * this kind directly; it was retired once the ai-sdk engine became the sole
+ * transport engine — see the PR that deleted transports/openai-responses.)
  *
  * Gated narrowly so this only ever affects the exact broken combination:
  *  - `descriptor.kind === 'openai-compat'` — never touches anthropic/bedrock/
@@ -67,17 +85,10 @@ export function reasoningEffort(body: Json): string | undefined {
  *    field this codebase supports, e.g. response_format/json_schema — no
  *    reason to risk those paths when they aren't the ones that are broken).
  *
- * Called per-attempt from `callUpstream` (body is available there; descriptor
- * resolution in apps/api's resolveCandidates happens before the body's
- * tools/reasoning_effort are known to that layer) — cheap enough to run on
- * every dispatch, including each failover retry.
- *
- * Also reused verbatim by the ai-sdk engine (ai-sdk/model.ts's
- * `needsResponsesApi`) to decide when to build a `.responses()` LanguageModel
- * instead of `.chat()` — the exact same broken combination, just served by
- * the AI SDK's own OpenAI Responses model instead of the native transport in
- * ./openai-responses. Both engines therefore route the same request the same
- * way; only the transport code speaking the wire protocol differs.
+ * Called per-attempt from the ai-sdk engine (body is available there;
+ * descriptor resolution in apps/api's resolveCandidates happens before the
+ * body's tools/reasoning_effort are known to that layer) — cheap enough to
+ * run on every dispatch, including each failover retry.
  */
 export function resolveTransportKind(body: Json, descriptor: UpstreamDescriptor): ProviderKind {
   if (

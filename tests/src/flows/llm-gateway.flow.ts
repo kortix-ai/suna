@@ -1,97 +1,100 @@
-import { flow } from "../core/flow";
-import { Client } from "../core/client";
+import { flow } from '../core/flow';
+import { Client } from '../core/client';
+
+flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }, async (ctx) => {
+  const gw = new Client(ctx.env.gatewayUrl);
+  await ctx.step('gateway /health is public', async () => {
+    const r = await gw.get('/health');
+    r.status(200).body().has('$.status', 'healthy').has('$.service', 'kortix-llm-gateway');
+  });
+});
 
 flow(
-  "GW-1",
-  { domain: "llm-gateway", tags: ["smoke"], routes: ["GET /health"] },
+  'GW-2',
+  {
+    domain: 'llm-gateway',
+    routes: ['GET /v1/llm/models', 'GET /v1/models', 'GET /v1/openai/models'],
+  },
   async (ctx) => {
     const gw = new Client(ctx.env.gatewayUrl);
-    await ctx.step("gateway /health is public", async () => {
-      const r = await gw.get("/health");
-      r.status(200).body().exists("$.ok");
-    });
+    const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('gateway-models') });
+    for (const path of ['/v1/llm/models', '/v1/models', '/v1/openai/models'] as const) {
+      await ctx.step(`${path} returns the authenticated model catalog`, async () => {
+        const r = await gw.withBearer(pat, 'OWNER_PAT').get(path);
+        r.status(200).body().exists('$.models');
+        const models = r.json<any>()?.models;
+        if (!models || typeof models !== 'object' || Object.keys(models).length === 0) {
+          throw new Error(`${path} returned an empty model catalog`);
+        }
+      });
+    }
   },
 );
 
+flow('GW-2b', { domain: 'llm-gateway', routes: ['GET /v1/llm/models'] }, async (ctx) => {
+  const gw = new Client(ctx.env.gatewayUrl);
+  await ctx.step('ANON cannot list models', async () => {
+    const r = await gw.as(ctx.P.ANON).get('/v1/llm/models');
+    r.status([401, 403]);
+  });
+});
+
 flow(
-  "GW-2",
+  'GW-3',
   {
-    domain: "llm-gateway",
-    todo: "GET /v1/llm/models (+ /v1/models, /v1/openai/models) returns 500 'Internal Server Error' on gateway-dev for an authed funded OWNER; should be 200 with the model catalog. Flip to assert 200 + $.data once the gateway model-list bug is fixed.",
-    routes: ["GET /v1/llm/models", "GET /v1/models", "GET /v1/openai/models"],
-  },
-  async () => {},
-);
-
-flow(
-  "GW-2b",
-  { domain: "llm-gateway", routes: ["GET /v1/llm/models"] },
-  async (ctx) => {
-    const gw = new Client(ctx.env.gatewayUrl);
-    await ctx.step("ANON cannot list models", async () => {
-      const r = await gw.as(ctx.P.ANON).get("/v1/llm/models");
-      r.status([401, 403]);
-    });
-  },
-);
-
-flow(
-  "GW-3",
-  {
-    domain: "llm-gateway",
+    domain: 'llm-gateway',
     routes: [
-      "POST /v1/chat/completions",
-      "POST /v1/llm/chat/completions",
-      "POST /v1/openai/chat/completions",
+      'POST /v1/chat/completions',
+      'POST /v1/llm/chat/completions',
+      'POST /v1/openai/chat/completions',
     ],
   },
   async (ctx) => {
     const gw = new Client(ctx.env.gatewayUrl);
-    const body = { model: "gpt-5.5", messages: [{ role: "user", content: "ping" }] };
-    await ctx.step("ANON cannot call /v1/llm/chat/completions", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/llm/chat/completions", body);
+    const body = { model: 'gpt-5.5', messages: [{ role: 'user', content: 'ping' }] };
+    await ctx.step('ANON cannot call /v1/llm/chat/completions', async () => {
+      const r = await gw.as(ctx.P.ANON).post('/v1/llm/chat/completions', body);
       r.status([401, 403]);
     });
-    await ctx.step("ANON cannot call /v1/chat/completions alias", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/chat/completions", body);
+    await ctx.step('ANON cannot call /v1/chat/completions alias', async () => {
+      const r = await gw.as(ctx.P.ANON).post('/v1/chat/completions', body);
       r.status([401, 403]);
     });
-    await ctx.step("ANON cannot call /v1/openai/chat/completions alias", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/openai/chat/completions", body);
+    await ctx.step('ANON cannot call /v1/openai/chat/completions alias', async () => {
+      const r = await gw.as(ctx.P.ANON).post('/v1/openai/chat/completions', body);
       r.status([401, 403]);
     });
   },
 );
 
 flow(
-  "GW-6",
+  'GW-6',
   {
-    domain: "llm-gateway",
-    routes: ["POST /v1/llm/messages", "POST /v1/llm/v1/messages"],
+    domain: 'llm-gateway',
+    routes: ['POST /v1/llm/messages', 'POST /v1/llm/v1/messages'],
   },
   async (ctx) => {
-    const gw = new Client(ctx.env.gatewayUrl);
     const body = {
-      model: "claude-sonnet-4-6",
+      model: 'claude-sonnet-4-6',
       max_tokens: 64,
-      messages: [{ role: "user", content: "ping" }],
+      messages: [{ role: 'user', content: 'ping' }],
     };
-    await ctx.step("ANON cannot call the Anthropic-Messages ingress /v1/llm/messages", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/llm/messages", body);
+    await ctx.step('ANON cannot call the Anthropic-Messages ingress /v1/llm/messages', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/llm/messages', body);
       r.status([401, 403]);
     });
-    await ctx.step("ANON cannot call the /v1/... prefixed variant", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/llm/v1/messages", body);
+    await ctx.step('ANON cannot call the /v1/... prefixed variant', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/llm/v1/messages', body);
       r.status([401, 403]);
     });
   },
 );
 
 flow(
-  "GW-7",
+  'GW-7',
   {
-    domain: "llm-gateway",
-    routes: ["POST /v1/messages", "POST /v1/llm/messages", "POST /v1/openai/messages"],
+    domain: 'llm-gateway',
+    routes: ['POST /v1/messages', 'POST /v1/llm/messages', 'POST /v1/openai/messages'],
   },
   async (ctx) => {
     // Standalone gateway pod: the same Anthropic-Messages ingress as GW-6,
@@ -99,182 +102,187 @@ flow(
     // /v1/openai) instead of the in-process API's /v1/llm/* mount.
     const gw = new Client(ctx.env.gatewayUrl);
     const body = {
-      model: "claude-sonnet-4-6",
+      model: 'claude-sonnet-4-6',
       max_tokens: 64,
-      messages: [{ role: "user", content: "ping" }],
+      messages: [{ role: 'user', content: 'ping' }],
     };
-    await ctx.step("ANON cannot call /v1/messages", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/messages", body);
+    await ctx.step('ANON cannot call /v1/messages', async () => {
+      const r = await gw.as(ctx.P.ANON).post('/v1/messages', body);
       r.status([401, 403]);
     });
-    await ctx.step("ANON cannot call /v1/llm/messages alias", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/llm/messages", body);
+    await ctx.step('ANON cannot call /v1/llm/messages alias', async () => {
+      const r = await gw.as(ctx.P.ANON).post('/v1/llm/messages', body);
       r.status([401, 403]);
     });
-    await ctx.step("ANON cannot call /v1/openai/messages alias", async () => {
-      const r = await gw.as(ctx.P.ANON).post("/v1/openai/messages", body);
+    await ctx.step('ANON cannot call /v1/openai/messages alias', async () => {
+      const r = await gw.as(ctx.P.ANON).post('/v1/openai/messages', body);
       r.status([401, 403]);
     });
   },
 );
 
 flow(
-  "GW-4",
+  'GW-4',
   {
-    domain: "llm-gateway",
+    domain: 'llm-gateway',
     routes: [
-      "GET /v1/projects/:projectId/gateway/routing-policy",
-      "PUT /v1/projects/:projectId/gateway/routing-policy",
-      "DELETE /v1/projects/:projectId/gateway/routing-policy",
-      "POST /v1/projects/:projectId/gateway/routing-policy/preview",
-      "GET /v1/projects/:projectId/model-picker",
+      'GET /v1/projects/:projectId/gateway/routing-policy',
+      'PUT /v1/projects/:projectId/gateway/routing-policy',
+      'DELETE /v1/projects/:projectId/gateway/routing-policy',
+      'POST /v1/projects/:projectId/gateway/routing-policy/preview',
+      'GET /v1/projects/:projectId/model-picker',
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const params = { projectId: project.id };
     const policy = {
-      defaultModel: "codex/gpt-5.6-sol",
-      visionModel: "glm-5.2",
-      defaultFallback: { models: ["glm-5.2"], fallbackOn: "any-error" },
+      defaultModel: 'codex/gpt-5.6-sol',
+      visionModel: 'glm-5.2',
+      defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
       rules: [
         {
-          model: "openai/gpt-5.5",
-          fallbackModels: ["glm-5.2"],
-          fallbackOn: "transient",
+          model: 'openai/gpt-5.5',
+          fallbackModels: ['glm-5.2'],
+          fallbackOn: 'transient',
         },
       ],
     };
 
-    await ctx.step("inherited routing policy is readable", async () => {
+    await ctx.step('inherited routing policy is readable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/gateway/routing-policy", { params });
+        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
       r.status(200)
         .body()
-        .has("$.version", 1)
-        .has("$.project.defaultModel", null)
-        .has("$.project.defaultFallback", null)
-        .has("$.project.rules", [])
-        .exists("$.effective.defaultModel")
-        .has("$.capabilities.write", true);
+        .has('$.version', 1)
+        .has('$.project.defaultModel', null)
+        .has('$.project.defaultFallback', null)
+        .has('$.project.rules', [])
+        .exists('$.effective.defaultModel')
+        .has('$.capabilities.write', true);
     });
 
-    await ctx.step("compact project model picker is available without the full runtime catalog", async () => {
-      const enabled = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          "/v1/projects/:projectId/experimental",
-          { feature: "llm_gateway", enabled: true },
-          { params },
-        );
-      enabled.status(200);
+    await ctx.step(
+      'compact project model picker is available without the full runtime catalog',
+      async () => {
+        const enabled = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            '/v1/projects/:projectId/experimental',
+            { feature: 'llm_gateway', enabled: true },
+            { params },
+          );
+        enabled.status(200);
 
-      const picker = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/model-picker", { params });
-      picker.status(200).body().exists("$.models");
-      const pickerModels = picker.json<{ models?: Record<string, unknown> }>().models ?? {};
-      const pickerCount = Object.keys(pickerModels).length;
-      if (pickerCount === 0 || pickerCount >= 100) {
-        throw new Error(`expected a compact non-empty picker catalog, got ${pickerCount} models`);
-      }
-    });
+        const picker = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/model-picker', { params });
+        picker.status(200).body().exists('$.models');
+        const pickerModels = picker.json<{ models?: Record<string, unknown> }>().models ?? {};
+        const pickerCount = Object.keys(pickerModels).length;
+        if (pickerCount === 0 || pickerCount >= 100) {
+          throw new Error(`expected a compact non-empty picker catalog, got ${pickerCount} models`);
+        }
+      },
+    );
 
-    await ctx.step("save and read back the complete project policy", async () => {
+    await ctx.step('save and read back the complete project policy', async () => {
       const saved = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/gateway/routing-policy", policy, { params });
-      saved.status(200)
+        .put('/v1/projects/:projectId/gateway/routing-policy', policy, { params });
+      saved
+        .status(200)
         .body()
-        .has("$.project", policy)
-        .has("$.effective.defaultModel", "codex/gpt-5.6-sol")
-        .has("$.effective.defaultFallback.models", ["glm-5.2"]);
+        .has('$.project', policy)
+        .has('$.effective.defaultModel', 'codex/gpt-5.6-sol')
+        .has('$.effective.defaultFallback.models', ['glm-5.2']);
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/gateway/routing-policy", { params });
-      read.status(200).body().has("$.project", policy);
+        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+      read.status(200).body().has('$.project', policy);
     });
 
-    await ctx.step("preview resolves ordered default and exact-model routes", async () => {
+    await ctx.step('preview resolves ordered default and exact-model routes', async () => {
       const automatic = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/gateway/routing-policy/preview",
-          { requestedModel: "auto", imageInput: false },
+          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          { requestedModel: 'auto', imageInput: false },
           { params },
         );
-      automatic.status(200)
+      automatic
+        .status(200)
         .body()
-        .has("$.route.policyId", "project:default")
-        .has("$.route.primaryModel", "codex/gpt-5.6-sol")
-        .has("$.route.fallbackModels", ["glm-5.2"])
-        .has("$.route.fallbackOn", "any-error")
-        .has("$.models[0].model", "codex/gpt-5.6-sol")
-        .has("$.models[1].model", "glm-5.2")
-        .exists("$.models[0].available")
-        .exists("$.models[1].available");
+        .has('$.route.policyId', 'project:default')
+        .has('$.route.primaryModel', 'codex/gpt-5.6-sol')
+        .has('$.route.fallbackModels', ['glm-5.2'])
+        .has('$.route.fallbackOn', 'any-error')
+        .has('$.models[0].model', 'codex/gpt-5.6-sol')
+        .has('$.models[1].model', 'glm-5.2')
+        .exists('$.models[0].available')
+        .exists('$.models[1].available');
 
       const exact = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/gateway/routing-policy/preview",
-          { requestedModel: "openai/gpt-5.5", imageInput: false },
+          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          { requestedModel: 'openai/gpt-5.5', imageInput: false },
           { params },
         );
-      exact.status(200)
+      exact
+        .status(200)
         .body()
-        .has("$.route.policyId", "project:exact:openai/gpt-5.5")
-        .has("$.route.primaryModel", "openai/gpt-5.5")
-        .has("$.route.fallbackModels", ["glm-5.2"])
-        .has("$.route.fallbackOn", "transient");
+        .has('$.route.policyId', 'project:exact:openai/gpt-5.5')
+        .has('$.route.primaryModel', 'openai/gpt-5.5')
+        .has('$.route.fallbackModels', ['glm-5.2'])
+        .has('$.route.fallbackOn', 'transient');
     });
 
-    await ctx.step("invalid self-loop is rejected without replacing the saved policy", async () => {
-      const invalid = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          "/v1/projects/:projectId/gateway/routing-policy",
-          {
-            ...policy,
-            defaultFallback: { models: ["codex/gpt-5.6-sol"], fallbackOn: "any-error" },
-          },
-          { params },
-        );
-      invalid.status(400).body().has("$.code", "invalid_routing_policy");
+    await ctx.step('invalid self-loop is rejected without replacing the saved policy', async () => {
+      const invalid = await ctx.client.as(ctx.P.OWNER).put(
+        '/v1/projects/:projectId/gateway/routing-policy',
+        {
+          ...policy,
+          defaultFallback: { models: ['codex/gpt-5.6-sol'], fallbackOn: 'any-error' },
+        },
+        { params },
+      );
+      invalid.status(400).body().has('$.code', 'invalid_routing_policy');
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/gateway/routing-policy", { params });
-      read.status(200).body().has("$.project", policy);
+        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+      read.status(200).body().has('$.project', policy);
     });
 
-    await ctx.step("project access boundaries are enforced", async () => {
+    await ctx.step('project access boundaries are enforced', async () => {
       const nonmember = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/gateway/routing-policy", { params });
+        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
       nonmember.status([403, 404]);
       const anonymous = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/gateway/routing-policy", { params });
+        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
       anonymous.status(401);
       const anonymousPicker = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/model-picker", { params });
+        .get('/v1/projects/:projectId/model-picker', { params });
       anonymousPicker.status(401);
     });
 
-    await ctx.step("reset removes every project override", async () => {
+    await ctx.step('reset removes every project override', async () => {
       const reset = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/gateway/routing-policy", { params });
-      reset.status(200)
+        .del('/v1/projects/:projectId/gateway/routing-policy', { params });
+      reset
+        .status(200)
         .body()
-        .has("$.project.defaultModel", null)
-        .has("$.project.visionModel", null)
-        .has("$.project.defaultFallback", null)
-        .has("$.project.rules", []);
+        .has('$.project.defaultModel', null)
+        .has('$.project.visionModel', null)
+        .has('$.project.defaultFallback', null)
+        .has('$.project.rules', []);
     });
   },
 );

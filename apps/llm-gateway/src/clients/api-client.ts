@@ -1,13 +1,14 @@
 import { withRetry } from '@kortix/llm-gateway';
-import type {
-  AuthedPrincipal,
-  AuthorizeResult,
-  GatewayTrace,
-  ModelCatalog,
-  ModelRouteInput,
-  ModelRoutePlan,
-  UpstreamDescriptor,
-  UsageEvent,
+import {
+  GatewayResolutionError,
+  type AuthedPrincipal,
+  type AuthorizeResult,
+  type GatewayTrace,
+  type ModelCatalog,
+  type ModelRouteInput,
+  type ModelRoutePlan,
+  type UpstreamDescriptor,
+  type UsageEvent,
 } from '@kortix/llm-gateway';
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -108,13 +109,29 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       return result.route ?? null;
     },
     resolveUpstream: async (principal, model) => {
-      const result = await post<{ candidates: UpstreamDescriptor[] }>(
-        '/internal/gateway/resolve-upstream',
-        {
-          principal,
-          model,
-        },
-      );
+      const result = await post<{
+        candidates?: UpstreamDescriptor[];
+        resolutionError?: {
+          code: 'model_not_found' | 'model_disabled_on_deployment' | 'plan_upgrade_required' | 'provider_not_connected' | 'provider_reauth_required';
+          message: string;
+          suggestion: string;
+        };
+      }>('/internal/gateway/resolve-upstream', {
+        principal,
+        model,
+      });
+      // The API catches GatewayResolutionError in /resolve-upstream and returns
+      // it in a 200 body instead of letting it propagate as a 500 (which would
+      // be captured to Sentry AND retried 3x here). Re-throw it as the typed
+      // error so the pipeline's dispatch loop (handler.ts) sees the same
+      // contract as the in-process hook (hooks.ts: resolveUpstream:
+      // resolveCandidates) — a thrown GatewayResolutionError it can surface as
+      // a clean 400 with the actionable suggestion, rather than a generic
+      // ApiUnavailableError 5xx.
+      if (result.resolutionError) {
+        const { code, message, suggestion } = result.resolutionError;
+        throw new GatewayResolutionError(code, message, suggestion);
+      }
       return result.candidates ?? [];
     },
     assertBillingActive: async (accountId) => {

@@ -1,7 +1,8 @@
-import { generateText, streamText } from 'ai';
+import { InvalidPromptError, generateText, streamText } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
 import { NetworkError, UpstreamHttpError, looksLikeTerminalAuthFailure } from '../../errors';
 import {
+  type AiSdkFetch,
   aiSdkFamilyFor,
   clampMaxOutputTokensForBedrock,
   isCodexDescriptor,
@@ -10,6 +11,7 @@ import {
 import { buildAiSdkArgs } from './request';
 import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
+export type { AiSdkFetch } from './model';
 export {
   aiSdkFamilyFor,
   isAiSdkServable,
@@ -23,6 +25,58 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+// An upstream can return a syntactically valid 200 with `choices: []` — a
+// genuinely EMPTY array, not merely an empty-content choice (see
+// usage/completion-guard.ts's `jsonHasContent`, which explicitly treats both
+// shapes the same way: "no real output, try the next candidate" — the
+// OpenRouter/z-ai pattern pipeline/handler.ts's `registerEmptyCompletion`
+// exists for, observed at a ~19% transient rate in production). Every
+// chat-completions-family AI SDK provider package (openai, openai-compatible)
+// unconditionally indexes `responseBody.choices[0]` and crashes with a raw
+// TypeError if that index doesn't exist, turning this already-understood,
+// already-handled upstream failure mode into an opaque thrown error that
+// bypasses the gateway's own empty-completion retry/failover logic entirely
+// — instead of flowing through as the syntactically valid (if unhelpfully
+// empty) response it actually is. Patched at the fetch boundary EVERY
+// chat-completions family's provider package ends up calling, so the fix
+// applies regardless of which one `resolveAiModel` picked; a no-op for the
+// Responses API (`output`, not `choices`) and Anthropic/Bedrock (their own
+// wire shapes) — neither ever has a `choices` key to match — and for
+// streaming responses (`content-type: text/event-stream`, never touched
+// here; an empty stream is a separate problem streaming.ts's probe already
+// handles on its own terms).
+function guardEmptyChoicesFetch(fetch: AiSdkFetch): AiSdkFetch {
+  return async (input, init) => {
+    const response = await fetch(input, init);
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!response.ok || !contentType.includes('json')) return response;
+    const text = await response.text();
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = undefined;
+    }
+    const choices = (data as { choices?: unknown } | undefined)?.choices;
+    if (!Array.isArray(choices) || choices.length !== 0) {
+      return new Response(text, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+    const patched = {
+      ...(data as Record<string, unknown>),
+      choices: [{ index: 0, message: { role: 'assistant', content: '' }, finish_reason: 'stop' }],
+    };
+    return new Response(JSON.stringify(patched), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
 }
 
 function sseResponse(stream: ReadableStream<Uint8Array>): Response {
@@ -48,6 +102,19 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
 // got retried into a permanently empty, hung session turn (11+ attempts over
 // 2+ minutes, no error ever surfaced) instead of failing fast on attempt one.
 export function toTransportError(err: unknown, provider: string): Error {
+  // The AI SDK validates the built prompt CLIENT-SIDE, before any request
+  // ever goes out (e.g. `messages` resolving to an empty array — a body with
+  // no `messages` field at all, or a `messages: []`) — no native transport
+  // ever had this check; it always forwarded whatever body it was given
+  // straight to the upstream, which would itself 400 the malformed request.
+  // Classified the same way a real upstream 400 would be here so it fails
+  // fast in ONE attempt (defaultIsRetryable never retries a 400) instead of
+  // falling through to the generic NetworkError case below, which IS
+  // retryable and would otherwise burn the full retry budget on a request
+  // that can never succeed no matter how many times it's replayed.
+  if (InvalidPromptError.isInstance(err)) {
+    return new UpstreamHttpError(400, err.message, provider);
+  }
   const e = err as {
     statusCode?: number;
     responseBody?: string;
@@ -141,14 +208,25 @@ export function mapToolCalls(
 export async function callUpstreamViaAiSdk(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal; fetch?: AiSdkFetch; requestId?: string } = {},
 ): Promise<Response> {
   const family = aiSdkFamilyFor(descriptor);
   const isCodex = isCodexDescriptor(descriptor);
   // `body` decides chat.completions vs Responses for the 'openai' family (see
   // model.ts's needsResponsesApi) — Codex/genuine-OpenAI-reasoning-with-tools
   // only, everything else keeps using .chat().
-  const model = resolveAiModel(descriptor, body);
+  const model = resolveAiModel(descriptor, body, {
+    // Always wrapped — see guardEmptyChoicesFetch's doc comment — regardless
+    // of whether the caller supplied its own fetchImpl (tests) or this falls
+    // through to the platform default (production).
+    fetch: guardEmptyChoicesFetch(opts.fetch ?? ((input, init) => globalThis.fetch(input, init))),
+    // Kortix-internal correlation id, mirrored onto the upstream request as a
+    // best-effort header — every provider here tolerates unknown headers.
+    // This is the ai-sdk-engine equivalent of what the retired native
+    // transport's `callUpstream` used to attach directly onto the built
+    // request (see http/call-upstream.ts).
+    extraHeaders: opts.requestId ? { 'x-kortix-request-id': opts.requestId } : undefined,
+  });
   const args = buildAiSdkArgs(body, family, {
     // The ChatGPT Codex backend always expects a reasoning effort; the native
     // transport defaults to 'low' when the caller sends none (see

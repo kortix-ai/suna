@@ -23,6 +23,8 @@ export interface Capabilities {
   database: boolean;
   /** Platform-admin token for /v1/ops/* + requireAdmin routes. */
   admin: boolean;
+  /** Internal service key for authenticated cron routes. */
+  internalCron: boolean;
   /** The target OWNER account is already funded enough to create sessions. */
   funded: boolean;
 }
@@ -43,6 +45,8 @@ export interface Env {
   ownerPassword: string | null;
   /** Platform-admin bearer token (kortix_pat_* or kortix_*). */
   adminToken: string | null;
+  /** Internal service bearer used only by the cron-contract flows. */
+  internalServiceKey: string | null;
   /** Stripe TEST secret key — to confirm PaymentIntents in the real subscribe flow. */
   stripeSecretKey: string | null;
   /**
@@ -135,6 +139,7 @@ export function loadEnv(): Env {
   const ownerEmail = pick('KE2E_OWNER_EMAIL', 'E2E_OWNER_EMAIL');
   const ownerPassword = pick('KE2E_OWNER_PASSWORD', 'E2E_OWNER_PASSWORD');
   const adminToken = pick('KE2E_ADMIN_TOKEN', 'E2E_ADMIN_TOKEN', 'ADMIN_TOKEN');
+  const internalServiceKey = pick('KE2E_INTERNAL_SERVICE_KEY');
   const stripeSecretKey = pick('KE2E_STRIPE_SECRET_KEY');
   const stripeWebhookSecret = pick('KE2E_STRIPE_WEBHOOK_SECRET');
   const liveConfirm = pick('KE2E_LIVE_CONFIRM');
@@ -148,6 +153,7 @@ export function loadEnv(): Env {
     supabaseAdmin: supabaseServiceRoleKey != null,
     database: databaseUrl != null,
     admin: adminToken != null,
+    internalCron: internalServiceKey != null,
     funded: pick('KE2E_CAP_FUNDED') === '1',
   };
 
@@ -162,6 +168,7 @@ export function loadEnv(): Env {
     ownerEmail,
     ownerPassword,
     adminToken,
+    internalServiceKey,
     stripeSecretKey,
     stripeWebhookSecret,
     liveConfirm,
