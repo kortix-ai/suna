@@ -920,3 +920,17 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for this explicitly requested rollback. The two
 skips are the pre-existing browser-bundle tests that require a bundle build.
+
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (claim)
+
+Claimed the user-directed source-agnostic connector authentication discovery
+work. Postman, OpenAPI, and every other supported connector source will preserve
+usable authentication metadata, normalize it into one additive typed contract,
+and prefill connector setup while leaving secret values and interactive consent
+to the user. Existing connector draft fields and provider behavior remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and
+finish with the full SDK typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
