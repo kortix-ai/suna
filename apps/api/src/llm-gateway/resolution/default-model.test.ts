@@ -201,11 +201,10 @@ describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account
 
   test('two projects on the SAME account never share a cached agent default', async () => {
     const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
-    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => ({
-      account: null,
-      agents: projectId && byProject[projectId] ? { kortix: byProject[projectId] } : {},
-      projects: {},
-    }));
+    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {
+      const agents: Record<string, string> = projectId && byProject[projectId] ? { kortix: byProject[projectId] } : {};
+      return { account: null, agents, projects: {} };
+    });
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'kortix',
       opencodeModel: null,
