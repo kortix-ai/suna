@@ -16,6 +16,9 @@ mock.module('../shared/preview-ownership', () => ({
     if (userId) return mockResolvedAccountId === mockSandboxAccountId;
     return false;
   },
+  // Not exercised by this suite (no project-scoped PATs here) — stub so the
+  // real module's shape stays satisfied for anything that imports it.
+  resolveSandboxProjectId: async () => null,
 }));
 
 mock.module('../shared/resolve-account', () => ({

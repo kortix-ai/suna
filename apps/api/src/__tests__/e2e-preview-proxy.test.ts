@@ -166,6 +166,10 @@ mock.module('../shared/preview-ownership', () => ({
     userId && mockDbSandbox && mockDbMembership
       ? { userId, sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
       : null,
+  // combinedAuth is bypassed in this suite (see above), so no project-scoped
+  // PAT ever reaches this — stub so the real module's shape stays satisfied
+  // for anything that imports it.
+  resolveSandboxProjectId: async () => null,
 }));
 
 // Daytona SDK mock
