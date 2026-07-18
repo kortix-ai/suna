@@ -46,7 +46,9 @@ describe('ACP rich tool projection', () => {
     }), 'session-1');
 
     expect(part.state.status).toBe('error');
-    expect(part.state.input).toEqual(input);
+    // Enriched, not mutated: original keys survive alongside the canonical
+    // `filePath` alias the SDK derives from the reported location.
+    expect(part.state.input).toEqual({ ...input, filePath: location.path });
     expect(part.state.output).toContain('failed');
     expect(part.state.metadata).toMatchObject({ locations: [location], acp: { vendor: 'codex' } });
   });

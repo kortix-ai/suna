@@ -2,6 +2,7 @@
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CopyButton } from '@/components/markdown/copy-button';
+import { cn } from '@/lib/utils';
 import type {
   AcpChatItem,
   AcpJsonRpcId,
@@ -9,7 +10,7 @@ import type {
   AcpPendingPrompts,
   AcpPendingQuestion,
 } from '@kortix/sdk';
-import { Bot, Brain, File, ImageIcon, Reply } from 'lucide-react';
+import { File, ImageIcon, Reply } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { AcpPlanCard, AcpToolCallCard } from './acp-tool-call-card';
@@ -121,10 +122,14 @@ function renderAcpChatItem({
     if (item.role === 'user') {
       return <AcpUserMessage item={item} onFileClick={onFileClick} onOpenPreview={onOpenPreview} />;
     }
-    const Icon = item.role === 'thought' ? Brain : Bot;
+    // Assistant prose renders bare — the right-aligned user bubble already
+    // disambiguates the two voices, so an "assistant" eyebrow on every
+    // paragraph was pure noise. (A `thought` message normally never reaches
+    // this branch — `groupAcpTurnItems` folds thoughts into
+    // `AcpGroupedReasoningCard` — but the defensive fallback keeps it
+    // visually distinct as muted italic rather than mislabeling it prose.)
     return (
-      <div className="py-2">
-        <div className="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-medium capitalize"><Icon className="size-3.5" />{item.role}</div>
+      <div className={cn('py-1', item.role === 'thought' && 'text-muted-foreground/60 italic')}>
         <UnifiedMarkdown content={item.text} isStreaming={isStreaming} />
         {item.attachments?.length ? <AcpMessageAttachments attachments={item.attachments} /> : null}
       </div>

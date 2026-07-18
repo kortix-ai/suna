@@ -23,10 +23,18 @@ import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { MessageWithParts, QuestionAnswer, Turn } from '@/ui';
-import type { AcpChatItem, AcpSessionConfigOption, AcpUsageProjection } from '@kortix/sdk';
+import type { AcpChatItem, AcpSessionConfigOption } from '@kortix/sdk';
 import type { useSession } from '@kortix/sdk/react';
-import { AlertTriangle, Check, ChevronDown, MessageCircle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, ArrowDown, Check, ChevronDown, MessageCircle } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { AcpChatItemRow } from './acp-chat-item-row';
 import {
   acpTodosFromPlanEntries,
@@ -44,7 +52,6 @@ import {
   acpOrdinalTimestamps,
   acpTurnDurationMs,
   formatAcpContextLabel,
-  formatAcpCost,
   formatAcpDuration,
   formatAcpSessionCostLabel,
   groupAcpTurnItems,
@@ -60,15 +67,20 @@ import { QuestionPrompt, type QuestionAction, type QuestionPromptHandle } from '
 import { isPendingAction, useSessionAudit } from './session-audit-shared';
 import { type AttachedFile } from './session-chat-input';
 import { SessionContextModal } from './session-context-modal';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 
 const EMPTY_CONVERSATION_COPY = 'Start a conversation with the selected native harness.';
 
-/** Per-turn footer chip data (`turnFooters`, below) — duration/cost text plus
- *  the assistant message the hover-reveal `CopyButton` copies. Mirrors what
- *  THEIRS derives inline per turn (`acpTurnDurationMs`, `formatAcpCost`). */
+/** Per-turn footer data (`turnFooters`, below) — the turn's duration, the
+ *  assistant message the `CopyButton` copies, and (last turn only) the
+ *  running session totals: cumulative cost and current context size. The
+ *  session totals live HERE, on the transcript's own footer line, rather
+ *  than as a detached meta row floating above the composer — one line, one
+ *  place, dot-separated via `InlineMeta`. */
 interface AcpTurnFooter {
   durationMs: number | null;
   costLabel: string | null;
+  contextLabel: string | null;
   lastAssistantText: AcpMessageItem | null;
 }
 
@@ -186,7 +198,11 @@ export function AcpSessionChat({
   // prop to `AcpChatItemRow`, so it cannot break that row's `memo` bailout.
   // Same footer condition THEIRS uses: only a turn with a completed
   // assistant response (never the streaming tail) shows one, and only the
-  // last turn ever carries a cost figure (the running session total).
+  // last turn ever carries the session totals — cumulative cost ("$0.42
+  // this session") and current context size ("128k ctx"). Both are pure
+  // projections off the SAME `usage` snapshot the store already maintains
+  // incrementally (`AcpSession`/`projectAcpUsage`, `@kortix/sdk`) — no new
+  // query, no envelope re-fold.
   const turnFooters = useMemo<AcpTurnFooter[]>(
     () =>
       turns.map((turn, turnIndex) => {
@@ -201,7 +217,8 @@ export function AcpSessionChat({
             ) ?? null;
         return {
           durationMs: acpTurnDurationMs(turn, ordinalTimestamps),
-          costLabel: isLastTurn && !busy ? formatAcpCost(usage?.cost) : null,
+          costLabel: isLastTurn && !busy ? formatAcpSessionCostLabel(usage?.cost) : null,
+          contextLabel: isLastTurn && !busy ? formatAcpContextLabel(usage) : null,
           lastAssistantText,
         };
       }),
@@ -527,6 +544,7 @@ export function AcpSessionChat({
                   const { userItem, restItems } = splitAcpTurn(turn);
                   const isLastTurn = turnIndex === turns.length - 1;
                   const turnBusy = isLastTurn && busy;
+                  const footer = turnFooters[turnIndex];
                   // Grafted grouping pipeline: fold this turn's non-user items
                   // into same-tool / reasoning runs (`groupAcpTurnItems`).
                   // Grouped runs render through their own memoized group cards;
@@ -558,69 +576,102 @@ export function AcpSessionChat({
                     <div
                       key={userItem?.id ?? `turn-${turnIndex}`}
                       data-turn-id={userItem?.id ?? `turn-${turnIndex}`}
-                      className="group/turn space-y-4"
+                      className="group/turn space-y-3"
                     >
                       {userItem ? renderRow(userItem, 0) : null}
-                      {renderItems.map((renderItem, renderIndex) => {
-                        if (renderItem.type === 'reasoning-group') {
-                          return (
-                            <AcpGroupedReasoningCard
-                              key={renderItem.key}
-                              items={renderItem.items}
-                              isStreaming={turnBusy}
-                            />
+                      {(() => {
+                        const renderElement = (
+                          renderItem: (typeof renderItems)[number],
+                          renderIndex: number,
+                        ) => {
+                          if (renderItem.type === 'reasoning-group') {
+                            return (
+                              <AcpGroupedReasoningCard
+                                key={renderItem.key}
+                                items={renderItem.items}
+                                isStreaming={turnBusy}
+                              />
+                            );
+                          }
+                          if (renderItem.type === 'tool-group') {
+                            return (
+                              <AcpSameToolGroup
+                                key={renderItem.key}
+                                groupKind={renderItem.groupKind}
+                                items={renderItem.items}
+                                sessionId={sessionId}
+                              />
+                            );
+                          }
+                          if (renderItem.type === 'raw') {
+                            return (
+                              <AcpUnknownMethodCard
+                                key={`raw-${turnIndex}-${renderIndex}`}
+                                method={renderItem.item.method}
+                                data={renderItem.item.data}
+                              />
+                            );
+                          }
+                          // tool-single | plan | question | message → memoized per-item row.
+                          return renderRow(renderItem.item, renderIndex + 1);
+                        };
+                        // Chain-of-thought packing: consecutive activity items
+                        // (reasoning runs, tool piles, single tools, plans,
+                        // raw events) collapse into ONE tight `space-y-1`
+                        // rail so the agent's work reads as a single stepper,
+                        // while assistant prose and interactive question
+                        // cards break the rail and keep the turn's full
+                        // `space-y-4` breathing room.
+                        const segments: ReactNode[] = [];
+                        let rail: ReactElement[] = [];
+                        const flushRail = () => {
+                          if (rail.length === 0) return;
+                          segments.push(
+                            <div key={`rail-${rail[0]!.key ?? turnIndex}`} className="space-y-2">
+                              {rail}
+                            </div>,
                           );
-                        }
-                        if (renderItem.type === 'tool-group') {
-                          return (
-                            <AcpSameToolGroup
-                              key={renderItem.key}
-                              groupKind={renderItem.groupKind}
-                              items={renderItem.items}
-                              sessionId={sessionId}
-                            />
-                          );
-                        }
-                        if (renderItem.type === 'raw') {
-                          return (
-                            <AcpUnknownMethodCard
-                              key={`raw-${turnIndex}-${renderIndex}`}
-                              method={renderItem.item.method}
-                              data={renderItem.item.data}
-                            />
-                          );
-                        }
-                        // tool-single | plan | question | message → memoized per-item row.
-                        return renderRow(renderItem.item, renderIndex + 1);
-                      })}
-                      {!turnBusy && turnFooters[turnIndex]?.lastAssistantText ? (
+                          rail = [];
+                        };
+                        renderItems.forEach((renderItem, renderIndex) => {
+                          const element = renderElement(renderItem, renderIndex);
+                          if (renderItem.type === 'message' || renderItem.type === 'question') {
+                            flushRail();
+                            segments.push(element);
+                            return;
+                          }
+                          rail.push(element);
+                        });
+                        flushRail();
+                        return segments;
+                      })()}
+                      {!turnBusy && footer?.lastAssistantText ? (
+                        // One aligned footer line per completed turn: the copy
+                        // action + an `InlineMeta` (turn duration · session
+                        // cost · context size — the session totals live here,
+                        // never as a detached line floating above the
+                        // composer). Last turn: legible, rest-visible.
+                        // Historical turns keep the hover-reveal noise control.
                         <div
                           data-testid="acp-turn-footer"
                           className={cn(
-                            'text-muted-foreground -mt-2 flex items-center gap-0.5 text-xs transition-opacity duration-150',
-                            // Last turn: legible, rest-visible — spend is not
-                            // hover-only-last-turn anymore. Historical turns
-                            // keep the hover-reveal noise control.
+                            'text-muted-foreground -mt-2 flex items-center gap-1 text-xs transition-opacity duration-150',
                             isLastTurn ? 'opacity-100' : 'opacity-0 group-hover/turn:opacity-100',
                           )}
                         >
-                          {turnFooters[turnIndex]!.durationMs != null ||
-                          turnFooters[turnIndex]!.costLabel ? (
-                            <span
-                              className={cn(
-                                'mr-1 tabular-nums',
-                                isLastTurn ? 'text-muted-foreground' : 'text-muted-foreground/50',
-                              )}
-                            >
-                              {turnFooters[turnIndex]!.durationMs != null
-                                ? formatAcpDuration(turnFooters[turnIndex]!.durationMs!)
-                                : null}
-                              {turnFooters[turnIndex]!.costLabel ? (
-                                <> · {turnFooters[turnIndex]!.costLabel}</>
-                              ) : null}
-                            </span>
-                          ) : null}
-                          <CopyButton code={turnFooters[turnIndex]!.lastAssistantText!.text} />
+                          <CopyButton code={footer.lastAssistantText.text} />
+                          <InlineMeta
+                            className={cn(
+                              'tabular-nums',
+                              isLastTurn ? 'text-muted-foreground' : 'text-muted-foreground/50',
+                            )}
+                          >
+                            {footer.durationMs != null
+                              ? formatAcpDuration(footer.durationMs)
+                              : null}
+                            {footer.costLabel}
+                            {footer.contextLabel}
+                          </InlineMeta>
                         </div>
                       ) : null}
                     </div>
@@ -650,20 +701,24 @@ export function AcpSessionChat({
             {busy ? <AcpBusyIndicator statusText={liveStatusText} /> : null}
             <div ref={spacerElRef} />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={
-              showScrollButton
-                ? 'bg-background/90 absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full shadow-lg'
-                : 'pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full opacity-0'
-            }
-            onClick={smoothScrollToAbsoluteBottom}
-          >
-            Scroll to latest
-          </Button>
         </div>
+
+        {/* Floats over the scroll area — anchored to the OUTER relative
+            wrapper, never inside the scroll container itself (an absolute
+            child of a scrolling box scrolls away with the content, which is
+            exactly the "stuck on the page" bug this fixes). */}
+        <Button
+          type="button"
+          // variant="outline"
+          size="icon"
+          className={cn(
+            'absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full transition-opacity duration-150',
+            showScrollButton ? 'shadow-md' : 'pointer-events-none opacity-0',
+          )}
+          onClick={smoothScrollToAbsoluteBottom}
+        >
+          <ArrowDown />
+        </Button>
 
         {selectionPopup && (
           <div
@@ -716,7 +771,6 @@ export function AcpSessionChat({
             Reconnecting…
           </span>
         ) : null}
-        <AcpSessionUsageMeta usage={usage} />
         <ComposerChatInput
           sessionId={sessionId}
           projectId={projectId}
@@ -833,30 +887,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/**
- * Quiet, always-legible session-total line above the composer — "$0.42 this
- * session · 128k ctx". A pure projection off the SAME `usage` snapshot
- * `AcpSessionChat` already receives as a prop (`AcpUsageProjection`, from the
- * store's incrementally-maintained `AcpSession`/`projectAcpUsage` —
- * `@kortix/sdk`) — no new query, no envelope re-fold. Renders nothing until
- * the harness has reported at least one of cost or context (never a
- * fabricated empty row), and numbers render `tabular-nums` so a changing
- * digit count never joggles neighboring text.
- */
-function AcpSessionUsageMeta({ usage }: { usage: AcpUsageProjection | null | undefined }) {
-  const costLabel = formatAcpSessionCostLabel(usage?.cost);
-  const contextLabel = formatAcpContextLabel(usage);
-  if (!costLabel && !contextLabel) return null;
-  return (
-    <div data-testid="acp-session-usage-meta">
-      <InlineMeta className="tabular-nums">
-        {costLabel}
-        {contextLabel}
-      </InlineMeta>
-    </div>
-  );
-}
-
 /** The pulsing-dot + shimmering status line shown while the agent is actively
  *  working — main's busy treatment (`AnimatedThinkingText` + pulsing dot +
  *  `· Ns` counter), fed by the live tool status derived from the streaming ACP
@@ -880,7 +910,8 @@ function AcpBusyIndicator({ statusText }: { statusText?: string }) {
         <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
         <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
       </span>
-      <AnimatedThinkingText statusText={statusText ?? 'Thinking'} className="text-xs" />
+      {/* <AnimatedThinkingText statusText={statusText ?? 'Thinking'} className="text-xs" /> */}
+      <TextShimmer className='text-xs'>{statusText ?? 'Thinking'}</TextShimmer>
       <span className="text-muted-foreground/50">·</span>
       <span className="text-muted-foreground/70 tabular-nums">{seconds}s</span>
     </div>

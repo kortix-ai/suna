@@ -124,7 +124,7 @@ describe('AcpUnknownMethodCard — graceful unknown-frame rendering', () => {
     }
   });
 
-  test('opening the Advanced disclosure reveals the raw JSON payload', async () => {
+  test('opening the step disclosure reveals the raw JSON payload', async () => {
     const { AcpUnknownMethodCard } = await import('./acp-transcript-groups');
 
     let renderer!: ReactTestRenderer;
@@ -133,11 +133,17 @@ describe('AcpUnknownMethodCard — graceful unknown-frame rendering', () => {
     });
 
     try {
-      const advancedButton = findButtonsWithText(renderer, 'Advanced')[0];
-      expect(advancedButton).toBeTruthy();
+      // The whole trigger row is the disclosure affordance now (the shared
+      // `Steps` stepper idiom) — no separate "Advanced" button.
+      const triggerButton = findButtonsWithText(renderer, 'Unrecognized agent event')[0];
+      expect(triggerButton).toBeTruthy();
 
       act(() => {
-        (advancedButton.props as { onClick: () => void }).onClick();
+        // Radix's composed click handler reads `event.defaultPrevented`, so
+        // hand it a minimal event stub rather than calling bare.
+        (triggerButton.props as { onClick: (event: unknown) => void }).onClick({
+          defaultPrevented: false,
+        });
       });
 
       const text = textOf(renderer.root);

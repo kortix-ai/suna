@@ -89,6 +89,79 @@ describe('acpToolCallToPart', () => {
     expect(part.state.input).toEqual(input);
   });
 
+  test('snake_case file_path (Claude Code wire shape) gains the canonical filePath alias, original key kept', () => {
+    const part = acpToolCallToPart(tool({ title: 'Read file', rawInput: { file_path: '/workspace/README.md' } }));
+    expect(part.state.input).toEqual({ file_path: '/workspace/README.md', filePath: '/workspace/README.md' });
+  });
+
+  test('object rawInput without a path falls back to the first location for filePath', () => {
+    const part = acpToolCallToPart(tool({
+      title: 'Read file',
+      rawInput: { offset: 10 },
+      locations: [{ path: '/workspace/a.ts', line: 1 }],
+    }));
+    expect(part.state.input).toEqual({ offset: 10, filePath: '/workspace/a.ts' });
+  });
+
+  test('an explicit filePath is never overridden by aliases or locations', () => {
+    const part = acpToolCallToPart(tool({
+      title: 'Read file',
+      rawInput: { filePath: '/keep/me.ts', file_path: '/other.ts' },
+      locations: [{ path: '/loc.ts' }],
+    }));
+    expect(part.state.input.filePath).toBe('/keep/me.ts');
+  });
+
+  test('sandbox process plumbing (Chunk ID / Wall time / session ID / Output:) is stripped, real output kept', () => {
+    const wrapped = [
+      'Chunk ID: ddbbf1',
+      'Wall time: 1.0005 seconds',
+      'Process running with session ID 16120',
+      'Original token count: 0',
+      'Output:',
+      '/workspace',
+      'total 24',
+    ].join('\n');
+    const part = acpToolCallToPart(tool({ title: 'Execute command', rawOutput: { formatted_output: wrapped } }));
+    expect(part.state.output).toBe('/workspace\ntotal 24');
+  });
+
+  test('a plumbing-only payload (process produced nothing) collapses to empty output', () => {
+    const wrapped = [
+      'Chunk ID: 000fcb',
+      'Wall time: 1.0035 seconds',
+      'Process running with session ID 24452',
+      'Original token count: 0',
+      'Output:',
+    ].join('\n');
+    const part = acpToolCallToPart(tool({ title: 'Execute command', rawOutput: { formatted_output: wrapped } }));
+    expect(part.state.output).toBe('');
+  });
+
+  test('ordinary output without a Chunk ID header passes through untouched', () => {
+    const part = acpToolCallToPart(tool({ title: 'Execute command', rawOutput: 'Wall time: is a phrase\nreal line' }));
+    expect(part.state.output).toBe('Wall time: is a phrase\nreal line');
+  });
+
+  test('structured rawOutput surfaces its human-readable text, never a JSON dump', () => {
+    const part = acpToolCallToPart(tool({
+      title: 'Execute command',
+      rawOutput: { formatted_output: 'hello from pwd', exit_code: 0 },
+    }));
+    expect(part.state.output).toBe('hello from pwd');
+  });
+
+  test('nested content blocks resolve to their text; diff blocks never flatten into output text', () => {
+    const part = acpToolCallToPart(tool({
+      title: 'Read file',
+      content: [
+        { type: 'content', content: { type: 'text', text: 'file body' } },
+        { type: 'diff', path: '/a.ts', oldText: 'x', newText: 'y' },
+      ],
+    }));
+    expect(part.state.output).toBe('file body');
+  });
+
   test('empty input when no rawInput and no usable location', () => {
     const part = acpToolCallToPart(tool({ title: 'Mystery step' }));
     expect(part.state.input).toEqual({});
@@ -125,7 +198,9 @@ describe('acpToolCallToPart', () => {
     }));
 
     expect(part.state.status).toBe('error');
-    expect(part.state.input).toEqual(input);
+    // Enriched, not mutated: the original keys survive alongside the
+    // canonical `filePath` alias derived from the reported location.
+    expect(part.state.input).toEqual({ ...input, filePath: location.path });
     expect(part.state.output).toContain('failed');
     expect(part.state.error).toContain('failed');
     expect(part.state.metadata).toEqual({ locations: [location], acp: { vendor: 'codex' } });

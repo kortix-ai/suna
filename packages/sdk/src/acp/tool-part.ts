@@ -23,7 +23,7 @@ export type AcpNormalizedToolPart = {
 export function acpToolCallToPart(tool: AcpToolCall): AcpNormalizedToolPart {
   const name = acpToolName(tool);
   const input = normalizeInput(tool.rawInput, name, tool.locations);
-  const output = valueText(tool.rawOutput) || contentText(tool.content);
+  const output = stripProcessPlumbing(valueText(tool.rawOutput) || contentText(tool.content));
   const status = statusFor(tool.status);
   const state = status === 'error'
     ? { status, input, output, error: output || `${tool.title} failed`, metadata: { locations: tool.locations, acp: tool.data } }
@@ -63,11 +63,24 @@ function statusFor(status: string | null): 'pending' | 'running' | 'completed' |
 }
 
 function normalizeInput(value: unknown, name: string, locations: unknown[]): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
-  if (typeof value === 'string') return name === 'bash' ? { command: value } : { value };
-  const first = locations.find((location) => location && typeof location === 'object') as Record<string, unknown> | undefined;
-  const path = first?.path ?? first?.uri;
-  return typeof path === 'string' ? { filePath: path } : {};
+  let input: Record<string, unknown>;
+  if (value && typeof value === 'object' && !Array.isArray(value)) input = { ...(value as Record<string, unknown>) };
+  else if (typeof value === 'string') input = name === 'bash' ? { command: value } : { value };
+  else input = {};
+  // Canonical `filePath` for the camelCase key every host renderer dispatches
+  // on (`getToolInfo`): ACP harnesses send snake_case (`file_path`, Claude
+  // Code / claude-agent-acp) or only report the file through `locations`.
+  // The original keys stay untouched alongside the alias.
+  if (typeof input.filePath !== 'string') {
+    const aliased = firstStringOf(input.file_path, input.abs_path, input.absolute_path, input.filename);
+    if (aliased) input.filePath = aliased;
+    else {
+      const first = locations.find((location) => location && typeof location === 'object') as Record<string, unknown> | undefined;
+      const path = first?.path ?? first?.uri;
+      if (typeof path === 'string') input.filePath = path;
+    }
+  }
+  return input;
 }
 
 function contentText(content: unknown[]): string {
@@ -75,6 +88,9 @@ function contentText(content: unknown[]): string {
     if (typeof entry === 'string') return entry;
     if (!entry || typeof entry !== 'object') return '';
     const record = entry as Record<string, unknown>;
+    // Diff/terminal content blocks are structured, not prose — hosts render
+    // them from `metadata.acp`/the raw tool call, never as flattened text.
+    if (record.type === 'diff' || record.type === 'terminal') return '';
     return valueText(record.text ?? record.content ?? record.output);
   }).filter(Boolean).join('\n');
 }
@@ -82,7 +98,61 @@ function contentText(content: unknown[]): string {
 function valueText(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined || value === null) return '';
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    // Structured tool outputs (e.g. claude-agent-acp's bash
+    // `{ formatted_output, exit_code }`, or a nested `{ text }` content
+    // block) carry their human-readable text under a well-known key —
+    // surface THAT, never a `JSON.stringify` dump of the whole envelope.
+    const record = value as Record<string, unknown>;
+    const text = firstStringOf(
+      record.formatted_output,
+      record.formattedOutput,
+      record.output,
+      record.stdout,
+      record.stderr,
+      record.text,
+      record.message,
+      record.content,
+    );
+    if (text) return text;
+  }
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+/**
+ * The Kortix sandbox wraps long-running shell/tool processes in a status
+ * header before the real text:
+ *
+ *     Chunk ID: ddbbf1
+ *     Wall time: 1.0005 seconds
+ *     Process running with session ID 16120
+ *     Original token count: 0
+ *     Output:
+ *     <the actual output…>
+ *
+ * That plumbing is process bookkeeping, not tool output — a non-technical
+ * reader should only ever see what the command actually printed. Drop the
+ * bookkeeping lines (they may repeat per chunk) and the bare `Output:`
+ * label; whatever remains is the real text. An empty remainder is the
+ * honest answer "this produced no output", which hosts render as their own
+ * quiet empty state rather than a wall of internals.
+ */
+const PROCESS_PLUMBING_LINE = /^\s*(Chunk ID: \S+|Wall time: [\d.]+ seconds?|Process (?:still )?running with session ID \d+|Original token count: \d+|Output:)\s*$/;
+
+function stripProcessPlumbing(text: string): string {
+  if (!text || !/^\s*Chunk ID: /m.test(text)) return text;
+  return text
+    .split('\n')
+    .filter((line) => !PROCESS_PLUMBING_LINE.test(line))
+    .join('\n')
+    .trim();
+}
+
+function firstStringOf(...values: unknown[]): string | undefined {
+  for (const candidate of values) {
+    if (typeof candidate === 'string' && candidate) return candidate;
+  }
+  return undefined;
 }
 
 /**
