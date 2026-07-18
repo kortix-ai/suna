@@ -13,6 +13,7 @@
 // entrypoint, so it can't collide with the sibling agents editing
 // apps/cli/src/** in parallel.
 
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -40,17 +41,26 @@ export interface RunResult {
 export class SelfHostSandbox {
   readonly tmp: string;
   readonly configRoot: string;
+  readonly instance: string;
   private readonly cliConfigFile: string;
 
   constructor() {
     this.tmp = mkdtempSync(join(tmpdir(), 'kortix-self-host-e2e-'));
     this.configRoot = join(this.tmp, 'self-host');
     this.cliConfigFile = join(this.tmp, 'cli-config.json');
+    // Compose identity is derived only from --instance, not configRoot. Using
+    // the default instance here would make `env set` inspect (and potentially
+    // recreate) a developer's real `kortix-default` stack even though every
+    // file lives in this throwaway directory. Keep every black-box sandbox on
+    // a globally unique Compose project so the no-Docker suite is truly inert.
+    this.instance = `kortixtest${randomUUID().replaceAll('-', '')}`;
   }
 
   async run(args: string[], extraEnv: Record<string, string> = {}): Promise<RunResult> {
+    const instanceArgs = args.includes('--instance') ? [] : ['--instance', this.instance];
     const proc = Bun.spawn({
-      cmd: [process.execPath, CLI_ENTRY, 'self-host', ...args],
+      cmd: [process.execPath, CLI_ENTRY, 'self-host', ...args, ...instanceArgs],
+      cwd: this.tmp,
       env: {
         ...process.env,
         KORTIX_SELF_HOST_CONFIG_DIR: this.configRoot,
@@ -84,7 +94,7 @@ export class SelfHostSandbox {
    *  (not a real dotenv parser): this repo's self-host `.env` never quotes or
    *  multi-lines a value (see writeEnv() in commands/self-host.ts), so a
    *  naive split is exact and dependency-free. */
-  readEnv(instance = 'default'): Record<string, string> {
+  readEnv(instance = this.instance): Record<string, string> {
     const content = readFileSync(join(this.configRoot, instance, '.env'), 'utf8');
     const out: Record<string, string> = {};
     for (const line of content.split(/\r?\n/)) {
@@ -95,7 +105,7 @@ export class SelfHostSandbox {
     return out;
   }
 
-  readComposeText(instance = 'default'): string {
+  readComposeText(instance = this.instance): string {
     return readFileSync(join(this.configRoot, instance, 'docker-compose.yml'), 'utf8');
   }
 
