@@ -77,3 +77,8 @@ export interface UploadResult {
   path: string;
   size: number;
 }
+
+/** `GET /ports` response item — a listening TCP port inside the sandbox. */
+export interface ListeningPort {
+  port: number;
+}

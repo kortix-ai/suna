@@ -17,6 +17,7 @@ import type {
   FileNode,
   FindMatch,
   GitFileStatus,
+  ListeningPort,
   RuntimeProjectInfo,
   ServerHealth,
   UploadResult,
@@ -148,6 +149,12 @@ export async function readBlob(filePath: string, baseUrl: string = getActiveRunt
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */
 export function getFileStatus(baseUrl: string = getActiveRuntimeUrl()): Promise<GitFileStatus[]> {
   return fetchDaemonJson<GitFileStatus[]>(`/file/status`, baseUrl);
+}
+
+/** Listening TCP ports inside the sandbox. Daemon `GET /ports`. */
+export async function listListeningPorts(baseUrl: string = getActiveRuntimeUrl()): Promise<ListeningPort[]> {
+  const result = await fetchDaemonJson<{ ports?: ListeningPort[] }>(`/ports`, baseUrl);
+  return result.ports ?? [];
 }
 
 /**
@@ -363,6 +370,7 @@ export const files = {
   read: readFile,
   readBlob,
   status: getFileStatus,
+  listeningPorts: listListeningPorts,
   findFiles,
   findText,
   upload: uploadFile,

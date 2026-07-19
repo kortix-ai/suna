@@ -238,6 +238,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-17 | `ws5-p0-c` | The SDK's OWN `ExperimentalFeatureKey` union (`core/rest/projects-client/projects.ts`) is a hand-maintained mirror of `apps/api/src/experimental/features.ts` / `@kortix/api-contract`'s `ExperimentalFeatureMapSchema` — and it was already missing `experimental_harnesses` (added to apps/api by commit `8658acde6`) before this session touched it. Added `unified_model_picker` (this task's own key, required for `apps/web` typecheck) but left `experimental_harnesses` unfixed — pre-existing drift, out of this task's granted scope. A consumer reading `project.experimental.experimental_harnesses` off the SDK's `KortixProject` type today gets a `Record<ExperimentalFeatureKey, boolean>` whose key type doesn't statically include it (works at runtime via bracket access or the api-contract-typed route, just not through the SDK's own narrower type). | `packages/sdk/src/core/rest/projects-client/projects.ts:16` |
 | 2026-07-17 | `ws5-p0-c` | `apps/api/.env.keys` (the dotenvx private key for the **local** profile) is absent from this sandbox and no `dotenvx-armor` CLI/session is available to pull it — `apps/api`'s own test suite (`bash scripts/test.sh`, per-file `dotenvx run -- bun test`) cannot execute here; `bun test` fails at `config.ts`'s env validation before any test file even loads (every encrypted var decrypts to `encrypted:…` literal, fails Zod). Not a regression from this task — pre-existing sandbox/environment gap. `apps/api`'s `tsc --noEmit` (no env needed) DOES run clean here, and was used as the substitute verification for the two `apps/api` files this task touched. | `apps/api/.env`, `apps/api/scripts/test.sh`, `apps/api/src/config.ts` |
 | 2026-07-17 | `fast-follow-disc07` | **DISC-07 closed.** The gap flagged on the row above (`ws5-p0-c`, `experimental_harnesses` missing from the SDK's own `ExperimentalFeatureKey` mirror) is fixed: the union now lists `experimental_harnesses` alongside `unified_model_picker`, matching `@kortix/api-contract`'s `ExperimentalFeatureMapSchema` key-for-key. Stale "missing / out of scope" NOTE comment corrected. Type-level regression test added (`projects.test.ts`). Gates: `typecheck` clean, `test` 1184/1184 (was 1183), `smoke:install` passed. Public snapshot untouched (name-only, doesn't track union members). | `packages/sdk/src/core/rest/projects-client/projects.ts:15-27`, `packages/sdk/src/core/rest/projects-client/projects.test.ts` |
+| 2026-07-19 | `listening-ports-synthetic-pin` | **`pnpm --filter @kortix/sdk typecheck` is pre-existing RED on this branch, unrelated to this task.** `src/react/model-flatten.test.ts:4` imports a type from `./use-opencode-sessions`, a module that no longer exists (deleted by an earlier OpenCode-session-mapping removal); `src/react/use-model-store.test.ts` has its entire body duplicated (two `import {describe,expect,test}` blocks, `TS2300` duplicate-identifier ×6), which reads as an incompletely-resolved merge — present already at `7398090d4` ("Merge branch 'main' into acp-harness-runtime-v2"), before this session's claim commit. Verified by stashing this task's 3 changed files and re-running `typecheck`: identical 7 errors, byte-for-byte. `bun test` (this task's actual gate per `AGENTS.md`) is unaffected and green. Left unfixed — out of this task's scope; flagging for whichever session owns `src/react/{model-flatten,use-model-store}.test.ts` next. | `packages/sdk/src/react/model-flatten.test.ts:4`, `packages/sdk/src/react/use-model-store.test.ts` |
 
 
 ---
@@ -1278,3 +1279,61 @@ verified fresh this session — supersedes the stale 1069/71 figure in
 `AGENTS.md`), and `smoke:install`.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-19 — session `listening-ports-synthetic-pin` (completion)
+
+Implemented per the brief, TDD throughout:
+
+1. **Client (RED → GREEN):** `client.test.ts` gained a failing suite for
+   `listListeningPorts` (unwraps `GET /ports` → `{ ports }`, throws `ApiError`
+   with the server's message on a non-OK response, returns `[]` when `ports`
+   is absent) — watched RED (`F.listListeningPorts is not a function`), then
+   `ListeningPort` (`core/files/types.ts`) + `listListeningPorts` (mirrors
+   `getFileStatus`) + `files.listeningPorts` (`core/files/client.ts`) turned it
+   GREEN, matching the file's existing fetch-mock idiom exactly.
+2. **Pinning test (PASSED FIRST RUN, as the brief predicted):**
+   `src/acp/synthetic-outputs.test.ts` feeds the exact Task-2 envelope through
+   `reduceEnvelope` then `acpToolCallToPart`, using the same `stored(...)`
+   row-factory idiom as `reduce.test.ts`. No SDK code changed for this half —
+   it locks existing generic normalization (`tool.data.tool` fallback in
+   `acpToolName`, object pass-through in `normalizeInput`, `data: update` in
+   `projectToolCall`) that the daemon's synthetic-output feature already
+   depends on. No provider branch was needed or added.
+3. **Snapshots:** both `public-surface.snapshot.json` and
+   `public-type-surface.snapshot.json` diffed — reviewed and confirmed
+   purely additive (`ListeningPort` in both maps' type lists, at root and
+   `./files`; `listListeningPorts` in both maps' runtime-name lists under
+   `./files`) — then re-recorded via `UPDATE_SURFACE_SNAPSHOT=1` /
+   `UPDATE_TYPE_SURFACE_SNAPSHOT=1`.
+
+**Found, not fixed (see Discovered-this-session row above):**
+`pnpm --filter @kortix/sdk typecheck` is pre-existing RED on this branch
+(`src/react/model-flatten.test.ts` + `src/react/use-model-store.test.ts`),
+verified unrelated to this task by stashing this task's diff and reproducing
+the identical 7 errors. `bun test` — this package's actual test gate — is
+unaffected.
+
+**Gates (paste-real-output, this session):**
+
+```
+pnpm --filter @kortix/sdk typecheck
+  → pre-existing RED (7 errors, see above), unchanged with/without this task's diff
+
+pnpm --filter @kortix/sdk test
+  → 1256 pass / 0 fail / 5416 expect() calls, 97 files
+  (baseline was 1252/0/96 before this task; +4 tests, +1 file, no regressions)
+
+pnpm --filter @kortix/sdk run smoke:install
+  → built dist/, staged manifests, npm pack, installed both tarballs into a
+    throwaway project, imported and constructed @kortix/sdk from the packed
+    tarball — "✔ install smoke test passed"
+```
+
+**Shippable to production: YES** for this task's surface
+(`listListeningPorts`/`ListeningPort`/`files.listeningPorts`, the synthetic
+output-show pinning test). **NOT a verdict on the whole branch** — the
+pre-existing `typecheck` RED in `src/react/{model-flatten,use-model-store}.test.ts`
+is unrelated and still needs its own owner/fix before the branch as a whole
+can claim a clean `typecheck`.
