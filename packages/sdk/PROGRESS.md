@@ -1260,3 +1260,21 @@ surface snapshots remained green without regeneration.
 **Shippable to production: YES** for the SDK and local web fix. Repository PR,
 merge, deploy-dev, and deployed-SHA verification remain part of the parent ACP
 branch lifecycle.
+
+---
+
+### 2026-07-19 — session `listening-ports-synthetic-pin` (claim)
+
+Claimed Task 4 of `.superpowers/sdd/task-4-brief.md`: an additive
+`listListeningPorts`/`ListeningPort` client over the sandbox daemon's `GET
+/ports` (added server-side by `dd4f689a4`), plus a regression-pinning test for
+the synthetic `session/update` output-show envelope the daemon now emits
+(`335d94110`) — asserting the reducer + `acpToolCallToPart` normalize it to
+`tool === 'show'`, `status === 'completed'`, `input.items` deep-equal, and
+`metadata.acp._meta.kortix.synthetic === 'filesystem-delta'`. Purely additive:
+no existing export renamed or removed. Full SDK gates required before
+closing: `typecheck`, `test` (baseline **1252 pass / 0 fail / 96 files**,
+verified fresh this session — supersedes the stale 1069/71 figure in
+`AGENTS.md`), and `smoke:install`.
+
+**Status:** IN PROGRESS.
