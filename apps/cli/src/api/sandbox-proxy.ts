@@ -127,18 +127,9 @@ function promptMessageId(): string {
   // OpenCode writes the encoded value into six bytes, retaining the low
   // 48 bits. slice(-12) mirrors that Buffer behavior exactly.
   const timestamp = encoded.toString(16).padStart(12, '0').slice(-12);
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  let random = '';
-  while (random.length < 14) {
-    const bytes = crypto.getRandomValues(new Uint8Array(14 - random.length));
-    for (const byte of bytes) {
-      // 248 is the largest multiple of 62 below 256. Rejecting the remaining
-      // byte values and dividing each accepted bucket by four gives every
-      // base62 character exactly the same probability.
-      if (byte >= 248) continue;
-      random += chars[Math.floor(byte / 4)];
-    }
-  }
+  // Hex is a valid subset of OpenCode's alphanumeric suffix alphabet. UUID
+  // entropy avoids hand-rolling arithmetic over secure random bytes.
+  const random = crypto.randomUUID().replaceAll('-', '').slice(0, 14);
   return `msg_${timestamp}${random}`;
 }
 
