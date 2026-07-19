@@ -22,3 +22,12 @@ test('copy control keeps both icons in an animated fixed-size box', () => {
   expect(source).toContain("filter: 'blur(4px)'");
   expect(source).toContain('duration: 0.3, bounce: 0');
 });
+
+test('develop locally includes the environment-aware CLI installer before clone', () => {
+  const source = readFileSync(join(import.meta.dir, 'git-view.tsx'), 'utf8');
+  expect(source).toContain('getKortixCliInstallCommand(getEnv().VERSION)');
+  expect(source).toContain('label="Install command"');
+  expect(source.indexOf('label="Install command"')).toBeLessThan(
+    source.indexOf('label="Clone command"'),
+  );
+});
