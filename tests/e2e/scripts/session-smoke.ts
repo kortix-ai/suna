@@ -232,7 +232,13 @@ async function main() {
     await sleep(1000);
   }
   if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
-  const branches = await api('GET', `/projects/${projectId}/branches`);
+  const branches = await eventuallyGet(
+    `/projects/${projectId}/branches`,
+    (result) => {
+      const rows = result.json?.branches ?? [];
+      return result.status === 200 && rows.some((branch: any) => branch.name === sessionId);
+    },
+  );
   const branchRows = branches.json?.branches ?? [];
   ok('session branch pushed to managed repo', branches.status === 200 && branchRows.some((branch: any) => branch.name === sessionId), `${branches.status} ${branches.text.slice(0, 160)}`);
 
