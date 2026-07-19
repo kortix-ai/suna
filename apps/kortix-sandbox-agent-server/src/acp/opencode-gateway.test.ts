@@ -120,6 +120,17 @@ describe('OpenCode managed-gateway provider mount', () => {
     expect(Object.keys(config.provider.kortix.models).length).toBeGreaterThan(1)
   })
 
+  it('falls back when a readable catalog contains an invalid model entry', () => {
+    const catalogPath = catalogFileWith({ broken: null })
+    const config = opencodeConfig({
+      ...GATEWAY_ENV,
+      KORTIX_RUNTIME_AUTH_KIND: 'managed_gateway',
+      KORTIX_LLM_CATALOG_FILE: catalogPath,
+    })
+    expect(config.provider.kortix.models.broken).toBeUndefined()
+    expect(config.provider.kortix.models.auto).toBeDefined()
+  })
+
   it('does not mount managed models for an OpenAI-compatible BYOK session', () => {
     const config = opencodeConfig({
       ...GATEWAY_ENV,
@@ -146,5 +157,26 @@ describe('OpenCode managed-gateway provider mount', () => {
 
   it('preserves native OpenCode behavior when gateway credentials are absent', () => {
     expect(resolveAcpHarnessLaunchEnv('opencode', isolateHarnessAuthEnv({}))).toBeUndefined()
+  })
+
+  it('does not emit an explicit managed model when gateway credentials are incomplete', () => {
+    for (const env of [
+      {
+        KORTIX_RUNTIME_AUTH_KIND: 'managed_gateway',
+        KORTIX_RUNTIME_MODEL: 'kortix/codex/gpt-5.6-sol',
+      },
+      {
+        KORTIX_RUNTIME_AUTH_KIND: 'managed_gateway',
+        KORTIX_RUNTIME_MODEL: 'kortix/codex/gpt-5.6-sol',
+        KORTIX_LLM_BASE_URL: GATEWAY_ENV.KORTIX_LLM_BASE_URL,
+      },
+      {
+        KORTIX_RUNTIME_AUTH_KIND: 'managed_gateway',
+        KORTIX_RUNTIME_MODEL: 'kortix/codex/gpt-5.6-sol',
+        KORTIX_LLM_API_KEY: GATEWAY_ENV.KORTIX_LLM_API_KEY,
+      },
+    ]) {
+      expect(resolveAcpHarnessLaunchEnv('opencode', isolateHarnessAuthEnv(env))).toBeUndefined()
+    }
   })
 })

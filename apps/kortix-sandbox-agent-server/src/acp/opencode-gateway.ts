@@ -144,15 +144,38 @@ function withModelLimits(
   return out
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+function isGatewayModel(value: unknown): value is KortixGatewayModel {
+  if (!isRecord(value) || typeof value.name !== 'string' || !value.name.trim()) return false
+  for (const key of ['reasoning', 'tool_call', 'attachment', 'temperature'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'boolean') return false
+  }
+  if (value.limit !== undefined) {
+    if (!isRecord(value.limit)) return false
+    if (value.limit.context !== undefined && !isPositiveNumber(value.limit.context)) return false
+    if (value.limit.output !== undefined && !isPositiveNumber(value.limit.output)) return false
+  }
+  return true
+}
+
 function readCatalogFile(path: string): Record<string, KortixGatewayModel> | null {
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as
-      | { models?: Record<string, KortixGatewayModel> }
-      | Record<string, KortixGatewayModel>
-    const models = (parsed && typeof parsed === 'object' && 'models' in parsed
-      ? (parsed as { models?: Record<string, KortixGatewayModel> }).models
-      : parsed as Record<string, KortixGatewayModel>) ?? {}
-    return Object.keys(models).length > 0 ? models : null
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (!isRecord(parsed)) return null
+    const models = 'models' in parsed ? parsed.models : parsed
+    if (!isRecord(models)) return null
+    const entries = Object.entries(models)
+    if (entries.length === 0 || entries.some(([id, model]) => !id.trim() || !isGatewayModel(model))) {
+      return null
+    }
+    return models as Record<string, KortixGatewayModel>
   } catch {
     return null
   }

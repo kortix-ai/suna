@@ -264,6 +264,9 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
       custom || (authKind && authKind !== 'managed_gateway')
         ? null
         : buildOpencodeKortixProvider(env)
+    if (authKind === 'managed_gateway' && !gatewayProvider) {
+      return Object.keys(native).length ? native : undefined
+    }
     if (!nativeAgent && !runtimeModel && custom?.protocol !== 'openai' && !gatewayProvider) {
       return Object.keys(native).length ? native : undefined
     }
