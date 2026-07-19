@@ -39,7 +39,7 @@ Load both before writing or reviewing UI. When Kortix rules and polish rules ove
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
 | **`@/lib/toast`**, raw `sonner`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx` |
 | Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
-| **`Loader2`**, `Loader`, or any icon as a spinner (`lucide-react`, `@mynaui/icons-react`, etc.) | **`Loading`** from `apps/web/src/components/ui/loading.tsx` |
+| **`CircleNotchIcon`**, `SpinnerIcon`, or any icon as a spinner (`@phosphor-icons/react`) | **`Loading`** from `apps/web/src/components/ui/loading.tsx` |
 | Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
 When editing a file that already uses banned primitives, migrate to the reference pattern — do not add more usage.
@@ -60,7 +60,7 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 | Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
 | Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections |
 | Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
-| Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `Loader2` or other icons |
+| Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
 
@@ -215,7 +215,7 @@ Match the customize views — consistent sizes and variants:
 
 | Context | Pattern |
 | --- | --- |
-| Section header primary action | `Button size="sm" variant="secondary"` + `Plus` icon (`size-4`) + label; group with `gap-1.5` |
+| Section header primary action | `Button size="sm" variant="secondary"` + `PlusIcon` (`size-4`) + label; group with `gap-1.5` |
 | Empty state CTA | `Button variant="outline" size="sm" className="gap-1.5"` |
 | Docs / secondary link | `Button asChild variant="ghost" size="sm" className="gap-1.5"` |
 | Row secondary action | `Button variant="ghost" size="sm"` |
@@ -223,13 +223,36 @@ Match the customize views — consistent sizes and variants:
 | Icon-only with tooltip | `Hint` → `Button variant="outline" size="icon"` inside `ButtonGroup` |
 | Inline text link | `Button variant="transparent" size="sm" asChild` |
 | Modal cancel | `Button variant="outline-ghost"` |
-| Pending / in-flight state | `<Loading className="size-4 shrink-0" />` in buttons; `<Loading />` or `className="size-4 shrink-0"` in headers — **never** `Loader2` |
+| Pending / in-flight state | `<Loading className="size-4 shrink-0" />` in buttons; `<Loading />` or `className="size-4 shrink-0"` in headers — **never** `CircleNotchIcon` |
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
 
+## Icons — Phosphor only
+
+**The only icon library in apps/web is `@phosphor-icons/react`.** `lucide-react`,
+`react-icons`, `@mynaui/icons-react`, and `@icons-pack/react-simple-icons` are
+removed and blocked by ESLint (`no-restricted-imports`).
+
+- Always import the `*Icon`-suffixed exports: `PlusIcon`, `MagnifyingGlassIcon`,
+  `CaretRightIcon` — never the deprecated bare names (`Plus`).
+- **Never pass a `weight` prop for ordinary icons.** The app-wide weight is set
+  once in `src/lib/icons/icon-config.ts` (`DEFAULT_ICON_WEIGHT`) and applied by
+  `IconProvider` (root layout) via Phosphor's `IconContext`. Jay flips this to
+  compare thin/light/regular/bold/fill/duotone across the whole app.
+- **Exception — solid intent:** status tiles, success checks, destructive
+  trash, and logo glyphs pass an explicit `weight="fill"` so they stay solid
+  regardless of the global weight.
+- In dev, a floating switcher (bottom-right) overrides the weight live
+  (`localStorage['kortix.icon-weight']`); production uses only the config
+  constant. Preview grid: /design-system → Icons.
+- Semantic layer: `src/components/ui/kortix-icons.ts` (`IconAdd`, `IconDelete`,
+  …) re-exports Phosphor icons; prefer it where already adopted.
+- Sizing stays Tailwind-first (`size-4`, `size-3.5 shrink-0` in dense buttons);
+  the provider's `size: 24` default only covers class-less usages.
+
 ## Button icon-swap — buttery transitions (blur + scale + opacity)
 
-When a button swaps its icon on a state change (copy → copied, play → pause, follow → following), **never hard-swap** `{done ? <Check/> : <Copy/>}`. Cross-fade the two icons in the same box with **blur + scale + opacity** so it reads as one morph, not two objects blinking. `motion` (`motion/react`) is already a dependency — use it.
+When a button swaps its icon on a state change (copy → copied, play → pause, follow → following), **never hard-swap** `{done ? <CheckIcon/> : <CopyIcon/>}`. Cross-fade the two icons in the same box with **blur + scale + opacity** so it reads as one morph, not two objects blinking. `motion` (`motion/react`) is already a dependency — use it.
 
 Exact values (from [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) → Contextual icon animations): **scale `0.25 → 1`, opacity `0 → 1`, blur `4px → 0`**, spring **`{ type: 'spring', duration: 0.3, bounce: 0 }`** (`bounce: 0` keeps it buttery, never playful). Always `initial={false}` so nothing animates on first paint.
 
@@ -255,7 +278,7 @@ import { AnimatePresence, motion } from 'motion/react';
         transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
         className="absolute inset-0 inline-flex items-center justify-center"
       >
-        {copied ? <Check className="size-3.5 text-kortix-green" /> : <Copy className="size-3.5" />}
+        {copied ? <CheckIcon className="size-3.5 text-kortix-green" /> : <CopyIcon className="size-3.5" />}
       </motion.span>
     </AnimatePresence>
   </span>
@@ -353,7 +376,7 @@ The ladder lives in `@theme` in `globals.css`. Each step layers a tight contact 
 </span>
 ```
 
-Use **solid** icons at `size-5` inside `size-8`/`size-9` tiles. Pair with `Badge` for text labels when needed (`changes-view.tsx`, `sandbox-view.tsx`).
+Use `weight="fill"` icons at `size-5` inside `size-8`/`size-9` tiles. Pair with `Badge` for text labels when needed (`changes-view.tsx`, `sandbox-view.tsx`).
 
 ## Modal pattern (canonical — use `modal.tsx`)
 
@@ -394,20 +417,20 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 
 ## Loading pattern (canonical)
 
-**Every in-flight spinner is `Loading` from `loading.tsx`.** The component ships its own rotate/dash animation — do not swap in `Loader2`, `Loader`, or any other spinning icon.
+**Every in-flight spinner is `Loading` from `loading.tsx`.** The component ships its own rotate/dash animation — do not swap in `CircleNotchIcon`, `SpinnerIcon`, or any other spinning icon.
 
 ```tsx
 import Loading from '@/components/ui/loading';
 
 // Button pending (replaces action icon)
 <Button disabled={pending}>
-  {pending ? <Loading className="size-3.5 shrink-0" /> : <Plus className="size-3.5 shrink-0" />}
+  {pending ? <Loading className="size-3.5 shrink-0" /> : <PlusIcon className="size-3.5 shrink-0" />}
   Save
 </Button>
 
 // Section header action
 <Button size="sm" variant="secondary" disabled={pending}>
-  {pending ? <Loading className="size-4 shrink-0" /> : <Plus className="size-4" />}
+  {pending ? <Loading className="size-4 shrink-0" /> : <PlusIcon className="size-4" />}
   New
 </Button>
 
@@ -453,14 +476,14 @@ Standard content block (`agents-view.tsx` pattern):
 - ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
 - ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
-- ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `Loader2`, `Loader`, or any `animate-spin` icon.
+- ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `CircleNotchIcon`, `SpinnerIcon`, or any `animate-spin` icon.
 
 ## Workflow checklist
 
 1. **Load [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md)** — run its review checklist after composing UI.
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
-4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `Loader2`.
+4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
 5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → ladder step for overlays only; flat border for in-flow panels.
 6. New primitive? Tokens only, tiny API, add to `/design-system`.
 7. Verify: no banned imports, no raw palette colors, no nested rounding, light + dark, `tsc` clean, polish checklist from `make-interfaces-feel-better`.
