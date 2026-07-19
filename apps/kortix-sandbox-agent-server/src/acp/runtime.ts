@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
@@ -67,7 +68,13 @@ export function materializeHarnessLaunchConfig(
   const dir = join(env.HOME || '/opt/kortix/home', '.config', 'kortix')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, 'kortix-opencode.json')
-  writeFileSync(file, content, { mode: 0o600 })
+  const temporaryFile = join(dir, `.kortix-opencode.${process.pid}.${randomUUID()}.tmp`)
+  try {
+    writeFileSync(temporaryFile, content, { flag: 'wx', mode: 0o600 })
+    renameSync(temporaryFile, file)
+  } finally {
+    rmSync(temporaryFile, { force: true })
+  }
   env.OPENCODE_CONFIG = file
   delete env.OPENCODE_CONFIG_CONTENT
 }

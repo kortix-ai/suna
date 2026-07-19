@@ -1,9 +1,13 @@
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -97,6 +101,53 @@ describe('OpenCode spawn config delivery', () => {
       for (const [name, value] of Object.entries(env)) {
         expect(`${name}=${value ?? ''}`.length).toBeLessThan(LINUX_MAX_ARG_STRLEN)
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('replaces a permissive destination with a private file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-opencode-config-mode-'))
+    try {
+      const dir = join(root, '.config', 'kortix')
+      const file = join(dir, 'kortix-opencode.json')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(file, '{"old":true}', { mode: 0o644 })
+      chmodSync(file, 0o644)
+      const env: NodeJS.ProcessEnv = {
+        HOME: root,
+        OPENCODE_CONFIG_CONTENT: '{"new":true}',
+      }
+
+      materializeHarnessLaunchConfig('opencode', env)
+
+      expect(readFileSync(file, 'utf8')).toBe('{"new":true}')
+      expect(statSync(file).mode & 0o777).toBe(0o600)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('replaces a destination symlink without changing its target', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-opencode-config-symlink-'))
+    try {
+      const dir = join(root, '.config', 'kortix')
+      const file = join(dir, 'kortix-opencode.json')
+      const sentinel = join(root, 'sentinel.json')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(sentinel, '{"sentinel":true}')
+      symlinkSync(sentinel, file)
+      const env: NodeJS.ProcessEnv = {
+        HOME: root,
+        OPENCODE_CONFIG_CONTENT: '{"new":true}',
+      }
+
+      materializeHarnessLaunchConfig('opencode', env)
+
+      expect(readFileSync(sentinel, 'utf8')).toBe('{"sentinel":true}')
+      expect(lstatSync(file).isSymbolicLink()).toBe(false)
+      expect(readFileSync(file, 'utf8')).toBe('{"new":true}')
+      expect(statSync(file).mode & 0o777).toBe(0o600)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
