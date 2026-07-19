@@ -10,6 +10,7 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
+import { createPortsRouter } from './routes/ports'
 import webProxyRouter from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
@@ -126,6 +127,7 @@ export function buildAcpApp(
   app.route('/proxy', createPortProxyRouter({ blockedPorts: new Set([cfg.servicePort]) }))
   app.route('/web-proxy', webProxyRouter)
   app.route('/file', createFilesRouter(cfg))
+  app.route('/ports', createPortsRouter({ excludedPorts: new Set([cfg.servicePort, cfg.opencodeInternalPort, cfg.staticPort]) }))
   app.route('/find', createFindRouter(cfg))
   app.route('/presentation', createPresentationRouter(cfg))
   app.route('/acp', createAcpRouter(acpRuntime))
