@@ -46,6 +46,7 @@ import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
+import { familyForTool, toolPartStatus } from '../shared/narration';
 import { mergePortApps } from '../shared/port-apps';
 import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
@@ -150,7 +151,18 @@ export const EasyPanel = memo(function EasyPanel({
   // explicitly `show`ed is still openable the moment it starts listening —
   // event-derived rows win on a shared port (see `mergePortApps`), since they
   // carry the human title the agent gave the deliverable.
-  const portApps = useRunningApps(isRunning);
+  // A rising count of completed 'run'-family calls (bash/pty — the family
+  // that starts servers) — passed to `useRunningApps` so it can refetch the
+  // instant a launch command finishes instead of waiting out the poll
+  // interval (W1). Monotonic across the whole session on purpose: it only
+  // needs to ever go UP for the hook's rising-edge check to fire.
+  const executeCompletions = useMemo(
+    () =>
+      parts.filter((p) => familyForTool(p.tool) === 'run' && toolPartStatus(p) === 'completed')
+        .length,
+    [parts],
+  );
+  const portApps = useRunningApps(isRunning, executeCompletions);
   const apps = useMemo(
     () => mergePortApps(outputs.filter((o) => o.kind === 'app'), portApps),
     [outputs, portApps],
