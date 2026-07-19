@@ -302,13 +302,27 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
       const kind = update.sessionUpdate ?? update.type;
       const text = textFromContent(update.content).join('');
       const attachments = contentAttachments(update.content);
-      if (openSessionLoadOrdinals.size > 0 || isLiveSessionLoadReplay(row)) {
+      // A tool_call carries a stable `toolCallId` and is deduped by `toolIndex`
+      // below: a replayed copy merges onto the existing item by id rather than
+      // appending a second one. So it does NOT need the bootstrap-replay guard —
+      // and MUST NOT be caught by it, because a genuinely-NEW tool_call can
+      // legitimately interleave with an open `session/load`. That is exactly D2:
+      // on an error-terminated run the client fires repeated auto-resume
+      // `session/load`s, and the daemon's async synthetic outputs `show` (a new
+      // tool_call) landed inside one still-open load window; blanket-suppressing
+      // it dropped the Outputs card's rows on reload. Message/thought chunks are
+      // NOT id-deduped, so replaying them WOULD duplicate turns — they keep the
+      // guard.
+      const isToolUpdate = kind === 'tool_call' || kind === 'tool_call_update';
+      if ((openSessionLoadOrdinals.size > 0 || isLiveSessionLoadReplay(row)) && !isToolUpdate) {
         // `session/load` rehydrates the native agent by replaying its existing
         // conversation as update notifications before the matching JSON-RPC
         // response. The API correctly persists those frames in the lossless
         // envelope log, but a semantic transcript must not interpret bootstrap
         // history as another live turn. Non-chat projections (usage/config)
-        // still consume the row in their dedicated blocks below.
+        // still consume the row in their dedicated blocks below. Tool calls are
+        // exempt (see above): they dedupe by id, so replay is safe and a new
+        // one must not be lost.
       } else if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
         const previous = chatItems.at(-1);

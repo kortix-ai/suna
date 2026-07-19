@@ -299,6 +299,47 @@ describe('reduceEnvelope', () => {
     expect(projectAcpChatItems(fixture)).toEqual(state.chatItems);
   });
 
+  test('a genuinely-new tool_call that interleaves with an open session/load is NOT suppressed', () => {
+    // Reproduces D2 (codex `8023ee8f…`): on an error-terminated run the client
+    // fires repeated `session/load` auto-resume requests. The daemon's async
+    // synthetic outputs `show` (a brand-new `tool_call`) landed inside one of
+    // those still-open load windows and was blanket-suppressed by the
+    // bootstrap-replay guard — so the Easy-panel Outputs card rendered empty on
+    // reload even though the envelope is persisted. A tool_call is deduped by
+    // `toolIndex` (a replayed copy merges by id), so it must never be dropped
+    // here the way an un-deduped message chunk is.
+    const prompt = userPrompt(1, 'make the files', 'prompt-1', 'session-1');
+    // session/load request opens a window that stays open (its response arrives
+    // AFTER the synthetic show below, mirroring ordinals 84798→84836→85120).
+    const load = stored(2, 'client_to_agent', {
+      jsonrpc: '2.0', id: 'load-1', method: 'session/load',
+      params: { sessionId: 'session-1', cwd: '/workspace' },
+    });
+    const syntheticShow = stored(3, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: {
+        sessionId: 'session-1',
+        update: {
+          sessionUpdate: 'tool_call', kind: 'other', tool: 'show', title: 'Show',
+          status: 'completed', toolCallId: 'kortix-outputs:1',
+          rawInput: { items: [{ path: '/workspace/report.pdf' }] },
+          _meta: { kortix: { synthetic: 'filesystem-delta', schemaVersion: 1 } },
+        },
+      },
+    });
+    const loadResult = stored(4, 'agent_to_client', {
+      jsonrpc: '2.0', id: 'load-1', result: { sessionId: 'session-1' },
+    });
+    const fixture = [prompt, load, syntheticShow, loadResult];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+
+    const toolItems = state.chatItems.filter((item) => item.kind === 'tool');
+    expect(toolItems.map((item) => (item as { id: string }).id)).toEqual(['kortix-outputs:1']);
+    expect(projectAcpChatItems(fixture)).toEqual(state.chatItems);
+  });
+
   test('a duplicate streamEventId row is dropped', () => {
     let state = emptyReducerState();
     const first = stored(1, 'agent_to_client', {
