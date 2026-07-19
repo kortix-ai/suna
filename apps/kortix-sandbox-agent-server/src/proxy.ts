@@ -127,6 +127,9 @@ export function buildAcpApp(
   app.route('/proxy', createPortProxyRouter({ blockedPorts: new Set([cfg.servicePort]) }))
   app.route('/web-proxy', webProxyRouter)
   app.route('/file', createFilesRouter(cfg))
+  // createPortsRouter also excludes its own INFRA_PORTS deny-list
+  // unconditionally (see routes/ports.ts) — this set only needs to carry
+  // THIS session's own cfg-specific listeners, not the standard-image infra.
   app.route('/ports', createPortsRouter({ excludedPorts: new Set([cfg.servicePort, cfg.opencodeInternalPort, cfg.staticPort]) }))
   app.route('/find', createFindRouter(cfg))
   app.route('/presentation', createPresentationRouter(cfg))
