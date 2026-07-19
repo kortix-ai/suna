@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import type { ProjectSummary } from "../api/types.ts";
 import {
+  configureClonedProjectAuth,
   resolveProjectCloneTarget,
   saveClonedProjectLink,
 } from "../commands/projects.ts";
@@ -98,4 +99,28 @@ test("a cloned repo is bound to its project without dirtying git status", () => 
     spawnSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" })
       .stdout,
   ).toBe("");
+});
+
+test("a proxied clone installs an on-demand Kortix credential helper without storing a token", () => {
+  const repo = mkdtempSync(resolve(tmpdir(), "kortix-project-clone-auth-"));
+  spawnSync("git", ["init", "-b", "main"], { cwd: repo });
+  const repoUrl = "https://dev-api.kortix.com/v1/git/proj_1.git";
+
+  configureClonedProjectAuth(repo, repoUrl, "!kortix git-credential");
+
+  const helpers = spawnSync(
+    "git",
+    ["config", "--local", "--get-all", `credential.${repoUrl}.helper`],
+    { cwd: repo, encoding: "utf8" },
+  ).stdout.split(/\r?\n/);
+  expect(helpers).toEqual(["", "!kortix git-credential", ""]);
+  expect(
+    spawnSync("git", ["config", "--local", "credential.useHttpPath"], {
+      cwd: repo,
+      encoding: "utf8",
+    }).stdout.trim(),
+  ).toBe("true");
+  expect(readFileSync(resolve(repo, ".git", "config"), "utf8")).not.toContain(
+    "kortix_pat_test",
+  );
 });
