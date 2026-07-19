@@ -44,6 +44,23 @@ export function channelDefaultSlug(platform: string): string {
 }
 
 /**
+ * Whether listing a project's connectors should first trigger a reconcile sweep.
+ * Two cases:
+ *  - the connector set is empty (first read after project creation), or
+ *  - Slack is installed but its channel connector row is missing. The latter
+ *    self-heals installs that predate the connector-scope status-read fix: their
+ *    connector was never synthesized (loadSlackInstall read null), and the empty
+ *    -set path never fires once the project has any other connector.
+ */
+export function connectorListNeedsResync(args: {
+  presentSlugs: readonly string[];
+  slackInstalled: boolean;
+}): boolean {
+  if (args.presentSlugs.length === 0) return true;
+  return args.slackInstalled && !args.presentSlugs.includes(SLACK_CHANNEL_CONNECTOR_SLUG);
+}
+
+/**
  * Per-platform credential placement. Slack/email attach their install token as
  * `Authorization: Bearer <token>`; Recall.ai (meet) wants `Authorization: Token
  * <key>`. executeCall's applyAuth honors the custom `name`+`prefix` verbatim, so
