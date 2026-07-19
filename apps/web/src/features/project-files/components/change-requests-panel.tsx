@@ -10,16 +10,16 @@ import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@kortix/shared';
 import {
-  AlertCircle,
-  CheckCircle2,
-  ChevronDown,
-  FileDiff,
-  Layers,
-  Plus,
-  RefreshCw,
-  X,
-  XCircle,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
+  CaretDownIcon as ChevronDown,
+  GitDiffIcon as FileDiff,
+  StackIcon as Layers,
+  PlusIcon as Plus,
+  ArrowsClockwiseIcon as RefreshCw,
+  XIcon as X,
+  XCircleIcon as XCircle,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import type { ChangeRequest, ChangeRequestStatus } from '../api/change-requests';
 import { useProjectContext } from '../context';

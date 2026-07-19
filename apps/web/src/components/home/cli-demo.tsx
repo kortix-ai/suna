@@ -3,7 +3,7 @@
 import { useCopy } from '@/hooks/use-copy';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { Check, Copy } from 'lucide-react';
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {
   type CSSProperties,

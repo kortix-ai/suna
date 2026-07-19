@@ -13,7 +13,11 @@ import { useTranslations } from 'next-intl';
  * style): **All files** (default) and **Changes** (the real diff viewer).
  */
 
-import { FileDiff, Info, Layers } from 'lucide-react';
+import {
+  GitDiffIcon as FileDiff,
+  InfoIcon as Info,
+  StackIcon as Layers,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 
 import Loading from '@/components/ui/loading';

@@ -1,66 +1,66 @@
 /* eslint-disable @next/next/no-img-element */
 import {
-  Activity,
-  AlarmClock,
-  AtSign,
-  BarChart3,
-  Bug,
-  Calculator,
-  CalendarClock,
-  CalendarPlus,
-  CheckCircle2,
-  CircleDollarSign,
-  ClipboardCheck,
-  ClipboardList,
-  Cloud,
-  Coffee,
-  CreditCard,
-  Database,
-  FileLock2,
-  FileSearch,
-  FileSignature,
-  Files,
-  FileText,
-  Filter,
-  Flag,
-  FlaskConical,
-  Gauge,
-  GitMerge,
-  GitPullRequest,
-  Handshake,
-  HelpCircle,
-  KeyRound,
-  LineChart,
-  Mail,
-  MessagesSquare,
-  PhoneCall,
-  Presentation,
-  Radar,
-  Receipt,
-  RefreshCw,
-  Repeat,
-  Rocket,
-  Route,
-  Scale,
-  ScrollText,
-  Send,
-  Share2,
-  ShieldAlert,
-  ShieldCheck,
-  Siren,
-  Tag,
-  Target,
-  Ticket,
-  TrendingDown,
-  TrendingUp,
-  TriangleAlert,
-  UserMinus,
-  UserPlus,
-  UserRoundSearch,
-  Users,
-  UserSearch,
-  Wallet,
-} from 'lucide-react';
+  ActivityIcon as Activity,
+  AlarmIcon as AlarmClock,
+  AtIcon as AtSign,
+  ChartBarIcon as BarChart3,
+  BugIcon as Bug,
+  CalculatorIcon as Calculator,
+  CalendarDotsIcon as CalendarClock,
+  CalendarPlusIcon as CalendarPlus,
+  CheckCircleIcon as CheckCircle2,
+  CurrencyCircleDollarIcon as CircleDollarSign,
+  ListChecksIcon as ClipboardCheck,
+  ClipboardTextIcon as ClipboardList,
+  CloudIcon as Cloud,
+  CoffeeIcon as Coffee,
+  CreditCardIcon as CreditCard,
+  DatabaseIcon as Database,
+  FileLockIcon as FileLock2,
+  FilesIcon as Files,
+  FileSearchIcon as FileSearch,
+  SignatureIcon as FileSignature,
+  FileTextIcon as FileText,
+  FunnelIcon as Filter,
+  FlagIcon as Flag,
+  FlaskIcon as FlaskConical,
+  GaugeIcon as Gauge,
+  GitMergeIcon as GitMerge,
+  GitPullRequestIcon as GitPullRequest,
+  HandshakeIcon as Handshake,
+  QuestionIcon as HelpCircle,
+  KeyIcon as KeyRound,
+  ChartLineIcon as LineChart,
+  EnvelopeIcon as Mail,
+  ChatsIcon as MessagesSquare,
+  PhoneCallIcon as PhoneCall,
+  PresentationIcon as Presentation,
+  BroadcastIcon as Radar,
+  ReceiptIcon as Receipt,
+  ArrowsClockwiseIcon as RefreshCw,
+  RepeatIcon as Repeat,
+  RocketIcon as Rocket,
+  PathIcon as Route,
+  ScalesIcon as Scale,
+  ScrollIcon as ScrollText,
+  PaperPlaneTiltIcon as Send,
+  ShareNetworkIcon as Share2,
+  ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
+  SirenIcon as Siren,
+  TagIcon as Tag,
+  TargetIcon as Target,
+  TicketIcon as Ticket,
+  TrendDownIcon as TrendingDown,
+  TrendUpIcon as TrendingUp,
+  WarningIcon as TriangleAlert,
+  UserMinusIcon as UserMinus,
+  UserPlusIcon as UserPlus,
+  UserFocusIcon as UserRoundSearch,
+  UsersIcon as Users,
+  UserFocusIcon as UserSearch,
+  WalletIcon as Wallet,
+} from '@phosphor-icons/react';
 import type { ComponentType, ReactNode } from 'react';
 
 import type { Post } from '@/lib/blog';
@@ -164,7 +164,7 @@ function FeatureCover({ children, glow }: { children: ReactNode; glow: string })
     <CoverBackdrop>
       <Glow className={glow} />
       <div className="absolute inset-0 flex items-center justify-center transition-transform duration-500 group-hover:scale-[1.03]">
-        <div className="flex size-16 items-center justify-center rounded-2xl bg-card shadow-lg shadow-black/10 ring-1 ring-black/5 dark:ring-white/10 sm:size-20">
+        <div className="bg-card flex size-16 items-center justify-center rounded-2xl shadow-lg ring-1 shadow-black/10 ring-black/5 sm:size-20 dark:ring-white/10">
           {children}
         </div>
       </div>
@@ -179,7 +179,7 @@ function HeroCover({ children }: { children: ReactNode }) {
       <Glow className="bg-primary/10" />
       <div className="absolute inset-0 flex items-center justify-center transition-transform duration-500 group-hover:scale-[1.03]">
         <div className="relative">
-          <div className="grid size-16 place-items-center rounded-2xl bg-white shadow-lg shadow-black/10 ring-1 ring-black/5 sm:size-20">
+          <div className="grid size-16 place-items-center rounded-2xl bg-white shadow-lg ring-1 shadow-black/10 ring-black/5 sm:size-20">
             {children}
           </div>
           <div className="absolute -right-1.5 -bottom-1.5 overflow-hidden rounded-lg shadow-md ring-[3px] ring-white">
@@ -205,7 +205,9 @@ function OrbitCover({ center, satellites }: { center: ReactNode; satellites: Rea
           <div
             key={i}
             className="absolute top-1/2 left-1/2"
-            style={{ transform: `translate(-50%,-50%) rotate(${angle}deg) translate(84px) rotate(${-angle}deg)` }}
+            style={{
+              transform: `translate(-50%,-50%) rotate(${angle}deg) translate(84px) rotate(${-angle}deg)`,
+            }}
           >
             {node}
           </div>
@@ -303,7 +305,11 @@ export const USE_CASE_COVERS: Record<string, ComponentType<UseCaseCoverProps>> =
   ),
   'dependency-upgrades': () => (
     <HeroCover>
-      <img src="/usecases/logos/github.svg" alt="GitHub" className="size-9 object-contain sm:size-11" />
+      <img
+        src="/usecases/logos/github.svg"
+        alt="GitHub"
+        className="size-9 object-contain sm:size-11"
+      />
     </HeroCover>
   ),
   'inbox-triage': () => (

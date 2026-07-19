@@ -26,19 +26,19 @@ import {
 } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  CircleAlert,
-  Globe,
-  Loader2,
-  PanelRight,
-  Search,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  WarningCircleIcon as CircleAlert,
+  GlobeIcon as Globe,
+  ArrowsClockwiseIcon as GrRefresh,
+  CircleNotchIcon as Loader2,
+  SidebarSimpleIcon as PanelRight,
+  MagnifyingGlassIcon as Search,
+  ArrowSquareOutIcon as TbExternalLink,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
@@ -214,7 +214,9 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
         </Button>
       </Hint>
       <Hint
-        label={tHardcodedUi.raw('autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929')}
+        label={tHardcodedUi.raw(
+          'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
+        )}
         side="top"
       >
         <Button
@@ -304,7 +306,6 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
     >
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
-     
           <div className="text-muted-foreground flex items-center gap-2">
             <Loading />
             <span className="text-xs">
@@ -601,16 +602,16 @@ export function JsonFailureOutputCard({
         <CircleAlert className={cn('size-3.5', STATUS_TEXT.destructive)} />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground/90 text-xs leading-relaxed break-words text-pretty">
+        <p className="text-foreground/90 text-xs leading-relaxed text-pretty break-words">
           {summary}
         </p>
         {detail && detail !== summary && (
-          <p className="text-muted-foreground text-xs leading-relaxed break-words text-pretty">
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty break-words">
             {detail}
           </p>
         )}
         {failure.hint && (
-          <p className="text-muted-foreground/80 text-xs leading-relaxed break-words text-pretty">
+          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty break-words">
             {failure.hint.trim()}
           </p>
         )}
@@ -960,7 +961,10 @@ function PanelTriggerTitle({
             {args.length > 0 && (
               <>
                 {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
-                <span className="text-muted-foreground/60 min-w-0 truncate" title={args.join(' · ')}>
+                <span
+                  className="text-muted-foreground/60 min-w-0 truncate"
+                  title={args.join(' · ')}
+                >
                   {args.join(' · ')}
                 </span>
               </>

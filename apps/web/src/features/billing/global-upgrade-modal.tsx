@@ -12,14 +12,14 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { useAccountState, useCreatePerSeatCheckout } from '@/hooks/billing';
 import type { AccountState } from '@/lib/api/billing';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { ArrowRight, UserPlus } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight, UserPlusIcon as UserPlus } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 export interface UpgradePlansModalProps {

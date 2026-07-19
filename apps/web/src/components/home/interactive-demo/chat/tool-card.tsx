@@ -1,6 +1,6 @@
-import { Check, type LucideIcon } from 'lucide-react';
+import type { Icon as IconType } from '@phosphor-icons/react';
+import { CheckIcon as Check, type Icon as LucideIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
-import type { IconType } from 'react-icons/lib';
 
 export function ToolCard({
   icon: Icon,

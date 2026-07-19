@@ -1,7 +1,7 @@
 'use client';
 
+import { ArrowsClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
@@ -27,7 +27,10 @@ import {
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
 } from '@kortix/sdk/projects-client';
-import { DangerTriangleSolid, SparklesSolid } from '@mynaui/icons-react';
+import {
+  WarningIcon as DangerTriangleSolid,
+  SparkleIcon as SparklesSolid,
+} from '@phosphor-icons/react';
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
@@ -184,7 +187,7 @@ function SandboxAlertContent({
             {fixWithAgent.isPending ? (
               <Loading className="text-foreground! size-3.5" />
             ) : (
-              <SparklesSolid className="size-3.5" />
+              <SparklesSolid weight="fill" className="size-3.5" />
             )}
             {tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
@@ -237,7 +240,7 @@ export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
             {severity === 'building' ? (
               <Loading className="text-muted-foreground!" />
             ) : (
-              <DangerTriangleSolid className="size-4" />
+              <DangerTriangleSolid weight="fill" className="size-4" />
             )}
             <span>{SEVERITY_LABEL[severity]}</span>
           </SidebarMenuButton>
@@ -264,7 +267,7 @@ export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }
             {severity === 'building' ? (
               <Loading className={cn('size-4', tone.icon)} />
             ) : (
-              <DangerTriangleSolid className={cn('size-4', tone.icon)} />
+              <DangerTriangleSolid weight="fill" className={cn('size-4', tone.icon)} />
             )}
             {severity !== 'building' && (
               <span className={cn('absolute top-1.5 right-1.5 size-1.5 rounded-full', tone.dot)} />

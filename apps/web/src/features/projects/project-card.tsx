@@ -12,8 +12,12 @@ import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
 import { relativeTime } from '@/lib/kortix/task-meta';
 import { KortixProject } from '@kortix/sdk/projects-client';
-import { ArrowUpRight, Pencil, TrashSolid } from '@mynaui/icons-react';
-import { MoreHorizontal } from 'lucide-react';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  DotsThreeIcon as MoreHorizontal,
+  PencilIcon as Pencil,
+  TrashIcon as TrashSolid,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 const ProjectCard = ({
@@ -86,7 +90,11 @@ const ProjectCard = ({
               onSelect={onArchive}
               disabled={archiving || !canManageProject}
             >
-              {archiving ? <Loading className="size-4 shrink-0" /> : <TrashSolid className="size-4" />}
+              {archiving ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <TrashSolid weight="fill" className="size-4" />
+              )}
               Archive
             </DropdownMenuItem>
           </DropdownMenuContent>

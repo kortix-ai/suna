@@ -30,7 +30,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -197,7 +197,7 @@ export function SessionPermissionPrompt({
 
   return (
     <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-amber-500/20 border-b px-3 py-1.5">
+      <div className="flex items-center gap-2 border-b border-amber-500/20 px-3 py-1.5">
         <ShieldCheck className="size-3.5 text-amber-600 dark:text-amber-400" />
         <span className="text-foreground text-xs font-semibold tracking-tight">
           {permissions.length === 1
@@ -206,7 +206,7 @@ export function SessionPermissionPrompt({
         </span>
         <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
       </div>
-      <ul className="divide-amber-500/15 divide-y">
+      <ul className="divide-y divide-amber-500/15">
         {permissions.map((p) => {
           const detail = permissionDetail(p);
           return (
@@ -259,7 +259,7 @@ export function SessionPermissionPrompt({
           );
         })}
       </ul>
-      <div className="flex items-center gap-2 border-amber-500/15 border-t px-3 py-1.5">
+      <div className="flex items-center gap-2 border-t border-amber-500/15 px-3 py-1.5">
         <span className="text-muted-foreground text-[11px]">This session:</span>
         <Button
           size="xs"

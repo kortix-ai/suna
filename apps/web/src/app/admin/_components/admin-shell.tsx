@@ -2,12 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import { usePathname } from 'next/navigation';
+import { ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { ShieldCheck } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
@@ -41,7 +41,7 @@ export function AdminShell({
 
   if (isLoading) {
     return (
-      <div className="min-h-svh bg-background flex items-center justify-center">
+      <div className="bg-background flex min-h-svh items-center justify-center">
         <Skeleton className="h-24 w-72" />
       </div>
     );
@@ -49,19 +49,27 @@ export function AdminShell({
 
   if (!adminRole?.isAdmin) {
     return (
-      <div className="min-h-svh bg-background flex items-center justify-center p-6">
-        <div className="max-w-md text-center space-y-4">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-            <ShieldCheck className="h-7 w-7 text-muted-foreground" />
+      <div className="bg-background flex min-h-svh items-center justify-center p-6">
+        <div className="max-w-md space-y-4 text-center">
+          <div className="bg-muted mx-auto flex h-14 w-14 items-center justify-center rounded-full">
+            <ShieldCheck className="text-muted-foreground h-7 w-7" />
           </div>
           <div className="space-y-1">
-            <h1 className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAdminComponentsAdminShell.line55JsxTextAdminAccessRequired')}</h1>
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminComponentsAdminShell.line57JsxTextYourAccountDoesnAposTHaveAdminPermissions')}</p>
+            <h1 className="text-lg font-semibold tracking-tight">
+              {tHardcodedUi.raw('appAdminComponentsAdminShell.line55JsxTextAdminAccessRequired')}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw(
+                'appAdminComponentsAdminShell.line57JsxTextYourAccountDoesnAposTHaveAdminPermissions',
+              )}
+            </p>
           </div>
           <Link
             href="/projects"
-            className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
-          >{tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}</Link>
+            className="text-foreground inline-flex text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}
+          </Link>
         </div>
       </div>
     );
@@ -71,7 +79,7 @@ export function AdminShell({
     <SidebarProvider defaultOpen={initialOpen}>
       <AdminSidebar />
       <SidebarInset className="bg-background">
-        <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <header className="border-border/60 bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b px-3 backdrop-blur">
           <SidebarTrigger />
           <Separator orientation="vertical" className="mx-1 h-4" />
           <div className="flex items-center gap-2 text-sm">

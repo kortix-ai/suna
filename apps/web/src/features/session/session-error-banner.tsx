@@ -2,24 +2,23 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import type { KortixSendError } from '@kortix/sdk/react';
+import {
+  WarningCircleIcon as AlertCircle,
+  CreditCardIcon as CreditCard,
+  CircleNotchIcon as Loader2,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 
 // ============================================================================
 // Abort detection — user-initiated stops get a lowkey treatment
 // ============================================================================
 
-const ABORT_PATTERNS = [
-  'operation was aborted',
-  'aborted',
-  'abort',
-  'cancelled',
-  'canceled',
-];
+const ABORT_PATTERNS = ['operation was aborted', 'aborted', 'abort', 'cancelled', 'canceled'];
 
 function isAbortError(text: string): boolean {
   const lower = text.toLowerCase();
@@ -75,14 +74,9 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
       className={cn('flex-col gap-2.5', className)}
     >
       <p className="break-words">{errorText}</p>
-      <div className="flex items-center gap-1.5 mt-2">
-        <Button
-          size="sm"
-          variant="default"
-          className="h-7 text-xs px-2.5"
-          onClick={openBilling}
-        >
-          <Zap className="size-3 mr-1" />
+      <div className="mt-2 flex items-center gap-1.5">
+        <Button size="sm" variant="default" className="h-7 px-2.5 text-xs" onClick={openBilling}>
+          <Zap className="mr-1 size-3" />
           Upgrade plan
         </Button>
       </div>
@@ -98,7 +92,13 @@ function parseBalance(text: string): string | null {
   return `$${value.toFixed(2)}`;
 }
 
-function InsufficientCreditsCard({ errorText, className }: { errorText: string; className?: string }) {
+function InsufficientCreditsCard({
+  errorText,
+  className,
+}: {
+  errorText: string;
+  className?: string;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
   const balance = parseBalance(errorText);
@@ -108,7 +108,9 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
     <InfoBanner
       tone="warning"
       icon={CreditCard}
-      title={tHardcodedUi.raw('componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits')}
+      title={tHardcodedUi.raw(
+        'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
+      )}
       className={cn('flex-col gap-2.5', className)}
     >
       <p>
@@ -116,20 +118,14 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
           ? `Your balance is ${balance}. Top up or enable auto top-up to continue.`
           : 'Top up or enable auto top-up to continue.'}
       </p>
-      <div className="flex items-center gap-1.5 mt-2">
-        <Button
-          size="sm"
-          variant="default"
-          className="h-7 text-xs px-2.5"
-          onClick={openBilling}
-        >
-          <Zap className="size-3 mr-1" />{tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}</Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-xs px-2.5"
-          onClick={openBilling}
-        >{tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}</Button>
+      <div className="mt-2 flex items-center gap-1.5">
+        <Button size="sm" variant="default" className="h-7 px-2.5 text-xs" onClick={openBilling}>
+          <Zap className="mr-1 size-3" />
+          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={openBilling}>
+          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
+        </Button>
       </div>
     </InfoBanner>
   );
@@ -181,7 +177,12 @@ interface TurnErrorDisplayProps {
  * Abort errors (user-initiated stops) get a minimal, lowkey treatment —
  * just muted text, no border/background card.
  */
-export function TurnErrorDisplay({ errorText, errorDetails, error, className }: TurnErrorDisplayProps) {
+export function TurnErrorDisplay({
+  errorText,
+  errorDetails,
+  error,
+  className,
+}: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
   if (!text) return null;
   // `error.gateway` (send-failure path) wins over the `errorDetails` prop
@@ -190,11 +191,7 @@ export function TurnErrorDisplay({ errorText, errorDetails, error, className }: 
 
   // Abort/cancelled → tiny muted note, no card
   if (isAbortError(text)) {
-    return (
-      <p className={cn('text-xs text-muted-foreground/50 italic', className)}>
-        Interrupted
-      </p>
-    );
+    return <p className={cn('text-muted-foreground/50 text-xs italic', className)}>Interrupted</p>;
   }
 
   // Typed billing failure — the "is this billing at all" question is already
@@ -228,29 +225,30 @@ export function TurnErrorDisplay({ errorText, errorDetails, error, className }: 
   // otherwise this is just the provider's own raw error text with no clue
   // which provider it came from or what to actually do about it (the bug
   // behind a user seeing a bare "Unsupported parameter: max_tokens..." string).
-  const suggestion = gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
+  const suggestion =
+    gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
   return (
     <div
       className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
+        'flex items-start gap-2 rounded-2xl border px-3 py-2',
         'bg-muted/40 dark:bg-muted/30',
         'border-border/60',
         className,
       )}
     >
-      <AlertCircle className="size-3.5 mt-0.5 flex-shrink-0 text-muted-foreground/70" />
+      <AlertCircle className="text-muted-foreground/70 mt-0.5 size-3.5 flex-shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs text-muted-foreground break-words">
+        <p className="text-muted-foreground text-xs break-words">
           {gateway?.provider && (
-            <span className="font-medium text-foreground/80">{gateway.provider}: </span>
+            <span className="text-foreground/80 font-medium">{gateway.provider}: </span>
           )}
           {text}
         </p>
         {suggestion && (
-          <p className="mt-1 text-xs text-muted-foreground/70 break-words">{suggestion}</p>
+          <p className="text-muted-foreground/70 mt-1 text-xs break-words">{suggestion}</p>
         )}
         {gateway?.requestId && (
-          <p className="mt-1 text-[10px] text-muted-foreground/50 font-mono break-all">
+          <p className="text-muted-foreground/50 mt-1 font-mono text-[10px] break-all">
             {gateway.requestId}
           </p>
         )}
@@ -274,21 +272,22 @@ export function SessionRetryDisplay({
 }: SessionRetryDisplayProps) {
   if (!message) return null;
 
-  const line = secondsLeft > 0 ? `Retrying in ${secondsLeft}s (#${attempt})` : `Retrying now (#${attempt})`;
+  const line =
+    secondsLeft > 0 ? `Retrying in ${secondsLeft}s (#${attempt})` : `Retrying now (#${attempt})`;
 
   return (
     <div
       className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
+        'flex items-start gap-2 rounded-2xl border px-3 py-2',
         'bg-muted/40 dark:bg-muted/30',
         'border-border/60',
         className,
       )}
     >
-      <Loader2 className="size-3.5 mt-0.5 flex-shrink-0 animate-spin text-muted-foreground/70" />
+      <Loader2 className="text-muted-foreground/70 mt-0.5 size-3.5 flex-shrink-0 animate-spin" />
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground break-words">{message}</p>
-        <p className="mt-1 text-xs text-muted-foreground/70">{line}</p>
+        <p className="text-muted-foreground text-xs break-words">{message}</p>
+        <p className="text-muted-foreground/70 mt-1 text-xs">{line}</p>
       </div>
     </div>
   );

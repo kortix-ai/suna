@@ -7,7 +7,7 @@
 // Kortix GitHub App" install card, which only makes sense on the hosted
 // deployment (there's no hosted Kortix App to install on self-host).
 
-import { Github } from 'lucide-react';
+import { GithubLogoIcon as Github } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 

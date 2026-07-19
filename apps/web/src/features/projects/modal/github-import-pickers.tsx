@@ -13,8 +13,12 @@ import { Separator } from '@/components/ui/separator';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import type { GitHubRepository, GitHubRepositoryBranch } from '@kortix/sdk';
-import { CheckCircleSolid } from '@mynaui/icons-react';
-import { ChevronsUpDown, GitBranch, Search } from 'lucide-react';
+import {
+  CheckCircleIcon as CheckCircleSolid,
+  CaretUpDownIcon as ChevronsUpDown,
+  GitBranchIcon as GitBranch,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface PickerOption {
@@ -137,11 +141,12 @@ function SearchPicker({
                       ) : null}
                     </span>
                     <CheckCircleSolid
+                      weight="fill"
                       aria-hidden="true"
                       className={cn(
                         'text-kortix-green size-4 shrink-0 transition-[opacity,filter,scale] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
                         active
-                          ? 'scale-100 opacity-100 blur-0'
+                          ? 'blur-0 scale-100 opacity-100'
                           : 'scale-[0.25] opacity-0 blur-[4px]',
                       )}
                     />

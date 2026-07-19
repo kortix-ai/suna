@@ -2,9 +2,13 @@
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
-// import { ChevronRight, Circle } from "@mynaui/icons-react";
+// import { CaretRightIcon as ChevronRight, CircleIcon as Circle } from '@phosphor-icons/react';
+import {
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CircleIcon as Circle,
+} from '@phosphor-icons/react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronRight, Circle } from 'lucide-react';
 import * as React from 'react';
 
 const DropdownMenu = DropdownMenuPrimitive.Root;

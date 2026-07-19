@@ -1,13 +1,13 @@
 import {
-  Blocks,
-  Database,
-  Download,
-  FileText,
-  GitPullRequest,
-  Mail,
-  MessageSquare,
-  Users,
-} from 'lucide-react';
+  SquaresFourIcon as Blocks,
+  DatabaseIcon as Database,
+  DownloadIcon as Download,
+  FileTextIcon as FileText,
+  GitPullRequestIcon as GitPullRequest,
+  EnvelopeIcon as Mail,
+  ChatIcon as MessageSquare,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import type { DemoScenario, DemoStep } from '../types';
 import { matchSkillsFromPrompt } from './match-skills';
 import { FileResult, ListResult, SentResult } from './result-card';

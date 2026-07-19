@@ -1,7 +1,11 @@
 'use client';
 
+import {
+  WarningCircleIcon as AlertCircle,
+  ArrowSquareOutIcon as ExternalLink,
+  CircleNotchIcon as Loader2,
+} from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -22,13 +26,13 @@ import {
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isBillingEnabled } from '@/lib/config';
+import { toast } from '@/lib/toast';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   listProjectSecrets,
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
 } from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
-import { useBillingAccountId } from '@/stores/billing-account-context';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';

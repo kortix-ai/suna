@@ -4,7 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  KeyIcon as KeyRound,
+  CircleNotchIcon as Loader2,
+  ShieldCheckIcon as ShieldCheck,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';

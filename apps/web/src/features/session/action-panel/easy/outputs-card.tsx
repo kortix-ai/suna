@@ -18,15 +18,15 @@ import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/opencod
 import { getFileIcon } from '@/features/project-files';
 import { track } from '@/lib/track';
 import {
-  AppWindow,
-  ChevronDown,
-  Download,
-  FileText,
-  Image as ImageIcon,
-  Loader2,
-  Presentation as PresentationIcon,
-  Video as VideoIcon,
-} from 'lucide-react';
+  AppWindowIcon as AppWindow,
+  CaretDownIcon as ChevronDown,
+  DownloadIcon as Download,
+  FileTextIcon as FileText,
+  ImageIcon,
+  CircleNotchIcon as Loader2,
+  PresentationIcon,
+  VideoIcon,
+} from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { deliverableKindLabel, isScaffoldingOutput } from '../shared/output-priority';

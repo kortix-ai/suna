@@ -1,6 +1,4 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   partInput,
@@ -8,10 +6,9 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-block';
-import {
-  MessageCircle,
-} from 'lucide-react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 
 export function SessionMessageTool({ part }: ToolProps) {
   const input = partInput(part);
@@ -46,4 +43,3 @@ ToolRegistry.register('session_message', SessionMessageTool);
 ToolRegistry.register('session-message', SessionMessageTool);
 ToolRegistry.register('oc-session_message', SessionMessageTool);
 ToolRegistry.register('oc-session-message', SessionMessageTool);
-

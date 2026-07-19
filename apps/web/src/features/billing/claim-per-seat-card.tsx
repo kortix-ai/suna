@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useClaimPerSeat } from '@/hooks/billing/use-account-state';
 import type { AccountState } from '@/lib/api/billing';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState }) {

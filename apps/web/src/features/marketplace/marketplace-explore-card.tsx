@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';

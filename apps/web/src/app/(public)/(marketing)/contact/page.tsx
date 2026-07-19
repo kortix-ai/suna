@@ -1,15 +1,15 @@
 'use client';
 
 import {
-  ArrowRight,
-  Boxes,
-  Clock,
-  Lock,
-  Mail,
-  PlayCircle,
-  Server,
-  ShieldCheck,
-} from 'lucide-react';
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  ClockIcon as Clock,
+  LockIcon as Lock,
+  EnvelopeIcon as Mail,
+  PlayCircleIcon as PlayCircle,
+  HardDrivesIcon as Server,
+  ShieldCheckIcon as ShieldCheck,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 

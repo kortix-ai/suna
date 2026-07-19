@@ -11,7 +11,13 @@ import {
   useTeamsMode,
   type TeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { Check, ChevronDown, Copy, ExternalLink, Loader2 } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  CircleNotchIcon as Loader2,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 export function TeamsChannelPanel({ projectId }: { projectId: string }) {
@@ -28,7 +34,9 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
         className="hover:bg-muted/30 flex w-full items-center justify-between gap-3 p-4 text-left transition-colors"
       >
         <div>
-          <div className="text-foreground text-sm font-medium">Bring your own Microsoft Teams bot</div>
+          <div className="text-foreground text-sm font-medium">
+            Bring your own Microsoft Teams bot
+          </div>
           <div className="text-muted-foreground text-xs">
             For self-hosted setups, or to sideload the app manually.
           </div>
@@ -95,11 +103,22 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
                   App manifest
                 </span>
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={copyManifest} disabled={!manifestText} className="h-7 gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={copyManifest}
+                    disabled={!manifestText}
+                    className="h-7 gap-1.5"
+                  >
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {copied ? 'Copied' : 'Copy'}
                   </Button>
-                  <a href={mode?.adminConsentUrl ?? '#'} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                  <a
+                    href={mode?.adminConsentUrl ?? '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex"
+                  >
                     <Button variant="outline" size="sm" className="h-7 gap-1.5">
                       Grant admin consent
                       <ExternalLink className="h-3 w-3" />
@@ -136,12 +155,15 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
         {managedAvailable ? (
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={byo} onChange={(e) => setByo(e.target.checked)} />
-            <span className="text-muted-foreground">Bring your own Azure bot instead of the managed Kortix bot</span>
+            <span className="text-muted-foreground">
+              Bring your own Azure bot instead of the managed Kortix bot
+            </span>
           </label>
         ) : (
           <InfoBanner tone="neutral">
-            No managed Kortix Teams bot is configured on this server. Register a multi-tenant Azure Bot and connect its
-            credentials below; after connecting, point its messaging endpoint at this project&apos;s Teams webhook.
+            No managed Kortix Teams bot is configured on this server. Register a multi-tenant Azure
+            Bot and connect its credentials below; after connecting, point its messaging endpoint at
+            this project&apos;s Teams webhook.
           </InfoBanner>
         )}
 

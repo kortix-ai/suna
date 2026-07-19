@@ -32,19 +32,19 @@
  * to be generated for these strings before this ships beyond local testing.
  */
 
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronDown,
-  CreditCard,
-  KeyRound,
-  Loader2,
-  Plus,
-  Search,
-  SlidersHorizontal,
-} from 'lucide-react';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CreditCardIcon as CreditCard,
+  KeyIcon as KeyRound,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  SlidersHorizontalIcon as SlidersHorizontal,
+} from '@phosphor-icons/react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import Image from 'next/image';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -119,7 +119,10 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   // Pipedream configured (default true), so this is a no-op there.
   const connectorsEnabled = isConnectorsEnabled();
   const steps = useMemo<StepId[]>(
-    () => (connectorsEnabled ? ['welcome', 'tools', 'slack', 'model', 'done'] : ['welcome', 'slack', 'model', 'done']),
+    () =>
+      connectorsEnabled
+        ? ['welcome', 'tools', 'slack', 'model', 'done']
+        : ['welcome', 'slack', 'model', 'done'],
     [connectorsEnabled],
   );
   const stepId = steps[index] ?? 'welcome';
@@ -527,8 +530,8 @@ function ToolsStep({
         {/* Custom — wire up any OpenAPI / Postman / GraphQL / MCP / HTTP service directly. */}
         <TabsContent value="custom" className="mt-0">
           <p className="text-muted-foreground mb-3 text-sm leading-6">
-            Have your own API? Connect a custom OpenAPI, Postman, GraphQL, MCP, or HTTP service so your agent
-            can call it directly.
+            Have your own API? Connect a custom OpenAPI, Postman, GraphQL, MCP, or HTTP service so
+            your agent can call it directly.
           </p>
           <div className="max-h-[46vh] overflow-y-auto pr-1">
             <Suspense fallback={<Skeleton className="h-64 w-full rounded-2xl" />}>
@@ -737,13 +740,8 @@ function SlackGlyph() {
 
 function ModelStep() {
   const { data: providers, isLoading } = useOpenCodeProviders();
-  const {
-    openConnectProvider,
-    openUpgrade,
-    modal,
-    hasSelectableModels,
-    showUpgradeOption,
-  } = useModelConnectionGate(flattenModels(providers));
+  const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
+    useModelConnectionGate(flattenModels(providers));
 
   return (
     <div className="flex flex-col gap-5">

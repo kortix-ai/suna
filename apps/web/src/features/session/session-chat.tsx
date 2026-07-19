@@ -8,26 +8,26 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
-  AlertTriangle,
-  ArrowDown,
-  Brain,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  Reply,
-  Scissors,
-  Search,
-  Terminal,
-  Timer,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowDownIcon as ArrowDown,
+  BrainIcon as Brain,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  ImageIcon,
+  StackIcon as Layers,
+  CircleNotchIcon as Loader2,
+  ArrowBendUpLeftIcon as Reply,
+  ScissorsIcon as Scissors,
+  MagnifyingGlassIcon as Search,
+  TerminalIcon as Terminal,
+  TimerIcon as Timer,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35,7 +35,10 @@ import { createPortal } from 'react-dom';
 
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import { ConnectProviderDialog, type ModelDefaultControls } from '@/features/session/model-selector';
+import {
+  ConnectProviderDialog,
+  type ModelDefaultControls,
+} from '@/features/session/model-selector';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -2744,7 +2747,11 @@ function SessionTurn({
           defaultOpen
         />
         {turnError && (
-          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+          <TurnErrorDisplay
+            errorText={turnError}
+            errorDetails={turnErrorDetails}
+            className="mt-2"
+          />
         )}
         <ConnectProviderDialog
           open={connectProviderOpen}
@@ -5397,7 +5404,7 @@ export function SessionChat({
               <Button
                 onClick={handleSelectionReply}
                 size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
+                className="animate-in fade-in-0 zoom-in-95 origin-bottom text-xs duration-150 ease-out"
               >
                 Reply
                 <svg

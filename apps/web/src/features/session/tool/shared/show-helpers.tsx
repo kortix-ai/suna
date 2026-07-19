@@ -1,5 +1,6 @@
 'use client';
 
+import { STATUS_BORDER } from '@/components/ui/status';
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
   SHOW_HTML_EXT_RE,
@@ -20,23 +21,22 @@ import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
-import { STATUS_BORDER } from '@/components/ui/status';
 import {
-  AlertTriangle,
-  Code2,
-  ExternalLink,
+  WarningIcon as AlertTriangle,
+  CodeSimpleIcon as Code2,
+  ArrowSquareOutIcon as ExternalLink,
   FileIcon,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Music,
-  Type,
-  Video,
-} from 'lucide-react';
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  ImageIcon,
+  MusicNotesIcon as Music,
+  TextTIcon as Type,
+  VideoIcon as Video,
+} from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
-export type { ShowCarouselItem };
 export { SHOW_HTML_EXT_RE, ShowCarousel, ShowContentRenderer, showDomain };
+export type { ShowCarouselItem };
 
 export const SHOW_BORDER_STYLES: Record<string, string> = {
   default: STATUS_BORDER.neutral,
@@ -75,7 +75,12 @@ export function showTypeIcon(type: string, className = 'size-4') {
   }
 }
 
-export function useShowOpenInTab(props: { type: string; url: string; path: string; title: string }) {
+export function useShowOpenInTab(props: {
+  type: string;
+  url: string;
+  path: string;
+  title: string;
+}) {
   const { type, url, path, title } = props;
   const { enabled, openTab, openExternal } = useToolNavigation();
   const proxy = useProxyUrl(url);

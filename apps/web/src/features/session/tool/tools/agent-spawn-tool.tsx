@@ -23,7 +23,7 @@ import {
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
-import { Check, Cpu } from 'lucide-react';
+import { CheckIcon as Check, CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useContext, useMemo, useState } from 'react';
 
 import { cleanWorkerOutput } from '@/features/session/tool/shared/agent-helpers';

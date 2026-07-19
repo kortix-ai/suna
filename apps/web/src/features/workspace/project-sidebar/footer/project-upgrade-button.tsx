@@ -6,7 +6,7 @@ import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRightIcon as ArrowUpRight } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 interface SidebarUpgradeButtonProps {

@@ -1,7 +1,7 @@
 'use client';
 
+import { ArchiveIcon as Archive } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Archive } from 'lucide-react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
@@ -11,8 +11,8 @@ import { AppHeader } from '@/features/layout/app-header';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
-import { listAccounts } from '@kortix/sdk/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts } from '@kortix/sdk/projects-client';
 
 /**
  * Hidden archive of legacy (pre-migration) machines. Not linked from the main

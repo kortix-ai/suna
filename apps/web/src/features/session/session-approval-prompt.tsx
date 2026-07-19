@@ -39,7 +39,7 @@ import {
   listProjectPolicies,
   setProjectPolicies,
 } from '@kortix/sdk/projects-client';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldWarningIcon as ShieldAlert } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -153,7 +153,7 @@ export function SessionApprovalPrompt() {
 
   return (
     <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-amber-500/20 border-b px-3 py-1.5">
+      <div className="flex items-center gap-2 border-b border-amber-500/20 px-3 py-1.5">
         <ShieldAlert className="size-3.5 text-amber-600 dark:text-amber-400" />
         <span className="text-foreground text-xs font-semibold tracking-tight">
           {pending.length === 1
@@ -162,7 +162,7 @@ export function SessionApprovalPrompt() {
         </span>
         <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
       </div>
-      <ul className="divide-amber-500/15 divide-y">
+      <ul className="divide-y divide-amber-500/15">
         {pending.map((a) => {
           const rowBusy = busy?.startsWith(`${a.execution_id}:`) ? busy.split(':')[1] : null;
           return (
@@ -221,7 +221,7 @@ export function SessionApprovalPrompt() {
           );
         })}
       </ul>
-      <div className="flex items-center gap-2 border-amber-500/15 border-t px-3 py-1.5">
+      <div className="flex items-center gap-2 border-t border-amber-500/15 px-3 py-1.5">
         <span className="text-muted-foreground text-[11px]">This session:</span>
         <Button
           size="xs"

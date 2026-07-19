@@ -1,6 +1,14 @@
 'use client';
 
-import { ExternalLink, FileText, Globe, Loader2, LogIn, Play, ShieldAlert } from 'lucide-react';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  SignInIcon as LogIn,
+  PlayIcon as Play,
+  ShieldWarningIcon as ShieldAlert,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';

@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Form,
   FormControl,
@@ -26,7 +25,6 @@ import {
 } from '@/components/ui/form';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Item,
   ItemActions,
@@ -35,6 +33,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
+import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import Loading from '@/components/ui/loading';
 import {
@@ -50,12 +49,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Separator } from '@/components/ui/separator';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
-import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   getMarketplaceItem,
   listMarketplaceItems,
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
+import {
+  isManagedGitUnavailableError,
+  isProjectLimitError,
+} from '@/lib/onboarding/ensure-first-project';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   getManagedGitStatus,
   linkRepository,
@@ -68,20 +73,20 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import {
+  CubeIcon as Boxes,
+  CheckCircleIcon as CheckCircleSolid,
+  CaretUpDownIcon as ChevronsUpDown,
+  ArrowSquareOutIcon as ExternalLink,
+  GithubLogoIcon as Github,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircleSolid } from '@mynaui/icons-react';
-import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { GitHubSetupRequiredPanel, isAccountGitAdmin } from './github-setup-required-panel';
-import {
-  startProjectOnboardingSession,
-  startTemplateSetupSession,
-} from './template-setup-session';
+import { startProjectOnboardingSession, startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -97,7 +102,10 @@ const managedProjectSchema = z.object({
       z
         .string()
         .min(1, 'Project name is required')
-        .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
+        .max(
+          PROJECT_NAME_MAX_LENGTH,
+          `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+        ),
     ),
 });
 
@@ -302,7 +310,8 @@ export const ProjectCreateModal = ({
         const gitSettingsAccountId =
           effectiveAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast("Managed git isn't set up on this server", {
-          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          description:
+            'An admin needs to connect GitHub in Git settings before projects can be created.',
           ...(gitSettingsAccountId
             ? {
                 button: (
@@ -569,7 +578,7 @@ export const ProjectCreateModal = ({
                   />
 
                   {cloningFromSource ? (
-                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
+                    <div className="divide-border/60 divide-y overflow-hidden rounded-2xl border">
                       <div className="flex items-start gap-3 px-3.5 py-3">
                         <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
                           <Boxes className="size-4" />
@@ -601,8 +610,8 @@ export const ProjectCreateModal = ({
                     <div className="space-y-2.5">
                       <span className="text-foreground text-sm font-medium">Starter skills</span>
                       <p className="text-muted-foreground text-xs leading-relaxed">
-                        Every new project ships with the full Kortix skill kit —
-                        preinstalled into your repo and ready in the first session.
+                        Every new project ships with the full Kortix skill kit — preinstalled into
+                        your repo and ready in the first session.
                       </p>
                       <div className="flex items-center gap-3 rounded-2xl border px-3.5 py-3">
                         <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
@@ -980,7 +989,12 @@ function CreateAccountField({
                     <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
                       {itemLabel}
                     </span>
-                    {active && <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />}
+                    {active && (
+                      <CheckCircleSolid
+                        weight="fill"
+                        className="text-kortix-green size-3.5 shrink-0"
+                      />
+                    )}
                   </DropdownMenuItem>
                 );
               })}
@@ -1052,7 +1066,12 @@ function TemplatePicker({
         </div>
       </ModalBody>
       <ModalFooter>
-        <Button type="button" variant="outline-ghost" className="w-full sm:w-auto" onClick={onCancel}>
+        <Button
+          type="button"
+          variant="outline-ghost"
+          className="w-full sm:w-auto"
+          onClick={onCancel}
+        >
           Back
         </Button>
       </ModalFooter>
@@ -1159,7 +1178,7 @@ function RepositoryPicker({
                     onValueChange(repo.full_name);
                     setOpen(false);
                   }}
-                  // leading={selected ? <CheckCircleSolid className='size-4' /> : <Icon.Github />}
+                  // leading={selected ? <CheckCircleSolid weight="fill" className='size-4' /> : <Icon.Github />}
                   title={<span className="text-sm">{repo.full_name}</span>}
                   badges={
                     repo.private ? (

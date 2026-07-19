@@ -7,9 +7,16 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import type { ProjectCommit } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
-import { AlertCircle, ChevronDown, History, Layers, RefreshCw, X } from 'lucide-react';
+import type { ProjectCommit } from '@kortix/sdk/projects-client';
+import {
+  WarningCircleIcon as AlertCircle,
+  CaretDownIcon as ChevronDown,
+  ClockCounterClockwiseIcon as History,
+  StackIcon as Layers,
+  ArrowsClockwiseIcon as RefreshCw,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
 import { useCommits } from '../hooks/use-commits';

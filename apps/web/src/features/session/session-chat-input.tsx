@@ -27,20 +27,20 @@ import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
-  ArrowUp,
-  ArrowUpLeft,
-  Check,
-  ChevronDown,
-  Clock,
-  Folder,
-  ListTodo,
-  Loader2,
-  MessageSquare,
-  Paperclip,
-  Reply,
-  Terminal,
-  X,
-} from 'lucide-react';
+  ArrowUpIcon as ArrowUp,
+  ArrowUpLeftIcon as ArrowUpLeft,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  ClockIcon as Clock,
+  FolderIcon as Folder,
+  ListChecksIcon as ListTodo,
+  CircleNotchIcon as Loader2,
+  ChatIcon as MessageSquare,
+  PaperclipIcon as Paperclip,
+  ArrowBendUpLeftIcon as Reply,
+  TerminalIcon as Terminal,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -208,7 +208,9 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         description:
           typeof (model as any).description === 'string' ? (model as any).description : undefined,
         openWeights:
-          typeof (model as any).open_weights === 'boolean' ? (model as any).open_weights : undefined,
+          typeof (model as any).open_weights === 'boolean'
+            ? (model as any).open_weights
+            : undefined,
         lastUpdated:
           typeof (model as any).last_updated === 'string' ? (model as any).last_updated : undefined,
       });
@@ -2347,7 +2349,7 @@ function SessionChatInputImpl({
                     className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
                     aria-label="Attach files"
                   >
-                    <Paperclip className="h-4 w-4" strokeWidth={2} />
+                    <Paperclip className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top">

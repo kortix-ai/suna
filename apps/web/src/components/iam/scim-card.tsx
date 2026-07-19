@@ -14,8 +14,17 @@ import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import { listAccountMembers } from '@kortix/sdk/projects-client';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  KeyIcon as KeyRound,
+  PlusIcon as Plus,
+  ArrowsClockwiseIcon as RefreshCw,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 

@@ -1,6 +1,5 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import {
   type ConnectorDraftInput,
   type DiscoverIntegration,
@@ -12,7 +11,16 @@ import {
   listDiscoverIntegrations,
   listPipedreamApps,
 } from '@kortix/sdk/projects-client';
-import { Boxes, ChevronRight, ExternalLink, Globe, Plus, Search, Zap } from 'lucide-react';
+import {
+  CubeIcon as Boxes,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { useDeferredValue, useState } from 'react';
 
@@ -38,8 +46,7 @@ import { isConnectorsEnabled } from '@/lib/config';
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
 type DiscoverCard =
-  | { source: 'integration'; item: DiscoverIntegration }
-  | { source: 'pipedream'; app: PipedreamApp };
+  { source: 'integration'; item: DiscoverIntegration } | { source: 'pipedream'; app: PipedreamApp };
 
 function connectorSlug(item: DiscoverIntegration, variant: DiscoverIntegrationVariant): string {
   return `${item.slug}-${variant.kind}`
@@ -128,7 +135,10 @@ export function DiscoverCatalogue({
     mutationFn: async ({
       item,
       variant,
-    }: { item: DiscoverIntegration; variant: DiscoverIntegrationVariant }) => {
+    }: {
+      item: DiscoverIntegration;
+      variant: DiscoverIntegrationVariant;
+    }) => {
       if (!variant.connector) throw new Error('This surface needs manual configuration');
       const template = variant.connector;
       const slug = connectorSlug(item, variant);
@@ -222,7 +232,7 @@ export function DiscoverCatalogue({
                       ? addPipedream.mutate({ slug: card.app.slug, name: card.app.name })
                       : setSelectedIntegration(card.item)
                   }
-                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 active:scale-[0.96] flex min-h-28 flex-col rounded-md border p-3.5 text-left transition-[background-color,transform] focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60"
+                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex min-h-28 flex-col rounded-md border p-3.5 text-left transition-[background-color,transform] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96] disabled:opacity-60"
                 >
                   <div className="flex items-center gap-3">
                     {icon ? (

@@ -1,11 +1,17 @@
 'use client';
 
-import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
+import {
+  BellIcon as Bell,
+  CalendarDotsIcon as CalendarClock,
+  ShippingContainerIcon as Container,
+  FileCodeIcon as FileCode,
+  PackageIcon as Package,
+  SparkleIcon as SparklesSolid,
+  UsersThreeIcon as UsersGroupSolid,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, CalendarClock, Container, FileCode, Package, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { IconType } from 'react-icons/lib';
+import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,7 +44,7 @@ import {
   type SandboxTemplate,
 } from '@kortix/sdk/projects-client';
 import { chalkColors } from '@kortix/shared';
-import { HiOutlineViewGrid } from 'react-icons/hi';
+import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
@@ -368,7 +374,7 @@ function SandboxPicker({
 }
 
 type SetupTile = {
-  icon: LucideIcon | IconMynauiType | IconType;
+  icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
   count: number | null;

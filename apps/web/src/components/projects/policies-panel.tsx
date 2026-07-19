@@ -16,13 +16,17 @@ import { useTranslations } from 'next-intl';
  *   • Default behavior: "Ask before risky actions" (risk) vs "Run everything"
  *     (allow_all, legacy).
  */
+import {
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
@@ -35,6 +39,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
   listProjectPolicies,
   setProjectPolicies,
@@ -42,8 +49,6 @@ import {
   type PolicyDefaultMode,
   type ProjectPolicy,
 } from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 
 interface DraftRule {
   id: string;

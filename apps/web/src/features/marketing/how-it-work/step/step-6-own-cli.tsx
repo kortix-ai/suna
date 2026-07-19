@@ -3,7 +3,14 @@
 import { PageHead, Panel } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { FileText, FolderGit2, Lightbulb, Repeat, TriangleAlert, Users } from 'lucide-react';
+import {
+  FileTextIcon as FileText,
+  GitBranchIcon as FolderGit2,
+  LightbulbIcon as Lightbulb,
+  RepeatIcon as Repeat,
+  WarningIcon as TriangleAlert,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import type { ComponentType } from 'react';

@@ -30,17 +30,17 @@ import {
 import { ProviderCard } from '@/features/providers/provider-card';
 import { cn } from '@/lib/utils';
 import {
-  AlertCircle,
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  Globe,
-  Key,
-  Loader2,
-  Plus,
-  Search,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  ArrowLeftIcon as ArrowLeft,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  KeyIcon as Key,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { successToast } from '@/components/ui/toast';

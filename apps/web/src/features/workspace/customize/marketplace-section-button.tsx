@@ -3,7 +3,7 @@
 import { useMarketplaceEnabled } from '@/components/projects/marketplace/marketplace-nav';
 import { Button } from '@/components/ui/button';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { Store } from 'lucide-react';
+import { StorefrontIcon as Store } from '@phosphor-icons/react';
 
 export function MarketplaceSectionButton({ projectId }: { projectId: string }) {
   const enabled = useMarketplaceEnabled(projectId);

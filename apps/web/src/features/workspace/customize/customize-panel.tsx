@@ -28,25 +28,30 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
-import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowUpCircle,
-  AudioLines,
-  Bot,
-  Boxes,
-  Container,
-  History,
-  Inbox,
-  KeyRound,
-  Monitor,
-  Plug,
-  Store,
-  Terminal,
-  Webhook,
-} from 'lucide-react';
+  AlarmIcon as AlarmClock,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowCircleUpIcon as ArrowUpCircle,
+  WaveformIcon as AudioLines,
+  RobotIcon as Bot,
+  CubeIcon as Boxes,
+  ChatsIcon as ChatMessages,
+  CommandIcon as Command,
+  ShippingContainerIcon as Container,
+  ClockCounterClockwiseIcon as History,
+  TrayIcon as Inbox,
+  KeyIcon as KeyRound,
+  GearIcon as LuSettings,
+  UsersThreeIcon as LuUsersRound,
+  MonitorIcon as Monitor,
+  PlugIcon as Plug,
+  SparkleIcon as Sparkles,
+  StorefrontIcon as Store,
+  TerminalIcon as Terminal,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
-import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';

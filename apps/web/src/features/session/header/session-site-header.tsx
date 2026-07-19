@@ -3,7 +3,6 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -20,6 +19,7 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -32,18 +32,21 @@ import {
   restartProjectSession,
   stopProjectSession,
 } from '@kortix/sdk/projects-client';
-import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  FileDown,
-  Globe,
-  Layers,
-  MoreHorizontal,
-  PanelRight,
-  RotateCcw,
-  Square,
-  SquareTerminal,
-} from 'lucide-react';
+  FileArrowDownIcon as FileDown,
+  GlobeIcon as Globe,
+  HouseIcon as HomeSolid,
+  StackIcon as Layers,
+  DotsThreeIcon as MoreHorizontal,
+  SidebarSimpleIcon as PanelRight,
+  PencilIcon as Pencil,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ShareIcon as Share,
+  SquareIcon as Square,
+  TerminalWindowIcon as SquareTerminal,
+  TrashIcon as TrashSolid,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -161,7 +164,7 @@ export function SessionSiteHeader({
             {isProjectSession && (
               <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
                 <Link href={`/projects/${projectId}`}>
-                  <HomeSolid className="size-4.5" />
+                  <HomeSolid weight="fill" className="size-4.5" />
                 </Link>
               </Button>
             )}
@@ -258,13 +261,12 @@ export function SessionSiteHeader({
                     onClick={() => setDeleteOpen(true)}
                     variant="destructive"
                   >
-                    <TrashSolid />
+                    <TrashSolid weight="fill" />
                     Delete
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
 
             <SessionChangesIndicator sessionId={sessionId} />
 

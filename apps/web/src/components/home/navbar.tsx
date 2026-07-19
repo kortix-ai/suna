@@ -33,7 +33,13 @@ import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { ChevronRight, Layers, Menu, Type, X } from 'lucide-react';
+import {
+  CaretRightIcon as ChevronRight,
+  StackIcon as Layers,
+  ListIcon as Menu,
+  TextTIcon as Type,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -101,8 +107,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
   // Use-cases section is on by default; hide it by setting NEXT_PUBLIC_USE_CASES_ENABLED=false.
   const filteredNavLinks = siteConfig.nav.links.filter(
-    (link) =>
-      process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' || link.href !== '/use-cases',
+    (link) => process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' || link.href !== '/use-cases',
   );
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();

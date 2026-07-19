@@ -16,8 +16,15 @@ import {
   type GatewayProviderVerifyResult,
   verifyGatewayProvider,
 } from '@kortix/sdk/projects-client';
+import {
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
+  SealQuestionIcon as ShieldQuestion,
+  PlugsIcon as Unplug,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
@@ -255,7 +262,9 @@ export function ConnectedTab({
           confirmProvider ? (
             <span className="text-xs">
               Remove <span className="text-foreground font-medium">{confirmProvider.label}</span>
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line366JsxTextThisDeletes')}{' '}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line366JsxTextThisDeletes',
+              )}{' '}
               {confirmProvider.envVars.length === 1 ? (
                 <>
                   the{' '}

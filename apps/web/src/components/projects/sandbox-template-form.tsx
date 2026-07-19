@@ -10,8 +10,13 @@ import { useTranslations } from 'next-intl';
  * layer is added automatically — the user only defines their workspace base.
  */
 
+import {
+  ShippingContainerIcon as Container,
+  FileCodeIcon as FileCode,
+  CircleNotchIcon as Loader2,
+  PackageIcon as Package,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Container, FileCode, Loader2, Package } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -26,13 +31,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
   createSandboxTemplate,
   updateSandboxTemplate,
   type SandboxTemplate,
 } from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 
 type Mode = 'image' | 'dockerfile';
 

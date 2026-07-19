@@ -38,11 +38,8 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  useAgentConfig,
-  useUpdateAgentConfig,
-} from '@/hooks/projects/use-agent-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
@@ -51,11 +48,11 @@ import {
   type OpencodeAgentConfig,
   type ProjectConfigSummary,
 } from '@kortix/sdk/projects-client';
+import { RobotIcon as Bot, CpuIcon as Cpu, StackIcon as Layers } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bot, Cpu, Layers } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { SectionHeader, LayerHeader } from './agent-editor-primitives';
+import { LayerHeader, SectionHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
 import { OpencodeLayerFields } from './opencode-layer-fields';
 
@@ -72,7 +69,7 @@ export {
   WORKSPACE_MODE_HELP,
   WORKSPACE_MODES,
 } from './agent-editor-catalog';
-export { Segmented, FieldRow } from './agent-editor-primitives';
+export { FieldRow, Segmented } from './agent-editor-primitives';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -93,7 +90,10 @@ function AgentEditorModal({
 }) {
   const [draft, setDraft] = useState<AgentConfigBlock>(initial);
   const [baseline] = useState<AgentConfigBlock>(initial);
-  const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  const isDirty = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(baseline),
+    [draft, baseline],
+  );
   const update = useUpdateAgentConfig(projectId, agentName);
 
   const secretsQuery = useQuery({

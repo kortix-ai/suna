@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { ChevronRight } from '@mynaui/icons-react';
+import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { type ReactNode, useEffect, useState } from 'react';
 
@@ -135,10 +135,7 @@ export function PanelCard({
                   // on click covers the mouse/tap case, and on keydown stops the
                   // Enter/Space that activates the nested button from *also*
                   // bubbling up into the trigger's own Enter/Space handler.
-                  <span
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
+                  <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     {headerAction}
                   </span>
                 )}

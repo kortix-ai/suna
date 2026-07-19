@@ -13,13 +13,13 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
-import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import {
   detectManifestVersion,
   type ManifestVersion,
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
+import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
@@ -28,17 +28,24 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
-  type ProjectConfigSummary,
   listConnectors,
   listProjectAccess,
   listProjectResourceGrants,
   listProjectSecrets,
+  type ProjectConfigSummary,
   setAgentScope,
   updateProjectDefaultAgent,
 } from '@kortix/sdk/projects-client';
-import { StarSolid } from '@mynaui/icons-react';
+import {
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  ShieldCheckIcon as ShieldCheck,
+  SparkleIcon as Sparkles,
+  StarIcon as StarSolid,
+  UserIcon as User,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
@@ -64,7 +71,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
         <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
       )}
       renderTriggerLabel={(agent) => agent.name}
-      className=' p-4  lg:py-0'
+      className="p-4 lg:py-0"
       renderRowTrailing={(agent, config) => (
         <>
           {agent.mode ? (
@@ -73,7 +80,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
             </Badge>
           ) : null}
           {config.open_code_default_agent === agent.name ? (
-            <StarSolid className="text-kortix-orange size-4 shrink-0 fill-current" />
+            <StarSolid weight="fill" className="text-kortix-orange size-4 shrink-0 fill-current" />
           ) : null}
         </>
       )}
@@ -96,7 +103,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
           ) : null}
           {config.open_code_default_agent === agent.name ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
-              <StarSolid className="text-kortix-orange size-3.5 shrink-0" />
+              <StarSolid weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
               Default
             </Badge>
           ) : null}
@@ -169,11 +176,7 @@ function DefaultAgentSelector({
           onValueChange={(agentName) => mutation.mutate(agentName)}
           disabled={!canWrite || mutation.isPending}
         >
-          <SelectTrigger
-            aria-label="Default agent"
-            className="w-48 shrink-0"
-            variant="popover"
-          >
+          <SelectTrigger aria-label="Default agent" className="w-48 shrink-0" variant="popover">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -240,8 +243,8 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
         ))}
       </div>
       <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        These members &amp; groups inherit this agent's declared secrets &amp; connectors
-        (below) as their own — usable in Secrets, sessions, and connector calls.
+        These members &amp; groups inherit this agent's declared secrets &amp; connectors (below) as
+        their own — usable in Secrets, sessions, and connector calls.
       </p>
     </div>
   );
@@ -475,7 +478,8 @@ function AgentScopeCard({
       <div className="border-border/50 flex items-center justify-between gap-3 border-t pt-3">
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
           Members assigned to this agent inherit exactly these secrets &amp; connectors. Saved to{' '}
-          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>.
+          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>
+          .
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {dirty && (

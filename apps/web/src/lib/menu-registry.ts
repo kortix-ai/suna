@@ -21,59 +21,49 @@ import { Icon } from '@/features/icon/icon';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
 import {
-  CogOne,
-  CogOneSolid,
-  CreditCardSolid,
-  Icon as IconMynauiType,
-  UsersSolid,
-} from '@mynaui/icons-react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  Activity,
-  Blocks,
-  Bot,
-  Boxes,
-  Calendar,
-  Coins,
-  Compass,
-  // Projects / app navigation (new project shell)
-  FolderGit2,
-  FolderOpen,
-  GitCompareArrows,
-  GitPullRequest,
-  Globe,
-  Hash,
-  Keyboard,
-  // Settings pages
-  KeyRound,
-  Layers,
-  // Navigation
-  LayoutDashboard,
-  LogOut,
-  MessagesSquare,
-  Monitor,
-  // Preferences
-  Palette,
-  // View / Misc
-  PanelLeftClose,
-  Plug,
-  // Actions
-  Plus,
-  Receipt,
-  RefreshCw,
-  ScrollText,
-  Search,
-  ShieldCheck,
-  SlidersHorizontal,
-  Store,
-  Terminal,
-  TerminalSquare,
-  UserPlus,
-  Volume2,
-  Wallpaper as WallpaperIcon,
-  Webhook,
-} from 'lucide-react';
-import { IconType } from 'react-icons/lib';
+  ActivityIcon as Activity,
+  SquaresFourIcon as Blocks,
+  RobotIcon as Bot,
+  CubeIcon as Boxes,
+  CalendarIcon as Calendar,
+  GearIcon as CogOne,
+  GearIcon as CogOneSolid,
+  CoinsIcon as Coins,
+  CompassIcon as Compass,
+  CreditCardIcon as CreditCardSolid,
+  GitBranchIcon as FolderGit2,
+  FolderOpenIcon as FolderOpen,
+  GitDiffIcon as GitCompareArrows,
+  GitPullRequestIcon as GitPullRequest,
+  GlobeIcon as Globe,
+  HashIcon as Hash,
+  KeyboardIcon as Keyboard,
+  KeyIcon as KeyRound,
+  StackIcon as Layers,
+  SquaresFourIcon as LayoutDashboard,
+  SignOutIcon as LogOut,
+  ChatsIcon as MessagesSquare,
+  MonitorIcon as Monitor,
+  PaletteIcon as Palette,
+  SidebarSimpleIcon as PanelLeftClose,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+  ReceiptIcon as Receipt,
+  ArrowsClockwiseIcon as RefreshCw,
+  ScrollIcon as ScrollText,
+  MagnifyingGlassIcon as Search,
+  ShieldCheckIcon as ShieldCheck,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  StorefrontIcon as Store,
+  TerminalIcon as Terminal,
+  TerminalWindowIcon as TerminalSquare,
+  UserPlusIcon as UserPlus,
+  UsersIcon as UsersSolid,
+  SpeakerHighIcon as Volume2,
+  ImagesSquareIcon as WallpaperIcon,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
+import type { ComponentType } from 'react';
 
 // ============================================================================
 // Types
@@ -93,12 +83,7 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
 export type MenuItemKind =
-  | 'navigate'
-  | 'action'
-  | 'settings'
-  | 'theme'
-  | 'wallpaper'
-  | 'sandboxService';
+  'navigate' | 'action' | 'settings' | 'theme' | 'wallpaper' | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -147,7 +132,7 @@ export interface MenuItemDef {
   /** Display label */
   label: string;
   /** Lucide icon component */
-  icon: LucideIcon | IconMynauiType | IconType;
+  icon: ComponentType<{ className?: string }>;
   /** Which group/section this belongs to */
   group: MenuGroup;
   /** Which UI surfaces should render this item */
@@ -442,7 +427,8 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
-    keywords: 'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
+    keywords:
+      'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
   },
   {
     id: 'proj-connectors-policies',
@@ -913,20 +899,18 @@ export const menuRegistry: MenuItemDef[] = [
   // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
   // name (Dither, Grain, Silk, …) in the palette applies it directly.
   // ──────────────────────────────────────────────────────────────────────────
-  ...WALLPAPERS.map(
-    (wp): MenuItemDef => ({
-      id: `wallpaper-${wp.id}`,
-      label: `Appearance · ${wp.name}`,
-      icon: WallpaperIcon,
-      group: 'wallpaper',
-      showIn: ['commandPalette'],
-      kind: 'wallpaper',
-      wallpaperValue: wp.id,
-      keywords: `wallpaper wallpapers background appearance ${wp.id}${
-        wp.type === 'shader' ? ' shader shaders animated' : ''
-      }`,
-    }),
-  ),
+  ...WALLPAPERS.map((wp): MenuItemDef => ({
+    id: `wallpaper-${wp.id}`,
+    label: `Appearance · ${wp.name}`,
+    icon: WallpaperIcon,
+    group: 'wallpaper',
+    showIn: ['commandPalette'],
+    kind: 'wallpaper',
+    wallpaperValue: wp.id,
+    keywords: `wallpaper wallpapers background appearance ${wp.id}${
+      wp.type === 'shader' ? ' shader shaders animated' : ''
+    }`,
+  })),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW
@@ -1023,7 +1007,7 @@ export function isItemActive(item: MenuItemDef, pathname: string | null): boolea
 export interface SettingsTab {
   id: SettingsTabId;
   label: string;
-  icon: LucideIcon | IconMynauiType | IconType;
+  icon: ComponentType<{ className?: string }>;
 }
 
 /** Preference tabs for the settings modal */

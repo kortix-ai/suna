@@ -12,8 +12,13 @@
 // customer actually uses, gated on `source === 'env'` at the call site in
 // accounts/[id]/page.tsx.
 
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  FileCodeIcon as FileCode2,
+  GithubLogoIcon as Github,
+  KeyIcon as KeyRound,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, FileCode2, Github, KeyRound } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -217,9 +222,11 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     // Robust auth-failure detection: the SDK's ApiError carries `.status`, but
     // depending on the failure path the code can sit on `.response.status` or
     // only in the message — a non-admin must NEVER see the scary generic error.
-    const err = statusQuery.error as
-      | { status?: number; response?: { status?: number }; message?: string }
-      | null;
+    const err = statusQuery.error as {
+      status?: number;
+      response?: { status?: number };
+      message?: string;
+    } | null;
     const status = err?.status ?? err?.response?.status;
     const forbidden =
       status === 403 ||

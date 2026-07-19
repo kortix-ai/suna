@@ -2,7 +2,7 @@
 
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
-import { AlertTriangle } from 'lucide-react';
+import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { PDFViewer } from './pdf-viewer';

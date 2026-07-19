@@ -24,25 +24,25 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { createProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
-import { SparklesSolid } from '@mynaui/icons-react';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { createProjectSession } from '@kortix/sdk/projects-client';
 import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  Columns2,
-  FileDiff,
-  FileEdit,
-  FilePlus2,
-  FileX2,
-  RefreshCcw,
-  RotateCcw,
-  Rows3,
-  XCircle,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle2,
+  CaretDownIcon as ChevronDown,
+  ColumnsIcon as Columns2,
+  GitDiffIcon as FileDiff,
+  NotePencilIcon as FileEdit,
+  FilePlusIcon as FilePlus2,
+  FileXIcon as FileX2,
+  ArrowsCounterClockwiseIcon as RefreshCcw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  RowsIcon as Rows3,
+  SparkleIcon as SparklesSolid,
+  XCircleIcon as XCircle,
+} from '@phosphor-icons/react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -234,8 +234,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   // Gate on `variables === crId` so a stale failure from a previously-viewed CR
   // (the dialog is reused, not remounted) never bleeds onto the current one.
   const mergeError = mergeMutation.error as
-    | (Error & { code?: string; data?: { issues?: ManifestIssue[] } })
-    | null;
+    (Error & { code?: string; data?: { issues?: ManifestIssue[] } }) | null;
   const manifestIssues =
     mergeError?.code === 'MANIFEST_INVALID' && mergeMutation.variables === crId
       ? (mergeError.data?.issues ?? [])
@@ -429,7 +428,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               title="Project config check failed, so this change can't be applied yet"
               action={
                 <Button size="sm" variant="blue" disabled={fixing} onClick={handleFixWithAgent}>
-                  {fixing ? <Loading /> : <SparklesSolid />}
+                  {fixing ? <Loading /> : <SparklesSolid weight="fill" />}
                   Fix with agent
                 </Button>
               }

@@ -1,20 +1,16 @@
 'use client';
 
+import { LinkSimpleIcon as Link2, CircleNotchIcon as Loader2 } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { Link2, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
   createSessionPublicShare,
   type CreateSessionPublicShareInput,
 } from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 
 export function PublicShareLinkButton({
   projectId,

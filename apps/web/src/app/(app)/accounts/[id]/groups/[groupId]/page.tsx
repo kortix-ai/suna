@@ -1,7 +1,13 @@
 'use client';
 
+import {
+  CaretLeftIcon as ChevronLeft,
+  FolderOpenIcon as FolderOpen,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, FolderOpen, Plus, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -57,6 +63,7 @@ import {
   updateGroup,
   type GroupProjectGrant,
 } from '@/lib/iam-client';
+import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import {
   attachGroupToProject,
@@ -66,7 +73,6 @@ import {
   listProjectsForAccount,
   type ProjectRole,
 } from '@kortix/sdk/projects-client';
-import { usePermission } from '@/lib/use-permission';
 
 // Entity row dialect shared with the customize section views.
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
@@ -288,7 +294,12 @@ function GroupMembersCard({
           </p>
         </div>
         {canManage ? (
-          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setAddOpen(true)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="gap-1.5"
+            onClick={() => setAddOpen(true)}
+          >
             <Plus className="size-4" />
             Add members
           </Button>
@@ -741,8 +752,8 @@ function GroupProjectGrantsCard({
             Projects{grants.length > 0 ? ` · ${grants.length}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
-            Every group member inherits the chosen role on these projects. Account owners and
-            admins always have Manager.
+            Every group member inherits the chosen role on these projects. Account owners and admins
+            always have Manager.
           </p>
         </div>
         <Button

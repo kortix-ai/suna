@@ -33,7 +33,6 @@ import { SupportModal } from '@/features/layout/support-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
-import { listAccounts } from '@kortix/sdk/projects-client';
 import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -41,9 +40,18 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import { BookOpen, CogOne, CreditCard, HomeSolid } from '@mynaui/icons-react';
+import { listAccounts } from '@kortix/sdk/projects-client';
+import {
+  BookOpenIcon as BookOpen,
+  GearIcon as CogOne,
+  CreditCardIcon as CreditCard,
+  DownloadIcon as Download,
+  HouseIcon as HomeSolid,
+  LifebuoyIcon as LifeBuoy,
+  SignOutIcon as LogOut,
+  StorefrontIcon as Store,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, LifeBuoy, LogOut, Store } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -205,7 +213,7 @@ export function UserMenu({
         )}
 
         <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))}>
-          <HomeSolid />
+          <HomeSolid weight="fill" />
           Home
         </DropdownMenuItem>
 

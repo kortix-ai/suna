@@ -42,25 +42,27 @@ import { isHeicFile } from '@/lib/utils/heic-convert';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
+  WarningIcon as AlertTriangle,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
   FileIcon,
-  FileText,
-  FileWarning,
-  Globe,
-  Loader2,
-  Music,
-} from 'lucide-react';
+  FileTextIcon as FileText,
+  FileXIcon as FileWarning,
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  MusicNotesIcon as Music,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { resolveShowType } from './show-type-utils';
 import { VideoRenderer } from './video-renderer';
-import { getShowFileCategory, resolveShowType } from './show-type-utils';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
-const PdfRenderer = lazy(() => import('./pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })));
+const PdfRenderer = lazy(() =>
+  import('./pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
+);
 const CsvRenderer = lazy(() =>
   import('./csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
 );
@@ -77,17 +79,17 @@ const PptxRenderer = lazy(() =>
 // ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
 
 export {
-  SHOW_IMAGE_EXT_RE,
-  SHOW_VIDEO_EXT_RE,
-  SHOW_AUDIO_EXT_RE,
-  SHOW_PDF_EXT_RE,
-  SHOW_CSV_EXT_RE,
-  SHOW_XLSX_EXT_RE,
-  SHOW_DOCX_EXT_RE,
-  SHOW_PPTX_EXT_RE,
-  SHOW_HTML_EXT_RE,
   getShowFileCategory,
   resolveShowType,
+  SHOW_AUDIO_EXT_RE,
+  SHOW_CSV_EXT_RE,
+  SHOW_DOCX_EXT_RE,
+  SHOW_HTML_EXT_RE,
+  SHOW_IMAGE_EXT_RE,
+  SHOW_PDF_EXT_RE,
+  SHOW_PPTX_EXT_RE,
+  SHOW_VIDEO_EXT_RE,
+  SHOW_XLSX_EXT_RE,
 } from './show-type-utils';
 
 // ── Helpers ────────────────────────────────────────────────────────────────

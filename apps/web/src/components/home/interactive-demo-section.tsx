@@ -8,32 +8,35 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import {
-  ArrowRight,
-  Blocks,
-  Bot,
-  Brain,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Database,
-  FileText,
-  GitPullRequest,
-  KeyRound,
-  MessageSquare,
-  Plus,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
+  ArrowRightIcon as ArrowRight,
+  SquaresFourIcon as Blocks,
+  RobotIcon as Bot,
+  BrainIcon as Brain,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  DatabaseIcon as Database,
+  UsersIcon as FaUsers,
+  FileTextIcon as FileText,
+  GitPullRequestIcon as GitPullRequest,
+  HouseIcon as GoHomeFill,
+  SparkleIcon as HiMiniSparkles,
+  KeyIcon as KeyRound,
+  ShieldIcon as MdShield,
+  ChatIcon as MessageSquare,
+  ChatCircleDotsIcon as PiChatCircleDotsFill,
+  ClockCountdownIcon as PiClockCountdownFill,
+  PlusIcon as Plus,
+  CpuIcon as RiCpuLine,
+  FolderIcon as RiFolder3Fill,
+  RobotIcon as RiRobot3Fill,
+  MagnifyingGlassIcon as Search,
+  type Icon as IconType,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
-import { FaUsers } from 'react-icons/fa';
-import { GoHomeFill } from 'react-icons/go';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { IconType } from 'react-icons/lib';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
 import { type DemoConversation } from './interactive-demo/chat/use-demo-conversation';
@@ -737,11 +740,11 @@ function ModelsPage({
               </div>
               {isActive ? (
                 <Badge size="sm" variant="success" className="shrink-0 gap-1">
-                  <HiMiniSparkles className="size-3" /> Active
+                  <HiMiniSparkles weight="fill" className="size-3" /> Active
                 </Badge>
               ) : p.state === 'managed' ? (
                 <Badge size="sm" variant="highlight" className="shrink-0 gap-1">
-                  <HiMiniSparkles className="size-3" /> Managed
+                  <HiMiniSparkles weight="fill" className="size-3" /> Managed
                 </Badge>
               ) : connected ? (
                 <ConnectBadge connected />
@@ -1147,7 +1150,7 @@ function SecurityPage({
                         'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleTwoFactor677873ea',
                       )}
                     >
-                      <MdShield className="size-3.5" /> 2FA
+                      <MdShield weight="fill" className="size-3.5" /> 2FA
                     </span>
                     <Badge size="sm" variant={m.role === 'Owner' ? 'highlight' : 'outline'}>
                       {m.role}
@@ -1202,7 +1205,7 @@ function SecurityPage({
         </Panel>
 
         <div className="border-border/60 bg-muted/20 text-muted-foreground flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs">
-          <MdShield className="size-4 shrink-0" />
+          <MdShield weight="fill" className="size-4 shrink-0" />
           <span>
             {tI18nHardcoded.raw(
               'autoComponentsHomeInteractiveDemoSectionJsxTextSSO2FAEnforced29070cf3',
@@ -1239,27 +1242,27 @@ const PAGES: Record<
 > = {
   home: {
     label: 'Home',
-    icon: <GoHomeFill className="size-4" />,
+    icon: <GoHomeFill weight="fill" className="size-4" />,
     render: (nav, convo) => <HomePage nav={nav} convo={convo} />,
   },
   projects: {
     label: 'Projects',
-    icon: <RiFolder3Fill className="size-4" />,
+    icon: <RiFolder3Fill weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <ProjectsPage projects={extras.projects} />,
   },
   chat: {
     label: 'Chat',
-    icon: <PiChatCircleDotsFill className="size-4" />,
+    icon: <PiChatCircleDotsFill weight="fill" className="size-4" />,
     render: (_nav, convo, extras) => <ChatPage convo={convo} onSkillClick={extras.onSkillClick} />,
   },
   agents: {
     label: 'Agents',
-    icon: <RiRobot3Fill className="size-4" />,
+    icon: <RiRobot3Fill weight="fill" className="size-4" />,
     render: () => <AgentsPage />,
   },
   skills: {
     label: 'Skills',
-    icon: <HiMiniSparkles className="size-4" />,
+    icon: <HiMiniSparkles weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <SkillsPage focusedSkill={extras.focusedSkill} />,
   },
   integrations: {
@@ -1276,7 +1279,7 @@ const PAGES: Record<
   },
   scheduling: {
     label: 'Scheduling',
-    icon: <PiClockCountdownFill className="size-4" />,
+    icon: <PiClockCountdownFill weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <SchedulingPage added={extras.scheduleAdded} />,
   },
   channels: {
@@ -1288,7 +1291,7 @@ const PAGES: Record<
   },
   security: {
     label: 'Security',
-    icon: <MdShield className="size-4" />,
+    icon: <MdShield weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => (
       <SecurityPage memberAdded={extras.memberAdded} secretAdded={extras.secretAdded} />
     ),

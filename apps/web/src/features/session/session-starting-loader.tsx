@@ -18,9 +18,11 @@ import {
   type SessionStartStage,
 } from '@kortix/sdk/projects-client';
 import { formatDuration } from '@kortix/sdk/turns';
-import { CheckCircleSolid } from '@mynaui/icons-react';
+import {
+  CheckCircleIcon as CheckCircleSolid,
+  ArrowCounterClockwiseIcon as RotateCcw,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { RotateCcw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
@@ -209,8 +211,8 @@ function BootStepList({
               <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-none text-current">
                 {done ? (
                   <CheckCircleSolid
+                    weight="fill"
                     className="text-kortix-green bg-background size-3.5"
-                    strokeWidth={2.5}
                   />
                 ) : (
                   <StepRing spinning={current} />

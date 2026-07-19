@@ -2,8 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
+import {
+  KeyIcon as KeyRound,
+  DotsThreeIcon as MoreHorizontal,
+  PlugIcon as Plug,
+  PlusIcon as Plus,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -60,7 +65,12 @@ import {
   listProjectSecrets,
   upsertProjectSecret,
 } from '@kortix/sdk/projects-client';
-import { DangerTriangleSolid, Pencil, Search, TrashSolid } from '@mynaui/icons-react';
+import {
+  WarningIcon as DangerTriangleSolid,
+  PencilIcon as Pencil,
+  MagnifyingGlassIcon as Search,
+  TrashIcon as TrashSolid,
+} from '@phosphor-icons/react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -212,7 +222,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               {missingRequired.length > 0 && (
                 <InfoBanner
                   tone="warning"
-                  icon={DangerTriangleSolid}
+                  icon={<DangerTriangleSolid weight="fill" />}
                   title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
                 >
                   Sessions can still start, but the agent will be missing these values.
@@ -441,7 +451,7 @@ function SecretTableRow({
           </div>
         </div>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-[200px] whitespace-normal text-xs font-medium">
+      <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
         {statusLabel(row)}
       </TableCell>
       <TableCell>
@@ -469,7 +479,7 @@ function SecretTableRow({
               </DropdownMenuItem>
               {row.configured && (
                 <DropdownMenuItem onClick={onDelete} variant="destructive">
-                  <TrashSolid className="size-3.5 shrink-0" />
+                  <TrashSolid weight="fill" className="size-3.5 shrink-0" />
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextDeleteSharedd7bb1731',
                   )}

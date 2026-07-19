@@ -13,8 +13,12 @@ import { useTranslations } from 'next-intl';
  * Entity tiles use the design-system <EntityAvatar> (things are square).
  */
 
+import {
+  CaretUpDownIcon as ChevronsUpDown,
+  GitBranchIcon as FolderGit2,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronsUpDown, FolderGit2, Search } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -33,12 +37,19 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
+import {
+  listAccounts,
+  listProjectsForAccount,
+  type KortixProject,
+} from '@kortix/sdk/projects-client';
 import { formatRelative } from '@kortix/shared';
-import { CheckCircleSolid, ChevronsUpDownSolid } from '@mynaui/icons-react';
+import {
+  CheckCircleIcon as CheckCircleSolid,
+  CaretUpDownIcon as ChevronsUpDownSolid,
+} from '@phosphor-icons/react';
 
 export type ProjectSwitcherVariant = 'header' | 'sidebar';
 
@@ -136,7 +147,7 @@ export function ProjectSwitcher({
       <Button type="button" className={cn(className)}>
         {tile}
         <span className="max-w-40 truncate text-sm font-medium">{label}</span>
-        <ChevronsUpDownSolid className="text-muted-foreground size-3" />
+        <ChevronsUpDownSolid weight="fill" className="text-muted-foreground size-3" />
       </Button>
     ) : (
       <SidebarMenuButton
@@ -223,7 +234,10 @@ export function ProjectSwitcher({
                     {loading ? (
                       <Loading className="text-muted-foreground size-3.5" />
                     ) : active ? (
-                      <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />
+                      <CheckCircleSolid
+                        weight="fill"
+                        className="text-kortix-green size-3.5 shrink-0"
+                      />
                     ) : null}
                   </DropdownMenuItem>
                 );

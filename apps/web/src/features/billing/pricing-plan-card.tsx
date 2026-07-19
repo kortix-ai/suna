@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import type { PricingPlan } from '@/features/billing/pricing-plans';
 import { cn } from '@/lib/utils';
-import { Check } from 'lucide-react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 
 interface PricingPlanCardProps {
   plan: PricingPlan;

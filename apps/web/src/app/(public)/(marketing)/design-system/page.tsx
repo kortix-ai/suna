@@ -4,29 +4,29 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  Bold,
-  Check,
-  ChevronsUpDown,
-  Copy,
-  Download,
-  FolderGit2,
-  HelpCircle,
-  Info,
-  Loader2,
-  Mail,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Settings,
-  Star,
-  Trash2,
-  TriangleAlert,
-  Users,
-  X,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  WarningIcon as AlertTriangle,
+  ArrowRightIcon as ArrowRight,
+  TextBIcon as Bold,
+  CheckIcon as Check,
+  CaretUpDownIcon as ChevronsUpDown,
+  CopyIcon as Copy,
+  DownloadIcon as Download,
+  GitBranchIcon as FolderGit2,
+  QuestionIcon as HelpCircle,
+  InfoIcon as Info,
+  CircleNotchIcon as Loader2,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  GearIcon as Settings,
+  StarIcon as Star,
+  TrashIcon as Trash2,
+  WarningIcon as TriangleAlert,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -168,7 +168,12 @@ import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { Cable, Plug, Radio, Zap } from 'lucide-react';
+import {
+  PlugsConnectedIcon as Cable,
+  PlugIcon as Plug,
+  RadioIcon as Radio,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },

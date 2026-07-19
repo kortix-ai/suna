@@ -1,29 +1,18 @@
 'use client';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import { BasicTool, partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  BasicTool,
-  partInput,
-  partStatus,
-} from '@/features/session/tool/shared/infrastructure';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
-import {
-  Cpu,
-  ExternalLink,
-} from 'lucide-react';
-import {
-  useMemo,
-  useState,
-} from 'react';
 import {
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
-
+import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -97,4 +86,3 @@ ToolRegistry.register('session_start_background', SessionSpawnTool);
 ToolRegistry.register('session-start-background', SessionSpawnTool);
 ToolRegistry.register('oc-session_start_background', SessionSpawnTool);
 ToolRegistry.register('oc-session-start-background', SessionSpawnTool);
-

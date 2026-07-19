@@ -26,13 +26,13 @@ import { StatusBadge } from '@/components/ui/status';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import {
-  ArrowUpRight,
-  Check,
-  CheckCircleSolid,
-  ChevronDown,
-  Eye,
-  SparklesSolid,
-} from '@mynaui/icons-react';
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircleSolid,
+  CaretDownIcon as ChevronDown,
+  EyeIcon as Eye,
+  SparkleIcon as SparklesSolid,
+} from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -560,7 +560,7 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
     <>
       <Panel>
         <div className="text-foreground flex items-start gap-2 text-sm text-pretty">
-          <SparklesSolid className="text-kortix-purple mt-0.5 size-4 shrink-0" />
+          <SparklesSolid weight="fill" className="text-kortix-purple mt-0.5 size-4 shrink-0" />
           <span>{d.note}</span>
         </div>
       </Panel>
@@ -674,7 +674,7 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
           {children.map((c) => (
             <li key={c.id} className="flex items-center gap-2.5 px-4 py-2">
               {c.status === 'done' ? (
-                <CheckCircleSolid className="text-kortix-green size-4 shrink-0" />
+                <CheckCircleSolid weight="fill" className="text-kortix-green size-4 shrink-0" />
               ) : (
                 <Eye className="dark:text-kortix-yellow size-4 shrink-0 text-yellow-600" />
               )}

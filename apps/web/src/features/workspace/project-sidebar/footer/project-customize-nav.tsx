@@ -1,18 +1,17 @@
 'use client';
 
-import { Config } from '@mynaui/icons-react';
-import { FolderOpen } from 'lucide-react';
+import { GearIcon as Config, FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
 import Hint from '@/components/ui/hint';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { useDevice } from '@/hooks/use-device';
+import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { useIsMobile } from '@/hooks/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
-import { useDevice } from '@/hooks/use-device';
 
 export function useCustomizeActivate() {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
@@ -74,13 +73,13 @@ export function ProjectCustomizeNavItem() {
         onClick={onClick}
         isActive={customizeOpen}
         tooltip="Customize"
-        className="text-sm! font-medium [&_svg]:size-4! flex items-center justify-between group/customize-button"
+        className="group/customize-button flex items-center justify-between text-sm! font-medium [&_svg]:size-4!"
       >
         <span className="flex items-center gap-2">
           <Config />
           Customize
         </span>
-        <KbdGroup className='opacity-0 group-hover/customize-button:opacity-100 transition-opacity duration-50'>
+        <KbdGroup className="opacity-0 transition-opacity duration-50 group-hover/customize-button:opacity-100">
           <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd>
           <Kbd>,</Kbd>
         </KbdGroup>
@@ -122,7 +121,7 @@ export function ProjectFilesNavItem() {
         onClick={onClick}
         isActive={isActive}
         tooltip="Files"
-        className="text-sm! font-medium [&_svg]:size-4! flex items-center gap-2"
+        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
       >
         <FolderOpen />
         Files

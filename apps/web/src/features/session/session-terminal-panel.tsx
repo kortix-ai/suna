@@ -1,13 +1,17 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import { shouldAutoReplaceTerminal } from '@/features/session/pty-connection';
+import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
 import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
 import { useServerStore } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import {
+  CircleDashedIcon as CircleDashed,
+  PlusIcon as Plus,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import React, { useCallback, useEffect, useRef } from 'react';

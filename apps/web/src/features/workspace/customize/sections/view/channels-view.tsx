@@ -72,9 +72,16 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
-import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
+import {
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircleSolid,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLinkSolid,
+  EnvelopeIcon as Mail,
+  ChatIcon as MessageSquare,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -176,7 +183,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   <TableHead>Platform</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Workspace</TableHead>
-                  <TableHead className="w-[1%] whitespace-nowrap text-right">
+                  <TableHead className="w-[1%] text-right whitespace-nowrap">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -200,7 +207,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
             </Table>
 
             {install ? (
-              <InfoBanner tone="neutral" icon={CheckCircleSolid}>
+              <InfoBanner tone="neutral" icon={<CheckCircleSolid weight="fill" />}>
                 <p className="text-sm">
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextInviteThe94db1964',
@@ -238,13 +245,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
  * the only other way to change these is the in-Slack `/kortix agent|model|policy`
  * commands; this edits the same row through `PATCH …/channels/bindings/:id`.
  */
-function ChannelBindingsSection({
-  projectId,
-  canWrite,
-}: {
-  projectId: string;
-  canWrite: boolean;
-}) {
+function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const bindingsQuery = useChannelBindings(projectId);
   const bindings = bindingsQuery.data?.bindings ?? [];
 
@@ -393,7 +394,7 @@ function ChannelBindingTableRow({
         </div>
       </TableCell>
       <TableCell>
-        <div className="bg-card rounded-2xl border px-2 py-1 inline-flex">
+        <div className="bg-card inline-flex rounded-2xl border px-2 py-1">
           <AgentSelector
             agents={agentSelectorAgents}
             selectedAgent={selectedAgentValue}
@@ -417,7 +418,7 @@ function ChannelBindingTableRow({
       <TableCell>
         {canManage ? (
           <div className="flex flex-col gap-1">
-            <div className="bg-card rounded-2xl border px-2 py-1 inline-flex w-fit">
+            <div className="bg-card inline-flex w-fit rounded-2xl border px-2 py-1">
               <ModelSelector
                 models={models}
                 providers={providers}
@@ -525,7 +526,11 @@ function SlackChannelRow({
       <TableCell className="text-muted-foreground text-sm">
         <span
           className="block max-w-[240px] truncate"
-          title={connected ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined) : undefined}
+          title={
+            connected
+              ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined)
+              : undefined
+          }
         >
           {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
         </span>
@@ -793,7 +798,7 @@ function ConnectedDetails() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
 
   return (
-    <InfoBanner tone="neutral" icon={CheckCircleSolid}>
+    <InfoBanner tone="neutral" icon={<CheckCircleSolid weight="fill" />}>
       <p className="text-sm">
         {tI18nHardcoded.raw(
           'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextInviteThe94db1964',
@@ -869,7 +874,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
                   disabled={!manifestText}
                 >
                   {copied ? (
-                    <CheckCircleSolid className="size-3.5 shrink-0" />
+                    <CheckCircleSolid weight="fill" className="size-3.5 shrink-0" />
                   ) : (
                     <Copy className="size-3.5 shrink-0" />
                   )}
@@ -884,7 +889,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenSlacka088997c',
                   )}
-                  <ExternalLinkSolid className="size-3.5 shrink-0" />
+                  <ExternalLinkSolid weight="fill" className="size-3.5 shrink-0" />
                 </Link>
               </Button>
             </ButtonGroup>

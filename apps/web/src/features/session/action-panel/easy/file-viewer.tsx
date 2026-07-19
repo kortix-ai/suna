@@ -36,15 +36,15 @@ import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import {
-  Code2,
-  Download,
-  ExternalLink,
-  Eye,
-  Loader2,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-} from 'lucide-react';
+  CodeSimpleIcon as Code2,
+  DownloadIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  EyeIcon as Eye,
+  CircleNotchIcon as Loader2,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 
@@ -363,7 +363,7 @@ function FileBody({
     <CodeBlockCode
       code={content}
       language={languageFor(fileName)}
-      className="[&_pre]:!bg-transparent [&_pre]:rounded-none [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
+      className="[&_pre]:rounded-none [&_pre]:!bg-transparent [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
     />
   );
 }

@@ -3,27 +3,27 @@
 import { useTranslations } from 'next-intl';
 
 import {
-  ArrowDown,
-  ArrowDownRight,
-  ArrowUp,
-  ArrowUpRight,
-  Ban,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  CreditCard,
-  ExternalLink,
-  Filter,
-  FolderKanban,
-  History,
-  Loader2,
-  Mail,
-  RefreshCw,
-  Shield,
-  SlidersHorizontal,
-  Users,
-  X,
-} from 'lucide-react';
+  ArrowDownIcon as ArrowDown,
+  ArrowDownRightIcon as ArrowDownRight,
+  ArrowUpIcon as ArrowUp,
+  ArrowUpRightIcon as ArrowUpRight,
+  ProhibitIcon as Ban,
+  CheckCircleIcon as CheckCircle2,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  CreditCardIcon as CreditCard,
+  ArrowSquareOutIcon as ExternalLink,
+  FunnelIcon as Filter,
+  KanbanIcon as FolderKanban,
+  ClockCounterClockwiseIcon as History,
+  CircleNotchIcon as Loader2,
+  EnvelopeIcon as Mail,
+  ArrowsClockwiseIcon as RefreshCw,
+  ShieldIcon as Shield,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -73,9 +73,9 @@ import {
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
+import { useDebounce } from '@/hooks/use-debounced-value';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { useDebounce } from '@/hooks/use-debounced-value';
 
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 

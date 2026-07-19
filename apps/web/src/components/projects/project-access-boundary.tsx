@@ -1,17 +1,17 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle,
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-  LockKeyhole,
-  RefreshCw,
-  Send,
-  ShieldAlert,
-  UserRound,
-} from 'lucide-react';
+  WarningCircleIcon as AlertCircle,
+  ArrowLeftIcon as ArrowLeft,
+  CheckCircleIcon as CheckCircle2,
+  CircleNotchIcon as Loader2,
+  LockIcon as LockKeyhole,
+  ArrowsClockwiseIcon as RefreshCw,
+  PaperPlaneTiltIcon as Send,
+  ShieldWarningIcon as ShieldAlert,
+  UserCircleIcon as UserRound,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
@@ -33,8 +33,8 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { setAdminBypass } from '@/lib/api-client';
-import { getProjectDetail, requestProjectAccess } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { getProjectDetail, requestProjectAccess } from '@kortix/sdk/projects-client';
 
 interface ProjectAccessBoundaryProps {
   projectId: string;
@@ -349,7 +349,7 @@ function ProjectAccessStateFrame({
       />
 
       {cornerAction ? (
-        <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">{cornerAction}</div>
+        <div className="absolute top-4 right-4 z-20 sm:top-6 sm:right-6">{cornerAction}</div>
       ) : null}
 
       <main className="relative z-10 mx-auto flex w-full max-w-4xl items-center">

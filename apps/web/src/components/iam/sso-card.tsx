@@ -6,11 +6,18 @@
 // holding group memberships. Once configured, every SAML-issued JWT
 // triggers JIT membership + group sync in the auth middleware.
 
-import { getEnv } from '@/lib/env-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { getEnv } from '@/lib/env-config';
 import { copyToClipboard } from '@/lib/utils/clipboard';
+import {
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, Copy, Plus, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -20,7 +27,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Switch } from '@/components/ui/switch';
 import {
   Modal,
   ModalBody,
@@ -38,6 +44,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   type SsoGroupMapping,
@@ -294,12 +301,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <div className="border-border border-t px-4 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 space-y-0.5">
-                <p className="text-foreground text-sm font-medium">
-                  Enforce SSO for this domain
-                </p>
+                <p className="text-foreground text-sm font-medium">Enforce SSO for this domain</p>
                 <p className="text-muted-foreground text-xs">
-                  Members must sign in with your identity provider — the password option
-                  disappears.
+                  Members must sign in with your identity provider — the password option disappears.
                 </p>
               </div>
               {canManage && (
@@ -356,7 +360,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                         {m.claim_value}
                       </code>
                       <ArrowRight className="text-muted-foreground/50 size-3.5 shrink-0" />
-                      <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
+                      <Badge variant="outline" size="sm" className="max-w-[42%] min-w-0 truncate">
                         {m.group_name}
                       </Badge>
                       <span className="flex-1" />
@@ -474,7 +478,9 @@ function EditProviderDialog({
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
   // New connections default auto-provision ON (groups appear without
   // hand-mapping); an existing provider keeps whatever the admin chose.
-  const [autoProvision, setAutoProvision] = useState(existing ? existing.auto_provision_groups : true);
+  const [autoProvision, setAutoProvision] = useState(
+    existing ? existing.auto_provision_groups : true,
+  );
   // New providers register by importing the IdP metadata (XML or URL) — the
   // backend handles the identity-provider registration; no internals surface in
   // the UI. Edits reuse the stored provider id under the hood.
@@ -550,7 +556,9 @@ function EditProviderDialog({
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-          {spUrls && <SpDetails urls={spUrls} className="bg-muted/20 rounded-md border px-3 py-3" />}
+          {spUrls && (
+            <SpDetails urls={spUrls} className="bg-muted/20 rounded-md border px-3 py-3" />
+          )}
 
           <div className="space-y-1.5">
             <Label>Display name</Label>
@@ -625,14 +633,14 @@ function EditProviderDialog({
               variant="popover"
             />
             <p className="text-muted-foreground text-xs">
-              Every sign-in from this domain is routed to this identity provider instead of
-              password login — only add a domain your IdP actually controls. Users on other
-              domains are unaffected.
+              Every sign-in from this domain is routed to this identity provider instead of password
+              login — only add a domain your IdP actually controls. Users on other domains are
+              unaffected.
             </p>
             {adminEmailDomain && domain.trim().toLowerCase() === adminEmailDomain && (
               <p className="text-kortix-yellow text-xs">
-                This is your own email domain — saving this will route YOUR next sign-in to the
-                IdP too. Make sure your account exists there before you continue.
+                This is your own email domain — saving this will route YOUR next sign-in to the IdP
+                too. Make sure your account exists there before you continue.
               </p>
             )}
           </div>
@@ -654,11 +662,10 @@ function EditProviderDialog({
             <p className="text-muted-foreground text-xs leading-relaxed">
               <span className="text-kortix-yellow">Entra tip:</span> set your SAML{' '}
               <span className="font-mono">emailaddress</span> claim source to{' '}
-              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com users have
-              no <span className="font-mono">mail</span>, and an empty email breaks sign-in. Entra
-              also emits group <span className="font-mono">Object IDs</span> by default: map
-              those, or emit names via “Groups assigned to the application” (needs Entra ID
-              P1/P2).
+              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com users have no{' '}
+              <span className="font-mono">mail</span>, and an empty email breaks sign-in. Entra also
+              emits group <span className="font-mono">Object IDs</span> by default: map those, or
+              emit names via “Groups assigned to the application” (needs Entra ID P1/P2).
             </p>
           </div>
 
@@ -673,8 +680,8 @@ function EditProviderDialog({
             <span>
               <span className="font-medium">Auto-create members</span>
               <span className="text-muted-foreground block text-xs">
-                When off, only users an admin has already invited can sign in via SAML. Group
-                sync still runs for those members.
+                When off, only users an admin has already invited can sign in via SAML. Group sync
+                still runs for those members.
               </span>
             </span>
           </label>
@@ -690,8 +697,8 @@ function EditProviderDialog({
             <span>
               <span className="font-medium">Auto-provision groups</span>
               <span className="text-muted-foreground block text-xs">
-                Create an IAM group for every group the IdP sends and add users to it — no
-                per-group mapping. You just attach project roles to the auto-created groups.
+                Create an IAM group for every group the IdP sends and add users to it — no per-group
+                mapping. You just attach project roles to the auto-created groups.
               </span>
             </span>
           </label>
@@ -776,8 +783,8 @@ function AddMappingDialog({
         <ModalHeader>
           <ModalTitle>Add group mapping</ModalTitle>
           <ModalDescription>
-            Users with this claim value in their SAML token will be added to the chosen IAM group
-            on sign-in.
+            Users with this claim value in their SAML token will be added to the chosen IAM group on
+            sign-in.
           </ModalDescription>
         </ModalHeader>
 

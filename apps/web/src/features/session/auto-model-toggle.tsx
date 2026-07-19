@@ -2,7 +2,7 @@
 
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
+import { SparkleIcon as Sparkles } from '@phosphor-icons/react';
 
 // AUTO lives outside the provider groups in the model picker — a standalone on/off
 // control rendered above every provider. `auto` is a synthetic managed entry (not a

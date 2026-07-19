@@ -2,7 +2,12 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Check, ExternalLink, Loader2, Plug } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  ArrowSquareOutIcon as ExternalLink,
+  CircleNotchIcon as Loader2,
+  PlugIcon as Plug,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';

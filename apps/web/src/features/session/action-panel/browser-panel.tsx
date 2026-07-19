@@ -33,20 +33,20 @@ import {
   createSessionPublicShare,
   type CreateSessionPublicShareInput,
 } from '@kortix/sdk/projects-client';
-import { useMutation } from '@tanstack/react-query';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Globe,
-  Link2,
-  MoreHorizontal,
-  RefreshCw,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  GlobeIcon as Globe,
+  ArrowsClockwiseIcon as GrRefresh,
+  LinkSimpleIcon as Link2,
+  DotsThreeIcon as MoreHorizontal,
+  ArrowsClockwiseIcon as RefreshCw,
+  ArrowSquareOutIcon as TbExternalLink,
+} from '@phosphor-icons/react';
+import { useMutation } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 
 interface PreviewTabContentProps {
   tabId: string;

@@ -31,9 +31,15 @@ import {
   getProjectDetail,
   readProjectFile,
 } from '@kortix/sdk/projects-client';
-import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
+import {
+  CopyIcon as Copy,
+  WarningIcon as DangerTriangleSolid,
+  type Icon as LucideIcon,
+  PencilIcon as Pencil,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, type LucideIcon, Plus } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 
 export type ConfigEntity = { name: string; path: string; description: string | null };
@@ -187,7 +193,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       ))}
     </div>
   ) : isForbidden ? (
-    <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
+    <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />} title="Access required">
       You don&apos;t have permission to read this repository.
     </InfoBanner>
   ) : detailQuery.isError ? (

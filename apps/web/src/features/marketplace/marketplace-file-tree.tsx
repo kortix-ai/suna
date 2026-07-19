@@ -1,4 +1,4 @@
-import { Folder, FileText } from 'lucide-react';
+import { FileTextIcon as FileText, FolderIcon as Folder } from '@phosphor-icons/react';
 
 import { cn } from '@/lib/utils';
 

@@ -1,7 +1,13 @@
 'use client';
 
+import {
+  ArrowsLeftRightIcon as ArrowRightLeft,
+  CubeIcon as Boxes,
+  CircleNotchIcon as Loader2,
+  DotsThreeIcon as MoreHorizontal,
+  ArrowsClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, Boxes, Loader2, MoreHorizontal, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';

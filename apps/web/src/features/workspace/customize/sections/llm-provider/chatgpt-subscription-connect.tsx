@@ -7,8 +7,12 @@ import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk/projects-client';
+import {
+  CheckCircleIcon as CheckCircle2,
+  ArrowSquareOutIcon as ExternalLink,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ExternalLink, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 

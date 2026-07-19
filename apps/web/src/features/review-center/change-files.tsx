@@ -24,7 +24,11 @@ import { DiffStat } from '@/components/ui/status';
 import { DiffRenderer } from '@/features/project-files/components/diff-renderer';
 import { useChangeRequestDiff } from '@/features/project-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight, ChevronDown, Eye } from '@mynaui/icons-react';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  CaretDownIcon as ChevronDown,
+  EyeIcon as Eye,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 /** Split a unified diff into per-file patch chunks keyed by the new (b/) path. */

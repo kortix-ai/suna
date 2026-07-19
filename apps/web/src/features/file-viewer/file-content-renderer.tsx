@@ -17,28 +17,28 @@ import {
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { getAuthToken } from '@/lib/auth-token';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { toSandboxAbsolutePath } from '@kortix/sdk/files';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import {
-  AlertTriangle,
-  Braces,
-  Check,
-  CircleAlert,
-  Code,
-  Download,
-  Eye,
-  FileDiff,
-  FileWarning,
-  FileX,
-  Globe,
-  Loader2,
-  RotateCcw,
-  Save,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  BracketsCurlyIcon as Braces,
+  CheckIcon as Check,
+  WarningCircleIcon as CircleAlert,
+  CodeIcon as Code,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  GitDiffIcon as FileDiff,
+  FileXIcon as FileWarning,
+  FileXIcon as FileX,
+  GlobeIcon as Globe,
+  CircleNotchIcon as Loader2,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  FloppyDiskIcon as Save,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
 
@@ -889,7 +889,11 @@ export function FileContentRenderer({
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer fileContent={fileContent.content} fileName={fileName} className="h-full" />
+              <PdfRenderer
+                fileContent={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+              />
             </Suspense>
           )}
 

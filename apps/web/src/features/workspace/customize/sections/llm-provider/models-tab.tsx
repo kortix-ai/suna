@@ -10,7 +10,7 @@ import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-import { ExternalLink } from 'lucide-react';
+import { ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 

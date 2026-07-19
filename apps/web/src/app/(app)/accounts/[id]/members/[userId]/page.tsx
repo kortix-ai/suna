@@ -1,7 +1,14 @@
 'use client';
 
+import {
+  CheckIcon as Check,
+  CaretLeftIcon as ChevronLeft,
+  EyeIcon as Eye,
+  FolderOpenIcon as FolderOpen,
+  UsersIcon as Users,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronLeft, Eye, FolderOpen, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -22,6 +29,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -32,10 +40,9 @@ import {
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
+import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -196,8 +203,8 @@ export default function MemberDetailPage() {
         title="Grant super-admin"
         description={
           <span>
-            Super-admin bypasses every permission check. <strong>{memberLabel}</strong> will be
-            able to do anything in this account.
+            Super-admin bypasses every permission check. <strong>{memberLabel}</strong> will be able
+            to do anything in this account.
           </span>
         }
         confirmLabel="Grant super-admin"
@@ -382,9 +389,7 @@ function MemberGroupsCard({
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <Label>
-          Groups{memberGroups.length > 0 ? ` · ${memberGroups.length}` : ''}
-        </Label>
+        <Label>Groups{memberGroups.length > 0 ? ` · ${memberGroups.length}` : ''}</Label>
         <p className="text-muted-foreground text-xs">
           Any policy attached to one of these groups also applies to this member.
         </p>

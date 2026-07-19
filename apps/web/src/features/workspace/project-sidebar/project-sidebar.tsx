@@ -48,28 +48,26 @@ import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk/projects-client';
-import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
-import { useQuery } from '@tanstack/react-query';
 import {
-  CalendarClock,
-  List,
-  Mail,
-  MessagesSquare,
-  PanelLeft,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
+  CalendarDotsIcon as CalendarClock,
+  DotsThreeIcon as HiDotsHorizontal,
+  ListIcon as List,
+  EnvelopeIcon as Mail,
+  ChatsIcon as MessagesSquare,
+  SidebarSimpleIcon as PanelLeft,
+  UsersIcon as UsersSolid,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { HiDotsHorizontal } from 'react-icons/hi';
-import { IconType } from 'react-icons/lib';
+import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
-const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiType | IconType> = {
+const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className?: string }>> = {
   all: List,
   mine: MessagesSquare,
   shared: UsersSolid,
@@ -203,7 +201,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   size="md"
-                  className="group/menu-button text-sidebar-foreground text-center border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] !text-sm font-medium [&_svg]:!size-4"
+                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] text-center !text-sm font-medium [&_svg]:!size-4"
                 >
                   <span>
                     {tI18nHardcoded.raw(

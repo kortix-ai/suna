@@ -1,8 +1,8 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -30,9 +30,15 @@ import {
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
-import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  KeyIcon as KeyRound,
+  ShieldIcon as ShieldSolid,
+  TrashIcon as TrashSolid,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -164,7 +170,10 @@ function TokenRow({
                   router.push(`/accounts/${selectedAccountId}/tokens/${token.token_id}`)
                 }
               >
-                <ShieldSolid className="text-muted-foreground hover:text-foreground size-4" />
+                <ShieldSolid
+                  weight="fill"
+                  className="text-muted-foreground hover:text-foreground size-4"
+                />
               </Button>
             )}
             <Button
@@ -173,7 +182,7 @@ function TokenRow({
               aria-label={`Revoke ${token.name}`}
               onClick={() => setConfirming(true)}
             >
-              <TrashSolid />
+              <TrashSolid weight="fill" />
             </Button>
           </div>
         )}
@@ -300,8 +309,8 @@ export function CliTokensTab() {
               </Button>
             }
           >
-            Verify your second factor to manage API keys. Already verified? This
-            list refreshes automatically once your session steps up.
+            Verify your second factor to manage API keys. Already verified? This list refreshes
+            automatically once your session steps up.
           </InfoBanner>
         ) : (
           <div className="border-destructive bg-destructive/5 text-destructive rounded-2xl border p-4 text-sm">

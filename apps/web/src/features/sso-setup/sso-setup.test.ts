@@ -203,7 +203,9 @@ describe('auto-provision groups default', () => {
   });
 
   test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    expect(cardSource).toContain('useState(existing ? existing.auto_provision_groups : true)');
+    expect(cardSource).toMatch(
+      /useState\(\s*existing \? existing\.auto_provision_groups : true,?\s*\)/,
+    );
   });
 });
 
@@ -371,8 +373,7 @@ describe('novice-walkthrough fixes stay fixed', () => {
     const google = getProviderGuide('google')!;
     const basic = google.steps.find((s) => s.id === 'basic-saml')!;
     const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
-      | { acsLabel?: string; acsFirst?: boolean }
-      | undefined;
+      { acsLabel?: string; acsFirst?: boolean } | undefined;
     expect(sp?.acsLabel).toBe('ACS URL');
     expect(sp?.acsFirst).toBe(true);
   });

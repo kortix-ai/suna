@@ -18,9 +18,9 @@ import Security from '@/features/marketing/security/security';
 import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
 
 function SectionDivider() {
   return (

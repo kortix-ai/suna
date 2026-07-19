@@ -21,18 +21,19 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCommits } from '@/features/project-files/hooks/use-commits';
-import { getProject, type ProjectCommit } from '@kortix/sdk/projects-client';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, type ProjectCommit } from '@kortix/sdk/projects-client';
 import {
-  Check,
-  CheckCircleSolid,
-  ChevronRight,
-  Refresh,
-  XCircleSolid,
-} from '@mynaui/icons-react';
-import { FileDiff, History } from 'lucide-react';
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircleSolid,
+  CaretRightIcon as ChevronRight,
+  GitDiffIcon as FileDiff,
+  ClockCounterClockwiseIcon as History,
+  ArrowsClockwiseIcon as Refresh,
+  XCircleIcon as XCircleSolid,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useMemo, useState } from 'react';
@@ -176,9 +177,9 @@ function ChangeRequestRow({
         )}
       >
         {cr.status === 'merged' ? (
-          <CheckCircleSolid className="text-kortix-green size-5" />
+          <CheckCircleSolid weight="fill" className="text-kortix-green size-5" />
         ) : cr.status === 'closed' ? (
-          <XCircleSolid className="text-kortix-red size-5" />
+          <XCircleSolid weight="fill" className="text-kortix-red size-5" />
         ) : (
           <FileDiff className="text-kortix-blue size-5" />
         )}
@@ -371,7 +372,9 @@ function ChangesTimeline({
           {(commitsFailed || crsFailed) && (
             <ErrorState
               size="sm"
-              title={commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"}
+              title={
+                commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"
+              }
               description="Showing what loaded. Retry to refresh."
               action={
                 <Button

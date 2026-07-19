@@ -2,8 +2,8 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 
+import { ClockIcon as Clock, CircleNotchIcon as Loader2 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clock, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';

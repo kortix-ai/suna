@@ -4,7 +4,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import { FolderGit2, GitBranch, Loader2, Plus } from 'lucide-react';
+import {
+  GitBranchIcon as FolderGit2,
+  GitBranchIcon as GitBranch,
+  CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
+} from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { PageHead } from '../primitives';

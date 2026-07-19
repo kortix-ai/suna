@@ -30,7 +30,11 @@ import {
   getTranscriptFilename,
   type TranscriptOptions,
 } from '@kortix/sdk';
-import { Check, Copy, Download } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  DownloadIcon as Download,
+} from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
 
 // ============================================================================

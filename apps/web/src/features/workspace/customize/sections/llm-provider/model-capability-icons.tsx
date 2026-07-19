@@ -2,7 +2,7 @@
 
 import Hint from '@/components/ui/hint';
 import type { LlmProviderModel } from '@/lib/llm-providers';
-import { Brain, Eye, Wrench } from 'lucide-react';
+import { BrainIcon as Brain, EyeIcon as Eye, WrenchIcon as Wrench } from '@phosphor-icons/react';
 
 const ICON_CLASS = 'text-muted-foreground/50 size-3.5 shrink-0';
 

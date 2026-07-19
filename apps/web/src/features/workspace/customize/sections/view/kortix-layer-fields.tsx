@@ -4,11 +4,11 @@
  *  runtime-agnostic, saves to `kortix.yaml`. */
 
 import { Switch } from '@/components/ui/switch';
-import { Bot, ShieldCheck } from 'lucide-react';
+import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk/projects-client';
+import { RobotIcon as Bot, ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
+import { WORKSPACE_MODES, WORKSPACE_MODE_HELP } from './agent-editor-catalog';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
 import { GrantSetField, KortixCliField } from './grant-mode-field';
-import { WORKSPACE_MODES, WORKSPACE_MODE_HELP } from './agent-editor-catalog';
-import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk/projects-client';
 
 export function KortixLayerFields({
   draft,
@@ -44,8 +44,8 @@ export function KortixLayerFields({
       <section className="space-y-4">
         <SectionHeader icon={ShieldCheck} title="Governance" />
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed text-pretty">
-          Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing
-          until you grant it.
+          Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing until
+          you grant it.
         </p>
         <FieldRow label="Skills">
           <GrantSetField
@@ -75,7 +75,10 @@ export function KortixLayerFields({
           />
         </FieldRow>
         <FieldRow label="Kortix CLI">
-          <KortixCliField value={draft.kortix_cli} onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)} />
+          <KortixCliField
+            value={draft.kortix_cli}
+            onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)}
+          />
         </FieldRow>
         <FieldRow label="Workspace" hint="git boundary (enforced in a later phase)">
           <div className="space-y-1.5">
@@ -86,7 +89,9 @@ export function KortixLayerFields({
               allowUnset
             />
             <p className="text-muted-foreground/60 text-[11px]">
-              {draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Inherits the project default.'}
+              {draft.workspace
+                ? WORKSPACE_MODE_HELP[draft.workspace]
+                : 'Inherits the project default.'}
             </p>
           </div>
         </FieldRow>

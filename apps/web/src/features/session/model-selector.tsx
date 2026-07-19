@@ -15,16 +15,16 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
-  Bot,
-  Check,
-  ChevronDown,
-  CreditCard,
-  FolderGit2,
-  KeyRound,
-  Plus,
-  SlidersHorizontal,
-  Star,
-} from 'lucide-react';
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CreditCardIcon as CreditCard,
+  GitBranchIcon as FolderGit2,
+  KeyIcon as KeyRound,
+  PlusIcon as Plus,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  StarIcon as Star,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -268,7 +268,11 @@ export function ModelSelector({
         // the provider modal's Models tab.
         if (
           !q &&
-          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
+          !modelStore.isVisible({
+            providerID: m.providerID,
+            modelID: m.modelID,
+            provider: m.provider,
+          })
         )
           return false;
         return (

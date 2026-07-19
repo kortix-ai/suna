@@ -6,6 +6,18 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
+import type {
+  PermissionAction,
+  PermissionConfig,
+  PermissionRule,
+} from '@kortix/sdk/projects-client';
+import {
+  PlusIcon as Plus,
+  SlidersIcon as Sliders,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useState } from 'react';
 import {
   PERMISSION_ACTION_ONLY_KEYS,
   PERMISSION_KEY_HELP,
@@ -13,10 +25,6 @@ import {
   PERMISSION_RULE_KEYS,
 } from './agent-editor-catalog';
 import { Segmented } from './agent-editor-primitives';
-import type { PermissionAction, PermissionConfig, PermissionRule } from '@kortix/sdk/projects-client';
-import { AnimatePresence, motion } from 'motion/react';
-import { Plus, Sliders, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 
 type PermObject = Record<string, PermissionRule | PermissionAction | undefined>;
 
@@ -64,7 +72,7 @@ export function PermissionRuleRow({
     <div className="space-y-2 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <Hint label={PERMISSION_KEY_HELP[label] ?? label} side="top">
-          <span className="font-mono text-xs cursor-default">{label}</span>
+          <span className="cursor-default font-mono text-xs">{label}</span>
         </Hint>
         <div className="flex items-center gap-1.5">
           <Segmented
@@ -227,7 +235,7 @@ export function PermissionEditor({
           {PERMISSION_ACTION_ONLY_KEYS.map((key) => (
             <div key={key} className="flex items-center justify-between gap-2 px-3 py-2.5">
               <Hint label={PERMISSION_KEY_HELP[key] ?? key} side="top">
-                <span className="font-mono text-xs cursor-default">{key}</span>
+                <span className="cursor-default font-mono text-xs">{key}</span>
               </Hint>
               <Segmented
                 options={[

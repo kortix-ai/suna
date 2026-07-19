@@ -3,10 +3,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Plus, Search } from 'lucide-react';
+import {
+  SparkleIcon as HiMiniSparkles,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
 import { CORE_SKILLS, GKW_SKILLS } from '../data';
 import { PageHead } from '../primitives';
 
@@ -22,7 +25,7 @@ function SkillItem({ name, desc, focused }: { name: string; desc: string; focuse
       )}
     >
       <span className="border-border bg-muted/40 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border">
-        <HiMiniSparkles className="text-foreground/70 size-3" />
+        <HiMiniSparkles weight="fill" className="text-foreground/70 size-3" />
       </span>
       <div className="min-w-0">
         <div className="text-foreground truncate font-mono text-xs font-medium">{name}</div>

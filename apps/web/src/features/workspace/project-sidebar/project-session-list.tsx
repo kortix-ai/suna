@@ -21,6 +21,8 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -31,9 +33,9 @@ import {
   shouldPollProjectSessions,
   sortSessionsByCreatedAt,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
-import { Icon } from '@/features/icon/icon';
+import { cn } from '@/lib/utils';
+import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -41,27 +43,22 @@ import {
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
 import {
-  shouldBeginSessionSwitch,
-  useSessionSwitchStore,
-} from '@/stores/session-switch-store';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+  CalendarDotsIcon as CalendarClock,
+  EnvelopeIcon as Mail,
+  DotsThreeIcon as MoreHorizontal,
+  PencilIcon as Pencil,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ShareIcon as Share,
+  SquareIcon as Square,
+  TrashIcon as TrashSolid,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import {
-  CalendarClock,
-  Mail,
-  MoreHorizontal,
-  RotateCcw,
-  Square,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import { useState, type ComponentType } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -73,7 +70,7 @@ const SESSION_RELATIVE_TIME_CLASS =
 
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
-  LucideIcon | IconMynauiType | IconType
+  ComponentType<{ className?: string }>
 > = {
   slack: Icon.Slack,
   telegram: Icon.Telegram,
@@ -229,13 +226,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 }
                 isSwitching={isSwitchTarget}
                 onNavigate={(event) => {
-                  if (
-                    shouldBeginSessionSwitch(
-                      event,
-                      session.session_id,
-                      activeSessionId,
-                    )
-                  ) {
+                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
                     beginSessionSwitch(session.session_id);
                   }
                 }}
@@ -467,7 +458,9 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
-                  onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+                  onSelect={() =>
+                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+                  }
                 >
                   {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
@@ -487,7 +480,7 @@ function ProjectSessionRow({
                   onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
                   variant="destructive"
                 >
-                  <TrashSolid />
+                  <TrashSolid weight="fill" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -551,9 +544,7 @@ function SessionStatusDot({
       side="right"
       label={
         reviewPending ? (
-          <span className="text-xs">
-            {reviewCount} awaiting your review
-          </span>
+          <span className="text-xs">{reviewCount} awaiting your review</span>
         ) : (
           <span className="text-xs capitalize">{status}</span>
         )

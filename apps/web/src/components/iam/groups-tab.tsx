@@ -5,8 +5,14 @@ import { useTranslations } from 'next-intl';
 // Groups tab on the account page. List + create + delete + navigate to
 // detail. Mirrors Cloudflare's "User Groups" surface.
 
+import {
+  DotsThreeIcon as MoreHorizontal,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
@@ -104,12 +110,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
   const gated = canCreate && !rbacEnabled;
   const createAction = canCreate ? (
     rbacEnabled ? (
-      <Button
-        onClick={() => setCreateOpen(true)}
-        size="sm"
-        variant="secondary"
-        className="gap-1.5"
-      >
+      <Button onClick={() => setCreateOpen(true)} size="sm" variant="secondary" className="gap-1.5">
         <Plus className="size-4" />
         Create a group
       </Button>
@@ -228,9 +229,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
                 <EntityAvatar icon={Users} size="md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-foreground truncate text-sm font-medium">
-                      {g.name}
-                    </span>
+                    <span className="text-foreground truncate text-sm font-medium">{g.name}</span>
                     <Badge variant="outline" size="sm" className="capitalize">
                       {g.source}
                     </Badge>

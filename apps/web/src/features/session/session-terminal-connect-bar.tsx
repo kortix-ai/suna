@@ -2,7 +2,12 @@
 
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { Check, ChevronRight, Copy, Laptop } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  LaptopIcon as Laptop,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -38,7 +43,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
       </button>
 
       {expanded && (
-        <div className="space-y-2.5 px-3 pb-3 pt-0.5">
+        <div className="space-y-2.5 px-3 pt-0.5 pb-3">
           <p className="text-xs leading-relaxed text-white/45">
             Attach your local OpenCode TUI straight to this session&apos;s sandbox. The CLI opens a
             local proxy, injects your Kortix token, then runs{' '}
@@ -67,7 +72,7 @@ function CommandRow({ label, command }: { label: string; command: string }) {
 
   return (
     <div className="space-y-1">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-white/35">{label}</div>
+      <div className="text-[11px] font-medium tracking-wide text-white/35 uppercase">{label}</div>
       <div className="flex items-center gap-2 rounded-md border border-white/10 bg-black/40 px-2.5 py-1.5">
         <code className="min-w-0 flex-1 truncate font-mono text-white/80">{command}</code>
         <button

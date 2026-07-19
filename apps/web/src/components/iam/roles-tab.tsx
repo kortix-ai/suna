@@ -10,9 +10,17 @@
 // filters the action catalog to the selected role's resource_type and groups
 // the actions by their capability prefix for readability.
 
-import { useEffect, useMemo, useState } from 'react';
+import {
+  CopyIcon as Copy,
+  LockIcon as Lock,
+  PencilIcon as Pencil,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  ShieldIcon as Shield,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -21,9 +29,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -55,6 +60,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type ActionCatalogEntry,
   type IamRole,
@@ -141,8 +149,9 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
     setCreateOpen(true);
   }
 
-  const newRoleButton = canManage && (
-    rbacEnabled ? (
+  const newRoleButton =
+    canManage &&
+    (rbacEnabled ? (
       <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
         <Plus className="size-4" />
         New role
@@ -159,8 +168,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           </Badge>
         </span>
       </Hint>
-    )
-  );
+    ));
 
   return (
     <div className="space-y-4">
@@ -461,17 +469,13 @@ function RoleDialog({
   const isEdit = mode === 'edit' && !!role;
 
   const [name, setName] = useState(role?.name ?? prefill?.name ?? '');
-  const [keyValue, setKeyValue] = useState(
-    role?.key ?? (prefill ? slugifyKey(prefill.name) : ''),
-  );
+  const [keyValue, setKeyValue] = useState(role?.key ?? (prefill ? slugifyKey(prefill.name) : ''));
   const [keyTouched, setKeyTouched] = useState(isEdit);
   const [description, setDescription] = useState(role?.description ?? '');
   const [resourceType, setResourceType] = useState<ResourceType>(
     role?.resource_type ?? prefill?.resourceType ?? 'project',
   );
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(prefill?.actions ?? []),
-  );
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(prefill?.actions ?? []));
   const [search, setSearch] = useState('');
 
   const actionsQuery = useQuery({
@@ -510,8 +514,7 @@ function RoleDialog({
       .map((group) => ({
         label: group.label,
         entries: group.entries.filter(
-          (e) =>
-            e.label.toLowerCase().includes(q) || e.action.toLowerCase().includes(q),
+          (e) => e.label.toLowerCase().includes(q) || e.action.toLowerCase().includes(q),
         ),
       }))
       .filter((group) => group.entries.length > 0);
@@ -716,9 +719,7 @@ function RoleDialog({
                   No capabilities are available for this scope.
                 </p>
               ) : filteredGroups.length === 0 ? (
-                <p className="text-muted-foreground text-xs">
-                  No capabilities match your search.
-                </p>
+                <p className="text-muted-foreground text-xs">No capabilities match your search.</p>
               ) : (
                 filteredGroups.map((group) => {
                   const allOn = group.entries.every((e) => selected.has(e.action));

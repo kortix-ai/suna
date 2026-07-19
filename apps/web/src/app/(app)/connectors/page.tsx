@@ -1,6 +1,10 @@
 'use client';
 
-import { AlertCircle, CheckCircle2, Plug } from 'lucide-react';
+import {
+  WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
+  PlugIcon as Plug,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';

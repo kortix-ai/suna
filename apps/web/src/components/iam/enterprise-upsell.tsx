@@ -8,7 +8,7 @@
 // 402 without the entitlement (requireEntitlement), so we never render controls
 // the backend would reject.
 
-import { Check, Lock } from 'lucide-react';
+import { CheckIcon as Check, LockIcon as Lock } from '@phosphor-icons/react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

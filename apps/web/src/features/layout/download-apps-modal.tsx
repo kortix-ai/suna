@@ -17,7 +17,13 @@ import { errorToast } from '@/components/ui/toast';
 import { desktopDownloadUrl, startDownload } from '@/lib/desktop';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
-import { Check, Copy, Monitor, Smartphone, Terminal } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  MonitorIcon as Monitor,
+  DeviceMobileIcon as Smartphone,
+  TerminalIcon as Terminal,
+} from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
 type PlatformId = 'macos' | 'windows' | 'linux';

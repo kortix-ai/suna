@@ -14,16 +14,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { DownloadIcon as Download, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Download, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -34,10 +33,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
+import { cn } from '@/lib/utils';
 import { listAccountMembers } from '@kortix/sdk/projects-client';
 import {
   formatResourcePill,
@@ -201,14 +201,16 @@ export function AuditTab({ accountId }: AuditTabProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="sm" disabled={exporting} className="gap-1.5">
-              {exporting ? <Loading className="size-4 shrink-0" /> : <Download className="size-4" />}
+              {exporting ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <Download className="size-4" />
+              )}
               Export
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onSelect={() => exportEvents('csv')}>
-              Download CSV
-            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => exportEvents('csv')}>Download CSV</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => exportEvents('jsonl')}>
               Download JSONL
             </DropdownMenuItem>

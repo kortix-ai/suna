@@ -6,10 +6,16 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { ProjectBranch } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
-import { ChevronsUpDown } from '@mynaui/icons-react';
-import { ArrowDownLeft, ArrowUpRight, Check, Layers, Search } from 'lucide-react';
+import type { ProjectBranch } from '@kortix/sdk/projects-client';
+import {
+  ArrowDownLeftIcon as ArrowDownLeft,
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  CaretUpDownIcon as ChevronsUpDown,
+  StackIcon as Layers,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';

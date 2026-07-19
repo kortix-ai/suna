@@ -1,14 +1,14 @@
 'use client';
 
 import {
-  AlertTriangle,
-  ArrowDown,
-  ArrowUp,
-  Plus,
-  RotateCcw,
-  SlidersHorizontal,
-  Trash2,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowDownIcon as ArrowDown,
+  ArrowUpIcon as ArrowUp,
+  PlusIcon as Plus,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

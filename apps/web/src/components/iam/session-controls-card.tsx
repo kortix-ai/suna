@@ -5,8 +5,8 @@
 // not represented here — they have their own lifecycle policies.
 
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ClockIcon as Clock, SignOutIcon as LogOut } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, LogOut } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -303,7 +303,10 @@ function SessionsTable({
       </TableHeader>
       <TableBody>
         {rows.map((s) => (
-          <TableRow key={`${s.user_id}|${s.session_id}`} className={muted ? 'hover:bg-transparent' : undefined}>
+          <TableRow
+            key={`${s.user_id}|${s.session_id}`}
+            className={muted ? 'hover:bg-transparent' : undefined}
+          >
             <TableCell className="text-foreground text-xs">
               {emailByUserId.get(s.user_id) ?? (
                 <span className="text-muted-foreground font-mono text-xs">{s.user_id}</span>
@@ -312,9 +315,7 @@ function SessionsTable({
             <TableCell className="text-muted-foreground text-xs">
               {formatRelative(s.last_seen_at)}
             </TableCell>
-            <TableCell className="text-muted-foreground font-mono text-xs">
-              {s.ip ?? '—'}
-            </TableCell>
+            <TableCell className="text-muted-foreground font-mono text-xs">{s.ip ?? '—'}</TableCell>
             <TableCell>
               {s.revoked_at ? (
                 <Badge variant="muted" size="sm">

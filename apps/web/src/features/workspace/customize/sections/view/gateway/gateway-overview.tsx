@@ -1,11 +1,17 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import {
+  WarningIcon as AlertTriangle,
+  CoinsIcon as Coins,
+  CpuIcon as Cpu,
+  CurrencyDollarIcon as DollarSign,
+  SparkleIcon as Sparkles,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -13,8 +19,8 @@ import {
   useGatewaySeries,
   useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
 
-import { displayModel, modelAccent } from './_shared';
 import {
   MeterRow,
   RangeSelector,
@@ -24,6 +30,7 @@ import {
   fmtCompact,
   fmtUsd,
 } from './_metrics';
+import { displayModel, modelAccent } from './_shared';
 
 type MetricKey = 'cost' | 'traffic' | 'tokens' | 'latency';
 
@@ -34,9 +41,19 @@ const METRICS: {
   fmt: (v: number) => string;
 }[] = [
   { key: 'cost', label: 'Spend', keys: ['cost'], fmt: fmtUsd },
-  { key: 'traffic', label: 'Requests', keys: ['requests', 'errors'], fmt: (v) => v.toLocaleString() },
+  {
+    key: 'traffic',
+    label: 'Requests',
+    keys: ['requests', 'errors'],
+    fmt: (v) => v.toLocaleString(),
+  },
   { key: 'tokens', label: 'Tokens', keys: ['input_tokens', 'output_tokens'], fmt: fmtCompact },
-  { key: 'latency', label: 'Latency', keys: ['p50', 'p95', 'p99'], fmt: (v) => `${fmtCompact(v)}ms` },
+  {
+    key: 'latency',
+    label: 'Latency',
+    keys: ['p50', 'p95', 'p99'],
+    fmt: (v) => `${fmtCompact(v)}ms`,
+  },
 ];
 
 /**
@@ -96,7 +113,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="w-full space-y-5 p-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-foreground">Last {days} days</h2>
+          <h2 className="text-foreground text-sm font-medium">Last {days} days</h2>
           <RangeSelector days={days} setDays={setDays} />
         </div>
 
@@ -125,7 +142,9 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
           <StatCard
             label="Errors"
             value={errors.toLocaleString()}
-            sub={requests ? `${((errors / requests) * 100).toFixed(1)}% error rate` : 'no requests yet'}
+            sub={
+              requests ? `${((errors / requests) * 100).toFixed(1)}% error rate` : 'no requests yet'
+            }
             icon={AlertTriangle}
             accent="var(--destructive)"
             spark={sparkSeries}
@@ -170,7 +189,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
         <div className="grid gap-4 lg:grid-cols-2">
           <Panel title="Top models" count={models.length} description="Spend by model">
             {models.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No requests yet.</p>
+              <p className="text-muted-foreground py-6 text-center text-sm">No requests yet.</p>
             ) : (
               <div className="space-y-0.5">
                 {models.map((m, i) => {
@@ -181,7 +200,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                       rank={i + 1}
                       accent={accent}
                       label={displayModel(m.model) || 'unknown'}
-                      value={<span className="font-medium text-foreground">{fmtUsd(m.cost)}</span>}
+                      value={<span className="text-foreground font-medium">{fmtUsd(m.cost)}</span>}
                       segments={[{ pct: (m.cost / maxModelCost) * 100, color: accent }]}
                     />
                   );
@@ -196,7 +215,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
             description="Total cost — LLM + sandbox compute"
           >
             {sessions.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No sessions yet.</p>
+              <p className="text-muted-foreground py-6 text-center text-sm">No sessions yet.</p>
             ) : (
               <div className="space-y-0.5">
                 {sessions.slice(0, 6).map((s, i) => {
@@ -207,28 +226,26 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                       rank={i + 1}
                       accent={modelAccent(s.session_id)}
                       label={
-                        name ? (
-                          <span className="font-sans">{name}</span>
-                        ) : (
-                          s.session_id.slice(0, 8)
-                        )
+                        name ? <span className="font-sans">{name}</span> : s.session_id.slice(0, 8)
                       }
                       value={
-                        <span className="font-semibold text-foreground">{fmtUsd(s.total_cost)}</span>
+                        <span className="text-foreground font-semibold">
+                          {fmtUsd(s.total_cost)}
+                        </span>
                       }
                       sub={
                         <>
                           {name && (
-                            <span className="font-mono text-muted-foreground/40">
+                            <span className="text-muted-foreground/40 font-mono">
                               {s.session_id.slice(0, 8)}
                             </span>
                           )}
                           <span className="inline-flex items-center gap-1">
-                            <Sparkles className="size-3 text-kortix-blue" />
+                            <Sparkles className="text-kortix-blue size-3" />
                             {fmtUsd(s.llm_cost)}
                           </span>
                           <span className="inline-flex items-center gap-1">
-                            <Cpu className="size-3 text-muted-foreground" />
+                            <Cpu className="text-muted-foreground size-3" />
                             {fmtUsd(s.compute_cost)}
                           </span>
                           <span className="text-muted-foreground/50">

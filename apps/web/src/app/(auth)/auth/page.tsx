@@ -15,7 +15,7 @@
  * hardcoded surface.
  */
 
-import { Eye, EyeOff } from 'lucide-react';
+import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -283,7 +283,6 @@ function AuthCardForm({
       setPendingAction(null);
     }
   };
-
 
   /**
    * Probe the address's domain for a registered SAML provider and hand the
@@ -873,7 +872,9 @@ function AuthCardForm({
               disabled={pending}
               className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
             >
-              {pendingAction === 'sso' ? 'Looking up your identity provider…' : 'Use single sign-on (SSO)'}
+              {pendingAction === 'sso'
+                ? 'Looking up your identity provider…'
+                : 'Use single sign-on (SSO)'}
             </button>
           </p>
         )}

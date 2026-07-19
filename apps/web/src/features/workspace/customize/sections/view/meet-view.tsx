@@ -1,6 +1,6 @@
 'use client';
 
-import { Play } from 'lucide-react';
+import { PlayIcon as Play } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,8 @@ export function MeetView({ projectId }: { projectId: string }) {
   const setBotName = useSetMeetBotName();
   // Read-only unless the role can write connectors (meet is connector-backed);
   // fails closed while the probe resolves.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
+  const canWrite =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
 

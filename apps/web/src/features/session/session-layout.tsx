@@ -28,7 +28,7 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
-import { PanelRight } from 'lucide-react';
+import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';

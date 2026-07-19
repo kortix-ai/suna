@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download } from 'lucide-react';
+import { WarningIcon as AlertTriangle, DownloadIcon as Download } from '@phosphor-icons/react';
 import { PowerPointViewer, type ViewerTheme } from 'pptx-react-viewer';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';

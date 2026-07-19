@@ -17,7 +17,7 @@ import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,7 +42,9 @@ import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 
-export function FileExplorerPage({ embedded = false }: { embedded?: boolean; shareContext?: unknown } = {}) {
+export function FileExplorerPage({
+  embedded = false,
+}: { embedded?: boolean; shareContext?: unknown } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);

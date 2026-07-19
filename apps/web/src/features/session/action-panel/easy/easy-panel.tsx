@@ -24,8 +24,8 @@ import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
-import { cn } from '@/lib/utils';
 import { track } from '@/lib/track';
+import { cn } from '@/lib/utils';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
@@ -37,7 +37,7 @@ import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import type { MessageWithParts } from '@/ui';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
-import { FileText, Terminal as TerminalIcon } from 'lucide-react';
+import { FileTextIcon as FileText, TerminalIcon } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
@@ -613,9 +613,7 @@ export const EasyPanel = memo(function EasyPanel({
             sessionId={sessionId}
             onOpenDetail={openDetail}
           />
-          {apps.length > 0 && (
-            <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />
-          )}
+          {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
         </div>
       </DetailLayer>
 

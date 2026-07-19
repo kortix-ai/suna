@@ -2,8 +2,12 @@
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretUpIcon as ChevronUp,
+} from '@phosphor-icons/react';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import * as React from 'react';
 import { ButtonProps } from './button';
 
@@ -158,7 +162,7 @@ const SelectItem = React.forwardRef<
     {description ? (
       <div className="flex min-w-0 flex-col gap-0.5">
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        <span className="max-w-[260px] text-[11px] leading-snug whitespace-normal text-muted-foreground">
+        <span className="text-muted-foreground max-w-[260px] text-[11px] leading-snug whitespace-normal">
           {description}
         </span>
       </div>

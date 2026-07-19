@@ -24,7 +24,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk/projects-client';
-import { PanelLeft } from 'lucide-react';
+import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({

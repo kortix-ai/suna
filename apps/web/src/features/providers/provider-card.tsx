@@ -1,9 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 import { ProviderLogo } from './provider-branding';
 
 // ─── Standardized tokens ─────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ export function GroupHeading({ children, className }: { children: ReactNode; cla
   return (
     <div
       className={cn(
-        'px-1 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40',
+        'text-foreground/40 px-1 pt-1 pb-1.5 text-xs font-semibold tracking-[0.08em] uppercase',
         className,
       )}
     >
@@ -61,11 +61,11 @@ export function ProviderRowContent({
       <ProviderLogo providerID={providerID} name={name} size={size} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{name}</span>
+          <span className="text-foreground truncate text-sm font-medium">{name}</span>
           {connected && <ConnectedBadge />}
         </div>
         {description && (
-          <div className="mt-0.5 truncate text-xs text-muted-foreground/60">{description}</div>
+          <div className="text-muted-foreground/60 mt-0.5 truncate text-xs">{description}</div>
         )}
       </div>
       {rightSlot}
@@ -101,7 +101,7 @@ export function ProviderCard({
         {...content}
         rightSlot={
           rightSlot ?? (
-            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
+            <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground ml-auto h-4 w-4 shrink-0 transition-colors" />
           )
         }
       />

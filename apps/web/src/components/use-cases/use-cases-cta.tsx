@@ -1,5 +1,5 @@
+import { ArrowRightIcon as HiArrowRight } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { HiArrowRight } from 'react-icons/hi2';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';

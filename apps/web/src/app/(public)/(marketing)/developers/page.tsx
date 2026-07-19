@@ -13,25 +13,25 @@ import { useCopy } from '@/hooks/use-copy';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
-  ArrowRight,
-  Boxes,
-  Check,
-  Copy,
-  Cpu,
-  FileCode2,
-  GitBranch,
-  GitPullRequest,
-  KeyRound,
-  Plug,
-  Server,
-  Terminal as TerminalIcon,
-  Workflow,
-} from 'lucide-react';
+  CheckIcon as AiOutlineCheck,
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  CpuIcon as Cpu,
+  FileCodeIcon as FileCode2,
+  GitBranchIcon as GitBranch,
+  GitPullRequestIcon as GitPullRequest,
+  ArrowRightIcon as HiArrowRight,
+  KeyIcon as KeyRound,
+  PlugIcon as Plug,
+  HardDrivesIcon as Server,
+  TerminalIcon,
+  FlowArrowIcon as Workflow,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback } from 'react';
-import { AiOutlineCheck } from 'react-icons/ai';
-import { HiArrowRight } from 'react-icons/hi';
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DOCS_URL = '/docs';

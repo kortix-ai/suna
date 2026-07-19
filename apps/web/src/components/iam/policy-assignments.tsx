@@ -5,16 +5,14 @@
 // v1 — no deny effect, no conditions, no token principals, no project_group
 // scope (the backend rejects/ignores them).
 
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Shield } from 'lucide-react';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { PlusIcon as Plus, ShieldIcon as Shield, TrashIcon as Trash2 } from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,18 +42,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
+  type AgentIdentity,
   type IamPolicy,
   type IamRole,
-  type AgentIdentity,
   type ServiceAccount,
   createPolicy,
   deletePolicy,
   listAgentIdentities,
-  listServiceAccountsApi,
   listGroups,
   listPolicies,
   listRoles,
+  listServiceAccountsApi,
 } from '@/lib/iam-client';
 import {
   type KortixProject,
@@ -175,9 +175,10 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
 
   const policies = policiesQuery.data ?? [];
 
-  function principalLabel(
-    p: IamPolicy,
-  ): { name: string; kind: 'Member' | 'Group' | 'Agent' | 'Service account' | null } {
+  function principalLabel(p: IamPolicy): {
+    name: string;
+    kind: 'Member' | 'Group' | 'Agent' | 'Service account' | null;
+  } {
     if (p.principal_type === 'member') {
       return { name: memberEmailById.get(p.principal_id) ?? p.principal_id, kind: 'Member' };
     }
@@ -207,13 +208,7 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
   // dialog's pickers. If any fail, the surface can't render trustworthy rows
   // (a bare id everywhere) or offer a working create flow — so we treat the
   // whole panel as errored and let one Retry refetch them all.
-  const lookupQueries = [
-    rolesQuery,
-    membersQuery,
-    groupsQuery,
-    agentsQuery,
-    projectsQuery,
-  ];
+  const lookupQueries = [rolesQuery, membersQuery, groupsQuery, agentsQuery, projectsQuery];
   const hasError = policiesQuery.isError || lookupQueries.some((q) => q.isError);
   const errorMessage =
     (policiesQuery.error as Error | undefined)?.message ??
@@ -226,12 +221,7 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
 
   const newAssignmentButton = canManage ? (
     rbacEnabled ? (
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => setCreateOpen(true)}
-        className="gap-1.5"
-      >
+      <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)} className="gap-1.5">
         <Plus className="size-4" />
         New assignment
       </Button>
@@ -624,7 +614,11 @@ function CreateAssignmentDialog({
                       ? (() => {
                           const active = serviceAccounts.filter((s) => s.status === 'active');
                           if (active.length === 0)
-                            return <SelectItem value="__none" disabled>No active service accounts yet</SelectItem>;
+                            return (
+                              <SelectItem value="__none" disabled>
+                                No active service accounts yet
+                              </SelectItem>
+                            );
                           return active.map((s) => (
                             <SelectItem key={s.service_account_id} value={s.service_account_id}>
                               {s.name}
@@ -634,10 +628,18 @@ function CreateAssignmentDialog({
                       : (() => {
                           // Agents are filtered to the project chosen above.
                           if (!projectId)
-                            return <SelectItem value="__none" disabled>Select a project first</SelectItem>;
+                            return (
+                              <SelectItem value="__none" disabled>
+                                Select a project first
+                              </SelectItem>
+                            );
                           const projectAgents = agents.filter((a) => a.project_id === projectId);
                           if (projectAgents.length === 0)
-                            return <SelectItem value="__none" disabled>No agents in this project</SelectItem>;
+                            return (
+                              <SelectItem value="__none" disabled>
+                                No agents in this project
+                              </SelectItem>
+                            );
                           return projectAgents.map((a) => (
                             <SelectItem key={a.service_account_id} value={a.service_account_id}>
                               {a.agent_name ?? a.name}
@@ -674,62 +676,60 @@ function CreateAssignmentDialog({
               the project chosen above, so these are hidden for agents. */}
           {principalType !== 'token' && (
             <>
-          <div className="space-y-1.5">
-            <Label htmlFor="assignment-scope">Scope</Label>
-            <Select
-              value={scopeType}
-              onValueChange={(v) => {
-                const next = v as ScopeType;
-                setScopeType(next);
-                // Switching back to account scope clears any picked project so
-                // a stale id can't ride along (createPolicy nulls scopeId on
-                // account scope, but keep local state honest too).
-                if (next === 'account') setProjectId('');
-              }}
-              disabled={mutation.isPending}
-            >
-              <SelectTrigger id="assignment-scope">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="account">Whole account</SelectItem>
-                <SelectItem value="project">A specific project</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {scopeType === 'project' && (
-            <div className="space-y-1.5">
-              <Label htmlFor="assignment-project">Project</Label>
-              {projectsLoading ? (
-                <p className="text-muted-foreground text-xs">Loading projects…</p>
-              ) : projects.length === 0 ? (
-                <p className="text-muted-foreground text-xs">
-                  No projects in this account yet.
-                </p>
-              ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="assignment-scope">Scope</Label>
                 <Select
-                  value={projectId}
-                  onValueChange={setProjectId}
+                  value={scopeType}
+                  onValueChange={(v) => {
+                    const next = v as ScopeType;
+                    setScopeType(next);
+                    // Switching back to account scope clears any picked project so
+                    // a stale id can't ride along (createPolicy nulls scopeId on
+                    // account scope, but keep local state honest too).
+                    if (next === 'account') setProjectId('');
+                  }}
                   disabled={mutation.isPending}
                 >
-                  <SelectTrigger id="assignment-project">
-                    <SelectValue placeholder="Select a project" />
+                  <SelectTrigger id="assignment-scope">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.project_id} value={p.project_id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="account">Whole account</SelectItem>
+                    <SelectItem value="project">A specific project</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {scopeType === 'project' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="assignment-project">Project</Label>
+                  {projectsLoading ? (
+                    <p className="text-muted-foreground text-xs">Loading projects…</p>
+                  ) : projects.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      No projects in this account yet.
+                    </p>
+                  ) : (
+                    <Select
+                      value={projectId}
+                      onValueChange={setProjectId}
+                      disabled={mutation.isPending}
+                    >
+                      <SelectTrigger id="assignment-project">
+                        <SelectValue placeholder="Select a project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projects.map((p) => (
+                          <SelectItem key={p.project_id} value={p.project_id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <p className="text-muted-foreground text-xs">The project this role applies to.</p>
+                </div>
               )}
-              <p className="text-muted-foreground text-xs">
-                The project this role applies to.
-              </p>
-            </div>
-          )}
             </>
           )}
 

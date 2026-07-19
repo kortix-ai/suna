@@ -1,7 +1,6 @@
 'use client';
 
-import { ArrowUpRight } from '@mynaui/icons-react';
-import { BookOpen } from 'lucide-react';
+import { ArrowUpRightIcon as ArrowUpRight, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
@@ -71,7 +70,7 @@ export function SupportModal({
         id: 'docs',
         title: 'Read the docs',
         subtitle: 'Guides, setup, and troubleshooting',
-        icon: <BookOpen className="size-4" strokeWidth={1.75} />,
+        icon: <BookOpen className="size-4" />,
         external: true,
         onSelect: () => openLink('/docs'),
       },
@@ -116,11 +115,7 @@ export function SupportModal({
                 <p className="text-muted-foreground/70 mt-0.5 text-xs">{path.subtitle}</p>
               </div>
               {path.external ? (
-                <ArrowUpRight
-                  className="text-muted-foreground size-4 shrink-0"
-                  strokeWidth={1.75}
-                  aria-hidden
-                />
+                <ArrowUpRight className="text-muted-foreground size-4 shrink-0" aria-hidden />
               ) : null}
             </button>
           ))}

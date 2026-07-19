@@ -26,7 +26,12 @@ import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { ToolPart } from '@/ui';
-import { ChevronLeft, ChevronRight, PanelLeft, X } from 'lucide-react';
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  SidebarSimpleIcon as PanelLeft,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import {
   AnimatePresence,
   motion,

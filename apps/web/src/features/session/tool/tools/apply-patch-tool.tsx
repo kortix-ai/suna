@@ -1,36 +1,25 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
-import { DiffStat, } from '@/components/ui/status';
+import { DiffStat } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
-  ToolOutputFallback,
-  ToolRunningContext,
   InlineDiffView,
+  isErrorOutput,
+  partMetadata,
   partOutput,
   partStatus,
-  partMetadata,
+  ToolOutputFallback,
+  ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import {
-  ChevronRight,
-  FileCode2,
-} from 'lucide-react';
+import { getDirectory, getFilename } from '@/ui';
+import { CaretRightIcon as ChevronRight, FileCodeIcon as FileCode2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
-import {
-  getDirectory,
-  getFilename,
-} from '@/ui';
-
+import { useContext, useMemo, useState } from 'react';
 
 import {
   PATCH_TYPE_STYLE,

@@ -31,14 +31,14 @@ import { track } from '@/lib/track';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import {
-  Check,
-  Copy,
-  FileWarning,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  Presentation,
-} from 'lucide-react';
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  FileXIcon as FileWarning,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+  PresentationIcon as Presentation,
+} from '@phosphor-icons/react';
 import { useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';

@@ -1,17 +1,17 @@
 'use client';
 
+import { GitDiffIcon as FileDiff, SparkleIcon as Sparkles } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { FileDiff, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { getProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { getProjectSession } from '@kortix/sdk/projects-client';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
