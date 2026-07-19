@@ -1,9 +1,20 @@
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { describe, expect, test } from 'bun:test';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, test } from 'bun:test'
 
-import { ensureHarnessConfigDirs, sanitizeHarnessEnv } from '../acp/runtime';
+import {
+  ensureHarnessConfigDirs,
+  materializeHarnessLaunchConfig,
+  sanitizeHarnessEnv,
+} from '../acp/runtime'
 
 describe('ACP runtime config directories', () => {
   test('keeps subscription refresh tokens server-side while preserving Claude native auth', () => {
@@ -56,3 +67,62 @@ describe('ACP runtime config directories', () => {
     }
   });
 });
+
+const LINUX_MAX_ARG_STRLEN = 131_072
+
+describe('OpenCode spawn config delivery', () => {
+  test('moves a config larger than MAX_ARG_STRLEN into a private file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-opencode-config-'))
+    try {
+      const models: Record<string, { name: string }> = {}
+      for (let i = 0; i < 3_000; i++) {
+        models[`provider-${i}/model-${i}`] = {
+          name: `Padded Model ${i} ${'x'.repeat(120)}`,
+        }
+      }
+      const env: NodeJS.ProcessEnv = {
+        HOME: root,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: { kortix: { models } } }),
+      }
+      expect(env.OPENCODE_CONFIG_CONTENT!.length).toBeGreaterThan(LINUX_MAX_ARG_STRLEN)
+
+      materializeHarnessLaunchConfig('opencode', env)
+
+      const expectedPath = join(root, '.config', 'kortix', 'kortix-opencode.json')
+      expect(env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+      expect(env.OPENCODE_CONFIG).toBe(expectedPath)
+      expect(statSync(expectedPath).mode & 0o777).toBe(0o600)
+      const written = JSON.parse(readFileSync(expectedPath, 'utf8'))
+      expect(written.provider.kortix.models['provider-0/model-0'].name).toContain('Padded Model 0')
+      for (const [name, value] of Object.entries(env)) {
+        expect(`${name}=${value ?? ''}`.length).toBeLessThan(LINUX_MAX_ARG_STRLEN)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('does not materialize OpenCode content for another harness id', () => {
+    for (const harness of ['claude', 'codex', 'pi'] as const) {
+      const root = mkdtempSync(join(tmpdir(), `kortix-${harness}-config-`))
+      try {
+        const env: NodeJS.ProcessEnv = {
+          HOME: root,
+          OPENCODE_CONFIG_CONTENT: '{"sentinel":true}',
+        }
+        materializeHarnessLaunchConfig(harness, env)
+        expect(env.OPENCODE_CONFIG_CONTENT).toBe('{"sentinel":true}')
+        expect(env.OPENCODE_CONFIG).toBeUndefined()
+        expect(existsSync(join(root, '.config', 'kortix', 'kortix-opencode.json'))).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  })
+
+  test('is a no-op for OpenCode when no content exists', () => {
+    const env: NodeJS.ProcessEnv = { HOME: '/nonexistent-home-never-created' }
+    materializeHarnessLaunchConfig('opencode', env)
+    expect(env.OPENCODE_CONFIG).toBeUndefined()
+  })
+})

@@ -56,6 +56,22 @@ export function redactHarnessStderr(line: string, env: NodeJS.ProcessEnv): strin
   return redacted
 }
 
+export function materializeHarnessLaunchConfig(
+  harness: AcpHarnessId,
+  env: NodeJS.ProcessEnv,
+): void {
+  if (harness !== 'opencode') return
+  const content = env.OPENCODE_CONFIG_CONTENT
+  if (!content) return
+
+  const dir = join(env.HOME || '/opt/kortix/home', '.config', 'kortix')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'kortix-opencode.json')
+  writeFileSync(file, content, { mode: 0o600 })
+  env.OPENCODE_CONFIG = file
+  delete env.OPENCODE_CONFIG_CONTENT
+}
+
 export function ensureHarnessConfigDirs(env: NodeJS.ProcessEnv, cwd: string): void {
   for (const name of HARNESS_CONFIG_DIR_ENV) {
     const raw = env[name]?.trim()
@@ -127,8 +143,9 @@ class AcpProcess {
     const isolatedEnv = isolateHarnessAuthEnv(options.env)
     const launchEnv = resolveAcpHarnessLaunchEnv(options.descriptor.id, isolatedEnv)
     const childEnv = sanitizeHarnessEnv({ ...isolatedEnv, ...launchEnv })
-    this.sessionDefaultsEnv = childEnv
     ensureHarnessConfigDirs(childEnv, options.cwd)
+    materializeHarnessLaunchConfig(options.descriptor.id, childEnv)
+    this.sessionDefaultsEnv = childEnv
     this.child = spawn(options.descriptor.launch.command, options.descriptor.launch.args, {
       cwd: options.cwd,
       env: childEnv,
