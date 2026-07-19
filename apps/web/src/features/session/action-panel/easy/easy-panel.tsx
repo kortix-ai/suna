@@ -46,6 +46,7 @@ import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-
 import { groupSteps } from '../shared/group-steps';
 import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
+import { mergePortApps } from '../shared/port-apps';
 import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
 import { AppsCard } from './apps-card';
@@ -72,6 +73,7 @@ import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
 import { useChatFileOpenRequest } from './use-chat-file-open-request';
+import { useRunningApps } from './use-running-apps';
 
 /** The path's last segment — used only to decide whether the path hint in
  *  "Ask for changes" would just repeat the display name (W12). */
@@ -117,10 +119,6 @@ export const EasyPanel = memo(function EasyPanel({
     [latestSteps],
   );
 
-  // A running app is not "one of" the outputs — it's the thing the user asked
-  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
-  // never wanted. It gets its own card; Outputs keeps the files.
-  const apps = useMemo(() => outputs.filter((o) => o.kind === 'app'), [outputs]);
   // Sorted, not filtered: everything the agent produced is still here, but the
   // report leads and the twelve files it took to build the report follow. See
   // `sortOutputs` — chronological order buries the answer under its scaffolding.
@@ -143,6 +141,19 @@ export const EasyPanel = memo(function EasyPanel({
   const isRunning = deriveIsRunning(
     steps.some((s) => s.status === 'running'),
     isSessionBusy,
+  );
+
+  // A running app is not "one of" the outputs — it's the thing the user asked
+  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
+  // never wanted. It gets its own card; Outputs keeps the files. Merged with
+  // live listening ports (`useRunningApps`) so a server the agent never
+  // explicitly `show`ed is still openable the moment it starts listening —
+  // event-derived rows win on a shared port (see `mergePortApps`), since they
+  // carry the human title the agent gave the deliverable.
+  const portApps = useRunningApps(isRunning);
+  const apps = useMemo(
+    () => mergePortApps(outputs.filter((o) => o.kind === 'app'), portApps),
+    [outputs, portApps],
   );
 
   // W9 — the agent is blocked on a pending question/permission for THIS

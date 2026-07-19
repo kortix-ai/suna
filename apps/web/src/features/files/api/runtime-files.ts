@@ -22,6 +22,7 @@ export {
   isServerReachable,
   isUnderSandboxRoot,
   listFiles,
+  listListeningPorts,
   mkdir as mkdirFile,
   readFile,
   readBlob as readFileAsBlob,
@@ -32,7 +33,7 @@ export {
   toWorkspaceRelative,
   uploadFile,
 } from '@kortix/sdk/files';
-export type { UploadResult } from '@kortix/sdk/files';
+export type { ListeningPort, UploadResult } from '@kortix/sdk/files';
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
 
