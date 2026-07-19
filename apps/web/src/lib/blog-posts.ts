@@ -27,6 +27,198 @@ export type BlogPostEntry = {
   blocks: Block[];
 };
 
+const bestSelfHostedAgentPlatforms: BlogPostEntry = {
+  slug: 'best-self-hosted-ai-agent-platforms',
+  title: 'The best self-hosted AI agent platforms, honestly compared',
+  description:
+    "Six open-source, self-hostable AI agent platforms compared by what each is great at and where it stops — Kortix, CrewAI, AutoGen, Dify, LangGraph, and n8n — so you can pick the one that fits the work you actually need done.",
+  date: '2026-07-19',
+  author: 'team',
+  cover: '/banner.png',
+  tags: ['Comparisons', 'Open Source', 'Self-Hosting'],
+  coverLogos: [
+    { domain: 'crewai.com', name: 'CrewAI' },
+    { domain: 'microsoft.com', name: 'AutoGen' },
+    { domain: 'dify.ai', name: 'Dify' },
+    { domain: 'langchain.com', name: 'LangGraph' },
+    { domain: 'n8n.io', name: 'n8n' },
+  ],
+  readingTime: 7,
+  blocks: [
+    {
+      type: 'lead',
+      text: "Most \"best self-hosted AI agent platform\" lists are ten tools that all do the same thing with different logos. This isn't that. The honest question is narrower: what kind of work do you need an agent to do, and which open-source platform actually runs that work end to end on infrastructure you own? Here are six that are genuinely self-hostable, what each one is great at, and — more usefully — where each one stops.",
+    },
+    {
+      type: 'logos',
+      label: 'Compared here:',
+      items: [
+        { domain: 'crewai.com', name: 'CrewAI' },
+        { domain: 'microsoft.com', name: 'AutoGen' },
+        { domain: 'dify.ai', name: 'Dify' },
+        { domain: 'langchain.com', name: 'LangGraph' },
+        { domain: 'n8n.io', name: 'n8n' },
+      ],
+    },
+    { type: 'h2', text: 'What we mean by self-hosted' },
+    {
+      type: 'p',
+      text: 'A self-hosted AI agent platform is open-source (or source-available) software you run on your own cloud, VPC, or on-prem — not a vendor-hosted SaaS. The agent code, the model calls, and the data all stay inside your walls. That rules out hosted-only agent builders and anything that ships as a managed cloud. What\'s left splits cleanly into three shapes: **frameworks** (libraries you build agents with), **app platforms** (visual builders for LLM apps and chatbots), and **runtimes** (a platform that hosts and governs agents that do real work). They are not interchangeable.',
+    },
+    { type: 'h2', text: '1. Kortix — the agent runtime built as a company OS' },
+    {
+      type: 'p',
+      text: 'Kortix is the odd one on this list: not a framework you wire up, and not a chatbot builder, but a runtime where a workforce of agents runs your company. Every agent, skill, connector, policy, and memory is a file in one Git repo you own — versioned, diffable, reviewable. Hand a task to a project and agents run in isolated microVM sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. [Introducing Kortix](/blog/introducing-kortix) covers the shape; the short version is that it treats a company the way a codebase treats code.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Great at:** running a fleet of agents in parallel that do real work across your tools — not one assistant, not one session. Multi-tenant by default, with scoped allow/ask/block policies on every connector and isolated sandboxes per session.',
+        '**Self-hosting model:** your cloud, VPC, on-prem, or your own GPUs. Open-source; any model, your keys — route a cheap open-weight model for the bulk and a frontier model only where it earns its keep.',
+        '**Where it stops:** it is a company-wide runtime, not a single-operator chatbot. If you want one personal assistant on your desktop, this is more than you need.',
+        '**Pick it if:** you want agents that take actions across your stack, land reviewed work, and run on infrastructure you own — for a team or a whole company, not one person.',
+      ],
+    },
+    { type: 'h2', text: '2. CrewAI — the multi-agent framework' },
+    {
+      type: 'p',
+      text: 'CrewAI is the open-source Python framework that made "role-playing agents that hand work to each other" a usable pattern. You define agents with roles, goals, and tools, and a crew of them collaborates on a task. It is genuinely self-hostable — it is a library you run wherever Python runs — and it is the right starting point if you want to build a custom multi-agent pipeline in code.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Great at:** a clean, developer-friendly framework for orchestrating role-based agents that pass work between each other. Strong ecosystem and a familiar mental model.',
+        '**Where it stops:** it is a framework, not a platform. The sandboxing, the connector governance, the multi-tenant roles, the audit trail, the UI your colleagues actually use — you build and operate all of that yourself. Each crew is a process you orchestrate; there is no shared `main` where durable work lands.',
+        '**Pick it if:** you have an engineering team that wants to code a bespoke agent pipeline and is willing to build the runtime around it.',
+      ],
+    },
+    { type: 'h2', text: '3. AutoGen — the research-grade multi-agent framework' },
+    {
+      type: 'p',
+      text: 'AutoGen is Microsoft Research\'s open-source framework for building multi-agent conversations. Its strength is the research lineage: agent-to-agent dialogue, group chat patterns, and flexible tool-calling are first-class. Like CrewAI it is a framework you run yourself, not a managed platform.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Great at:** expressive multi-agent conversation patterns and a research-first design. Good fit for experimentation and for teams that want to prototype novel agent topologies.',
+        '**Where it stops:** the same framework-not-platform gap. Production concerns — isolation, governance, a shared company memory, a review path for landed work — are left to you. The research velocity that makes it great for prototyping also means the API moves under you.',
+        '**Pick it if:** you are prototyping multi-agent research and can absorb the operational cost of turning a framework into a platform.',
+      ],
+    },
+    { type: 'h2', text: '4. Dify — the visual LLM app platform' },
+    {
+      type: 'p',
+      text: 'Dify is an open-source, self-hostable platform for building LLM applications — chatbots, assistants, and agent-style workflows — with a visual builder. If your real goal is "ship a customer-facing AI chat app on our own infra," Dify is the one on this list built explicitly for that.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Great at:** a polished visual builder for LLM apps, with prompt management, RAG pipelines, and a UI for non-engineers to assemble agents. Genuinely self-hostable.',
+        '**Where it stops:** it is app-centric. You are building an AI chat app that answers; you are not running a workforce of agents that takes durable actions across your business systems and lands reviewed change. Governance, multi-tenant scoping, and a shared company-wide memory are not the center of the product.',
+        '**Pick it if:** you want to ship a self-hosted AI chatbot or assistant app quickly, and "an app that answers" is the whole job.',
+      ],
+    },
+    { type: 'h2', text: '5. LangGraph — the stateful agent graph framework' },
+    {
+      type: 'p',
+      text: 'LangGraph is LangChain\'s open-source framework for building stateful, graph-structured agent flows. Where CrewAI optimizes for role-based crews, LangGraph optimizes for explicit graphs of state and control flow — cycles, branches, checkpoints, and memory. It is a library, self-hosted wherever it runs.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Great at:** precise, debuggable control over agent state machines and complex branching flows. The checkpointing and state model are a real step up if your agent logic is genuinely graph-shaped.',
+        '**Where it stops:** it is a framework that assumes you will write and maintain the orchestration code. The platform layer — sandboxes, connector policies, a company-wide repo, a review path for work — is not in scope. You are composing LangChain primitives, which is powerful and also a commitment.',
+        '**Pick it if:** your agents are genuinely stateful graphs and you have the engineering capacity to own that graph and the runtime around it.',
+      ],
+    },
+    { type: 'h2', text: '6. n8n — workflow automation with AI nodes (complementary)' },
+    {
+      type: 'p',
+      text: 'n8n is the open-source, self-hostable workflow-automation tool that added AI nodes. It belongs on this list because people ask, and it belongs with an asterisk because it is not really an agent platform — it is deterministic workflow automation that can call models. We run it ourselves as a connector: [agents trigger and oversee n8n workflows](/blog/secure-ai-agent-tool-access) as plug-and-play tools. They are complementary, not interchangeable.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Great at:** deterministic, visual workflow automation with hundreds of integrations and AI nodes bolted on. The self-hosted license and the integration catalog are the value.',
+        '**Where it stops:** it is workflow-first, not agent-first. The "agent" is an AI node inside a fixed DAG; there is no autonomous workforce, no isolated sandboxes, no governance layer, no shared company memory. Use it as a tool an agent calls, not as the agent platform.',
+        '**Pick it if:** you already run n8n for automation and want to add AI to existing workflows — or as the deterministic execution layer behind a real agent runtime.',
+      ],
+    },
+    { type: 'h2', text: 'How to actually choose' },
+    {
+      type: 'p',
+      text: 'The decision comes down to one question: do you need an agent that **answers**, an agent that **runs a pipeline**, or a workforce that **does the work and lands it**?',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Answers →** Dify. If the deliverable is an AI chat app, ship the chat app.',
+        '**Runs a pipeline →** CrewAI, AutoGen, or LangGraph. Pick by which mental model fits your team — roles (CrewAI), conversations (AutoGen), or graphs (LangGraph) — and accept that you are building the platform around the framework.',
+        '**Does the work and lands it →** Kortix. If the deliverable is durable change across your business systems, reviewed into a shared `main`, on infrastructure you own, with governance and a company-wide memory — that is a runtime, and it is what Kortix is.',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'None of these is "best" in the abstract. A framework is the right answer when the answer is code; a runtime is the right answer when the answer is work. If you want to see whether the runtime shape fits your team, [see the plans](/pricing) or look at how [Kortix compares to Glean](/blog/kortix-vs-glean) for the enterprise-search-to-agent-platform transition.',
+    },
+    {
+      type: 'callout',
+      text: 'The honest pitch: Kortix is the only one on this list built to run a company, not an app or a pipeline. Open-source, self-hostable, any model — [see it for yourself](/enterprise) across departments, or run one project today.',
+    },
+    { type: 'h2', text: 'Side by side' },
+    {
+      type: 'compare',
+      them: 'CrewAI / AutoGen / LangGraph',
+      rows: [
+        {
+          dimension: 'Shape',
+          them: 'Framework (you build the platform)',
+          kortix: 'Runtime (the platform is the product)',
+        },
+        {
+          dimension: 'Runs a workforce in parallel',
+          them: 'You orchestrate it',
+          kortix: 'Thousands of agents, isolated sandboxes',
+        },
+        {
+          dimension: 'Where the work lands',
+          them: 'A process you manage',
+          kortix: 'Reviewed change request to one shared `main`',
+        },
+        {
+          dimension: 'Multi-tenant governance',
+          them: 'Build it yourself',
+          kortix: 'Roles + scoped allow/ask/block policies, shipped',
+        },
+        {
+          dimension: 'Self-hostable + any model',
+          them: 'Yes (it is a library)',
+          kortix: 'Yes — your cloud, VPC, on-prem, your keys',
+        },
+        {
+          dimension: 'Who it is for',
+          them: 'An engineering team writing agent code',
+          kortix: 'A team or company running agents that do work',
+        },
+      ],
+    },
+    { type: 'h2', text: 'The takeaway' },
+    {
+      type: 'p',
+      text: 'Self-hosting is the easy part — every platform on this list lets you run it on your own infrastructure. The real differentiator is what happens after the agent runs. A framework hands you a result; a runtime lands the work. If "the agent did it" needs to mean "the work is reviewed, durable, and in our repo," that is the runtime shape, and that is where Kortix sits. If it means "the pipeline finished and returned a value," a framework is the honest answer. Pick the one that matches the work you actually need done.',
+    },
+    {
+      type: 'verdict',
+      text: 'Kortix is the best self-hosted platform when the job is durable, governed work across a company — not a chatbot and not a pipeline. The frameworks on this list are the right answer when the right answer is code.',
+    },
+    {
+      type: 'cta',
+      title: 'Run an agent that lands work, not just one that answers.',
+      body: 'Open-source, self-hostable, any model. Start one project today or see it across departments.',
+    },
+  ],
+};
+
 const agiReadyArchitecture: BlogPostEntry = {
   slug: 'agi-ready-architecture',
   title: 'AGI-ready architecture: what it really means, and how Kortix is built for it',
@@ -1141,6 +1333,7 @@ const kortixVsGlean: BlogPostEntry = {
 };
 
 export const BLOG_POSTS: BlogPostEntry[] = [
+  bestSelfHostedAgentPlatforms,
   agiReadyArchitecture,
   kortixVsGlean,
   secureAiAgentToolAccess,
