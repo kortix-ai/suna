@@ -95,6 +95,7 @@ projectsApp.openapi(
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
+        query: z.object({ purge: z.enum(['true', 'false']).optional() }),
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -110,15 +111,19 @@ projectsApp.openapi(
   // editors through via project.write.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
-  // A project archive is the terminal lifecycle event for a Kortix-managed
-  // upstream. Delete it before hiding the project so a provider outage remains
-  // visible and retryable instead of silently leaking an orphan repository.
-  // User-connected/BYO repositories are deliberately left untouched.
-  try {
-    await deleteManagedProjectRepo(loaded.row);
-  } catch (error) {
-    console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
-    return c.json({ error: 'Failed to delete managed project repository' }, 502);
+  // Archiving is recoverable by default. Only an explicit purge permanently
+  // deletes a Kortix-managed upstream; user-connected/BYO repositories are
+  // always left untouched. Delete before hiding the project so provider
+  // failures remain visible and retryable.
+  const purge = c.req.query('purge') === 'true';
+  let repoDeleted = false;
+  if (purge) {
+    try {
+      repoDeleted = await deleteManagedProjectRepo(loaded.row);
+    } catch (error) {
+      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+      return c.json({ error: 'Failed to delete managed project repository' }, 502);
+    }
   }
 
   const [row] = await db
@@ -128,7 +133,7 @@ projectsApp.openapi(
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ ok: true });
+  return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
 },
 );
 
