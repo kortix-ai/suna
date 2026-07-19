@@ -30,9 +30,9 @@ Routing:
                                     resolves from). --json.
   routing set [flags]               Update the project routing policy:
     --default-model <id>              Default model ("" to clear).
-    --vision-model <id>               Vision FALLBACK — only used on `auto` when
+    --vision-model <id>               Vision FALLBACK — only used on 'auto' when
                                       an image is sent and the default model
-                                      can't see images. Ignored otherwise.
+                                      cannot see images. Ignored otherwise.
     --fallback <id,id,…>              Fallback chain ("" to clear).
     --fallback-on transient|any-error
     --file <path|->                   Full policy JSON (stdin with -).
