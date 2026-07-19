@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, statSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, statSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -18,6 +18,7 @@ import {
 } from '../agents.ts';
 import { printBanner, printGetStarted } from '../banner.ts';
 import { C, help, status } from '../style.ts';
+import { appendGitExcludeEntries } from '../git-exclude.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
@@ -192,30 +193,10 @@ function gitAvailable(): boolean {
 
 /** Keep post-clone agent wiring local so setup never dirties the user's repo. */
 function excludeLocalAgentWiring(repoRoot: string): void {
-  const gitPath = spawnSync(
-    "git",
-    ["rev-parse", "--git-path", "info/exclude"],
-    {
-      cwd: repoRoot,
-      encoding: "utf8",
-    },
-  );
-  if (gitPath.status !== 0) return;
-  const rawPath = gitPath.stdout.trim();
-  if (!rawPath) return;
-  const excludePath = resolve(repoRoot, rawPath);
-  const existing = existsSync(excludePath)
-    ? readFileSync(excludePath, "utf8")
-    : "";
-  const entries = ["/.agents", "/.claude", "/.opencode", "/AGENTS.md"];
-  const missing = entries.filter(
-    (entry) => !existing.split(/\r?\n/).includes(entry),
-  );
-  if (missing.length === 0) return;
-  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  appendFileSync(
-    excludePath,
-    `${prefix}# Kortix local coding-agent wiring\n${missing.join("\n")}\n`,
+  appendGitExcludeEntries(
+    repoRoot,
+    ['/.agents', '/.claude', '/.opencode', '/AGENTS.md'],
+    'Kortix local coding-agent wiring',
   );
 }
 

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadAuth } from '../api/auth.ts';
 import {
@@ -23,6 +23,7 @@ import { selectFromList } from '../tui-select.ts';
 import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
+import { appendGitExcludeEntries } from '../git-exclude.ts';
 import type { Auth } from '../api/auth.ts';
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 import { authHeaderArgs } from './ship.ts';
@@ -211,26 +212,10 @@ export function saveClonedProjectLink(
     repoRoot,
   );
 
-  const gitPath = spawnSync(
-    "git",
-    ["rev-parse", "--git-path", "info/exclude"],
-    {
-      cwd: repoRoot,
-      encoding: "utf8",
-    },
-  );
-  if (gitPath.status !== 0) return;
-  const rawPath = gitPath.stdout.trim();
-  if (!rawPath) return;
-  const excludePath = resolve(repoRoot, rawPath);
-  const existing = existsSync(excludePath)
-    ? readFileSync(excludePath, "utf8")
-    : "";
-  if (existing.split(/\r?\n/).includes("/.kortix/link.json")) return;
-  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  appendFileSync(
-    excludePath,
-    `${prefix}# Kortix local project binding\n/.kortix/link.json\n`,
+  appendGitExcludeEntries(
+    repoRoot,
+    ['/.kortix/link.json'],
+    'Kortix local project binding',
   );
 }
 
