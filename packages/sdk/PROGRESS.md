@@ -1349,3 +1349,46 @@ stream (`8023ee8f…`) and minimized: `reduceEnvelope`'s `session/load`
 bootstrap-replay guard suppresses a genuinely-new `tool_call` update that lands
 inside an open `session/load` window. Fix is SDK-layer (`packages/sdk/src/acp/reduce.ts`),
 TDD, full gates. Evidence + verdict in the completion entry below once green.
+
+### 2026-07-20 — session `acp-harness-runtime-v2`: D2 reload-drop fix (Task W5) — DONE
+
+Implementation `HEAD` (`fix(sdk): render persisted outputs on reload of
+error-terminated runs`). One-line change of substance in
+`packages/sdk/src/acp/reduce.ts`: exempt `tool_call`/`tool_call_update` from the
+`session/load` bootstrap-replay suppression guard (they dedupe by `toolCallId`
+via `toolIndex`; message/thought chunks, which do not, keep the guard).
+
+**Root cause (pinned, real stream `8023ee8f…`):** synthetic outputs `show`
+`kortix-outputs:1` at ordinal 84836 fell inside the open `session/load`
+`1784486906549-18-2` window [84798 → response 85120] and was blanket-dropped
+from `chatItems`, so Easy-panel Outputs rendered empty on reload of the
+error-terminated (repeated auto-resume) run. pi/claude never interleave a
+tool_call with an open load, so they were unaffected.
+
+**TDD:** RED test `a genuinely-new tool_call that interleaves with an open
+session/load is NOT suppressed` in `reduce.test.ts` — failed `[] ≠
+['kortix-outputs:1']`; GREEN after the guard change.
+
+**Non-regression (byte-for-byte, real persisted streams, projectAcpChatItems
+hash before→after):** pi `a06a0a04…` unchanged; claude `8c50b95e…` unchanged;
+pi-dist `0fd64363…` unchanged (all 3 synthetic shows across 3 turns preserved —
+accumulate-across-turns + explicit-show-wins intact); codex ONLY changed
+`9d3018c5…`→`82963ba5…` (176→177 items), i.e. exactly the dropped synthetic show
+restored, nothing else.
+
+**Gates:**
+```
+bun test src            → 1257 pass / 0 fail / 97 files (baseline 1256; +1 new test)
+pnpm --filter @kortix/sdk typecheck
+                        → pre-existing RED only (7 errors in
+                          src/react/{model-flatten,use-model-store}.test.ts,
+                          Backlog row 2026-07-19; byte-identical with/without this
+                          diff — my touched files reduce.ts/reduce.test.ts are clean)
+pnpm --filter @kortix/sdk run smoke:install → "✔ install smoke test passed"
+```
+Public-surface snapshot unchanged (no export touched; snapshot test green in the
+full run).
+
+**Shippable to production: YES** for the SDK reducer surface. Verified: RED→GREEN,
+full suite, packed-install smoke, and the real four-harness streams (codex fixed;
+pi/claude/pi-dist byte-identical). Report: `.superpowers/sdd/d2-fix-report.md`.
