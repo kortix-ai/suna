@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, afterEach, describe, expect, mock, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { AcpChatItem, AcpPendingPrompts } from '@kortix/sdk';
@@ -282,6 +282,24 @@ describe('AcpChatItemRow — memoization', () => {
 });
 
 describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
+  // Stub `globalThis.fetch` for all tests in this suite: `usePortReachability`
+  // (in `SandboxPreviewCard` / `sandbox-url-detector.tsx`) probes on mount and
+  // fires a real fetch if not mocked. This ensures tests don't depend on loopback
+  // network availability or port state, and don't incur connection attempt delays.
+  const originalFetch = globalThis.fetch;
+  let mockFetch: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    mockFetch = mock(async () => {
+      throw new TypeError('network disabled in test');
+    }) as unknown as ReturnType<typeof mock>;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
   // Renders a single row in isolation — the memoization suite above uses
   // `TranscriptFixture` for multi-item render-count spying; these tests only
   // care about which component renders a given item's text, so a bare
@@ -316,7 +334,24 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
     const { SandboxUrlDetector } = await import('./sandbox-url-detector');
     const item = messageItem('a1', 'Check the dev server at http://localhost:3000 now.');
 
-    const renderer = await renderRow(item, AcpChatItemRow);
+    const { TooltipProvider } = await import('@/components/ui/tooltip');
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <TooltipProvider>
+          <AcpChatItemRow
+            item={item}
+            isTail={true}
+            isStreaming={false}
+            sessionId="s1"
+            pending={STABLE_PENDING}
+            onRespondQuestion={NOOP_RESPOND_QUESTION}
+            onRejectQuestion={NOOP_REJECT_QUESTION}
+            animateEnter={false}
+          />
+        </TooltipProvider>,
+      );
+    });
     try {
       expect(renderer.root.findAllByType(SandboxUrlDetector)).toHaveLength(1);
     } finally {
@@ -430,35 +465,25 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
     const { AcpChatItemRow } = await import('./acp-chat-item-row');
     const item = messageItem('a4', 'Your app is running at http://localhost:3000 — check it out.');
 
-    // `usePortReachability` (in `sandbox-url-detector.tsx`) probes the URL via
-    // `fetch` on mount and every 10s after. Stubbed here (not just left to hit
-    // real loopback network) so the test doesn't depend on what happens to be
-    // listening on port 3000 on the machine running the suite, and doesn't
-    // pull in unrelated flake from a real connection attempt/timeout.
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = mock(async () => {
-      throw new TypeError('network disabled in test');
-    }) as unknown as typeof fetch;
-
     let renderer!: ReactTestRenderer;
-    try {
-      await act(async () => {
-        renderer = create(
-          <TooltipProvider>
-            <AcpChatItemRow
-              item={item}
-              isTail={true}
-              isStreaming={false}
-              sessionId="s1"
-              pending={STABLE_PENDING}
-              onRespondQuestion={NOOP_RESPOND_QUESTION}
-              onRejectQuestion={NOOP_REJECT_QUESTION}
-              animateEnter={false}
-            />
-          </TooltipProvider>,
-        );
-      });
+    await act(async () => {
+      renderer = create(
+        <TooltipProvider>
+          <AcpChatItemRow
+            item={item}
+            isTail={true}
+            isStreaming={false}
+            sessionId="s1"
+            pending={STABLE_PENDING}
+            onRespondQuestion={NOOP_RESPOND_QUESTION}
+            onRejectQuestion={NOOP_REJECT_QUESTION}
+            animateEnter={false}
+          />
+        </TooltipProvider>,
+      );
+    });
 
+    try {
       // "Preview" is a literal JSX string inside `SandboxPreviewCard`'s
       // primary action button (not a translation key, unlike the other
       // labels in this component) — a stable artifact that only the full
@@ -470,7 +495,6 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
       expect(json).toContain('localhost:');
       expect(json).toContain('3000');
     } finally {
-      globalThis.fetch = originalFetch;
       act(() => {
         renderer.unmount();
       });
