@@ -210,6 +210,18 @@ type KortixProviderOpts = {
 }
 
 async function buildKortixProvider(opts: KortixProviderOpts): Promise<Record<string, unknown>> {
+  const catalog = withModelLimits(await loadGatewayCatalog(opts))
+  const models = Object.fromEntries(
+    Object.entries(catalog).map(([id, model]) => {
+      // The gateway catalog's string `provider` is UI metadata describing the
+      // upstream family used to group/brand a model. OpenCode 1.1.25+ reserves
+      // this key for a nested provider override object, so passing the catalog
+      // value through makes the entire config invalid and prevents startup.
+      // Preserve every runtime capability while dropping only that UI field.
+      const { provider: _catalogProvider, ...opencodeModel } = model
+      return [id, opencodeModel]
+    }),
+  )
   return {
     npm: '@ai-sdk/openai-compatible',
     name: 'Kortix',
@@ -217,7 +229,7 @@ async function buildKortixProvider(opts: KortixProviderOpts): Promise<Record<str
       baseURL: opts.baseURL,
       apiKey: opts.apiKey,
     },
-    models: withModelLimits(await loadGatewayCatalog(opts)),
+    models,
   }
 }
 

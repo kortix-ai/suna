@@ -5,7 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, type GitScope } from '../git-backends';
+import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
@@ -529,6 +529,10 @@ projectsApp.openapi(
     status: 'connected',
     metadata: { seeded: false },
   });
+  const connRef = buildConnectionRef(
+    row,
+    getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
+  );
 
   // Resolve a push credential for seeding / the CLI's first push. The managed
   // GitHub backend mints an installation token.
@@ -541,6 +545,14 @@ projectsApp.openapi(
       ? null
       : resolved.auth?.token ?? null;
   }
+  const writeUpstream = internalPushToken
+    ? backend.buildUpstream(connRef, internalPushToken, 'write')
+    : null;
+  const exportableCredential = exportablePushToken
+    ? parseBasicAuthHeader(
+        backend.buildUpstream(connRef, exportablePushToken, 'write').headers.Authorization,
+      )
+    : null;
 
   // Seed the starter into the empty repo when the caller has no local working
   // tree to push (web "Create project"). The CLI leaves this false and pushes
@@ -551,7 +563,6 @@ projectsApp.openapi(
   const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
   let seeded = false;
   if (seedStarter) {
-    const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
     try {
       if (!internalPushToken) throw new Error('no push credential resolved for seeding');
       const seed = sourceItemId
@@ -622,10 +633,11 @@ projectsApp.openapi(
     kickProjectTemplatePrebuilds(
       {
         projectId: row.projectId,
-        repoUrl: row.repoUrl,
+        repoUrl: writeUpstream?.url ?? row.repoUrl,
         defaultBranch: row.defaultBranch,
         manifestPath: row.manifestPath,
         gitAuthToken: internalPushToken,
+        gitAuthHeaders: writeUpstream?.headers ?? {},
       },
       { accountId: scope.accountId, source: 'project-create' },
     );
@@ -635,6 +647,7 @@ projectsApp.openapi(
     {
       ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
       push_token: exportablePushToken,
+      git_username: exportableCredential?.username ?? null,
       repo_id: provisioned.externalRepoId,
       seeded,
     },
@@ -683,9 +696,6 @@ projectsApp.openapi(
   // (the managed GitHub backend mints an installation token). Never persisted
   // in the sandbox/CLI git config.
   const gitAuth = await resolveProjectGitAuth(loaded.row);
-  if (!gitAuth.auth?.token) {
-    return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
-  }
   if (gitAuth.authSource === 'pat') {
     return c.json(
       { error: 'Managed git push token export requires a repo-scoped installation token' },
@@ -693,9 +703,14 @@ projectsApp.openapi(
     );
   }
   const upstream = await resolveProjectUpstream(loaded.row, 'write');
+  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
+  if (!credential) {
+    return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
+  }
 
   return c.json({
-    push_token: gitAuth.auth.token,
+    push_token: credential.token,
+    git_username: credential.username,
     repo_id: remote.externalRepoId,
     repo_url: upstream?.url ?? loaded.row.repoUrl,
   });

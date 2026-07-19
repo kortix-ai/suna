@@ -12,6 +12,9 @@ It manages:
 - CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
   and production regions, discovered on every plan so replacement EKS workers
   remain covered (Drata DCF-86).
+- Regional Lambda reconcilers triggered by EC2 running-state events, plus a
+  five-minute repair schedule, so replacement instances receive the same alarm
+  without waiting for another Terraform apply.
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
@@ -38,3 +41,19 @@ terraform apply tfplan
 
 Email SNS subscriptions remain a human confirmation step; Terraform must not
 pretend an unconfirmed subscription is a working alert channel.
+
+## Verify EC2 CPU coverage
+
+The reconciler only writes an alarm when it is absent or its metric, threshold,
+period, instance dimension, or SNS action has drifted. Invoke both regional
+functions and compare every running instance ID with the alarm dimensions:
+
+```bash
+aws lambda invoke --region us-west-2 \
+  --function-name kortix-ec2-cpu-alarm-reconciler /tmp/usw2.json
+aws lambda invoke --region eu-west-2 \
+  --function-name kortix-ec2-cpu-alarm-reconciler /tmp/euw2.json
+```
+
+Both payloads must report `covered_instances == running_instances` and an empty
+`updated_instances` list on the second invocation.

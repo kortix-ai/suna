@@ -48,7 +48,23 @@ const {
   GitOperationError,
   refreshMirror,
   repoCachePath,
+  runGit,
 } = await import('../projects/git/mirror');
+
+test('runGit applies backend-produced Authorization headers without rebuilding GitHub auth', async () => {
+  const basic = `Basic ${Buffer.from('t:code-storage-jwt').toString('base64')}`;
+  const result = await runGit(
+    ['config', '--get-all', 'http.https://kortix.code.storage/.extraheader'],
+    undefined,
+    true,
+    null,
+    undefined,
+    'kortix.code.storage',
+    30_000,
+    { Authorization: basic },
+  );
+  expect(result.stdout.trim()).toBe(`Authorization: ${basic}`);
+});
 
 async function git(args: string[], cwd: string) {
   await execFileAsync('git', args, {
