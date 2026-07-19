@@ -415,7 +415,10 @@ function responseFormatFromBody(body: Record<string, unknown>): AiSdkResponseFor
 //
 //  - @ai-sdk/anthropic (dist/index.d.ts's `anthropicLanguageModelOptions`,
 //    dist/index.js's `CacheControlValidator`/`getCacheControl`): thinking is
-//    `providerOptions.anthropic.thinking = {type:'enabled', budgetTokens}`;
+//    `providerOptions.anthropic.thinking = {type:'adaptive'}` + a top-level
+//    `providerOptions.anthropic.effort` tier (the package serializes `effort`
+//    to the wire's `output_config.effort`) — current-gen Claude rejects the
+//    legacy `{type:'enabled', budgetTokens}` shape (see applyAnthropicThinking);
 //    caching is `providerOptions.anthropic.cacheControl = {type:'ephemeral'}`,
 //    read PER message/part/tool, not once globally.
 //  - @ai-sdk/amazon-bedrock (dist/index.d.ts's
@@ -441,7 +444,7 @@ const REASONING_EFFORT_BUDGET_TOKENS: Record<string, number> = {
   // e.g. claude-opus-4-8's `['low','medium','high','xhigh','max']`) expose a
   // fifth effort tier between the two. Without an entry here, selecting
   // 'xhigh' silently produced NO thinking budget at all (falls through every
-  // check in resolveAnthropicThinkingBudget/clampGenerationConfig's
+  // check in resolveThinkingRequest/clampGenerationConfig's
   // reasoningEffort branch).
   xhigh: 24000,
   max: 32000,
@@ -453,30 +456,64 @@ const REASONING_EFFORT_BUDGET_TOKENS: Record<string, number> = {
 // than the plain 4096 used for non-thinking anthropic/bedrock requests.
 const DEFAULT_MAX_TOKENS_WITH_THINKING = 32_000;
 
-interface ResolvedThinkingBudget {
+// The effort tiers @ai-sdk/anthropic's `providerOptions.anthropic.effort` enum
+// accepts (serialized to the wire's `output_config.effort`). Our internal
+// reasoning tiers add 'minimal', which Anthropic has no equivalent for → fold
+// it into the lowest real tier.
+type AnthropicThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+const ANTHROPIC_EFFORT_TIERS = new Set<AnthropicThinkingEffort>([
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
+function toAnthropicEffort(tier: string | undefined): AnthropicThinkingEffort | undefined {
+  if (!tier) return undefined;
+  if (tier === 'minimal') return 'low';
+  return ANTHROPIC_EFFORT_TIERS.has(tier as AnthropicThinkingEffort)
+    ? (tier as AnthropicThinkingEffort)
+    : undefined;
+}
+// Reverse the budget table so a raw `budget_tokens` request (no effort tier)
+// still maps onto an adaptive-thinking effort tier — newer Claude models only
+// accept adaptive thinking, so we can never fall back to a raw token budget.
+function budgetToAnthropicEffort(budget: number): AnthropicThinkingEffort {
+  if (budget <= REASONING_EFFORT_BUDGET_TOKENS.low) return 'low';
+  if (budget <= REASONING_EFFORT_BUDGET_TOKENS.medium) return 'medium';
+  if (budget <= REASONING_EFFORT_BUDGET_TOKENS.high) return 'high';
+  if (budget <= REASONING_EFFORT_BUDGET_TOKENS.xhigh) return 'xhigh';
+  return 'max';
+}
+
+interface ResolvedThinking {
+  // Token budget — used by Bedrock's `reasoningConfig` and to size maxOutputTokens.
   budgetTokens: number;
+  // Effort tier — used by Anthropic's ADAPTIVE thinking (see the call site).
+  effort: AnthropicThinkingEffort;
 }
 
 // Client-supplied `reasoning_effort` (OpenAI/opencode-shaped), an OpenAI
 // Responses-style `reasoning.effort`/`reasoning.budget_tokens`/`.max_tokens`,
 // or a raw Anthropic-shaped `body.thinking:{type:'enabled',budget_tokens}`
-// block — resolved into a thinking-token budget for the anthropic/bedrock
-// families. Ported field-for-field (including the budget table) from the
-// deleted native anthropic transport's `translateThinking` +
-// `REASONING_EFFORT_BUDGET_TOKENS`. Like native: an explicit `body.thinking`
-// object that ISN'T the `{type:'enabled', budget_tokens>0}` shape (e.g.
-// `{type:'disabled'}`) returns "no thinking" WITHOUT falling through to the
-// reasoning/effort checks below — an explicit disable must win.
-function resolveAnthropicThinkingBudget(
+// block — resolved into BOTH a thinking-token budget (for Bedrock + maxTokens
+// sizing) AND an effort tier (for Anthropic adaptive thinking). Ported
+// field-for-field (including the budget table) from the deleted native
+// anthropic transport's `translateThinking` + `REASONING_EFFORT_BUDGET_TOKENS`.
+// Like native: an explicit `body.thinking` object that ISN'T the
+// `{type:'enabled', budget_tokens>0}` shape (e.g. `{type:'disabled'}`) returns
+// "no thinking" WITHOUT falling through to the reasoning/effort checks below —
+// an explicit disable must win.
+function resolveThinkingRequest(
   body: Record<string, unknown>,
   reasoningEffort: string | undefined,
-): ResolvedThinkingBudget | undefined {
+): ResolvedThinking | undefined {
   const rawThinking = body.thinking;
   if (rawThinking && typeof rawThinking === 'object') {
     const budget = (rawThinking as { budget_tokens?: unknown }).budget_tokens;
     const type = (rawThinking as { type?: unknown }).type;
     if (type === 'enabled' && typeof budget === 'number' && budget > 0) {
-      return { budgetTokens: budget };
+      return { budgetTokens: budget, effort: budgetToAnthropicEffort(budget) };
     }
     return undefined;
   }
@@ -486,10 +523,15 @@ function resolveAnthropicThinkingBudget(
     const explicit =
       (reasoning as { budget_tokens?: unknown }).budget_tokens ??
       (reasoning as { max_tokens?: unknown }).max_tokens;
-    if (typeof explicit === 'number' && explicit > 0) return { budgetTokens: explicit };
+    if (typeof explicit === 'number' && explicit > 0) {
+      return { budgetTokens: explicit, effort: budgetToAnthropicEffort(explicit) };
+    }
     const effort = (reasoning as { effort?: unknown }).effort;
     if (typeof effort === 'string' && REASONING_EFFORT_BUDGET_TOKENS[effort] != null) {
-      return { budgetTokens: REASONING_EFFORT_BUDGET_TOKENS[effort] };
+      return {
+        budgetTokens: REASONING_EFFORT_BUDGET_TOKENS[effort],
+        effort: toAnthropicEffort(effort) ?? 'medium',
+      };
     }
   }
 
@@ -497,10 +539,54 @@ function resolveAnthropicThinkingBudget(
     typeof reasoningEffort === 'string' &&
     REASONING_EFFORT_BUDGET_TOKENS[reasoningEffort] != null
   ) {
-    return { budgetTokens: REASONING_EFFORT_BUDGET_TOKENS[reasoningEffort] };
+    return {
+      budgetTokens: REASONING_EFFORT_BUDGET_TOKENS[reasoningEffort],
+      effort: toAnthropicEffort(reasoningEffort) ?? 'medium',
+    };
   }
 
   return undefined;
+}
+
+// Extended thinking is the one place the two Claude backends genuinely diverge:
+// they are DIFFERENT AI-SDK packages with DIFFERENT wire contracts. Direct
+// Anthropic (@ai-sdk/anthropic) and AWS Bedrock (@ai-sdk/amazon-bedrock, the
+// Converse API) each get their own applier below, keyed off `resolveThinkingRequest`'s
+// single result — no shared "is it anthropic or bedrock" branch inside the
+// request builder.
+
+// @ai-sdk/anthropic — current-gen Claude (Opus 4.5+/4.8) REJECTS the legacy
+// `thinking.type:"enabled"` + budget_tokens shape ("`thinking.type.enabled` is
+// not supported for this model. Use `thinking.type.adaptive` and
+// `output_config.effort`"). So we drive extended thinking through ADAPTIVE + an
+// effort tier — the model manages its own budget, and @ai-sdk/anthropic
+// serializes `effort` to the wire's `output_config.effort`. (No budgetTokens to
+// clamp; the caller's maxOutputTokens bump gives thinking + answer headroom.)
+// The old `enabled` shape broke every explicit-reasoning-effort turn on
+// Anthropic; only AUTO worked because it sent no thinking block at all.
+function applyAnthropicThinking(
+  providerOptions: Record<string, Record<string, unknown>>,
+  resolved: ResolvedThinking,
+): void {
+  mergeProviderOptions(providerOptions, 'anthropic', {
+    thinking: { type: 'adaptive' },
+    effort: resolved.effort,
+  });
+}
+
+// @ai-sdk/amazon-bedrock — Bedrock's Converse API still uses the
+// `reasoningConfig: {type:"enabled", budgetTokens}` shape (it has NOT adopted
+// Anthropic's adaptive/output_config surface). Converse rejects
+// budgetTokens >= max output tokens, so clamp below the answer headroom.
+function applyBedrockThinking(
+  providerOptions: Record<string, Record<string, unknown>>,
+  resolved: ResolvedThinking,
+  maxTokens: number,
+): void {
+  const budgetTokens = Math.min(resolved.budgetTokens, Math.max(1024, maxTokens - 1024));
+  mergeProviderOptions(providerOptions, 'bedrock', {
+    reasoningConfig: { type: 'enabled', budgetTokens },
+  });
 }
 
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
@@ -613,7 +699,7 @@ export function buildAiSdkArgs(
   const reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
 
   // anthropic/bedrock never read a bare `reasoningEffort` providerOptions key
-  // (see the file-level comment above `resolveAnthropicThinkingBudget`) — for
+  // (see the file-level comment above `resolveThinkingRequest`) — for
   // those two families reasoning_effort/thinking is translated into a real
   // thinking budget further below instead.
   if (typeof reasoningEffort === 'string' && !isAnthropicOrBedrock) {
@@ -624,7 +710,7 @@ export function buildAiSdkArgs(
   }
 
   const thinkingBudget = isAnthropicOrBedrock
-    ? resolveAnthropicThinkingBudget(body, reasoningEffort)
+    ? resolveThinkingRequest(body, reasoningEffort)
     : undefined;
 
   const explicitMaxTokens =
@@ -635,23 +721,13 @@ export function buildAiSdkArgs(
     explicitMaxTokens ??
     (isAnthropicOrBedrock ? (thinkingBudget ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096) : undefined);
 
+  // Hand the resolved thinking request to the family's OWN applier — the two
+  // backends' wire contracts diverge (see applyAnthropicThinking /
+  // applyBedrockThinking). openai/openai-compatible never reach here (their
+  // reasoningEffort was set above and thinkingBudget is undefined for them).
   if (thinkingBudget && typeof maxTokens === 'number') {
-    // Anthropic/Bedrock both reject budgetTokens >= max output tokens —
-    // clamp instead of 400ing on a client-set combination that doesn't leave
-    // room for the answer (identical clamp to native's translateThinking).
-    const clampedBudgetTokens = Math.min(
-      thinkingBudget.budgetTokens,
-      Math.max(1024, maxTokens - 1024),
-    );
-    if (family === 'anthropic') {
-      mergeProviderOptions(providerOptions, 'anthropic', {
-        thinking: { type: 'enabled', budgetTokens: clampedBudgetTokens },
-      });
-    } else {
-      mergeProviderOptions(providerOptions, 'bedrock', {
-        reasoningConfig: { type: 'enabled', budgetTokens: clampedBudgetTokens },
-      });
-    }
+    if (family === 'anthropic') applyAnthropicThinking(providerOptions, thinkingBudget);
+    else if (family === 'bedrock') applyBedrockThinking(providerOptions, thinkingBudget, maxTokens);
   }
 
   const stop = body.stop;

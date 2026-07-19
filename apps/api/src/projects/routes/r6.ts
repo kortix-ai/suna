@@ -21,6 +21,7 @@ import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../e
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { config, type SandboxProviderName } from '../../config';
+import { deleteManagedProjectRepo } from '../lib/project-deletion';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -97,7 +98,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(404),
+        ...errors(404, 502),
     },
   }),
   async (c: any) => {
@@ -108,6 +109,17 @@ projectsApp.openapi(
   // project.delete; loadProjectForUser('manage') would otherwise let
   // editors through via project.write.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
+
+  // A project archive is the terminal lifecycle event for a Kortix-managed
+  // upstream. Delete it before hiding the project so a provider outage remains
+  // visible and retryable instead of silently leaking an orphan repository.
+  // User-connected/BYO repositories are deliberately left untouched.
+  try {
+    await deleteManagedProjectRepo(loaded.row);
+  } catch (error) {
+    console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+    return c.json({ error: 'Failed to delete managed project repository' }, 502);
+  }
 
   const [row] = await db
     .update(projects)
