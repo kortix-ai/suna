@@ -148,7 +148,22 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 (was Playwright's 30s default)
 // + a 5-attempt backoff retry loop around `playwright install --with-deps
 // chromium`, so a transient CDN blip no longer fails the whole image build.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v27';
+// v28: v27's cache-order fix made the Chromium RUN text byte-identical across
+// bakes, but under concurrency (3+ simultaneous per-project bakes) the
+// opportunistic build-cache STILL did not reliably hit — the provider's
+// build-cache is not something we can observe or guarantee from here, so
+// per-project warm bakes kept re-downloading Chromium and saturating egress
+// (root cause of the v0.10.11 prod rollback). Two changes: (a) per-project warm
+// bakes now prefer building FROM the already-built default image
+// (buildPerProjectWarmFromBaseDockerfile in dockerfile-layer.ts, wired through
+// ensurePerProjectWarmImage) — Chromium is INHERITED, not re-installed, so
+// there is no download to miss, no matter what the provider's cache does. This
+// requires the default image to already be `active` on the provider; when it
+// isn't (or the provider can't report an image ref), the builder falls back to
+// the v27 full-rebuild path unchanged. (b) Raised
+// PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT to 1800000 (30min, was 300000/5min) as
+// a safety net for that fallback path under a cold cache.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v28';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

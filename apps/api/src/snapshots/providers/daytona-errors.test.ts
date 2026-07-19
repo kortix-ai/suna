@@ -19,7 +19,7 @@ setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 
-const { isDaytonaSnapshotNotFoundError } = await import('./daytona');
+const { daytonaProvider, isDaytonaSnapshotNotFoundError } = await import('./daytona');
 
 describe('Daytona snapshot not-found classifier', () => {
   test.each([
@@ -43,5 +43,25 @@ describe('Daytona snapshot not-found classifier', () => {
     ['imprecise snapshot text', new Error('snapshot lookup not found')],
   ])('rejects %s as an unconfirmed not-found', (_label, err) => {
     expect(isDaytonaSnapshotNotFoundError(err)).toBe(false);
+  });
+});
+
+describe('DaytonaAdapter.buildSnapshot input validation (FROM-base fast path)', () => {
+  const BASE_SPEC = { spec: {}, slug: 'default-warm' };
+
+  test('rejects when none of image, userDockerfile, baseImageRef are set', async () => {
+    await expect(
+      daytonaProvider.buildSnapshot({ snapshotName: 'kortix-tpl-x', ...BASE_SPEC }),
+    ).rejects.toThrow('none of image, userDockerfile, baseImageRef set');
+  });
+
+  test('rejects baseImageRef without warmRepo before touching the network', async () => {
+    await expect(
+      daytonaProvider.buildSnapshot({
+        snapshotName: 'kortix-ppwarm-x',
+        baseImageRef: 'registry.example/kortix-default-abc:latest',
+        ...BASE_SPEC,
+      }),
+    ).rejects.toThrow('baseImageRef requires warmRepo');
   });
 });
