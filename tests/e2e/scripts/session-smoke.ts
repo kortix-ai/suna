@@ -143,10 +143,24 @@ async function main() {
   const snapEnd = Date.now() + 9 * 60_000;
   while (!snapReady && Date.now() < snapEnd) {
     const s = await api('GET', `/projects/${projectId}/snapshots`);
-    const list = s.json?.items ?? s.json?.snapshots ?? (Array.isArray(s.json) ? s.json : []);
-    log('   snapshots:', list.map((x: any) => `${x.branch ?? '?'}:${x.status}`).join(',') || 'none');
-    if (list.some((x: any) => x.status === 'ready')) { snapReady = true; break; }
-    if (list.length && list.every((x: any) => x.status === 'failed')) { ok('snapshot build', false, list[0]?.error?.slice(0, 100)); break; }
+    const templates = s.json?.templates ?? [];
+    const builds = s.json?.builds ?? [];
+    const legacy = s.json?.items ?? s.json?.snapshots ?? (Array.isArray(s.json) ? s.json : []);
+    log(
+      '   snapshots:',
+      [
+        ...templates.map((x: any) => `${x.slug ?? x.branch ?? '?'}:${x.ready ? 'ready' : x.daytona_state || x.provider_state || '?'}`),
+        ...builds.map((x: any) => `${x.branch ?? '?'}:${x.status}`),
+        ...legacy.map((x: any) => `${x.branch ?? '?'}:${x.status}`),
+      ].join(',') || 'none',
+    );
+    if (
+      templates.some((x: any) => x.ready) ||
+      builds.some((x: any) => x.status === 'ready') ||
+      legacy.some((x: any) => x.status === 'ready')
+    ) { snapReady = true; break; }
+    if (builds.length && builds.every((x: any) => x.status === 'failed')) { ok('snapshot build', false, builds[0]?.error?.slice(0, 100)); break; }
+    if (!builds.length && legacy.length && legacy.every((x: any) => x.status === 'failed')) { ok('snapshot build', false, legacy[0]?.error?.slice(0, 100)); break; }
     await sleep(10_000);
   }
   if (!ok('snapshot gate satisfied', snapReady)) return finish({ projectId });
@@ -173,19 +187,28 @@ async function main() {
   ok('GET session (read)', (await api('GET', `/projects/${projectId}/sessions/${sessionId}`)).status === 200);
   ok('PATCH session (rename)', (await api('PATCH', `/projects/${projectId}/sessions/${sessionId}`, { name: 'e2e session 2' })).status === 200);
 
-  // 7. wait for sandbox active
+  // 7. wait for sandbox active. Session creation provisions in the background,
+  // while POST /start is the idempotent session-open contract that waits for
+  // and returns the serialized session sandbox once it is ready.
   log('Polling sandbox...');
-  let ext = '', sbStatus = '';
+  let ext = '', sbStatus = '', startStage = '';
   const sbEnd = Date.now() + 5 * 60_000;
   while (Date.now() < sbEnd) {
-    const sb = await api('GET', `/projects/${projectId}/sessions/${sessionId}/sandbox`);
-    if (sb.status === 404) { await sleep(4000); continue; }
-    sbStatus = sb.json?.status ?? ''; ext = sb.json?.external_id || sb.json?.externalId || '';
-    log(`   sandbox: status=${sbStatus} ext=${ext || '—'}`);
-    if (sbStatus === 'active' || sbStatus === 'error' || sbStatus === 'failed') break;
-    await sleep(5000);
+    const sb = await api('POST', `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`);
+    startStage = sb.json?.stage ?? '';
+    const sandbox = sb.json?.sandbox ?? null;
+    sbStatus = sandbox?.status ?? '';
+    ext = sandbox?.external_id || sandbox?.externalId || '';
+    log(`   sandbox: stage=${startStage || '—'} status=${sbStatus || '—'} ext=${ext || '—'}`);
+    if (startStage === 'ready' && sbStatus === 'active' && ext) break;
+    if (startStage === 'failed' || sbStatus === 'error' || sbStatus === 'failed') break;
+    if (sb.status >= 400 && sb.status !== 404) {
+      ok('sandbox start', false, `${sb.status} ${sb.text.slice(0, 200)}`);
+      break;
+    }
+    await sleep(1000);
   }
-  if (!ok('sandbox active', sbStatus === 'active', `status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
+  if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
   const branches = await api('GET', `/projects/${projectId}/branches`);
   const branchRows = branches.json?.branches ?? [];
   ok('session branch pushed to managed repo', branches.status === 200 && branchRows.some((branch: any) => branch.name === sessionId), `${branches.status} ${branches.text.slice(0, 160)}`);
