@@ -206,6 +206,75 @@ describe('AcpSession', () => {
     expect(fetchMock.calls('session/load')).toHaveLength(1);
   });
 
+  test('live SSE history replay emitted while session/load is in flight stays raw without duplicating chat items', async () => {
+    const transcript = [
+      {
+        ordinal: 1,
+        direction: 'client_to_agent',
+        streamEventId: null,
+        envelope: {
+          jsonrpc: '2.0', id: 'prompt-1', method: 'session/prompt',
+          params: { sessionId: 'acp-existing-1', prompt: [{ type: 'text', text: 'hello' }] },
+        },
+      },
+      {
+        ordinal: 2,
+        direction: 'agent_to_client',
+        streamEventId: 1,
+        envelope: {
+          jsonrpc: '2.0', method: 'session/update',
+          params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'original reply' } } },
+        },
+      },
+    ];
+    const base = makeSessionFetchMock({ transcript });
+    let loadStarted = false;
+    const loadGate: { resolve?: () => void } = {};
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        if (body.method === 'session/load') {
+          loadStarted = true;
+          return new Promise<Response>((resolve) => {
+            loadGate.resolve = () => resolve(Response.json({
+              jsonrpc: '2.0',
+              id: body.id,
+              result: { sessionId: 'acp-existing-1', configOptions: [] },
+            }));
+          });
+        }
+      }
+      return base.fetch(input, init);
+    };
+    const session = createAcpSession({
+      endpoint: 'https://api.test/acp/s1',
+      acpSessionId: 'acp-existing-1',
+      fetch: fetchImpl as typeof fetch,
+      scheduleFlush: (flush) => flush(),
+    });
+
+    session.connect();
+    await waitUntil(() => loadStarted && base.sseConnections === 1);
+    await base.emitSse([
+      {
+        id: 2,
+        envelope: {
+          jsonrpc: '2.0', method: 'session/update',
+          params: { update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'hello' } } },
+        },
+      },
+      chunkEnvelope(3, 'original reply'),
+    ]);
+    loadGate.resolve?.();
+    await waitUntil(() => session.getSnapshot().ready);
+
+    expect(session.getSnapshot().envelopes).toHaveLength(4);
+    expect(session.getSnapshot().chatItems).toEqual([
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'hello' },
+      { kind: 'message', id: 'assistant-2', role: 'assistant', text: 'original reply' },
+    ]);
+  });
+
   test('bootstrap falls back to session/new when session/load is rejected (harness lost the thread)', async () => {
     const base = makeSessionFetchMock();
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {

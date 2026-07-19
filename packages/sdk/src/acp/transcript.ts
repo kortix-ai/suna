@@ -199,7 +199,16 @@ export function projectAcpTranscript(
 ): AcpTranscriptMessage[] {
   const messages: AcpTranscriptMessage[] = [];
   const maxChars = options.maxChars ?? 4_000;
+  let reducerState = emptyReducerState();
   for (const row of rows) {
+    const previousChatItems = reducerState.chatItems;
+    reducerState = reduceEnvelope(reducerState, row);
+    // Keep this compact API/CLI/share projection aligned with the canonical
+    // chat projector. In particular, `session/load` history notifications
+    // extend the lossless envelope log but intentionally leave `chatItems`
+    // unchanged, so processing them again here would resurrect the exact
+    // duplicate transcript that the shared reducer suppressed.
+    if (reducerState.chatItems === previousChatItems) continue;
     const envelope = row.envelope;
     if (!('method' in envelope)) continue;
     if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {

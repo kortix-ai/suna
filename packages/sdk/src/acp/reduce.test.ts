@@ -248,6 +248,57 @@ describe('reduceEnvelope', () => {
     expect(projected).toEqual(state.chatItems);
   });
 
+  test('session/load history replay stays in the raw envelope log but does not create duplicate chat turns', () => {
+    const originalPrompt = userPrompt(1, 'hello', 'prompt-1', 'session-1');
+    const originalReply = agentChunk(2, 'original reply');
+    const originalEnd = stored(3, 'agent_to_client', {
+      jsonrpc: '2.0', id: 'prompt-1', result: { stopReason: 'end_turn' },
+    });
+    const load = stored(4, 'client_to_agent', {
+      jsonrpc: '2.0', id: 'load-1', method: 'session/load',
+      params: { sessionId: 'session-1', cwd: '/workspace' },
+    });
+    const replayedPrompt = stored(5, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: {
+        sessionId: 'session-1',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'hello' },
+        },
+      },
+    });
+    const replayedReply = agentChunk(6, 'original reply');
+    const loadResult = stored(7, 'agent_to_client', {
+      jsonrpc: '2.0', id: 'load-1', result: { sessionId: 'session-1' },
+    });
+    const nextPrompt = userPrompt(8, 'next question', 'prompt-2', 'session-1');
+    const nextReply = agentChunk(9, 'fresh reply');
+    const fixture = [
+      originalPrompt,
+      originalReply,
+      originalEnd,
+      load,
+      replayedPrompt,
+      replayedReply,
+      loadResult,
+      nextPrompt,
+      nextReply,
+    ];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+
+    expect(state.envelopes).toEqual(fixture);
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'hello' },
+      { kind: 'message', id: 'assistant-2', role: 'assistant', text: 'original reply' },
+      { kind: 'message', id: 'prompt-8', role: 'user', text: 'next question' },
+      { kind: 'message', id: 'assistant-9', role: 'assistant', text: 'fresh reply' },
+    ]);
+    expect(projectAcpChatItems(fixture)).toEqual(state.chatItems);
+  });
+
   test('a duplicate streamEventId row is dropped', () => {
     let state = emptyReducerState();
     const first = stored(1, 'agent_to_client', {

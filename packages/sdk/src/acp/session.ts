@@ -1,5 +1,6 @@
 import { createAcpClient, type AcpClient } from './client';
 import { clearOpenPrompts, emptyReducerState, pendingFromState, reduceEnvelope, type AcpReducerState } from './reduce';
+import { markLiveSessionLoadReplay } from './load-replay';
 import {
   type AcpChatItem,
   type AcpPendingPrompts,
@@ -203,6 +204,11 @@ export class AcpSession {
   private bootstrap: Promise<void> | null = null;
   private createdSessionId: string | null = null;
   private requestBusy = false;
+  /** True only while the bootstrap `session/load` RPC is awaiting its result.
+   *  Native agents emit the loaded conversation over SSE inside this window;
+   *  the stream does not echo the client load request, so those live row
+   *  objects need an in-memory projection marker (see `load-replay.ts`). */
+  private sessionLoadInFlight = false;
   /** High-water mark for `enqueueHistory`'s idempotency check — the largest
    *  `ordinal` ever accepted from history. Replaces the old `Set<number>` of
    *  every ordinal ever accepted (one entry retained for the life of the
@@ -307,12 +313,19 @@ export class AcpSession {
           // callback closure outlives `close()`, so the guard is on identity,
           // not on the client-level stream having actually torn down.
           if (this.stream !== handle) return;
-          this.enqueue({
+          const row: AcpStoredEnvelope = {
             ordinal: syntheticOrdinal(event.id),
             direction: 'agent_to_client',
             streamEventId: event.id,
             envelope: event.envelope,
-          });
+          };
+          if (
+            this.sessionLoadInFlight
+            && (event.envelope as Record<string, unknown>).method === 'session/update'
+          ) {
+            markLiveSessionLoadReplay(row);
+          }
+          this.enqueue(row);
         },
         onError: (error) => {
           if (this.stream !== handle) return;
@@ -482,7 +495,12 @@ export class AcpSession {
       let result: Awaited<ReturnType<AcpClient['loadSession']>>;
       if (id) {
         try {
-          result = await this.client.loadSession({ sessionId: id, cwd: this.cwd(), mcpServers: [] });
+          this.sessionLoadInFlight = true;
+          try {
+            result = await this.client.loadSession({ sessionId: id, cwd: this.cwd(), mcpServers: [] });
+          } finally {
+            this.sessionLoadInFlight = false;
+          }
         } catch (error) {
           // The harness could not resume this ACP session (process restarted,
           // rollout/thread state gone — e.g. codex-acp's "no rollout found

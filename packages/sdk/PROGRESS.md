@@ -1222,3 +1222,41 @@ with focused web/SDK tests plus the SDK typecheck, full suite, and packed-instal
 smoke gates.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-19 — session `acp-session-load-replay-projection` (completion)
+
+Completed the ACP reload/recovery defect fix. Native OpenCode ACP emits the
+loaded conversation as `session/update` notifications before answering
+`session/load`; the API correctly preserved those lossless raw frames, but the
+SDK previously projected them as fresh user/assistant turns. Persisted replay
+is now classified by the open load request/response scope, and live SSE replay
+is marked in memory while `AcpSession` awaits the load result. Raw envelopes
+and JSONL remain untouched; chat, context, compact transcript, Markdown, HTML,
+web, CLI, API-share, and panel projections no longer duplicate the turn.
+
+The companion web session page now retains an already-ready ACP chat subtree
+when runtime recovery temporarily makes `session.switched` false. The boot
+layer may already have faded out and unmounted, so this closes the state where
+both center layers were absent and only the persistent project sidebar
+remained.
+
+**TDD and live evidence:** focused SDK reducer/transcript/session tests passed;
+focused web lifecycle/layout/chat tests passed **28 / 0**. In the reported
+local session `ecb1084b-c5c5-4b37-875f-b08d8f341da0`, one reload previously
+increased the visible identical reply count from 3 to 4. After the fix, the
+same durable log (including all historical replay rows) renders exactly one
+reply and zero `user_message_chunk` replay cards. The second reported session
+`abb36570-9478-48ca-b667-6fb50fc23700` likewise renders one prompt/reply with a
+non-empty mounted center layout.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full
+SDK suite reported **1240 pass / 0 fail** across 95 files with 5380 assertions;
+and `pnpm --filter @kortix/sdk run smoke:install` built, packed, installed,
+imported, and constructed `@kortix/sdk` successfully. Public runtime/type
+surface snapshots remained green without regeneration.
+
+**Shippable to production: YES** for the SDK and local web fix. Repository PR,
+merge, deploy-dev, and deployed-SHA verification remain part of the parent ACP
+branch lifecycle.

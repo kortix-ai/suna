@@ -16,6 +16,7 @@ import { isAutoResuming, isSandboxResumable } from '@/features/session/session-r
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
+import { shouldMountAcpChat } from '@/features/session/session-page-lifecycle';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -231,8 +232,16 @@ export default function ProjectSessionPage() {
   // The chat subtree mounts once useSession reports the runtime is switched in.
   const canMountChat = session.switched;
   // For a fresh session, hold the real chat until the user actually sends their
-  // first message — the instant shell is the typing surface until then.
-  const mountChat = canMountChat && (!isFresh || shellSubmitted);
+  // first message — the instant shell is the typing surface until then. Once
+  // the chat has reported ready, retain it through a temporary runtime
+  // re-switch: the boot layer has already faded out and unmounted, so dropping
+  // this subtree too would leave the session center completely blank.
+  const mountChat = shouldMountAcpChat({
+    switched: canMountChat,
+    fresh: isFresh,
+    shellSubmitted,
+    chatReady,
+  });
 
   const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
   const inner = (() => {
@@ -336,7 +345,7 @@ export default function ProjectSessionPage() {
     // the staged loader (resumes) and crossfades in once it's ready. useSession
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {canMountChat && (
+        {mountChat && (
           <div
             className={cn(
               'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out',
@@ -344,16 +353,14 @@ export default function ProjectSessionPage() {
             )}
           >
             <ProjectSessionRuntimeConnection>
-              {mountChat && (
-                <AcpSessionChat
-                  acp={session.acp!}
-                  sessionId={sessionId}
-                  sessionTitle={`Session ${sessionId.slice(0, 8)}`}
-                  projectId={projectId}
-                  boundAgentName={session.agentName}
-                  onReady={() => setChatReady(true)}
-                />
-              )}
+              <AcpSessionChat
+                acp={session.acp!}
+                sessionId={sessionId}
+                sessionTitle={`Session ${sessionId.slice(0, 8)}`}
+                projectId={projectId}
+                boundAgentName={session.agentName}
+                onReady={() => setChatReady(true)}
+              />
             </ProjectSessionRuntimeConnection>
           </div>
         )}

@@ -240,6 +240,39 @@ describe('projectAcpTranscript', () => {
       }),
     ]);
   });
+
+  test('does not expose session/load history replay as duplicate transcript messages', () => {
+    const messages = projectAcpTranscript([
+      stored(1, 'client_to_agent', {
+        jsonrpc: '2.0', id: 'prompt-1', method: 'session/prompt',
+        params: { sessionId: 's1', prompt: [{ type: 'text', text: 'Hello' }] },
+      }),
+      stored(2, 'agent_to_client', {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' } } },
+      }),
+      stored(3, 'client_to_agent', {
+        jsonrpc: '2.0', id: 'load-1', method: 'session/load',
+        params: { sessionId: 's1', cwd: '/workspace' },
+      }),
+      stored(4, 'agent_to_client', {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Hello' } } },
+      }),
+      stored(5, 'agent_to_client', {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' } } },
+      }),
+      stored(6, 'agent_to_client', {
+        jsonrpc: '2.0', id: 'load-1', result: { sessionId: 's1' },
+      }),
+    ]);
+
+    expect(messages.map(({ role, text }) => ({ role, text }))).toEqual([
+      { role: 'user', text: 'Hello' },
+      { role: 'assistant', text: 'Hi' },
+    ]);
+  });
 });
 
 describe('projectAcpPendingPrompts', () => {

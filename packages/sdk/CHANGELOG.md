@@ -77,6 +77,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Native ACP `session/load` history replay no longer appears as duplicate
+  user/assistant turns after reload or reconnect. The durable envelope log
+  remains lossless; only semantic chat/context/transcript/export projections
+  classify load-scoped update notifications as bootstrap history. `AcpSession`
+  applies the same rule to live SSE replay emitted while the load RPC is still
+  in flight, so the active page does not show a transient extra copy.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient

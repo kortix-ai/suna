@@ -270,6 +270,15 @@ lossless, raw)"):
   tool/plan/permission/question), never one heading per raw wire chunk — a
   lossy, human-readable view built from `projectAcpChatItems`, not a
   replacement for the raw envelope log.
+- **`session/load` replay is history, not a new turn.** Native agents may
+  re-emit the loaded conversation as `session/update` notifications before
+  answering `session/load`. Those frames remain append-only raw envelopes and
+  therefore remain present in JSONL, but the shared reducer suppresses them
+  from `projectAcpChatItems`, `projectAcpContext`, `projectAcpTranscript`, and
+  the Markdown/HTML projections. Persisted rows are classified by the open
+  load request/response scope; live SSE rows emitted while `AcpSession` is
+  awaiting the load result carry an in-memory projection marker so the active
+  page cannot show one transient extra copy before the next history fetch.
 
 ## 6. The session store
 

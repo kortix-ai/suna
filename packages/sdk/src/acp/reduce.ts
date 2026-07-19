@@ -1,4 +1,5 @@
 import { contentAttachments, contentText, textFromContent } from './content';
+import { isLiveSessionLoadReplay } from './load-replay';
 import type { AcpJsonRpcId } from './types';
 import type {
   AcpChatItem,
@@ -119,6 +120,14 @@ export type AcpReducerState = {
    *  (in principle) appear in the same log. See `reduceEnvelope`'s
    *  `session/prompt`/`session/cancel` branches. */
   openPromptSessionIds: Map<string, string | undefined>;
+  /** Still-open client `session/load` requests, keyed by `rpcIdKey(id)` and
+   *  carrying their request ordinal. Native ACP agents replay the loaded
+   *  conversation as `session/update` notifications before answering the
+   *  load request; those notifications remain in `envelopes` as durable raw
+   *  truth but must not be projected as brand-new chat turns. Optional for
+   *  source compatibility with callers that persisted/constructed the
+   *  previously-published reducer state shape. */
+  openSessionLoadOrdinals?: Map<string, number>;
 };
 
 export function emptyReducerState(): AcpReducerState {
@@ -138,6 +147,7 @@ export function emptyReducerState(): AcpReducerState {
     openPromptIds: new Map(),
     openPromptOrdinals: new Map(),
     openPromptSessionIds: new Map(),
+    openSessionLoadOrdinals: new Map(),
   };
 }
 
@@ -203,6 +213,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   let openPromptIds = state.openPromptIds;
   let openPromptOrdinals = state.openPromptOrdinals;
   let openPromptSessionIds = state.openPromptSessionIds;
+  let openSessionLoadOrdinals = state.openSessionLoadOrdinals ?? new Map<string, number>();
 
   // ── chat items + turn-state bookkeeping: a client's `session/prompt` ──
   if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
@@ -259,6 +270,12 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
       openPromptSessionIds = new Map(openPromptSessionIds);
       openPromptSessionIds.set(key, promptSessionId);
     }
+  } else if (row.direction === 'client_to_agent' && envelope.method === 'session/load') {
+    const id = envelope.id;
+    if (typeof id === 'string' || typeof id === 'number') {
+      openSessionLoadOrdinals = new Map(openSessionLoadOrdinals);
+      openSessionLoadOrdinals.set(rpcIdKey(id), row.ordinal);
+    }
   } else if (row.direction === 'client_to_agent' && envelope.method === 'session/cancel') {
     // Busy-staleness policy, half (a): a `session/cancel` notification for a
     // session clears every currently-open prompt belonging to that session —
@@ -285,7 +302,14 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
       const kind = update.sessionUpdate ?? update.type;
       const text = textFromContent(update.content).join('');
       const attachments = contentAttachments(update.content);
-      if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
+      if (openSessionLoadOrdinals.size > 0 || isLiveSessionLoadReplay(row)) {
+        // `session/load` rehydrates the native agent by replaying its existing
+        // conversation as update notifications before the matching JSON-RPC
+        // response. The API correctly persists those frames in the lossless
+        // envelope log, but a semantic transcript must not interpret bootstrap
+        // history as another live turn. Non-chat projections (usage/config)
+        // still consume the row in their dedicated blocks below.
+      } else if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
         const previous = chatItems.at(-1);
         if (previous?.kind === 'message' && previous.role === role) {
@@ -416,6 +440,15 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   // ── responses: answer permission/question requests and prompt requests ──
   if ('id' in envelope && !('method' in envelope) && ('result' in envelope || 'error' in envelope)) {
     const key = rpcIdKey(envelope.id);
+    const openSessionLoadOrdinal = openSessionLoadOrdinals.get(key);
+    if (
+      row.direction === 'agent_to_client'
+      && openSessionLoadOrdinal !== undefined
+      && openSessionLoadOrdinal < row.ordinal
+    ) {
+      openSessionLoadOrdinals = new Map(openSessionLoadOrdinals);
+      openSessionLoadOrdinals.delete(key);
+    }
     if (!answeredIds.has(key)) {
       answeredIds = new Set(answeredIds);
       answeredIds.add(key);
@@ -496,6 +529,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     openPromptIds,
     openPromptOrdinals,
     openPromptSessionIds,
+    openSessionLoadOrdinals,
   };
 }
 
