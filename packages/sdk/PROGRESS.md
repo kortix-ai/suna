@@ -191,7 +191,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider. | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default. | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green |
 | B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
 | B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.** | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`. | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green |
-| B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **IN PROGRESS 2026-07-19** — session `code-storage-e2e`; RED test required before implementation |
+| B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -1023,3 +1023,29 @@ focused RED -> GREEN coverage, full SDK typecheck/test/packed-install gates, rea
 local browser/API proof, and the repository merge/deploy/live-dev lifecycle.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-19 — session `code-storage-e2e` (completion)
+
+Completed the additive managed-Git username contract. `ProjectGitToken` now
+exposes `git_username` without removing or renaming any public SDK name, so
+Code Storage clients use `t:<token>` while the existing GitHub path continues
+to use `x-access-token:<token>`.
+
+**TDD evidence:** the focused RED run of
+`bun test src/core/rest/projects-client/manifest-git-token.test.ts` failed when
+the response's `git_username` was absent; after implementation the same command
+reported **3 pass / 0 fail / 10 assertions**.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1138 pass / 2 skip / 0 fail**; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully. Cross-surface verification also
+reported API focused **18 pass**, provision fixture **9 pass**, CLI **454 pass / 0
+fail**, sandbox agent **208 pass / 0 fail**, and the live isolated Code Storage +
+Daytona session smoke **24 pass / 0 fail**.
+
+**Shippable to production: YES** for the SDK surface and local end-to-end path.
+Repository merge, Deploy Dev, and live-dev verification remain part of the parent
+feature lifecycle.
