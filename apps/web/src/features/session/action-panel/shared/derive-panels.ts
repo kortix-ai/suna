@@ -578,17 +578,22 @@ export function deriveContext(parts: ToolPart[]): {
       continue;
     }
 
-    // Everything else is recorded once, by name, as "a tool that was used".
-    // Every call to that tool rides along on `parts` so the UI can show what
-    // the tool actually did when the user asks — one chip, all its calls.
-    const label = humanizeToolName(part.tool);
-    const seen = seenTools.get(label);
+    // Everything else is recorded once, keyed by the tool's real IDENTITY, as
+    // "a tool that was used". Every call to that tool rides along on `parts`
+    // so the UI can show what the tool actually did when the user asks — one
+    // chip, all its calls, its count badge. Dedup by identity (`tool`), NOT by
+    // the humanized label: two genuinely different tools can share a leaf name
+    // (`mcp__linear__create_issue` and `mcp__github__create_issue` both read
+    // as "Create Issue"), and merging them would hide one tool's calls behind
+    // the other's chip.
+    const identity = normalizeName(part.tool);
+    const seen = seenTools.get(identity);
     if (seen) {
       (seen.parts ??= []).push(part);
       continue;
     }
-    const item: ContextItem = { callID: part.callID, label, kind: 'tool', parts: [part] };
-    seenTools.set(label, item);
+    const item: ContextItem = { callID: part.callID, label: humanizeToolName(part.tool), kind: 'tool', parts: [part] };
+    seenTools.set(identity, item);
     tools.push(item);
   }
 

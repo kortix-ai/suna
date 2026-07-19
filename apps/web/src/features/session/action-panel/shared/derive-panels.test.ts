@@ -529,6 +529,50 @@ describe('deriveContext', () => {
     const { tools } = deriveContext([part('bash', { command: 'ls' }, { status: 'error' })]);
     expect(tools).toEqual([]);
   });
+
+  // ─── W4 / W3 Mechanism 1: the tools bucket used to dedup by the *humanized
+  // label*, not by identity — so two genuinely different tools that happen to
+  // share a leaf name collapsed into one chip, hiding one behind the other.
+  // Dedup by the tool's real identity instead. ──────────────────────────────
+  it('keeps two distinct tools that humanize to the same label as separate chips', () => {
+    const { tools } = deriveContext([
+      part('mcp__linear__create_issue', { title: 'Bug' }),
+      part('mcp__github__create_issue', { title: 'Bug' }),
+    ]);
+    // Both humanize to "Create Issue" — but they are different tools and must
+    // not be merged (one's calls would ride, mislabeled, on the other's chip).
+    expect(tools).toHaveLength(2);
+    expect(new Set(tools.map((t) => t.callID)).size).toBe(2);
+  });
+
+  it('still collapses repeated calls to the SAME tool into one chip carrying every call', () => {
+    const { tools } = deriveContext([
+      part('bash', { command: 'ls' }),
+      part('bash', { command: 'pwd' }),
+      part('bash', { command: 'whoami' }),
+    ]);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].label).toBe('Bash');
+    // Every call rides along so the card's count badge reads "Bash · 3".
+    expect(tools[0].parts).toHaveLength(3);
+  });
+
+  // ─── W4 end-to-end (real codex shape, session `8023ee8f…`): once the SDK
+  // stops misreading `write_stdin` as a file edit, it arrives here with its
+  // own identity (family `other`) and must surface as its own visible chip —
+  // NOT be dropped like an edit, and NOT pollute files. This is the 44% of
+  // codex tool volume W3 measured as invisible on both cards. ───────────────
+  it('surfaces a write_stdin (PTY-poll) tool as its own Context chip, never as a dropped edit', () => {
+    const { files, web, tools } = deriveContext([
+      part('write_stdin', { name: 'write_stdin', arguments: { session_id: 3700 } }),
+      part('write_stdin', { name: 'write_stdin', arguments: { session_id: 7377 } }),
+    ]);
+    expect(files).toEqual([]);
+    expect(web).toEqual([]);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].label).toBe('Write Stdin');
+    expect(tools[0].parts).toHaveLength(2);
+  });
 });
 
 describe('deriveOutputs — running apps', () => {
