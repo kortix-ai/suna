@@ -6,7 +6,9 @@ import { createInterface } from 'node:readline'
 
 import { logger } from '../logger'
 import { mergeProjectEnv, type ProjectEnvStore } from '../project-env'
+import { gitIgnoredSet } from '../routes/files'
 import { applyAcpSessionDefaults, isolateHarnessAuthEnv, resolveAcpHarnessLaunchEnv, type AcpHarnessDescriptor, type AcpHarnessId, type AcpHarnessRegistry } from './harness-registry'
+import { OutputScanTracker } from './output-scan'
 
 export type JsonRpcEnvelope = Record<string, unknown> & { jsonrpc: '2.0' }
 
@@ -134,6 +136,7 @@ class AcpProcess {
   private exited = false
   private readonly onUnexpectedExit: (process: AcpProcess) => void
   private readonly sessionDefaultsEnv: NodeJS.ProcessEnv
+  private readonly outputScan: OutputScanTracker
 
   constructor(options: {
     serverId: string
@@ -183,6 +186,12 @@ class AcpProcess {
         ),
       )
     })
+
+    this.outputScan = new OutputScanTracker({
+      workspace: options.cwd,
+      publish: (envelope) => { if (!this.exited) this.publish(envelope) },
+      isIgnored: (absPaths) => gitIgnoredSet(options.cwd, absPaths),
+    })
   }
 
   get pid(): number | null {
@@ -199,6 +208,7 @@ class AcpProcess {
     }
 
     const outbound = applyAcpSessionDefaults(this.descriptor.id, envelope, this.sessionDefaultsEnv)
+    this.outputScan.noteOutbound(outbound)
     const isMethodCall = typeof outbound.method === 'string'
     const hasId = Object.prototype.hasOwnProperty.call(envelope, 'id')
     if (!isMethodCall || !hasId) {
@@ -242,6 +252,7 @@ class AcpProcess {
   async stop(): Promise<void> {
     if (this.exited) return
     this.exited = true
+    this.outputScan.dispose()
     this.child.kill('SIGTERM')
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
@@ -291,11 +302,17 @@ class AcpProcess {
       if (pending) {
         clearTimeout(pending.timer)
         this.pending.delete(rpcIdKey(envelope.id))
+        this.outputScan.noteResponse(envelope)
         pending.resolve(envelope)
         return
       }
     }
 
+    this.publish(envelope)
+    this.outputScan.noteInbound(envelope)
+  }
+
+  private publish(envelope: JsonRpcEnvelope): void {
     const event = { id: this.nextEventId++, envelope }
     this.replay.push(event)
     if (this.replay.length > MAX_REPLAY_EVENTS) this.replay.shift()
@@ -305,6 +322,7 @@ class AcpProcess {
   private fail(error: Error): void {
     if (this.exited) return
     this.exited = true
+    this.outputScan.dispose()
     this.rejectPending(new AcpUpstreamError(error.message))
     this.closeSubscribers()
     this.onUnexpectedExit(this)

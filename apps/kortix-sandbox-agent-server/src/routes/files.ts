@@ -35,7 +35,7 @@ const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
  * workspace isn't a git repo (check-ignore exits 128) — runGit never throws on
  * non-zero, so we just parse whatever matched.
  */
-async function gitIgnoredSet(workspace: string, absPaths: string[]): Promise<Set<string>> {
+export async function gitIgnoredSet(workspace: string, absPaths: string[]): Promise<Set<string>> {
   const set = new Set<string>()
   if (!absPaths.length) return set
   const res = await runGit(['check-ignore', '-z', '--stdin'], {
