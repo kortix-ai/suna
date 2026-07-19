@@ -132,6 +132,54 @@ describe('the Python floor is venv-isolated from dpkg', () => {
   });
 });
 
+describe('Chromium sits on deterministic parents (cache order is load-bearing)', () => {
+  // Regression guard for the v0.10.11 "session never starts" incident. The
+  // provider build caches are CONTENT-ADDRESSED (Daytona has no instruction-text
+  // cache, no agent-swap), so a non-deterministic layer above the ~150MB Chromium
+  // download busts its cache and forces a re-download on every rebuild. An
+  // agent-server code change re-mints the base snapshot hash → a full Daytona
+  // rebuild → if Chromium sat below the `opencode serve` migration-bake (sqlite
+  // with live timestamps) or the warm-repo clone (fresh credential in the RUN
+  // text), it re-downloaded and overran the session-ready window. Chromium must
+  // stay directly on the deterministic apt + pip floors, ABOVE all of them.
+  const chromiumAt = (t: string) =>
+    t.indexOf('npx -y playwright@');
+  const opencodeInstallAt = (t: string) =>
+    t.indexOf('"opencode-ai@');
+  const migrationBakeAt = (t: string) => t.indexOf('/tmp/oc-bake.log');
+
+  test('the base default image installs Chromium before opencode + the migration-bake', () => {
+    const base = kortixToolchainLayer({
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      opencodeConfigPath: 'kortix-opencode-config',
+      isSharedDefault: true,
+    });
+    const chromium = chromiumAt(base);
+    expect(chromium).toBeGreaterThan(-1);
+    expect(chromium).toBeLessThan(opencodeInstallAt(base));
+    expect(chromium).toBeLessThan(migrationBakeAt(base));
+  });
+
+  test('a per-project warm bake installs Chromium before the credential-bearing clone', () => {
+    const warm = kortixToolchainLayer({
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      opencodeConfigPath: 'kortix-opencode-config',
+      warmRepo: {
+        cloneUrl: 'https://git.example.com/acme/app.git',
+        cloneHeaders: { Authorization: 'Bearer redacted' },
+        branch: 'main',
+        originUrl: 'https://kortix.example.com/v1/git/proj.git',
+      },
+    });
+    const chromium = chromiumAt(warm);
+    expect(chromium).toBeGreaterThan(-1);
+    // the credential-bearing clone RUN must come strictly after Chromium
+    expect(chromium).toBeLessThan(warm.indexOf('/tmp/kortix-warm-repo'));
+  });
+});
+
 describe('the /workspace wipe is scoped to the shared default image', () => {
   const WIPE = 'find /workspace -mindepth 1 -delete';
 
