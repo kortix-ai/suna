@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { getEnv } from '@/lib/env-config';
+import { getKortixCliInstallCommand } from '@/lib/kortix-cli';
 import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, GitBranch, GitFork, Github, RefreshCw } from 'lucide-react';
@@ -166,6 +167,7 @@ function SummaryRow({
 }
 
 export function GitView({ projectId }: { projectId: string }) {
+  const installCommand = getKortixCliInstallCommand(getEnv().VERSION);
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -212,9 +214,11 @@ export function GitView({ projectId }: { projectId: string }) {
             <div>
               <h3 className="text-foreground text-sm font-medium">Develop locally</h3>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                The CLI authenticates the clone without saving a token in the URL or Git config.
+                Install the CLI, then clone through the authenticated Kortix proxy. Tokens are never
+                saved in the URL or Git config.
               </p>
             </div>
+            <CopyValue value={installCommand} label="Install command" />
             <CopyValue value={`kortix projects clone ${projectId}`} label="Clone command" />
             <p className="text-muted-foreground text-xs">
               Then run <code className="text-foreground font-mono">kortix init --force</code> and{' '}
