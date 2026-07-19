@@ -58,6 +58,7 @@
     "@mynaui/icons-react": "^0.4.2",
     "@next/third-parties": "^15.3.1",
     "@paper-design/shaders-react": "^0.0.76",
+    "@phosphor-icons/react": "2.1.10",
     "@pierre/diffs": "1.1.22",
     "@pierre/theme": "0.0.28",
     "@pipedream/sdk": "^2.3.7",
