@@ -26,7 +26,6 @@ import {
   CATEGORY_LABELS,
   groupSecretsByCategory,
   isUpdaterManagedKey,
-  maskSecretValue,
   ROTATABLE_GENERATED_KEYS,
   SECRET_DEFS,
   secretDefFor,

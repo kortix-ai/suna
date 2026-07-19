@@ -53,7 +53,6 @@ import {
   parseSessionConnectorBindings,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
-import { allocateSessionRuntime } from './session-runtime-allocator';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,

@@ -24,9 +24,24 @@ interface SandboxResourceSpec {
 export interface BuildableTemplate {
   /** Snapshot name the provider should write under. */
   snapshotName: string;
-  /** Either `image` OR `userDockerfile` is set (not both). */
+  /**
+   * Exactly one of `image`, `userDockerfile`, or `baseImageRef` is set.
+   */
   image?: string;
   userDockerfile?: string;
+  /**
+   * Per-project warm FAST PATH: a registry-addressable ref to an
+   * already-built, active runtime image (the shared default) to `FROM`
+   * instead of composing the full toolchain Dockerfile. When set, the
+   * provider stages a minimal Dockerfile (see `stageWarmFromBaseContext`)
+   * that only adds `warmRepo` on top — the toolchain (including the
+   * Chromium install that per-project bakes could otherwise re-download
+   * under a build-cache miss) is INHERITED, not re-run. Only meaningful
+   * together with `warmRepo`; providers that don't support this (no
+   * `getSnapshotImageRef`) never receive it — the caller falls back to
+   * `userDockerfile` instead.
+   */
+  baseImageRef?: string;
   /** Optional entrypoint override; null means use the provider default. */
   entrypoint?: string[];
   /** Resource spec. */
@@ -37,10 +52,11 @@ export interface BuildableTemplate {
   isShared?: boolean;
   /**
    * Per-project COLD warm: bake the project's repo checkout into /workspace at
-   * build time. Threaded straight to `stageBuildContext` → the Dockerfile layer,
-   * which clones the repo (build-time creds) and keeps /workspace. The image
-   * stays capture:'none' (no memory snapshot) — BOTH providers boot it cold.
-   * Absent for the shared default image (workspace stays empty).
+   * build time. Threaded straight to `stageBuildContext` (or, on the
+   * `baseImageRef` fast path, `stageWarmFromBaseContext`) → the Dockerfile
+   * layer, which clones the repo (build-time creds) and keeps /workspace. The
+   * image stays capture:'none' (no memory snapshot) — BOTH providers boot it
+   * cold. Absent for the shared default image (workspace stays empty).
    */
   warmRepo?: WarmRepoContext;
 }
@@ -77,6 +93,19 @@ export interface SandboxProviderAdapter {
   deleteSnapshot(snapshotName: string): Promise<void>;
   /** List provider snapshots/templates owned by the current account. */
   listSnapshots(): Promise<Array<{ name: string }>>;
+
+  /**
+   * Optional: resolve a registry-addressable image reference for an
+   * ALREADY-BUILT snapshot, for use as `BuildableTemplate.baseImageRef` on a
+   * later build (the per-project warm FAST PATH — see builder.ts
+   * `ensurePerProjectWarmImage`). Returns null when the snapshot doesn't exist,
+   * the provider has no such reference to give, or on any lookup error — every
+   * caller treats null as "fall back to the full rebuild path", never as a
+   * hard failure. Absent on providers that don't expose an image reference at
+   * all (Platinum, E2B, local-docker); callers must null-check the method
+   * itself, not just its return value.
+   */
+  getSnapshotImageRef?(snapshotName: string): Promise<string | null>;
 
   /**
    * Optional agent-only fast path: produce `newSnapshotName` from a predecessor

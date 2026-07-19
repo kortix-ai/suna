@@ -253,19 +253,27 @@ flow(
   },
 );
 
+// COV-8's original `marketplace`/`registry` CRUD routes (GET .../marketplace,
+// .../marketplace/updates, POST .../marketplace/{install,update,update-all},
+// DELETE .../marketplace/:name, POST .../registry/update-all) were DELETED by
+// the marketplace-as-projects rewrite (docs/specs/2026-07-13-marketplace-as-projects.md,
+// merge 444b6906e): the deterministic install/lock/update/remove engine is
+// gone, replaced by the agent-driven `POST /:projectId/marketplace/install-session`
+// covered below. Verified live against staging with a real authed project:
+// each of those paths now 404s "Not found" (not the 401 an unauthenticated
+// probe would suggest — /v1/projects/:projectId/* runs its auth gate before
+// routing, so an unauthed call to a genuinely-dead sibling path still reads
+// 401). `tests/spec/routes.generated.json` was stale (pre-dated that merge)
+// and has been regenerated; these route strings would now fail the coverage
+// gate's "declared but not in the manifest" (external) check, so they're
+// dropped rather than kept as dead weight.
 flow(
   'COV-8',
   {
     domain: 'coverage',
     routes: [
+      'POST /v1/projects/:projectId/marketplace/install-session',
       'GET /v1/projects/:projectId/llm-catalog',
-      'GET /v1/projects/:projectId/marketplace',
-      'GET /v1/projects/:projectId/marketplace/updates',
-      'POST /v1/projects/:projectId/marketplace/install',
-      'POST /v1/projects/:projectId/marketplace/update',
-      'POST /v1/projects/:projectId/marketplace/update-all',
-      'DELETE /v1/projects/:projectId/marketplace/:name',
-      'POST /v1/projects/:projectId/registry/update-all',
       'PATCH /v1/projects/:projectId/channels/email/installation',
       'POST /v1/channels/slack/identity/bind',
       'POST /internal/gateway/authorize',
@@ -274,32 +282,16 @@ flow(
   async (ctx) => {
     const params = { projectId: ZERO_UUID };
 
-    await ctx.step('unauthenticated project marketplace and catalog routes are gated', async () => {
-      for (const route of [
-        '/v1/projects/:projectId/llm-catalog',
-        '/v1/projects/:projectId/marketplace',
-        '/v1/projects/:projectId/marketplace/updates',
-      ]) {
-        const r = await ctx.client.as(ctx.P.ANON).get(route, { params });
-        r.status(401);
-      }
+    await ctx.step('unauthenticated marketplace install-session is gated', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/projects/:projectId/marketplace/install-session', {}, { params });
+      r.status(401);
     });
 
-    await ctx.step('unauthenticated marketplace mutation routes are gated', async () => {
-      for (const route of [
-        '/v1/projects/:projectId/marketplace/install',
-        '/v1/projects/:projectId/marketplace/update',
-        '/v1/projects/:projectId/marketplace/update-all',
-        '/v1/projects/:projectId/registry/update-all',
-      ]) {
-        const r = await ctx.client.as(ctx.P.ANON).post(route, {}, { params });
-        r.status(401);
-      }
-
-      const del = await ctx.client.as(ctx.P.ANON).del('/v1/projects/:projectId/marketplace/:name', {
-        params: { ...params, name: 'missing' },
-      });
-      del.status(401);
+    await ctx.step('unauthenticated project catalog route is gated', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/llm-catalog', { params });
+      r.status(401);
     });
 
     await ctx.step('unauthenticated email and Slack identity mutations are gated', async () => {
@@ -319,6 +311,43 @@ flow(
         r.status([401, 503]);
       },
     );
+
+    // The project-scoped marketplace install-session route (the agent-driven
+    // replacement for the removed deterministic install/update/remove engine)
+    // is the one project write a non-member must NOT be able to trigger, and
+    // whose body validation runs AFTER auth — prove both boundaries against a
+    // real project so the route can never silently degrade to a 500.
+    const project = await ctx.fixtures.project();
+    const projParams = { projectId: project.id };
+
+    await ctx.step('NONMEMBER cannot start a marketplace install-session → 403/404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          '/v1/projects/:projectId/marketplace/install-session',
+          { id: 'kortix/runtime' },
+          { params: projParams },
+        );
+      r.status([403, 404]);
+    });
+
+    await ctx.step('missing id body → 400 (not 500)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/marketplace/install-session', {}, { params: projParams });
+      r.status(400);
+    });
+
+    await ctx.step('unknown marketplace id → 400 (not 500)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/marketplace/install-session',
+          { id: 'no-such-item-' + ctx.fixtures.name('x') },
+          { params: projParams },
+        );
+      r.status(400);
+    });
   },
 );
 

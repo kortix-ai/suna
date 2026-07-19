@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../config';

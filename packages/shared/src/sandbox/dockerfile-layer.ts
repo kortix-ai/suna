@@ -128,24 +128,32 @@ export interface KortixToolchainLayerOpts {
    * NOT wipe /workspace afterward. Omit for the shared, project-independent
    * default image (workspace stays empty; the daemon clones at boot).
    */
-  warmRepo?: {
-    /** Upstream URL to clone from at BUILD time (real git host or proxy). */
-    cloneUrl: string;
-    /**
-     * Auth headers for the build-time clone, passed via `git -c
-     * http.extraHeader` inside a RUN that deletes the script in the same
-     * invocation — nothing credential-shaped survives into the image layer.
-     */
-    cloneHeaders: Record<string, string>;
-    /** Branch to check out (the default branch tip is baked). */
-    branch: string;
-    /**
-     * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
-     * the daemon's per-session credential helper re-auths pushes/fetches at
-     * runtime (the build credential is never persisted).
-     */
-    originUrl: string;
-  };
+  warmRepo?: WarmRepoConfig;
+}
+
+/**
+ * Build-time git-clone inputs for a per-project COLD warm bake. Shared between
+ * `kortixToolchainLayer` (the full monolithic build) and
+ * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) so both
+ * render the identical clone RUN — see `buildWarmRepoCloneLines`.
+ */
+export interface WarmRepoConfig {
+  /** Upstream URL to clone from at BUILD time (real git host or proxy). */
+  cloneUrl: string;
+  /**
+   * Auth headers for the build-time clone, passed via `git -c
+   * http.extraHeader` inside a RUN that deletes the script in the same
+   * invocation — nothing credential-shaped survives into the image layer.
+   */
+  cloneHeaders: Record<string, string>;
+  /** Branch to check out (the default branch tip is baked). */
+  branch: string;
+  /**
+   * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
+   * the daemon's per-session credential helper re-auths pushes/fetches at
+   * runtime (the build credential is never persisted).
+   */
+  originUrl: string;
 }
 
 /**
@@ -213,6 +221,156 @@ export interface BuildLayeredDockerfileOpts
  * Renders against an EMPTY build context — it stages nothing. Ends with a
  * trailing newline so it concatenates directly onto `kortixArtifactLayer`.
  */
+// Single-quote a value for safe embedding in a build-time bash RUN.
+const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+
+/**
+ * The per-project COLD warm clone RUN: clones `warmRepo` into /workspace at
+ * BUILD time. The auth header goes through `git -c http.extraHeader` (never
+ * written to git config) and the whole step is one RUN, so no credential-shaped
+ * bytes persist. origin is reset to the Kortix proxy so the daemon re-auths per
+ * session at runtime.
+ *
+ * Shared verbatim between `kortixToolchainLayer` (the monolithic build) and
+ * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) — the two
+ * MUST render byte-identical clone text so the baked checkout is the same
+ * either way. Returns `[]` when there's no repo to bake (the shared,
+ * project-independent default image).
+ */
+function buildWarmRepoCloneLines(warmRepo: WarmRepoConfig | undefined): string[] {
+  if (!warmRepo) return [];
+  return [
+    '',
+    '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
+    // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
+    // small; the daemon fast-paths the baked .git and deepens on demand.
+    // NOTE: an earlier layer sets `WORKDIR /workspace` (either this image's own
+    // toolchain layer, or — on the FROM-base fast path — the inherited base
+    // image), so the build shell's CWD IS /workspace. We must NOT `rm -rf
+    // /workspace` (that orphans the CWD inode → git dies with "Unable to read
+    // current working directory"). Instead `cd /`, clone into a scratch dir,
+    // then move the contents into the (emptied) /workspace so the CWD inode
+    // stays valid.
+    `RUN cd / \\`,
+    `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
+    `    && git ${Object.entries(warmRepo.cloneHeaders)
+      .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
+      .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
+    `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
+    `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
+    `    && rm -rf /tmp/kortix-warm-repo \\`,
+    `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
+    `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
+    '',
+  ];
+}
+
+/**
+ * Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
+ * creates an instance for a project dir it loads that dir's .kortix/opencode
+ * surface — importing the pty plugin + tools — which makes Bun auto-install /
+ * transpile the plugin dep tree and opencode fetch its model catalog +
+ * ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
+ * GitHub are contended) that gates runtimeReady right on the session hot path.
+ * We pay it ONCE here, against the canonical starter config staged at the SAME
+ * runtime path (/workspace) so Bun's content-addressed transpile cache hits at
+ * boot. For the SHARED default image we then wipe /workspace (the session
+ * clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
+ * already baked at /workspace and we KEEP it — the daemon boots off the baked
+ * checkout with NO clone. For a CUSTOM template we remove only the config we
+ * staged: /workspace is the user's. Either way the warmed caches under
+ * /opt/kortix/home persist in the image layer. Measured: cold first-instance
+ * 6–60s → ~2–4s after this bake. Requires opencode + bun + the baked config
+ * deps to already be present in the image (either from the toolchain layer
+ * above, or inherited via FROM on the fast path), so it must come after them.
+ * Best effort: a build without network (or a warm-up failure) just falls back
+ * to the runtime cost — set +e + trailing `true` keep the image build green.
+ *
+ * Shared between `kortixToolchainLayer` and `buildPerProjectWarmFromBaseDockerfile`
+ * so both render byte-identical warm-up text. Returns `[]` when there's no
+ * starter config to warm against.
+ */
+function buildOpencodeInstanceWarmupLines(opts: {
+  opencodeConfigPath?: string;
+  warmRepo?: WarmRepoConfig;
+  isSharedDefault?: boolean;
+}): string[] {
+  const { opencodeConfigPath, warmRepo, isSharedDefault } = opts;
+  if (!opencodeConfigPath) return [];
+  return [
+    `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+    // Same "does it actually bundle" check as the opencode-config-deps
+    // verification above, but exercised against the REAL starter tool
+    // files (web_search / scrape_webpage / image_search / memory / show)
+    // instead of just their axios/form-data override targets — this is
+    // what actually walks the full transitive dependency tree
+    // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
+    // on a session's first prompt. Deliberately its own RUN step (not
+    // folded into the `set +e` warm-up below): a tool that can't bundle
+    // breaks every session's first prompt, not just startup latency, so
+    // it must fail the build — the warm-up readiness probe below stays
+    // best-effort as before.
+    'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
+    '    && rm -rf node_modules \\',
+    '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
+    '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
+    '    && rm -rf /tmp/opencode-tools-bundle-check \\',
+    '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
+    '',
+    'RUN set +e; \\',
+    '    export HOME=/opt/kortix/home \\',
+    '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
+    '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
+    '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
+    '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
+    '    mkdir -p /workspace/.kortix; \\',
+    // Stage the canonical starter opencode config so the instance warm-up
+    // has the pty plugin + tools to load. For a per-project warm the baked
+    // repo may already ship its own .kortix/opencode — keep it (its config
+    // is what the session actually resolves at runtime) and only fall back
+    // to the staged starter when the repo has none.
+    // `staged_starter_config` records whether the starter config in
+    // /workspace is OURS (we copied it) or the image's own — it decides what
+    // the non-shared cleanup below is allowed to delete.
+    '    staged_starter_config=0; \\',
+    '    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\',
+    '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
+    '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
+    '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
+    '    cd /workspace; \\',
+    '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
+    '    ready=0; \\',
+    '    for i in $(seq 1 300); do \\',
+    `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
+    '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
+    '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+    '        sleep 1; \\',
+    '    done; \\',
+    '    echo "=== instance-warm: ready=$ready ==="; \\',
+    '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+    // Three cases, and only one of them may delete indiscriminately:
+    //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
+    //    the daemon boots off it with no clone.
+    //  • SHARED default: /workspace contains only what this warm-up put
+    //    there (the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a
+    //    WORKDIR), so wiping it is exact, and it also clears anything opencode
+    //    itself dropped while serving. The session clones into it at boot.
+    //  • CUSTOM template: the user's Dockerfile owns /workspace. Remove ONLY
+    //    the starter config we staged (and the .kortix dir if that leaves it
+    //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
+    //    purpose; a user's own /workspace/.kortix survives untouched.
+    warmRepo
+      ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
+      : isSharedDefault
+        ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
+        : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\',
+    '    rm -rf /opt/kortix/warm-config; \\',
+    '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
+    '    rm -f /tmp/oc-warm.log; true',
+    '',
+  ];
+}
+
 export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
   const {
     opencodeVersion,
@@ -222,36 +380,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     warmRepo,
   } = opts;
 
-  // Single-quote a value for safe embedding in a build-time bash RUN.
-  const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
-  // Per-project COLD warm: clone the repo into /workspace at BUILD time. The auth
-  // header goes through `git -c http.extraHeader` (never written to git config)
-  // and the whole step is one RUN, so no credential-shaped bytes persist. origin
-  // is reset to the Kortix proxy so the daemon re-auths per session at runtime.
-  const warmRepoClone = warmRepo
-    ? [
-        '',
-        '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
-        // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
-        // small; the daemon fast-paths the baked .git and deepens on demand.
-        // NOTE: an earlier base layer sets `WORKDIR /workspace`, so the build
-        // shell's CWD IS /workspace. We must NOT `rm -rf /workspace` (that orphans
-        // the CWD inode → git dies with "Unable to read current working
-        // directory"). Instead `cd /`, clone into a scratch dir, then move the
-        // contents into the (emptied) /workspace so the CWD inode stays valid.
-        `RUN cd / \\`,
-        `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
-        `    && git ${Object.entries(warmRepo.cloneHeaders)
-          .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
-          .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
-        `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
-        `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
-        `    && rm -rf /tmp/kortix-warm-repo \\`,
-        `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
-        `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
-        '',
-      ]
-    : [];
+  const warmRepoClone = buildWarmRepoCloneLines(warmRepo);
 
   return [
     '',
@@ -488,104 +617,6 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
-    // Per-project COLD warm: bake the repo checkout into /workspace BEFORE the
-    // opencode instance warm-up below, so opencode indexes the REAL project (its
-    // config, file tree, sqlite rows) — all baked into the cold rootfs. git is
-    // installed by the first apt RUN above, so this is safe here. For the shared
-    // default image warmRepo is absent → /workspace stays empty (unchanged).
-    ...warmRepoClone,
-    // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
-    // creates an instance for a project dir it loads that dir's .kortix/opencode
-    // surface — importing the pty plugin + tools — which makes Bun auto-install /
-    // transpile the plugin dep tree and opencode fetch its model catalog +
-    // ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
-    // GitHub are contended) that gates runtimeReady right on the session hot path.
-    // We pay it ONCE here, against the canonical starter config staged at the SAME
-    // runtime path (/workspace) so Bun's content-addressed transpile cache hits at
-    // boot. For the SHARED default image we then wipe /workspace (the session
-    // clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
-    // already baked at /workspace and we KEEP it — the daemon boots off the baked
-    // checkout with NO clone. For a CUSTOM template we remove only the config we
-    // staged: /workspace is the user's. Either way the warmed caches under /opt/kortix/home
-    // persist in the image layer. Measured: cold first-instance 6–60s → ~2–4s
-    // after this bake. Requires opencode + bun + the
-    // baked config deps above, so it must come after them. Best effort: a build
-    // without network (or a warm-up failure) just falls back to the runtime cost —
-    // set +e + trailing `true` keep the image build green.
-    ...(opencodeConfigPath
-      ? [
-          `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
-          // Same "does it actually bundle" check as the opencode-config-deps
-          // verification above, but exercised against the REAL starter tool
-          // files (web_search / scrape_webpage / image_search / memory / show)
-          // instead of just their axios/form-data override targets — this is
-          // what actually walks the full transitive dependency tree
-          // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
-          // on a session's first prompt. Deliberately its own RUN step (not
-          // folded into the `set +e` warm-up below): a tool that can't bundle
-          // breaks every session's first prompt, not just startup latency, so
-          // it must fail the build — the warm-up readiness probe below stays
-          // best-effort as before.
-          'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
-          '    && rm -rf node_modules \\',
-          '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
-          '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
-          '    && rm -rf /tmp/opencode-tools-bundle-check \\',
-          '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
-          '',
-          'RUN set +e; \\',
-          '    export HOME=/opt/kortix/home \\',
-          '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
-          '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
-          '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
-          '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
-          '    mkdir -p /workspace/.kortix; \\',
-          // Stage the canonical starter opencode config so the instance warm-up
-          // has the pty plugin + tools to load. For a per-project warm the baked
-          // repo may already ship its own .kortix/opencode — keep it (its config
-          // is what the session actually resolves at runtime) and only fall back
-          // to the staged starter when the repo has none.
-          // `staged_starter_config` records whether the starter config in
-          // /workspace is OURS (we copied it) or the image's own — it decides what
-          // the non-shared cleanup below is allowed to delete.
-          '    staged_starter_config=0; \\',
-          '    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\',
-          '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
-          '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
-          '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
-          '    cd /workspace; \\',
-          '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
-          '    ready=0; \\',
-          '    for i in $(seq 1 300); do \\',
-          `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
-          '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
-          '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
-          '        sleep 1; \\',
-          '    done; \\',
-          '    echo "=== instance-warm: ready=$ready ==="; \\',
-          '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
-          // Three cases, and only one of them may delete indiscriminately:
-          //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
-          //    the daemon boots off it with no clone.
-          //  • SHARED default: /workspace contains only what this warm-up put
-          //    there (the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a
-          //    WORKDIR), so wiping it is exact, and it also clears anything opencode
-          //    itself dropped while serving. The session clones into it at boot.
-          //  • CUSTOM template: the user's Dockerfile owns /workspace. Remove ONLY
-          //    the starter config we staged (and the .kortix dir if that leaves it
-          //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
-          //    purpose; a user's own /workspace/.kortix survives untouched.
-          warmRepo
-            ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
-            : isSharedDefault
-              ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
-              : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\',
-          '    rm -rf /opt/kortix/warm-config; \\',
-          '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
-          '    rm -f /tmp/oc-warm.log; true',
-          '',
-        ]
-      : []),
     // agent-browser (Vercel) — the browser-automation CLI the agent-browser
     // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
     // bake a real Chromium into the image and wire agent-browser to it TWO
@@ -602,12 +633,51 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
     // every sandbox ships a working browser; we never install one on the session
     // hot path.
+    //
+    // DELIBERATELY PLACED HERE — before the per-project warm bits below (repo
+    // clone + opencode instance warm-up) — instead of after them. This is the
+    // ONLY layer-order requirement in this whole toolchain: everything up to and
+    // including this RUN is byte-identical across the shared default image AND
+    // every per-project warm bake (no project data has been mixed in yet), so its
+    // build-cache key is IDENTICAL everywhere too — one cache-populating build
+    // (e.g. the periodic shared-default rebuild) lets every later warm bake, for
+    // every project, reuse this exact layer. The repo-clone step right below bakes
+    // a FRESH short-lived git credential into its RUN text on every single
+    // invocation (a ~1h GitHub App installation token, or a JWT with a live
+    // iat/exp — see resolveWarmRepoContext in snapshots/builder.ts) — so it can
+    // NEVER cache-hit, and neither can anything chained after it. Before this
+    // reorder, Chromium sat downstream of that never-cacheable clone step, so
+    // EVERY per-project warm bake re-ran the ~150MB Chrome-for-Testing download
+    // from cdn.playwright.dev against Playwright's install timeout — regardless
+    // of environment. Do not move this block back below the warm-repo clone.
     'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
     '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
+    // Playwright's browser download defaults to a 30s socket timeout
+    // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
+    // fetch can miss under any network hiccup / contended CDN — observed live as
+    // "Downloading Chrome for Testing ... timed out after 30000ms" failing the
+    // whole bake. 30 minutes gives real headroom for a cold-cache build under
+    // contention (staging observed this stalling on slower Daytona egress); the
+    // retry loop below is the second line of defense for a transient failure
+    // within that window. This is a SAFETY NET, not the primary fix — the
+    // primary fix is that per-project warm bakes now build FROM the already-baked
+    // default image (see buildPerProjectWarmFromBaseDockerfile below) and so
+    // never re-run this install at all when that fast path is available; this
+    // timeout only matters for the fallback full rebuild path.
+    '    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version \\',
-    `    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
+    // Retry the Chromium download a handful of times with backoff before giving
+    // up — a transient CDN/network blip must not fail the whole image build. The
+    // loop's own exit status is irrelevant either way: `test -n "$pw_chrome"`
+    // below still hard-fails the build if every attempt came up empty, so a total
+    // failure never ships a browser-less image.
+    '    && for pw_try in 1 2 3 4 5; do \\',
+    `        HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
+    '        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\',
+    '        sleep $((pw_try*10)); \\',
+    '    done \\',
     '    && rm -rf /var/lib/apt/lists/* \\',
     `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
     '    && test -n "$pw_chrome" \\',
@@ -622,6 +692,16 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // detection line, not the launch verdict, so the gate is emulation-safe.
     "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
     '',
+    // Per-project COLD warm: bake the repo checkout into /workspace BEFORE the
+    // opencode instance warm-up below, so opencode indexes the REAL project (its
+    // config, file tree, sqlite rows) — all baked into the cold rootfs. git is
+    // installed by the first apt RUN above, so this is safe here. For the shared
+    // default image warmRepo is absent → /workspace stays empty (unchanged).
+    // Placed AFTER the agent-browser/Chromium layer above — see that block's
+    // comment for why the order matters (this step's RUN text is never
+    // cache-stable, so nothing cache-sensitive may sit downstream of it).
+    ...warmRepoClone,
+    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, warmRepo, isSharedDefault }),
     // The staged-artifact tail lives in `kortixArtifactLayer`. The split is
     // here — everything above installs from the network into an empty build
     // context; everything below COPYs bytes the caller had to stage first.
@@ -696,6 +776,75 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
   const trimmed = normalizeUserDockerfileForSnapshot(opts.userDockerfile).trimEnd();
   return `${trimmed}\n${kortixToolchainLayer(opts)}${kortixArtifactLayer(opts)}`;
+}
+
+/** Inputs for the FROM-base per-project warm fast path — see
+ *  {@link buildPerProjectWarmFromBaseDockerfile}. */
+export interface PerProjectWarmFromBaseOpts {
+  /**
+   * Registry-addressable reference to an ALREADY-BUILT, ACTIVE image that has
+   * the full Kortix runtime layer baked in (apt/pip/opencode/bun/agent-browser
+   * + Chromium + the artifact tail) — in practice the shared default image's
+   * provider-reported image ref (e.g. Daytona `Snapshot.imageName`). The
+   * caller (ensurePerProjectWarmImage in apps/api/src/snapshots/builder.ts) is
+   * responsible for resolving this and MUST verify the source snapshot is
+   * `active` first; a `FROM` of a not-yet-built or missing image fails the
+   * whole bake immediately (no opportunistic retry-as-full-rebuild happens
+   * inside this function — that fallback lives in the caller).
+   */
+  baseImageRef: string;
+  /** Repo to bake into /workspace — always set; a per-project warm with no
+   *  repo to clone has nothing for this fast path to add over the base. */
+  warmRepo: WarmRepoConfig;
+  /** Same meaning as {@link KortixToolchainLayerOpts.opencodeConfigPath}. */
+  opencodeConfigPath?: string;
+}
+
+/**
+ * Per-project COLD warm, FAST PATH: `FROM` an already-built runtime image
+ * (the shared default) instead of re-running the ~15-layer toolchain install
+ * (apt/pip/opencode/bun/agent-browser+Chromium) from scratch.
+ *
+ * THIS is the actual fix for the Chromium re-download bug (prod incident,
+ * v0.10.11 rollback): `kortixToolchainLayer`'s comment already establishes
+ * that the toolchain RUN text up to and including the Chromium install is
+ * byte-identical between the shared default build and every per-project warm
+ * bake — so in principle a build-cache hit should always be available. In
+ * practice it was not reliable enough under concurrency (3+ simultaneous
+ * per-project bakes), and a full monolithic rebuild is fundamentally an
+ * OPPORTUNISTIC cache hit — the provider's build backend is free to evict,
+ * shard across builder nodes, or otherwise not share that cache, and there is
+ * no way to observe or guarantee it from here. `FROM <baseImageRef>` removes
+ * the dependency on that cache entirely: Chromium (and everything else in the
+ * toolchain) is INHERITED, not re-executed, so there is no download to miss.
+ *
+ * Only adds the two per-project-specific steps on top of the base — the
+ * warm-repo clone and the opencode instance re-warm against the real project
+ * — using the EXACT SAME line-builders as the monolithic path
+ * (`buildWarmRepoCloneLines` / `buildOpencodeInstanceWarmupLines`), so the
+ * resulting /workspace content is equivalent to what the full rebuild would
+ * have produced. Everything else — WORKDIR, ENV, ENTRYPOINT, EXPOSE, the
+ * baked agent/CLI binaries — is inherited from the base image, since Docker
+ * FROM semantics carry those forward automatically; this function does not
+ * (and must not) re-declare them.
+ */
+export function buildPerProjectWarmFromBaseDockerfile(opts: PerProjectWarmFromBaseOpts): string {
+  const { baseImageRef, warmRepo, opencodeConfigPath } = opts;
+  return [
+    `FROM ${baseImageRef}`,
+    '',
+    '# ─── Per-project COLD warm (FROM-base fast path, auto-injected) ─────',
+    '# Everything above this line is INHERITED from the already-built default',
+    '# runtime image (apt/pip/opencode/bun/agent-browser + Chromium are already',
+    '# baked in) — nothing below re-installs any of it. This is what makes the',
+    '# Chromium install a guaranteed inherit instead of an opportunistic',
+    '# build-cache hit. Do not add toolchain RUNs here — they belong in',
+    '# kortixToolchainLayer, which this stage deliberately skips.',
+    '',
+    'USER root',
+    ...buildWarmRepoCloneLines(warmRepo),
+    ...buildOpencodeInstanceWarmupLines({ opencodeConfigPath, warmRepo, isSharedDefault: false }),
+  ].join('\n') + '\n';
 }
 
 export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {

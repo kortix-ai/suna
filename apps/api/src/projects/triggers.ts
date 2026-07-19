@@ -43,7 +43,7 @@ import {
   validateAgentsV3,
   validateTriggerAgentRefsV2,
 } from '@kortix/manifest-schema';
-import { type GitBackedProject, readManifestFromRepo, readRepoFile } from './git';
+import { type GitBackedProject, readManifestFromRepo } from './git';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
  *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —

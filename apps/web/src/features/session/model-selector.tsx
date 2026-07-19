@@ -21,8 +21,8 @@ import {
   CreditCard,
   FolderGit2,
   KeyRound,
-  Sparkles,
   SlidersHorizontal,
+  Sparkles,
   Star,
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
@@ -32,13 +32,13 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
-import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import { useModelStore } from '@/hooks/runtime/use-model-store';
 import { useProjectLlmGatewayEnabled } from '@/hooks/runtime/use-project-llm-gateway-enabled';
+import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
+import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
@@ -78,6 +78,54 @@ export function ConnectProviderDialog({
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
+
+// `auto` is a synthetic managed entry (not a real upstream model): grouped under
+// Kortix and — when exposed (see featureFlags.enableAutoModel) — rendered as a
+// special "smart routing" affordance rather than a normal list item. It stays in
+// this set so it groups under Kortix and is recognised as managed even while the
+// toggle is hidden.
+const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
+
+// The gateway exposes its whole catalog through a single `kortix` provider, with
+// model ids namespaced as `<provider>/<model>`. For the picker we recover the
+// REAL provider: platform-managed defaults stay under the "Kortix" group, while
+// every BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) —
+// so a connected provider reads as its own section, not buried in Kortix.
+//
+// *** BUG THIS FIXES (every model showing under "Kortix", even BYOK Anthropic) ***
+// `pickerGroupId` always correctly computed the grouping KEY (it split
+// `modelID` on "/" and returned e.g. "anthropic"). The bug was never in the
+// key — it was that the group's DISPLAY NAME, built in `grouped` below, was
+// taken verbatim from `model.providerName` (opencode's raw provider name,
+// which is ALWAYS "Kortix" — every gateway model is registered under the one
+// synthetic `kortix` opencode provider). So the group's icon rendered
+// correctly (`ProviderLogo` is keyed off the correct `providerID`), but the
+// text label next to it always read "Kortix" regardless of which provider
+// actually served the model.
+//
+// The robust fix (per the live /v1/models trace): the gateway now serves an
+// EXPLICIT `provider` field per model (`GatewayModel.provider`, threaded onto
+// `FlatModel.provider` by flattenModels) — grouping/labeling should prefer
+// that over parsing the wire id at all. String-splitting `modelID` remains
+// ONLY as a fallback for a stale/older baked catalog that predates the field.
+export function pickerGroupId(model: FlatModel): string {
+  if (model.providerID !== 'kortix' || MANAGED_MODEL_IDS.has(model.modelID)) {
+    return model.providerID;
+  }
+  if (model.provider) return model.provider;
+  const slash = model.modelID.indexOf('/');
+  return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
+}
+
+// The group's display name/label — NEVER the raw `FlatModel.providerName`
+// (always "Kortix" under the gateway, see the bug note above). Prefer the
+// canonical label for the resolved real-provider id; only fall back to the
+// model's own providerName for a truly unknown id (e.g. `pickerGroupId`
+// degrading to the raw `providerID` because neither `provider` nor a `/` was
+// present — at that point `groupID === model.providerID` anyway).
+export function pickerGroupLabel(groupID: string, model: FlatModel): string {
+  return PROVIDER_LABELS[groupID] ?? model.providerName;
+}
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
@@ -227,7 +275,14 @@ export function ModelSelector({
         if (m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID) return false;
         // A search query reveals everything; otherwise respect visibility from
         // the provider modal's Models tab.
-        if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }))
+        if (
+          !q &&
+          !modelStore.isVisible({
+            providerID: m.providerID,
+            modelID: m.modelID,
+            provider: m.provider,
+          })
+        )
           return false;
         return (
           !q ||
@@ -252,7 +307,11 @@ export function ModelSelector({
       } else {
         groups.set(groupID, {
           providerID: groupID,
-          providerName: m.providerName,
+          // NEVER `m.providerName` here — under the gateway it's always
+          // "Kortix" (opencode's raw provider name), which is exactly the
+          // "every provider shows as Kortix" bug. Label by the resolved real
+          // provider id instead. See pickerGroupLabel's doc comment.
+          providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, m) : m.providerName,
           models: [m],
         });
       }
@@ -400,150 +459,159 @@ export function ModelSelector({
             ) : null}
 
             {grouped.length > 0 ? (
-                  <>
-                    {grouped.map((group) => (
-                      <CommandGroup
-                        key={group.providerID}
-                        heading={
-                          // The context header already names a lone connection —
-                          // repeating it as a group heading reads twice.
-                          contextLine && grouped.length === 1 ? undefined : (
-                            <div className="flex items-center gap-2">
-                              <ProviderLogo
-                                providerID={group.providerID}
-                                name={group.providerName}
-                                size="small"
-                              />
-                              <span className="flex-1">{group.providerName}</span>
-                              <span className="text-muted-foreground/30 text-xs normal-case tracking-normal">
-                                {group.models.length}
-                              </span>
-                            </div>
-                          )
-                        }
-                        forceMount
-                      >
-                        {group.models.map((model) => {
-                          const isSelected =
-                            selectedModel?.providerID === model.providerID &&
-                            selectedModel?.modelID === model.modelID;
+              <>
+                {grouped.map((group) => (
+                  <CommandGroup
+                    key={group.providerID}
+                    heading={
+                      // The context header already names a lone connection —
+                      // repeating it as a group heading reads twice.
+                      contextLine && grouped.length === 1 ? undefined : (
+                        <div className="flex items-center gap-2">
+                          <ProviderLogo
+                            providerID={group.providerID}
+                            name={group.providerName}
+                            size="small"
+                          />
+                          <span className="flex-1">{group.providerName}</span>
+                          <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
+                            {group.models.length}
+                          </span>
+                        </div>
+                      )
+                    }
+                    forceMount
+                  >
+                    {group.models.map((model) => {
+                      const isSelected =
+                        selectedModel?.providerID === model.providerID &&
+                        selectedModel?.modelID === model.modelID;
 
-                          const isFree = shouldShowFreeTag(model);
-                          const modelKey = { providerID: model.providerID, modelID: model.modelID };
-                          // "Latest" models are always shown; older ones get an
-                          // activation switch so they can be pinned into the picker.
-                          const isLatestModel = modelStore.isLatest(modelKey);
-                          const isModelVisible = modelStore.isVisible(modelKey);
-                          // Under a BYOK provider group the `<provider>/` prefix is
-                          // redundant — show just the bare model id.
-                          const displayModelID =
-                            group.providerID !== model.providerID && model.modelID.includes('/')
-                              ? model.modelID.slice(model.modelID.indexOf('/') + 1)
-                              : model.modelID;
+                      const isFree = shouldShowFreeTag(model);
+                      // `.provider` (the real upstream, when the gateway
+                      // serves it) makes isVisible's connection-gating
+                      // check the correct sub-provider instead of falling
+                      // back to string-splitting modelID — see
+                      // use-model-store.ts's subProviderOf.
+                      const modelKey = {
+                        providerID: model.providerID,
+                        modelID: model.modelID,
+                        provider: model.provider,
+                      };
+                      // "Latest" models are always shown; older ones get an
+                      // activation switch so they can be pinned into the picker.
+                      const isLatestModel = modelStore.isLatest(modelKey);
+                      const isModelVisible = modelStore.isVisible(modelKey);
+                      // Under a BYOK provider group the `<provider>/` prefix is
+                      // redundant — show just the bare model id.
+                      const displayModelID =
+                        group.providerID !== model.providerID && model.modelID.includes('/')
+                          ? model.modelID.slice(model.modelID.indexOf('/') + 1)
+                          : model.modelID;
 
-                          return (
-                            <CommandItem
-                              key={`${model.providerID}:${model.modelID}`}
-                              value={`model-${model.providerID}-${model.modelID}`}
+                      return (
+                        <CommandItem
+                          key={`${model.providerID}:${model.modelID}`}
+                          value={`model-${model.providerID}-${model.modelID}`}
+                          className={cn(
+                            '!pl-3',
+                            isSelected && 'bg-foreground/[0.06]',
+                            !isLatestModel && !isModelVisible && 'opacity-60',
+                          )}
+                          onSelect={() => handleSelect(model)}
+                        >
+                          <div className="min-w-0 flex-1 py-0.5">
+                            <div
                               className={cn(
-                                '!pl-3',
-                                isSelected && 'bg-foreground/[0.06]',
-                                !isLatestModel && !isModelVisible && 'opacity-60',
+                                'truncate text-sm leading-tight',
+                                isSelected
+                                  ? 'text-foreground font-semibold'
+                                  : 'text-foreground/90 font-medium',
                               )}
-                              onSelect={() => handleSelect(model)}
                             >
-                              <div className="min-w-0 flex-1 py-0.5">
-                                <div
-                                  className={cn(
-                                    'truncate text-sm leading-tight',
-                                    isSelected
-                                      ? 'text-foreground font-semibold'
-                                      : 'text-foreground/90 font-medium',
-                                  )}
-                                >
-                                  {model.modelName}
-                                </div>
-                                {search ? (
-                                  <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                                    {displayModelID}
-                                  </p>
-                                ) : null}
-                              </div>
-                              {isFree && <Tag variant="free">Free</Tag>}
-                              {isSelected && <Check className="text-foreground shrink-0" />}
-                            </CommandItem>
-                          );
-                        })}
-                      </CommandGroup>
-                    ))}
-                  </>
+                              {model.modelName}
+                            </div>
+                            {search ? (
+                              <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                                {displayModelID}
+                              </p>
+                            ) : null}
+                          </div>
+                          {isFree && <Tag variant="free">Free</Tag>}
+                          {isSelected && <Check className="text-foreground shrink-0" />}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                ))}
+              </>
             ) : !autoModel ? (
-                  <div className="px-3 py-5 text-center">
-                    <div className="text-foreground text-sm font-medium">No models available</div>
-                    <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                      {showUpgradeOption
-                        ? 'Upgrade or connect your own provider to start using this session.'
-                        : 'Connect your own provider to start using this session.'}
-                    </p>
-                    <div className="mt-4 flex items-center justify-center gap-2">
-                      {showUpgradeOption && (
-                        <Button type="button" size="xs" onClick={handleUpgrade}>
-                          <CreditCard className="size-3.5" />
-                          Upgrade
-                        </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant={showUpgradeOption ? 'outline' : 'default'}
-                        onClick={() => handleOpenProviderModal('providers')}
-                      >
-                        <KeyRound className="size-3.5" />
-                        Connect a model service
-                      </Button>
-                    </div>
-                  </div>
+              <div className="px-3 py-5 text-center">
+                <div className="text-foreground text-sm font-medium">No models available</div>
+                <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
+                  {showUpgradeOption
+                    ? 'Upgrade or connect your own provider to start using this session.'
+                    : 'Connect your own provider to start using this session.'}
+                </p>
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  {showUpgradeOption && (
+                    <Button type="button" size="xs" onClick={handleUpgrade}>
+                      <CreditCard className="size-3.5" />
+                      Upgrade
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={showUpgradeOption ? 'outline' : 'default'}
+                    onClick={() => handleOpenProviderModal('providers')}
+                  >
+                    <KeyRound className="size-3.5" />
+                    Connect a model service
+                  </Button>
+                </div>
+              </div>
             ) : null}
           </CommandList>
           {defaultControls && selectedModel ? (
-                <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      defaultControls.onSetAccountDefault(selectedModel);
-                      setOpen(false);
-                    }}
-                    className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                  >
-                    <Star className="size-3.5 shrink-0" />
-                    Set as my default model
-                  </button>
-                  {defaultControls.onSetProjectDefault ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        defaultControls.onSetProjectDefault?.(selectedModel);
-                        setOpen(false);
-                      }}
-                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                    >
-                      <FolderGit2 className="size-3.5 shrink-0" />
-                      Set as this project&apos;s default
-                    </button>
-                  ) : null}
-                  {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        defaultControls.onSetAgentDefault?.(selectedModel);
-                        setOpen(false);
-                      }}
-                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-                    >
-                      <Bot className="size-3.5 shrink-0" />
-                      Set as default for {defaultControls.agentName}
-                    </button>
-                  ) : null}
+            <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  defaultControls.onSetAccountDefault(selectedModel);
+                  setOpen(false);
+                }}
+                className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+              >
+                <Star className="size-3.5 shrink-0" />
+                Set as my default model
+              </button>
+              {defaultControls.onSetProjectDefault ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    defaultControls.onSetProjectDefault?.(selectedModel);
+                    setOpen(false);
+                  }}
+                  className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                >
+                  <FolderGit2 className="size-3.5 shrink-0" />
+                  Set as this project&apos;s default
+                </button>
+              ) : null}
+              {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    defaultControls.onSetAgentDefault?.(selectedModel);
+                    setOpen(false);
+                  }}
+                  className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                >
+                  <Bot className="size-3.5 shrink-0" />
+                  Set as default for {defaultControls.agentName}
+                </button>
+              ) : null}
             </div>
           ) : null}
 

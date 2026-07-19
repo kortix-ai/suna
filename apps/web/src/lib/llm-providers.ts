@@ -41,6 +41,7 @@
 
 import {
   type CatalogCost,
+  type CatalogModalities,
   type CatalogReasoningOption,
   type ProviderAuthRequirement,
   CATALOG as catalog,
@@ -66,6 +67,7 @@ export interface LlmProviderModel {
    * section (`utils.ts`'s `buildCodexProvider`, `use-connected-providers.ts`'s
    * `kortixProvider`) only set what the opencode provider snapshot exposes.
    */
+  description?: string;
   attachment?: boolean;
   reasoning?: boolean;
   /** Present iff the model exposes a tunable reasoning-effort knob — see
@@ -77,6 +79,17 @@ export interface LlmProviderModel {
   /** false means FIXED temperature (e.g. gpt-5.6-sol) — the generation-
    *  controls panel must hide the temperature (and top_p) slider entirely. */
   temperature?: boolean;
+  structured_output?: boolean;
+  // Two real models.dev shapes: a plain boolean, or an object naming the
+  // response field the interleaved content arrives on (e.g.
+  // {field:'reasoning_content'}) — the large majority. Mirrors
+  // `@kortix/llm-catalog`'s `CatalogModel.interleaved`.
+  interleaved?: boolean | { field?: string };
+  open_weights?: boolean;
+  knowledge?: string;
+  last_updated?: string;
+  family?: string;
+  modalities?: CatalogModalities;
   limit?: { context?: number; input?: number; output?: number };
   cost?: CatalogCost;
 }

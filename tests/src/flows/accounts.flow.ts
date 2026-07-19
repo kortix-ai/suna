@@ -289,6 +289,60 @@ flow(
   },
 );
 
+// DEL-3 — the "backwards-compatible" `/v1/account/*` deletion mount
+// (apps/api/src/billing/routes/account-deletion.ts, mounted at /v1/account/*
+// in apps/api/src/index.ts:694, distinct from the `/v1/billing/account/*`
+// mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
+// the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
+// own personal account (never OWNER/team accounts other flows depend on).
+// deleteAccountImmediately() zeroes the credit account (balance/tier/status)
+// but does not remove the Supabase auth identity — the world fixture tears
+// that down via the admin API regardless of what this flow does to it.
+flow(
+  'DEL-4',
+  {
+    domain: 'accounts',
+    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/account/deletion-status'],
+  },
+  async (ctx) => {
+    const victim = await ctx.fixtures.user({ label: 'DEL-4' });
+    const asVictim = ctx.client.as(victim);
+
+    await ctx.step('ANON cannot read deletion status → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/account/deletion-status');
+      r.status(401);
+    });
+    await ctx.step('ANON cannot delete-immediately → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).del('/v1/account/delete-immediately');
+      r.status(401);
+    });
+    await ctx.step('fresh throwaway account has no pending deletion', async () => {
+      const r = await asVictim.get('/v1/account/deletion-status');
+      r.status(200)
+        .body()
+        .has('$.has_pending_deletion', false)
+        .has('$.deletion_scheduled_for', null)
+        .has('$.can_cancel', false);
+    });
+    await ctx.step('throwaway account deletes itself immediately → 200', async () => {
+      const r = await asVictim.del('/v1/account/delete-immediately');
+      r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
+    });
+    await ctx.step('deletion-status is still readable after immediate delete', async () => {
+      // No deletion REQUEST was ever scheduled, so the immediate delete doesn't
+      // flip has_pending_deletion — it just proves the account (and its token)
+      // are still usable, i.e. delete-immediately zeroes credits rather than
+      // hard-deleting the identity.
+      const r = await asVictim.get('/v1/account/deletion-status');
+      r.status(200).body().has('$.has_pending_deletion', false);
+    });
+    await ctx.step('delete-immediately is idempotent → 200 again', async () => {
+      const r = await asVictim.del('/v1/account/delete-immediately');
+      r.status(200).body().has('$.success', true);
+    });
+  },
+);
+
 // ACCT-3 — GET a single account: a member reads it (200, with role + counts);
 // a NONMEMBER is forbidden (403).
 flow('ACCT-3', { domain: 'accounts', routes: ['GET /v1/accounts/:accountId'] }, async (ctx) => {

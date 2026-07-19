@@ -27,7 +27,20 @@ import { createModelLookup } from './model-lookup';
 // Types
 // ============================================================================
 
-export type ModelKey = { providerID: string; modelID: string };
+export type ModelKey = {
+  providerID: string;
+  modelID: string;
+  /**
+   * The REAL upstream provider a `kortix`-gateway model resolves against
+   * ('anthropic', 'openai', 'codex', 'kortix', ...) — see `FlatModel.provider`
+   * (model-flatten.ts). When present, `subProviderOf` uses it directly instead
+   * of parsing `modelID`, so connection-gating never depends on the wire id
+   * happening to be namespaced `<provider>/<model>`. Optional so every
+   * existing caller (which only ever had `providerID`/`modelID`) keeps
+   * compiling unchanged.
+   */
+  provider?: string;
+};
 
 // ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
 // The LLM gateway identifies a model by its "wire model" — what a harness sends
@@ -236,7 +249,13 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // Includes the synthetic `auto` entry so it's always offered in the picker.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
-function subProviderOf(modelID: string): string {
+// `explicitProvider` (a model's `FlatModel.provider` / `ModelKey.provider`) is
+// the robust path — the gateway now serves it directly, so grouping/gating
+// never has to guess the real provider from string-splitting `modelID`.
+// String-splitting on "/" remains only a fallback for a stale/older baked
+// catalog that predates the field.
+function subProviderOf(modelID: string, explicitProvider?: string): string {
+  if (explicitProvider) return explicitProvider;
   const slash = modelID.indexOf('/');
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
@@ -267,7 +286,7 @@ export function hasUsableModel(
       return true;
     }
     if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
-    const sub = subProviderOf(m.modelID);
+    const sub = subProviderOf(m.modelID, m.provider);
     return sub === SUBSCRIPTION_PROVIDER_ID
       ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
       : (connectedProviderIds?.has(sub) ?? false);
@@ -379,7 +398,7 @@ export function useModelStore(
       // connected), a platform-managed default, or the BYOK provider is
       // connected. Everything else is search-only so the catalog can't flood.
       if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
-        const sub = subProviderOf(model.modelID);
+        const sub = subProviderOf(model.modelID, model.provider);
         // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
         // gate its display on the subscription being connected.
         const connected =

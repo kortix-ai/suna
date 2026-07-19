@@ -30,6 +30,14 @@ import {
   PLAYWRIGHT_VERSION,
 } from '@kortix/shared';
 
+// FROM-base warm renderer lives in @kortix/shared (main moved the layer there).
+// This branch still owns the ACP-aware buildLayeredDockerfile locally, so we
+// re-export only the missing helper instead of replacing this whole module.
+export {
+  buildPerProjectWarmFromBaseDockerfile,
+} from '@kortix/shared/sandbox';
+export type { PerProjectWarmFromBaseOpts } from '@kortix/shared/sandbox';
+
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
  * the layer when the caller doesn't pin one explicitly. The builder may pass an

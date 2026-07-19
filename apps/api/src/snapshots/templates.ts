@@ -120,15 +120,58 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // starter tool files against it) can't actually be bundled by Bun — a
 // bundle-breaking axios override once shipped silently baked into every
 // sandbox image (bun install succeeded; the runtime bundle did not).
-// v34: rebake after merging main's `kortix skills` in-sandbox CLI subcommand
-// (the seeded kortix-system <live-skills> pointer needs it).
-// v35: venv-isolate the starter Python floor (was pip --break-system-packages
-// into the system interpreter, which fought dpkg for any package the user's
-// Dockerfile apt-installed — real incident: gdal-bin's dpkg-owned numpy vs.
-// the floor's pip-resolved numpy hard-failed the build) and stop wiping a
-// CUSTOM template's /workspace after the warm-up (only the shared default
-// image gets the post-warm-up wipe now — ported from main's 8e0b4fc39).
-const RUNTIME_LAYER_VERSION = 'acp-credential-free-warm-repo-v35';
+// v25: bake the `kortix skills` subcommand into the in-sandbox CLI so the
+// seeded kortix-system <live-skills> pointer (`kortix skills get <name>`)
+// resolves — without this rebake, fresh sandboxes run an older baked CLI that
+// hard-errors on `kortix skills`.
+// v26: layer robustness. (a) The starter Python floor moved OUT of the system
+// interpreter into a `--system-site-packages` venv at /opt/kortix/pyfloor (on the
+// front of PATH): the old `pip install --break-system-packages` fought dpkg for
+// any floor package the USER's Dockerfile had apt-installed — a project's
+// `gdal-bin` pulled dpkg-owned python3-numpy 1.26.4, our `numpy>=1.26` resolved
+// to 2.x, pip tried to uninstall it and hard-failed the build ("RECORD file not
+// found ... installed by debian") on a CORRECT user image. pip in a venv cannot
+// uninstall a dpkg package at all, which retires the whole class (every floor
+// member has a dpkg counterpart). (b) The post-warm-up `find /workspace
+// -mindepth 1 -delete` is now emitted ONLY for the shared default image; custom
+// templates get a targeted cleanup of just the staged starter config, so an
+// image that seeds /workspace (a documented WORKDIR) no longer has it silently
+// deleted. (c) ENV DEBIAN_FRONTEND=noninteractive is set by the layer instead of
+// being inherited by luck from the user's base.
+// v27: Chromium layer cache-determinism + download hardening. (a) Moved the
+// agent-browser/Playwright Chromium RUN to sit BEFORE the per-project warm-repo
+// clone (and the opencode instance warm-up that follows it), instead of after.
+// The repo-clone step bakes a FRESH short-lived git credential into its RUN
+// text on every single invocation (~1h GitHub App installation token, or a JWT
+// with a live iat/exp), so it can never build-cache-hit — and neither can
+// anything chained after it. With Chromium previously downstream of that clone
+// step, EVERY per-project warm bake re-downloaded the ~150MB Chrome-for-Testing
+// from cdn.playwright.dev, live-observed timing out staging's ke2e suite
+// ("Downloading Chrome for Testing ... timed out after 30000ms"). Chromium now
+// sits immediately after the toolchain floor — a prefix that is byte-identical
+// across the shared default image AND every per-project warm bake — so its
+// build-cache key is identical everywhere and one cache-populating build (e.g.
+// the shared-default rebuild) serves every later warm bake, for every project.
+// (b) Regardless of cache state, hardened the Chromium download itself:
+// PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 (was Playwright's 30s default)
+// + a 5-attempt backoff retry loop around `playwright install --with-deps
+// chromium`, so a transient CDN blip no longer fails the whole image build.
+// v28: v27's cache-order fix made the Chromium RUN text byte-identical across
+// bakes, but under concurrency (3+ simultaneous per-project bakes) the
+// opportunistic build-cache STILL did not reliably hit — the provider's
+// build-cache is not something we can observe or guarantee from here, so
+// per-project warm bakes kept re-downloading Chromium and saturating egress
+// (root cause of the v0.10.11 prod rollback). Two changes: (a) per-project warm
+// bakes now prefer building FROM the already-built default image
+// (buildPerProjectWarmFromBaseDockerfile in dockerfile-layer.ts, wired through
+// ensurePerProjectWarmImage) — Chromium is INHERITED, not re-installed, so
+// there is no download to miss, no matter what the provider's cache does. This
+// requires the default image to already be `active` on the provider; when it
+// isn't (or the provider can't report an image ref), the builder falls back to
+// the v27 full-rebuild path unchanged. (b) Raised
+// PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT to 1800000 (30min, was 300000/5min) as
+// a safety net for that fallback path under a cold cache.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v28';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

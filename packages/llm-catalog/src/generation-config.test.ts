@@ -157,8 +157,12 @@ describe('clampGenerationConfig', () => {
 describe('generationControlCapabilities — effort only from real reasoning_options', () => {
   test('exposes effort values ONLY from a real models.dev reasoning_options entry', () => {
     const caps = generationControlCapabilities({
-      id: 'openai/gpt-5.6-sol', name: 'GPT-5.6 Sol', reasoning: true,
-      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+      id: 'openai/gpt-5.6-sol',
+      name: 'GPT-5.6 Sol',
+      reasoning: true,
+      reasoning_options: [
+        { type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+      ],
       temperature: false,
     } as CatalogModel);
     expect(caps.reasoningEffort?.values).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -166,15 +170,82 @@ describe('generationControlCapabilities — effort only from real reasoning_opti
 
   test('exposes NO effort control for a reasoning:true model with no reasoning_options (never fabricated)', () => {
     const caps = generationControlCapabilities({
-      id: 'x/thinks-but-no-knob', name: 'Thinks', reasoning: true, temperature: true,
+      id: 'x/thinks-but-no-knob',
+      name: 'Thinks',
+      reasoning: true,
+      temperature: true,
     } as CatalogModel);
     expect(caps.reasoningEffort).toBeUndefined();
   });
 
   test('exposes NO effort control for a non-reasoning model', () => {
     const caps = generationControlCapabilities({
-      id: 'x/plain', name: 'Plain', reasoning: false, temperature: true,
+      id: 'x/plain',
+      name: 'Plain',
+      reasoning: false,
+      temperature: true,
     } as CatalogModel);
     expect(caps.reasoningEffort).toBeUndefined();
+  });
+
+  // MUST-FIX regression (adversarial review of PR #5010): a `budget_tokens`
+  // reasoning_options entry — mainline Anthropic's ONLY shape
+  // (claude-sonnet-4-5/claude-haiku-4-5/claude-opus-4-1 all publish this and
+  // nothing else) — used to yield NO effort control at all, because the
+  // derivation only ever looked for `type === 'effort'`. `budget_tokens` has
+  // no discrete `values` of its own, but it IS a real published knob (the
+  // transport maps an effort label to a thinking-token budget via
+  // `resolveAnthropicThinkingBudget`), so — per the task's rule — this is
+  // allowed to synthesize a standard tier set, unlike the "no
+  // reasoning_options at all" case above which stays empty.
+  test('synthesizes standard low/medium/high tiers for a budget_tokens-only model (mainline Claude shape)', () => {
+    const caps = generationControlCapabilities({
+      id: 'anthropic/claude-sonnet-4-5',
+      name: 'Claude Sonnet 4.5',
+      reasoning: true,
+      reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+      temperature: true,
+    } as CatalogModel);
+    expect(caps.reasoningEffort).toEqual({ values: ['low', 'medium', 'high'] });
+  });
+
+  test('budget_tokens with an explicit max still yields the same standard tier set', () => {
+    const caps = generationControlCapabilities({
+      id: 'x/budget-with-max',
+      name: 'Budget With Max',
+      reasoning: true,
+      reasoning_options: [{ type: 'budget_tokens', min: 1024, max: 63999 }],
+      temperature: true,
+    } as CatalogModel);
+    expect(caps.reasoningEffort).toEqual({ values: ['low', 'medium', 'high'] });
+  });
+
+  // A `toggle` entry (`{type:'toggle'}`, no values/min/max — a plain on/off
+  // knob, no enum) matches neither the `effort` nor `budget_tokens` branch —
+  // must ingest without crashing and without fabricating an effort enum for
+  // a knob that isn't effort-shaped at all.
+  test('a toggle-only reasoning model yields no effort control and does not crash', () => {
+    const caps = generationControlCapabilities({
+      id: 'x/toggle-only',
+      name: 'Toggle Only',
+      reasoning: true,
+      reasoning_options: [{ type: 'toggle' }],
+      temperature: true,
+    } as CatalogModel);
+    expect(caps.reasoningEffort).toBeUndefined();
+  });
+
+  test('prefers a real `effort` entry over a `budget_tokens` entry when a model somehow carries both', () => {
+    const caps = generationControlCapabilities({
+      id: 'x/both-shapes',
+      name: 'Both Shapes',
+      reasoning: true,
+      reasoning_options: [
+        { type: 'budget_tokens', min: 1024 },
+        { type: 'effort', values: ['low', 'high'] },
+      ],
+      temperature: true,
+    } as CatalogModel);
+    expect(caps.reasoningEffort).toEqual({ values: ['low', 'high'] });
   });
 });

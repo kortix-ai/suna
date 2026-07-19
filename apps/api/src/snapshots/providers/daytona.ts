@@ -17,7 +17,9 @@ import {
   DEFAULT_DISK_GB,
   DEFAULT_MEMORY_GB,
   KORTIX_ENTRYPOINT,
+  type StagedContext,
   stageBuildContext,
+  stageWarmFromBaseContext,
 } from '../build-context';
 import { type InvalidatableObservation, shortLivedObservation } from '../observation-cache';
 import type {
@@ -91,8 +93,10 @@ class DaytonaAdapter implements SandboxProviderAdapter {
   }
 
   async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<void> {
-    if (!input.image && !input.userDockerfile) {
-      throw new Error('DaytonaAdapter.buildSnapshot: neither image nor userDockerfile set');
+    if (!input.image && !input.userDockerfile && !input.baseImageRef) {
+      throw new Error(
+        'DaytonaAdapter.buildSnapshot: none of image, userDockerfile, baseImageRef set',
+      );
     }
     invalidateSnapshotState(input.snapshotName);
     const daytona = getDaytona();
@@ -114,7 +118,24 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       // reports as "Path does not exist: …/scaffold.git". Re-staging self-heals
       // it so the auto/background build recovers on its own instead of needing a
       // manual rebuild (the "always have to manually start" symptom).
-      const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
+      let ctx: StagedContext;
+      if (input.baseImageRef) {
+        if (!input.warmRepo) {
+          throw new Error('DaytonaAdapter.buildSnapshot: baseImageRef requires warmRepo');
+        }
+        ctx = await stageWarmFromBaseContext(
+          input.snapshotName,
+          input.baseImageRef,
+          input.warmRepo,
+        );
+      } else {
+        ctx = await stageBuildContext(
+          input.snapshotName,
+          userDockerfile,
+          input.warmRepo,
+          input.isShared,
+        );
+      }
       const buildLogs: string[] = [];
       try {
         await daytona.snapshot.create(
@@ -181,6 +202,32 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     // the rare race where an `active` snapshot disappears between our check
     // and the actual sandbox.create.
     return observeSnapshotState(snapshotName)();
+  }
+
+  /**
+   * Resolve the registry image ref backing an already-built Daytona snapshot
+   * (`Snapshot.imageName` in the SDK — Daytona snapshots ARE registry images
+   * under the hood: `CreateSnapshotParams.image` accepts a plain string
+   * "available on some registry" as an alternative to an `Image` build spec).
+   * Used by the per-project warm fast path to `FROM` the shared default image
+   * instead of rebuilding its whole toolchain — see builder.ts
+   * `ensurePerProjectWarmImage`. Returns null on ANY failure (not found, no
+   * imageName, network error, unconfigured) — every caller treats null as
+   * "fall back to the full rebuild", never as fatal.
+   */
+  async getSnapshotImageRef(snapshotName: string): Promise<string | null> {
+    if (!isDaytonaConfigured()) return null;
+    try {
+      const snap = await withTimeout(
+        getDaytona().snapshot.get(snapshotName),
+        SNAPSHOT_STATE_TIMEOUT_MS,
+        `Daytona snapshot.get(${snapshotName})`,
+      );
+      const imageName = (snap as { imageName?: unknown } | null | undefined)?.imageName;
+      return typeof imageName === 'string' && imageName.trim() ? imageName : null;
+    } catch {
+      return null;
+    }
   }
 
   async deleteSnapshot(snapshotName: string): Promise<void> {

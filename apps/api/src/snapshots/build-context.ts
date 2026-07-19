@@ -21,7 +21,7 @@ import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
-import { buildLayeredDockerfile } from './dockerfile-layer';
+import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -197,34 +197,8 @@ export async function stageBuildContext(
     warmRepo: layeredWarmRepo,
   });
 
-  // ── Buildah-portability guard ──────────────────────────────────────────────
-  // The SAME composed context ships to BOTH providers. Daytona builds with
-  // BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
-  // builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
-  // parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
-  // instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
-  // all Platinum sessions. This exact regression (a `<<'PY'` python verify added
-  // 2026-06-27) took dev down for hours because Daytona silently tolerated it.
-  // Reject it at the SOURCE with a clear error instead of an opaque remote build
-  // failure minutes later — and keep the Dockerfile portable to both builders.
-  const heredocLine = composed
-    .split('\n')
-    .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
-  if (heredocLine) {
-    throw new Error(
-      `composed Dockerfile is not buildah-portable — it contains a RUN heredoc Platinum's ` +
-        `builder cannot parse: "${heredocLine.trim().slice(0, 120)}". Use a single-line ` +
-        `equivalent (e.g. \`python3 -c '...'\`). Heredocs and BuildKit-only \`# syntax\` ` +
-        `directives work on Daytona but silently break every Platinum template build.`,
-    );
-  }
-
-  if (typeof (globalThis as any).Bun?.write === 'function') {
-    await (globalThis as any).Bun.write(composedPath, composed);
-  } else {
-    const fs = await import('node:fs/promises');
-    await fs.writeFile(composedPath, composed);
-  }
+  await guardBuildahPortable(composed);
+  await writeComposedDockerfile(composedPath, composed);
   // Fail-loud completeness guard: a context missing scaffold.git / the agent
   // binary / the composed Dockerfile reaches the provider as a confusing remote
   // "Path does not exist", and the auto-build can't tell it's a staging miss to
@@ -237,6 +211,91 @@ export async function stageBuildContext(
   );
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
+}
+
+/**
+ * Stage a MINIMAL build context for the per-project warm FAST PATH: a
+ * Dockerfile that `FROM`s an already-built runtime image (the shared default's
+ * provider-reported image ref) and only adds the warm-repo clone + opencode
+ * instance re-warm on top — see `buildPerProjectWarmFromBaseDockerfile`
+ * (dockerfile-layer.ts) for why this is the actual fix for the Chromium
+ * re-download bug: nothing here re-installs the toolchain, so there's no
+ * Chromium download to lose a cache race on.
+ *
+ * Unlike `stageBuildContext`, this does NOT stage the agent/CLI binaries,
+ * entrypoint, slack-cli, executor-sdk, catalog, or scaffold.git — none of the
+ * artifact tail is re-COPY'd; it's inherited from `baseImageRef`. Only the
+ * starter opencode config (if present) is staged, for the instance re-warm.
+ *
+ * The caller (daytona.ts) is responsible for verifying `baseImageRef` points
+ * at an `active` snapshot before calling this — a `FROM` of a missing or
+ * still-building image fails the build immediately.
+ */
+export async function stageWarmFromBaseContext(
+  snapshotName: string,
+  baseImageRef: string,
+  warmRepo: WarmRepoContext,
+): Promise<StagedContext> {
+  const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-warm-'));
+  let opencodeConfigPath: string | undefined;
+  if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
+    await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
+      recursive: true,
+    });
+    opencodeConfigPath = 'kortix-opencode-config';
+  }
+
+  const dockerfileName = '.kortix-snapshot.Dockerfile';
+  const composedPath = join(contextDir, dockerfileName);
+  const composed = buildPerProjectWarmFromBaseDockerfile({
+    baseImageRef,
+    warmRepo,
+    opencodeConfigPath,
+  });
+
+  await guardBuildahPortable(composed);
+  await writeComposedDockerfile(composedPath, composed);
+  try {
+    await stat(composedPath);
+  } catch {
+    throw new Error(`build context staging incomplete: ${dockerfileName} missing in ${contextDir}`);
+  }
+  console.info(`[snapshots] ${snapshotName}: FROM-base warm context staged at ${contextDir} (base=${baseImageRef})`);
+  return { contextDir, composedPath, dockerfileName };
+}
+
+// ── Buildah-portability guard ──────────────────────────────────────────────
+// The SAME composed context ships to BOTH providers. Daytona builds with
+// BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
+// builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
+// parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
+// instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
+// all Platinum sessions. This exact regression (a `<<'PY'` python verify added
+// 2026-06-27) took dev down for hours because Daytona silently tolerated it.
+// Reject it at the SOURCE with a clear error instead of an opaque remote build
+// failure minutes later — and keep the Dockerfile portable to both builders.
+async function guardBuildahPortable(composed: string): Promise<void> {
+  const heredocLine = composed
+    .split('\n')
+    .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+  if (heredocLine) {
+    throw new Error(
+      `composed Dockerfile is not buildah-portable — it contains a RUN heredoc Platinum's ` +
+        `builder cannot parse: "${heredocLine.trim().slice(0, 120)}". Use a single-line ` +
+        `equivalent (e.g. \`python3 -c '...'\`). Heredocs and BuildKit-only \`# syntax\` ` +
+        `directives work on Daytona but silently break every Platinum template build.`,
+    );
+  }
+}
+
+async function writeComposedDockerfile(composedPath: string, composed: string): Promise<void> {
+  if (typeof (globalThis as any).Bun?.write === 'function') {
+    await (globalThis as any).Bun.write(composedPath, composed);
+  } else {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(composedPath, composed);
+  }
 }
 
 /**

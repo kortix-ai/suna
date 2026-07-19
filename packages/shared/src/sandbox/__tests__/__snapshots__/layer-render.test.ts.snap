@@ -98,6 +98,26 @@ RUN cd /opt/kortix/opencode-config-deps \\
     && rm -rf /tmp/opencode-deps-bundle-check \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
+    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
+    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
+    && agent-browser --version \\
+    && for pw_try in 1 2 3 4 5; do \\
+        HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium && break; \\
+        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\
+        sleep $((pw_try*10)); \\
+    done \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
+    && test -n "$pw_chrome" \\
+    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
+    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
+    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
+    && /usr/local/bin/chromium --version \\
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
 COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
@@ -133,21 +153,6 @@ RUN set +e; \\
     rm -rf /opt/kortix/warm-config; \\
     echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
     rm -f /tmp/oc-warm.log; true
-
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
-    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
-RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
-    && agent-browser --version \\
-    && HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium \\
-    && rm -rf /var/lib/apt/lists/* \\
-    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
-    && test -n "$pw_chrome" \\
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
-    && /usr/local/bin/chromium --version \\
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
@@ -269,6 +274,26 @@ RUN cd /opt/kortix/opencode-config-deps \\
     && rm -rf /tmp/opencode-deps-bundle-check \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
+    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
+    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
+    && agent-browser --version \\
+    && for pw_try in 1 2 3 4 5; do \\
+        HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium && break; \\
+        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\
+        sleep $((pw_try*10)); \\
+    done \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
+    && test -n "$pw_chrome" \\
+    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
+    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
+    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
+    && /usr/local/bin/chromium --version \\
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
 COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
@@ -304,21 +329,6 @@ RUN set +e; \\
     rm -rf /opt/kortix/warm-config; \\
     echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
     rm -f /tmp/oc-warm.log; true
-
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
-    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
-RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
-    && agent-browser --version \\
-    && HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium \\
-    && rm -rf /var/lib/apt/lists/* \\
-    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
-    && test -n "$pw_chrome" \\
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
-    && /usr/local/bin/chromium --version \\
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
@@ -441,6 +451,26 @@ RUN cd /opt/kortix/opencode-config-deps \\
     && rm -rf /tmp/opencode-deps-bundle-check \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
+    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
+    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
+    && agent-browser --version \\
+    && for pw_try in 1 2 3 4 5; do \\
+        HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium && break; \\
+        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\
+        sleep $((pw_try*10)); \\
+    done \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
+    && test -n "$pw_chrome" \\
+    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
+    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
+    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
+    && /usr/local/bin/chromium --version \\
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
 
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
 RUN cd / \\
@@ -488,21 +518,6 @@ RUN set +e; \\
     echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
     rm -f /tmp/oc-warm.log; true
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
-    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
-    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
-RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
-    && agent-browser --version \\
-    && HOME=/opt/kortix/home npx -y playwright@1.60.0 install --with-deps chromium \\
-    && rm -rf /var/lib/apt/lists/* \\
-    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\
-    && test -n "$pw_chrome" \\
-    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\
-    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\
-    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\
-    && /usr/local/bin/chromium --version \\
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
-
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
@@ -523,5 +538,67 @@ RUN mkdir -p /workspace /opt/kortix/home /ephemeral/kortix-master/opencode
 WORKDIR /workspace
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
+"
+`;
+
+exports[`buildPerProjectWarmFromBaseDockerfile (FROM-base fast path) golden 1`] = `
+"FROM registry.daytona.internal/kortix-default-abc123:latest
+
+# ─── Per-project COLD warm (FROM-base fast path, auto-injected) ─────
+# Everything above this line is INHERITED from the already-built default
+# runtime image (apt/pip/opencode/bun/agent-browser + Chromium are already
+# baked in) — nothing below re-installs any of it. This is what makes the
+# Chromium install a guaranteed inherit instead of an opportunistic
+# build-cache hit. Do not add toolchain RUNs here — they belong in
+# kortixToolchainLayer, which this stage deliberately skips.
+
+USER root
+
+# ─── Per-project COLD warm: bake repo checkout into /workspace ──────
+RUN cd / \\
+    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\
+    && git -c http.extraHeader='Authorization: Bearer redacted' clone --depth 1 --branch 'main' 'https://git.example.com/acme/app.git' /tmp/kortix-warm-repo \\
+    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\
+    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\
+    && rm -rf /tmp/kortix-warm-repo \\
+    && git -C /workspace remote set-url origin 'https://kortix.example.com/v1/git/proj.git' \\
+    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on main"
+
+COPY kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+RUN cd /opt/kortix/warm-config/.kortix/opencode \\
+    && rm -rf node_modules \\
+    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
+    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
+    && rm -rf /tmp/opencode-tools-bundle-check \\
+    && echo "opencode-config-deps: starter tool files bundle cleanly"
+
+RUN set +e; \\
+    export HOME=/opt/kortix/home \\
+        XDG_DATA_HOME=/opt/kortix/home/.local/share \\
+        XDG_CONFIG_HOME=/opt/kortix/home/.config \\
+        XDG_CACHE_HOME=/opt/kortix/home/.cache \\
+        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\
+    mkdir -p /workspace/.kortix; \\
+    staged_starter_config=0; \\
+    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\
+    rm -rf /workspace/.kortix/opencode/node_modules; \\
+    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\
+    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\
+    cd /workspace; \\
+    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\
+    ready=0; \\
+    for i in $(seq 1 300); do \\
+        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\
+        case "$code" in 200|204|301|302) ready=1; break;; esac; \\
+        kill -0 "$oc_pid" 2>/dev/null || break; \\
+        sleep 1; \\
+    done; \\
+    echo "=== instance-warm: ready=$ready ==="; \\
+    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\
+    echo "warm-repo: keeping baked /workspace checkout"; \\
+    rm -rf /opt/kortix/warm-config; \\
+    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\
+    rm -f /tmp/oc-warm.log; true
+
 "
 `;

@@ -34,7 +34,6 @@ import {
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
 import { classifySnapshotError } from './error-classify';
 import type { WarmRepoContext } from './build-context';
-import { createHash } from 'node:crypto';
 import {
   enabledTemplateBuildProviders,
   observeTemplateProviderCoverage,
@@ -1149,6 +1148,16 @@ export async function ensurePerProjectWarmImage(
 
   const warmRepo = await resolveWarmRepoContext(project, tip);
 
+  // FAST PATH: FROM the already-built shared default image instead of
+  // recomposing + rebuilding the full ~15-layer toolchain (apt/pip/opencode/
+  // bun/agent-browser+Chromium). This is what actually stops per-project warm
+  // bakes from re-downloading Chromium under concurrency — see
+  // buildPerProjectWarmFromBaseDockerfile (dockerfile-layer.ts) for the full
+  // rationale. Only attempted when the provider can report a usable image ref
+  // AND the base snapshot is confirmed `active`; a `FROM` of a not-yet-built
+  // image would fail the whole bake, so this must never guess.
+  const baseImageRef = await resolveWarmBaseImageRef(provider, baseIdentity.snapshotName);
+
   const buildId = opts.accountId
     ? await openBuildLog({
         accountId: opts.accountId,
@@ -1165,12 +1174,15 @@ export async function ensurePerProjectWarmImage(
   try {
     console.log(
       `[snapshots] per-project warm: baking ${snapshotName} (project ${project.projectId.slice(0, 8)}, ` +
-      `tip ${tip.slice(0, 8)}, base ${baseIdentity.snapshotName}, provider=${buildProvider})`,
+      `tip ${tip.slice(0, 8)}, base ${baseIdentity.snapshotName}, provider=${buildProvider}, ` +
+      `fastPath=${baseImageRef ? 'from-base' : 'full-rebuild'})`,
     );
     // COLD build (capture:'none' — buildSnapshot on this branch never captures a
-    // memory snapshot). The ONLY delta from the shared default build is warmRepo,
-    // which bakes /workspace at build time.
-    await provider.buildSnapshot({
+    // memory snapshot). The only per-project delta over the shared default is
+    // warmRepo, which bakes /workspace at build time — either on top of a full
+    // rebuild of the toolchain, or (fast path) on top of the base image FROM'd
+    // verbatim.
+    const fullRebuildInput = {
       snapshotName,
       image: template.image ?? undefined,
       userDockerfile: baseIdentity.userDockerfile,
@@ -1179,7 +1191,25 @@ export async function ensurePerProjectWarmImage(
       slug: warmBuildSlug(template.slug),
       isShared: false,
       warmRepo,
-    });
+    };
+    if (baseImageRef) {
+      try {
+        await provider.buildSnapshot({ ...fullRebuildInput, image: undefined, userDockerfile: undefined, baseImageRef });
+      } catch (fastPathErr) {
+        // Never let a fast-path failure (a stale/unpullable base ref, a
+        // provider-side hiccup building FROM it, …) take down session boot —
+        // fall back to the always-correct full rebuild. This keeps the fast
+        // path strictly additive: worst case is the pre-existing behavior.
+        const msg = fastPathErr instanceof Error ? fastPathErr.message : String(fastPathErr);
+        console.warn(
+          `[snapshots] per-project warm: FROM-base fast path failed for ${snapshotName} ` +
+          `(base=${baseImageRef}) — falling back to full rebuild: ${msg.slice(0, 200)}`,
+        );
+        await provider.buildSnapshot(fullRebuildInput);
+      }
+    } else {
+      await provider.buildSnapshot(fullRebuildInput);
+    }
     if (buildId) await closeBuildLogReady(buildId);
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
     return { snapshotName, tip, built: true, provider: buildProvider };
@@ -1188,6 +1218,36 @@ export async function ensurePerProjectWarmImage(
     if (buildId) await closeBuildLogFailed(buildId, message);
     throw new SnapshotBuildError(message, err);
   }
+}
+
+/** `true` iff a snapshot's provider state means it's safe to `FROM` its image
+ *  — anything short of a confirmed `active` snapshot risks a `FROM` of a
+ *  not-yet-built or vanished image, which would fail the whole warm bake
+ *  outright instead of falling back cleanly. */
+export function shouldAttemptWarmFromBase(baseState: ProviderState): boolean {
+  return baseState === 'active';
+}
+
+/**
+ * Resolve a registry-addressable ref for the already-built base (shared
+ * default) image, for use as `BuildableTemplate.baseImageRef` — the
+ * per-project warm fast path. Returns undefined (never throws) whenever the
+ * fast path isn't available: the provider doesn't implement
+ * `getSnapshotImageRef`, the base snapshot isn't `active` yet, or the lookup
+ * itself fails. Every one of those is a normal, expected condition (a fresh
+ * region where the default hasn't built yet, a provider without a registry
+ * concept, a transient lookup hiccup) — the caller always has the full
+ * rebuild path to fall back to.
+ */
+export async function resolveWarmBaseImageRef(
+  provider: Pick<SandboxProviderAdapter, 'getSnapshotState' | 'getSnapshotImageRef'>,
+  baseSnapshotName: string,
+): Promise<string | undefined> {
+  if (!provider.getSnapshotImageRef) return undefined;
+  const baseState = await provider.getSnapshotState(baseSnapshotName).catch((): ProviderState => 'unknown');
+  if (!shouldAttemptWarmFromBase(baseState)) return undefined;
+  const ref = await provider.getSnapshotImageRef(baseSnapshotName).catch(() => null);
+  return ref ?? undefined;
 }
 
 /**

@@ -1,7 +1,10 @@
 import {
   AUTO_MODEL_ID,
   type Catalog,
+  type CatalogCost,
+  type CatalogModalities,
   type CatalogModel,
+  type CatalogReasoningOption,
   getManagedModel,
   pricingRefLookupCandidates,
 } from "@kortix/llm-catalog";
@@ -10,16 +13,49 @@ import { codexModelIds } from "./codex-models";
 import { runtimeModelCatalog } from './runtime-catalog';
 import { RUNTIME_MANAGED_MODELS } from './managed-models';
 
+// The real upstream provider id for the ChatGPT-subscription lineup served
+// under `codex/<id>` — kept as one named constant so this file, the sandbox
+// agent server, and the web picker can never drift on the string.
+const CODEX_PROVIDER_ID = 'codex';
+// The real upstream "provider" for every Kortix-managed model (including the
+// synthetic `auto`) — the brand a client should group/label these under.
+const KORTIX_PROVIDER_ID = 'kortix';
+
 interface GatewayModel {
   name: string;
   released?: string | null;
   release_date?: string | null;
   family?: string;
+  // The REAL upstream provider this model resolves against ('anthropic',
+  // 'openai', 'codex', 'kortix', ...). Every model here is registered under
+  // the single synthetic `kortix` opencode provider (see the sandbox agent
+  // server's `buildKortixProvider`) — this is the one field a client can
+  // group/brand by without parsing `<provider>/<model>` out of the wire id.
+  // See apps/web/src/features/session/model-selector.tsx's `pickerGroupId`.
+  provider?: string;
   reasoning?: boolean;
+  // Present iff the model exposes a tunable reasoning-effort knob — the
+  // chat runtime's PRIORITY field for offering an effort control without a
+  // second catalog round trip. Same shape as `CatalogReasoningOption`.
+  reasoning_options?: CatalogReasoningOption[];
   tool_call?: boolean;
   attachment?: boolean;
   temperature?: boolean;
-  limit?: { context?: number; output?: number };
+  structured_output?: boolean;
+  // Training data cutoff (models.dev's free-text field, e.g. "2026-02-16").
+  knowledge?: string;
+  modalities?: CatalogModalities;
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: CatalogCost;
+  // Free-text blurb models.dev publishes for the model. Threaded through
+  // alongside the rest of the enriched field set — was previously dropped
+  // between LlmProviderModel (the web catalog) and this served shape.
+  description?: string;
+  // True when the model's weights are publicly released (open-weights) vs.
+  // closed API-only. models.dev's `open_weights` field, mirrored verbatim.
+  open_weights?: boolean;
+  // When models.dev last refreshed this model's own entry.
+  last_updated?: string;
 }
 
 function modelsById(catalog: Catalog): Map<string, CatalogModel> {
@@ -53,8 +89,12 @@ const DEFAULT_SERVED_LIMIT = { context: 200_000, output: 32_000 } as const;
 // Coerce a (possibly partial or zero) models.dev limit into a guaranteed-positive
 // window. Some non-chat catalog entries (whisper audio, NVIDIA video/TTS models)
 // report context:0 — fall back to the default so EVERY served model can be sized.
-function servedLimit(limit?: { context?: number; output?: number }): {
+// `input` (max prompt tokens, when models.dev distinguishes it from the total
+// context window) is passed through verbatim when present — it's not backfilled
+// like context/output because no consumer needs a guaranteed value for it yet.
+function servedLimit(limit?: { context?: number; input?: number; output?: number }): {
   context: number;
+  input?: number;
   output: number;
 } {
   return {
@@ -62,6 +102,7 @@ function servedLimit(limit?: { context?: number; output?: number }): {
       limit?.context && limit.context > 0
         ? limit.context
         : DEFAULT_SERVED_LIMIT.context,
+    ...(typeof limit?.input === 'number' && limit.input > 0 ? { input: limit.input } : {}),
     output:
       limit?.output && limit.output > 0
         ? limit.output
@@ -73,15 +114,32 @@ function servedLimit(limit?: { context?: number; output?: number }): {
 // an enriched catalog entry (capabilities present) is used verbatim; a model
 // models.dev doesn't carry falls back to permissive legacy defaults so it isn't
 // crippled. See apps/web/scripts/enrich-llm-catalog-capabilities.ts.
+//
+// Carries the FULL useful capability set through to the served catalog — not
+// just the booleans transports need. `reasoning_options` is the PRIORITY field
+// (the chat runtime's effort control reads it straight off the served model,
+// no second catalog lookup); `cost`/`modalities`/`structured_output`/
+// `knowledge` ride along so nothing #4995/#5002-adjacent UI needs is dropped
+// between models.dev and opencode's registered model dict.
 function capabilitiesOf(
   model: CatalogModel | undefined,
-): Omit<GatewayModel, "name"> {
+): Omit<GatewayModel, "name" | "provider"> {
   if (model && model.attachment !== undefined) {
     return {
       reasoning: !!model.reasoning,
+      ...(model.reasoning_options?.length ? { reasoning_options: model.reasoning_options } : {}),
       tool_call: !!model.tool_call,
       attachment: !!model.attachment,
       temperature: !!model.temperature,
+      ...(typeof model.structured_output === 'boolean'
+        ? { structured_output: model.structured_output }
+        : {}),
+      ...(typeof model.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
+      ...(model.modalities ? { modalities: model.modalities } : {}),
+      ...(model.cost ? { cost: model.cost } : {}),
+      ...(typeof model.description === 'string' ? { description: model.description } : {}),
+      ...(typeof model.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
+      ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
       limit: servedLimit(model.limit),
     };
   }
@@ -183,9 +241,12 @@ export function managedModels(): Record<string, GatewayModel> {
   if (RUNTIME_MANAGED_MODELS.length === 0) return out;
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target so OpenCode sizes conversations the same.
+  // its default target so OpenCode sizes conversations the same. Every managed
+  // model (incl. AUTO) brands as the `kortix` provider — the real "who serves
+  // this" for the picker's grouping (see ModelSelector's `pickerGroupId`).
   out[AUTO_MODEL_ID] = {
     name: "Auto",
+    provider: KORTIX_PROVIDER_ID,
     reasoning: false,
     tool_call: true,
     attachment: true,
@@ -198,6 +259,7 @@ export function managedModels(): Record<string, GatewayModel> {
   for (const m of RUNTIME_MANAGED_MODELS) {
     out[m.id] = {
       name: m.name,
+      provider: KORTIX_PROVIDER_ID,
       reasoning: true,
       tool_call: true,
       attachment: m.vision,
@@ -217,8 +279,12 @@ export function gatewayModelsAll(
     if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
       // BYOK models ARE catalog entries — capabilities come straight from models.dev.
+      // `provider` is the REAL upstream id (e.g. "anthropic") — every model here
+      // is registered under the single synthetic `kortix` opencode provider, so
+      // this is what the picker groups/brands by instead of parsing the wire id.
       out[`${provider.id}/${model.id}`] = {
         name: model.name,
+        provider: provider.id,
         released: model.released,
         release_date: model.released,
         family: (model as { family?: string }).family,
@@ -238,15 +304,29 @@ export function gatewayCodexModels(
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
       name: `${model?.name ?? codexName(id)} (ChatGPT)`,
+      // Codex is a ChatGPT subscription, not the raw `openai` BYOK provider —
+      // brand/group it as its own 'codex' provider (matches the picker's
+      // SUBSCRIPTION_PROVIDER_ID convention in use-model-store.ts).
+      provider: CODEX_PROVIDER_ID,
       released: model?.released,
       release_date: model?.released,
       family: (model as { family?: string } | undefined)?.family,
       // Derive from models.dev; default to GPT-5.x's profile (reasoning, tools,
       // vision) for any id models.dev doesn't list yet.
       reasoning: model?.reasoning ?? true,
+      ...(model?.reasoning_options?.length ? { reasoning_options: model.reasoning_options } : {}),
       tool_call: model?.tool_call ?? true,
       attachment: model?.attachment ?? true,
       temperature: model?.temperature ?? false,
+      ...(typeof model?.structured_output === 'boolean'
+        ? { structured_output: model.structured_output }
+        : {}),
+      ...(typeof model?.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
+      ...(model?.modalities ? { modalities: model.modalities } : {}),
+      ...(model?.cost ? { cost: model.cost } : {}),
+      ...(typeof model?.description === 'string' ? { description: model.description } : {}),
+      ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
+      ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
       limit: servedLimit(model?.limit),
     };
   }

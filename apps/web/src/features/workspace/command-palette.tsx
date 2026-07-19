@@ -529,7 +529,10 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase();
     return allModels
       .filter((m) => {
-        if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }))
+        if (
+          !q &&
+          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID, provider: m.provider })
+        )
           return false;
         return (
           !q ||
