@@ -20,6 +20,7 @@ import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
 import { runProviderActions } from '../../snapshots/provider-actions';
+import { getCatalogItemDetail } from '../../marketplace/catalog';
 
 function templateProviderObservation(metadata: unknown) {
   const selectedProvider = resolveConfiguredProjectProviderPin(
@@ -189,6 +190,17 @@ projectsApp.openapi(
     return c.json({ error: 'name must contain only letters, numbers, hyphens, underscores or dots' }, 400);
   }
 
+  // Resolve through the public marketplace detail gate before creating
+  // anything upstream. Hidden/support items remain internal even when a caller
+  // knows their catalog id.
+  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+  if (sourceItemId) {
+    const sourceItem = await getCatalogItemDetail(sourceItemId);
+    if (!sourceItem || sourceItem.type !== 'registry:project') {
+      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+    }
+  }
+
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);
 
@@ -257,7 +269,6 @@ projectsApp.openapi(
   // A partial starter is not a usable project.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
   const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
-  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
   const starter = sourceItemId
     ? (await buildProjectSeedFilesFromItem({
         id: sourceItemId,

@@ -871,4 +871,23 @@ describe('create-repo starter scaffold contract', () => {
       }),
     );
   });
+
+  test('rejects hidden marketplace projects before creating a GitHub repository', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'internal-project',
+        source_item_id: 'kortix-projects:web-studio',
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'Unknown or non-cloneable project item "kortix-projects:web-studio"',
+    });
+    expect(repoCreateCalls).toHaveLength(0);
+  });
 });
