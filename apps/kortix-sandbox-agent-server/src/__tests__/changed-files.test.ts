@@ -92,4 +92,18 @@ describe('collectChangedFiles', () => {
       await fs.rm(tree, { recursive: true, force: true })
     }
   })
+
+  it('respects time budget inside wide directories', async () => {
+    const wide = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-changed-wide-'))
+    for (let i = 0; i < 50; i++) {
+      await fs.writeFile(path.join(wide, `file${i}.txt`), 'x')
+    }
+    // timeBudgetMs: 0 means deadline expires; the in-loop deadline check (not just
+    // the top-of-walk check) ensures truncation happens during file processing
+    const res = await collectChangedFiles(wide, 0, noneIgnored, { timeBudgetMs: 0 })
+    expect(res.truncated).toBe(true)
+    // Should be significantly fewer than 50 files, confirming the loop respects deadline
+    expect(res.files.length).toBeLessThan(50)
+    await fs.rm(wide, { recursive: true, force: true })
+  })
 })

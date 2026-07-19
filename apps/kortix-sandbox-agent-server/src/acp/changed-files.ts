@@ -37,7 +37,7 @@ export async function collectChangedFiles(
     }
     for (const entry of entries) {
       if (truncated) return
-      if (++visited > maxVisited) { truncated = true; return }
+      if (++visited > maxVisited || Date.now() > deadline) { truncated = true; return }
       if (entry.name.startsWith('.')) continue // hidden segment (covers .git/.env*/.DS_Store)
       const absolute = path.join(dir, entry.name)
       if (entry.isDirectory()) {
