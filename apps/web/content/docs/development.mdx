@@ -49,7 +49,7 @@ Each environment is a [dotenvx](https://dotenvx.com)-encrypted file, committed t
 Every value is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts sits in the file and is safe to commit; the **private key** that decrypts never touches git — it lives off your machine in [Dotenv Armor](https://dotenvx.com/armor). At runtime `dotenvx run --overload -f <file>` decrypts **in memory** and injects the vars — nothing plaintext is ever written to disk. `--overload` is intentional for env-specific runs so exported local cloud credentials cannot override the selected profile.
 
 All eight keypairs (API + web, four environments each) belong to the canonical
-Armor organization **`kortix-ai`**. Always pass `--team kortix-ai` when pushing
+Armor organization **`go-marko-kortix-ai`**. Always pass `--team go-marko-kortix-ai` when pushing
 or pulling; do not rely on a personal-team default. The prod API and web keys
 are separate keypairs so production access can be restricted independently.
 
@@ -78,7 +78,7 @@ Armor token moves from the settings file into the native OS secret store.
 ### Pull the keys from the cloud
 ```sh
 for app in api web; do
-  (cd "apps/$app" && for f in .env .env.dev .env.staging .env.prod; do dotenvx armor pull --team kortix-ai -f "$f"; done)
+  (cd "apps/$app" && for f in .env .env.dev .env.staging .env.prod; do dotenvx armor pull --team go-marko-kortix-ai -f "$f"; done)
 done
 ```
 </Step>
@@ -101,13 +101,13 @@ The pre-commit hook **auto-encrypts** the profile files (`.env` / `.env.dev` / `
 | Verify all envs decrypt | `pnpm test:envs` |
 | Read a secret | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`) |
 | Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit |
-| Share a new/rotated key with the team | `dotenvx armor push --team kortix-ai -f <file>` (one file at a time) |
+| Share a new/rotated key with the team | `dotenvx armor push --team go-marko-kortix-ai -f <file>` (one file at a time) |
 
 The repo-pinned dotenvx 1.75.x still provides `rotate`; dotenvx 2.x temporarily
 removed that command. Use `pnpm exec dotenvx rotate`, not the global binary.
 `rotate --no-armor` creates a transitional comma-separated `old,new` private-key
 value locally. Do not push that combined value to Armor. Retain only the new key
-after decryption verification, push it to `kortix-ai`, and prove a clean pull
+after decryption verification, push it to `go-marko-kortix-ai`, and prove a clean pull
 before merging the rotated ciphertext.
 
 <Callout type="warn">

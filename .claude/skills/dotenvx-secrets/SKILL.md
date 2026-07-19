@@ -9,7 +9,7 @@ API secrets are **encrypted in git** with [dotenvx](https://dotenvx.com); the de
 
 ## Armor organization and access boundary
 
-The canonical Armor organization is **`kortix-ai`**. All API and web keypairs
+The canonical Armor organization is **`go-marko-kortix-ai`**. All API and web keypairs
 must be pushed to and pulled from that team explicitly; never rely on the CLI's
 personal-team default.
 
@@ -69,8 +69,8 @@ This re-encrypts the file in place (value becomes `KEY=encrypted:…`). Then com
 | Verify all 4 envs decrypt + are separated | `pnpm test:envs` |
 | Read a secret | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`) |
 | Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit |
-| First time / new machine | `dotenvx armor login` then `cd apps/api && for f in .env .env.dev .env.staging .env.prod; do dotenvx armor pull --team kortix-ai -f "$f"; done` |
-| Share a NEW profile / rotated key | `dotenvx armor push --team kortix-ai -f <file>` |
+| First time / new machine | `dotenvx armor login` then `cd apps/api && for f in .env .env.dev .env.staging .env.prod; do dotenvx armor pull --team go-marko-kortix-ai -f "$f"; done` |
+| Share a NEW profile / rotated key | `dotenvx armor push --team go-marko-kortix-ai -f <file>` |
 | Remove a key from the cloud | `dotenvx armor down -f <file>` |
 
 ## Armor login security
@@ -98,7 +98,7 @@ login/push/pull use the current global CLI.
 `rotate --no-armor` deliberately leaves a transitional `old,new` value in
 `.env.keys`. Armor accepts exactly one private key, so **never push that combined
 value**. After proving the new ciphertext decrypts, retain only the new private
-key, push it explicitly to `kortix-ai`, then prove a clean Armor pull matches all
+key, push it explicitly to `go-marko-kortix-ai`, then prove a clean Armor pull matches all
 eight keys before merging. Remove the old armored keys only after the rotated
 ciphertext is merged and available to every consumer.
 
@@ -117,7 +117,7 @@ If a guard fires, the fix is to **encrypt the value**, never to bypass it.
 
 ## The web app (apps/web) — same setup
 
-`apps/web` has the **same four encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.staging` / `.env.prod`), own keypairs in `apps/web/.env.keys`, armored under `kortix-ai`. Decrypted the same way: `pnpm dev` (via `load_local_env`) and the environment-specific web scripts. Pull on a new machine: `cd apps/web && for f in .env .env.dev .env.staging .env.prod; do dotenvx armor pull --team kortix-ai -f "$f"; done`.
+`apps/web` has the **same four encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.staging` / `.env.prod`), own keypairs in `apps/web/.env.keys`, armored under `go-marko-kortix-ai`. Decrypted the same way: `pnpm dev` (via `load_local_env`) and the environment-specific web scripts. Pull on a new machine: `cd apps/web && for f in .env .env.dev .env.staging .env.prod; do dotenvx armor pull --team go-marko-kortix-ai -f "$f"; done`.
 
 Maintenance flags are **DB-backed** now (was Vercel Edge Config): stored in `kortix.platform_settings['maintenance_config']`, read via public `GET /v1/system/maintenance`, written via admin-only `PUT /v1/system/maintenance`, set from `/admin/utils`. The `EDGE_CONFIG`/`EDGE_CONFIG_ID`/`VERCEL_API_TOKEN` secrets + the `@vercel/edge-config` dep are gone.
 
