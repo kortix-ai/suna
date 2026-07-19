@@ -530,7 +530,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // "Downloading Chrome for Testing ... timed out after 30000ms" failing the
     // whole bake. Give it real headroom; the retry loop below is the second line
     // of defense for a transient failure within that window.
-    '    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000',
+    '    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version \\',
     // Retry the Chromium download a handful of times with backoff before giving

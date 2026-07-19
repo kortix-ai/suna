@@ -101,7 +101,7 @@ RUN cd /opt/kortix/opencode-config-deps \\
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
     AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
-    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
 RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
     && agent-browser --version \\
     && for pw_try in 1 2 3 4 5; do \\
@@ -277,7 +277,7 @@ RUN cd /opt/kortix/opencode-config-deps \\
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
     AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
-    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
 RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
     && agent-browser --version \\
     && for pw_try in 1 2 3 4 5; do \\
@@ -454,7 +454,7 @@ RUN cd /opt/kortix/opencode-config-deps \\
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\
     AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\
-    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
 RUN npm install -g --no-audit --no-fund "agent-browser@0.27.0" \\
     && agent-browser --version \\
     && for pw_try in 1 2 3 4 5; do \\
