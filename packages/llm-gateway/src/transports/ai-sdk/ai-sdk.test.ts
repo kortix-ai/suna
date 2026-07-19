@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import type { CatalogModel } from '@kortix/llm-catalog';
 import { generateText, jsonSchema, streamText, tool } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import type { UpstreamDescriptor } from '../../domain';
@@ -320,6 +321,86 @@ describe('ai-sdk request conversion', () => {
     );
     expect(openai.maxOutputTokens).toBe(2000);
     expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+  });
+});
+
+// buildAiSdkArgs is now models.dev-capability-driven: when the caller passes
+// the resolved CatalogModel (index.ts resolves it via @kortix/llm-catalog's
+// `catalogModelForWireModel`), the four generation params are clamped ONCE in
+// normalizeRequest through the CANONICAL `clampGenerationConfig` — the exact
+// same gate the host runs on route defaults, now also applied to the
+// client-supplied values that path never touched. With NO model the clamp is a
+// deliberate NO-OP (permissive parity), which is why every test above still
+// passes a body with no model and sees pre-gating behavior verbatim.
+describe('ai-sdk per-request capability gating (reuses @kortix/llm-catalog clampGenerationConfig)', () => {
+  // Fixtures use only capability shapes that derive identically in every
+  // catalog version (an explicit `effort` reasoning_options entry, a literal
+  // `temperature` flag, an explicit `limit.output`) — never a bare
+  // `reasoning:true`-with-no-options, whose effort-control synthesis is a
+  // catalog-internal heuristic, not the contract under test here.
+  const effortModel = (over: Partial<CatalogModel> = {}): CatalogModel => ({
+    id: 'test-model',
+    name: 'Test Model',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+    temperature: true,
+    limit: { output: 8000 },
+    ...over,
+  });
+
+  it('(a) drops a client temperature (and top_p) for a temperature:false model, keeps them for a capable one', () => {
+    const fixed = buildAiSdkArgs({ messages: [], temperature: 0.7, top_p: 0.9 }, 'openai', {
+      model: effortModel({ temperature: false }),
+    });
+    expect(fixed.temperature).toBeUndefined();
+    expect(fixed.topP).toBeUndefined();
+
+    const tunable = buildAiSdkArgs({ messages: [], temperature: 0.7, top_p: 0.9 }, 'openai', {
+      model: effortModel({ temperature: true }),
+    });
+    expect(tunable.temperature).toBe(0.7);
+    expect(tunable.topP).toBe(0.9);
+  });
+
+  it('(b) drops a reasoning_effort the model does not publish, keeps a published one, and clamps max_tokens to limit.output', () => {
+    // 'xhigh' is NOT in the model's effort values → dropped, so no reasoningEffort
+    // reaches providerOptions at all (providerOptions ends up empty → undefined).
+    const rejected = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'xhigh', max_tokens: 100000 },
+      'openai',
+      { model: effortModel() },
+    );
+    expect(rejected.providerOptions).toBeUndefined();
+    // max_tokens clamped down to the model's real output ceiling.
+    expect(rejected.maxOutputTokens).toBe(8000);
+
+    // A published tier survives verbatim.
+    const accepted = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+      model: effortModel(),
+    });
+    expect(accepted.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+  });
+
+  it('(c) a non-reasoning model suppresses thinking/reasoningEffort entirely (anthropic family)', () => {
+    // reasoning:false + no reasoning_options → the effort tier is dropped, so
+    // resolveThinkingRequest never turns extended thinking on and maxOutputTokens
+    // falls back to the plain (non-thinking) 4096 default, not the thinking bump.
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic', {
+      model: effortModel({ reasoning: false, reasoning_options: undefined }),
+    });
+    expect(args.providerOptions).toBeUndefined();
+    expect(args.maxOutputTokens).toBe(4096);
+  });
+
+  it('(d) parity: with NO model passed, gating is a no-op — output matches the pre-gating result exactly', () => {
+    const body = { messages: [], temperature: 1.5, top_p: 0.2, reasoning_effort: 'xhigh' };
+    const ungated = buildAiSdkArgs({ ...body }, 'openai');
+    // Every capability-relevant field passes through untouched — no model, no gate.
+    expect(ungated.temperature).toBe(1.5);
+    expect(ungated.topP).toBe(0.2);
+    // 'xhigh' would be dropped by a temperature:true/effort-limited model above,
+    // but with no model it survives verbatim — the exact permissive parity contract.
+    expect(ungated.providerOptions).toEqual({ openai: { reasoningEffort: 'xhigh' } });
   });
 });
 

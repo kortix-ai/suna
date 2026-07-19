@@ -1,6 +1,7 @@
 import type { BedrockProviderOptions } from '@ai-sdk/amazon-bedrock';
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic';
 import type { OpenAIChatLanguageModelOptions } from '@ai-sdk/openai';
+import { type CatalogModel, clampGenerationConfig } from '@kortix/llm-catalog';
 import {
   type JSONValue,
   type ModelMessage,
@@ -643,10 +644,13 @@ function applyAnthropicPromptCaching(
 
 // ---------------------------------------------------------------------------
 // Normalization: the incoming OpenAI chat.completions body, translated ONCE
-// into the family-agnostic shape every adapter below reads from. Sampling
-// params with a direct AI-SDK CallSettings equivalent (temperature/top_p/
-// stop/seed/penalties) have no per-family behaviour at all, so they're read
-// straight off `raw` in the orchestrator instead of being duplicated here.
+// into the family-agnostic shape every adapter below reads from. The four
+// capability-gated generation params (reasoning effort, temperature, top_p,
+// max output tokens) are ALSO clamped here, in one place, against the resolved
+// model's real models.dev capabilities — so adapters and the orchestrator only
+// ever read already-gated values. The remaining CallSettings-equivalent params
+// (stop/seed/penalties) carry no per-model capability, so they stay read
+// straight off `raw` in the orchestrator.
 interface NormalizedRequest {
   // The original parsed body — adapters read family-specific raw fields
   // (`thinking`, `reasoning`, `response_format`, the openai-only extra
@@ -661,25 +665,65 @@ interface NormalizedRequest {
   // the Responses-style nested shape (`reasoning: { effort: string }`) some
   // callers (opencode) send directly, folded with the caller's own default
   // (Codex always sends a reasoning effort — see buildAiSdkArgs's opts doc).
+  // Dropped when a resolved model publishes no matching effort tier (gating).
   reasoningEffort: string | undefined;
+  // Client-supplied sampling params. Dropped when the resolved model rejects a
+  // custom temperature/top_p (models.dev `temperature:false`, e.g. gpt-5.6-sol);
+  // clamped to [0,2]/[0,1] otherwise — read by the orchestrator instead of the
+  // raw body so gating lives in exactly one place.
+  temperature: number | undefined;
+  topP: number | undefined;
   // `max_tokens` / `max_completion_tokens`, whichever is present — always
   // wins over any family default (see each adapter's `defaultMaxTokens`).
+  // Clamped to the model's `limit.output` ceiling when one is known.
   explicitMaxTokens: number | undefined;
 }
 
 function normalizeRequest(
   body: Record<string, unknown>,
-  opts: { defaultReasoningEffort?: string },
+  opts: { defaultReasoningEffort?: string; model?: CatalogModel },
 ): NormalizedRequest {
   const { system, messages } = toModelMessages(body.messages);
   const tools = toToolSet(body.tools);
   const toolChoice = tools ? toToolChoice(body.tool_choice) : undefined;
-  const reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
-  const explicitMaxTokens =
+
+  // Raw per-request generation params, before capability gating.
+  let reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
+  let temperature = typeof body.temperature === 'number' ? body.temperature : undefined;
+  let topP = typeof body.top_p === 'number' ? body.top_p : undefined;
+  let explicitMaxTokens =
     (typeof body.max_tokens === 'number' ? body.max_tokens : undefined) ??
     (typeof body.max_completion_tokens === 'number' ? body.max_completion_tokens : undefined);
 
-  return { raw: body, system, messages, tools, toolChoice, reasoningEffort, explicitMaxTokens };
+  // Gate ONCE against the resolved model's real capabilities, REUSING the
+  // canonical clamp from @kortix/llm-catalog — the exact gate the host already
+  // runs on route DEFAULTS (see routing/resolve-route.ts), now applied to the
+  // client-supplied values that path never touched. Only when a model is known:
+  // `clampGenerationConfig` treats an unknown model as "supports nothing" and
+  // would drop every field, so absence is a deliberate NO-OP (permissive —
+  // preserves the pre-gating behavior every existing caller relies on).
+  if (opts.model) {
+    const gated = clampGenerationConfig(
+      { reasoningEffort, temperature, topP, maxOutputTokens: explicitMaxTokens },
+      opts.model,
+    );
+    reasoningEffort = gated.reasoningEffort;
+    temperature = gated.temperature;
+    topP = gated.topP;
+    explicitMaxTokens = gated.maxOutputTokens;
+  }
+
+  return {
+    raw: body,
+    system,
+    messages,
+    tools,
+    toolChoice,
+    reasoningEffort,
+    temperature,
+    topP,
+    explicitMaxTokens,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -851,6 +895,12 @@ export function buildAiSdkArgs(
     // the 'openai-compatible' family (see the ProviderAdapter interface doc
     // comment above). Ignored for every other family.
     providerName?: string;
+    // The resolved catalog model for this wire request (see index.ts, which
+    // resolves it via @kortix/llm-catalog's `catalogModelForWireModel`). When
+    // present, the four capability-gated generation params are clamped against
+    // its real models.dev capabilities in `normalizeRequest`. OPTIONAL: absent
+    // → no gating (permissive parity — every param passes through unchanged).
+    model?: CatalogModel;
   } = {},
 ): AiSdkCallArgs {
   const req = normalizeRequest(body, opts);
@@ -894,8 +944,11 @@ export function buildAiSdkArgs(
     messages: req.messages,
     tools,
     toolChoice: req.toolChoice,
-    temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
-    topP: typeof body.top_p === 'number' ? body.top_p : undefined,
+    // Already capability-gated in normalizeRequest (dropped/clamped per the
+    // resolved model) — read off `req`, never the raw body, so a model that
+    // rejects a custom temperature/top_p never sees one.
+    temperature: req.temperature,
+    topP: req.topP,
     maxOutputTokens: maxTokens,
     stopSequences,
     seed: typeof body.seed === 'number' ? body.seed : undefined,
