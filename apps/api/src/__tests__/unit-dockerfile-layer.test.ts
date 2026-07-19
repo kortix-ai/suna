@@ -70,6 +70,55 @@ describe('buildLayeredDockerfile', () => {
     expect(envIdx).toBeLessThan(installIdx);
   });
 
+  test('hardens the Chromium download: generous timeout + backoff retry, still fails loudly on total loss', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    // Playwright's default download socket timeout is 30s — too tight for a
+    // ~150MB Chrome-for-Testing fetch under any network hiccup. Overridden
+    // before the install runs.
+    expect(merged).toContain('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000');
+    const timeoutIdx = merged.indexOf('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000');
+    const installIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install`);
+    expect(timeoutIdx).toBeGreaterThanOrEqual(0);
+    expect(timeoutIdx).toBeLessThan(installIdx);
+    // A 5-attempt backoff loop around the install, portable to buildah's classic
+    // imagebuilder (plain sh for/$(( )), no heredoc).
+    expect(merged).toContain('for pw_try in 1 2 3 4 5; do');
+    expect(merged).toContain('sleep $((pw_try*10));');
+    // The loop's own exit status doesn't gate the build — the downstream
+    // `test -n "$pw_chrome"` guard still hard-fails it if every attempt failed.
+    const pwChromeIdx = merged.indexOf('pw_chrome="$(find /opt/pw-browsers');
+    expect(pwChromeIdx).toBeGreaterThan(merged.indexOf('for pw_try in 1 2 3 4 5; do'));
+    expect(merged).toContain('&& test -n "$pw_chrome"');
+  });
+
+  test('the Chromium layer sits BEFORE the per-project warm-repo clone', () => {
+    // Root-cause fix: the warm-repo clone bakes a FRESH short-lived git
+    // credential into its RUN text on every bake, so it can never build-cache
+    // hit — and neither can anything chained after it. Chromium must sit ahead
+    // of it so its own cache key stays independent of that per-project,
+    // never-cacheable step (and identical across every per-project bake AND the
+    // shared default image).
+    const merged = buildLayeredDockerfile({
+      userDockerfile: 'FROM ubuntu:24.04',
+      ...COMMON,
+      opencodeConfigPath: 'kortix-opencode-config',
+      warmRepo: {
+        cloneUrl: 'https://git.example.com/acme/repo.git',
+        cloneHeaders: { Authorization: 'Bearer tok-en' },
+        branch: 'main',
+        originUrl: 'https://proxy.kortix.ai/git/acme/repo.git',
+      },
+    });
+    const chromiumIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
+    const cloneIdx = merged.indexOf('Per-project COLD warm: bake repo checkout into /workspace');
+    const opencodeWarmupIdx = merged.indexOf('opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log');
+    expect(chromiumIdx).toBeGreaterThanOrEqual(0);
+    expect(cloneIdx).toBeGreaterThanOrEqual(0);
+    expect(opencodeWarmupIdx).toBeGreaterThanOrEqual(0);
+    expect(chromiumIdx).toBeLessThan(cloneIdx);
+    expect(cloneIdx).toBeLessThan(opencodeWarmupIdx);
+  });
+
   test('hard-fails the bake if opencode-config-deps cannot be bundled by Bun', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     // Regression coverage for the incident where `bun install` exited 0 but
