@@ -165,8 +165,8 @@ const envSchema = z.object({
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
-  // ('github' default; only active managed backend). The GitHub backend creates
-  // repos under MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
+  // ('github' default). The GitHub backend creates repos under
+  // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
   // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
   // for the App JWT. Each backend's isConfigured() checks its own vars, so
   // leaving these blank keeps the managed-git path inert.
@@ -178,6 +178,24 @@ const envSchema = z.object({
   // over the GitHub App for managed-org admin ops (create/delete repo, invite
   // collaborator). Leave blank to use the App installation instead.
   MANAGED_GIT_GITHUB_TOKEN:        optStr,
+  // Second managed backend: code.storage (Pierre), a headless git-hosting API
+  // (https://code.storage/docs). Select it with MANAGED_GIT_PROVIDER=code-storage
+  // — inert (isConfigured() false) until org + private key are both set.
+  // CODE_STORAGE_ORG: your code.storage organization identifier — doubles as
+  // the JWT `iss` claim and (unless overridden) the git-remote/API host prefix.
+  CODE_STORAGE_ORG:                optStr,
+  // PKCS8 PEM private key (EC or RSA — algorithm auto-detected) code.storage
+  // issued you; signs every management-API and git-push/pull JWT server-side
+  // (projects/git-backends/code-storage.ts's `mintCodeStorageJwt`). Never
+  // logged, returned to a caller, or embedded verbatim — only its signatures
+  // leave this process. \n-escaped or quote-wrapped values are normalized.
+  CODE_STORAGE_PRIVATE_KEY:        optStr,
+  // Management API base URL. Defaults to `https://api.<CODE_STORAGE_ORG>.code.storage`
+  // when blank; set only for a non-standard cluster mapping.
+  CODE_STORAGE_API_BASE:           optStr,
+  // Git remote host for clone/push URLs. Defaults to `<CODE_STORAGE_ORG>.code.storage`
+  // when blank.
+  CODE_STORAGE_GIT_HOST:           optStr,
   // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
   // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
   // so a real GitHub credential never reaches a sandbox. Requires a
@@ -744,6 +762,10 @@ export const config = {
   MANAGED_GIT_GITHUB_OWNER: env.MANAGED_GIT_GITHUB_OWNER,
   MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
+  CODE_STORAGE_ORG: env.CODE_STORAGE_ORG,
+  CODE_STORAGE_PRIVATE_KEY: env.CODE_STORAGE_PRIVATE_KEY,
+  CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
+  CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
