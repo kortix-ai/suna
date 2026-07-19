@@ -69,6 +69,21 @@ mock.module('@/components/markdown', () => ({ UnifiedMarkdown: () => null }));
 mock.module('next-intl', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key, rich: (key: string) => key, markup: (key: string) => key }),
 }));
+// The full `SandboxPreviewCard` path (plain-text localhost URLs, restored by
+// Fix wave 2 below) mounts `InlineIframePreview`, which calls
+// `useAuthenticatedPreviewUrl` — that hook chains into `getAuthToken()`
+// (`@/lib/auth-token`), which builds a real Supabase client and retries
+// `getSession()`/`refreshSession()` against `NEXT_PUBLIC_SUPABASE_URL`
+// (unreachable in this DOM-free harness) with backoff delays. None of that
+// is what this file tests — it only cares whether the card renders — so the
+// hook is stubbed to resolve synchronously, same "mock at the module
+// boundary" convention `use-running-apps.test.tsx` uses for
+// `use-sandbox-proxy`'s upstream stores.
+const realUseAuthenticatedPreviewUrl = await import('@/hooks/use-authenticated-preview-url');
+mock.module('@/hooks/use-authenticated-preview-url', () => ({
+  ...realUseAuthenticatedPreviewUrl,
+  useAuthenticatedPreviewUrl: (url: string) => url || null,
+}));
 
 const STABLE_PENDING: AcpPendingPrompts = { permissions: [], questions: [] };
 const NOOP_RESPOND_QUESTION = async () => {};
@@ -270,21 +285,27 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
   // Renders a single row in isolation — the memoization suite above uses
   // `TranscriptFixture` for multi-item render-count spying; these tests only
   // care about which component renders a given item's text, so a bare
-  // `AcpChatItemRow` is enough.
-  function renderRow(item: AcpChatItem, AcpChatItemRow: React.ComponentType<AcpChatItemRowProps>): ReactTestRenderer {
+  // `AcpChatItemRow` is enough. Always wrapped in `TooltipProvider`: Fix wave
+  // 2 restored `SandboxPreviewCard` (and its Radix `Tooltip`s) for plain-text
+  // localhost URLs too, so any row here that carries one now mounts real
+  // Tooltips, not just the code-block chip case Task 7 originally covered.
+  async function renderRow(item: AcpChatItem, AcpChatItemRow: React.ComponentType<AcpChatItemRowProps>): Promise<ReactTestRenderer> {
+    const { TooltipProvider } = await import('@/components/ui/tooltip');
     let renderer!: ReactTestRenderer;
     act(() => {
       renderer = create(
-        <AcpChatItemRow
-          item={item}
-          isTail={true}
-          isStreaming={false}
-          sessionId="s1"
-          pending={STABLE_PENDING}
-          onRespondQuestion={NOOP_RESPOND_QUESTION}
-          onRejectQuestion={NOOP_REJECT_QUESTION}
-          animateEnter={false}
-        />,
+        <TooltipProvider>
+          <AcpChatItemRow
+            item={item}
+            isTail={true}
+            isStreaming={false}
+            sessionId="s1"
+            pending={STABLE_PENDING}
+            onRespondQuestion={NOOP_RESPOND_QUESTION}
+            onRejectQuestion={NOOP_REJECT_QUESTION}
+            animateEnter={false}
+          />
+        </TooltipProvider>,
       );
     });
     return renderer;
@@ -295,7 +316,7 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
     const { SandboxUrlDetector } = await import('./sandbox-url-detector');
     const item = messageItem('a1', 'Check the dev server at http://localhost:3000 now.');
 
-    const renderer = renderRow(item, AcpChatItemRow);
+    const renderer = await renderRow(item, AcpChatItemRow);
     try {
       expect(renderer.root.findAllByType(SandboxUrlDetector)).toHaveLength(1);
     } finally {
@@ -315,7 +336,7 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
       text: 'Check the dev server at http://localhost:3000 now.',
     };
 
-    const renderer = renderRow(item, AcpChatItemRow);
+    const renderer = await renderRow(item, AcpChatItemRow);
     try {
       // The user bubble (`AcpUserMessage`) always renders through the plain
       // `AcpHighlightMentions`/markdown path — `SandboxUrlDetector` must never
@@ -334,7 +355,7 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
     const { UnifiedMarkdown } = await import('@/components/markdown');
     const item = messageItem('a2', 'no urls in this one');
 
-    const renderer = renderRow(item, AcpChatItemRow);
+    const renderer = await renderRow(item, AcpChatItemRow);
     try {
       // Every assistant row now routes through `SandboxUrlDetector` — when it
       // finds no localhost URLs it falls back internally to a bare
@@ -390,6 +411,66 @@ describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
       expect(json).toContain('4000');
       expect(json).toContain('/health');
     } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('Fix wave 2: assistant message with a PLAIN-TEXT localhost URL renders the full SandboxPreviewCard', async () => {
+    // Task 7 wired `SandboxUrlDetector` into the assistant row and it computes
+    // `liveUrls` (plain-text, non-code-block localhost URLs) correctly, but a
+    // stale comment claimed they were "rendered as inline preview cards
+    // directly inside UnifiedMarkdown" — false; nothing ever rendered them.
+    // This is the RED case for that gap: a plain-text `http://localhost:3000`
+    // must produce the real `SandboxPreviewCard` (status probe + "Preview"
+    // button + inline iframe toolbar), not just the raw text passed through
+    // to the (stubbed) markdown renderer.
+    const { TooltipProvider } = await import('@/components/ui/tooltip');
+    const { AcpChatItemRow } = await import('./acp-chat-item-row');
+    const item = messageItem('a4', 'Your app is running at http://localhost:3000 — check it out.');
+
+    // `usePortReachability` (in `sandbox-url-detector.tsx`) probes the URL via
+    // `fetch` on mount and every 10s after. Stubbed here (not just left to hit
+    // real loopback network) so the test doesn't depend on what happens to be
+    // listening on port 3000 on the machine running the suite, and doesn't
+    // pull in unrelated flake from a real connection attempt/timeout.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async () => {
+      throw new TypeError('network disabled in test');
+    }) as unknown as typeof fetch;
+
+    let renderer!: ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = create(
+          <TooltipProvider>
+            <AcpChatItemRow
+              item={item}
+              isTail={true}
+              isStreaming={false}
+              sessionId="s1"
+              pending={STABLE_PENDING}
+              onRespondQuestion={NOOP_RESPOND_QUESTION}
+              onRejectQuestion={NOOP_REJECT_QUESTION}
+              animateEnter={false}
+            />
+          </TooltipProvider>,
+        );
+      });
+
+      // "Preview" is a literal JSX string inside `SandboxPreviewCard`'s
+      // primary action button (not a translation key, unlike the other
+      // labels in this component) — a stable artifact that only the full
+      // card renders, distinguishing it from `SandboxUrlChip` (the
+      // code-block variant, which has no "Preview" button) and from plain
+      // markdown text.
+      const json = JSON.stringify(renderer.toJSON());
+      expect(json).toContain('Preview');
+      expect(json).toContain('localhost:');
+      expect(json).toContain('3000');
+    } finally {
+      globalThis.fetch = originalFetch;
       act(() => {
         renderer.unmount();
       });
