@@ -8,8 +8,10 @@ describe('port apps', () => {
       name: 'localhost:3000',
       kind: 'app',
       url: 'http://localhost:3000',
-      fresh: 'new',
     });
+  });
+  it('port-derived apps are never marked fresh (payoff must ignore them)', () => {
+    expect(portToAppOutput(3000).fresh).toBeUndefined();
   });
   it('extracts ports from event-app urls (default ports included)', () => {
     expect(urlPort('http://localhost:3000')).toBe(3000);

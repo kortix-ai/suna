@@ -51,8 +51,8 @@ describe('useRunningApps', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(result).toEqual([
-      { callID: 'port:3000', name: 'localhost:3000', kind: 'app', url: 'http://localhost:3000', fresh: 'new' },
-      { callID: 'port:5173', name: 'localhost:5173', kind: 'app', url: 'http://localhost:5173', fresh: 'new' },
+      { callID: 'port:3000', name: 'localhost:3000', kind: 'app', url: 'http://localhost:3000' },
+      { callID: 'port:5173', name: 'localhost:5173', kind: 'app', url: 'http://localhost:5173' },
     ]);
     renderer!.unmount();
   });

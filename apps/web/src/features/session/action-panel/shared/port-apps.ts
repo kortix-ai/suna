@@ -27,16 +27,15 @@ export function urlPort(url: string): number | null {
   }
 }
 
-/** A live listening port, presented as an app `OutputItem`. `fresh: 'new'`
- *  matches a first-appearance event app: a port row is always "new" — there
- *  is no notion of a stale one, it either is or isn't listening right now. */
+/** A live listening port, presented as an app `OutputItem`. Port-derived apps
+ *  are live status, not new deliverables — they should not be marked fresh so the
+ *  payoff effect does not auto-open stale servers from previous runs. */
 export function portToAppOutput(port: number): OutputItem {
   return {
     callID: `port:${port}`,
     name: `localhost:${port}`,
     kind: 'app',
     url: `http://localhost:${port}`,
-    fresh: 'new',
   };
 }
 
