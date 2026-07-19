@@ -17,7 +17,6 @@ import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/pr
 import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
-import { config } from '../../config';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
 import { runProviderActions } from '../../snapshots/provider-actions';
 
