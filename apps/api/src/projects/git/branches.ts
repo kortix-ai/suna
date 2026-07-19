@@ -162,6 +162,8 @@ export async function createRemoteSessionBranch(
       project.gitAuthToken,
       undefined,
       authHost,
+      undefined,
+      project.gitAuthHeaders,
     );
     await runGit(
       ['push', 'origin', `refs/heads/${base}:refs/heads/${branch}`],
@@ -170,6 +172,8 @@ export async function createRemoteSessionBranch(
       project.gitAuthToken,
       undefined,
       authHost,
+      undefined,
+      project.gitAuthHeaders,
     );
     invalidateProjectMirror(project.projectId);
   } finally {
@@ -187,11 +191,11 @@ export async function deleteRemoteSessionBranch(
 
   const authHost = hostFromRepoUrl(project.repoUrl);
   const repoPath = await refreshMirror(project, true);
-  const remote = await runGit(['ls-remote', '--heads', 'origin', branchName], repoPath, true, project.gitAuthToken, undefined, authHost)
+  const remote = await runGit(['ls-remote', '--heads', 'origin', branchName], repoPath, true, project.gitAuthToken, undefined, authHost, undefined, project.gitAuthHeaders)
     .catch(() => ({ stdout: '', stderr: '' }));
   if (!remote.stdout.trim()) return false;
 
-  await runGit(['push', 'origin', `:${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost);
+  await runGit(['push', 'origin', `:${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost, undefined, project.gitAuthHeaders);
   await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false)
     .catch(() => undefined);
   return true;
@@ -313,6 +317,8 @@ export async function commitMultipleFilesToBranch(
       project.gitAuthToken,
       undefined,
       authHost,
+      undefined,
+      project.gitAuthHeaders,
     );
 
     invalidateProjectMirror(project.projectId);

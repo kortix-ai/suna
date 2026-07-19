@@ -7,6 +7,8 @@ export interface GitBackedProject {
   defaultBranch: string;
   manifestPath: string;
   gitAuthToken?: string | null;
+  /** Provider-formatted HTTP headers for authenticated clone/fetch/push. */
+  gitAuthHeaders?: Record<string, string>;
 }
 
 export interface ProjectFileEntry {

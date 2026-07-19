@@ -16,6 +16,9 @@
  *   E2E_ANON_KEY           Supabase anon key     (default: apps/web/.env)
  *   E2E_OPENROUTER_API_KEY model key for the run (default: apps/api/.env OPENROUTER_API_KEY)
  *   E2E_MODEL              opencode model id     (default openrouter/openai/gpt-4o-mini)
+ *   E2E_EXPECT_MANAGED_GIT_PROVIDER  assert the configured managed Git provider
+ *   E2E_SKIP_SNAPSHOT_WAIT   create the session immediately (default false)
+ *   E2E_SKIP_AGENT_REPLY     skip model-secret and prompt assertions (default false)
  *
  * Exit code 0 = all assertions passed, non-zero = a failure (CI-friendly).
  */
@@ -44,10 +47,13 @@ function need(value: string | null | undefined, what: string): string {
 
 const API = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const SUPABASE = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const SERVICE_KEY = need(process.env.E2E_SERVICE_ROLE_KEY || fromEnvFile(API_ENV, 'SUPABASE_SERVICE_ROLE_KEY'), 'SUPABASE_SERVICE_ROLE_KEY');
-const ANON_KEY = need(process.env.E2E_ANON_KEY || fromEnvFile(WEB_ENV, 'NEXT_PUBLIC_SUPABASE_ANON_KEY'), 'SUPABASE anon key');
-const OPENROUTER = process.env.E2E_OPENROUTER_API_KEY || fromEnvFile(API_ENV, 'OPENROUTER_API_KEY');
+const SERVICE_KEY = need(process.env.E2E_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || fromEnvFile(API_ENV, 'SUPABASE_SERVICE_ROLE_KEY'), 'SUPABASE_SERVICE_ROLE_KEY');
+const ANON_KEY = need(process.env.E2E_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || fromEnvFile(WEB_ENV, 'NEXT_PUBLIC_SUPABASE_ANON_KEY'), 'SUPABASE anon key');
+const OPENROUTER = process.env.E2E_SKIP_AGENT_REPLY === '1'
+  ? null
+  : process.env.E2E_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || fromEnvFile(API_ENV, 'OPENROUTER_API_KEY');
 const MODEL = process.env.E2E_MODEL || 'openrouter/openai/gpt-4o-mini';
+const EXPECTED_MANAGED_GIT_PROVIDER = process.env.E2E_EXPECT_MANAGED_GIT_PROVIDER || '';
 const [MODEL_PROVIDER, ...MODEL_REST] = MODEL.split('/');
 const MODEL_ID = MODEL_REST.join('/');
 
@@ -96,13 +102,33 @@ async function main() {
   const accts = await api('GET', '/accounts');
   const accountId = Array.isArray(accts.json) ? (accts.json.find((a: any) => a.personal_account)?.account_id ?? accts.json[0]?.account_id) : null;
   if (!ok('personal account', !!accountId, accountId ?? accts.text.slice(0, 120))) return finish();
+  if (EXPECTED_MANAGED_GIT_PROVIDER) {
+    const managed = await api('GET', '/projects/managed-git/status');
+    ok(
+      `managed git provider is ${EXPECTED_MANAGED_GIT_PROVIDER}`,
+      managed.status === 200 && managed.json?.configured === true && managed.json?.provider === EXPECTED_MANAGED_GIT_PROVIDER,
+      `${managed.status} ${managed.text.slice(0, 160)}`,
+    );
+  }
 
   // 3. project CRUD — provision (managed + seed starter; triggers snapshot build)
   const prov = await api('POST', '/projects/provision', { account_id: accountId, name: `e2e ${Date.now().toString().slice(-6)}`, seed_starter: true });
   const projectId = prov.json?.project_id || prov.json?.id;
-  if (!ok('POST /projects/provision', !!projectId, `${prov.status} ${prov.text.slice(0, 160)}`)) return finish();
+  if (!ok('POST /projects/provision', !!projectId, `${prov.status}`)) return finish();
+  if (EXPECTED_MANAGED_GIT_PROVIDER === 'code-storage') {
+    ok('provision returns Code Storage git username', prov.json?.git_username === 't', String(prov.json?.git_username));
+  }
   ok('GET /projects/:id (read)', (await api('GET', `/projects/${projectId}`)).status === 200);
   ok('PATCH /projects/:id (rename)', (await api('PATCH', `/projects/${projectId}`, { name: 'e2e renamed' })).status === 200);
+  const files = await api('GET', `/projects/${projectId}/files`);
+  ok('managed repo files cloned into API mirror', files.status === 200 && Array.isArray(files.json) && files.json.some((file: any) => file.path === 'kortix.yaml'), `${files.status} ${files.text.slice(0, 160)}`);
+  const manifest = await api('GET', `/projects/${projectId}/files/content?path=kortix.yaml`);
+  ok('managed repo manifest content readable', manifest.status === 200 && typeof manifest.json?.content === 'string' && manifest.json.content.length > 0, `${manifest.status} ${manifest.text.slice(0, 160)}`);
+  const gitToken = await api('POST', `/projects/${projectId}/git-token`, {});
+  ok('fresh managed git token', gitToken.status === 200 && !!gitToken.json?.push_token, `${gitToken.status}`);
+  if (EXPECTED_MANAGED_GIT_PROVIDER === 'code-storage') {
+    ok('fresh token returns Code Storage git username', gitToken.json?.git_username === 't', String(gitToken.json?.git_username));
+  }
 
   // 4. provider key as a project secret (so opencode has a model)
   if (OPENROUTER) {
@@ -112,10 +138,10 @@ async function main() {
   }
 
   // 5. wait for a ready snapshot of the base branch
-  log('Polling snapshot build...');
-  let snapReady = false;
+  let snapReady = process.env.E2E_SKIP_SNAPSHOT_WAIT === '1';
+  log(snapReady ? 'Skipping snapshot-list wait; session boot will resolve/build its image.' : 'Polling snapshot build...');
   const snapEnd = Date.now() + 9 * 60_000;
-  while (Date.now() < snapEnd) {
+  while (!snapReady && Date.now() < snapEnd) {
     const s = await api('GET', `/projects/${projectId}/snapshots`);
     const list = s.json?.items ?? s.json?.snapshots ?? (Array.isArray(s.json) ? s.json : []);
     log('   snapshots:', list.map((x: any) => `${x.branch ?? '?'}:${x.status}`).join(',') || 'none');
@@ -123,10 +149,24 @@ async function main() {
     if (list.length && list.every((x: any) => x.status === 'failed')) { ok('snapshot build', false, list[0]?.error?.slice(0, 100)); break; }
     await sleep(10_000);
   }
-  if (!ok('snapshot ready', snapReady)) return finish({ projectId });
+  if (!ok('snapshot gate satisfied', snapReady)) return finish({ projectId });
 
   // 6. session CRUD — create / list / read / rename
-  const sess = await api('POST', `/projects/${projectId}/sessions`, { name: 'e2e session' });
+  const sessionName = `e2e session ${Date.now()}`;
+  let sess = await api('POST', `/projects/${projectId}/sessions`, { name: sessionName });
+  if (sess.status === 503) {
+    const reconcileEnd = Date.now() + 45_000;
+    while (Date.now() < reconcileEnd) {
+      const listed = await api('GET', `/projects/${projectId}/sessions`);
+      const rows = Array.isArray(listed.json) ? listed.json : (listed.json?.sessions ?? []);
+      const created = rows.find((row: any) => row.name === sessionName);
+      if (created) {
+        sess = { status: 201, json: created, text: JSON.stringify(created) };
+        break;
+      }
+      await sleep(2_000);
+    }
+  }
   const sessionId = sess.json?.session_id || sess.json?.id;
   if (!ok('POST /projects/:id/sessions', !!sessionId, `${sess.status} ${sess.text.slice(0, 160)}`)) return finish({ projectId });
   ok('GET sessions (list)', (await api('GET', `/projects/${projectId}/sessions`)).status === 200);
@@ -146,6 +186,9 @@ async function main() {
     await sleep(5000);
   }
   if (!ok('sandbox active', sbStatus === 'active', `status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
+  const branches = await api('GET', `/projects/${projectId}/branches`);
+  const branchRows = branches.json?.branches ?? [];
+  ok('session branch pushed to managed repo', branches.status === 200 && branchRows.some((branch: any) => branch.name === sessionId), `${branches.status} ${branches.text.slice(0, 160)}`);
 
   // 8. OpenCode reachable via preview proxy
   log('Probing OpenCode runtime...');
@@ -158,6 +201,8 @@ async function main() {
     await sleep(5000);
   }
   if (!ok('OpenCode runtime reachable', up, lastProbe)) return finish({ projectId, sessionId });
+  const runtimeManifest = await api('GET', `/p/${ext}/8000/file/content?path=${encodeURIComponent('kortix.yaml')}`);
+  ok('sandbox workspace contains cloned kortix.yaml', runtimeManifest.status === 200 && typeof runtimeManifest.json?.content === 'string' && runtimeManifest.json.content.length > 0, `${runtimeManifest.status} ${runtimeManifest.text.slice(0, 160)}`);
 
   // 9. create OpenCode session, prompt, assert a real assistant reply
   const oc = await api('POST', `/p/${ext}/8000/session`, {});
@@ -194,8 +239,22 @@ async function main() {
 }
 
 async function finish(cleanup?: { projectId?: string; sessionId?: string }) {
-  if (cleanup?.sessionId) ok('DELETE session', (await api('DELETE', `/projects/${cleanup.projectId}/sessions/${cleanup.sessionId}`)).status === 200);
-  if (cleanup?.projectId) { const d = await api('DELETE', `/projects/${cleanup.projectId}`); ok('DELETE project', d.status === 200 || d.status === 204, `${d.status}`); }
+  if (cleanup?.sessionId) {
+    let deleted = await api('DELETE', `/projects/${cleanup.projectId}/sessions/${cleanup.sessionId}`);
+    for (let attempt = 1; deleted.status === 503 && attempt < 4; attempt++) {
+      await sleep(1_000 * attempt);
+      deleted = await api('DELETE', `/projects/${cleanup.projectId}/sessions/${cleanup.sessionId}`);
+    }
+    ok('DELETE session', deleted.status === 200 || deleted.status === 404, `${deleted.status}`);
+  }
+  if (cleanup?.projectId) {
+    let deleted = await api('DELETE', `/projects/${cleanup.projectId}`);
+    for (let attempt = 1; deleted.status === 503 && attempt < 4; attempt++) {
+      await sleep(1_000 * attempt);
+      deleted = await api('DELETE', `/projects/${cleanup.projectId}`);
+    }
+    ok('DELETE project', deleted.status === 200 || deleted.status === 204 || deleted.status === 404, `${deleted.status}`);
+  }
   log('==============================');
   log(`RESULT: ${PASS} passed, ${FAIL} failed`);
   process.exit(FAIL > 0 ? 1 : 0);

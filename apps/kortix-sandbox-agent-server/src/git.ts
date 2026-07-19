@@ -159,6 +159,7 @@ async function configureSafeDirectory(target: string): Promise<void> {
 export function buildGitAuthArgs(
   repoUrl: string | undefined,
   token: string | undefined,
+  username = 'x-access-token',
 ): string[] {
   if (!token) return []
 
@@ -175,7 +176,7 @@ export function buildGitAuthArgs(
     }
   }
 
-  const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
+  const headerValue = Buffer.from(`${username}:${token}`).toString('base64')
   const header = `AUTHORIZATION: basic ${headerValue}`
   const args = ['-c', `http.${authOrigin}/.extraheader=${header}`]
 
@@ -190,13 +191,21 @@ export function buildGitAuthArgs(
   return args
 }
 
+interface CloneCredential {
+  username: string
+  token: string
+}
+
 async function gitWithAuth(
-  token: string | undefined,
+  credential: CloneCredential | undefined,
   repoUrl: string | undefined,
   args: string[],
   opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
-  return execGit([...buildGitAuthArgs(repoUrl, token), ...args], opts)
+  return execGit([
+    ...buildGitAuthArgs(repoUrl, credential?.token, credential?.username),
+    ...args,
+  ], opts)
 }
 
 const CLONE_CRED_TIMEOUT_MS = 15_000
@@ -204,19 +213,19 @@ const CLONE_CRED_ATTEMPTS = 4
 
 /**
  * Per-process cache for the clone-credential round-trip. `materializeRepo`
- * calls `resolveCloneToken` twice (base clone + branch checkout) on the cold
+ * calls `resolveCloneCredential` twice (base clone + branch checkout) on the cold
  * path; the API token doesn't change within a single boot, so caching it
  * avoids a second control-plane round-trip over the public internet.
  * Memoize on the input shape (api+project+token) so re-keying invalidates.
  */
-let cachedCloneToken: { key: string; value: string | undefined } | null = null
+let cachedCloneToken: { key: string; value: CloneCredential | undefined } | null = null
 
 /** Test-only: drop the cached clone token so a fresh fetch happens next call. */
 export function __clearCloneTokenCacheForTests(): void {
   cachedCloneToken = null
 }
 
-async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
+async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
   // Universal proxy origin: when the repo is served by the Kortix git proxy
   // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
@@ -224,7 +233,7 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   // the real upstream + host credential server-side. No clone-credential round
   // trip, and a real GitHub token never enters the sandbox.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return cfg.sandboxToken
+    return { username: 'x-access-token', token: cfg.sandboxToken }
   }
   const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
@@ -265,10 +274,11 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
         throw new Error(`clone-credential ${res.status}: ${text || res.statusText}`)
       }
       const body = await res.json().catch(() => null) as
-        | { auth?: { token?: string | null } | null }
+        | { auth?: { username?: string | null; token?: string | null } | null }
         | null
       const token = body?.auth?.token?.trim()
-      const value = token || undefined
+      const username = body?.auth?.username?.trim() || 'x-access-token'
+      const value = token ? { username, token } : undefined
       cachedCloneToken = { key: cacheKey, value }
       return value
     } catch (err) {
@@ -337,6 +347,8 @@ export async function configureGitCredentialHelper(
   if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
+  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
+    ?? 'x-access-token'
 
   const env = { HOME: home }
   // `--replace-all` keeps re-boots idempotent instead of appending duplicate
@@ -355,7 +367,7 @@ export async function configureGitCredentialHelper(
   // Pin the username so git doesn't prompt for it when the remote URL carries
   // no userinfo (GitHub expects the literal `x-access-token`).
   await execGit(
-    ['config', '--global', '--replace-all', `credential.${host}.username`, 'x-access-token'],
+    ['config', '--global', '--replace-all', `credential.${host}.username`, username],
     { env },
   )
   logger.info('[git] configured managed credential helper (global)', { host })
@@ -375,6 +387,8 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
+  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
+    ?? 'x-access-token'
 
   const setHelper = await execGit(
     ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
@@ -387,7 +401,7 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
     return
   }
   await execGit(
-    ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.username`, 'x-access-token'],
+    ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.username`, username],
   )
   logger.info('[git] configured managed credential helper (repo-local)', { host, target })
 }
@@ -421,17 +435,17 @@ export async function runGitCredentialHelper(
  * (git then falls back to its other helpers / prompts).
  */
 export async function resolveGitCredentialOutput(cfg: Config): Promise<string | null> {
-  let token: string | undefined
+  let credential: CloneCredential | undefined
   try {
-    token = await resolveCloneToken(cfg)
+    credential = await resolveCloneCredential(cfg)
   } catch (err) {
     logger.warn('[git] credential helper could not resolve token', {
       err: err instanceof Error ? err.message : String(err),
     })
     return null
   }
-  if (!token) return null
-  return `username=x-access-token\npassword=${token}\n`
+  if (!credential) return null
+  return `username=${credential.username}\npassword=${credential.token}\n`
 }
 
 function readAllStdin(): Promise<string> {
@@ -483,13 +497,13 @@ async function checkoutSessionBranch(
   cfg: Config,
   target: string,
   branch: string,
-  token: string | undefined,
+  credential: CloneCredential | undefined,
 ): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
   // Same stall-abort + hard timeout as the clone: a restored VM's RX can hang
   // this fetch with no reset. On failure/timeout we fall through to a local
   // branch from the base checkout (below), so the session still boots.
-  const fetched = await gitWithAuth(token, cfg.repoUrl, [
+  const fetched = await gitWithAuth(credential, cfg.repoUrl, [
     '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
     '-C',
     target,
@@ -500,7 +514,7 @@ async function checkoutSessionBranch(
 
   if (fetched.code === 0) {
     await clearStaleGitLock(target)
-    const checkout = await gitWithAuth(token, cfg.repoUrl, [
+    const checkout = await gitWithAuth(credential, cfg.repoUrl, [
       '-C',
       target,
       'checkout',
@@ -524,7 +538,7 @@ async function checkoutSessionBranch(
   }
 
   await clearStaleGitLock(target)
-  const local = await gitWithAuth(token, cfg.repoUrl, [
+  const local = await gitWithAuth(credential, cfg.repoUrl, [
     '-C',
     target,
     'checkout',
@@ -621,7 +635,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await rm(target, { recursive: true, force: true })
   }
   {
-    const cloneToken = await resolveCloneToken(cfg)
+    const cloneCredential = await resolveCloneCredential(cfg)
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).
@@ -631,12 +645,12 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // dev tunnel, 2026-06-13). Imported repos / other starters share no
     // ancestor → the fetch degrades to a full pack (same as a clone); ANY
     // failure falls through to the battle-tested clone path below.
-    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneToken)) {
+    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneCredential)) {
       if (cfg.branchName) {
         // Fresh session → branch == base, create it LOCALLY (zero network).
         // Restart/resume → the remote branch may carry the agent's commits.
         if (cfg.sessionFresh) await checkoutLocalSessionBranch(target, cfg.branchName)
-        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
       }
       await configureRepoGitIdentity(cfg, target)
       return
@@ -662,7 +676,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // 12 s) so a hang becomes a fast failure, then we retry with jittered
     // backoff (jitter de-clusters concurrent retries so they don't re-stampede).
     // 4 attempts × (≤12 s stall-abort + backoff) stays well under the 75 s ceiling
-    // while a transient blip clears in 1–2 retries. resolveCloneToken already
+    // while a transient blip clears in 1–2 retries. resolveCloneCredential already
     // retries the credential fetch; the clone itself needs it just as much.
     const baseCloneArgs = [
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
@@ -685,7 +699,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Blobless partial clone keeps full history but defers file blobs, cutting
       // the boot-time transfer from a full-history pack to roughly the working
       // tree. This is the dominant per-session boot cost on large repos.
-      cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
+      cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [
         ...baseCloneArgs,
         ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
         cfg.repoUrl,
@@ -699,7 +713,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           stderr: cloned.stderr.slice(0, 200),
         })
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-        cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
+        cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
       }
       if (cloned.code === 0) break
       // Empty upstream is terminal-but-fine: stop retrying and init locally below.
@@ -737,9 +751,9 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Fresh session → branch == freshly-cloned base; local, no extra fetch.
       await checkoutLocalSessionBranch(target, cfg.branchName)
     } else {
-      // resolveCloneToken is memoized — this second call is now ~free.
-      const cloneToken = await resolveCloneToken(cfg)
-      await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+      // resolveCloneCredential is memoized — this second call is now ~free.
+      const cloneCredential = await resolveCloneCredential(cfg)
+      await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
     }
   }
 
@@ -823,7 +837,7 @@ async function tryScaffoldDeltaFetch(
   cfg: Config,
   target: string,
   base: string,
-  cloneToken: string | undefined,
+  cloneCredential: CloneCredential | undefined,
 ): Promise<boolean> {
   if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
   const tmp = join(dirname(target), `.kortix-scaffold-${process.pid}-${Date.now()}`)
@@ -850,7 +864,7 @@ async function tryScaffoldDeltaFetch(
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
-    const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
       'fetch', '-q', 'origin', base,
@@ -952,9 +966,9 @@ export async function commitAndPushWorkingTree(
   }
 
   // 2. Push HEAD to the session branch on origin.
-  const cloneToken = await resolveCloneToken(cfg)
+  const cloneCredential = await resolveCloneCredential(cfg)
   const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
-  const push = await gitWithAuth(cloneToken, authRepoUrl, [
+  const push = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
     target,
     'push',
@@ -983,9 +997,9 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
     throw new Error('project repo is not materialized')
   }
 
-  const cloneToken = await resolveCloneToken(cfg)
+  const cloneCredential = await resolveCloneCredential(cfg)
   if (cfg.repoUrl) {
-    const setUrl = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    const setUrl = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C',
       target,
       'remote',
@@ -998,7 +1012,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
 
   const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
   const branch = cfg.branchName || before.branch || cfg.defaultBranch
-  const fetched = await gitWithAuth(cloneToken, authRepoUrl, [
+  const fetched = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
     target,
     'fetch',
@@ -1008,7 +1022,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
   ])
   if (fetched.code !== 0) throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
 
-  const pulled = await gitWithAuth(cloneToken, authRepoUrl, [
+  const pulled = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
     target,
     'pull',
@@ -1036,15 +1050,15 @@ export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoIn
   const before = await readRepoInfo(target)
   if (!before) throw new Error('project repo is not materialized')
 
-  const cloneToken = await resolveCloneToken(cfg)
+  const cloneCredential = await resolveCloneCredential(cfg)
   const base = cfg.defaultBranch
-  const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+  const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
     '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
   ])
   if (fetched.code !== 0) throw new Error(`git fetch base failed: ${fetched.stderr}`)
 
   const branch = cfg.branchName || before.branch || base
-  const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
+  const reset = await gitWithAuth(cloneCredential, cfg.repoUrl, [
     '-C', target, 'checkout', '-B', branch, `refs/remotes/origin/${base}`,
   ])
   if (reset.code !== 0) throw new Error(`git reset to base failed: ${reset.stderr}`)
