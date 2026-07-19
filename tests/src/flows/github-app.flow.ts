@@ -10,16 +10,17 @@
  *   - admin-gated routes: ANON → 401, authed non-admin (OWNER) → 403.
  *   - missing required fields → 400 (admin token, when available — fails
  *     BEFORE any GitHub API call, so it's safe and non-mutating).
- *   - public callbacks: a PRESENT-but-invalid state/code/installation_id →
- *     302 redirect to the frontend with an `error` reason (never a store).
+ *   - public callbacks: ANY malformed input (no query at all, present-but-
+ *     invalid state, missing code, missing installation_id, GitHub ?error=)
+ *     → 302 redirect to the frontend with an `error` reason (never a store,
+ *     never a 500).
  *
- * KNOWN BUG (asserted, not hidden — GHA-2): a truly bare hit on
- * install-callback (no query at all) 500s — `verifyGitHubAppInstallStatePayload`
- * calls `.split()` on `undefined` when `state` is absent entirely, before the
- * route's own `!installationId` guard runs. Every real GitHub redirect always
- * includes `state`, so this is a low-severity robustness gap, not a security
- * issue — but the test asserts the REAL observed 500, not the docblock's
- * original claim of a graceful redirect for that exact shape.
+ * The bare install-callback hit (no query at all) used to 500 —
+ * `verifyGitHubAppInstallStatePayload` called `.split()` on `undefined` when
+ * `state` was absent entirely. Fixed in apps/api/src/projects/github.ts
+ * (defensive null-on-non-string input, mirroring verifyManifestStartState);
+ * the GHA-2 assertion now pins the correct 302 redirect, with a unit test
+ * (unit-github-app-install-state.test.ts) guarding the regression.
  *
  * We NEVER call POST /app, POST /pat, POST /manifest-start (happy path) or
  * DELETE / with real creds — those mutate the single shared platform_settings
@@ -226,16 +227,21 @@ flow(
     });
 
     await ctx.step(
-      'install-callback with a truly bare hit (no query at all) → 500, a REAL pre-existing bug, ' +
-        'not an assertion of desired behavior: verifyGitHubAppInstallStatePayload(query.state) ' +
-        'calls .split() on undefined when `state` is absent entirely, crashing before the route\'s ' +
-        'own !installationId guard ever runs. Confirmed live against staging-api.kortix.com. ' +
-        'Never asserted as [302] here — that would silently paper over the bug.',
+      'install-callback with a truly bare hit (no query at all) → 302 (graceful redirect, ' +
+        'not a 500): verifyGitHubAppInstallStatePayload now returns null on undefined state ' +
+        '(defensive null-on-non-string input, mirroring verifyManifestStartState), so the ' +
+        'route falls through to its !installationId guard and redirects. This used to 500 ' +
+        '— a real bug the ke2e suite surfaced (GHA-2); fixed in apps/api/src/projects/github.ts, ' +
+        'regression-guard unit test in unit-github-app-install-state.test.ts.',
       async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
           .get('/v1/platform/github-app/install-callback');
-        r.status(500);
+        r.status(302).headerExists('location');
+        const loc = r.header('location') ?? '';
+        if (!loc.includes('github=error')) {
+          throw new Error(`expected redirect to carry github=error, got: ${loc}`);
+        }
       },
     );
 
@@ -274,5 +280,60 @@ flow(
         throw new Error(`expected an http redirect or empty, got: ${loc}`);
       }
     });
+
+    await ctx.step(
+      'install-callback with installation_id but NO state param → 302 (not 500)',
+      async () => {
+        // The exact regression-guard for the bug the suite surfaced: an
+        // installation_id present but `state` entirely absent used to crash
+        // verifyGitHubAppInstallStatePayload (undefined.split). With the fix
+        // the function returns null on non-string input and the route
+        // redirects. A confused browser stripping query params, or a direct
+        // hit with only the installation_id, is the realistic shape.
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/platform/github-app/install-callback', {
+            query: { installation_id: '12345', setup_action: 'install' },
+          });
+        r.status(302);
+        const loc = r.header('location') ?? '';
+        if (!loc.includes('github=error')) {
+          throw new Error(`expected redirect to carry github=error, got: ${loc}`);
+        }
+      },
+    );
+
+    await ctx.step('install-callback with empty-string state → 302 (not 500)', async () => {
+      // Boundary: `state` is present but empty. The zod schema allows any
+      // string, so `?state=` reaches the handler as `''`. Must redirect, not
+      // crash — verifyGitHubAppInstallStatePayload now returns null on
+      // empty strings too (mirroring verifyManifestStartState).
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/platform/github-app/install-callback', {
+          query: { state: '', installation_id: '12345' },
+        });
+      r.status(302);
+      const loc = r.header('location') ?? '';
+      if (!loc.includes('github=error')) {
+        throw new Error(`expected redirect to carry github=error, got: ${loc}`);
+      }
+    });
+
+    await ctx.step(
+      'install-callback with a state carrying the wrong version prefix → 302',
+      async () => {
+        // A state token shaped `v2.payload.sig` (wrong version) must be
+        // rejected, not crash. Guards against a future version bump silently
+        // accepting old-shape tokens, and against an attacker crafting
+        // plausible-looking but foreign tokens.
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/platform/github-app/install-callback', {
+            query: { state: 'v2.payload.sig', installation_id: '12345' },
+          });
+        r.status(302);
+      },
+    );
   },
 );
