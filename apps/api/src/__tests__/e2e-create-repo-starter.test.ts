@@ -447,6 +447,8 @@ const starterDbMock: any = {
                   projectId: values.projectId,
                   provider: values.provider,
                   repoUrl: values.repoUrl,
+                upstreamUrl: values.upstreamUrl ?? null,
+                managed: values.managed ?? false,
                   repoOwner: values.repoOwner ?? null,
                   repoName: values.repoName ?? null,
                   externalRepoId: values.externalRepoId ?? null,
@@ -738,6 +740,13 @@ describe('create-repo starter scaffold contract', () => {
         installation_id: '84',
       },
     });
+    expect(gitConnectionRows).toContainEqual(
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        provider: "github",
+        managed: false,
+      }),
+    );
   });
 
   test('commits the default starter scaffold with the account GitHub App token before registering the project', async () => {
@@ -820,6 +829,7 @@ describe('create-repo starter scaffold contract', () => {
       externalRepoId: '7',
       authMethod: 'github_app',
       installationId: '42',
+      managed: true,
       visibility: 'private',
       status: 'connected',
     }));
@@ -830,5 +840,35 @@ describe('create-repo starter scaffold contract', () => {
       projectRole: 'manager',
       grantedBy: USER_ID,
     });
+  });
+
+  test("commits a selected marketplace project template into the new GitHub repository", async () => {
+    const app = createApp();
+    const res = await app.request("/v1/projects/create-repo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: "company-os",
+        project_name: "Company OS",
+        private: true,
+        source_item_id: "kortix-projects:starter",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(commitCalls.map((call) => call.path)).toContain(
+      ".kortix/opencode/skills/account-research/SKILL.md",
+    );
+    expect(
+      commitCalls.find((call) => call.path === "kortix.yaml")?.content,
+    ).toContain('name: "Company OS"');
+    expect(gitConnectionRows).toContainEqual(
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        provider: "github",
+        managed: true,
+      }),
+    );
   });
 });

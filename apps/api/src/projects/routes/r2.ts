@@ -8,6 +8,7 @@ import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, getFileSha } from '../github';
+import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
@@ -256,7 +257,16 @@ projectsApp.openapi(
   // A partial starter is not a usable project.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
   const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
-  const starter = buildStarterFiles({
+  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+  const starter = sourceItemId
+    ? (await buildProjectSeedFilesFromItem({
+        id: sourceItemId,
+        projectName,
+        repoFullName: repo.full_name,
+        extraMarketplaceItems: [],
+        now: new Date().toISOString(),
+      })).files
+    : buildStarterFiles({
     projectName,
     repoFullName: repo.full_name,
     template: starterTemplate,
@@ -291,6 +301,7 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
+      managed: true,
     // The starter just committed above (buildStarterFiles) ships kortix.yaml
     // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',

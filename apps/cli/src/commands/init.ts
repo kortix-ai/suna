@@ -1,5 +1,5 @@
-import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { appendFileSync, existsSync, statSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
@@ -40,8 +40,9 @@ Start a new Kortix project.
 
 A fresh, self-contained workspace your agents can run from day one — the
 full OpenCode runtime, project memory, and a kortix.yaml to make it yours.
-Standalone by design: like create-next-app, init always spins up a new
-project in its own directory; it never touches an existing one.
+By default this works like create-next-app and creates a new directory. In an
+already-cloned Kortix repository, pass --force to wire local coding agents in
+place without replacing repository files.
 
 Arguments:
   project-name         Your project's name — and the directory it's created
@@ -59,6 +60,8 @@ Options:
                        Example: --agents claude,cursor
   --template <name>    Starter template: general-knowledge-worker (default, full
                        skill kit) or minimal (base plumbing only).
+  --force              Configure the current cloned Kortix repository in place.
+                       Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -187,6 +190,35 @@ function gitAvailable(): boolean {
   return spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0;
 }
 
+/** Keep post-clone agent wiring local so setup never dirties the user's repo. */
+function excludeLocalAgentWiring(repoRoot: string): void {
+  const gitPath = spawnSync(
+    "git",
+    ["rev-parse", "--git-path", "info/exclude"],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+    },
+  );
+  if (gitPath.status !== 0) return;
+  const rawPath = gitPath.stdout.trim();
+  if (!rawPath) return;
+  const excludePath = resolve(repoRoot, rawPath);
+  const existing = existsSync(excludePath)
+    ? readFileSync(excludePath, "utf8")
+    : "";
+  const entries = ["/.agents", "/.claude", "/.opencode", "/AGENTS.md"];
+  const missing = entries.filter(
+    (entry) => !existing.split(/\r?\n/).includes(entry),
+  );
+  if (missing.length === 0) return;
+  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  appendFileSync(
+    excludePath,
+    `${prefix}# Kortix local coding-agent wiring\n${missing.join("\n")}\n`,
+  );
+}
+
 /** Layered: bright headline up top, dim supporting text below for the
  * reader who wants the deeper context, bold options at the bottom. */
 function printAgentPreamble(): void {
@@ -235,12 +267,15 @@ export async function runInit(argv: string[]): Promise<number> {
 
   printBanner();
 
+  const configureExisting = flags.force && !flags.name;
+
   // ── Resolve project name ─────────────────────────────────────────────
-  // `kortix init` ALWAYS creates a NEW standalone project in its own fresh
-  // directory (like `create-next-app`) — it never scaffolds into an existing
-  // folder. The project name IS the directory name.
+  // The default is a NEW standalone project. `--force` with no name is the
+  // documented post-clone setup path and operates on cwd in place.
   let projectName: string;
-  if (flags.name) {
+  if (configureExisting) {
+    projectName = normalizeProjectName(basename(process.cwd()));
+  } else if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
     process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
@@ -252,15 +287,36 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // Create the project in a fresh directory next to the shell's cwd. Refuse to
   // scaffold into an existing non-empty folder — a Kortix project is standalone.
-  const cwd = resolve(process.cwd(), projectName);
-  if (existsSync(cwd) && statSync(cwd).isDirectory() && readdirSync(cwd).length > 0) {
+  const cwd = configureExisting
+    ? resolve(process.cwd())
+    : resolve(process.cwd(), projectName);
+  if (
+    !configureExisting &&
+    existsSync(cwd) &&
+    statSync(cwd).isDirectory() &&
+    readdirSync(cwd).length > 0
+  ) {
     process.stderr.write(
       `kortix init: "${projectName}" already exists and isn't empty.\n` +
         `Pick a different name, or remove the directory first.\n`,
     );
     return 1;
   }
-  mkdirSync(cwd, { recursive: true });
+  if (!configureExisting) mkdirSync(cwd, { recursive: true });
+
+  if (configureExisting) {
+    const hasManifest =
+      existsSync(resolve(cwd, "kortix.yaml")) ||
+      existsSync(resolve(cwd, "kortix.toml"));
+    const hasRuntime = existsSync(resolve(cwd, ".kortix", "opencode"));
+    if (!hasManifest || !hasRuntime) {
+      process.stderr.write(
+        "kortix init --force: this directory is not a cloned Kortix project.\n" +
+          "Expected kortix.yaml (or kortix.toml) and .kortix/opencode.\n",
+      );
+      return 1;
+    }
+  }
 
   // ── Resolve starter template ────────────────────────────────────────
   // There's one starter kit — every project scaffolds with the full Kortix
@@ -274,10 +330,14 @@ export async function runInit(argv: string[]): Promise<number> {
   // TUI is toggle-order, so primary = chosen[0].
   let chosenAgents: CodingAgent[];
 
-  if (flags.primary || flags.agents || flags.yes) {
+  if (flags.primary || flags.agents || flags.yes || configureExisting) {
     // Headless / flag-driven path. Honor --primary + --agents.
     const primary = flags.primary ?? DEFAULT_PRIMARY;
-    const extras = (flags.agents ?? []).filter((a) => a !== primary);
+    const requestedAgents =
+      configureExisting && !flags.primary && !flags.agents
+        ? [...SUPPORTED_AGENTS]
+        : (flags.agents ?? []);
+    const extras = requestedAgents.filter((a) => a !== primary);
     chosenAgents = [primary, ...extras];
   } else {
     printAgentPreamble();
@@ -302,7 +362,7 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // ── Detect existing .kortix/ ─────────────────────────────────────────
   const kortixExists = existsSync(resolve(cwd, '.kortix'));
-  if (kortixExists && !flags.overwrite && !flags.yes) {
+  if (kortixExists && !configureExisting && !flags.overwrite && !flags.yes) {
     const reuse = await confirm(
       `Detected an existing .kortix/ folder. Keep your files and only add what's missing?`,
       true,
@@ -314,7 +374,9 @@ export async function runInit(argv: string[]): Promise<number> {
   }
 
   // ── Scaffold ─────────────────────────────────────────────────────────
-  const result = applyScaffold({
+  const result = configureExisting
+    ? { written: [] as string[], skipped: [] as string[] }
+    : applyScaffold({
     repoRoot: cwd,
     projectName,
     template,
@@ -327,8 +389,9 @@ export async function runInit(argv: string[]): Promise<number> {
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,
-    overwrite: flags.overwrite,
+    overwrite: flags.overwrite || configureExisting,
   });
+  if (configureExisting) excludeLocalAgentWiring(cwd);
 
   // ── Optional `git init` ──────────────────────────────────────────────
   let gitNote = '';
@@ -343,7 +406,11 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // ── Report ───────────────────────────────────────────────────────────
   const lines: string[] = [];
-  lines.push(`Initialized Kortix project "${projectName}" in ${cwd}`);
+  lines.push(
+    configureExisting
+      ? `Configured this Kortix project in ${cwd}`
+      : `Initialized Kortix project "${projectName}" in ${cwd}`,
+  );
   const totalWritten = result.written.length + agentInstall.written.length;
   lines.push(`Wrote ${totalWritten} file${totalWritten === 1 ? '' : 's'}:`);
   for (const f of result.written) lines.push(`  + ${f}`);
@@ -358,9 +425,11 @@ export async function runInit(argv: string[]): Promise<number> {
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }
   if (gitNote) lines.push(gitNote);
-  lines.push('');
-  lines.push('Next:');
-  lines.push(`  cd ${projectName}`);
+  if (!configureExisting) {
+    lines.push('');
+    lines.push('Next:');
+    lines.push(`  cd ${projectName}`);
+  }
   process.stdout.write(`${lines.join('\n')}\n`);
 
   // ── Get started panel ────────────────────────────────────────────────
