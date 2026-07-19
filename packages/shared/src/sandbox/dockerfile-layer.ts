@@ -488,11 +488,83 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
+    // agent-browser (Vercel) — the browser-automation CLI the agent-browser
+    // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
+    // bake a real Chromium into the image and wire agent-browser to it TWO
+    // independent ways:
+    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable /usr/local/bin/chromium
+    //      symlink (the documented API; verified working on agent-browser 0.27.0).
+    //   2. a symlink into agent-browser's OWN browser cache (chrome-linux64),
+    //      which its auto-detect finds even if the env var is ever ignored again
+    //      — it WAS, historically (vercel-labs/agent-browser#422). Belt + braces.
+    // PLAYWRIGHT_BROWSERS_PATH is set BEFORE the install so Chromium lands in
+    // /opt/pw-browsers (a stable system path the symlinks resolve against). HOME
+    // is pinned to the runtime HOME (/opt/kortix/home, see opencode.ts) so the
+    // cache symlink lands where the agent looks at runtime. The build FAILS LOUDLY
+    // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
+    // every sandbox ships a working browser; we never install one on the session
+    // hot path.
+    //
+    // DELIBERATELY PLACED HERE — before the per-project warm bits below (repo
+    // clone + opencode instance warm-up) — instead of after them. This is the
+    // ONLY layer-order requirement in this whole toolchain: everything up to and
+    // including this RUN is byte-identical across the shared default image AND
+    // every per-project warm bake (no project data has been mixed in yet), so its
+    // build-cache key is IDENTICAL everywhere too — one cache-populating build
+    // (e.g. the periodic shared-default rebuild) lets every later warm bake, for
+    // every project, reuse this exact layer. The repo-clone step right below bakes
+    // a FRESH short-lived git credential into its RUN text on every single
+    // invocation (a ~1h GitHub App installation token, or a JWT with a live
+    // iat/exp — see resolveWarmRepoContext in snapshots/builder.ts) — so it can
+    // NEVER cache-hit, and neither can anything chained after it. Before this
+    // reorder, Chromium sat downstream of that never-cacheable clone step, so
+    // EVERY per-project warm bake re-ran the ~150MB Chrome-for-Testing download
+    // from cdn.playwright.dev against Playwright's install timeout — regardless
+    // of environment. Do not move this block back below the warm-repo clone.
+    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \\',
+    // Playwright's browser download defaults to a 30s socket timeout
+    // (NET_DEFAULT_TIMEOUT in playwright-core), which a ~150MB Chrome-for-Testing
+    // fetch can miss under any network hiccup / contended CDN — observed live as
+    // "Downloading Chrome for Testing ... timed out after 30000ms" failing the
+    // whole bake. Give it real headroom; the retry loop below is the second line
+    // of defense for a transient failure within that window.
+    '    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000',
+    `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
+    '    && agent-browser --version \\',
+    // Retry the Chromium download a handful of times with backoff before giving
+    // up — a transient CDN/network blip must not fail the whole image build. The
+    // loop's own exit status is irrelevant either way: `test -n "$pw_chrome"`
+    // below still hard-fails the build if every attempt came up empty, so a total
+    // failure never ships a browser-less image.
+    '    && for pw_try in 1 2 3 4 5; do \\',
+    `        HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \\`,
+    '        echo "playwright chromium install attempt $pw_try failed, retrying..."; \\',
+    '        sleep $((pw_try*10)); \\',
+    '    done \\',
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
+    '    && test -n "$pw_chrome" \\',
+    '    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\',
+    '    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\',
+    '    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\',
+    '    && /usr/local/bin/chromium --version \\',
+    // Assert agent-browser RESOLVES the browser via its env-independent cache —
+    // match the resolved path (deterministic), not the browser NAME (which is
+    // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
+    // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
+    // detection line, not the launch verdict, so the gate is emulation-safe.
+    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
+    '',
     // Per-project COLD warm: bake the repo checkout into /workspace BEFORE the
     // opencode instance warm-up below, so opencode indexes the REAL project (its
     // config, file tree, sqlite rows) — all baked into the cold rootfs. git is
     // installed by the first apt RUN above, so this is safe here. For the shared
     // default image warmRepo is absent → /workspace stays empty (unchanged).
+    // Placed AFTER the agent-browser/Chromium layer above — see that block's
+    // comment for why the order matters (this step's RUN text is never
+    // cache-stable, so nothing cache-sensitive may sit downstream of it).
     ...warmRepoClone,
     // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
     // creates an instance for a project dir it loads that dir's .kortix/opencode
@@ -586,42 +658,6 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
           '',
         ]
       : []),
-    // agent-browser (Vercel) — the browser-automation CLI the agent-browser
-    // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
-    // bake a real Chromium into the image and wire agent-browser to it TWO
-    // independent ways:
-    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable /usr/local/bin/chromium
-    //      symlink (the documented API; verified working on agent-browser 0.27.0).
-    //   2. a symlink into agent-browser's OWN browser cache (chrome-linux64),
-    //      which its auto-detect finds even if the env var is ever ignored again
-    //      — it WAS, historically (vercel-labs/agent-browser#422). Belt + braces.
-    // PLAYWRIGHT_BROWSERS_PATH is set BEFORE the install so Chromium lands in
-    // /opt/pw-browsers (a stable system path the symlinks resolve against). HOME
-    // is pinned to the runtime HOME (/opt/kortix/home, see opencode.ts) so the
-    // cache symlink lands where the agent looks at runtime. The build FAILS LOUDLY
-    // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
-    // every sandbox ships a working browser; we never install one on the session
-    // hot path.
-    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
-    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
-    `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
-    '    && agent-browser --version \\',
-    `    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
-    '    && rm -rf /var/lib/apt/lists/* \\',
-    `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
-    '    && test -n "$pw_chrome" \\',
-    '    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\',
-    '    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\',
-    '    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\',
-    '    && /usr/local/bin/chromium --version \\',
-    // Assert agent-browser RESOLVES the browser via its env-independent cache —
-    // match the resolved path (deterministic), not the browser NAME (which is
-    // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
-    // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
-    // detection line, not the launch verdict, so the gate is emulation-safe.
-    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
-    '',
     // The staged-artifact tail lives in `kortixArtifactLayer`. The split is
     // here — everything above installs from the network into an empty build
     // context; everything below COPYs bytes the caller had to stage first.
