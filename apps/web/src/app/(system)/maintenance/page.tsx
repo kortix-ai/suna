@@ -1,7 +1,8 @@
 import { LocalTime } from '@/components/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
+import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
-import { WrenchIcon as Wrench } from '@phosphor-icons/react';
+import { WrenchIcon as Wrench } from '@phosphor-icons/react/dist/ssr';
 
 const SCHEDULE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: 'short',
@@ -30,7 +31,7 @@ export default async function MaintenancePage() {
       <div className="w-full max-w-lg space-y-6 text-center">
         {/* Icon */}
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl border border-amber-500/20 bg-amber-500/10">
-          <Wrench className="h-10 w-10 text-amber-500" />
+          <Wrench className="h-10 w-10 text-amber-500" weight={DEFAULT_ICON_WEIGHT} />
         </div>
 
         {/* Title */}

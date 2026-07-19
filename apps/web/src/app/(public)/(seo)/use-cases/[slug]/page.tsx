@@ -1,4 +1,4 @@
-import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
+import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react/dist/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -27,6 +27,7 @@ import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { resolveAuthor } from '@/lib/blog';
 import { siteMetadata } from '@/lib/site-metadata';
+import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
 
@@ -182,7 +183,7 @@ export default async function UseCasePage(props: PageProps) {
               href="/use-cases"
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
             >
-              <ArrowLeft className="size-3.5" />
+              <ArrowLeft className="size-3.5" weight={DEFAULT_ICON_WEIGHT} />
               Use Cases
             </Link>
 

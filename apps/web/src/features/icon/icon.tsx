@@ -1,3 +1,5 @@
+'use client';
+
 import { cn } from '@/lib/utils';
 import { SmileyMeltingIcon, XIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';

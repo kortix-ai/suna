@@ -1,13 +1,14 @@
 import { docsMdxComponents } from '@/components/markdown/docs-mdx-components';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/features/icon/icon';
+import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import { source } from '@/lib/source';
 import { cn } from '@/lib/utils';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
-} from '@phosphor-icons/react';
+} from '@phosphor-icons/react/dist/ssr';
 import { getBreadcrumbItems } from 'fumadocs-core/breadcrumb';
 import { findNeighbour } from 'fumadocs-core/server';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
@@ -53,7 +54,12 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
                 );
                 return (
                   <Fragment key={i}>
-                    {i !== 0 && <ChevronRight className="size-3.5 shrink-0" />}
+                    {i !== 0 && (
+                      <ChevronRight
+                        className="size-3.5 shrink-0"
+                        weight={DEFAULT_ICON_WEIGHT}
+                      />
+                    )}
                     {item.url ? (
                       <Link
                         href={item.url}
@@ -108,7 +114,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
               className="hover:bg-fd-accent flex flex-col gap-1 rounded-lg border p-4 transition-colors"
             >
               <span className="text-fd-muted-foreground inline-flex items-center gap-1 text-xs">
-                <ChevronLeft className="size-3.5" />
+                <ChevronLeft className="size-3.5" weight={DEFAULT_ICON_WEIGHT} />
                 Previous
               </span>
               <span className="text-sm font-medium">{previous.name}</span>
@@ -121,7 +127,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             >
               <span className="text-fd-muted-foreground inline-flex items-center gap-1 text-xs">
                 Next
-                <ChevronRight className="size-3.5" />
+                <ChevronRight className="size-3.5" weight={DEFAULT_ICON_WEIGHT} />
               </span>
               <span className="text-sm font-medium">{next.name}</span>
             </Link>

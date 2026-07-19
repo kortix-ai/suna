@@ -249,6 +249,14 @@ removed and blocked by ESLint (`no-restricted-imports`).
   …) re-exports Phosphor icons; prefer it where already adopted.
 - Sizing stays Tailwind-first (`size-4`, `size-3.5 shrink-0` in dense buttons);
   the provider's `size: 24` default only covers class-less usages.
+- **Server Components (RSC) must import from `@phosphor-icons/react/dist/ssr`**,
+  not the main entry — the main entry calls `createContext` at module scope
+  with no `'use client'` directive, which crashes the Next.js RSC build
+  (`TypeError: (0, d.createContext) is not a function`) the moment any
+  server-only module graph reaches it. The ssr entry ships the same
+  `*Icon` components with no context dependency, so pass
+  `weight={DEFAULT_ICON_WEIGHT}` explicitly on every icon in that file —
+  `IconProvider`'s `IconContext` never reaches a Server Component.
 
 ## Button icon-swap — buttery transitions (blur + scale + opacity)
 
