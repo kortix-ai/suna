@@ -192,7 +192,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
 | B9  | **`core/turns/parts.ts`, `grouping.ts`, `shell.ts`, `state.ts` still lack `@deprecated` JSDoc.** WS3-P3-a tagged `classify.ts`/`view-model.ts`/`tool-registry.ts` (its granted file list) but NOT these 4 sibling files — which are the ones `apps/mobile`'s `SessionTurn.tsx` (3568 lines, the mobile session renderer) actually imports most heavily (`collectTurnParts`, `getTurnStatus`, `getWorkingState`, `formatDuration`, `formatCost`, `formatTokens`, `stripAnsi`, `getRetryInfo`, `splitUserParts`, `isFilePart`, etc.). Same additive/zero-risk JSDoc-only shape as the work already done; left alone here only because it was outside the granted scope. | `packages/sdk/src/core/turns/{parts,grouping,shell,state}.ts`; `apps/mobile/components/session/SessionTurn.tsx:71-93` | OPEN |
 | B11 | **`reduceEnvelope` drops genuinely-new `tool_call` updates that interleave with an open `session/load`.** The `openSessionLoadOrdinals`/`isLiveSessionLoadReplay` bootstrap-replay guard (`reduce.ts:305`) blanket-suppresses ALL `session/update` chat items while a `session/load` request is unanswered — including a NEW `tool_call` (e.g. the daemon's async synthetic outputs `show`) that lands inside the window. Replayed tool_calls already dedupe by `toolIndex`; only message/thought chunks need the guard. | Codex D2: real persisted stream `8023ee8f…` — synthetic show `kortix-outputs:1` at ordinal 84836 falls inside open load `1784486906549-18-2` [84798→85120] and vanishes from `chatItems`, so the Easy-panel Outputs card renders empty on reload of the error-terminated run. `.superpowers/sdd/d2-fix-report.md`. | **DONE (Task W5)** — see session log below |
-| B12 | **`acpToolName` misclassifies a harness-declared tool by a free-text substring.** The `/write\|create file/` hint check (`tool-part.ts:48`) fires on any title *containing* "write" — so codex's `write_stdin` (an MCP-wrapped PTY-poll tool, `rawInput: { name: "write_stdin", arguments: {...} }`, NO file path) resolves to `'write'` → family `edit` → dropped from BOTH Context and Outputs (44% of one real codex session's tool volume, 16/16 false positives). Fix generically: prefer the harness's own declared name (`rawInput.name`, the MCP wrapper) BEFORE the substring guesses, and reorder the web-search hint ahead of `/search\|grep/` so a native web search lands in the `web` family, not `explore`. No harness branch, no `write_stdin` literal. | W3 diagnosis `.superpowers/sdd/w3-context-diagnosis.md` (Mechanisms 2 & 3), DB-verified real shapes from session `8023ee8f…`. | **CLAIMED (Task W4) — session `acp-harness-runtime-v2`** |
+| B12 | **`acpToolName` misclassifies a harness-declared tool by a free-text substring.** The `/write\|create file/` hint check (`tool-part.ts:48`) fires on any title *containing* "write" — so codex's `write_stdin` (an MCP-wrapped PTY-poll tool, `rawInput: { name: "write_stdin", arguments: {...} }`, NO file path) resolves to `'write'` → family `edit` → dropped from BOTH Context and Outputs (44% of one real codex session's tool volume, 16/16 false positives). Fix generically: prefer the harness's own declared name (`rawInput.name`, the MCP wrapper) BEFORE the substring guesses, and reorder the web-search hint ahead of `/search\|grep/` so a native web search lands in the `web` family, not `explore`. No harness branch, no `write_stdin` literal. | W3 diagnosis `.superpowers/sdd/w3-context-diagnosis.md` (Mechanisms 2 & 3), DB-verified real shapes from session `8023ee8f…`. | **DONE (Task W4)** — `1254f53201` (SDK); web dedup `243b856fff`. See session log below. |
 | B10 | **ModelPicker `defaultControls` omitted.** The unified ModelPicker (commits `9dbe2c24b`, `6be202616`) omits the old picker's "Set as my/project/agent default" footer because `ModelPickerViewModel` has no persistence seam. Restoring it requires either a vm seam (follow-up P0-a) or wiring the footer to `useModelStore`; **must be resolved or explicitly cut by Jay before `unified_model_picker` flag defaults on**. | `apps/web/src/features/session/model-picker.tsx` (new); `packages/sdk/PROGRESS.md` (TS SDK takeover) | **RESOLVED — no cut needed, WS5-P0-c.** Verified (`grep -rn "modelDefaultControls" apps/web/src`) that `modelDefaultControls`/`ModelDefaultControls` is declared and consumed ONLY inside `model-selector.tsx` and `session-chat-input.tsx`'s own prop plumbing — **zero call sites ever populate it**: `ComposerChatInput` (the composer's only `SessionChatInput` wiring path, confirmed the sole non-test caller via `grep -rln "SessionChatInput" apps/web/src`) never passes `modelDefaultControls`, so the "Set as my/project/agent default" footer was already unreachable dead code in the live composer BEFORE this flag existed. Flag OFF and flag ON are therefore both "no default-controls footer in the composer" — not a regression, a parity. (Every other `<ModelSelector>` call site — Customize/schedule/task-config pages — is untouched, out of this task's composer-only scope, and keeps whatever `defaultControls` behavior it already had.) See Open decisions and the 2026-07-17 session log entry for the full evidence trail. |
 
 
@@ -1393,3 +1393,53 @@ full run).
 **Shippable to production: YES** for the SDK reducer surface. Verified: RED→GREEN,
 full suite, packed-install smoke, and the real four-harness streams (codex fixed;
 pi/claude/pi-dist byte-identical). Report: `.superpowers/sdd/d2-fix-report.md`.
+
+## Session log — 2026-07-20: Task W4 — Context card tool-identity fix (B12)
+
+`acpToolName` (`packages/sdk/src/acp/tool-part.ts`) now prefers the harness's
+own declared tool name — the MCP-style `rawInput: { name, arguments }` wrapper
+(the `arguments` sibling is required, so a genuine tool with a coincidental
+`name` *argument* like `project_create({ name, description })` is not mistaken
+for the wrapper) — BEFORE the free-text substring guesses. This fixes W3
+Mechanism 2: codex's `write_stdin` (a PTY-poll tool, no file path) had matched
+`/write/` → `'write'` → family `edit` → dropped from BOTH the Context and
+Outputs cards (44% of codex `8023ee8f…`'s 36 merged tool calls, 16/16 false
+positives, DB-verified). It now resolves to `'write_stdin'` (family `other`),
+surfacing as its own counted chip via `GenericTool`, and never pollutes the
+edit family/Outputs. Also reordered the web-search hint ahead of
+`/search|grep/` (W3 Mechanism 3) so a native web search reaches the `web`
+family; a non-web `ToolSearch` (kind `other`) still stays `grep`.
+
+No harness branch, no `write_stdin` literal, no snapshot change (`declaredToolName`
+is internal). Genuine writes/edits are unaffected — all real edits in the 5
+sampled sessions have an empty `rawInput.name` and keep classifying via kind/
+title; pinned by regression tests.
+
+**Web (`apps/web`, commit `243b856fff`):** `deriveContext`'s tools bucket now
+dedups by tool IDENTITY (`normalizeName(part.tool)`) instead of the humanized
+label (W3 Mechanism 1's "dedupes by label, not identity") — two distinct tools
+that share a leaf name (`mcp__linear__create_issue` / `mcp__github__create_issue`
+→ both "Create Issue") no longer collapse into one chip. The Context card's
+per-chip count badge (`count: parts.length`) already realised W3's
+presentation fix for the legitimate same-tool collapse (Bash · N).
+
+**TDD:** SDK — 3 RED (`write_stdin`→`write_stdin`, declared-name-wins, web
+search→`websearch`), GREEN after; regression guards (genuine write→`write`,
+edit→`edit`, execute→`bash`, `ToolSearch`→`grep`) green throughout. Web — 1
+RED (distinct tools same label = 2 chips), GREEN after; guards (bash collapse
+keeps all calls, `write_stdin` surfaces as own chip) green.
+
+**Gates:** SDK `bun test src` → 1264 pass / 0 fail / 97 files (baseline 1257 +7
+new). `typecheck` → only the pre-existing 7 REDs in `react/{model-flatten,
+use-model-store}.test.ts` (my files clean). `smoke:install` → passed.
+Public-surface + public-type-surface snapshots unchanged. Web `bun test
+src/features/session/{action-panel/,}` → 847 pass / 0 fail / 75 files; `tsc
+--noEmit` → only the pre-existing `llm-provider/utils.test.ts` dup-identifier
+errors (my files clean). Report: `.superpowers/sdd/w4-uo-report.md`.
+
+**Shippable to production: YES** (SDK acpToolName surface + web deriveContext).
+Verified: RED→GREEN, full SDK suite, packed-install smoke, public snapshots,
+full web session suites. Unverified: no live four-harness Playwright run this
+turn (that is W7); a genuine web-search fixture (Mechanism 3) still comes from
+a live browsing session in W7 — the reorder is pinned only against the real
+`ToolSearch` negative case + a canonical "Web Search" title here.
