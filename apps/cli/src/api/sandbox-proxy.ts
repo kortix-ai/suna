@@ -128,9 +128,17 @@ function promptMessageId(): string {
   // 48 bits. slice(-12) mirrors that Buffer behavior exactly.
   const timestamp = encoded.toString(16).padStart(12, '0').slice(-12);
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  const bytes = crypto.getRandomValues(new Uint8Array(14));
   let random = '';
-  for (const byte of bytes) random += chars[byte % chars.length];
+  while (random.length < 14) {
+    const bytes = crypto.getRandomValues(new Uint8Array(14 - random.length));
+    for (const byte of bytes) {
+      // 248 is the largest multiple of 62 below 256. Rejecting the remaining
+      // byte values and dividing each accepted bucket by four gives every
+      // base62 character exactly the same probability.
+      if (byte >= 248) continue;
+      random += chars[Math.floor(byte / 4)];
+    }
+  }
   return `msg_${timestamp}${random}`;
 }
 
@@ -199,7 +207,7 @@ async function submitPromptAsync(
 ): Promise<void> {
   let lastSubmitError: unknown;
 
-  for (let attempt = 0; attempt <= PROMPT_ACCEPT_BACKOFF_MS.length; attempt += 1) {
+  for (const backoff of [...PROMPT_ACCEPT_BACKOFF_MS, undefined]) {
     try {
       await sandboxRequest<null>({
         ...base,
@@ -211,7 +219,6 @@ async function submitPromptAsync(
       return;
     } catch (error) {
       lastSubmitError = error;
-      const backoff = PROMPT_ACCEPT_BACKOFF_MS[attempt];
       if (!isTransientSandboxError(error) || backoff === undefined || Date.now() + backoff >= deadline) {
         throw error;
       }
