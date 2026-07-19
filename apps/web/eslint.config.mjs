@@ -31,7 +31,13 @@ const eslintConfig = [
                 'react-icons',
                 'react-icons/*',
                 '@mynaui/icons-react',
+                '@mynaui/icons-react/*',
                 '@icons-pack/react-simple-icons',
+                '@icons-pack/react-simple-icons/*',
+                '@hugeicons/react',
+                '@hugeicons/react/*',
+                '@hugeicons/core-free-icons',
+                '@hugeicons/core-free-icons/*',
               ],
               message:
                 'Icons come from @phosphor-icons/react. Global weight: src/lib/icons/icon-config.ts.',

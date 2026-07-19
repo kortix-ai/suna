@@ -3,7 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
-import { IconProvider } from './icon-provider';
+import { IconProvider, useIconWeight } from './icon-provider';
+
+function UseIconWeightConsumer() {
+  useIconWeight();
+  return null;
+}
 
 describe('IconProvider', () => {
   test('icons inherit the configured default weight and size 24', () => {
@@ -28,6 +33,12 @@ describe('IconProvider', () => {
     expect(inProvider).toContain(duotone);
     expect(inProvider).not.toContain(
       renderToStaticMarkup(<PlusIcon weight={DEFAULT_ICON_WEIGHT} size={24} />),
+    );
+  });
+
+  test('useIconWeight throws outside of IconProvider', () => {
+    expect(() => renderToStaticMarkup(<UseIconWeightConsumer />)).toThrow(
+      'useIconWeight must be used within IconProvider',
     );
   });
 });

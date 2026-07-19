@@ -330,7 +330,7 @@ export function SidebarRight() {
               onClick={toggleSidebar}
               aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
             >
-              <PanelRight className="h-4 w-4" />
+              <PanelRight className="h-4 w-4" mirrored />
             </button>
           </div>
 

@@ -16,5 +16,6 @@ describe('IconWeightSwitcher', () => {
       expect(html).toContain(`>${weight}</button>`);
     }
     expect(html.match(/aria-pressed="true"/g)?.length).toBe(1);
+    expect(html).toContain('aria-label="Icon weight"');
   });
 });

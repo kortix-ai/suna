@@ -10,7 +10,11 @@ export function IconWeightSwitcher() {
   const { weight, setWeight } = useIconWeight();
 
   return (
-    <div className="bg-background fixed bottom-4 right-4 z-50 flex items-center gap-0.5 rounded-md border p-1 shadow-md">
+    <div
+      role="group"
+      aria-label="Icon weight"
+      className="bg-background fixed bottom-4 right-4 z-50 flex items-center gap-0.5 rounded-md border p-1 shadow-md"
+    >
       {ICON_WEIGHTS.map((w) => (
         <button
           key={w}

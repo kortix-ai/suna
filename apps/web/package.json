@@ -47,8 +47,6 @@
     "@extend-ai/react-xlsx": "0.13.4",
     "@glideapps/glide-data-grid": "6.0.4-alpha24",
     "@hookform/resolvers": "^5.2.1",
-    "@hugeicons/core-free-icons": "^4.2.0",
-    "@hugeicons/react": "^1.1.6",
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/sdk": "workspace:*",
     "@kortix/shared": "workspace:*",

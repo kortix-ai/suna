@@ -5,7 +5,7 @@ description: "Kortix brand + design system: the rules, tokens, and component lib
 
 # Kortix Design System
 
-**Track this file:** `.claude/skills/kortix-design-system/SKILL.md` (mirror: `.cursor/skills/kortix-design-system/SKILL.md`)
+**Track this file:** `.claude/skills/kortix-design-system/SKILL.md`
 
 **If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished customize-panel reference implementations — older guidance is stale and superseded. (July 2026: `Card` codified as the system panel; elevation ladder added — `shadow-*` now renders the Kortix four-sided soft shadows, not Tailwind's stock bottom-only ones.)
 
@@ -246,7 +246,9 @@ removed and blocked by ESLint (`no-restricted-imports`).
   (`localStorage['kortix.icon-weight']`); production uses only the config
   constant. Preview grid: /design-system → Icons.
 - Semantic layer: `src/components/ui/kortix-icons.ts` (`IconAdd`, `IconDelete`,
-  …) re-exports Phosphor icons; prefer it where already adopted.
+  …) re-exports Phosphor icons; prefer it where already adopted. `kortix-icons.ts`
+  re-exports the main entry, so it is client-graph only — server components use
+  `@phosphor-icons/react/dist/ssr` directly.
 - Sizing stays Tailwind-first (`size-4`, `size-3.5 shrink-0` in dense buttons);
   the provider's `size: 24` default only covers class-less usages.
 - **Server Components (RSC) must import from `@phosphor-icons/react/dist/ssr`**,
@@ -293,7 +295,7 @@ import { AnimatePresence, motion } from 'motion/react';
 </button>
 ```
 
-Rules: both icons share one fixed-size box (`relative size-3.5` parent, each child `absolute inset-0`) so they overlap and the blur bridges the crossfade. Pair it with `active:scale-[0.97]` press feedback and `transition-colors` hover — the three compound into the "buttery button". Confirmed status colour stays a `kortix-*` token (`text-kortix-green`), never raw palette. **Reference:** `CopyButton` in `apps/web/src/components/markdown/unified-markdown.tsx`.
+Rules: both icons share one fixed-size box (`relative size-3.5` parent, each child `absolute inset-0`) so they overlap and the blur bridges the crossfade. Pair it with `active:scale-[0.97]` press feedback and `transition-colors` hover — the three compound into the "buttery button". Confirmed status colour stays a `kortix-*` token (`text-kortix-green`), never raw palette. **Reference:** `CopyButton` in `apps/web/src/components/markdown/copy-button.tsx`.
 
 ## Spacing cheat sheet (from reference views)
 

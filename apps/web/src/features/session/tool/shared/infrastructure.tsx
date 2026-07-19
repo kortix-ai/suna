@@ -1079,7 +1079,10 @@ function ActivatableToolRow({
       className={cn(TOOL_ROW_CLASS, 'cursor-pointer')}
     >
       {header}
-      <PanelRight className="text-muted-foreground/30 size-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-80" />
+      <PanelRight
+        className="text-muted-foreground/30 size-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-80"
+        mirrored
+      />
     </div>
   );
 }

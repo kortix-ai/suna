@@ -714,12 +714,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.1
         version: 5.4.0(react-hook-form@7.81.0)
-      '@hugeicons/core-free-icons':
-        specifier: ^4.2.0
-        version: 4.2.2
-      '@hugeicons/react':
-        specifier: ^1.1.6
-        version: 1.1.9(react@19.1.0)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../../packages/llm-catalog
@@ -4832,18 +4826,6 @@ packages:
     dependencies:
       '@standard-schema/utils': 0.3.0
       react-hook-form: 7.81.0(react@19.1.0)
-    dev: false
-
-  /@hugeicons/core-free-icons@4.2.2:
-    resolution: {integrity: sha512-fjQW3p6cwoJmwK3oCnV8Z3PC5sHihDvr2jkAHax8cxqp62GaV/D7B/Rnao+JwicW8fmLZUQ6QrzWfoyMFOEQlQ==}
-    dev: false
-
-  /@hugeicons/react@1.1.9(react@19.1.0):
-    resolution: {integrity: sha512-O+lWSWjbijoAvMCxn4K2bQWCGN5+mP1y5j+X99j23mXMj+s0X25fs71T6t9YJLaBodwmZdaewD27dzS/PiboQw==}
-    peerDependencies:
-      react: '>=16.0.0'
-    dependencies:
-      react: 19.1.0
     dev: false
 
   /@humanfs/core@0.19.2:

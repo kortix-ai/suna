@@ -14,6 +14,9 @@
  *
  * Rule for new pages: if the icon you want isn't exported here, add it here
  * and give it a purposeful name.
+ *
+ * This file re-exports the client entry; server components (RSC) must
+ * import from `@phosphor-icons/react/dist/ssr` instead.
  */
 
 export {

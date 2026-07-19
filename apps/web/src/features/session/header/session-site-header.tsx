@@ -328,7 +328,7 @@ export function SessionSiteHeader({
                 className={cn('text-foreground cursor-pointer transition-colors')}
               >
                 <span className="relative inline-flex">
-                  <PanelRight className="h-4 w-4" />
+                  <PanelRight className="h-4 w-4" mirrored />
                   {readyChip?.sessionId === sessionId && !isSidePanelOpen && (
                     <span
                       className="bg-kortix-green ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"

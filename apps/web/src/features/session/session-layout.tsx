@@ -526,7 +526,7 @@ function PanelHeaderSwitcher({
           isSidePanelOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
       >
-        <PanelRight className="h-4 w-4" />
+        <PanelRight className="h-4 w-4" mirrored />
       </Button>
     </Hint>
   );
