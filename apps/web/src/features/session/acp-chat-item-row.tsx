@@ -2,6 +2,7 @@
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CopyButton } from '@/components/markdown/copy-button';
+import { SandboxUrlDetector } from '@/features/session/sandbox-url-detector';
 import { cn } from '@/lib/utils';
 import type {
   AcpChatItem,
@@ -130,7 +131,11 @@ function renderAcpChatItem({
     // visually distinct as muted italic rather than mislabeling it prose.)
     return (
       <div className={cn('py-1', item.role === 'thought' && 'text-muted-foreground/60 italic')}>
-        <UnifiedMarkdown content={item.text} isStreaming={isStreaming} />
+        {item.role === 'assistant' ? (
+          <SandboxUrlDetector content={item.text} isStreaming={isStreaming} />
+        ) : (
+          <UnifiedMarkdown content={item.text} isStreaming={isStreaming} />
+        )}
         {item.attachments?.length ? <AcpMessageAttachments attachments={item.attachments} /> : null}
       </div>
     );

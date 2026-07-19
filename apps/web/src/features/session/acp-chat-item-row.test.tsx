@@ -60,6 +60,15 @@ if (typeof (globalThis as any).localStorage === 'undefined') {
 // that needs it import it dynamically (matching `acp-config-controls.test.tsx`'s
 // established convention for exactly this reason).
 mock.module('@/components/markdown', () => ({ UnifiedMarkdown: () => null }));
+// Assistant rows now render through `SandboxUrlDetector` (Task 7), which
+// calls `useTranslations('hardcodedUi')` (`next-intl`) unconditionally at the
+// top of its render body — even the no-URL fallback path. There is no
+// `NextIntlClientProvider` in this DOM-free harness, so stub it to an
+// identity passthrough — same convention `acp-session-chat.test.tsx` uses.
+// Must be registered before the first `import('./acp-chat-item-row')` below.
+mock.module('next-intl', () => ({
+  useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key, rich: (key: string) => key, markup: (key: string) => key }),
+}));
 
 const STABLE_PENDING: AcpPendingPrompts = { permissions: [], questions: [] };
 const NOOP_RESPOND_QUESTION = async () => {};
@@ -250,6 +259,137 @@ describe('AcpChatItemRow — memoization', () => {
       expect(spy.renders.get('message-2')).toBe(3);
     } finally {
       spy.restore();
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+});
+
+describe('AcpChatItemRow — restored localhost preview cards (Task 7)', () => {
+  // Renders a single row in isolation — the memoization suite above uses
+  // `TranscriptFixture` for multi-item render-count spying; these tests only
+  // care about which component renders a given item's text, so a bare
+  // `AcpChatItemRow` is enough.
+  function renderRow(item: AcpChatItem, AcpChatItemRow: React.ComponentType<AcpChatItemRowProps>): ReactTestRenderer {
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpChatItemRow
+          item={item}
+          isTail={true}
+          isStreaming={false}
+          sessionId="s1"
+          pending={STABLE_PENDING}
+          onRespondQuestion={NOOP_RESPOND_QUESTION}
+          onRejectQuestion={NOOP_REJECT_QUESTION}
+          animateEnter={false}
+        />,
+      );
+    });
+    return renderer;
+  }
+
+  test('assistant message text containing a localhost URL renders through SandboxUrlDetector', async () => {
+    const { AcpChatItemRow } = await import('./acp-chat-item-row');
+    const { SandboxUrlDetector } = await import('./sandbox-url-detector');
+    const item = messageItem('a1', 'Check the dev server at http://localhost:3000 now.');
+
+    const renderer = renderRow(item, AcpChatItemRow);
+    try {
+      expect(renderer.root.findAllByType(SandboxUrlDetector)).toHaveLength(1);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('user message with the same localhost URL text does NOT get preview treatment', async () => {
+    const { AcpChatItemRow } = await import('./acp-chat-item-row');
+    const { SandboxUrlDetector } = await import('./sandbox-url-detector');
+    const item: AcpChatItem = {
+      kind: 'message',
+      id: 'u1',
+      role: 'user',
+      text: 'Check the dev server at http://localhost:3000 now.',
+    };
+
+    const renderer = renderRow(item, AcpChatItemRow);
+    try {
+      // The user bubble (`AcpUserMessage`) always renders through the plain
+      // `AcpHighlightMentions`/markdown path — `SandboxUrlDetector` must never
+      // appear in a user row's tree, localhost URL or not.
+      expect(renderer.root.findAllByType(SandboxUrlDetector)).toHaveLength(0);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('assistant message without a URL still renders through SandboxUrlDetector, unchanged markdown output', async () => {
+    const { AcpChatItemRow } = await import('./acp-chat-item-row');
+    const { SandboxUrlDetector } = await import('./sandbox-url-detector');
+    const { UnifiedMarkdown } = await import('@/components/markdown');
+    const item = messageItem('a2', 'no urls in this one');
+
+    const renderer = renderRow(item, AcpChatItemRow);
+    try {
+      // Every assistant row now routes through `SandboxUrlDetector` — when it
+      // finds no localhost URLs it falls back internally to a bare
+      // `UnifiedMarkdown`, so the previously-existing render path (content,
+      // isStreaming) is preserved byte-for-byte, just one layer deeper.
+      expect(renderer.root.findAllByType(SandboxUrlDetector)).toHaveLength(1);
+      const markdownNodes = renderer.root.findAllByType(UnifiedMarkdown as unknown as React.ComponentType);
+      expect(markdownNodes).toHaveLength(1);
+      expect(markdownNodes[0].props).toMatchObject({ content: 'no urls in this one', isStreaming: false });
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('assistant message with a localhost URL inside a code span renders the code-block preview chip', async () => {
+    const { AcpChatItemRow } = await import('./acp-chat-item-row');
+    // The chip's action buttons (`SandboxUrlChip`, in `sandbox-url-detector.tsx`)
+    // are wrapped in Radix `Tooltip`s, which throw without a `TooltipProvider`
+    // ancestor — none of this DOM-free harness's other fixtures need one, since
+    // this is the first row content that renders a real (non-stubbed) Tooltip.
+    const { TooltipProvider } = await import('@/components/ui/tooltip');
+    const item = messageItem('a3', 'Run it, then open `http://localhost:4000/health` to check.');
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <TooltipProvider>
+          <AcpChatItemRow
+            item={item}
+            isTail={true}
+            isStreaming={false}
+            sessionId="s1"
+            pending={STABLE_PENDING}
+            onRespondQuestion={NOOP_RESPOND_QUESTION}
+            onRejectQuestion={NOOP_REJECT_QUESTION}
+            animateEnter={false}
+          />
+        </TooltipProvider>,
+      );
+    });
+    try {
+      // `SandboxUrlDetector` renders code-block-URL matches as a
+      // `SandboxUrlChip` — a real, visible artifact independent of the
+      // `UnifiedMarkdown` stand-in — the strongest stable signal available
+      // that the detector actually ran its detection logic on this content,
+      // not just that the component was mounted. JSX renders `localhost:`
+      // and the port number as two separate text nodes (`localhost:{port}`),
+      // so assert on both rather than the concatenated string.
+      const json = JSON.stringify(renderer.toJSON());
+      expect(json).toContain('localhost:');
+      expect(json).toContain('4000');
+      expect(json).toContain('/health');
+    } finally {
       act(() => {
         renderer.unmount();
       });
