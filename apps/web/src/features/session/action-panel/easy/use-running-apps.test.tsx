@@ -136,6 +136,61 @@ describe('useRunningApps', () => {
     renderer!.unmount();
   });
 
+  // W1 pin — a session reset (agent stops, counter drops from 5 → 0) must not
+  // trigger a refetch; only a rising edge does. Subsequent rise (0 → 1) from the
+  // new baseline must refetch exactly once.
+  test('a decreasing executeCompletions never refetches; a subsequent rise from baseline does', async () => {
+    ports = [{ port: 3000 }];
+    portsError = null;
+    let fetchCount = 0;
+    mock.module('@/features/files/api/runtime-files', () => ({
+      listListeningPorts: () => {
+        fetchCount += 1;
+        return portsError ? Promise.reject(portsError) : Promise.resolve(ports);
+      },
+    }));
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        withQueryClient(
+          <Probe isRunning={false} executeCompletions={5} onResult={() => {}} />,
+        ),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const afterInitialMount = fetchCount;
+    expect(afterInitialMount).toBeGreaterThan(0);
+
+    // Drop from 5 → 0 (session reset, agent stops) — must NOT refetch.
+    await act(async () => {
+      renderer!.update(
+        withQueryClient(
+          <Probe isRunning={false} executeCompletions={0} onResult={() => {}} />,
+        ),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchCount).toBe(afterInitialMount);
+
+    // Rise from 0 → 1 (new run) — must refetch exactly once.
+    await act(async () => {
+      renderer!.update(
+        withQueryClient(
+          <Probe isRunning={false} executeCompletions={1} onResult={() => {}} />,
+        ),
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchCount).toBe(afterInitialMount + 1);
+    renderer!.unmount();
+  });
+
   // 404 pin — a sandbox that has no /ports route yet (old image) or one that's
   // gone stale must degrade to "no apps", never crash the panel or spam retries.
   test('a 404 from listListeningPorts pins the hook to [] with no throw and no retry', async () => {
