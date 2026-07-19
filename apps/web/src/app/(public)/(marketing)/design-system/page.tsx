@@ -175,6 +175,8 @@ import {
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 
+import { IconsSection } from './icons-section';
+
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },
   {
@@ -627,6 +629,7 @@ const TOC_SECTIONS = [
   },
   { id: 'anti-patterns', label: 'Anti-Patterns' },
   { id: 'usage', label: 'Usage' },
+  { id: 'icons', label: 'Icons' },
 ] as const;
 
 /* All section IDs flattened for intersection observer */
@@ -3773,6 +3776,8 @@ export default function BrandPage() {
                 </div>
               </div>
             </section>
+
+            <IconsSection />
           </div>
         </div>
       </div>
