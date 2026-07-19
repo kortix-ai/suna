@@ -387,3 +387,316 @@ flow(
     });
   },
 );
+
+// PROJ-27 — model-defaults CRUD. GET reads the platform/account/project/agent
+// defaults; PUT upserts one scope (agent requires agentName); DELETE clears
+// one scope by query. Entitlement is NOT enforced here (the gateway rejects
+// an unavailable model at request time) — the handler only sanity-checks the
+// wire form: a `provider/model` string always passes (isStorableModel), the
+// synthetic `auto` id never does. Full set → read-back → clear lifecycle on
+// scope=project.
+flow(
+  "PROJ-27",
+  {
+    domain: "projects",
+    routes: [
+      "GET /v1/projects/:projectId/model-defaults",
+      "PUT /v1/projects/:projectId/model-defaults",
+      "DELETE /v1/projects/:projectId/model-defaults",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("GET before any override → 200 with no project default", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.platformDefault").has("$.projectDefault", null);
+    });
+    await ctx.step("PUT scope=project sets a concrete model → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/model-defaults",
+          { scope: "project", model: "openai/gpt-5.5" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.ok", true).has("$.scope", "project").has("$.model", "openai/gpt-5.5");
+    });
+    await ctx.step("GET reflects the set project default", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
+      r.status(200).body().has("$.projectDefault", "openai/gpt-5.5").has("$.resolvedForCaller", "openai/gpt-5.5");
+    });
+    await ctx.step("PUT with the synthetic auto id → 400 (not a settable model)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/model-defaults",
+          { scope: "project", model: "auto" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    await ctx.step("PUT scope=agent without agentName → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/model-defaults",
+          { scope: "agent", model: "openai/gpt-5.5" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    await ctx.step("DELETE scope=project clears the override → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/model-defaults", {
+          params: { projectId: p.id },
+          query: { scope: "project" },
+        });
+      r.status(200).body().has("$.ok", true);
+    });
+    await ctx.step("GET reflects the clear", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
+      r.status(200).body().has("$.projectDefault", null);
+    });
+    await ctx.step("DELETE with an invalid scope → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/model-defaults", {
+          params: { projectId: p.id },
+          query: { scope: "bogus" },
+        });
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER cannot read → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/model-defaults", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+  },
+);
+
+// PROJ-28 — Suna-migration status surface. Top-level `/v1/projects/suna-migration/*`
+// (NOT project-scoped, despite the path prefix) — scoped to the caller's own
+// account. eligible = the account has legacy `public.projects` rows AND no
+// completed/in-flight migration yet. A fresh e2e account (synthesized per run)
+// has neither, so this asserts the real "nothing to migrate" shape rather than
+// kicking off a real migration against production Suna data.
+flow(
+  "PROJ-28",
+  {
+    domain: "projects",
+    routes: [
+      "GET /v1/projects/suna-migration/eligibility",
+      "GET /v1/projects/suna-migration/status",
+      "POST /v1/projects/suna-migration/start",
+    ],
+  },
+  async (ctx) => {
+    await ctx.step("GET eligibility for a fresh account → 200, not eligible", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/suna-migration/eligibility");
+      r.status(200).body().has("$.eligible", false).has("$.migration", null);
+    });
+    await ctx.step("GET status for a fresh account → 200, no migration on record", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/suna-migration/status");
+      r.status(200).body().has("$.migration", null);
+    });
+    await ctx.step("POST start for a non-eligible account → 400 (nothing to migrate)", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/suna-migration/start", {});
+      r.status(400);
+    });
+    await ctx.step("ANON cannot read eligibility → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/suna-migration/eligibility");
+      r.status(401);
+    });
+  },
+);
+
+// PROJ-29 — manifest validation (dry-run, no commit). Body: { raw, format? }.
+// Always resolves — the verdict lives in the body, never a raw parser 4xx —
+// except the caller-input guards (missing `raw`) which are the real 400s.
+flow(
+  "PROJ-29",
+  { domain: "projects", routes: ["POST /v1/projects/:projectId/manifest/validate"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("missing raw → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/manifest/validate", { format: "yaml" }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step("a valid minimal v2 manifest → 200 valid:true", async () => {
+      const raw = "kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n";
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/manifest/validate",
+          { raw, format: "yaml" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.valid", true);
+    });
+    await ctx.step("a broken manifest (default_agent not declared) → 200 valid:false with issues", async () => {
+      const raw = "kortix_version: 2\ndefault_agent: does-not-exist\nagents:\n  kortix: {}\n";
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/manifest/validate",
+          { raw, format: "yaml" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.valid", false).exists("$.issues");
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/manifest/validate",
+          { raw: "kortix_version: 2\n", format: "yaml" },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
+
+// PROJ-30 — set the project default agent. `kortix.yaml.default_agent` is
+// durable truth; project.metadata.default_agent mirrors it for reads. A fresh
+// provisioned project now synthesizes a blank v2 manifest with a `kortix`
+// agent already declared (see PROJ-19), so setting it back to `kortix` is a
+// safe, real no-op write (still commits to git) that proves the success path.
+flow(
+  "PROJ-30",
+  { domain: "projects", routes: ["PUT /v1/projects/:projectId/default-agent"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ seed: true });
+    await ctx.step("set default agent to the existing 'kortix' agent → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/default-agent", { agent: "kortix" }, { params: { projectId: p.id } });
+      r.status(200).body().has("$.ok", true).has("$.default_agent", "kortix");
+    });
+    await ctx.step("unknown agent name → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/default-agent",
+          { agent: "does-not-exist" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    await ctx.step("empty agent name → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/default-agent", { agent: "" }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put("/v1/projects/:projectId/default-agent", { agent: "kortix" }, { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+  },
+);
+
+// PROJ-31 — per-project sandbox-provider pin. `null`/`''` clears the pin
+// (follow the platform default/distribution); a concrete value must be an
+// ENABLED provider (in ALLOWED_SANDBOX_PROVIDERS with its API key configured)
+// or 400. `daytona` is the provider every other session-touching flow in this
+// suite boots on, so it is guaranteed enabled here — pin-then-clear on a
+// project with no sessions is side-effect-free (resolveSessionProvider only
+// consults the pin at session-create time).
+flow(
+  "PROJ-31",
+  { domain: "projects", routes: ["PATCH /v1/projects/:projectId/sandbox-provider"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("unknown/disabled provider → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/sandbox-provider",
+          { provider: "not-a-real-provider" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    await ctx.step("pin to the enabled 'daytona' provider → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
+      r.status(200).body().has("$.default_sandbox_provider", "daytona");
+    });
+    await ctx.step("clear the pin (null) → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/sandbox-provider", { provider: null }, { params: { projectId: p.id } });
+      r.status(200);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .patch("/v1/projects/:projectId/sandbox-provider", { provider: "daytona" }, { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
+// 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
+// endpoint reads (apps/api/src/projects/routes/r4.ts) — provider-level rows
+// (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
+// since it's meaningful for every project including native (non-gateway)
+// ones. Project-read-scoped (403/404 boundary), not actually secret data.
+flow(
+  "PROJ-32",
+  { domain: "projects", routes: ["GET /v1/projects/:projectId/llm-catalog/providers"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("OWNER reads the provider-connect catalog → 200 live snapshot", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.providers").exists("$.provider_count").exists("$.model_count");
+      const body = r.json<any>();
+      if (!Array.isArray(body?.providers) || body.providers.length === 0) {
+        throw new Error("llm-catalog/providers returned an empty provider list");
+      }
+    });
+    await ctx.step("unknown project → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/llm-catalog/providers", {
+          params: { projectId: "00000000-0000-4000-a000-000000000000" },
+        });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+      r.status(403);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/llm-catalog/providers", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);

@@ -253,12 +253,27 @@ flow(
   },
 );
 
+// COV-8's original `marketplace`/`registry` CRUD routes (GET .../marketplace,
+// .../marketplace/updates, POST .../marketplace/{install,update,update-all},
+// DELETE .../marketplace/:name, POST .../registry/update-all) were DELETED by
+// the marketplace-as-projects rewrite (docs/specs/2026-07-13-marketplace-as-projects.md,
+// merge 444b6906e): the deterministic install/lock/update/remove engine is
+// gone, replaced by the agent-driven `POST /:projectId/marketplace/install-session`
+// covered below. Verified live against staging with a real authed project:
+// each of those paths now 404s "Not found" (not the 401 an unauthenticated
+// probe would suggest — /v1/projects/:projectId/* runs its auth gate before
+// routing, so an unauthed call to a genuinely-dead sibling path still reads
+// 401). `tests/spec/routes.generated.json` was stale (pre-dated that merge)
+// and has been regenerated; these route strings would now fail the coverage
+// gate's "declared but not in the manifest" (external) check, so they're
+// dropped rather than kept as dead weight.
 flow(
   'COV-8',
   {
     domain: 'coverage',
     routes: [
       'POST /v1/projects/:projectId/marketplace/install-session',
+      'GET /v1/projects/:projectId/llm-catalog',
       'PATCH /v1/projects/:projectId/channels/email/installation',
       'POST /v1/channels/slack/identity/bind',
       'POST /internal/gateway/authorize',
@@ -271,6 +286,11 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post('/v1/projects/:projectId/marketplace/install-session', {}, { params });
+      r.status(401);
+    });
+
+    await ctx.step('unauthenticated project catalog route is gated', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/llm-catalog', { params });
       r.status(401);
     });
 

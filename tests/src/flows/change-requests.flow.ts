@@ -206,3 +206,44 @@ flow(
     });
   },
 );
+
+// CR-13 — request-changes (Review Center "request changes" on an open CR,
+// r8.ts). `feedback` is validated BEFORE the CR lookup (so a missing feedback
+// is 400 even against an unknown crId); an unknown crId is 404. A real CR
+// needs a session branch + a funded sandbox this suite can't cheaply drive
+// (see the file header), so — like CR-3..CR-8 — we assert the real validation
+// + not-found boundaries against a fresh project with no CRs.
+flow(
+  "CR-13",
+  {
+    domain: "change-requests",
+    routes: ["POST /v1/projects/:projectId/change-requests/:crId/request-changes"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("missing feedback → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/change-requests/:crId/request-changes",
+        {},
+        { params: { projectId: p.id, crId: RANDOM_UUID } },
+      );
+      r.status(400);
+    });
+    await ctx.step("unknown crId (feedback present) → 404", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/change-requests/:crId/request-changes",
+        { feedback: "please fix the thing" },
+        { params: { projectId: p.id, crId: RANDOM_UUID } },
+      );
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post(
+        "/v1/projects/:projectId/change-requests/:crId/request-changes",
+        { feedback: "please fix the thing" },
+        { params: { projectId: p.id, crId: RANDOM_UUID } },
+      );
+      r.status([403, 404]);
+    });
+  },
+);

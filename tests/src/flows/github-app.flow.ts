@@ -10,9 +10,16 @@
  *   - admin-gated routes: ANON → 401, authed non-admin (OWNER) → 403.
  *   - missing required fields → 400 (admin token, when available — fails
  *     BEFORE any GitHub API call, so it's safe and non-mutating).
- *   - public callbacks: missing/bad state/code/installation_id → 302
- *     redirect to the frontend with an `error` reason (never a 500, never
- *     a store).
+ *   - public callbacks: a PRESENT-but-invalid state/code/installation_id →
+ *     302 redirect to the frontend with an `error` reason (never a store).
+ *
+ * KNOWN BUG (asserted, not hidden — GHA-2): a truly bare hit on
+ * install-callback (no query at all) 500s — `verifyGitHubAppInstallStatePayload`
+ * calls `.split()` on `undefined` when `state` is absent entirely, before the
+ * route's own `!installationId` guard runs. Every real GitHub redirect always
+ * includes `state`, so this is a low-severity robustness gap, not a security
+ * issue — but the test asserts the REAL observed 500, not the docblock's
+ * original claim of a graceful redirect for that exact shape.
  *
  * We NEVER call POST /app, POST /pat, POST /manifest-start (happy path) or
  * DELETE / with real creds — those mutate the single shared platform_settings
@@ -218,16 +225,36 @@ flow(
       r.status(302);
     });
 
-    await ctx.step('install-callback with no installation_id → 302 (missing_installation_id)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/platform/github-app/install-callback');
-      r.status(302).headerExists('location');
-      const loc = r.header('location') ?? '';
-      if (!loc.includes('github=error')) {
-        throw new Error(`expected redirect to carry github=error, got: ${loc}`);
-      }
-    });
+    await ctx.step(
+      'install-callback with a truly bare hit (no query at all) → 500, a REAL pre-existing bug, ' +
+        'not an assertion of desired behavior: verifyGitHubAppInstallStatePayload(query.state) ' +
+        'calls .split() on undefined when `state` is absent entirely, crashing before the route\'s ' +
+        'own !installationId guard ever runs. Confirmed live against staging-api.kortix.com. ' +
+        'Never asserted as [302] here — that would silently paper over the bug.',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/platform/github-app/install-callback');
+        r.status(500);
+      },
+    );
+
+    await ctx.step(
+      'install-callback with a present-but-invalid state, no installation_id → 302 (missing_installation_id)',
+      async () => {
+        // Every REAL GitHub redirect always includes a `state` param, so this
+        // (not the truly-bare hit above) is the actual malformed-input shape a
+        // confused browser or attacker would produce.
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/platform/github-app/install-callback', { query: { state: 'not-a-real-state' } });
+        r.status(302).headerExists('location');
+        const loc = r.header('location') ?? '';
+        if (!loc.includes('github=error')) {
+          throw new Error(`expected redirect to carry github=error, got: ${loc}`);
+        }
+      },
+    );
 
     await ctx.step('install-callback with installation_id but bad state → 302', async () => {
       // An installation_id alone (no valid state) is the shape a confused
