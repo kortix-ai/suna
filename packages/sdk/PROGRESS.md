@@ -1205,3 +1205,20 @@ focused RED -> GREEN coverage, full SDK typecheck/test/packed-install gates, rea
 local browser/API proof, and the repository merge/deploy/live-dev lifecycle.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-19 — session `acp-session-load-replay-projection` (claim)
+
+Claimed the user-reported ACP reload defect where native harness
+`session/load` history replay is persisted as fresh raw envelopes and then
+projected as duplicate user/assistant turns. The raw append-only envelope log
+will remain lossless; the SDK's semantic transcript projections will classify
+load-scoped conversation replay as bootstrap history rather than new live
+turns. The companion web session surface will also retain its already-mounted
+chat through a transient runtime re-switch so recovery cannot leave both chat
+and boot loader absent. Work will follow RED -> GREEN -> REFACTOR and finish
+with focused web/SDK tests plus the SDK typecheck, full suite, and packed-install
+smoke gates.
+
+**Status:** IN PROGRESS.
