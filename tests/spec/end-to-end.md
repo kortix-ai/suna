@@ -626,6 +626,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `AUD-2` `GET /accounts/:id/audit/export` → 200 (CSV/JSONL); bad format → 400; NONMEMBER → 403.
 `AUD-3` `GET /accounts/:id/audit/webhooks` → 200; NONMEMBER → 403.
 `AUD-4` `POST`/`PATCH`/`DELETE /accounts/:id/audit/webhooks[/:id]` → 201 secret-once; bad url → 400; unknown → 404; delete 200.
+`AUD-5` Audit edge cases: ANON → 401 on every audit route; MEMBER (in-team, no audit.read/account.write) → 403; limit clamp (0/neg→1, non-numeric→50, oversize→200, never 400); cursor pagination no overlap; export headers + uppercase format normalization; webhook create validation (missing name, >128 name, malformed url, SSRF 169.254.169.254 → 400); webhook secret-once invariant (no leak on GET list / PATCH); cross-account isolation (teamA hook via teamB path → 404).
 `SCIM-1` `GET /scim/v2/accounts/:id/ServiceProviderConfig` → SCIM bearer 200; OWNER JWT/no bearer → 401.
 `SCIM-2` `GET/POST /scim/v2/accounts/:id/Users` · `GET/PATCH/DELETE …/:userId` → ListResponse; missing userName → 400; idempotent deletes 204; OWNER JWT → 401.
 `SCIM-3` `GET/POST /scim/v2/accounts/:id/Groups` · `GET/PATCH/DELETE …/:groupId` → list; missing displayName → 400; create 201.

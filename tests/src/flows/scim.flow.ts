@@ -38,7 +38,11 @@ flow(
   {
     domain: 'scim',
     tags: ['smoke'],
-    routes: ['GET /scim/v2/accounts/:accountId/ServiceProviderConfig'],
+    routes: [
+      'GET /scim/v2/accounts/:accountId/ServiceProviderConfig',
+      'GET /scim/v2/accounts/:accountId/ResourceTypes',
+      'GET /scim/v2/accounts/:accountId/Schemas',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -345,6 +349,99 @@ flow(
           params: { accountId: teamA.id },
         });
       r.status(401);
+    });
+  },
+);
+
+flow(
+  'SCIM-5',
+  {
+    domain: 'scim',
+    routes: [
+      'GET /scim/v2/accounts/:accountId/ResourceTypes/:id',
+      'GET /scim/v2/accounts/:accountId/Schemas/:id',
+      'PUT /scim/v2/accounts/:accountId/Users/:userId',
+    ],
+  },
+  async (ctx) => {
+    // Single-resource discovery (ResourceTypes/:id, Schemas/:id) — Azure AD
+    // fetches these by id after the plain list (SCIM-1). Then PUT (Okta's "Push
+    // Profile Updates") full-replaces a REAL created User (not the unknown-id
+    // idempotent case SCIM-2 already covers).
+    const team = await ctx.fixtures.team({ enterprise: true });
+    let scim: Client;
+
+    await ctx.step('mint SCIM token', async () => {
+      scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
+    });
+
+    await ctx.step('ResourceTypes/User → 200 with endpoint + schema', async () => {
+      const r = await scim.get('/scim/v2/accounts/:accountId/ResourceTypes/:id', {
+        params: { accountId: team.id, id: 'User' },
+      });
+      r.status(200)
+        .body()
+        .has('$.id', 'User')
+        .has('$.endpoint', '/Users')
+        .has('$.schema', 'urn:ietf:params:scim:schemas:core:2.0:User');
+    });
+
+    await ctx.step('ResourceTypes/:id unknown → 404 SCIM error', async () => {
+      const r = await scim.get('/scim/v2/accounts/:accountId/ResourceTypes/:id', {
+        params: { accountId: team.id, id: 'Bogus' },
+      });
+      r.status(404).body().exists('$.detail');
+    });
+
+    await ctx.step('Schemas/:id (core User urn) → 200 with attributes', async () => {
+      const r = await scim.get('/scim/v2/accounts/:accountId/Schemas/:id', {
+        params: { accountId: team.id, id: 'urn:ietf:params:scim:schemas:core:2.0:User' },
+      });
+      r.status(200)
+        .body()
+        .has('$.id', 'urn:ietf:params:scim:schemas:core:2.0:User')
+        .exists('$.attributes');
+    });
+
+    await ctx.step('Schemas/:id unknown → 404 SCIM error', async () => {
+      const r = await scim.get('/scim/v2/accounts/:accountId/Schemas/:id', {
+        params: { accountId: team.id, id: 'urn:ietf:params:scim:schemas:core:2.0:Bogus' },
+      });
+      r.status(404).body().exists('$.detail');
+    });
+
+    let userId = '';
+    await ctx.step('POST Users for an unknown email → 201 invite (create the real user to PUT)', async () => {
+      const userName = `${ctx.fixtures.name('scim-put-user')}@ke2e.kortix.test`;
+      const r = await scim.post(
+        '/scim/v2/accounts/:accountId/Users',
+        { userName, externalId: 'ext-ke2e-put-1' },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().has('$.active', true);
+      userId = r.json<any>().id;
+    });
+
+    await ctx.step('PUT full-replace with active:false → 200, actually deactivates (not idempotent 204 on an unknown id)', async () => {
+      const r = await scim.put(
+        '/scim/v2/accounts/:accountId/Users/:userId',
+        {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+          userName: 'ke2e-put-replaced@ke2e.kortix.test',
+          active: false,
+        },
+        { params: { accountId: team.id, userId } },
+      );
+      // The pending invite is revoked by this PUT — 200 + active:false confirms
+      // the write landed (distinct from SCIM-2's PUT-on-unknown-id → 204 case).
+      r.status(200).body().has('$.active', false);
+    });
+
+    await ctx.step('DELETE the now-revoked invite → idempotent 204 (cleanup)', async () => {
+      const r = await scim.del('/scim/v2/accounts/:accountId/Users/:userId', {
+        params: { accountId: team.id, userId },
+      });
+      r.status(204);
     });
   },
 );

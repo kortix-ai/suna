@@ -85,9 +85,21 @@ export function GET(request: Request): Response {
     );
   }
 
+  // Recency-first ordering: dated content (blog posts + dated use-cases) leads
+  // by lastModified desc so answer-engine crawlers reading top-N see the
+  // freshest high-intent comparison content first; undated content (marketing,
+  // most docs) follows in a stable alphabetical-by-path order. The sort is
+  // deterministic so offset-based pagination stays stable within a snapshot.
   const records = getPublicContentRecords()
     .filter((record) => !requestedKind || record.kind === requestedKind)
-    .sort((a, b) => a.htmlPath.localeCompare(b.htmlPath));
+    .sort((a, b) => {
+      const aDate = a.lastModified ?? null;
+      const bDate = b.lastModified ?? null;
+      if (aDate && bDate) return bDate.localeCompare(aDate);
+      if (aDate) return -1;
+      if (bDate) return 1;
+      return a.htmlPath.localeCompare(b.htmlPath);
+    });
   const page = records.slice(cursor, cursor + limit);
   const nextOffset = cursor + page.length;
 

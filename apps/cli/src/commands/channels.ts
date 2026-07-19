@@ -11,22 +11,28 @@ import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix channels <subcommand> [options]
 
-Connect this project to Slack.
+Connect this project to a chat platform (Slack by default; MS Teams via --platform teams).
 
 Subcommands:
-  status                  Show the current Slack connection.
-  connect                 Connect Slack. On Kortix Cloud (or any host with the
+  status                  Show the current connection.
+  connect                 Connect. Slack: on Kortix Cloud (or any host with the
                           shared Slack app configured) this prints a one-click
                           "Add to Slack" install link — open it, pick the
                           workspace, Allow. Done: no app to create, no tokens.
                           Manual token mode (self-host without the shared app)
                           kicks in automatically, or force it with --manual.
-  disconnect              Drop the project's Slack connection.
-  manifest                Print the Slack app manifest JSON — MANUAL/self-host
-                          setup only (paste into api.slack.com/apps → "From a
-                          manifest"). The one-click install never needs this.
+                          Teams: prints the Microsoft admin-consent URL (open
+                          it, grant tenant-wide consent, the app is published
+                          to your Teams catalog automatically).
+  disconnect              Drop the project's connection (Slack only in this release).
+  manifest                Print the app manifest JSON — MANUAL/self-host
+                          setup only. Slack: paste into api.slack.com/apps →
+                          "From a manifest". Teams: prints the Teams app
+                          manifest from the server. The one-click install
+                          never needs this.
 
 Global options:
+  --platform <slack|teams>  Chat platform (default: slack).
   --project <id>          Operate on this project id (default: linked or
                           \$KORTIX_PROJECT_ID).
   --host <name>           Use this host instead of the linked / active one.
@@ -35,10 +41,10 @@ Global options:
 
 Connect options:
   --wait                  After printing the install link, poll until the
-                          workspace is connected (Ctrl+C to stop).
+                          workspace is connected (Ctrl+C to stop). Slack only.
   --timeout <sec>         Give up --wait after this many seconds (default 300).
   --manual                Skip the one-click flow; save a bot token + signing
-                          secret instead.
+                          secret instead. Slack only.
   --bot-token <xoxb-…>    Bot User OAuth Token (implies --manual). Or env
                           SLACK_BOT_TOKEN. Or \`-\` for stdin.
   --signing-secret <…>    Signing secret (implies --manual). Or env
@@ -56,6 +62,22 @@ interface SlackMode {
   oauth_available: boolean;
   install_url: string | null;
 }
+
+interface TeamsInstallation {
+  tenantId: string | null;
+  catalogAppId: string | null;
+  orgInstalled: boolean;
+  installedAt: string | null;
+}
+
+interface TeamsMode {
+  oauth_available: boolean;
+  orgConsentUrl: string | null;
+  orgInstalled: boolean;
+  deepLinkUrl: string | null;
+}
+
+type Platform = 'slack' | 'teams';
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
@@ -76,36 +98,49 @@ export async function runChannels(argv: string[]): Promise<number> {
   let botTokenFlag: string | undefined;
   let signingSecretFlag: string | undefined;
   let timeoutFlag: string | undefined;
+  let platformFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     botTokenFlag = takeFlagValue(rest, ['--bot-token']);
     signingSecretFlag = takeFlagValue(rest, ['--signing-secret']);
     timeoutFlag = takeFlagValue(rest, ['--timeout']);
+    platformFlag = takeFlagValue(rest, ['--platform']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const platform: Platform = platformFlag === 'teams' ? 'teams' : 'slack';
+  if (platformFlag && platformFlag !== 'slack' && platformFlag !== 'teams') {
+    process.stderr.write(`${status.err(`--platform must be 'slack' or 'teams', got '${platformFlag}'`)}\n`);
     return 2;
   }
   const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'status':
-      return channelsStatus(ctxOpts, json);
+      return platform === 'teams' ? teamsStatus(ctxOpts, json) : channelsStatus(ctxOpts, json);
     case 'connect':
-      return channelsConnect(ctxOpts, {
-        json,
-        manual,
-        wait,
-        timeoutSec: timeoutFlag ? Number(timeoutFlag) : 300,
-        botTokenFlag,
-        signingSecretFlag,
-      });
+      return platform === 'teams'
+        ? teamsConnect(ctxOpts, { json })
+        : channelsConnect(ctxOpts, {
+            json,
+            manual,
+            wait,
+            timeoutSec: timeoutFlag ? Number(timeoutFlag) : 300,
+            botTokenFlag,
+            signingSecretFlag,
+          });
     case 'disconnect':
     case 'remove':
     case 'rm':
+      if (platform === 'teams') {
+        process.stderr.write(`${status.err('Teams disconnect is not yet supported in the CLI — use the dashboard or DELETE /v1/projects/:id/channels/teams/installation.')}\n`);
+        return 2;
+      }
       return channelsDisconnect(ctxOpts);
     case 'manifest':
-      return channelsManifest(ctxOpts);
+      return platform === 'teams' ? teamsManifest(ctxOpts) : channelsManifest(ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -401,4 +436,108 @@ function resolveSecret(label: string, flagValue: string | undefined, envName: st
     return null;
   }
   return value;
+}
+
+// ─── Microsoft Teams ─────────────────────────────────────────────────────
+// The Teams backend is already mounted in the API (apps/api/src/channels/teams/,
+// /v1/webhooks/teams/*, /v1/projects/:id/channels/teams/installation + /mode).
+// These CLI functions mirror the Slack surface so an operator can connect a
+// project to Teams the same way they connect to Slack.
+
+async function teamsStatus(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  json: boolean,
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  try {
+    const install = await ctx.client.get<TeamsInstallation | null>(
+      `/projects/${ctx.projectId}/channels/teams/installation`,
+    );
+    if (json) {
+      emitJson({ connected: Boolean(install), installation: install ?? null });
+      return 0;
+    }
+    if (!install || !install.orgInstalled) {
+      process.stdout.write(
+        `${C.dim}teams${C.reset}  not connected\n` +
+          `       Run ${C.cyan}kortix channels connect --platform teams${C.reset} — it prints the Microsoft admin-consent URL.\n`,
+      );
+      return 0;
+    }
+    process.stdout.write(
+      `${status.ok('teams')}  tenant ${install.tenantId ?? '?'}${install.catalogAppId ? `  catalog app ${install.catalogAppId}` : ''}  (installed ${install.installedAt ?? '?'})\n`,
+    );
+    if (install.catalogAppId) {
+      process.stdout.write(`       Deep link: ${install.catalogAppId}\n`);
+    }
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
+async function teamsConnect(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  opts: { json: boolean },
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  try {
+    const mode = await ctx.client.get<TeamsMode>(
+      `/projects/${ctx.projectId}/channels/teams/mode`,
+    );
+    if (!mode.oauth_available || !mode.orgConsentUrl) {
+      process.stdout.write(
+        `${C.dim}Teams one-click install isn't configured on this host. Set the Teams app credentials (TEAMS_CLIENT_ID / TEAMS_CLIENT_SECRET / TEAMS_TENANT_ID) on the server, then retry.${C.reset}\n`,
+      );
+      return 1;
+    }
+    if (opts.json) {
+      emitJson({ orgConsentUrl: mode.orgConsentUrl, orgInstalled: mode.orgInstalled });
+      return 0;
+    }
+    process.stdout.write(
+      `\n  ${C.bold}Add to Microsoft Teams — admin consent:${C.reset}\n\n` +
+      `  ${mode.orgConsentUrl}\n\n` +
+      `  Open the link, sign in as a Teams admin, grant tenant-wide consent.\n` +
+      `  Kortix publishes the app to your Teams catalog automatically.\n` +
+      `  Confirm after install with ${C.cyan}kortix channels status --platform teams${C.reset}.\n\n`,
+    );
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
+async function teamsManifest(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  // The Teams app manifest lives in the repo at apps/api/src/channels/teams-app-manifest.json.
+  // Print it so an operator can review/submit it manually if the one-click flow
+  // isn't available. The server's /mode endpoint carries the consent URL; the
+  // manifest is static (doesn't depend on the project).
+  const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
+  const manifestUrl = `${baseUrl}/v1/projects/${ctx.projectId}/channels/teams/mode`;
+  try {
+    const mode = await ctx.client.get<TeamsMode>(manifestUrl);
+    process.stdout.write(
+      JSON.stringify(
+        {
+          platform: 'teams',
+          orgConsentUrl: mode.orgConsentUrl,
+          orgInstalled: mode.orgInstalled,
+          deepLinkUrl: mode.deepLinkUrl,
+          note: 'Teams app manifest is generated server-side from apps/api/src/channels/teams-app-manifest.json. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 }

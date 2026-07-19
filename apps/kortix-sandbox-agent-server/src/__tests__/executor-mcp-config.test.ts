@@ -5,7 +5,7 @@ import { buildExecutorMcpConfigContent, buildOpencodeConfigContent } from '../op
 const ENV = { KORTIX_EXECUTOR_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
 const GATEWAY_CATALOG = {
-  'anthropic/claude-opus-4.8': { name: 'Claude Opus 4.8', reasoning: true, tool_call: true, attachment: true, temperature: true },
+  'anthropic/claude-opus-4.8': { name: 'Claude Opus 4.8', provider: 'anthropic', reasoning: true, tool_call: true, attachment: true, temperature: true },
   'anthropic/claude-sonnet-4.6': { name: 'Claude Sonnet 4.6', reasoning: true, tool_call: true, attachment: true },
   'deepseek/deepseek-v4-flash': { name: 'DeepSeek V4 Flash', reasoning: true, tool_call: true },
   'x-ai/grok-4.3': { name: 'Grok 4.3', tool_call: true },
@@ -113,6 +113,10 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     expect(models['deepseek/deepseek-v4-flash'].reasoning).toBe(true)
     expect(models['x-ai/grok-4.3'].tool_call).toBe(true)
     expect(models['minimax/minimax-m3'].tool_call).toBe(true)
+    // `provider` is picker metadata from the Kortix catalog, not part of an
+    // OpenCode custom-provider model definition. OpenCode 1.1.25+ treats that
+    // field as a nested provider override and rejects string values at startup.
+    expect(models['anthropic/claude-opus-4.8'].provider).toBeUndefined()
   })
 
   test('falls back to a minimal catalog when the gateway /models fetch fails', async () => {

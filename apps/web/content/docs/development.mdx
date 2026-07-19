@@ -48,6 +48,11 @@ Each environment is a [dotenvx](https://dotenvx.com)-encrypted file, committed t
 
 Every value is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts sits in the file and is safe to commit; the **private key** that decrypts never touches git — it lives off your machine in [Dotenv Armor](https://dotenvx.com/armor). At runtime `dotenvx run --overload -f <file>` decrypts **in memory** and injects the vars — nothing plaintext is ever written to disk. `--overload` is intentional for env-specific runs so exported local cloud credentials cannot override the selected profile.
 
+Armor access is split by environment. The six API/web local, dev, and staging
+keypairs belong to **`go-marko-kortix-ai`**. Only the two `.env.prod` keypairs
+belong to **`kortix-ai-prod`**. Always pass the owning team when pushing or
+pulling; do not rely on a personal-team default.
+
 <Callout type="info">
 These encrypted files are **only for local development**. The actual deployed **production** environment does **not** read them — the prod infra loads its env from **AWS Secrets Manager** at runtime. So `apps/api/.env.prod` is just for running locally against the prod backend; changing it does not change what production runs.
 </Callout>
@@ -60,15 +65,28 @@ These encrypted files are **only for local development**. The actual deployed **
 <Step>
 ### Install the key manager and log in
 ```sh
+curl -sfS https://dotenvx.sh | sh
 curl -sfS https://dotenvx.sh/armor | sh
-dotenvx-armor login
+dotenvx armor login
 ```
+
+Use dotenvx 2.7.1 or newer. Existing Armor users upgrading from an older CLI
+must run `dotenvx armor logout` followed by `dotenvx armor login` once so the
+Armor token moves from the settings file into the native OS secret store.
 </Step>
 <Step>
 ### Pull the keys from the cloud
 ```sh
 for app in api web; do
-  (cd "apps/$app" && for f in .env .env.dev .env.staging .env.prod; do dotenvx-armor pull -f "$f"; done)
+  (cd "apps/$app" && for f in .env .env.dev .env.staging; do dotenvx armor pull --team go-marko-kortix-ai -f "$f"; done)
+done
+```
+
+Production-authorized users additionally pull the isolated prod keys:
+
+```sh
+for app in api web; do
+  (cd "apps/$app" && dotenvx armor pull --team kortix-ai-prod -f .env.prod)
 done
 ```
 </Step>
@@ -91,7 +109,25 @@ The pre-commit hook **auto-encrypts** the profile files (`.env` / `.env.dev` / `
 | Verify all envs decrypt | `pnpm test:envs` |
 | Read a secret | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`) |
 | Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit |
-| Share a new/rotated key with the team | `dotenvx-armor push -f <file>` (one file at a time) |
+| Share a new/rotated non-prod key | `dotenvx armor push --team go-marko-kortix-ai -f <file>` (one file at a time) |
+| Share a new/rotated prod key | `dotenvx armor push --team kortix-ai-prod -f .env.prod` (from the app directory) |
+
+<Callout type="warn">
+Dotenvx 2.14.0 currently ignores the token supplied to `run --token` and can
+fall back to an interactive Armor login. For automation, first run
+`dotenvx armor pull --token "$DOTENVX_ARMOR_TOKEN" --team <owning-team> -f <file>`
+in an ephemeral workspace, then execute with `dotenvx run --no-armor -f <file> -- <command>`.
+Remove the generated `.env.keys` when the job ends.
+</Callout>
+
+The repo-pinned dotenvx 1.75.x still provides `rotate`; dotenvx 2.x temporarily
+removed that command. Use `pnpm exec dotenvx rotate`, not the global binary.
+`rotate --no-armor` creates a transitional comma-separated `old,new` private-key
+value locally. Do not push that combined value to Armor. Retain only the new key
+after decryption verification, push it to the profile's owning team, and prove a
+clean pull before merging the rotated ciphertext. Key rotation protects new
+ciphertext; rotate the underlying vendor credential too if previously decrypted
+secret values must be revoked.
 
 <Callout type="warn">
 Never write plaintext into the profile files — they're encrypted and committed. Machine-local overrides go in the gitignored `apps/api/.env.local`, which Bun loads at higher precedence.

@@ -130,7 +130,59 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // image that seeds /workspace (a documented WORKDIR) no longer has it silently
 // deleted. (c) ENV DEBIAN_FRONTEND=noninteractive is set by the layer instead of
 // being inherited by luck from the user's base.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v26';
+// v27: Chromium layer cache-determinism + download hardening. (a) Moved the
+// agent-browser/Playwright Chromium RUN to sit BEFORE the per-project warm-repo
+// clone (and the opencode instance warm-up that follows it), instead of after.
+// The repo-clone step bakes a FRESH short-lived git credential into its RUN
+// text on every single invocation (~1h GitHub App installation token, or a JWT
+// with a live iat/exp), so it can never build-cache-hit — and neither can
+// anything chained after it. With Chromium previously downstream of that clone
+// step, EVERY per-project warm bake re-downloaded the ~150MB Chrome-for-Testing
+// from cdn.playwright.dev, live-observed timing out staging's ke2e suite
+// ("Downloading Chrome for Testing ... timed out after 30000ms"). Chromium now
+// sits immediately after the toolchain floor — a prefix that is byte-identical
+// across the shared default image AND every per-project warm bake — so its
+// build-cache key is identical everywhere and one cache-populating build (e.g.
+// the shared-default rebuild) serves every later warm bake, for every project.
+// (b) Regardless of cache state, hardened the Chromium download itself:
+// PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 (was Playwright's 30s default)
+// + a 5-attempt backoff retry loop around `playwright install --with-deps
+// chromium`, so a transient CDN blip no longer fails the whole image build.
+// v28: v27's cache-order fix made the Chromium RUN text byte-identical across
+// bakes, but under concurrency (3+ simultaneous per-project bakes) the
+// opportunistic build-cache STILL did not reliably hit — the provider's
+// build-cache is not something we can observe or guarantee from here, so
+// per-project warm bakes kept re-downloading Chromium and saturating egress
+// (root cause of the v0.10.11 prod rollback). Two changes: (a) per-project warm
+// bakes now prefer building FROM the already-built default image
+// (buildPerProjectWarmFromBaseDockerfile in dockerfile-layer.ts, wired through
+// ensurePerProjectWarmImage) — Chromium is INHERITED, not re-installed, so
+// there is no download to miss, no matter what the provider's cache does. This
+// requires the default image to already be `active` on the provider; when it
+// isn't (or the provider can't report an image ref), the builder falls back to
+// the v27 full-rebuild path unchanged. (b) Raised
+// PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT to 1800000 (30min, was 300000/5min) as
+// a safety net for that fallback path under a cold cache.
+// v29: fix the BASE default image rebuild (the gap v27/v28 left open). v27/v28
+// only moved Chromium above the per-project warm-repo clone + instance warm-up,
+// and made per-project bakes inherit Chromium FROM the base — but in the base
+// image's own build (kortixToolchainLayer with no warmRepo) Chromium STILL sat
+// BELOW the opencode install, the `opencode serve` migration-bake, and the
+// config-deps bun install. The migration-bake writes a sqlite db with live
+// timestamps and the config-deps install churns node_modules mtimes — both
+// non-deterministic — so on a content-addressed provider cache (Daytona) they
+// bust the cache for the Chromium layer chained below them. The kortix-agent
+// SOURCE feeds the snapshot fingerprint (AGENT_RUNTIME_ARTIFACTS below), so any
+// agent-server code change mints a brand-new base snapshot name → a full rebuild
+// on Daytona (no agent-swap) → Chromium re-download → the base image never
+// becomes ready inside the session window → "session never starts" (the actual
+// mechanism behind the v0.10.11 rollback: PR #5010 changed the agent-server and
+// re-minted the base hash). Fix: move the Chromium block to sit DIRECTLY on the
+// deterministic apt + pip floors, ABOVE opencode and every non-deterministic
+// layer. Chromium's content hash is now stable across agent-source churn — it is
+// fetched at most once per pinned Playwright/agent-browser version and
+// cache-reused for every base rebuild after.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v29';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

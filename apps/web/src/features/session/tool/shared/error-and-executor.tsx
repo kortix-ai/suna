@@ -1,6 +1,6 @@
 'use client';
 
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { cn } from '@/lib/utils';
 

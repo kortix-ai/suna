@@ -19,10 +19,11 @@
 import { describe, expect, test } from 'bun:test';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '../../runtime-versions';
 import {
-  buildLayeredDockerfile,
   type BuildLayeredDockerfileOpts,
-  kortixToolchainLayer,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
+  buildLayeredDockerfile,
+  buildPerProjectWarmFromBaseDockerfile,
+  kortixToolchainLayer,
 } from '../dockerfile-layer';
 
 const COMMON = {
@@ -131,6 +132,54 @@ describe('the Python floor is venv-isolated from dpkg', () => {
   });
 });
 
+describe('Chromium sits on deterministic parents (cache order is load-bearing)', () => {
+  // Regression guard for the v0.10.11 "session never starts" incident. The
+  // provider build caches are CONTENT-ADDRESSED (Daytona has no instruction-text
+  // cache, no agent-swap), so a non-deterministic layer above the ~150MB Chromium
+  // download busts its cache and forces a re-download on every rebuild. An
+  // agent-server code change re-mints the base snapshot hash → a full Daytona
+  // rebuild → if Chromium sat below the `opencode serve` migration-bake (sqlite
+  // with live timestamps) or the warm-repo clone (fresh credential in the RUN
+  // text), it re-downloaded and overran the session-ready window. Chromium must
+  // stay directly on the deterministic apt + pip floors, ABOVE all of them.
+  const chromiumAt = (t: string) =>
+    t.indexOf('npx -y playwright@');
+  const opencodeInstallAt = (t: string) =>
+    t.indexOf('"opencode-ai@');
+  const migrationBakeAt = (t: string) => t.indexOf('/tmp/oc-bake.log');
+
+  test('the base default image installs Chromium before opencode + the migration-bake', () => {
+    const base = kortixToolchainLayer({
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      opencodeConfigPath: 'kortix-opencode-config',
+      isSharedDefault: true,
+    });
+    const chromium = chromiumAt(base);
+    expect(chromium).toBeGreaterThan(-1);
+    expect(chromium).toBeLessThan(opencodeInstallAt(base));
+    expect(chromium).toBeLessThan(migrationBakeAt(base));
+  });
+
+  test('a per-project warm bake installs Chromium before the credential-bearing clone', () => {
+    const warm = kortixToolchainLayer({
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      opencodeConfigPath: 'kortix-opencode-config',
+      warmRepo: {
+        cloneUrl: 'https://git.example.com/acme/app.git',
+        cloneHeaders: { Authorization: 'Bearer redacted' },
+        branch: 'main',
+        originUrl: 'https://kortix.example.com/v1/git/proj.git',
+      },
+    });
+    const chromium = chromiumAt(warm);
+    expect(chromium).toBeGreaterThan(-1);
+    // the credential-bearing clone RUN must come strictly after Chromium
+    expect(chromium).toBeLessThan(warm.indexOf('/tmp/kortix-warm-repo'));
+  });
+});
+
 describe('the /workspace wipe is scoped to the shared default image', () => {
   const WIPE = 'find /workspace -mindepth 1 -delete';
 
@@ -163,5 +212,89 @@ describe('the /workspace wipe is scoped to the shared default image', () => {
   test('warmRepo outranks isSharedDefault — a baked checkout is never wiped', () => {
     const both = buildLayeredDockerfile({ ...CASES[2]!.opts, isSharedDefault: true });
     expect(both).not.toContain(WIPE);
+  });
+});
+
+describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
+  const FROM_BASE_OPTS = {
+    baseImageRef: 'registry.daytona.internal/kortix-default-abc123:latest',
+    opencodeConfigPath: 'kortix-opencode-config',
+    warmRepo: {
+      cloneUrl: 'https://git.example.com/acme/app.git',
+      cloneHeaders: { Authorization: 'Bearer redacted' },
+      branch: 'main',
+      originUrl: 'https://kortix.example.com/v1/git/proj.git',
+    },
+  };
+
+  test('golden', () => {
+    expect(buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS)).toMatchSnapshot();
+  });
+
+  test('FROMs the base image ref as the very first line', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered.startsWith(`FROM ${FROM_BASE_OPTS.baseImageRef}\n`)).toBe(true);
+  });
+
+  test('never re-installs the toolchain — Chromium is inherited, not re-run', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('apt-get');
+    expect(rendered).not.toContain('opencode-ai@');
+    expect(rendered).not.toContain('playwright');
+    expect(rendered).not.toContain('chromium');
+    expect(rendered).not.toContain('agent-browser@');
+    expect(rendered).not.toContain('pip install');
+    expect(rendered).not.toContain('bun.com/install');
+  });
+
+  test('bakes the repo checkout and re-warms the opencode instance against it', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
+    expect(rendered).toContain(FROM_BASE_OPTS.warmRepo.cloneUrl);
+    expect(rendered).toContain('opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log');
+    expect(rendered).toContain('warm-repo: keeping baked /workspace checkout');
+  });
+
+  test('renders the clone + warm-up steps byte-identically to the monolithic build', () => {
+    const monolithic = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: FROM_BASE_OPTS.warmRepo,
+    });
+    const fromBase = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    const startMarker = 'RUN cd / \\\n    && rm -rf /tmp/kortix-warm-repo';
+    const endMarker = 'rm -f /tmp/oc-warm.log; true';
+    const slice = (text: string) =>
+      text.slice(text.indexOf(startMarker), text.indexOf(endMarker) + endMarker.length);
+    expect(slice(fromBase)).toBe(slice(monolithic));
+  });
+
+  test('does not COPY or reference any staged artifact paths — everything is inherited', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('COPY kortix-agent.gz');
+    expect(rendered).not.toContain('COPY kortix.gz');
+    expect(rendered).not.toContain('scaffold.git');
+    expect(rendered).not.toContain('ENTRYPOINT');
+  });
+
+  test('with no opencodeConfigPath, only the clone step is added on top of the base', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile({
+      baseImageRef: FROM_BASE_OPTS.baseImageRef,
+      warmRepo: FROM_BASE_OPTS.warmRepo,
+    });
+    expect(rendered).not.toContain('COPY ');
+    expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
+  });
+
+  test('is portable — no buildah-unsupported heredocs', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    const heredocLine = rendered
+      .split('\n')
+      .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+    expect(heredocLine).toBeUndefined();
+  });
+
+  test('result ends with a trailing newline', () => {
+    expect(buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS).endsWith('\n')).toBe(true);
   });
 });

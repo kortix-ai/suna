@@ -39,7 +39,6 @@ import {
   Loader2,
   type LucideIcon,
   Pencil,
-  Search,
   SquareTerminal,
   Wrench,
 } from 'lucide-react';

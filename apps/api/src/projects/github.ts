@@ -148,7 +148,7 @@ export interface GitHubAppInstallState {
   issuedAt: number;
 }
 
-function buildGitHubAppInstallState(
+export function buildGitHubAppInstallState(
   accountId: string,
   options: { nonce?: string } = {},
   nowMs = Date.now(),
@@ -161,7 +161,21 @@ function buildGitHubAppInstallState(
   return `v1.${payload}.${signGitHubAppStatePayload(payload)}`;
 }
 
-export function verifyGitHubAppInstallStatePayload(state: string, nowMs = Date.now()): GitHubAppInstallState | null {
+export function verifyGitHubAppInstallStatePayload(
+  state: string | undefined | null,
+  nowMs = Date.now(),
+): GitHubAppInstallState | null {
+  // Defensive against bare/missing `state` query params — the install-callback
+  // route (apps/api/src/platform/routes/github-app.ts) calls this with
+  // `query.state`, which is `string | undefined` (zod schema marks it
+  // `optional()`). Without this guard, `undefined.split('.')` throws a
+  // TypeError that surfaces as a 500 on a bare GET /install-callback hit —
+  // observed live on staging (ke2e GHA-2). Mirrors verifyManifestStartState's
+  // own null-on-non-string-input contract. Every real GitHub redirect always
+  // includes a `state` param, so this is a robustness fix, not a security
+  // change — a missing state was always meant to be rejected (→ null → 302
+  // redirect), just not by crashing.
+  if (typeof state !== 'string' || state.length === 0) return null;
   const parts = state.split('.');
   if (parts.length !== 3 || parts[0] !== 'v1') return null;
   const payload = parts[1]!;

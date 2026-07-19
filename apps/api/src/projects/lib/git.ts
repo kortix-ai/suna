@@ -3,7 +3,7 @@ import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
-import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
@@ -535,11 +535,21 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
 }
 
 
-export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
-  const gitAuth = await resolveProjectGitAuth(project);
+export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & {
+  gitAuthToken: string | null;
+  gitAuthHeaders: Record<string, string>;
+}> {
+  const upstream = await resolveProjectUpstream(project, 'write');
+  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
   return {
     ...project,
-    gitAuthToken: gitAuth.auth?.token ?? null,
+    repoUrl: upstream?.url ?? project.repoUrl,
+    // Keep the legacy token field populated for GitHub API fast paths and
+    // older callers, but derive it from the backend-produced credential so
+    // provider-minted credentials (for example Code Storage `t:<jwt>`) are
+    // represented consistently with the headers used by git CLI operations.
+    gitAuthToken: credential?.token ?? null,
+    gitAuthHeaders: upstream?.headers ?? {},
   };
 }
 
@@ -763,14 +773,43 @@ export async function resolveGitHubImportWithPat(input: {
  */
 
 export async function loadGitProject(loaded: { row: ProjectRow }) {
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
+  const resolved = await withProjectGitAuth(loaded.row);
   return {
-    projectId: loaded.row.projectId,
-    repoUrl: loaded.row.repoUrl,
-    defaultBranch: loaded.row.defaultBranch,
-    manifestPath: loaded.row.manifestPath,
-    gitAuthToken: gitAuth.auth?.token ?? null,
+    projectId: resolved.projectId,
+    repoUrl: resolved.repoUrl,
+    defaultBranch: resolved.defaultBranch,
+    manifestPath: resolved.manifestPath,
+    gitAuthToken: resolved.gitAuthToken,
+    gitAuthHeaders: resolved.gitAuthHeaders,
   };
+}
+
+/** Lazy provider-neutral mirror access resolution from only a project id. */
+export async function resolveProjectGitAccessById(projectId: string): Promise<{
+  repoUrl: string;
+  token: string | null;
+  headers: Record<string, string>;
+} | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!row) return null;
+    const resolved = await withProjectGitAuth(row);
+    return {
+      repoUrl: resolved.repoUrl,
+      token: resolved.gitAuthToken,
+      headers: resolved.gitAuthHeaders,
+    };
+  } catch (err) {
+    console.warn(
+      `[projects] lazy git-access resolve failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
 }
 
 /**
@@ -793,22 +832,7 @@ export async function loadGitProject(loaded: { row: ProjectRow }) {
  * exactly as before this hook existed), never crash the mirror refresh.
  */
 export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
-  try {
-    const [row] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1);
-    if (!row) return null;
-    const gitAuth = await resolveProjectGitAuth(row);
-    return gitAuth.auth?.token ?? null;
-  } catch (err) {
-    console.warn(
-      `[projects] lazy git-auth resolve failed for ${projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return null;
-  }
+  return (await resolveProjectGitAccessById(projectId))?.token ?? null;
 }
 
 // GET /v1/projects/:projectId/sandboxes

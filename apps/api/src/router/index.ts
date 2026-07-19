@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { config } from '../config';
 import { apiKeyAuth } from '../middleware/auth';
 import { makeOpenApiApp, json } from '../openapi';
 import { webSearch } from './routes/search-web';

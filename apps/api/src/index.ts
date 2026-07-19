@@ -49,11 +49,11 @@ import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
+import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
+import { startLeaderElection, stopLeaderElection, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -61,8 +61,6 @@ import {
   projectsApp,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
-  schedulerSweepIsStale,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
