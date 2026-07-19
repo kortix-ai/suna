@@ -720,9 +720,6 @@ importers:
       '@hugeicons/react':
         specifier: ^1.1.6
         version: 1.1.9(react@19.1.0)
-      '@icons-pack/react-simple-icons':
-        specifier: 13.11.1
-        version: 13.11.1(react@19.1.0)
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../../packages/llm-catalog
@@ -738,9 +735,6 @@ importers:
       '@logtail/next':
         specifier: ^0.3.1
         version: 0.3.1(next@15.5.18)(react@19.1.0)
-      '@mynaui/icons-react':
-        specifier: ^0.4.2
-        version: 0.4.8(react@19.1.0)
       '@next/third-parties':
         specifier: ^15.3.1
         version: 15.5.20(next@15.5.18)(react@19.1.0)
@@ -1004,13 +998,13 @@ importers:
         version: 2.0.5
       fumadocs-core:
         specifier: 15.8.5
-        version: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
+        version: 15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
       fumadocs-mdx:
         specifier: 11.10.1
         version: 11.10.1(fumadocs-core@15.8.5)(next@15.5.18)(react@19.1.0)
       fumadocs-ui:
         specifier: 15.8.5
-        version: 15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2)
+        version: 15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2)
       heic2any:
         specifier: 0.0.4
         version: 0.0.4
@@ -1029,9 +1023,6 @@ importers:
       lodash:
         specifier: ^4.18.1
         version: 4.18.1
-      lucide-react:
-        specifier: ^0.479.0
-        version: 0.479.0(react@19.1.0)
       marked:
         specifier: ^15.0.7
         version: 15.0.12
@@ -1070,7 +1061,7 @@ importers:
         version: 1.396.6
       pptx-react-viewer:
         specifier: ^1.15.0
-        version: 1.15.0(fast-xml-parser@5.10.0)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@0.479.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0)
+        version: 1.15.0(fast-xml-parser@5.10.0)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@1.25.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0)
       pptx-viewer-core:
         specifier: ^1.2.8
         version: 1.2.8(node-forge@1.4.0)(xml-crypto@6.1.2)
@@ -1092,9 +1083,6 @@ importers:
       react-i18next:
         specifier: ^17.0.9
         version: 17.0.9(i18next@26.3.6)(react-dom@19.1.0)(react@19.1.0)(typescript@5.9.3)
-      react-icons:
-        specifier: ^5.5.0
-        version: 5.7.0(react@19.1.0)
       react-is:
         specifier: ^19.2.3
         version: 19.2.7
@@ -4905,14 +4893,6 @@ packages:
       import-meta-resolve: 4.2.0
     dev: false
 
-  /@icons-pack/react-simple-icons@13.11.1(react@19.1.0):
-    resolution: {integrity: sha512-WbwN/o7dUHEjDCJh2p3RvDZ4kZ8nhfUSkUSm0bWuPTXIsoKgDJpwD5UkMCG22R/5kZH6lHAZXwuHWsKNtX7fYA==}
-    peerDependencies:
-      react: ^16.13 || ^17 || ^18 || ^19
-    dependencies:
-      react: 19.1.0
-    dev: false
-
   /@ide/backoff@1.0.0:
     resolution: {integrity: sha512-F0YfUDjvT+Mtt/R4xdl2X0EYCHMMiJqNLdxHD++jDT5ydEFIyqbCHh51Qx2E211dgZprPKhV7sHmnXKpLuvc5g==}
     dev: false
@@ -5568,15 +5548,6 @@ packages:
   /@msgpack/msgpack@2.8.0:
     resolution: {integrity: sha512-h9u4u/jiIRKbq25PM+zymTyW6bhTzELvOoUd+AvYriWOAKpLGnIamaET3pnHYoI5iYphAHBI4ayx0MehR+VVPQ==}
     engines: {node: '>= 10'}
-    dev: false
-
-  /@mynaui/icons-react@0.4.8(react@19.1.0):
-    resolution: {integrity: sha512-hTqiULZ9+Z7Ws+ozrfdPQ6smGvtLZ5AdurxDkrAVTazvVoEH2FXd9O5PSWws1NlrnQgNY7+TvWoP1aehRHAu8Q==}
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-    dependencies:
-      prop-types: 15.8.1
-      react: 19.1.0
     dev: false
 
   /@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0):
@@ -16526,7 +16497,7 @@ packages:
     requiresBuild: true
     optional: true
 
-  /fumadocs-core@15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0):
+  /fumadocs-core@15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0):
     resolution: {integrity: sha512-hyJtKGuB2J/5y7tDfI1EnGMKlNbSXM5N5cpwvgCY0DcBJwFMDG/GpSpaVRzh3aWy67pAYDZFIwdtbKXBa/q5bg==}
     peerDependencies:
       '@mixedbread/sdk': ^0.19.0
@@ -16573,7 +16544,7 @@ packages:
       hast-util-to-estree: 3.1.3
       hast-util-to-jsx-runtime: 2.3.6
       image-size: 2.0.2
-      lucide-react: 0.479.0(react@19.1.0)
+      lucide-react: 1.25.0(react@19.1.0)
       negotiator: 1.0.0
       next: 15.5.18(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
       npm-to-yarn: 3.0.1
@@ -16615,7 +16586,7 @@ packages:
       chokidar: 4.0.3
       esbuild: 0.28.1
       estree-util-value-to-estree: 3.5.0
-      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
+      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
       js-yaml: 4.2.0
       lru-cache: 11.5.1
       next: 15.5.18(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
@@ -16632,7 +16603,7 @@ packages:
       - supports-color
     dev: false
 
-  /fumadocs-ui@15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2):
+  /fumadocs-ui@15.8.5(@types/react-dom@19.2.3)(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)(tailwindcss@4.3.2):
     resolution: {integrity: sha512-9pyB+9rOOsrFnmmZ9xREp/OgVhyaSq2ocEpqTNbeQ7tlJ6JWbdFWfW0C9lRXprQEB6DJWUDtDxqKS5QXLH0EGA==}
     peerDependencies:
       '@types/react': '*'
@@ -16660,7 +16631,7 @@ packages:
       '@radix-ui/react-tabs': 1.1.16(@types/react-dom@19.2.3)(@types/react@19.1.17)(react-dom@19.1.0)(react@19.1.0)
       '@types/react': 19.1.17
       class-variance-authority: 0.7.1
-      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@0.479.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
+      fumadocs-core: 15.8.5(@types/react@19.1.17)(lucide-react@1.25.0)(next@15.5.18)(react-dom@19.1.0)(react@19.1.0)
       lodash.merge: 4.6.2
       next: 15.5.18(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.1.0)(react@19.1.0)
       next-themes: 0.4.6(react-dom@19.1.0)(react@19.1.0)
@@ -18780,6 +18751,14 @@ packages:
 
   /lucide-react@0.542.0(react@19.1.0):
     resolution: {integrity: sha512-w3hD8/SQB7+lzU2r4VdFyzzOzKnUjTZIF/MQJGSSvni7Llewni4vuViRppfRAa2guOsY5k4jZyxw/i9DQHv+dw==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    dependencies:
+      react: 19.1.0
+    dev: false
+
+  /lucide-react@1.25.0(react@19.1.0):
+    resolution: {integrity: sha512-/mdJTRbiwcLOQ1NZZK1amZF9rIZyvO18D6r9TngE6TG1NmqHgFuT4eE7Xrkm9UsXMbBJD1NlfwHVltCDWHrOTw==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
     dependencies:
@@ -21232,7 +21211,7 @@ packages:
       web-vitals: 5.3.0
     dev: false
 
-  /pptx-react-viewer@1.15.0(fast-xml-parser@5.10.0)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@0.479.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0):
+  /pptx-react-viewer@1.15.0(fast-xml-parser@5.10.0)(framer-motion@12.42.2)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@1.25.0)(react-dom@19.1.0)(react-i18next@17.0.9)(react-icons@5.7.0)(react@19.1.0):
     resolution: {integrity: sha512-eolwYnEYdqWAUpFKC0I5XqrnNyyu/qpCTGqyIdQDdAQlJLk8MeTtXIU5bUlKzrpaPERZW/boxD59SoZqIMZkFw==}
     peerDependencies:
       fast-xml-parser: ^5.8.0
@@ -21254,7 +21233,7 @@ packages:
       i18next: 26.3.6(typescript@5.9.3)
       jspdf: 4.2.1
       jszip: 3.10.1
-      lucide-react: 0.479.0(react@19.1.0)
+      lucide-react: 1.25.0(react@19.1.0)
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
       react-i18next: 17.0.9(i18next@26.3.6)(react-dom@19.1.0)(react@19.1.0)(typescript@5.9.3)

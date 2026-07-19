@@ -171,15 +171,12 @@ const nextConfig = (): NextConfig => ({
     },
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
-      'lucide-react',
-      '@radix-ui/react-icons',
+      '@phosphor-icons/react',
       'recharts',
       'date-fns',
       '@tanstack/react-query',
-      'react-icons',
       'cmdk',
       'next-intl',
-      '@icons-pack/react-simple-icons',
     ],
   },
 

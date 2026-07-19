@@ -20,6 +20,25 @@ const eslintConfig = [
       '@next/next/no-img-element': 'warn',
       '@typescript-eslint/no-empty-object-type': 'off',
       'prefer-const': 'warn',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'lucide-react',
+                'lucide-react/*',
+                'react-icons',
+                'react-icons/*',
+                '@mynaui/icons-react',
+                '@icons-pack/react-simple-icons',
+              ],
+              message:
+                'Icons come from @phosphor-icons/react. Global weight: src/lib/icons/icon-config.ts.',
+            },
+          ],
+        },
+      ],
     },
   },
 ];
