@@ -1,12 +1,10 @@
 import {
-  executorConnectionProfiles,
   executorConnectorActions,
   executorConnectorPolicies,
   executorConnectors,
   executorExecutions,
   executorProjectPolicies,
   executorProjectSettings,
-  projectSessions,
   projects,
   sessionToolApprovals,
 } from '@kortix/db';
