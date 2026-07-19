@@ -41,6 +41,8 @@ let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
+let deleteManagedRepoCalls: any[];
+let deleteManagedRepoError: Error | null;
 let rejectedBranch: string | null;
 
 function setCurrentUser(userId: string, userEmail: string) {
@@ -92,6 +94,8 @@ function resetState() {
   listRepoFileCalls = [];
   readRepoFileCalls = [];
   archiveCalls = [];
+  deleteManagedRepoCalls = [];
+  deleteManagedRepoError = null;
   rejectedBranch = null;
 }
 
@@ -205,6 +209,14 @@ mock.module('../projects/git', () => ({
   resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
+}));
+
+mock.module('../projects/lib/project-deletion', () => ({
+  deleteManagedProjectRepo: async (project: ProjectRow) => {
+    deleteManagedRepoCalls.push(project);
+    if (deleteManagedRepoError) throw deleteManagedRepoError;
+    return false;
+  },
 }));
 
 mock.module("../snapshots/builder", () => ({
@@ -603,10 +615,23 @@ describe('projects API contract', () => {
     const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
+  });
+
+  test('does not archive a project when managed repository deletion fails', async () => {
+    const app = createApp();
+    deleteManagedRepoError = new Error('provider unavailable');
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
+
+    expect(del.status).toBe(502);
+    expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 
   test('lists and manages explicit project access grants without overriding account managers', async () => {
