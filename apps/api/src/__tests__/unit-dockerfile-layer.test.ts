@@ -74,9 +74,11 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     // Playwright's default download socket timeout is 30s — too tight for a
     // ~150MB Chrome-for-Testing fetch under any network hiccup. Overridden
-    // before the install runs.
-    expect(merged).toContain('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000');
-    const timeoutIdx = merged.indexOf('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000');
+    // before the install runs. 30 minutes: headroom for a cold-cache build
+    // under contention (the fallback full-rebuild path only — the primary fix
+    // is the FROM-base fast path, which never re-runs this install at all).
+    expect(merged).toContain('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000');
+    const timeoutIdx = merged.indexOf('PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000');
     const installIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install`);
     expect(timeoutIdx).toBeGreaterThanOrEqual(0);
     expect(timeoutIdx).toBeLessThan(installIdx);
