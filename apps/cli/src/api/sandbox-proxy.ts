@@ -1,6 +1,11 @@
 import type { Auth } from './auth.ts';
 import { ApiError } from './client.ts';
 
+const TRANSIENT_SANDBOX_STATUSES = new Set([408, 429]);
+const PROMPT_ACCEPT_BACKOFF_MS = [250, 500, 1_000];
+const PROMPT_POLL_INTERVAL_MS = 500;
+const PROMPT_MESSAGE_LIMIT = 100;
+
 /**
  * The sandbox daemon exposes OpenCode and PTY helpers on this port. Older CLI
  * builds talked to OpenCode's internal 4096 port directly, but live sessions are
@@ -23,8 +28,7 @@ interface RequestOpts {
   method?: string;
   body?: unknown;
   query?: Record<string, string | undefined>;
-  /** Per-request timeout. OpenCode prompt calls block for the AI to finish,
-   *  so callers can override to e.g. 5 minutes. */
+  /** Per-request timeout. */
   timeoutMs?: number;
 }
 
@@ -97,6 +101,179 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   return payload as T;
 }
 
+function isTransientSandboxError(error: unknown): boolean {
+  return error instanceof ApiError &&
+    (error.status === 0 || error.status >= 500 || TRANSIENT_SANDBOX_STATUSES.has(error.status));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let lastPromptIdTimestamp = 0;
+let promptIdCounter = 0;
+
+/** Generate the ascending OpenCode message-id shape accepted by prompt_async.
+ * Reusing this stable id across a transient submit retry makes the logical
+ * prompt idempotent even if the proxy lost the first 204 response. */
+function promptMessageId(): string {
+  const now = Date.now();
+  if (now !== lastPromptIdTimestamp) {
+    lastPromptIdTimestamp = now;
+    promptIdCounter = 0;
+  }
+  promptIdCounter += 1;
+  const encoded = BigInt(now) * BigInt(0x1000) + BigInt(promptIdCounter);
+  // OpenCode writes the encoded value into six bytes, retaining the low
+  // 48 bits. slice(-12) mirrors that Buffer behavior exactly.
+  const timestamp = encoded.toString(16).padStart(12, '0').slice(-12);
+  // Hex is a valid subset of OpenCode's alphanumeric suffix alphabet. UUID
+  // entropy avoids hand-rolling arithmetic over secure random bytes.
+  const random = crypto.randomUUID().replaceAll('-', '').slice(0, 14);
+  return `msg_${timestamp}${random}`;
+}
+
+function completedReplyFor(
+  messages: OpencodeMessageWithParts[],
+  parentID: string,
+): OpencodeMessageWithParts | null {
+  let latest: OpencodeMessageWithParts | null = null;
+  for (const message of messages) {
+    if (message.info.role !== 'assistant' || message.info.parentID !== parentID) continue;
+    if (message.info.time?.completed === undefined && !message.info.error) continue;
+    if (!message.info.error && (message.info.finish === 'tool-calls' || message.info.finish === 'unknown')) continue;
+    if (!latest) {
+      latest = message;
+      continue;
+    }
+    const created = message.info.time?.created ?? 0;
+    const latestCreated = latest.info.time?.created ?? 0;
+    if (created > latestCreated || (created === latestCreated && message.info.id > latest.info.id)) {
+      latest = message;
+    }
+  }
+  return latest;
+}
+
+async function sessionIsIdle(
+  base: Pick<RequestOpts, 'apiBase' | 'token' | 'sandboxId' | 'port'>,
+  sessionId: string,
+  deadline: number,
+): Promise<boolean> {
+  const statuses = await sandboxRequest<Record<string, { type?: string }>>({
+    ...base,
+    path: '/session/status',
+    timeoutMs: Math.max(1, Math.min(5_000, deadline - Date.now())),
+  });
+  const status = statuses[sessionId];
+  // OpenCode may omit idle sessions from the active-status map.
+  return status === undefined || status.type === 'idle';
+}
+
+async function promptWasAccepted(
+  base: Pick<RequestOpts, 'apiBase' | 'token' | 'sandboxId' | 'port'>,
+  sessionId: string,
+  messageID: string,
+  deadline: number,
+): Promise<boolean> {
+  try {
+    const message = await sandboxRequest<OpencodeMessageWithParts>({
+      ...base,
+      path: `/session/${sessionId}/message/${messageID}`,
+      timeoutMs: Math.max(1, Math.min(5_000, deadline - Date.now())),
+    });
+    return message.info.role === 'user' && message.info.id === messageID;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return false;
+    if (isTransientSandboxError(error)) return false;
+    throw error;
+  }
+}
+
+async function submitPromptAsync(
+  base: Pick<RequestOpts, 'apiBase' | 'token' | 'sandboxId' | 'port'>,
+  sessionId: string,
+  body: Record<string, unknown>,
+  deadline: number,
+): Promise<void> {
+  let lastSubmitError: unknown;
+
+  for (const backoff of [...PROMPT_ACCEPT_BACKOFF_MS, undefined]) {
+    try {
+      await sandboxRequest<null>({
+        ...base,
+        path: `/session/${sessionId}/prompt_async`,
+        method: 'POST',
+        body,
+        timeoutMs: Math.max(1, Math.min(30_000, deadline - Date.now())),
+      });
+      return;
+    } catch (error) {
+      lastSubmitError = error;
+      if (!isTransientSandboxError(error) || backoff === undefined || Date.now() + backoff >= deadline) {
+        throw error;
+      }
+      // A proxy may have delivered the initial request but lost OpenCode's
+      // 204. Check the new stable user-message id before retrying so an
+      // ambiguous 502 cannot enqueue the logical prompt twice.
+      if (await promptWasAccepted(base, sessionId, String(body.messageID), deadline)) {
+        return;
+      }
+      await sleep(backoff);
+    }
+  }
+  if (lastSubmitError) throw lastSubmitError;
+}
+
+/**
+ * Submit a CLI chat turn through OpenCode's short-lived prompt_async endpoint,
+ * then wait for the exact assistant reply using idempotent message reads.
+ *
+ * The previous synchronous POST /message kept the API→sandbox proxy request
+ * open for the whole model/tool turn. Cloud load balancers close that request
+ * around 60–70 seconds with a 502 even though OpenCode continues working.
+ * prompt_async returns 204 immediately, so no long-lived proxy request exists;
+ * transient gateway errors while accepting or polling are absorbed within the
+ * caller's existing five-minute turn deadline.
+ */
+async function sendPromptAsyncAndWait(
+  base: Pick<RequestOpts, 'apiBase' | 'token' | 'sandboxId' | 'port'>,
+  sessionId: string,
+  parts: OpencodePromptPart[],
+  extra: { agent?: string; model?: { providerID: string; modelID: string } } | undefined,
+  timeoutMs: number,
+): Promise<{ info: OpencodeAssistantMessage; parts: OpencodePart[] }> {
+  const deadline = Date.now() + timeoutMs;
+  const messageID = promptMessageId();
+  const body = { parts, messageID, ...(extra ?? {}) };
+  await submitPromptAsync(base, sessionId, body, deadline);
+
+  while (Date.now() < deadline) {
+    try {
+      const messages = await sandboxRequest<OpencodeMessageWithParts[]>({
+        ...base,
+        path: `/session/${sessionId}/message`,
+        query: { limit: String(PROMPT_MESSAGE_LIMIT) },
+        timeoutMs: Math.max(1, Math.min(30_000, deadline - Date.now())),
+      });
+      const reply = completedReplyFor(messages, messageID);
+      // Tool turns can emit several completed assistant messages with the same
+      // parent user id. Only return once the run is idle, then select the most
+      // recent one so the CLI prints the final answer instead of an empty
+      // completed tool step.
+      if (reply && await sessionIsIdle(base, sessionId, deadline)) {
+        return { info: reply.info as OpencodeAssistantMessage, parts: reply.parts };
+      }
+    } catch (error) {
+      if (!isTransientSandboxError(error)) throw error;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining > 0) await sleep(Math.min(PROMPT_POLL_INTERVAL_MS, remaining));
+  }
+
+  throw new ApiError(0, `agent reply timed out after ${timeoutMs}ms`);
+}
+
 /** Build the WebSocket URL for a raw terminal (PTY) session, mirroring what
  *  the web app's browser client connects to — same host, same `?token=`
  *  query auth (WebSocket can't set custom headers). Reaches Kortix's own
@@ -162,23 +339,14 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
         path: `/session/${sessionId}/message`,
         query: { limit: limit ? String(limit) : undefined },
       }),
-    /**
-     * Send a prompt. This BLOCKS until OpenCode finishes generating —
-     * pass a generous timeout (`timeoutMs`) for long completions.
-     */
+    /** Submit a prompt asynchronously, then poll for its completed reply. */
     sendPrompt: (
       sessionId: string,
       parts: OpencodePromptPart[],
       extra?: { agent?: string; model?: { providerID: string; modelID: string } },
       timeoutMs?: number,
     ) =>
-      sandboxRequest<{ info: OpencodeAssistantMessage; parts: OpencodePart[] }>({
-        ...base,
-        path: `/session/${sessionId}/message`,
-        method: 'POST',
-        body: { parts, ...(extra ?? {}) },
-        timeoutMs: timeoutMs ?? 5 * 60_000,
-      }),
+      sendPromptAsyncAndWait(base, sessionId, parts, extra, timeoutMs ?? 5 * 60_000),
     abortSession: (sessionId: string) =>
       sandboxRequest<boolean>({
         ...base,
@@ -273,8 +441,11 @@ export interface OpencodeAssistantMessage {
   id: string;
   role: 'assistant';
   sessionID: string;
+  /** User message that started this turn. */
+  parentID?: string;
   time?: { created?: number; completed?: number };
   error?: { name?: string; message?: string } | null;
+  finish?: string;
   modelID?: string;
   providerID?: string;
 }
