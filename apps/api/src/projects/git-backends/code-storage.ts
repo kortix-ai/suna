@@ -6,10 +6,14 @@
  *
  * Auth model (see https://code.storage/docs/getting-started/authentication):
  * every request — management API AND git push/pull — carries a JWT you sign
- * yourself with your org's PKCS8 private key (ES256 or RS256, auto-detected
- * from the key). Claims: `iss` (org), `sub` (agent identity, for logging),
- * `repo` (optional — a single repo path; OMIT for org-wide tokens), `scopes`,
- * `iat`, `exp`. There is no key-exchange or OAuth dance — a compromised
+ * yourself with your org's PKCS8 private key (ES256 for EC P-256, RS256 for
+ * RSA — auto-detected from the key; a non-P-256 EC curve is rejected, since
+ * ES256 is only spec-valid for P-256). Claims: `iss` (org), `sub` (agent
+ * identity, for logging), `repo` (a single repo path — REQUIRED, including
+ * for createRepo, since the target repo's identity comes from this claim,
+ * not the request body; omit only for genuinely org-wide, no-target
+ * operations), `scopes`, `iat`, `exp`. There is no key-exchange or OAuth
+ * dance — a compromised
  * private key is a full compromise, so it lives ONLY in
  * `CODE_STORAGE_PRIVATE_KEY` and is never logged, returned to a caller, or
  * embedded anywhere except the one signature it produces.
@@ -124,12 +128,21 @@ function loadKey(pem: string): LoadedKey {
   if (cached) return cached;
   const keyObject = createPrivateKey(pem);
   let alg: 'ES256' | 'RS256';
-  if (keyObject.asymmetricKeyType === 'ec') alg = 'ES256';
-  else if (keyObject.asymmetricKeyType === 'rsa') alg = 'RS256';
-  else {
+  // ES256 is only spec-valid for P-256 (`prime256v1`) — an EC key on any other
+  // curve (P-384, P-521, secp256k1, ...) would sign fine but produce a JWS the
+  // server's ES256 verifier must reject, so treat it the same as an
+  // unsupported key type rather than silently minting an invalid token.
+  if (
+    keyObject.asymmetricKeyType === 'ec' &&
+    keyObject.asymmetricKeyDetails?.namedCurve === 'prime256v1'
+  ) {
+    alg = 'ES256';
+  } else if (keyObject.asymmetricKeyType === 'rsa') {
+    alg = 'RS256';
+  } else {
     throw new Error(
       `code.storage: unsupported CODE_STORAGE_PRIVATE_KEY type "${keyObject.asymmetricKeyType}" ` +
-        `(expected a PKCS8 PEM-encoded EC or RSA key)`,
+        `(expected a PKCS8 PEM-encoded EC P-256 key or RSA key)`,
     );
   }
   const loaded: LoadedKey = { keyObject, alg };
@@ -300,8 +313,14 @@ export const codeStorageBackend: GitHostBackend = {
   },
 
   async createRepo(input: ProvisionInput): Promise<ProvisionedRepo> {
-    // repo:write, org-wide (no `repo` claim — the repo doesn't exist yet).
+    // repo:write, REPO-SCOPED to the repo we're about to create. Per the live
+    // docs (code.storage/docs/reference/api/repositories/create-repo.md) the
+    // request body schema is `additionalProperties: false` with only
+    // `default_branch` / `base_repo` — there is NO `id` field. The target
+    // repo's identity comes entirely from the JWT's `repo` claim, not the
+    // body, so the token — not the payload — is what names `input.slug`.
     const token = mintCodeStorageJwt({
+      repo: input.slug,
       scopes: ['repo:write'],
       ttlSeconds: MGMT_TOKEN_TTL_SECONDS,
     });
@@ -309,13 +328,6 @@ export const codeStorageBackend: GitHostBackend = {
       method: 'POST',
       headers: mgmtHeaders(token, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        // `id`: a custom repo id/slug — documented on the SDK's `createRepo({id})`
-        // (the management API "mirrors SDK primitives"); the scraped HTTP schema
-        // doc doesn't enumerate it, so this is sent best-effort and ignored
-        // harmlessly if the server doesn't honor it (we always fall back to
-        // parsing the authoritative repo path out of the response `http_url`
-        // below, never assume `id` was applied).
-        id: input.slug,
         default_branch: input.defaultBranch,
       }),
     });
@@ -348,8 +360,24 @@ export const codeStorageBackend: GitHostBackend = {
   },
 
   async deleteRepo(ref: GitConnectionRef): Promise<void> {
-    const repoPath = ref.repoName || ref.externalRepoId;
-    if (!repoPath) return;
+    // Nothing was ever provisioned (or we never learned an identifier) —
+    // a true no-op, nothing to clean up.
+    if (!ref.repoName && !ref.externalRepoId) return;
+    // `DELETE /api/repos/{repo_name}` takes the human-readable repo
+    // name/path, NOT `externalRepoId` (code.storage's opaque internal
+    // `repo_id`, e.g. `repo_7f2b3d9`) — the two are different identifier
+    // spaces and using the id as the path segment would either 404 against
+    // the wrong resource or, worse, silently no-op against a repo that was
+    // never actually deleted. Refuse rather than guess.
+    if (!ref.repoName) {
+      throw new Error(
+        'code.storage deleteRepo: connection ref is missing repoName (the ' +
+          '`{repo_name}` path segment DELETE /api/repos/{repo_name} expects) — ' +
+          `refusing to delete using externalRepoId ("${ref.externalRepoId}") as a ` +
+          'substitute, since that is an opaque internal id, not the repo name/path',
+      );
+    }
+    const repoPath = ref.repoName;
     // repo:write + per-repo authorization, per delete-repo's own docs (NOT
     // git:write — deleting is a repo-management op, not a git op).
     const token = mintCodeStorageJwt({

@@ -134,6 +134,29 @@ describe('mintCodeStorageJwt', () => {
     config.CODE_STORAGE_PRIVATE_KEY = ed.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
     expect(() => mintCodeStorageJwt({ scopes: ['git:read'] })).toThrow(/unsupported/);
   });
+
+  test('throws on a non-P-256 EC curve (ES256 is only spec-valid for P-256)', () => {
+    // secp384r1 (P-384) is a valid EC curve but NOT one ES256 supports —
+    // `asymmetricKeyType === 'ec'` alone isn't enough to pick ES256.
+    const p384 = generateKeyPairSync('ec', { namedCurve: 'secp384r1' });
+    config.CODE_STORAGE_PRIVATE_KEY = p384.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    expect(() => mintCodeStorageJwt({ scopes: ['git:read'] })).toThrow(/unsupported/);
+  });
+
+  test('normalizeKeyPem: strips surrounding quotes and un-escapes literal \\n before signing', async () => {
+    // Same PEM as the happy-path EC key, but stored the way a secret manager
+    // / .env round-trip commonly mangles a PEM: wrapped in quotes with real
+    // newlines flattened to the two-character sequence `\n`.
+    const mangled = `"${EC_PRIVATE_PEM.trim().replace(/\n/g, '\\n')}"`;
+    config.CODE_STORAGE_PRIVATE_KEY = mangled;
+    const jwt = mintCodeStorageJwt({ repo: 'team/project-alpha', scopes: ['git:read'] });
+    expect(decodeJwtHeader(jwt)).toEqual({ alg: 'ES256', typ: 'JWT' });
+    // Verifiable against the ORIGINAL (un-mangled) public key — proves the
+    // normalized PEM signs identically to the clean one.
+    const key = await importSPKI(EC_PUBLIC_PEM, 'ES256');
+    const { payload } = await jwtVerify(jwt, key);
+    expect(payload.repo).toBe('team/project-alpha');
+  });
 });
 
 describe('codeStorageGitAuthHeader', () => {
@@ -210,7 +233,7 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('createRepo: POST /api/repos with repo:write org-wide bearer token, maps the response', async () => {
+  test('createRepo: POST /api/repos with a repo-scoped repo:write bearer token, maps the response', async () => {
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
       requests.push({ url: href, init });
@@ -236,9 +259,13 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
     const token = authHeader!.replace('Bearer ', '');
     const payload = decodeJwtPayload(token);
     expect(payload.scopes).toEqual(['repo:write']);
-    expect('repo' in payload).toBe(false); // org-wide — repo doesn't exist yet
+    // Per the live create-repo.md schema (additionalProperties: false, no
+    // `id` field): the target repo's identity comes from the JWT `repo`
+    // claim, not the body — so the token MUST be repo-scoped to the slug.
+    expect(payload.repo).toBe('my-project');
     const sentBody = JSON.parse(String(requests[0]!.init?.body));
-    expect(sentBody).toEqual({ id: 'my-project', default_branch: 'main' });
+    expect(sentBody).toEqual({ default_branch: 'main' });
+    expect(sentBody).not.toHaveProperty('id');
 
     expect(repo.provider).toBe('code-storage');
     expect(repo.externalRepoId).toBe('repo_7f2b3d9');
@@ -278,6 +305,25 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
         isPrivate: true,
       }),
     ).rejects.toThrow(/repo already exists/);
+  });
+
+  test('CODE_STORAGE_API_BASE override replaces the default https://api.<org>.code.storage host (trailing slash stripped)', async () => {
+    config.CODE_STORAGE_API_BASE = 'https://mgmt.custom-cluster.example/';
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url;
+      requests.push({ url: href, init });
+      return json({ repo_id: 'repo_x', http_url: 'https://git.code.storage/acme/my-project', message: 'ok' });
+    }) as unknown as typeof fetch;
+
+    await codeStorageBackend.createRepo({
+      accountId: 'a',
+      projectId: 'p',
+      slug: 'my-project',
+      defaultBranch: 'main',
+      isPrivate: true,
+    });
+
+    expect(requests[0]!.url).toBe('https://mgmt.custom-cluster.example/api/repos');
   });
 
   test('deleteRepo: DELETE /api/repos/{repoName} (URL-encoded) with a repo-scoped repo:write bearer token', async () => {
@@ -322,6 +368,21 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
       return json({});
     }) as unknown as typeof fetch;
     await codeStorageBackend.deleteRepo(ref({ repoName: null, externalRepoId: null }));
+    expect(called).toBe(false);
+  });
+
+  test('deleteRepo: throws instead of using externalRepoId as the {repo_name} path when repoName is missing', async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return json({});
+    }) as unknown as typeof fetch;
+    // `externalRepoId` is code.storage's opaque internal repo_id — never a
+    // valid `{repo_name}` path segment. Silently substituting it (the old
+    // behavior) would call DELETE against the wrong resource.
+    await expect(
+      codeStorageBackend.deleteRepo(ref({ repoName: null, externalRepoId: 'repo_7f2b3d9' })),
+    ).rejects.toThrow(/missing repoName/);
     expect(called).toBe(false);
   });
 });
