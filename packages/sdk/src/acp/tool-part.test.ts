@@ -49,6 +49,55 @@ describe('acpToolName', () => {
   test('falls back to acp_tool when nothing matches and no explicit name', () => {
     expect(acpToolName(tool({ title: 'Mystery step', data: {} }))).toBe('acp_tool');
   });
+
+  // ─── W4 / B12: a harness that declares its own tool name (the MCP-style
+  // `rawInput: { name, arguments }` wrapper codex uses) must keep that
+  // identity. Otherwise a free-text substring match on the title hijacks it —
+  // codex's `write_stdin` (a PTY-poll tool, NOT a file write) was read as
+  // `'write'` because its title contains "write", vanishing from both cards.
+  // Real DB-verified shape from session `8023ee8f…`. ────────────────────────
+  test("codex's MCP-wrapped write_stdin keeps its declared name, is NOT a file write", () => {
+    const call = tool({
+      title: 'write_stdin',
+      toolKind: 'other',
+      rawInput: { name: 'write_stdin', arguments: { session_id: 3700, yield_time_ms: 1000, max_output_tokens: 4000 } },
+    });
+    expect(acpToolName(call)).toBe('write_stdin');
+    expect(acpToolName(call)).not.toBe('write');
+  });
+
+  test('a harness-declared rawInput.name wins over a title/kind hint', () => {
+    // Even a title that reads like a shell command yields to an explicit name.
+    expect(acpToolName(tool({ title: 'run in terminal', rawInput: { name: 'custom_pty', arguments: {} } }))).toBe('custom_pty');
+  });
+
+  test('a genuine file write (title Write, real path in rawInput) still classifies as write', () => {
+    expect(
+      acpToolName(tool({ title: 'Write', toolKind: 'edit', rawInput: { file_path: '/workspace/a.py', content: 'x' } })),
+    ).toBe('write');
+  });
+
+  test('a genuine edit (title Edit, real path) still classifies as edit', () => {
+    expect(
+      acpToolName(tool({ title: 'Edit .gitignore', toolKind: 'edit', rawInput: { file_path: '/workspace/.gitignore', new_string: 'y', old_string: 'x' } })),
+    ).toBe('edit');
+  });
+
+  test('an execute call whose rawInput carries a command (no declared name) is still bash', () => {
+    expect(acpToolName(tool({ title: 'curl -I http://127.0.0.1:4173/', toolKind: 'execute', rawInput: { command: 'curl -I http://127.0.0.1:4173/' } }))).toBe('bash');
+  });
+
+  // ─── W4 / Mechanism 3: a native web search must land in the `web` family,
+  // not be claimed by the generic `/search|grep/` check first. But a
+  // NON-web "search"-flavored title (codex/Claude's MCP `ToolSearch`,
+  // `kind: 'other'`) must stay `grep`/explore — it is not web. ──────────────
+  test('a native web search resolves to websearch, not grep', () => {
+    expect(acpToolName(tool({ title: 'Web Search', toolKind: 'search' }))).toBe('websearch');
+  });
+
+  test("a non-web ToolSearch (kind other) stays grep — the web reorder must not over-route it", () => {
+    expect(acpToolName(tool({ title: 'ToolSearch', toolKind: 'other' }))).toBe('grep');
+  });
 });
 
 describe('acpToolCallToPart', () => {

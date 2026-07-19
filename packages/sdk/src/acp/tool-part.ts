@@ -38,10 +38,24 @@ export function acpToolCallToPart(tool: AcpToolCall): AcpNormalizedToolPart {
 
 /**
  * Maps an ACP tool call's title/kind (vendor-specific, free text) onto the
- * renderer identity every host's tool components dispatch on. Falls back to
- * an explicit `data.tool`/`data.name` hint, then `'acp_tool'`.
+ * renderer identity every host's tool components dispatch on.
+ *
+ * A harness that *declares* its tool's name is trusted first: the MCP-style
+ * `rawInput: { name, arguments }` wrapper (codex uses it for its non-native
+ * tools) carries the tool's real identity, so it wins over the free-text
+ * substring guesses below. Without this, a title that merely *contains* a
+ * verb hijacks the call — codex's `write_stdin` (a PTY-poll tool with no file
+ * path) was read as `'write'` by the `/write/` check, misfiled into the
+ * `edit` family, and dropped from both the Context and Outputs cards. The
+ * substring guesses remain the fallback for ACP-native calls that arrive with
+ * only a title/kind and no declared name (the read/edit/execute path).
+ *
+ * Falls back to an explicit `data.tool`/`data.name` hint, then `'acp_tool'`.
  */
 export function acpToolName(tool: AcpToolCall): string {
+  const declared = declaredToolName(tool.rawInput);
+  if (declared) return declared;
+
   const hint = `${tool.toolKind ?? ''} ${tool.title}`.toLowerCase();
   if (/execute|terminal|shell|command|bash/.test(hint)) return 'bash';
   if (/apply.?patch|diff|patch/.test(hint)) return 'apply_patch';
@@ -49,10 +63,34 @@ export function acpToolName(tool: AcpToolCall): string {
   if (/edit|replace/.test(hint)) return 'edit';
   if (/read|view file/.test(hint)) return 'read';
   if (/glob|find files/.test(hint)) return 'glob';
-  if (/search|grep/.test(hint)) return 'grep';
+  // A native web search must reach the `web` family — check it (and any
+  // fetch/http/web hint) BEFORE the generic `/search|grep/`, which would
+  // otherwise claim "web search" as a code grep. A non-web "search"-flavored
+  // title (an MCP `ToolSearch`, a repo grep) has no web/fetch/http token and
+  // still falls through to `grep`.
+  if (/web.?search|websearch/.test(hint)) return 'websearch';
   if (/fetch|http|web/.test(hint)) return 'webfetch';
+  if (/search|grep/.test(hint)) return 'grep';
   const explicit = tool.data.tool ?? tool.data.name;
   return typeof explicit === 'string' && explicit ? explicit : 'acp_tool';
+}
+
+/**
+ * The harness's own declared tool name, if the call carries an MCP-style
+ * `{ name, arguments }` wrapper in its `rawInput`. The `arguments` sibling is
+ * required so a genuine tool that merely has a `name` *argument* (e.g.
+ * `project_create({ name, description })`) is not mistaken for the wrapper —
+ * only the real envelope shape (`{ name: "write_stdin", arguments: {…} }`)
+ * qualifies. Returns `undefined` for the ACP-native shape (a bare
+ * `{ command }` / `{ file_path, … }` input), leaving classification to the
+ * title/kind heuristics.
+ */
+function declaredToolName(rawInput: unknown): string | undefined {
+  if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return undefined;
+  const record = rawInput as Record<string, unknown>;
+  const name = record.name;
+  const hasArguments = record.arguments !== undefined && typeof record.arguments === 'object';
+  return hasArguments && typeof name === 'string' && name ? name : undefined;
 }
 
 function statusFor(status: string | null): 'pending' | 'running' | 'completed' | 'error' {
