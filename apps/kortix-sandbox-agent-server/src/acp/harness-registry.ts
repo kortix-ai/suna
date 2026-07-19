@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { buildOpencodeKortixProvider, DEFAULT_KORTIX_MODEL } from './opencode-gateway'
+
 export const ACP_HARNESS_IDS = ['claude', 'codex', 'opencode', 'pi'] as const
 
 export type AcpHarnessId = (typeof ACP_HARNESS_IDS)[number]
@@ -258,14 +260,19 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
   const authKind = runtimeAuthKind(env)
   if (id === 'opencode') {
     const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
-    if (!nativeAgent && !runtimeModel && custom?.protocol !== 'openai') return Object.keys(native).length ? native : undefined
+    const gatewayProvider =
+      custom || (authKind && authKind !== 'managed_gateway')
+        ? null
+        : buildOpencodeKortixProvider(env)
+    if (!nativeAgent && !runtimeModel && custom?.protocol !== 'openai' && !gatewayProvider) {
+      return Object.keys(native).length ? native : undefined
+    }
     let existing: Record<string, unknown> = {}
     try {
       const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT || '{}')
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) existing = parsed
     } catch {
-      // A malformed inherited override must not make logical agent routing
-      // disappear. OpenCode receives the manifest-selected default below.
+      // Invalid inherited content must not suppress manifest-selected routing.
     }
     const customConfig =
       custom?.protocol === 'openai'
@@ -283,11 +290,31 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
             },
           }
         : {}
+    const gatewayConfig = gatewayProvider
+      ? {
+          provider: {
+            ...(existing.provider && typeof existing.provider === 'object' && !Array.isArray(existing.provider)
+              ? existing.provider as Record<string, unknown>
+              : {}),
+            kortix: gatewayProvider,
+          },
+          enabled_providers: ['kortix'],
+          model:
+            typeof existing.model === 'string' && existing.model.startsWith('kortix/')
+              ? existing.model
+              : DEFAULT_KORTIX_MODEL,
+          small_model:
+            typeof existing.small_model === 'string' && existing.small_model.startsWith('kortix/')
+              ? existing.small_model
+              : DEFAULT_KORTIX_MODEL,
+        }
+      : {}
     return {
       ...native,
       OPENCODE_CONFIG_CONTENT: JSON.stringify({
         ...existing,
         ...customConfig,
+        ...gatewayConfig,
         ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(nativeAgent ? { default_agent: nativeAgent } : {}),
       }),
