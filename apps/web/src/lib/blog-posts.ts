@@ -209,7 +209,10 @@ const bestSelfHostedAgentPlatforms: BlogPostEntry = {
     },
     {
       type: 'verdict',
-      text: 'Kortix is the best self-hosted platform when the job is durable, governed work across a company — not a chatbot and not a pipeline. The frameworks on this list are the right answer when the right answer is code.',
+      themLabel: 'a framework',
+      them: 'your job is to code a custom agent pipeline and you have the engineering team to build and operate the platform around it.',
+      kortix:
+        'you want agents that land durable, reviewed work across your company — on infrastructure you own, with any model, with governance and a shared memory shipped in.',
     },
     {
       type: 'cta',
