@@ -130,7 +130,25 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // image that seeds /workspace (a documented WORKDIR) no longer has it silently
 // deleted. (c) ENV DEBIAN_FRONTEND=noninteractive is set by the layer instead of
 // being inherited by luck from the user's base.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v26';
+// v27: Chromium layer cache-determinism + download hardening. (a) Moved the
+// agent-browser/Playwright Chromium RUN to sit BEFORE the per-project warm-repo
+// clone (and the opencode instance warm-up that follows it), instead of after.
+// The repo-clone step bakes a FRESH short-lived git credential into its RUN
+// text on every single invocation (~1h GitHub App installation token, or a JWT
+// with a live iat/exp), so it can never build-cache-hit — and neither can
+// anything chained after it. With Chromium previously downstream of that clone
+// step, EVERY per-project warm bake re-downloaded the ~150MB Chrome-for-Testing
+// from cdn.playwright.dev, live-observed timing out staging's ke2e suite
+// ("Downloading Chrome for Testing ... timed out after 30000ms"). Chromium now
+// sits immediately after the toolchain floor — a prefix that is byte-identical
+// across the shared default image AND every per-project warm bake — so its
+// build-cache key is identical everywhere and one cache-populating build (e.g.
+// the shared-default rebuild) serves every later warm bake, for every project.
+// (b) Regardless of cache state, hardened the Chromium download itself:
+// PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 (was Playwright's 30s default)
+// + a 5-attempt backoff retry loop around `playwright install --with-deps
+// chromium`, so a transient CDN blip no longer fails the whole image build.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v27';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
