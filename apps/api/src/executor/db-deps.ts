@@ -1,10 +1,12 @@
 import {
+  executorConnectionProfiles,
   executorConnectorActions,
   executorConnectorPolicies,
   executorConnectors,
   executorExecutions,
   executorProjectPolicies,
   executorProjectSettings,
+  projectSessions,
   projects,
   sessionToolApprovals,
 } from '@kortix/db';
@@ -44,6 +46,7 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { hideSupersededSlack } from './channel-rules';
+import { SLACK_CHANNEL_CONNECTOR_SLUG, connectorListNeedsResync } from './channels';
 import {
   credentialExists,
   deleteCredential,
@@ -78,7 +81,6 @@ import {
   verifyWebhookSig,
 } from './pipedream';
 import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
-import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
 import type {
   AdminConnectorView,
   CatalogConnector,
@@ -86,7 +88,7 @@ import type {
   ExecutorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
+import { syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -806,11 +808,17 @@ async function listConnectors(
   projectId: string,
   viewerUserId: string,
 ): Promise<AdminConnectorView[]> {
-  let rows = await db
-    .select()
-    .from(executorConnectors)
-    .where(eq(executorConnectors.projectId, projectId));
-  if (rows.length === 0) {
+  const fetchRows = () =>
+    db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+  let rows = await fetchRows();
+  // Only consult the install-store when it could change the decision: an empty
+  // set reconciles regardless, and a present Slack connector needs no heal — so
+  // healthy projects never pay for loadSlackInstall here.
+  const slackInstalled =
+    rows.length > 0 && !rows.some((r) => r.slug === SLACK_CHANNEL_CONNECTOR_SLUG)
+      ? (await loadSlackInstall(projectId).catch(() => null)) != null
+      : false;
+  if (connectorListNeedsResync({ presentSlugs: rows.map((r) => r.slug), slackInstalled })) {
     const [project] = await db
       .select({ accountId: projects.accountId })
       .from(projects)
@@ -818,10 +826,7 @@ async function listConnectors(
       .limit(1);
     if (project) {
       await syncProjectConnectors(projectId, project.accountId);
-      rows = await db
-        .select()
-        .from(executorConnectors)
-        .where(eq(executorConnectors.projectId, projectId));
+      rows = await fetchRows();
     }
   }
   const conns = hideSupersededSlack(rows);
@@ -934,7 +939,6 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     syncProjectConnectors(projectId, accountId, { force: true }),
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
-  discoverConnectorAuth: discoverDraftConnectorAuth,
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
   setConnectorCredential: (projectId, slug, value) =>
     setConnectorCredentialShared(projectId, slug, value),
@@ -1015,8 +1019,6 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
     : undefined,
-  listDiscoverIntegrations: (input) => listIntegrationCatalog(input),
-  getDiscoverIntegration: (id) => getIntegrationCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

@@ -1,11 +1,7 @@
 import { chatInstalls, projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { config } from '../config';
-import {
-  decryptProjectSecret,
-  encryptProjectSecret,
-  listProjectSecrets,
-} from '../projects/secrets';
+import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 
 export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
@@ -540,8 +536,10 @@ export async function listProjectsForWorkspace(
 }
 
 export async function loadSlackInstall(projectId: string): Promise<SlackInstallSummary | null> {
-  const secrets = await listProjectSecrets(projectId);
-  const teamId = secrets[SLACK_TEAM_ID];
+  // Read scope-agnostically: Slack credentials are stored with scope='connector'
+  // (kept out of the sandbox env), which listProjectSecrets deliberately drops —
+  // so status must go through readSecret, matching the Teams install read path.
+  const teamId = await readSecret(projectId, SLACK_TEAM_ID);
   if (!teamId) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
@@ -550,8 +548,8 @@ export async function loadSlackInstall(projectId: string): Promise<SlackInstallS
     .limit(1);
   return {
     workspaceId: teamId,
-    workspaceName: secrets[SLACK_TEAM_NAME] || null,
-    botUserId: secrets[SLACK_BOT_USER_ID] || null,
+    workspaceName: (await readSecret(projectId, SLACK_TEAM_NAME)) || null,
+    botUserId: (await readSecret(projectId, SLACK_BOT_USER_ID)) || null,
     installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
 }
