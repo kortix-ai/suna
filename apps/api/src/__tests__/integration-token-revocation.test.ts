@@ -5,7 +5,7 @@
  * sandbox session tokens) is revoked so they can't keep acting on a bearer.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { accountTokens, accounts, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';

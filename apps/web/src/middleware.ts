@@ -138,12 +138,20 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
-  // When maintenance level is "blocking", redirect all traffic to /maintenance
-  // except the maintenance page itself and the admin panel (so admins can disable it).
-  const MAINTENANCE_BYPASS = ['/maintenance', '/admin', '/auth'];
-  const bypassesMaintenance = MAINTENANCE_BYPASS.some(
+  // When maintenance level is "blocking" (Full Lockdown), redirect DASHBOARD /
+  // app traffic to /maintenance — but NOT the public marketing/landing site.
+  // A release lockdown should take the product surface offline while new
+  // visitors can still reach kortix.com, the blog, pricing, docs, etc.
+  // So we bypass the redirect for every public route (which already includes
+  // /, /auth, /maintenance, marketing pages, docs, …) plus the admin panel
+  // (so admins can disable the lockdown). Everything else — /projects,
+  // /accounts, /invites and the other authed product routes — still gets the
+  // maintenance takeover.
+  const isPublicMaintenanceRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(route + '/'),
   );
+  const isAdminMaintenanceRoute = pathname === '/admin' || pathname.startsWith('/admin/');
+  const bypassesMaintenance = isPublicMaintenanceRoute || isAdminMaintenanceRoute;
 
   if (!bypassesMaintenance) {
     try {
@@ -156,7 +164,11 @@ export async function middleware(request: NextRequest) {
           request.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value,
         );
         if (!adminBypass) {
-          return NextResponse.redirect(new URL('/maintenance', request.url));
+          // Preserve where the user was headed so the maintenance page can
+          // send them back once the lockdown is lifted.
+          const maintenanceUrl = new URL('/maintenance', request.url);
+          maintenanceUrl.searchParams.set('from', pathname + (request.nextUrl.search || ''));
+          return NextResponse.redirect(maintenanceUrl);
         }
       }
     } catch {

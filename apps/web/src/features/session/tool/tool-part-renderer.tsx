@@ -5,8 +5,6 @@ import { ToolError } from '@/features/session/tool/tool-error';
 import {
   BasicTool,
   BoundActivateContext,
-  partInput,
-  shouldShowToolPartInActionsPanel,
   StalePendingContext,
   ToolActivateContext,
   ToolDurationContext,
@@ -20,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { PERMISSION_LABELS, type PermissionRequest, type QuestionRequest, type ToolPart } from '@/ui';
 import { CircleAlert } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 

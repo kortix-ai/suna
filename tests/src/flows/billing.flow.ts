@@ -67,6 +67,37 @@ flow(
   },
 );
 
+/**
+ * BILL-16 — the yearly credit rotation cron (billing/index.ts). Same
+ * `requireInternalCronAuth` gate as BILL-13's free-tier-rotation (Bearer or
+ * X-Kortix-Internal-Key must timing-safe-equal INTERNAL_SERVICE_KEY), but
+ * unlike BILL-13 we deliberately do NOT call this one with the real internal
+ * key: a genuine yearly rotation grants/rolls real credits across every
+ * account on the deployment, which is not something ke2e should ever trigger
+ * for real, even against staging. Boundary-only: no/garbage credentials → 401,
+ * proving the route is mounted and gated without ever reaching
+ * processYearlyCreditRotation().
+ */
+flow(
+  'BILL-16',
+  {
+    domain: 'billing',
+    routes: ['POST /v1/billing/cron/yearly-rotation'],
+  },
+  async (ctx) => {
+    await ctx.step('no credentials → 401 (route mounted + gated, rotation never runs)', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/cron/yearly-rotation', {});
+      r.status(401);
+    });
+    await ctx.step('wrong bearer → 401 (never the real internal key)', async () => {
+      const r = await ctx.client
+        .withBearer('ke2e-not-the-internal-key', 'WRONG_TOKEN')
+        .post('/v1/billing/cron/yearly-rotation', {});
+      r.status(401);
+    });
+  },
+);
+
 flow(
   'BILL-3',
   {

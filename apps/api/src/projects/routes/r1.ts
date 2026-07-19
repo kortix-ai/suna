@@ -9,7 +9,7 @@ import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, type Gi
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
-import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
+import { normalizeStarterTemplateId } from '../starter';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,

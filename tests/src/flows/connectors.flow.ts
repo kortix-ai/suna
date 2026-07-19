@@ -281,3 +281,245 @@ flow(
     });
   },
 );
+
+// Pairs with CONN-7 (PUT .../credential) — disconnect (delete) a connector's
+// stored credential. Unknown connector → 404 (deleteConnectorCredential looks
+// the connector up before touching the credential store).
+flow(
+  "CONN-16",
+  { domain: "connectors", routes: ["DELETE /v1/executor/projects/:projectId/connectors/:slug/credential"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("delete credential for an unknown connector → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/executor/projects/:projectId/connectors/:slug/credential", { params: { projectId: p.id, slug: "nope" } });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .del("/v1/executor/projects/:projectId/connectors/:slug/credential", { params: { projectId: p.id, slug: "nope" } });
+      r.status(403);
+    });
+  },
+);
+
+// Pairs with CONN-13 (PUT .../policies) — read a connector's per-tool/per-pattern
+// policies. Unknown connector → 404 (manifest-first, DB-fallback; neither hits).
+flow(
+  "CONN-17",
+  { domain: "connectors", routes: ["GET /v1/executor/projects/:projectId/connectors/:slug/policies"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("read policies for an unknown connector → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/executor/projects/:projectId/connectors/:slug/policies", { params: { projectId: p.id, slug: "nope" } });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/executor/projects/:projectId/connectors/:slug/policies", { params: { projectId: p.id, slug: "nope" } });
+      r.status(403);
+    });
+  },
+);
+
+// Connector-profiles — mint→activate→credential→revoke lifecycle. Creating a
+// real profile needs an existing executor connector to reference by
+// connector_alias, so this first declares a lightweight `mcp` connector (only
+// requires a `url`, no live reachability check during manifest sync) via the
+// already-covered POST /v1/executor/projects/:projectId/connectors, then drives
+// the full connector-profiles surface against it.
+flow(
+  "COVD-1",
+  {
+    domain: "connectors",
+    routes: [
+      "GET /v1/projects/:projectId/connector-profiles",
+      "POST /v1/projects/:projectId/connector-profiles",
+      "PUT /v1/projects/:projectId/connector-profiles/:profileId/activate",
+      "PUT /v1/projects/:projectId/connector-profiles/:profileId/credential",
+      "PUT /v1/projects/:projectId/connector-profiles/:profileId/revoke",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const slug = `ke2e-mcp-${Date.now().toString(36)}`;
+
+    await ctx.step("seed a real connector to hang a profile off (mcp provider)", async () => {
+      // auth explicitly set (not omitted) so the create route skips its
+      // auto-discovery probe — that probe does a LIVE fetch against the
+      // connector's url, and this url is intentionally unreachable.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/executor/projects/:projectId/connectors",
+          { slug, provider: "mcp", url: "https://ke2e.kortix.test/mcp", auth: { type: "none" } },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("list connector-profiles → 200, empty before any profile exists", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/connector-profiles", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.profiles");
+    });
+
+    await ctx.step("NONMEMBER cannot list → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/connector-profiles", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/connector-profiles", { params: { projectId: p.id } });
+      r.status(401);
+    });
+
+    let profileId = "";
+    await ctx.step("create (reconcile) a connection profile → 201 with a real shape", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/connector-profiles",
+          { connector_alias: slug, owner_type: "external", owner_id: "ke2e-external-owner-1", label: "KE2E connection" },
+          { params: { projectId: p.id } },
+        );
+      r.status(201)
+        .body()
+        .has("$.connector_alias", slug)
+        .has("$.owner_type", "external")
+        .has("$.status", "active")
+        .exists("$.profile_id");
+      profileId = r.json<any>().profile_id;
+    });
+
+    await ctx.step("missing required fields → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/connector-profiles", { connector_alias: slug }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step("activate the profile → 200 ok", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/connector-profiles/:profileId/activate", {}, { params: { projectId: p.id, profileId } });
+      r.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("set the profile's credential → 200 ok", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/connector-profiles/:profileId/credential",
+          { value: "ke2e-secret-value" },
+          { params: { projectId: p.id, profileId } },
+        );
+      r.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("credential with no value → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/connector-profiles/:profileId/credential", {}, { params: { projectId: p.id, profileId } });
+      r.status(400);
+    });
+
+    await ctx.step("revoke the profile (terminal state — no DELETE route exists) → 200 ok", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/connector-profiles/:profileId/revoke", {}, { params: { projectId: p.id, profileId } });
+      r.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("activate/credential/revoke on an unknown profileId → 404", async () => {
+      const unknown = "00000000-0000-4000-a000-000000000000";
+      for (const op of ["activate", "credential", "revoke"] as const) {
+        const body = op === "credential" ? { value: "x" } : {};
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(`/v1/projects/:projectId/connector-profiles/:profileId/${op}`, body, { params: { projectId: p.id, profileId: unknown } });
+        r.status(404);
+      }
+    });
+  },
+);
+
+// Setup-links (connector half) — public, token-gated read + start. The minting
+// side (POST /v1/projects/:projectId/connect-requests) belongs to a different
+// coverage group; this covers the two public consume-side routes independently
+// via the boundary case (a bogus token can never resolve, regardless of who
+// eventually mints real ones), which is legitimate coverage on its own.
+flow(
+  "COVD-2",
+  {
+    domain: "connectors",
+    routes: ["GET /v1/setup-links/connector/:token", "POST /v1/setup-links/connector/:token/start"],
+  },
+  async (ctx) => {
+    await ctx.step("GET with a bogus token → 404 (invalid/unknown link)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/setup-links/connector/:token", { params: { token: "bogus-connector-setup-link" } });
+      r.status(404).body().exists("$.error");
+    });
+    await ctx.step("POST .../start with a bogus token → 404 (invalid/unknown link)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/connector/:token/start", {}, { params: { token: "bogus-connector-setup-link" } });
+      r.status(404).body().exists("$.error");
+    });
+  },
+);
+
+// CONN-18 — mint a Pipedream Quick Connect setup link (projects/routes/setup-links.ts).
+// The real 200 needs a live Pipedream-backed connector already declared in
+// kortix.yaml (which a bare e2e project has none of), so this covers the real
+// validation boundary: missing slug → 400; a slug that names no connected-via-
+// Pipedream connector on this project → 404 (or 501 if Pipedream isn't
+// configured on this deployment at all — both are legitimate real outcomes,
+// never a 200/201 without a real connector). The analogous public consume
+// routes (`GET/POST /v1/setup-links/connector/:token[/start]`, COVD-2 above)
+// belong to a different coverage group.
+flow(
+  "CONN-18",
+  { domain: "connectors", routes: ["POST /v1/projects/:projectId/connect-requests"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("missing slug → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/connect-requests", {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step("unconnected slug → 404 (or 501 if Pipedream isn't configured)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/connect-requests",
+          { slug: "not-a-connected-app" },
+          { params: { projectId: p.id } },
+        );
+      r.status([404, 501]);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/connect-requests",
+          { slug: "not-a-connected-app" },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);

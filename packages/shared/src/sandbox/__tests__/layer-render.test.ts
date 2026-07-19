@@ -19,10 +19,11 @@
 import { describe, expect, test } from 'bun:test';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '../../runtime-versions';
 import {
-  buildLayeredDockerfile,
   type BuildLayeredDockerfileOpts,
-  kortixToolchainLayer,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
+  buildLayeredDockerfile,
+  buildPerProjectWarmFromBaseDockerfile,
+  kortixToolchainLayer,
 } from '../dockerfile-layer';
 
 const COMMON = {
@@ -163,5 +164,89 @@ describe('the /workspace wipe is scoped to the shared default image', () => {
   test('warmRepo outranks isSharedDefault — a baked checkout is never wiped', () => {
     const both = buildLayeredDockerfile({ ...CASES[2]!.opts, isSharedDefault: true });
     expect(both).not.toContain(WIPE);
+  });
+});
+
+describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
+  const FROM_BASE_OPTS = {
+    baseImageRef: 'registry.daytona.internal/kortix-default-abc123:latest',
+    opencodeConfigPath: 'kortix-opencode-config',
+    warmRepo: {
+      cloneUrl: 'https://git.example.com/acme/app.git',
+      cloneHeaders: { Authorization: 'Bearer redacted' },
+      branch: 'main',
+      originUrl: 'https://kortix.example.com/v1/git/proj.git',
+    },
+  };
+
+  test('golden', () => {
+    expect(buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS)).toMatchSnapshot();
+  });
+
+  test('FROMs the base image ref as the very first line', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered.startsWith(`FROM ${FROM_BASE_OPTS.baseImageRef}\n`)).toBe(true);
+  });
+
+  test('never re-installs the toolchain — Chromium is inherited, not re-run', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('apt-get');
+    expect(rendered).not.toContain('opencode-ai@');
+    expect(rendered).not.toContain('playwright');
+    expect(rendered).not.toContain('chromium');
+    expect(rendered).not.toContain('agent-browser@');
+    expect(rendered).not.toContain('pip install');
+    expect(rendered).not.toContain('bun.com/install');
+  });
+
+  test('bakes the repo checkout and re-warms the opencode instance against it', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
+    expect(rendered).toContain(FROM_BASE_OPTS.warmRepo.cloneUrl);
+    expect(rendered).toContain('opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log');
+    expect(rendered).toContain('warm-repo: keeping baked /workspace checkout');
+  });
+
+  test('renders the clone + warm-up steps byte-identically to the monolithic build', () => {
+    const monolithic = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: FROM_BASE_OPTS.warmRepo,
+    });
+    const fromBase = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    const startMarker = 'RUN cd / \\\n    && rm -rf /tmp/kortix-warm-repo';
+    const endMarker = 'rm -f /tmp/oc-warm.log; true';
+    const slice = (text: string) =>
+      text.slice(text.indexOf(startMarker), text.indexOf(endMarker) + endMarker.length);
+    expect(slice(fromBase)).toBe(slice(monolithic));
+  });
+
+  test('does not COPY or reference any staged artifact paths — everything is inherited', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('COPY kortix-agent.gz');
+    expect(rendered).not.toContain('COPY kortix.gz');
+    expect(rendered).not.toContain('scaffold.git');
+    expect(rendered).not.toContain('ENTRYPOINT');
+  });
+
+  test('with no opencodeConfigPath, only the clone step is added on top of the base', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile({
+      baseImageRef: FROM_BASE_OPTS.baseImageRef,
+      warmRepo: FROM_BASE_OPTS.warmRepo,
+    });
+    expect(rendered).not.toContain('COPY ');
+    expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
+  });
+
+  test('is portable — no buildah-unsupported heredocs', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    const heredocLine = rendered
+      .split('\n')
+      .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+    expect(heredocLine).toBeUndefined();
+  });
+
+  test('result ends with a trailing newline', () => {
+    expect(buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS).endsWith('\n')).toBe(true);
   });
 });

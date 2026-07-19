@@ -31,7 +31,6 @@ import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';

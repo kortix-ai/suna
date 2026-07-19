@@ -686,3 +686,171 @@ flow(
     });
   },
 );
+
+// CHN-21 — Slack identity "/login/:token" magic-link redirect (public). Mirrors
+// the already-allowlisted teams identity-login twin: login.ts never verifies the
+// token server-side (that happens client-side when the web page POSTs /bind), so
+// it's a deterministic, always-200 HTML redirect for ANY token shape — bogus
+// included. Real coverage: status + content-type + the token round-tripping into
+// the redirect target (proves the handler actually read the param, not a 404
+// route-miss).
+flow(
+  "CHN-21",
+  {
+    domain: "channels",
+    routes: ["GET /v1/channels/slack/identity/login/:token"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON bogus token → 200 HTML redirect (never verified server-side)", async () => {
+      const token = "bogus-login-token-ke2e";
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/channels/slack/identity/login/:token", { params: { token } });
+      r.status(200).headerEquals("content-type", /text\/html/);
+      if (!r.text().includes(encodeURIComponent(token))) {
+        throw new Error("CHN-21: redirect target did not echo the token back");
+      }
+    });
+  },
+);
+
+// CHN-22 — Per-project (BYO app) Slack manifest (public, unauthenticated
+// scaffolding template — no DB lookup, so it renders for ANY projectId,
+// including one that was never created).
+flow(
+  "CHN-22",
+  {
+    domain: "channels",
+    routes: ["GET /v1/webhooks/slack/:projectId/manifest"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON reads the BYO manifest for a real project → 200 shape", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/webhooks/slack/:projectId/manifest", { params: { projectId: p.id } });
+      r.status(200)
+        .body()
+        .exists("$.display_information.name")
+        .exists("$.features.slash_commands")
+        .exists("$.settings.interactivity.request_url");
+      const manifest = r.json<any>();
+      if (!manifest.settings.interactivity.request_url.includes(p.id)) {
+        throw new Error("CHN-22: manifest webhook URLs are not scoped to the requested project");
+      }
+    });
+    await ctx.step("ANON on an unknown projectId → still 200 (scaffolding template, no DB check)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/webhooks/slack/:projectId/manifest", { params: { projectId: UNKNOWN } });
+      r.status(200).body().exists("$.display_information.name");
+    });
+  },
+);
+
+// CHN-23 — Bind a Slack thread to a session (dual-authed: user PAT/JWT with
+// project-read, or an in-sandbox project-scoped sandbox token). No public seam
+// creates a real Slack thread binding without a live Slack workspace, so the
+// live-assertable ceiling is validation + the auth boundary — same shape every
+// other user-authed channels route in this file exercises.
+flow(
+  "CHN-23",
+  {
+    domain: "channels",
+    routes: ["POST /v1/projects/:projectId/channels/slack/bind-thread"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const session = await ctx.fixtures.session(p);
+
+    await ctx.step("OWNER, missing session_id/channel/thread_ts → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/slack/bind-thread", {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step("OWNER, well-formed but channel not bound to any Slack workspace → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("NONMEMBER cannot bind → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
+          { params: { projectId: p.id } },
+        );
+      r.status(401);
+    });
+  },
+);
+
+// CHN-24 / CHN-25 — Per-project (BYO app) Slack slash-command + interactivity
+// webhooks. Same signed-rejection idea as COV-7's unsigned-payload pattern for
+// /v1/webhooks/sandbox/*: POST an unsigned body at a REAL (but Slack-unconnected)
+// project. loadSlackSigningSecretForProject resolves to null before the HMAC
+// check ever runs, so the rejection is a deterministic 404 "Not configured" —
+// real coverage of the reject-unsigned boundary, not a route-miss (a genuinely
+// unknown project hits the exact same code path, so this also proves the route
+// isn't silently accepting anything).
+flow(
+  "CHN-24",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/slack/:projectId/commands"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON unsigned slash command on an unconnected project → 404 (not configured)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/webhooks/slack/:projectId/commands",
+          "command=%2Fkortix&text=hi&team_id=TKE2E&channel_id=CKE2E&user_id=UKE2E",
+          { params: { projectId: p.id }, raw: true, headers: { "content-type": "application/x-www-form-urlencoded" } },
+        );
+      r.status(404);
+    });
+  },
+);
+
+flow(
+  "CHN-25",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/slack/:projectId/interactivity"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON unsigned interaction on an unconnected project → 404 (not configured)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/webhooks/slack/:projectId/interactivity",
+          `payload=${encodeURIComponent(JSON.stringify({ type: "block_actions" }))}`,
+          { params: { projectId: p.id }, raw: true, headers: { "content-type": "application/x-www-form-urlencoded" } },
+        );
+      r.status(404);
+    });
+  },
+);

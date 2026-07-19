@@ -24,10 +24,17 @@ const ENV_KEYS = [
 ] as const;
 
 const INSTALL_URL = 'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
+const TEAMS_CONSENT_URL = 'https://login.microsoftonline.com/common/adminconsent?client_id=teams-1';
 const INSTALLATION = {
   workspaceId: 'T012AB3CD',
   workspaceName: 'Acme',
   botUserId: 'U0BOT',
+  installedAt: '2026-07-08T00:00:00.000Z',
+};
+const TEAMS_INSTALLATION = {
+  tenantId: 'tid-1',
+  catalogAppId: 'cat-1',
+  orgInstalled: true,
   installedAt: '2026-07-08T00:00:00.000Z',
 };
 
@@ -47,6 +54,7 @@ interface MockState {
 
 let state: MockState;
 let installationGets = 0;
+let teamsInstall: typeof TEAMS_INSTALLATION | null = null;
 
 function writeConfig(): void {
   const file = join(tmp, 'config.json');
@@ -111,6 +119,18 @@ function mockApi() {
     if (url.includes('/channels/slack/connect') && method === 'POST') {
       return json(INSTALLATION);
     }
+    // Teams endpoints
+    if (url.includes('/channels/teams/mode')) {
+      return json({
+        oauth_available: state.oauthAvailable,
+        orgConsentUrl: state.oauthAvailable ? TEAMS_CONSENT_URL : null,
+        orgInstalled: Boolean(teamsInstall),
+        deepLinkUrl: teamsInstall?.catalogAppId ?? null,
+      });
+    }
+    if (url.includes('/channels/teams/installation') && method === 'GET') {
+      return json(teamsInstall ?? null);
+    }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
   }) as typeof fetch;
 }
@@ -127,6 +147,7 @@ beforeEach(() => {
   captureOutput();
   requests = [];
   state = { oauthAvailable: true, installation: null };
+  teamsInstall = null;
   mockApi();
 });
 
@@ -244,5 +265,64 @@ describe('kortix channels status', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.connected).toBe(true);
     expect(parsed.installation.workspaceId).toBe('T012AB3CD');
+  });
+});
+
+describe('kortix channels --platform teams', () => {
+  test('status not connected → points at `kortix channels connect --platform teams`', async () => {
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('teams');
+    expect(out).toContain('not connected');
+    expect(out).toContain('kortix channels connect --platform teams');
+    // Must NOT hit the Slack endpoint.
+    expect(requests.some((r) => r.url.includes('/channels/slack/'))).toBe(false);
+    expect(requests.some((r) => r.url.includes('/channels/teams/installation'))).toBe(true);
+  });
+
+  test('status connected → shows tenant + catalog app', async () => {
+    teamsInstall = TEAMS_INSTALLATION;
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('tid-1');
+    expect(out).toContain('cat-1');
+  });
+
+  test('connect → prints the Microsoft admin-consent URL', async () => {
+    const code = await runChannels(['connect', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain(TEAMS_CONSENT_URL);
+    expect(out).toContain('admin consent');
+    expect(requests.some((r) => r.url.includes('/channels/teams/mode'))).toBe(true);
+  });
+
+  test('connect --json → emits orgConsentUrl', async () => {
+    const code = await runChannels(['connect', '--platform', 'teams', '--json']);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.orgConsentUrl).toBe(TEAMS_CONSENT_URL);
+    expect(parsed.orgInstalled).toBe(false);
+  });
+
+  test('invalid --platform value → exit 2', async () => {
+    const code = await runChannels(['status', '--platform', 'discord']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("--platform must be 'slack' or 'teams'");
+  });
+
+  test('disconnect --platform teams → not-yet-supported error', async () => {
+    const code = await runChannels(['disconnect', '--platform', 'teams']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('not yet supported');
+  });
+
+  test('default (no --platform) still routes to Slack', async () => {
+    const code = await runChannels(['status']);
+    expect(code).toBe(0);
+    expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(true);
+    expect(requests.some((r) => r.url.includes('/channels/teams/'))).toBe(false);
   });
 });
