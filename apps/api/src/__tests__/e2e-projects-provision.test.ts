@@ -78,7 +78,12 @@ const stubBackend = {
     };
   },
   deleteRepo: async () => { backendCalls.push('deleteRepo'); },
-  buildUpstream: (ref: any) => ({ url: ref.upstreamUrl, headers: {} }),
+  buildUpstream: (ref: any, token: string | null) => ({
+    url: ref.upstreamUrl,
+    headers: token
+      ? { Authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` }
+      : {},
+  }),
   seedFiles: async (_ref: any, _token: string, files: Array<{ path: string; content: string }>, opts: { baseFiles?: Array<{ path: string; content: string }> }) => {
     backendCalls.push('seedFiles');
     seedFilePaths = files.map((file) => file.path).sort();
@@ -96,6 +101,14 @@ mock.module('../projects/git-backends', () => ({
   managedGithubOwner: () => REPO_OWNER,
   managedGithubOwnerType: () => undefined,
   managedGithubToken: () => managedPat,
+  parseBasicAuthHeader: (value?: string | null) => {
+    if (!value?.startsWith('Basic ')) return null;
+    const decoded = Buffer.from(value.slice(6), 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    return separator > 0
+      ? { username: decoded.slice(0, separator), token: decoded.slice(separator + 1) }
+      : null;
+  },
 }));
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -380,6 +393,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.repo_url).toBe(expectedRepoUrl);
     expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
     expect(body.push_token).toBe(PUSH_TOKEN);
+    expect(body.git_username).toBe('x-access-token');
 
     // Persisted row records the canonical typed git-remote reference.
     expect(insertedProject).toMatchObject({

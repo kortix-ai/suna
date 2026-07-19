@@ -214,6 +214,8 @@ export async function validateProjectManifest(
 
 export interface ProjectGitToken {
   push_token: string;
+  /** Provider-selected HTTP Basic username (`x-access-token` for GitHub, `t` for Code Storage). */
+  git_username: string;
   repo_id: string | null;
   repo_url: string | null;
 }

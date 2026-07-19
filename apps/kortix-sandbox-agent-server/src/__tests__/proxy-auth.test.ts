@@ -156,6 +156,19 @@ describe('daemon proxy auth gate', () => {
     ])
   })
 
+  it('uses the provider-selected username for direct-upstream auth', () => {
+    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
+
+    expect(buildGitAuthArgs(
+      'https://kortix.code.storage/project-123.git',
+      'code-storage-jwt',
+      't',
+    )).toEqual([
+      '-c',
+      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
+  })
+
   it('fetches clone credentials from the API v1 project endpoint', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
     const originalFetch = globalThis.fetch
