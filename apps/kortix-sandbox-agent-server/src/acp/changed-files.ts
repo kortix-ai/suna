@@ -14,6 +14,15 @@ const DENY_FILE_NAMES = new Set([
 ])
 const DEFAULTS = { maxVisited: 50_000, maxResults: 500, timeBudgetMs: 2_000 }
 
+/** True for a hidden segment (dotfile/dotdir — covers .git, dotenv files,
+ * .DS_Store) or a lockfile name. The single source of truth for "never a
+ * work-product item" — reused by both the bounded walk below and the
+ * git-status-based workspace-recovery path (`acp/output-scan.ts`) so the
+ * deny list never forks. */
+export function isDeniedChangeName(name: string): boolean {
+  return name.startsWith('.') || DENY_FILE_NAMES.has(name)
+}
+
 export async function collectChangedFiles(
   workspace: string,
   sinceMs: number,
@@ -38,7 +47,7 @@ export async function collectChangedFiles(
     for (const entry of entries) {
       if (truncated) return
       if (++visited > maxVisited || Date.now() > deadline) { truncated = true; return }
-      if (entry.name.startsWith('.')) continue // hidden segment (covers .git/.env*/.DS_Store)
+      if (isDeniedChangeName(entry.name)) continue // hidden segment or a lockfile
       const absolute = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         if (SKIP_DIR_NAMES.has(entry.name)) continue
@@ -46,7 +55,6 @@ export async function collectChangedFiles(
         continue
       }
       if (!entry.isFile()) continue // symlinks/sockets/fifos never qualify
-      if (DENY_FILE_NAMES.has(entry.name)) continue
       let stat: import('node:fs').Stats
       try {
         stat = await fs.lstat(absolute)

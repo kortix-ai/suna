@@ -1,5 +1,8 @@
-import { collectChangedFiles, type ChangedScanResult } from './changed-files'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { collectChangedFiles, isDeniedChangeName, type ChangedScanResult } from './changed-files'
 import type { JsonRpcEnvelope } from './runtime'
+import { gitWorkingStatus } from '../routes/files'
 import { logger } from '../logger'
 
 /** Watches one AcpProcess's ACP traffic and publishes durable synthetic
@@ -9,8 +12,14 @@ import { logger } from '../logger'
 const PROMPT_START_ALLOWANCE_MS = 2_000
 const MAX_ITEMS = 500
 const TERMINAL = new Set(['completed', 'failed'])
+const RECOVERY_TOOL_CALL_ID = 'kortix-outputs:recovery'
 
 type Scan = (workspace: string, sinceMs: number, isIgnored: (p: string[]) => Promise<Set<string>>) => Promise<ChangedScanResult>
+/** Only the field the recovery scan actually reads — real `gitWorkingStatus`
+ * (which returns the richer `GitFileStatus[]`) satisfies this structurally. */
+type GitStatusEntry = { path: string }
+type GitStatusFn = (workspace: string) => Promise<GitStatusEntry[]>
+type HasGitDirFn = (workspace: string) => boolean
 
 type PromptState = {
   seq: number
@@ -32,6 +41,7 @@ export class OutputScanTracker {
   private rescanWanted = false
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
+  private recoveryDone = false
 
   constructor(
     private readonly options: {
@@ -41,10 +51,18 @@ export class OutputScanTracker {
       scan?: Scan
       now?: () => number
       debounceMs?: number
+      gitWorkingStatus?: GitStatusFn
+      hasGitDir?: HasGitDirFn
     },
   ) {}
 
   noteOutbound(envelope: JsonRpcEnvelope): void {
+    if (envelope.method === 'session/load' && !this.recoveryDone) {
+      this.recoveryDone = true
+      const loadParams = isRecord(envelope.params) ? envelope.params : {}
+      const sessionId = typeof loadParams.sessionId === 'string' ? loadParams.sessionId : ''
+      void this.runRecoveryScan(sessionId)
+    }
     if (envelope.method !== 'session/prompt') return
     const params = isRecord(envelope.params) ? envelope.params : {}
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : ''
@@ -132,6 +150,61 @@ export class OutputScanTracker {
         this.rescanWanted = false
         this.requestScan()
       }
+    }
+  }
+
+  /** One-shot recovery for pre-feature sessions resumed via `session/load`:
+   * surface the work product that already exists on disk (never fires for
+   * `session/new` — a fresh workspace has nothing to recover). Git workspace →
+   * untracked+modified files from git status (filtered through the same
+   * lockfile/hidden deny list as the bounded walk, capped at MAX_ITEMS);
+   * non-git workspace → the same bounded walk used by the delta scanner,
+   * `since 0`. Empty result → no event. */
+  private async runRecoveryScan(sessionId: string): Promise<void> {
+    if (this.disposed) return
+    try {
+      const { items, truncated } = await this.collectRecoveryItems()
+      if (!items.length) return
+      this.options.publish({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: RECOVERY_TOOL_CALL_ID,
+            title: 'Show',
+            kind: 'other',
+            status: 'completed',
+            tool: 'show',
+            rawInput: { items: items.map((absolute) => ({ path: absolute })) },
+            _meta: { kortix: { synthetic: 'workspace-recovery', schemaVersion: 1, truncated } },
+          },
+        },
+      })
+    } catch (error) {
+      logger.warn('[acp] workspace recovery scan failed', { error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  private async collectRecoveryItems(): Promise<{ items: string[]; truncated: boolean }> {
+    const workspace = this.options.workspace
+    const readGitStatus = this.options.gitWorkingStatus ?? gitWorkingStatus
+    const hasGitDir = this.options.hasGitDir ?? ((ws: string) => existsSync(path.join(ws, '.git')))
+    const statuses = await readGitStatus(workspace).catch(() => [] as GitStatusEntry[])
+    const isGitWorkspace = statuses.length > 0 || hasGitDir(workspace)
+    if (isGitWorkspace) {
+      const absolutes = statuses
+        .map((entry) => path.join(workspace, entry.path))
+        .filter((absolute) => !isDeniedChangeName(path.basename(absolute)))
+      const truncated = absolutes.length > MAX_ITEMS
+      return { items: absolutes.slice(0, MAX_ITEMS), truncated }
+    }
+    const scan = this.options.scan ?? collectChangedFiles
+    const result = await scan(workspace, 0, this.options.isIgnored)
+    return {
+      items: result.files.slice(0, MAX_ITEMS).map((file) => file.absolute),
+      truncated: result.truncated || result.files.length > MAX_ITEMS,
     }
   }
 }

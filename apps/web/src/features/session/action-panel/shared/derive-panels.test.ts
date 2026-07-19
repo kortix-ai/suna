@@ -863,6 +863,25 @@ describe('deriveOutputs — synthetic (daemon-discovered) show parts', () => {
     expect(byExplicit?.shown).toBe(true);
   });
 
+  it('a workspace-recovery synthetic marker (one-shot show on session/load) behaves identically to filesystem-delta: shown falsy', () => {
+    // The daemon's OutputScanTracker emits this marker for its one-shot
+    // recovery scan (apps/kortix-sandbox-agent-server/src/acp/output-scan.ts)
+    // instead of the per-prompt `filesystem-delta` marker. isSyntheticShowPart
+    // is presence-based on `_meta.kortix.synthetic` (any value), so both
+    // markers must be treated the same here — this pins that.
+    const recovery = part('show', { path: '/workspace/recovered.txt' }, {
+      metadata: { acp: { _meta: { kortix: { synthetic: 'workspace-recovery' } } } },
+    });
+    const explicit = part('show', { path: '/workspace/made.txt' });
+    const out = deriveOutputs([recovery, explicit]);
+
+    expect(isSyntheticShowPart(recovery)).toBe(true);
+    const byRecovery = out.find((o) => o.name === 'recovered.txt');
+    const byExplicit = out.find((o) => o.name === 'made.txt');
+    expect(byRecovery?.shown).toBeFalsy();
+    expect(byExplicit?.shown).toBe(true);
+  });
+
   it('an explicit show wins over a synthetic rediscovery of the same path — explicit first', () => {
     const explicitShow = part('show', {
       path: '/workspace/report.pdf',

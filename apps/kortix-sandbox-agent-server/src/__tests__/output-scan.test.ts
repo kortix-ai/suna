@@ -9,6 +9,12 @@ import { AcpRuntime, type AcpStreamEvent } from '../acp/runtime'
 const prompt = (id: number, sessionId = 'sess-1') => ({
   jsonrpc: '2.0' as const, id, method: 'session/prompt', params: { sessionId, prompt: [] },
 })
+const load = (id: number, sessionId = 'sess-1') => ({
+  jsonrpc: '2.0' as const, id, method: 'session/load', params: { sessionId },
+})
+const newSession = (id: number, sessionId = 'sess-1') => ({
+  jsonrpc: '2.0' as const, id, method: 'session/new', params: { sessionId },
+})
 const toolCall = (toolCallId: string, kind: string, status: string) => ({
   jsonrpc: '2.0' as const, method: 'session/update',
   params: { sessionId: 'sess-1', update: { sessionUpdate: 'tool_call', toolCallId, kind, status } },
@@ -132,6 +138,134 @@ describe('OutputScanTracker', () => {
     const { t, published } = tracker(files)
     t.noteOutbound(prompt(1))
     t.noteInbound(toolCall('c1', 'execute', 'completed'))
+    await flush()
+    expect(published[0].params.update.rawInput.items.length).toBe(500)
+    expect(published[0].params.update._meta.kortix.truncated).toBe(true)
+  })
+})
+
+describe('OutputScanTracker workspace recovery (session/load)', () => {
+  function recoveryTracker(options: {
+    gitWorkingStatus?: (workspace: string) => Promise<Array<{ path: string }>>
+    hasGitDir?: (workspace: string) => boolean
+    scan?: (workspace: string, sinceMs: number, isIgnored: (p: string[]) => Promise<Set<string>>) => Promise<{ files: Array<{ path: string; absolute: string; mtime: number; size: number }>; truncated: boolean }>
+  } = {}) {
+    const published: any[] = []
+    const t = new OutputScanTracker({
+      workspace: '/workspace',
+      publish: (envelope) => published.push(envelope),
+      isIgnored: async () => new Set(),
+      debounceMs: 0,
+      gitWorkingStatus: options.gitWorkingStatus,
+      hasGitDir: options.hasGitDir,
+      scan: options.scan,
+    })
+    return { t, published }
+  }
+
+  it('git workspace: publishes untracked+modified files from git status on the first session/load, filtered through the same lockfile/hidden filters', async () => {
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [{ path: 'a.txt' }, { path: '.env' }, { path: 'pnpm-lock.yaml' }, { path: 'src/b.txt' }],
+      hasGitDir: () => true,
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    expect(published.length).toBe(1)
+    const update = published[0].params.update
+    expect(update.toolCallId).toBe('kortix-outputs:recovery')
+    expect(update.tool).toBe('show')
+    expect(update.status).toBe('completed')
+    expect(update._meta.kortix.synthetic).toBe('workspace-recovery')
+    expect(update._meta.kortix.schemaVersion).toBe(1)
+    expect(update.rawInput.items).toEqual([
+      { path: join('/workspace', 'a.txt') },
+      { path: join('/workspace', 'src/b.txt') },
+    ])
+    expect(published[0].params.sessionId).toBe('sess-1')
+  })
+
+  it('non-git workspace: falls back to a bounded walk since 0', async () => {
+    let scanArgs: any = null
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [],
+      hasGitDir: () => false,
+      scan: async (workspace, sinceMs, isIgnored) => {
+        scanArgs = { workspace, sinceMs }
+        return { files: [{ path: 'c.txt', absolute: '/workspace/c.txt', mtime: 1, size: 1 }], truncated: false }
+      },
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    expect(scanArgs).toEqual({ workspace: '/workspace', sinceMs: 0 })
+    expect(published.length).toBe(1)
+    expect(published[0].params.update.rawInput.items).toEqual([{ path: '/workspace/c.txt' }])
+    expect(published[0].params.update._meta.kortix.synthetic).toBe('workspace-recovery')
+  })
+
+  it('a clean git repo (empty git status, .git present) never falls through to the bounded walk', async () => {
+    let scanCalls = 0
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [],
+      hasGitDir: () => true,
+      scan: async () => {
+        scanCalls++
+        return { files: [{ path: 'x.txt', absolute: '/workspace/x.txt', mtime: 1, size: 1 }], truncated: false }
+      },
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    expect(scanCalls).toBe(0)
+    expect(published.length).toBe(0)
+  })
+
+  it('empty result (nothing to recover) publishes nothing', async () => {
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [],
+      hasGitDir: () => false,
+      scan: async () => ({ files: [], truncated: false }),
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    expect(published.length).toBe(0)
+  })
+
+  it('fires exactly once per process lifetime — a second session/load never re-scans', async () => {
+    let gitStatusCalls = 0
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => {
+        gitStatusCalls++
+        return [{ path: 'a.txt' }]
+      },
+      hasGitDir: () => true,
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    t.noteOutbound(load(2, 'sess-2'))
+    await flush()
+    expect(gitStatusCalls).toBe(1)
+    expect(published.length).toBe(1)
+  })
+
+  it('session/new never triggers recovery, including before a later session/load', async () => {
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [{ path: 'a.txt' }],
+      hasGitDir: () => true,
+    })
+    t.noteOutbound(newSession(1))
+    await flush()
+    expect(published.length).toBe(0)
+    t.noteOutbound(load(2))
+    await flush()
+    expect(published.length).toBe(1) // the later session/load still fires (latch untouched by session/new)
+  })
+
+  it('caps recovered git-status items at 500 and flags truncation', async () => {
+    const paths = Array.from({ length: 600 }, (_, i) => ({ path: `f${i}.txt` }))
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => paths,
+      hasGitDir: () => true,
+    })
+    t.noteOutbound(load(1))
     await flush()
     expect(published[0].params.update.rawInput.items.length).toBe(500)
     expect(published[0].params.update._meta.kortix.truncated).toBe(true)

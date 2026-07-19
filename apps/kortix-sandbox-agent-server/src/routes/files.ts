@@ -61,7 +61,7 @@ async function countTextLines(absPath: string): Promise<number> {
   }
 }
 
-type GitFileStatus = {
+export type GitFileStatus = {
   path: string
   added: number
   removed: number
@@ -74,7 +74,7 @@ type GitFileStatus = {
  * from `git diff --numstat HEAD` (tracked) + line-count for untracked files.
  * Returns [] when not a git repo.
  */
-async function gitWorkingStatus(workspace: string): Promise<GitFileStatus[]> {
+export async function gitWorkingStatus(workspace: string): Promise<GitFileStatus[]> {
   const st = await runGit(['-c', 'core.quotePath=false', 'status', '--porcelain', '-uall'], {
     cwd: workspace,
   })
