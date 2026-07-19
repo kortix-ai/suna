@@ -34,7 +34,6 @@ import {
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
 import { classifySnapshotError } from './error-classify';
 import type { WarmRepoContext } from './build-context';
-import { createHash } from 'node:crypto';
 import {
   enabledTemplateBuildProviders,
   observeTemplateProviderCoverage,
