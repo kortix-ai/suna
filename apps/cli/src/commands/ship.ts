@@ -876,7 +876,9 @@ export function authHeaderArgs(
     /* keep default */
   }
   const enc = Buffer.from(`${gitUsername}:${token}`).toString('base64');
-  return ['-c', `http.${origin}/.extraheader=AUTHORIZATION: basic ${enc}`];
+  // RFC 7617 treats the auth scheme case-insensitively, but Code Storage's
+  // Git endpoint currently requires the canonical `Basic` spelling.
+  return ['-c', `http.${origin}/.extraheader=Authorization: Basic ${enc}`];
 }
 
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {

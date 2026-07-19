@@ -225,6 +225,31 @@ describe('renderContext + host notice', () => {
     expect(notice).toContain('(default)');
   });
 
+  test('a directory link displays its own host instead of the globally active host', () => {
+    writeConfig({
+      cloud: loggedInHost({ url: 'https://api.kortix.com' }),
+      customdev: loggedInHost({ url: 'https://dev-api.kortix.com' }),
+    });
+    mkdirSync(join(tmp, '.kortix'), { recursive: true });
+    saveLink(
+      {
+        project_id: 'proj_linked',
+        account_id: 'account_1',
+        host: 'customdev',
+        host_url: 'https://dev-api.kortix.com',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      },
+      tmp,
+    );
+    process.chdir(tmp);
+
+    const notice = stripAnsi(renderHostNotice(['env', 'pull']) ?? '');
+    expect(notice).toContain('host customdev');
+    expect(notice).toContain('https://dev-api.kortix.com');
+    expect(notice).toContain('project proj_lin');
+    expect(notice).not.toContain('host cloud');
+  });
+
   test('--host override does not claim the active account / project', () => {
     writeConfig({
       test: loggedInHost({

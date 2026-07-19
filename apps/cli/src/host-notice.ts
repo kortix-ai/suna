@@ -57,13 +57,19 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const command = commandArgv[0];
   if (!command || ['help', '--help', '-h', 'version'].includes(command)) return null;
   const hostArg = findHostArg(commandArgv.slice(1));
-  const notice = resolveHostNotice(hostArg);
+  const directoryLink = loadLink();
+  const linkedHost = !hostArg ? directoryLink?.host : undefined;
+  const notice = resolveHostNotice(hostArg ?? linkedHost);
   let line = `${C.dim}host ${C.reset}${C.bold}${notice.name}${C.reset}${C.dim} (${notice.url}, ${notice.authState})${C.reset}`;
   // Append account + project for the active host only. With an explicit
   // `--host`, the active-config account/project may belong to a different
   // host, so we don't claim them.
   if (!hostArg) {
-    const acct = activeAccountLabel();
+    const acct = linkedHost
+      ? directoryLink?.account_id
+        ? shortId(directoryLink.account_id)
+        : null
+      : activeAccountLabel();
     if (acct) line += `${C.dim} · account ${C.reset}${acct}`;
     const proj = activeProjectLabel();
     if (proj) line += `${C.dim} · project ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
@@ -99,9 +105,13 @@ function shortId(id: string): string {
  * (config + cwd link) — no network, no latency.
  */
 export function renderContext(): string {
-  const { name, host } = activeHostEntry();
+  const directoryLink = loadLink();
+  const linkedHost = directoryLink?.host ? getHost(directoryLink.host) : null;
+  const active = activeHostEntry();
+  const name = linkedHost ? directoryLink!.host! : active.name;
+  const host = linkedHost ?? active.host;
   const authState = hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored');
-  const acct = activeAccount();
+  const acct = linkedHost ? null : activeAccount();
   const proj = activeProjectLabel();
   const labelW = 7; // "account".length
   const rows: string[] = [];
@@ -114,6 +124,8 @@ export function renderContext(): string {
         ? acct.name
           ? `${C.bold}${acct.name}${C.reset}  ${C.faded}(${acct.slug})${C.reset}`
           : `${C.bold}${acct.slug}${C.reset}`
+        : linkedHost && directoryLink?.account_id
+          ? `${C.bold}${shortId(directoryLink.account_id)}${C.reset}  ${C.faded}(linked)${C.reset}`
         : `${C.faded}— none (run \`kortix accounts use\`)${C.reset}`
     }`,
   );

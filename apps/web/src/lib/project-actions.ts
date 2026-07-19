@@ -68,9 +68,9 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  * Notes:
  * - `channels` maps to connector.* (NOT the unseeded channel.* namespace) — the
  *   actual Slack connect/disconnect routes assert project.connector.write.
- * - `changes` write = cr.open (opening a CR); the destructive MERGE is gated
- *   separately on project.cr.merge inside the view, never collapsed to one leaf.
- * - sandbox/dev/settings/marketplace/computers have no dedicated read leaf, so
+ * - `git` surfaces repository metadata and clone instructions; pushes remain
+ *   separately gated by project.gitops.push.
+ * - sandbox/settings/marketplace/computers have no dedicated read leaf, so
  *   they stay visible on project.read and gate writes on the closest real leaf
  *   the backend asserts (e.g. sandbox rebuild → customize.write, marketplace
  *   install → gitops.push).
@@ -111,7 +111,7 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
     read: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
     write: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
   },
-  changes: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_CR_OPEN },
+  git: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
   review: { read: PROJECT_ACTIONS.PROJECT_REVIEW_READ, write: PROJECT_ACTIONS.PROJECT_REVIEW_ACT },
   members: {
     read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
@@ -129,7 +129,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   'llm-keys': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-api': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
-  dev: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   // `upgrade` (migrate the manifest to v2) starts an agent session that edits the
   // repo and opens a CR — the session itself asserts the real leaves; visibility

@@ -132,6 +132,8 @@ export interface CreateProjectRepoInput {
   private?: boolean;
   description?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
+  /** Clone a `registry:project` item into the new GitHub repository. */
+  source_item_id?: string;
 }
 
 export interface ProvisionProjectInput {

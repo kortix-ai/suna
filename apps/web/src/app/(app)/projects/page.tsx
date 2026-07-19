@@ -278,7 +278,8 @@ export default function ProjectsPage() {
       .then((project) => {
         if (!project) {
           setAutoCreating(false);
-          autoCreateAttempted.current.delete(accountId);
+          setCreateAccountId(accountId);
+          setModalOpen(true);
           return;
         }
         queryClient.invalidateQueries({ queryKey: ['projects', accountId] });

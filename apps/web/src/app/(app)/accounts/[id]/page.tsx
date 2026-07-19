@@ -780,7 +780,7 @@ function GitHubConnectionCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <span className="flex items-center gap-1">
-            <p className="text-foreground text-sm font-medium">GitHub connections</p>
+            <p className="text-foreground text-sm font-medium">Git providers</p>
             <Hint label="Kortix stores the GitHub App installation on the account, not on individual members — Git credentials are platform credentials.">
               <Button
                 type="button"
@@ -794,7 +794,7 @@ function GitHubConnectionCard({
             </Hint>
           </span>
           <p className="text-muted-foreground text-xs">
-            Connect GitHub users or organizations to import repositories.
+            Connect a provider account or organization to create and import repositories.
           </p>
         </div>
         <Button
@@ -823,7 +823,8 @@ function GitHubConnectionCard({
         // Quiet contained empty state — the toolbar above already carries the
         // single "Connect GitHub" CTA.
         <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No GitHub connections yet. Connect the Kortix GitHub App to import repositories.
+          No Git provider connections yet. Connect the Kortix GitHub App to create or import
+          repositories.
         </div>
       ) : (
         <ul className="space-y-2">
