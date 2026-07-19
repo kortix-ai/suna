@@ -275,6 +275,68 @@ function appendQuery(query: URLSearchParams, key: string, value: unknown): void 
   }
 }
 
+function renderPostmanTemplate(
+  template: string,
+  args: Record<string, unknown>,
+  encode: boolean,
+): string {
+  return template.replace(/{{\s*([^{}]+?)\s*}}/g, (_whole, rawName: string) => {
+    const name = rawName.trim();
+    const value = args[name];
+    if (value === undefined || value === null) throw new Error(`missing Postman variable "${name}"`);
+    const rendered = String(value);
+    return encode ? encodeURIComponent(rendered) : rendered;
+  });
+}
+
+function setDefaultHeader(headers: Record<string, string>, name: string, value: string): void {
+  if (!Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase())) headers[name] = value;
+}
+
+function buildPostmanRequest(opts: {
+  binding: Extract<ActionBinding, { kind: 'postman' }>;
+  auth?: ExecutorAuth;
+  secret?: string | null;
+  args?: Record<string, unknown>;
+}): BuiltRequest {
+  const args = opts.args ?? {};
+  const url = new URL(renderPostmanTemplate(opts.binding.url, args, true));
+  const headers = Object.fromEntries(
+    Object.entries(opts.binding.headers).map(([key, value]) => [key, renderPostmanTemplate(value, args, false)]),
+  );
+  const auth = opts.auth ?? NO_AUTH;
+  if (auth.type === 'oauth1') {
+    const creds = parseOauth1Secret(opts.secret ?? null);
+    if (!creds) {
+      throw new Error(
+        'oauth1 credential must be a JSON object {"consumer_key","consumer_secret","token","token_secret"}',
+      );
+    }
+    headers.Authorization = oauth1Header({
+      method: opts.binding.method,
+      url: `${url.protocol}//${url.host}${url.pathname}`,
+      query: url.searchParams,
+      creds,
+    });
+  } else {
+    applyAuth(headers, url.searchParams, auth, opts.secret ?? null);
+  }
+
+  let body: string | undefined;
+  if (opts.binding.bodyMode === 'json' && args.body !== undefined) {
+    setDefaultHeader(headers, 'Content-Type', 'application/json');
+    body = JSON.stringify(args.body);
+  } else if (opts.binding.bodyMode === 'raw' && args.body !== undefined) {
+    body = typeof args.body === 'string' ? args.body : JSON.stringify(args.body);
+  } else if (opts.binding.bodyMode === 'urlencoded' && args.body && typeof args.body === 'object') {
+    setDefaultHeader(headers, 'Content-Type', 'application/x-www-form-urlencoded');
+    const encoded = new URLSearchParams();
+    for (const [key, value] of Object.entries(args.body as Record<string, unknown>)) appendQuery(encoded, key, value);
+    body = encoded.toString();
+  }
+  return { url: url.href, method: opts.binding.method.toUpperCase(), headers, body };
+}
+
 /** Serialize a JS value to a GraphQL literal (strings/numbers/bools/arrays/objects). */
 function gqlLiteral(v: unknown): string {
   if (v === null || v === undefined) return 'null';
@@ -393,6 +455,15 @@ export async function executeCall(opts: {
   fetchImpl: FetchImpl;
 }): Promise<ExecResult> {
   const { binding } = opts;
+
+  if (binding.kind === 'postman') {
+    return performRequest(buildPostmanRequest({
+      binding,
+      auth: opts.auth,
+      secret: opts.secret,
+      args: opts.args,
+    }), opts.fetchImpl);
+  }
 
   if (binding.kind === 'openapi') {
     const base = opts.baseUrl ?? binding.server;

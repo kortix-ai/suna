@@ -30,7 +30,15 @@ import { Loader2, Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-type Provider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+type Provider =
+  | 'pipedream'
+  | 'mcp'
+  | 'openapi'
+  | 'postman'
+  | 'graphql'
+  | 'http'
+  | 'channel'
+  | 'computer';
 
 const PROVIDERS: Provider[] = [
   'pipedream',

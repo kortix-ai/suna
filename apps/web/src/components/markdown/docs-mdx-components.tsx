@@ -5,15 +5,15 @@ import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import Link from 'next/link';
 import type { ComponentProps } from 'react';
 
-// Visual parity with doc-markdown.tsx (the docs-owned copy of the app
-// renderer) — when that file's styles change, mirror them here. This map
-// restyles fumadocs MDX output (server-rendered, no 'use client') to the
-// app's markdown look: same heading scale, paragraph voice, list markers,
-// kortix-blue links, inline-code chips, tables, images, blockquote, hr and
-// strong/em/del — minus app-only interactivity (sandbox proxy, file-preview
-// clicks, setup links, KaTeX, Mermaid, streaming). Code blocks stay on
-// fumadocs' native CodeBlock (copy button, title bar) — the `pre` override
-// below only flattens its chrome to the app surface (rounded-md, no shadow).
+// Visual parity with unified-markdown.tsx (the canonical markdown renderer)
+// — when that file's styles change, mirror them here. This map restyles
+// fumadocs MDX output (server-rendered, no 'use client') to the app's
+// markdown look: same heading scale, paragraph voice, list markers, kortix-blue
+// links, inline-code chips, tables, images, blockquote, hr and strong/em/del
+// — minus app-only interactivity (sandbox proxy, file-preview clicks, setup
+// links, KaTeX, Mermaid, streaming). Code blocks stay on fumadocs' native
+// CodeBlock (copy button, title bar) — the `pre` override below only flattens
+// its chrome to the app surface (rounded-md, no shadow).
 
 const linkClass = cn(
   'font-medium text-kortix-blue',

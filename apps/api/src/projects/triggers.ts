@@ -206,6 +206,65 @@ export async function readManifest(project: GitBackedProject): Promise<ParsedMan
 }
 
 /**
+ * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
+ * default — same name `@kortix/starter`'s `base` template seeds (see
+ * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
+ * `agents.kortix`). Keeping the two in sync means a blank managed-git project
+ * (provisioned WITHOUT `seed_starter:true`, so no kortix.yaml ever lands on
+ * disk) self-heals into the exact shape a seeded one would already have.
+ *
+ * Exported (not file-local) because more than one reader needs the SAME
+ * synthesized shape: `loadManifestForEdit` (lib/triggers.ts, the agent-config
+ * write path) AND `loadProjectAgents` (./agents.ts, the session-create
+ * declared-agent read path) both treat "no manifest committed yet" as if
+ * this manifest already existed — otherwise the two paths disagree (PR
+ * #4974 fixed only the write side; session-create still read `readManifest`'s
+ * literal `null` and 400'd AGENT_NOT_DECLARED on a blank project's very
+ * first session).
+ */
+export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
+
+/**
+ * Build the synthesized v2 manifest for a project with no kortix.yaml/
+ * kortix.toml committed yet. Pure (no I/O) — callers decide when a `null`
+ * `readManifest` result should be treated as this shape.
+ *
+ * MUST embed `kortix_version` INSIDE `raw` (not just carry it on the
+ * `schemaVersion` wrapper) — `applyDefaultAgentV2`/`applyAgentBlockV2`
+ * (lib/agent-config-v2.ts) call `validateManifest(manifest.raw, format)`
+ * directly on this raw object (not through `serializeManifest`, which
+ * re-injects `kortix_version` from `schemaVersion` on the way out). Without
+ * the key present here, `validateRoot` reads the raw object as schema-version-
+ * less and rejects it with "kortix_version is required" before ever reaching
+ * the v2 body validators — the exact 400 a blank project's first
+ * PUT /default-agent hit.
+ */
+export function synthesizeBlankManifest(project: {
+  name?: string;
+  manifestPath?: string | null;
+}): ParsedManifest {
+  return {
+    schemaVersion: 2,
+    raw: {
+      kortix_version: 2,
+      project: { name: project.name ?? '', description: '' },
+      env: { required: [], optional: [] },
+      default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
+      agents: {
+        [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
+          connectors: 'all',
+          secrets: 'all',
+          kortix_cli: 'all',
+          skills: 'all',
+        },
+      },
+    },
+    format: 'yaml',
+    path: manifestCandidatePaths(project.manifestPath ?? undefined)[0].path,
+  };
+}
+
+/**
  * Synchronous parse from a manifest string. Exported so the CRUD path can
  * round-trip (read existing string, parse, mutate, serialize) without touching
  * the network. `format`/`path` default to TOML/kortix.toml so an existing

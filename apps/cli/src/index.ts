@@ -17,6 +17,7 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
+import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -142,6 +143,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'secrets',
             args: '<subcommand>',
             blurb: 'Manage project secrets (project-scoped)',
+          },
+          {
+            name: 'providers',
+            args: '<subcommand>',
+            blurb: 'Connect LLM providers (API key or OAuth) for this project',
           },
           {
             name: 'env',
@@ -354,6 +360,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));
   }
+  if (argv[0] === 'providers') {
+    return runProviders(argv.slice(1));
+  }
   if (argv[0] === 'agents') {
     return runAgents(argv.slice(1));
   }
@@ -455,6 +464,7 @@ const KNOWN_COMMANDS = [
   'triggers',
   'connectors',
   'secrets',
+  'providers',
   'env',
   'gateway',
   'channels',

@@ -313,6 +313,13 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
 });
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
+  await kortix.project('PID123').connectors.auth.discover({
+    slug: 'hubspot', provider: 'postman',
+    spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  });
+  expect(last().url).toContain('/executor/projects/PID123/connectors/auth-discovery');
+  expect(last().method).toBe('POST');
+
   await kortix.project('PID123').connectors.setName('slack-1', 'My Slack');
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/name');
 
@@ -335,6 +342,12 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
 
   await kortix.project('PID123').connectors.pipedream.listApps('gmail');
   expect(last().url).toContain('/executor/projects/PID123/pipedream/apps?q=gmail');
+
+  await kortix.project('PID123').connectors.discover.list('notion');
+  expect(last().url).toContain('/executor/projects/PID123/discover/integrations?q=notion');
+
+  await kortix.project('PID123').connectors.discover.detail('mcp/notion');
+  expect(last().url).toContain('/executor/projects/PID123/discover/integrations/detail?id=mcp%2Fnotion');
 
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect');

@@ -3,12 +3,15 @@ import { configureKortix } from '../../http/config';
 import {
   activateConnectionProfile,
   createConnector,
+  discoverConnectorAuth,
   deleteConnector,
   getConnectStatus,
+  getDiscoverIntegration,
   getConnectorConfig,
   getConnectorPolicies,
   listConnectionProfiles,
   listConnectors,
+  listDiscoverIntegrations,
   listPipedreamApps,
   pipedreamConnect,
   pipedreamFinalize,
@@ -44,6 +47,13 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
+
+const postmanDraftTypecheck: import('./connectors').ConnectorDraftInput = {
+  slug: 'hubspot',
+  provider: 'postman',
+  spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+};
+void postmanDraftTypecheck;
 
 test('listConnectors GETs the project connectors list', async () => {
   nextResponse = { status: 200, body: { connectors: [] } };
@@ -168,6 +178,23 @@ test('createConnector POSTs the draft as the raw body', async () => {
   expect(last().body).toEqual(draft);
 });
 
+test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async () => {
+  const discovery: import('./connectors').ConnectorAuthDiscovery = {
+    status: 'detected',
+    recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
+    candidates: [], warnings: [], totalRequests: 10,
+  };
+  nextResponse = { status: 200, body: discovery };
+  const draft = {
+    slug: 'hubspot', provider: 'postman' as const,
+    spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  };
+  expect(await discoverConnectorAuth('P1', draft)).toEqual(discovery);
+  expect(last().url).toContain('/executor/projects/P1/connectors/auth-discovery');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual(draft);
+});
+
 test('deleteConnector DELETEs the connector by slug', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteConnector('P1', 'slack');
@@ -190,6 +217,27 @@ test('listPipedreamApps GETs with q + cursor as query params when given', async 
   expect(last().url).toContain('q=slack');
   expect(last().url).toContain('cursor=c1');
   expect(result.nextCursor).toBe('c2');
+});
+
+test('listDiscoverIntegrations GETs a searchable cursor page', async () => {
+  nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
+  await listDiscoverIntegrations('P1', 'notion admin', '48');
+  expect(last().url).toContain('/executor/projects/P1/discover/integrations?');
+  expect(last().url).toContain('q=notion+admin');
+  expect(last().url).toContain('cursor=48');
+  expect(last().method).toBe('GET');
+});
+
+test('getDiscoverIntegration GETs detail by encoded catalogue id', async () => {
+  nextResponse = {
+    status: 200,
+    body: { item: { id: 'openapi/1forge-com' }, variants: [] },
+  };
+  const result = await getDiscoverIntegration('P1', 'openapi/1forge-com');
+  expect(last().url).toContain('/executor/projects/P1/discover/integrations/detail?');
+  expect(last().url).toContain('id=openapi%2F1forge-com');
+  expect(last().method).toBe('GET');
+  expect(result.item.id).toBe('openapi/1forge-com');
 });
 
 test('getConnectStatus GETs the deployment-wide connect-status endpoint', async () => {

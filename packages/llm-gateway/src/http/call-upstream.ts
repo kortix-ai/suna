@@ -1,9 +1,7 @@
-import type { TranslationSidecarConfig, UpstreamDescriptor } from '../domain';
-import { ClientAbortError, NetworkError, UpstreamHttpError } from '../errors';
+import type { UpstreamDescriptor } from '../domain';
+import { ClientAbortError, UpstreamMisconfiguredError } from '../errors';
 import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
-import { transportFor } from '../transports';
-import { resolveTransportKind } from '../transports/route-kind';
-import { buildSidecarRequest, isSidecarEligible } from '../transports/sidecar';
+import { type AiSdkFetch, callUpstreamViaAiSdk } from '../transports/ai-sdk';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -11,8 +9,6 @@ export interface CallUpstreamOptions {
   retry?: RetryOptions;
   binding?: BreakerBinding;
   fetchImpl?: FetchImpl;
-  /** See GatewayConfig.translationSidecar. Unset = direct upstream (current behavior). */
-  translationSidecar?: TranslationSidecarConfig;
   /** Inbound client's abort signal — combined with the per-attempt timeout
    *  signal so a caller disconnect aborts the in-flight upstream fetch too,
    *  instead of only bounding it by the retry timeout. */
@@ -25,63 +21,91 @@ export interface CallUpstreamOptions {
   requestId?: string;
 }
 
+// The AI SDK provider packages build their outgoing request straight from
+// `descriptor.baseUrl` — a required `string` on the type, but TypeScript
+// can't stop that string from being empty or unparseable at runtime. Left
+// unchecked, a blank baseUrl reaches deep inside a provider SDK/fetch call
+// before failing with an opaque "Invalid URL" — and for the STREAMING path
+// specifically, that failure never even throws: it surfaces as a 200-status
+// SSE stream carrying an in-band `error` frame (see UpstreamMisconfiguredError's
+// doc comment in errors.ts). Every descriptor this gateway resolves today
+// (apps/api's resolveCandidates, which is provider-keyed — see
+// provider-registry.ts's resolveCatalogUpstream — never per-model) already
+// carries a real baseUrl, so this never fires in practice; it exists purely
+// as a fail-fast, correctly-classified backstop against a FUTURE resolution
+// regression (a different host's resolveUpstream hook, a new provider kind,
+// ...) instead of letting a bad descriptor reach the transport at all.
+function assertUsableBaseUrl(descriptor: UpstreamDescriptor): void {
+  const baseUrl = descriptor.baseUrl?.trim();
+  if (!baseUrl) {
+    throw new UpstreamMisconfiguredError(descriptor.provider || 'unknown', 'missing baseUrl');
+  }
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('not http(s)');
+    }
+  } catch {
+    throw new UpstreamMisconfiguredError(
+      descriptor.provider || 'unknown',
+      `invalid baseUrl "${descriptor.baseUrl}"`,
+    );
+  }
+}
+
+// Adapts `FetchImpl` (this package's own, `(input: string, init: RequestInit)`)
+// to the AI SDK provider packages' `fetch` override (`typeof globalThis.fetch`,
+// `input?: RequestInfo | URL`, `init?: RequestInit`) so a caller-supplied
+// fetchImpl (production middleware, or a test double — see CallUpstreamOptions)
+// is honored on the ai-sdk engine exactly like it was on the retired native
+// transport's direct `fetch()` call.
+function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
+  return (input, init) => fetchImpl(String(input), init ?? {});
+}
+
 export async function callUpstream(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
   opts: CallUpstreamOptions = {},
 ): Promise<Response> {
-  const fetchImpl: FetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  // Resolved per-request (not just from the descriptor's static `kind`): a
-  // genuine-OpenAI reasoning model with function tools + a live reasoning
-  // effort must go out over the Responses API even though descriptor
-  // resolution (apps/api's resolveCandidates, which doesn't see the body)
-  // labeled it 'openai-compat' — see route-kind.ts. Every other request keeps
-  // the descriptor's own kind unchanged.
-  const kind = resolveTransportKind(body, descriptor);
-  const transport = transportFor(kind);
-  const direct = transport.buildRequest(body, descriptor);
-  const request =
-    opts.translationSidecar &&
-    isSidecarEligible({ kind, omitAuthorization: descriptor.omitAuthorization })
-      ? buildSidecarRequest(direct, descriptor, opts.translationSidecar)
-      : direct;
-  if (opts.requestId) {
-    request.headers = { ...request.headers, 'x-kortix-request-id': opts.requestId };
-  }
-  const streaming = body.stream === true;
-  const clientSignal = opts.signal;
+  assertUsableBaseUrl(descriptor);
 
-  const raw = await withResilience(
+  const clientSignal = opts.signal;
+  // A caller already gone before dispatch even starts must never spend a
+  // fetch/retry/breaker-trip on a response no one will receive.
+  if (clientSignal?.aborted) throw new ClientAbortError();
+
+  const fetchImpl: AiSdkFetch | undefined = opts.fetchImpl
+    ? toAiSdkFetch(opts.fetchImpl)
+    : undefined;
+
+  // The SDK provider package owns the request build, HTTP, and response
+  // decoding; the adapter (transports/ai-sdk) maps its output back to the
+  // same OpenAI-compatible shape callers already expect (so the pipeline,
+  // billing, and opencode see no difference). Still wrapped in withResilience
+  // so the circuit breaker + gateway retry apply. Non-streaming awaits inside
+  // (a 4xx/5xx throws → retry/failover); streaming returns immediately
+  // (errors surface as an in-stream frame the pipeline probe handles).
+  return withResilience(
     async (attemptSignal) => {
-      if (clientSignal?.aborted) throw new ClientAbortError();
-      // Combine the per-attempt timeout controller with the inbound client's
-      // signal so either one aborts this fetch — `AbortSignal.any` is a plain
-      // union, so whichever fires first wins and the other is simply unused.
       const signal = clientSignal ? AbortSignal.any([attemptSignal, clientSignal]) : attemptSignal;
-      let response: Response;
       try {
-        response = await fetchImpl(request.url, {
-          method: 'POST',
-          headers: request.headers,
-          body: JSON.stringify(request.payload),
+        return await callUpstreamViaAiSdk(body, descriptor, {
           signal,
+          fetch: fetchImpl,
+          requestId: opts.requestId,
         });
       } catch (err) {
-        // Disambiguate WHY the fetch aborted: a client disconnect must never be
-        // retried/failed-over (there's no one left to serve), unlike a genuine
-        // upstream timeout or network failure.
+        // Disambiguate WHY the call failed: a client disconnect mid-flight
+        // must never be retried/failed-over (there's no one left to serve)
+        // or trip the shared provider circuit breaker, unlike a genuine
+        // upstream timeout or network failure — regardless of how the AI SDK
+        // itself classified the abort.
         if (clientSignal?.aborted) throw new ClientAbortError();
-        throw new NetworkError(`fetch to ${descriptor.provider} failed`, err);
+        throw err;
       }
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new UpstreamHttpError(response.status, text, descriptor.provider);
-      }
-      return response;
     },
     opts.retry ?? {},
     opts.binding,
   );
-
-  return transport.translateResponse(raw, { streaming, descriptor });
 }

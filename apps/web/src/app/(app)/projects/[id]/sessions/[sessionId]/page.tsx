@@ -8,6 +8,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
@@ -642,7 +643,9 @@ function ActiveSessionChat({
       projectId={projectId}
       projectSessionId={sessionId}
     >
-      <SessionChat key={chatSessionId} sessionId={chatSessionId} projectId={projectId} />
+      <ClientErrorBoundary>
+        <SessionChat key={chatSessionId} sessionId={chatSessionId} projectId={projectId} />
+      </ClientErrorBoundary>
     </SessionLayout>
   );
 }

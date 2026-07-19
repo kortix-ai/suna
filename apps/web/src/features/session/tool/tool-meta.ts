@@ -7,6 +7,7 @@
  */
 
 import type { ToolPart } from '@/ui';
+import { truncate as sharedTruncate } from '@/lib/utils/string';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ function basename(p: string): string {
 function truncate(s: string, max = 60): string {
   if (!s) return '';
   const trimmed = s.replace(/\s+/g, ' ').trim();
-  return trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed;
+  return sharedTruncate(trimmed, max);
 }
 
 /**

@@ -4,7 +4,7 @@ import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
-import { canAccessPreviewSandbox } from '../shared/preview-ownership';
+import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
@@ -181,7 +181,7 @@ export async function supabaseAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
     if (result.projectId) {
-      enforceTokenProjectScope(c, result.projectId);
+      await enforceTokenProjectScope(c, result.projectId);
     }
     c.set('userId', result.userId);
     c.set('userEmail', '');
@@ -461,7 +461,7 @@ export async function combinedAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
     }
     if (patResult.projectId) {
-      enforceTokenProjectScope(c, patResult.projectId);
+      await enforceTokenProjectScope(c, patResult.projectId);
     }
     c.set('userId', patResult.userId);
     c.set('userEmail', '');
@@ -672,11 +672,13 @@ function extractPreviewSandboxId(path: string): string | null {
  *   - the URL is an account-level route (`/v1/accounts/*` other than
  *     `/v1/accounts/me`, which we allow as a self-identity probe), OR
  *   - the URL is a webhook / preview / system route the token has no
- *     business hitting.
+ *     business hitting — UNLESS it is the sandbox-proxy path
+ *     (`/v1/p/{sandboxId}/{port}/...`) AND the sandbox belongs to the
+ *     token's own project (see below).
  *
  * Throws HTTPException(403) so the calling middleware aborts the chain.
  */
-function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
+async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Promise<void> {
   const path = c.req.path;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
@@ -714,6 +716,25 @@ function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
   if (path === '/v1/projects') {
     throw new HTTPException(403, {
       message: 'Project-scoped token cannot list projects',
+    });
+  }
+
+  // Sandbox-proxy path — this is what session.send()/stream() and other
+  // runtime.* SDK calls actually hit (NOT /v1/projects/:id/*). Without this
+  // branch a project PAT could authenticate REST calls but never drive an
+  // agent turn. Allow it through ONLY for a sandbox that resolves back to
+  // THIS token's own project — resolved via `session_sandboxes` (one indexed
+  // lookup, sandbox_id is the PK). A lookup miss or a mismatched project both
+  // deny, same as every other surface a project PAT has no business on; this
+  // never widens access to another project's or another account's sandbox.
+  const previewSandboxId = extractPreviewSandboxId(path);
+  if (previewSandboxId) {
+    const sandboxProjectId = await resolveSandboxProjectId(previewSandboxId);
+    if (sandboxProjectId && sandboxProjectId === tokenProjectId) {
+      return;
+    }
+    throw new HTTPException(403, {
+      message: 'Project-scoped token cannot access a sandbox outside its project',
     });
   }
 

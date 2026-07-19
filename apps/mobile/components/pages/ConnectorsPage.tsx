@@ -1,7 +1,7 @@
 /**
  * ConnectorsPage — the project's tool connectors (web parity:
  * customize/sections connectors-view). Lists connected connectors (Pipedream
- * apps, MCP servers, custom OpenAPI/GraphQL/HTTP), with a Sync action, a detail
+ * apps, MCP servers, custom OpenAPI/Postman/GraphQL/HTTP), with a Sync action, a detail
  * view of each connector's tools, and delete. Adding/connecting connectors is
  * layered on top in a follow-up.
  *
@@ -108,7 +108,7 @@ const CONNECT_ERROR_URI = 'kortix://connectors/error';
 function providerIcon(provider: ConnectorProvider): LucideIcon {
   if (provider === 'pipedream') return Zap;
   if (provider === 'mcp') return Boxes;
-  return Globe; // openapi | graphql | http
+  return Globe; // openapi | postman | graphql | http
 }
 
 function providerLabel(provider: ConnectorProvider): string {
@@ -601,7 +601,7 @@ function AddConnectorView({
         </TouchableOpacity>
       </View>
 
-      {/* Easy Connect (Pipedream catalogue) vs Custom (MCP / OpenAPI / GraphQL / HTTP) */}
+      {/* Easy Connect (Pipedream catalogue) vs Custom (MCP / OpenAPI / Postman / GraphQL / HTTP) */}
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         <Segmented
           isDark={isDark}
@@ -690,7 +690,7 @@ function AddConnectorView({
   );
 }
 
-// ─── Custom connector form (MCP / OpenAPI / GraphQL / HTTP) ───────────────────
+// ─── Custom connector form (MCP / OpenAPI / Postman / GraphQL / HTTP) ─────────
 
 function Segmented<T extends string>({
   options,
@@ -770,6 +770,7 @@ function CustomConnectorForm({
 
   const providerValid =
     (provider === 'openapi' && spec.trim()) ||
+    (provider === 'postman' && spec.trim()) ||
     (provider === 'graphql' && endpoint.trim()) ||
     (provider === 'mcp' && url.trim()) ||
     (provider === 'http' && baseUrl.trim());
@@ -783,7 +784,7 @@ function CustomConnectorForm({
         slug: slug.trim(),
         provider,
         auth: { type: authType, ...(authType === 'custom' ? { name: authName.trim(), in: 'header' } : {}) },
-        ...(provider === 'openapi' ? { spec: spec.trim() } : {}),
+        ...(provider === 'openapi' || provider === 'postman' ? { spec: spec.trim() } : {}),
         ...(provider === 'graphql' ? { endpoint: endpoint.trim(), ...(spec.trim() ? { spec: spec.trim() } : {}) } : {}),
         ...(provider === 'mcp' ? { url: url.trim(), transport } : {}),
         ...(provider === 'http' ? { baseUrl: baseUrl.trim(), ...(spec.trim() ? { spec: spec.trim() } : {}) } : {}),
@@ -821,6 +822,7 @@ function CustomConnectorForm({
             onChange={setProvider}
             options={[
               { value: 'openapi', label: 'OpenAPI' },
+              { value: 'postman', label: 'Postman' },
               { value: 'graphql', label: 'GraphQL' },
               { value: 'mcp', label: 'MCP' },
               { value: 'http', label: 'HTTP' },
@@ -828,9 +830,9 @@ function CustomConnectorForm({
           />
         </FormField>
 
-        {provider === 'openapi' && (
-          <FormField label="Spec URL or repo path" isDark={isDark}>
-            <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder="https://…/openapi.json" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+        {(provider === 'openapi' || provider === 'postman') && (
+          <FormField label={provider === 'postman' ? 'Collection, repository, or workspace' : 'Spec URL or repo path'} isDark={isDark}>
+            <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder={provider === 'postman' ? 'https://github.com/… or collection.json' : 'https://…/openapi.json'} placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
           </FormField>
         )}
         {provider === 'graphql' && (

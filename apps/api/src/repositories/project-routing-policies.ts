@@ -1,7 +1,8 @@
 import { accountModelPreferences, projectLlmRoutingPolicies } from "@kortix/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../shared/db";
 import type {
+  ProjectModelGenerationConfig,
   ProjectRoutingFallback,
   ProjectRoutingPolicyInput,
   ProjectRoutingRule,
@@ -11,6 +12,7 @@ export interface StoredProjectRoutingPolicy {
   visionModel: string | null;
   defaultFallback: ProjectRoutingFallback | null;
   rules: ProjectRoutingRule[];
+  modelGenerationConfig: ProjectModelGenerationConfig;
 }
 
 function fromRow(
@@ -26,6 +28,7 @@ function fromRow(
             fallbackOn: row.defaultFallbackOn as "transient" | "any-error",
           },
     rules: row.rules,
+    modelGenerationConfig: (row.modelGenerationConfig ?? {}) as ProjectModelGenerationConfig,
   };
 }
 
@@ -73,6 +76,12 @@ export async function setProjectRoutingPolicy(params: {
             accountModelPreferences.scope,
             accountModelPreferences.scopeKey,
           ],
+          // project-scope default is a project_id-IS-NULL row, so the ON CONFLICT
+          // arbiter must name the GLOBAL partial unique index's predicate (PR #4978
+          // split the old single unique index into two partial indexes). Without
+          // this, Postgres errors "no unique/exclusion constraint matching ON
+          // CONFLICT" and the routing-policy PUT 500s whenever defaultModel is set.
+          targetWhere: sql`project_id is null`,
           set: {
             model: params.policy.defaultModel,
             updatedBy: params.updatedBy,
@@ -91,6 +100,7 @@ export async function setProjectRoutingPolicy(params: {
         defaultFallbackModels: params.policy.defaultFallback?.models ?? null,
         defaultFallbackOn: params.policy.defaultFallback?.fallbackOn ?? null,
         rules: params.policy.rules,
+        modelGenerationConfig: params.policy.modelGenerationConfig,
         updatedBy: params.updatedBy,
       })
       .onConflictDoUpdate({
@@ -100,6 +110,7 @@ export async function setProjectRoutingPolicy(params: {
           defaultFallbackModels: params.policy.defaultFallback?.models ?? null,
           defaultFallbackOn: params.policy.defaultFallback?.fallbackOn ?? null,
           rules: params.policy.rules,
+          modelGenerationConfig: params.policy.modelGenerationConfig,
           updatedBy: params.updatedBy,
           updatedAt: now,
         },

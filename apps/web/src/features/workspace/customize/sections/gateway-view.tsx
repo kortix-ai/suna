@@ -21,12 +21,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
+import { GatewayPlayground } from '@/features/workspace/customize/sections/view/gateway/gateway-playground';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -34,15 +37,25 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
-type LlmTab = 'providers' | 'routing' | 'overview' | 'logs' | 'budgets' | 'keys';
+type LlmTab =
+  | 'providers'
+  | 'routing'
+  | 'playground'
+  | 'overview'
+  | 'logs'
+  | 'budgets'
+  | 'keys'
+  | 'api';
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'providers', label: 'Providers' },
   { id: 'routing', label: 'Routing' },
+  { id: 'playground', label: 'Playground' },
   { id: 'overview', label: 'Overview' },
   { id: 'logs', label: 'Logs' },
   { id: 'budgets', label: 'Budgets' },
   { id: 'keys', label: 'API keys' },
+  { id: 'api', label: 'API' },
 ];
 
 const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
@@ -52,6 +65,7 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
   'llm-logs': 'logs',
   'llm-budgets': 'budgets',
   'llm-keys': 'keys',
+  'llm-api': 'api',
 };
 
 export function LlmManagementView({ projectId }: { projectId: string }) {
@@ -66,6 +80,11 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const models = useProjectModels(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
+  // Only fetched once the API tab is open — this call needs the manage-keys
+  // permission, and a read-only member should still see the reference (with
+  // the prod-default base URL fallback) rather than eating a 403 on tab open.
+  const gatewayKeysQuery = useGatewayKeys(projectId, tab === 'api');
+  const gatewayUrl = gatewayKeysQuery.data?.gateway_url ?? null;
   const effectiveDefault =
     modelDefaults.projectDefault ??
     modelDefaults.accountDefault ??
@@ -145,6 +164,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           projectDefaultPending={modelDefaults.isUpdating}
         />
       </TabsContent>
+      <TabsContent value="playground" className="min-h-0 overflow-y-auto">
+        <GatewayPlayground projectId={projectId} />
+      </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />
       </TabsContent>
@@ -152,7 +174,35 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         <GatewayBudgets projectId={projectId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="keys" className="min-h-0 overflow-y-auto">
-        <GatewayKeys projectId={projectId} canWrite={canWrite} />
+        <GatewayKeys
+          projectId={projectId}
+          canWrite={canWrite}
+          onViewModels={() => setTab('providers')}
+        />
+      </TabsContent>
+      <TabsContent value="api" className="min-h-0 overflow-y-auto">
+        <div className="w-full space-y-4 p-5">
+          <div className="space-y-1">
+            <p className="text-foreground text-sm font-medium">Call the gateway</p>
+            <p className="text-muted-foreground text-pretty text-xs">
+              Drop-in OpenAI- and Anthropic-compatible endpoints for calling this project's gateway
+              from outside a Kortix session.{' '}
+              <button
+                type="button"
+                onClick={() => setTab('keys')}
+                className="text-foreground cursor-pointer underline underline-offset-2"
+              >
+                Create a key
+              </button>{' '}
+              in API keys to try these with a real key.
+            </p>
+          </div>
+          <GatewayApiReference
+            apiKey="kortix_gw_..."
+            gatewayUrl={gatewayUrl}
+            onViewModels={() => setTab('providers')}
+          />
+        </div>
       </TabsContent>
     </Tabs>
   );

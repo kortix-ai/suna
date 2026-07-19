@@ -47,16 +47,4 @@ export const config = {
     failureThreshold: optionalInt('GATEWAY_BREAKER_THRESHOLD', 5),
     cooldownMs: optionalInt('GATEWAY_BREAKER_COOLDOWN_MS', 30_000),
   },
-  // Stateless LiteLLM translation sidecar — see packages/llm-gateway's
-  // GatewayConfig.translationSidecar. Unset in cloud today: this standalone
-  // pod is the sandbox-facing gateway in EKS/ECS (LLM_GATEWAY_BASE_URL), so
-  // turning this on is a deliberate ops step (task-def/pod env addition), not
-  // part of this change — see the PR's cloud-rollout note. Wired here now so
-  // that follow-up is a one-line env addition, not a code change.
-  translationSidecar: process.env.LLM_TRANSLATION_SIDECAR_URL
-    ? {
-        url: process.env.LLM_TRANSLATION_SIDECAR_URL,
-        authToken: process.env.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN || undefined,
-      }
-    : undefined,
 };

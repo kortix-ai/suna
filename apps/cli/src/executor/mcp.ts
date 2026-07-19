@@ -2,7 +2,7 @@
  * `kortix executor mcp` — the Executor exposed as a stdio MCP server.
  *
  * This is an optional compatibility face for every configured integration
- * (Pipedream / MCP / OpenAPI / GraphQL / HTTP). The default agent path is the
+ * (Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP). The default agent path is the
  * `kortix executor` CLI; OpenCode only sees this MCP server when the runtime
  * explicitly registers it.
  *
@@ -48,7 +48,7 @@ const META_TOOLS = [
   {
     name: 'connectors',
     description:
-      'List the integration connectors this session can use (Pipedream / MCP / OpenAPI / GraphQL / HTTP), each with its provider, status, and number of tools. Start here to see what is available.',
+      'List the integration connectors this session can use (Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), each with its provider, status, and number of tools. Start here to see what is available.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     readOnly: true,
   },
@@ -173,7 +173,7 @@ const META_TOOLS = [
         slug: { type: 'string', description: 'Connector slug, e.g. "smartlead".' },
         provider: {
           type: 'string',
-          enum: ['pipedream', 'mcp', 'openapi', 'graphql', 'http'],
+          enum: ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'],
           description: 'Connector provider.',
         },
         app: {
@@ -189,7 +189,7 @@ const META_TOOLS = [
         },
         endpoint: { type: 'string', description: 'GraphQL endpoint (provider=graphql).' },
         base_url: { type: 'string', description: 'HTTP base URL (provider=http).' },
-        spec: { type: 'string', description: 'OpenAPI/GraphQL/HTTP spec ref.' },
+        spec: { type: 'string', description: 'OpenAPI/Postman/GraphQL/HTTP spec or source ref.' },
         credential: {
           type: 'string',
           enum: ['shared'],

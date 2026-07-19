@@ -17,6 +17,7 @@ export {
   getGatewayKeys,
   createGatewayKey,
   revokeGatewayKey,
+  runGatewayPlayground,
   type GatewayLogRow,
   type GatewayLogDetail,
   type GatewayLogsResponse,
@@ -35,4 +36,7 @@ export {
   type SetGatewayBudgetInput,
   type GatewayKeyRow,
   type CreatedGatewayKey,
+  type GatewayPlaygroundResult,
+  type GatewayPlaygroundResponse,
+  type GatewayModelGenerationConfig,
 } from '@kortix/sdk/projects-client';

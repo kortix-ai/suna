@@ -19,6 +19,18 @@ data "aws_lbs" "euw2" {
   provider = aws.euw2
 }
 
+# EKS worker instance IDs are ephemeral. Discover every running EC2 instance in
+# the two production-system regions so replacement workers receive the same CPU
+# alarm on the next plan/apply without maintaining an ID list by hand.
+data "aws_instances" "usw2" {
+  instance_state_names = ["running"]
+}
+
+data "aws_instances" "euw2" {
+  provider             = aws.euw2
+  instance_state_names = ["running"]
+}
+
 data "aws_wafv2_web_acl" "usw2" {
   name  = "kortix-alb-waf"
   scope = "REGIONAL"
@@ -47,6 +59,35 @@ locals {
     ManagedBy = "kortix-compliance"
     Control   = "DCF-86"
   }
+  # Drata's AWS connection assumes this account-local role. Keep its SNS
+  # subscription inspection permission explicit and read-only.
+  drata_autopilot_role_arn = "arn:aws:iam::${local.account_id}:role/DrataAutopilotRole"
+}
+
+data "aws_iam_policy_document" "drata_sns_inspection" {
+  statement {
+    sid = "ReadAlertTopicSubscriptions"
+    actions = [
+      "sns:GetTopicAttributes",
+      "sns:GetSubscriptionAttributes",
+      "sns:ListSubscriptions",
+      "sns:ListSubscriptionsByTopic",
+      "sns:ListTopics",
+    ]
+    resources = [data.aws_sns_topic.usw2_alerts.arn, data.aws_sns_topic.euw2_alerts.arn]
+  }
+
+  statement {
+    sid       = "ListTopicsForInspection"
+    actions   = ["sns:ListSubscriptions", "sns:ListTopics"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "drata_sns_inspection" {
+  name   = "DrataSNSSubscriptionInspection"
+  role   = "DrataAutopilotRole"
+  policy = data.aws_iam_policy_document.drata_sns_inspection.json
 }
 
 resource "aws_wafv2_web_acl_association" "usw2" {
@@ -173,7 +214,54 @@ resource "aws_cloudwatch_metric_alarm" "euw2_unhealthy_hosts" {
   tags                = local.alarm_tags
 }
 
+resource "aws_cloudwatch_metric_alarm" "usw2_instance_cpu" {
+  for_each            = toset(data.aws_instances.usw2.ids)
+  alarm_name          = "compliance-${each.value}-cpu-high"
+  alarm_description   = "EC2 CPU above 80 percent for 15 minutes"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  dimensions          = { InstanceId = each.value }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
+  tags                = local.alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "euw2_instance_cpu" {
+  provider            = aws.euw2
+  for_each            = toset(data.aws_instances.euw2.ids)
+  alarm_name          = "compliance-${each.value}-cpu-high"
+  alarm_description   = "EC2 CPU above 80 percent for 15 minutes"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  dimensions          = { InstanceId = each.value }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [data.aws_sns_topic.euw2_alerts.arn]
+  tags                = local.alarm_tags
+}
+
 data "aws_iam_policy_document" "usw2_alerts" {
+  statement {
+    sid       = "AllowDrataSubscriptionInspection"
+    actions   = ["SNS:GetTopicAttributes", "SNS:ListSubscriptionsByTopic"]
+    resources = [data.aws_sns_topic.usw2_alerts.arn]
+    principals {
+      type        = "AWS"
+      identifiers = [local.drata_autopilot_role_arn]
+    }
+  }
+
   statement {
     sid       = "TopicOwnerAdministration"
     actions   = ["SNS:GetTopicAttributes", "SNS:SetTopicAttributes", "SNS:AddPermission", "SNS:RemovePermission", "SNS:DeleteTopic", "SNS:Subscribe", "SNS:ListSubscriptionsByTopic", "SNS:Publish"]
@@ -215,6 +303,16 @@ data "aws_iam_policy_document" "usw2_alerts" {
 
 data "aws_iam_policy_document" "euw2_alerts" {
   provider = aws.euw2
+  statement {
+    sid       = "AllowDrataSubscriptionInspection"
+    actions   = ["SNS:GetTopicAttributes", "SNS:ListSubscriptionsByTopic"]
+    resources = [data.aws_sns_topic.euw2_alerts.arn]
+    principals {
+      type        = "AWS"
+      identifiers = [local.drata_autopilot_role_arn]
+    }
+  }
+
   statement {
     sid       = "TopicOwnerAdministration"
     actions   = ["SNS:GetTopicAttributes", "SNS:SetTopicAttributes", "SNS:AddPermission", "SNS:RemovePermission", "SNS:DeleteTopic", "SNS:Subscribe", "SNS:ListSubscriptionsByTopic", "SNS:Publish"]

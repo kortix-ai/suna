@@ -18,7 +18,7 @@ export interface ConnectorAction {
 export interface AdminConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model. Always `shared` — `per_user` (each member's
@@ -40,6 +40,32 @@ export interface ConnectorsResponse {
 export interface ConnectorSyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+export type DiscoveredAuthScheme =
+  | 'none' | 'bearer' | 'basic' | 'api_key' | 'oauth1' | 'oauth2'
+  | 'openid_connect' | 'mutual_tls' | 'digest' | 'hawk' | 'ntlm'
+  | 'aws_v4' | 'edgegrid' | 'asap' | 'unknown';
+export interface ExecutableConnectorAuth {
+  type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1';
+  in: 'header' | 'query'; name: string | null; prefix: string | null;
+}
+export interface ConnectorAuthCandidate {
+  id: string; source: string; scheme: DiscoveredAuthScheme; label: string;
+  supported: boolean; requestCount: number; totalRequests: number;
+  placement: 'header' | 'query' | 'cookie' | null;
+  parameterName: string | null; prefix: string | null;
+  parameterNames: string[]; variables: string[];
+  oauth?: {
+    authorizationUrl?: string; tokenUrl?: string; refreshUrl?: string;
+    openIdConnectUrl?: string; protectedResourceMetadataUrl?: string; scopes: string[];
+  };
+  executable: ExecutableConnectorAuth | null;
+}
+export interface ConnectorAuthDiscovery {
+  status: 'detected' | 'none' | 'ambiguous' | 'unsupported';
+  recommended: ExecutableConnectorAuth | null;
+  candidates: ConnectorAuthCandidate[]; warnings: string[]; totalRequests: number;
 }
 
 export interface ConnectionProfile {
@@ -249,9 +275,19 @@ export interface ConnectorDraftInput {
 
 export async function createConnector(projectId: string, draft: ConnectorDraftInput) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; sync?: ConnectorSyncResult }>(
+    await backendApi.post<{
+      ok: boolean; sync?: ConnectorSyncResult; authDiscovery?: ConnectorAuthDiscovery;
+    }>(
       `/executor/projects/${projectId}/connectors`,
       draft,
+    ),
+  );
+}
+
+export async function discoverConnectorAuth(projectId: string, draft: ConnectorDraftInput) {
+  return unwrap(
+    await backendApi.post<ConnectorAuthDiscovery>(
+      `/executor/projects/${projectId}/connectors/auth-discovery`, draft,
     ),
   );
 }
@@ -269,6 +305,8 @@ export interface PipedreamApp {
   name: string;
   description: string | null;
   imgSrc: string | null;
+  /** Pipedream is surfaced only as an explicit managed-OAuth alternative. */
+  authType: 'oauth';
   categories: string[];
 }
 
@@ -280,6 +318,82 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   return unwrap(
     await backendApi.get<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }>(
       `/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export type DiscoverIntegrationKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+
+export interface DiscoverIntegration {
+  id: string;
+  kind: DiscoverIntegrationKind;
+  slug: string;
+  name: string;
+  description: string | null;
+  url: string | null;
+  icon: string | null;
+  domain: string;
+  categories: string[];
+  feeds: string[];
+  popularity: number | null;
+}
+
+export interface DiscoverConnectorTemplate {
+  provider: 'openapi' | 'postman' | 'mcp' | 'graphql';
+  spec?: string;
+  url?: string;
+  transport?: 'http' | 'sse';
+  endpoint?: string;
+  auth?: {
+    type: 'none' | 'bearer' | 'basic' | 'custom';
+    in: 'header' | 'query';
+    name: string | null;
+    prefix: string | null;
+  };
+}
+
+export interface DiscoverIntegrationVariant {
+  id: string;
+  kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli';
+  name: string;
+  url: string | null;
+  docs: string | null;
+  description: string | null;
+  transports: string[];
+  requiresAuth: boolean;
+  command: string | null;
+  connector: DiscoverConnectorTemplate | null;
+}
+
+export interface DiscoverIntegrationsPage {
+  items: DiscoverIntegration[];
+  total: number;
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export interface DiscoverIntegrationDetail {
+  item: DiscoverIntegration;
+  variants: DiscoverIntegrationVariant[];
+}
+
+export async function listDiscoverIntegrations(projectId: string, q?: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<DiscoverIntegrationsPage>(
+      `/executor/projects/${projectId}/discover/integrations${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function getDiscoverIntegration(projectId: string, id: string) {
+  const params = new URLSearchParams({ id });
+  return unwrap(
+    await backendApi.get<DiscoverIntegrationDetail>(
+      `/executor/projects/${projectId}/discover/integrations/detail?${params.toString()}`,
     ),
   );
 }

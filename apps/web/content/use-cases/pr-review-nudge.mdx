@@ -1,0 +1,144 @@
+---
+title: "How we keep code review from stalling"
+description: The pull-request review agent we run on Kortix — it flags PRs stuck past a review SLA, gone stale, or sitting on unaddressed change requests, then nudges the author or reviewer in Slack with exactly what's blocking.
+date: "2026-03-14"
+author: team
+tags:
+  - Engineering
+  - Case Study
+  - Enterprise
+template: pr-review-nudge
+---
+
+A PR that sits unreviewed for three days doesn't announce itself. It just sits,
+under a growing pile of newer PRs, until the author pings someone directly or
+gives up and context-switches to something else. Multiply that across a team
+and a review SLA becomes a suggestion nobody enforces, and "requested changes"
+becomes a state a PR can live in indefinitely.
+
+We run a PR review nudge agent on Kortix that reads every open pull request
+across our repos once a day and posts a Slack nudge for anything stuck: past
+the review SLA, gone stale, or sitting on unaddressed change requests. It only
+reads GitHub; the single output is the Slack nudge. It never merges, closes, or
+approves anything.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">GitHub · Slack</Fact>
+  <Fact label="Mode">Read-only on GitHub · nudge + summarize only</Fact>
+</KeyFacts>
+
+## The problem
+
+A review SLA is easy to write down and hard to enforce. Nobody is watching the
+review queue full-time, so a PR opened Monday morning and still unreviewed
+Wednesday afternoon looks the same in the repo list as one opened five minutes
+ago — until someone happens to scroll far enough to notice. Stale PRs are worse:
+a branch with no commits, no comments, and no reviews in a week has usually just
+been forgotten, and it silently rots until a rebase conflict forces someone to
+deal with it. And "requested changes" is a state, not an alert — a reviewer asks
+for changes, the author sees it, life happens, and the PR sits there looking
+open while actually being blocked.
+
+The common approaches don't close this loop. GitHub's own notifications are
+easy to mute and don't distinguish a PR that's five minutes old from one that's
+five days old. A weekly standup catches the loudest blockers, not the quiet
+ones. Manually skimming the PR list is thorough the first time and skipped the
+second.
+
+## What we built
+
+On Kortix, a daily cron triggers an agent. It spawns a fresh session with
+read-only access to GitHub through the `gh` CLI, pulls every open PR across our
+repos, and classifies each one against three rules: awaiting review past the
+SLA, stale with no activity in N days, or carrying requested changes the author
+hasn't addressed. For each PR that trips a rule, it posts a Slack nudge to the
+person who owns the next move — the requested reviewer if it's overdue for
+review, the author if it's stale or has unaddressed feedback — with a one-line
+summary of what's actually blocking it.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox. One day maps to one run, so the review state is
+recomputed from GitHub's current state every time — nothing carries over from
+yesterday's nudges.
+
+</Step>
+<Step title="Give the agent the SLA rules">
+
+What counts as "past SLA," "stale," and "unaddressed" lives as a **skill** that
+travels with the agent: the review-SLA clock, the staleness window, how to tell
+a requested-changes review has actually been addressed versus just sitting
+there, and who to nudge for each case.
+
+</Step>
+<Step title="Connect to GitHub read-only">
+
+Through the `gh` CLI, authenticated with a scoped **GH_TOKEN** secret injected
+at runtime, the agent reads:
+
+- **Open pull requests** across the configured repos — age, author, requested
+  reviewers, and current state.
+- **Reviews and comments** on each PR — whether a review was submitted, what it
+  said, and whether the author has pushed or replied since.
+- **Posts to Slack** — the nudge, with the PR link and what's blocking it.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent has **no write access to GitHub**. It cannot merge a PR, close it,
+approve it, or dismiss a review. Its only output is the Slack nudge. Credentials
+are encrypted in the Secrets Manager and injected at runtime, never shown to the
+model or written to logs.
+
+</Step>
+<Step title="Nudge the right person">
+
+With that in place, each morning brings a Slack nudge for every PR that's stuck:
+who it's nudging, why (overdue for review, stale, or unaddressed changes), how
+long it's been that way, and a link straight to the PR. The team decides what to
+do next — review it, ping the reviewer directly, or close it themselves.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a fresh session that reads open PRs through the `gh`
+  CLI with a scoped **GH_TOKEN**. The SLA, staleness, and unaddressed-changes
+  rules live as a **skill**. The agent reads everything and writes nothing but
+  the Slack nudge.
+</Callout>
+
+## Guardrails
+
+The agent reads across every repo it's pointed at, so its access is scoped and
+strictly one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only GitHub (read-only) and Slack; nothing else leaves the sandbox.
+- **Scoped secret.** The `GH_TOKEN` is encrypted in the Secrets Manager and
+  injected into the sandbox at runtime, never exposed to the model or the logs.
+- **Nudge and summarize only.** The agent never merges, closes, or approves a
+  PR, and never dismisses or resolves a review. It reports what's blocking and
+  leaves the decision to a human.
+- **Everything is code.** The SLA thresholds, the staleness window, and the
+  agent's GitHub permissions are files in the repo, versioned and changed
+  through a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="Every open PR rechecked against the current GitHub state" />
+  <Stat value="3 checks" label="Overdue for review, stale, and unaddressed changes, in one pass" />
+  <Stat value="Zero" label="Merges, closes, or approvals made by the agent" />
+</StatGrid>
+
+A review queue that used to require someone remembering to scroll through it
+now surfaces its own blockers every morning, in Slack, addressed to whoever
+owns the next move. The agent only reads and nudges; the team still decides
+what happens to every PR.

@@ -118,6 +118,7 @@ export function ComposerChatInput({
       toolbarSlot={toolbarSlot}
       cardClassName={cardClassName}
       sessionId={sessionId}
+      projectId={projectId}
       providers={providers}
       agents={local.agent.list}
       selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}

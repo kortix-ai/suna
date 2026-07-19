@@ -44,6 +44,7 @@ ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
 COPY packages/executor-sdk ./packages/executor-sdk
+COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/shared ./packages/shared

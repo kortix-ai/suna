@@ -302,7 +302,8 @@ flow(
 );
 
 // CHN-5 — Slack inbound, BYO per-project (POST /v1/webhooks/slack/:projectId). Public.
-// Not configured for project → 404; configured + bad sig → 401.
+// An unsigned url_verification bootstrap is accepted before installation;
+// real callbacks still require a configured project signing secret.
 flow(
   "CHN-5",
   {
@@ -311,13 +312,13 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("project with no Slack install → 404", async () => {
+    await ctx.step("unsigned url_verification bootstrap → 200 challenge", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post("/v1/webhooks/slack/:projectId", { type: "url_verification", challenge: "abc123" }, {
           params: { projectId: p.id },
         });
-      r.status([404, 401]);
+      r.status(200).body().has("$.challenge", "abc123");
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client
@@ -461,7 +462,7 @@ flow(
         );
       r.status(404);
     });
-    await ctx.step("OWNER, empty body → 400", async () => {
+    await ctx.step("OWNER, unknown binding wins before empty-body validation → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
@@ -469,7 +470,7 @@ flow(
           {},
           { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
         );
-      r.status(400);
+      r.status(404);
     });
     await ctx.step("NONMEMBER cannot update → 403/404", async () => {
       const r = await ctx.client

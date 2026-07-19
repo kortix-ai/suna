@@ -108,8 +108,11 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
  * schema covers every section (project, env, opencode, sandboxes, triggers,
  * connectors, channels, apps).
  */
-export function lintManifest(data: Record<string, unknown>): ManifestIssues {
-  const { issues } = validateManifest(data);
+export function lintManifest(
+  data: Record<string, unknown>,
+  format: ManifestFormat = 'toml',
+): ManifestIssues {
+  const { issues } = validateManifest(data, format);
   return classifyIssues(issues);
 }
 

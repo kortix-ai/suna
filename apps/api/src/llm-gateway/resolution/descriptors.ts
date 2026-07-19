@@ -35,6 +35,38 @@ export function bedrockByokBaseUrl(region: string | null | undefined): string {
   return `https://bedrock-runtime.${trimmed || DEFAULT_BEDROCK_BYOK_REGION}.amazonaws.com`;
 }
 
+// Bedrock cross-region ("global") inference profiles prepend a geography code
+// to the base model id so a single logical model can route across multiple
+// AWS regions — e.g. `us.anthropic.claude-sonnet-4-20250514-v1:0` instead of
+// the base `anthropic.claude-sonnet-4-20250514-v1:0` (see AWS's "cross-region
+// inference" docs; the same base model can also appear as `eu.` or `apac.`).
+// The models.dev catalog only ever carries the base (unprefixed) id, so a
+// pricing lookup keyed by the prefixed id silently misses and produces a $0
+// upstream-cost hint. This list is intentionally exhaustive over AWS's
+// published prefixes, not just the first path segment before a dot, so it
+// never mis-strips a legitimate base id that happens to start with one of
+// these codes (there is no `us.*` or `eu.*` Bedrock model family today, but
+// checking the known set instead of "any leading `xx.`" keeps that true).
+const BEDROCK_INFERENCE_PROFILE_PREFIXES = ['us-gov', 'us', 'eu', 'apac'] as const;
+
+/**
+ * Strip a Bedrock cross-region inference-profile prefix (`us.`, `eu.`,
+ * `apac.`, `us-gov.`) from a model id, for PRICING lookups only — never for
+ * the id actually sent to the Bedrock InvokeModel API, which still needs the
+ * full profile id to route correctly. Bedrock-scoped: only ever call this for
+ * `kind === 'bedrock'` descriptors; other providers' ids never carry these
+ * prefixes and shouldn't be run through this heuristic.
+ */
+export function stripBedrockInferenceProfilePrefix(modelId: string): string {
+  for (const prefix of BEDROCK_INFERENCE_PROFILE_PREFIXES) {
+    const withDot = `${prefix}.`;
+    if (modelId.startsWith(withDot) && modelId.length > withDot.length) {
+      return modelId.slice(withDot.length);
+    }
+  }
+  return modelId;
+}
+
 export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | undefined {
   const p = getModelPricing(modelId);
   if (!p) return undefined;
@@ -86,6 +118,10 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     kind: 'bedrock',
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
+    // Region for the AI-SDK engine's Bedrock provider (bearer-token auth still
+    // comes from apiKey; region only picks the endpoint host). Ignored by the
+    // native path, which bakes the region into baseUrl.
+    region: config.AWS_BEDROCK_REGION || 'us-west-2',
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,

@@ -1,0 +1,153 @@
+---
+title: "How we draft QBR decks for key accounts"
+description: The QBR-prep agent we run on Kortix — connected to Postgres, HubSpot, Google Slides, and Google Docs. Weekly, for every account due a quarterly business review, it pulls usage trends, account health, support activity, and expansion signals into a draft deck and briefing doc for the CSM to review and present.
+date: "2026-05-20"
+author: team
+tags:
+  - Customer Success
+  - Case Study
+  - Enterprise
+template: qbr-prep
+---
+
+A quarterly business review is only as good as its prep. The account's usage
+trend lives in the product database, its health score and CSM notes live in
+HubSpot, the support history is scattered across a quarter's worth of tickets,
+and the expansion angle is usually in someone's head. Pulling all of that into
+a deck by hand takes an afternoon per account, and with a book of a few dozen
+accounts, QBR week turns into a slide-building sprint instead of an
+account-strategy exercise.
+
+We run a QBR-prep agent on Kortix that does that assembly every week. It reads
+across the source systems, drafts a deck and a companion briefing doc per
+account due a review, and stops there. It never writes back to a source system
+and never presents anything — the CSM opens the draft, edits the story, and
+walks into the room with it.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron</Fact>
+  <Fact label="Connected systems">Postgres · HubSpot · Google Slides · Google Docs</Fact>
+  <Fact label="Mode">Read-only across sources · draft deck + briefing doc per account</Fact>
+</KeyFacts>
+
+## The problem
+
+The material for a QBR is real but scattered. Product usage trends sit in
+Postgres. Account health, CSM notes, and the deal history sit in HubSpot.
+Support friction is a quarter's worth of tickets no one has time to reread.
+Expansion opportunities are pattern-matched from all of the above, usually
+from memory, right before the meeting.
+
+Templates help with layout but not with assembly — someone still has to pull
+every number, read every note, and decide what's worth a slide. Doing that for
+one account is an afternoon. Doing it for every account due a review, every
+week, is the part that gets skipped, rushed, or handed to whoever has the
+least on their plate that week — which is exactly when a CSM walks in
+under-prepared for a renewal conversation.
+
+## What we built
+
+On Kortix, a weekly cron triggers an agent. It spawns an isolated session with
+read-only access to Postgres and HubSpot, finds every account whose next QBR
+falls due in the coming window, and for each one pulls usage trends, value
+delivered, account health, a support summary, and expansion opportunities.
+It assembles that into a draft deck in Google Slides and a companion briefing
+doc in Google Docs with the backup detail, then stops. Nothing is shared,
+presented, or sent — the CSM reviews both and takes it from there.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly cron">
+
+A **cron trigger** fires the agent once a week. Each firing spawns a fresh
+**session** in its own sandbox — this run doesn't remember last week's, so it
+recomputes who's due and what their numbers look like from the current state
+of the data every time.
+
+</Step>
+<Step title="Give the agent the QBR structure">
+
+What goes in a QBR deck, and in what order, lives as a **skill** that travels
+with the agent: how we define a usage trend, what "value delivered" means for
+our product, how account health rolls up, how to summarize a quarter of
+support activity without burying the one issue that matters, and what counts
+as a credible expansion signal versus a guess.
+
+</Step>
+<Step title="Connect the sources read-only, and the deck read-write">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches
+the model, the agent:
+
+- **Reads usage trends from Postgres** — activity and adoption over the
+  quarter, per account.
+- **Reads account and CSM data from HubSpot** — health score, CSM notes,
+  support ticket history, and the deal record, to find who's due and why.
+- **Writes the draft deck to Google Slides** — the QBR deck itself, one per
+  due account.
+- **Writes the briefing doc to Google Docs** — the backup detail behind every
+  slide, for the CSM to reference when a question goes deeper than the deck.
+
+</Step>
+<Step title="Set the guardrails">
+
+Postgres and HubSpot are **read-only** — the agent cannot change a usage
+record, a health score, a note, or a deal, even though it reads deeply from
+all of them. Its only writes are the new deck and the new doc it creates.
+Credentials are encrypted in the Secrets Manager and injected at runtime,
+never shown to the model or written to logs.
+
+</Step>
+<Step title="Land the draft, stop there">
+
+Each due account ends the run with a draft deck and a briefing doc under a
+shared folder, named for the account and the quarter. The agent reports where
+each one landed and stops. The CSM reviews the story, edits the commentary,
+and is the one who opens the meeting and presents it.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **cron** spawns a session with read-only **connectors** into
+  Postgres and HubSpot. The deck structure lives as a **skill**. The agent
+  reads the account's quarter and writes exactly two drafts — a deck and a
+  briefing doc — then stops for the CSM.
+</Callout>
+
+## Guardrails
+
+The agent reads deeply across account data, so its access is scoped and its
+output is bounded:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only the systems it's scoped to, and only the new deck and doc leave
+  the sandbox.
+- **Scoped secrets.** The Postgres and HubSpot credentials are encrypted in the
+  Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Read-only across the source systems.** Postgres and HubSpot are read-only
+  connectors. The agent cannot change a usage record, a health score, a CSM
+  note, or a deal — it can only draw from them.
+- **Draft only, nothing sent.** The deck and briefing doc are drafts. The
+  agent never shares, presents, or emails either one — the CSM reviews and
+  presents.
+- **Everything is code.** The deck structure, the skill, and the per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Weekly" label="Every account due a review restaged before the CSM's meeting" />
+  <Stat value="Read-only" label="Nothing written back to Postgres or HubSpot" />
+  <Stat value="2 drafts" label="One deck and one briefing doc per account, every time" />
+</StatGrid>
+
+The afternoon of pulling numbers and rereading tickets now happens automatically,
+every week, for every account that needs it. The CSM opens a draft deck that
+already has the trend, the health picture, the support summary, and a
+candidate expansion angle, edits the story into their own words, and presents
+it themselves.

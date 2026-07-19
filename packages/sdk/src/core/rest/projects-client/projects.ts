@@ -1,19 +1,26 @@
 // Projects — project CRUD, detail, experimental features, warm pool, onboarding.
 
-import { backendApi, type ApiClientOptions } from '../../http/api-client';
+import { type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
-  normalizeServerBackendBase,
-  serverTokenGet,
-  unwrap,
   type ProjectFileEntry,
   type ProjectGitConnection,
   type ProjectRole,
   type ServerTokenOptions,
+  normalizeServerBackendBase,
+  serverTokenGet,
+  unwrap,
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
+export type ExperimentalFeatureKey =
+  | 'agent_tunnel'
+  | 'marketplace'
+  | 'connectors_api_discover'
+  | 'agentmail_email'
+  | 'meet'
+  | 'llm_gateway'
+  | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -96,15 +103,18 @@ export interface ProjectDetail {
 }
 
 export interface ProjectLlmCatalogResponse {
-  models: Record<string, {
-    name: string;
-    free?: boolean;
-    reasoning?: boolean;
-    tool_call?: boolean;
-    attachment?: boolean;
-    temperature?: boolean;
-    limit?: { context?: number; output?: number };
-  }>;
+  models: Record<
+    string,
+    {
+      name: string;
+      free?: boolean;
+      reasoning?: boolean;
+      tool_call?: boolean;
+      attachment?: boolean;
+      temperature?: boolean;
+      limit?: { context?: number; output?: number };
+    }
+  >;
 }
 
 export interface ProjectInput {
@@ -168,10 +178,10 @@ export async function inviteRepoCollaborator(
   permission: 'read' | 'write' = 'write',
 ) {
   return unwrap(
-    await backendApi.post<RepoCollaboratorInvite>(
-      `/projects/${projectId}/git/collaborators`,
-      { github_username: githubUsername, permission },
-    ),
+    await backendApi.post<RepoCollaboratorInvite>(`/projects/${projectId}/git/collaborators`, {
+      github_username: githubUsername,
+      permission,
+    }),
   );
 }
 
@@ -195,7 +205,9 @@ export async function validateProjectManifest(
   raw: string,
 ): Promise<ManifestValidationResult> {
   return unwrap(
-    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, { raw }),
+    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, {
+      raw,
+    }),
     'Failed to validate manifest',
   );
 }
@@ -219,8 +231,11 @@ export async function getProjectGitToken(projectId: string): Promise<ProjectGitT
 }
 
 /** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
-export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
-  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;
+export function isManagedGithubProject(project: {
+  metadata?: Record<string, unknown> | null;
+}): boolean {
+  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)
+    ?.git;
   return git?.provider === 'github' && git?.managed === true;
 }
 
@@ -256,14 +271,47 @@ export async function getProjectModelPicker(projectId: string, options?: ApiClie
   );
 }
 
+/** One provider row from the live, server-refreshed models.dev catalog. */
+export interface ProjectLlmCatalogProvider {
+  id: string;
+  name: string;
+  env?: string[];
+  doc?: string | null;
+  api?: string | null;
+  npm?: string | null;
+  models: Array<{ id: string; name: string; released: string | null }>;
+}
+
+export interface ProjectLlmCatalogProvidersResponse {
+  source: string;
+  fetched_at: string;
+  provider_count: number;
+  model_count: number;
+  providers: ProjectLlmCatalogProvider[];
+}
+
+/**
+ * The PROVIDER-level rows of the live runtime catalog — id/name/env/doc per
+ * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
+ * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
+ * native (non-gateway) projects too — see the route's doc comment
+ * (apps/api/src/projects/routes/r4.ts, `/llm-catalog/providers`).
+ */
+export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogProvidersResponse>(
+      `/projects/${projectId}/llm-catalog/providers`,
+      { showErrors: false, ...options },
+    ),
+  );
+}
+
 export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(
-    await backendApi.post<KortixProject>('/projects/create-repo', input),
-  );
+  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
 }
 
 /**
@@ -306,13 +354,8 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
   }
 }
 
-export async function updateProject(
-  projectId: string,
-  input: Partial<ProjectInput>,
-) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}`, input),
-  );
+export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
 }
 
 /** Toggle an experimental feature for a project (Customize → Settings →
@@ -355,27 +398,17 @@ export async function updateTemplateWarmPool(
   projectId: string,
   input: { slug: string; enabled?: boolean; size?: number },
 ) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
-  );
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
 }
 
-export async function setProjectOnboardingComplete(
-  projectId: string,
-  completed: boolean,
-) {
+export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
   return unwrap(
-    await backendApi.patch<KortixProject>(
-      `/projects/${projectId}/onboarding`,
-      { completed },
-    ),
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
   );
 }
 
 export async function archiveProject(projectId: string) {
-  return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`),
-  );
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
 }
 
 // ── Server-side explicit-token variants ──────────────────────────────────────

@@ -6,6 +6,7 @@
 // be pasted into the receiver's signature-verification code.
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Copy, Plus, Trash2, Webhook } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -56,11 +57,10 @@ function relative(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-async function copyToClipboard(value: string, ok = 'Copied') {
-  try {
-    await navigator.clipboard.writeText(value);
+async function copyValue(value: string, ok = 'Copied') {
+  if (await copyToClipboard(value)) {
     successToast(ok);
-  } catch {
+  } else {
     warningToast('Copy failed — select and copy manually');
   }
 }
@@ -325,7 +325,7 @@ function CreateAuditWebhookDialog({
                     variant="outline"
                     size="icon"
                     aria-label="Copy secret"
-                    onClick={() => copyToClipboard(created.secret, 'Secret copied')}
+                    onClick={() => copyValue(created.secret, 'Secret copied')}
                   >
                     <Copy className="size-3.5 shrink-0" />
                   </Button>

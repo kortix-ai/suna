@@ -3,7 +3,7 @@
  * v1 project may instead declare `[[connectors]]` in `kortix.toml`).
  *
  * A connector is one named integration the Executor can call — Pipedream,
- * MCP, OpenAPI, GraphQL, or raw HTTP. The manifest holds the *definition*
+ * MCP, OpenAPI, Postman, GraphQL, or raw HTTP. The manifest holds the *definition*
  * (provider, endpoint/spec, auth method + which project-secret to use) and,
  * for the policy layer, each connector's `policies:` list. The
  * secret *value* and Pipedream OAuth live in the platform, never in git.
@@ -37,8 +37,8 @@ import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 import { isValidSecretName } from './secrets';
 import { CHANNEL_PLATFORMS, RESERVED_SLUG_PROVIDERS, SLUG_RE } from '@kortix/manifest-schema';
 
-export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
-const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel', 'computer'];
+export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
+const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel', 'computer'];
 
 /**
  * Platform-owned slugs and the ONLY provider allowed to use each. These are
@@ -132,10 +132,12 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
-  /** openapi/graphql/http: a URL or repo-relative file path. Optional for graphql. */
+  /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
   auth: ConnectorAuthSpec;
+  /** Omitted auth is auto-detected for direct providers; explicit none opts out. */
+  authAuto?: boolean;
   policies: ConnectorPolicySpec[];
 }
 
@@ -232,11 +234,11 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     if (spec.spec) entry.spec = spec.spec;
   } else if (spec.provider === 'channel') {
     if (spec.platform) entry.platform = spec.platform;
-  } else if (spec.provider === 'openapi') {
+  } else if (spec.provider === 'openapi' || spec.provider === 'postman') {
     if (spec.spec) entry.spec = spec.spec;
   }
 
-  if (spec.auth.type !== 'none') {
+  if (spec.authAuto === false || spec.auth.type !== 'none') {
     const auth: Record<string, unknown> = { type: spec.auth.type };
     if (spec.auth.type === 'custom') {
       if (spec.auth.in !== 'header') auth.in = spec.auth.in;
@@ -273,6 +275,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     platform: spec.platform,
     spec: spec.spec,
     auth: spec.auth,
+    authAuto: spec.authAuto ?? false,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -358,7 +361,14 @@ function parseConnectorEntry(entry: unknown, index: number, filename: string = M
 
   return {
     ok: true,
-    spec: { ...providerParsed.value, auth: authParsed.value, policies: policiesParsed.value },
+    spec: {
+      ...providerParsed.value,
+      auth: authParsed.value,
+      authAuto:
+        (row.auth === undefined || row.auth === null) &&
+        provider !== 'pipedream' && provider !== 'channel' && provider !== 'computer',
+      policies: policiesParsed.value,
+    },
   };
 }
 
@@ -389,9 +399,9 @@ function parseProviderFields(
     return { ok: true, value: { ...base, url, transport: t } };
   }
 
-  if (provider === 'openapi') {
+  if (provider === 'openapi' || provider === 'postman') {
     const spec = str(row.spec);
-    if (!spec) return err(slug, 'provider="openapi" requires `spec` (a URL or repo-relative file path)', filename);
+    if (!spec) return err(slug, `provider="${provider}" requires \`spec\` (a URL or repo-relative file path)`, filename);
     return { ok: true, value: { ...base, spec } };
   }
 
@@ -428,7 +438,8 @@ function parseAuth(
   raw: unknown,
   filename: string = MANIFEST_FILENAME,
 ): { ok: true; value: ConnectorAuthSpec } | ParseErr {
-  // No auth table → none (pipedream authenticates via its connected account).
+  // The caller records whether omission means auto-detect. Platform providers
+  // still use none because their install owns authentication.
   if (raw === undefined || raw === null) return { ok: true, value: { ...NO_AUTH } };
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     return err(slug, '[connectors.auth] must be a table', filename);
@@ -445,7 +456,7 @@ function parseAuth(
   if (provider === 'channel' && type !== 'none') {
     return err(slug, 'provider="channel" authenticates via its platform install token — omit [connectors.auth]', filename);
   }
-  if (type === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+  if (type === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
     return err(slug, '[connectors.auth] type="oauth1" is only supported for openapi/http connectors');
   }
 

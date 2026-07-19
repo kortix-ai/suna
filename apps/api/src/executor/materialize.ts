@@ -32,6 +32,10 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
         return { baseUrl: spec.baseUrl, spec: spec.spec, auth };
       case 'openapi':
         return { spec: spec.spec, server: openapiServer ?? null, auth };
+      case 'postman':
+        // Each Postman request carries its own absolute URL binding; a bundle
+        // can span many upstream servers, so there is intentionally no shared base.
+        return { spec: spec.spec, auth };
       case 'channel':
         // The credential is the platform install token (resolved server-side); the
         // connector carries the platform's API base + its auth placement so

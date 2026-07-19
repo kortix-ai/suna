@@ -45,10 +45,41 @@ describe('runtime catalog provider resolution', () => {
     expect(resolveCatalogUpstream('amazon-bedrock')).toEqual({
       kind: 'bedrock',
       envVar: 'AWS_BEARER_TOKEN_BEDROCK',
+      // models.dev `npm` (for the ai-sdk engine's provider selection); still NO
+      // static baseUrl — the region-scoped endpoint is resolved per-request.
+      npm: '@ai-sdk/amazon-bedrock',
     });
   });
 
   test('returns null for an unknown provider', () => {
     expect(resolveCatalogUpstream('definitely-not-a-provider')).toBeNull();
+  });
+
+  // Regression coverage (2026-07-17 defect report): a BYOK OpenRouter call to
+  // a model NOT individually catalogued by models.dev (OpenRouter's dynamic/
+  // no-catalog-price auto-router, `openrouter/openrouter/fusion`, among
+  // hundreds of other models OpenRouter proxies) 502ed with an "Invalid URL"
+  // upstream error — consistent with `descriptor.baseUrl` ending up empty for
+  // that call. `resolveCatalogUpstream` is this codebase's ONE source of
+  // BYOK baseUrl resolution (see resolve-candidates.ts's `byok.baseUrl`), and
+  // its signature takes ONLY a `providerId` — there is no model parameter to
+  // key off of, so it structurally cannot special-case "is this exact model
+  // individually catalogued." A connected provider's baseUrl is therefore the
+  // same regardless of which model id a caller passes through it, including
+  // one models.dev has never heard of. Live re-verified against dev
+  // (2026-07-17): both the in-process gateway and the standalone gateway pod
+  // now reach OpenRouter and bill non-zero upstream cost for exactly this
+  // model, streaming and non-streaming alike.
+  test('OpenRouter resolves a real, non-empty baseUrl — independent of any specific model id', () => {
+    const upstream = resolveCatalogUpstream('openrouter');
+    expect(upstream).not.toBeNull();
+    expect(upstream?.kind).toBe('openai-compat');
+    expect(upstream?.envVar).toBe('OPENROUTER_API_KEY');
+    // `kind !== 'bedrock'` narrows CatalogUpstream's discriminated union to the
+    // branch that actually carries `baseUrl` (bedrock has none — see the type's
+    // doc comment above).
+    if (upstream?.kind === 'bedrock') throw new Error('expected openai-compat, got bedrock');
+    expect(upstream?.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect(upstream?.baseUrl).toBeTruthy();
   });
 });

@@ -1,0 +1,148 @@
+---
+title: "How we turn NDAs around in minutes, not days"
+description: The NDA agent we run on Kortix — every 15 minutes it reviews a new inbound NDA against our standard playbook, redlines the non-standard terms in the document, and drafts a flag summary for counsel. It never signs or sends; counsel does.
+date: "2026-07-04"
+author: team
+tags:
+  - Legal
+  - Case Study
+  - Enterprise
+template: nda-turnaround
+---
+
+An NDA is the most standardized document a deal touches, and also the one most
+likely to sit in an inbox for two days waiting for someone with a law degree to
+open it. The deal doesn't move until it's signed, but the review itself is
+usually mechanical: the same eight or nine clauses, checked against the same
+standard positions, over and over.
+
+We run an NDA-turnaround agent on Kortix that watches for inbound NDAs and gives
+each one its first pass within fifteen minutes of arriving. It redlines what
+deviates from our standard positions and drafts a flag summary for counsel. It
+never signs anything and never sends anything to the counterparty — counsel does
+both. This is how we keep NDAs from being the thing a deal waits on.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every 15 minutes</Fact>
+  <Fact label="Connected systems">Gmail · Google Drive · Google Docs</Fact>
+  <Fact label="Mode">Redline + flag only · counsel signs</Fact>
+</KeyFacts>
+
+## The problem
+
+NDAs are high volume and low variance — most deals need one, and most of them
+follow the same handful of templates with the same handful of predictable
+deviations: a one-way instead of mutual, a perpetual confidentiality term, a
+non-solicit that reaches further than it should. None of that requires a
+first read from a lawyer. It just requires someone to check.
+
+But "someone" means counsel, and counsel's queue is full of things that
+actually need judgment. An NDA that's 90% standard waits behind a contract
+renegotiation, and the deal it's gating waits with it. By the time it gets
+reviewed, the delay has nothing to do with the document's complexity and
+everything to do with queue position.
+
+## What we built
+
+On Kortix, a **cron** fires every 15 minutes and checks a watched Gmail label
+for a new inbound NDA. Each firing spawns a fresh session — a cloud sandbox —
+that saves the attached document into a Drive folder, opens it in Docs, checks
+it clause by clause against our standard NDA playbook, redlines every
+deviation as a suggested edit in the document, and drafts — never sends — a
+flag summary on the original email thread addressed to counsel. Counsel opens
+the thread to a redline and a summary instead of a blank document.
+
+## How it works
+
+<Steps>
+<Step title="Run on a 15-minute cron">
+
+A **cron trigger** checks the watched Gmail label every 15 minutes. Each firing
+spawns a fresh **session** in its own sandbox, seeded with whatever NDA is
+waiting. One NDA maps to one run on one disposable machine — nothing carries
+over between runs beyond what's already sitting in Gmail and Drive.
+
+</Step>
+<Step title="Give the agent our standard positions">
+
+Our standard NDA positions live as a **skill** loaded into every session: mutual
+vs. one-way, confidentiality duration, governing law, non-solicit scope, remedies,
+the residuals clause, return-or-destroy obligations, assignment, and
+indemnification. The agent checks against that standard instead of a generic
+sense of what an NDA should say.
+
+</Step>
+<Step title="Connect what the review needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent:
+
+- **Reads the watched label in Gmail** — to find a new inbound NDA that hasn't
+  already been processed.
+- **Saves the document to Google Drive** — into a dedicated NDA folder, so
+  there's a durable copy to review and redline.
+- **Redlines in Google Docs** — every non-standard clause gets a suggested edit,
+  never a direct change.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's only outputs are a **Docs suggestion** and a **Gmail draft** — never a
+sent reply, never an applied edit, never a signature. Counsel reviews both and
+decides what goes back to the counterparty. Credentials are encrypted in the
+secrets manager and injected at runtime, never shown to the model or written to
+logs.
+
+</Step>
+<Step title="Counsel picks it up already redlined">
+
+With that in place, an NDA that lands at 9:03am has a redline and a flag summary
+waiting by 9:15 — the routine terms noted, the non-standard ones marked with the
+section and the reason, a proposed replacement already drafted. Counsel reviews,
+adjusts if needed, and sends. Nothing reaches the counterparty without that
+review.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A 15-minute **cron** spawns a fresh session with scoped **connectors** into
+  Gmail, Drive, and Docs. Our standard positions live as a **skill**. The agent
+  redlines and flags; it never signs, executes, or sends.
+</Callout>
+
+## Guardrails
+
+An agent that touches an unsigned legal document needs a hard line between
+drafting and executing:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Gmail, Drive, and Docs, and only the redline and the draft leave
+  it.
+- **Scoped secrets.** The Gmail, Drive, and Docs credentials are encrypted in the
+  secrets manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Suggesting mode only.** Redlines land as Docs suggested edits, never a direct
+  write to the document, and the original attachment is never overwritten,
+  deleted, or moved.
+- **Never sign, execute, or send.** The flag summary is a Gmail draft on the
+  original thread, never sent. The agent has no path to countersign an NDA or
+  message the counterparty — counsel owns both.
+- **Everything is code.** The agent's playbook, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="15 minutes" label="Longest an inbound NDA waits before its first pass" />
+  <Stat value="Redline only" label="Every change is a suggested edit, never applied" />
+  <Stat value="3 systems" label="Gmail, Drive, and Docs in one agent" />
+</StatGrid>
+
+NDAs stop being the paperwork a deal waits on. Counsel opens a thread to a
+redline already marked against our standard positions and a summary of exactly
+what's non-standard and why, instead of a cold document. The agent does the
+first pass; counsel still signs off on every word that goes back to the
+counterparty.

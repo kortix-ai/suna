@@ -47,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -95,10 +95,12 @@ import {
   type AdminConnector,
   type ConnectorAction,
   type ConnectorConfig,
+  type ConnectorAuthDiscovery,
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   createConnector,
+  discoverConnectorAuth,
   deleteConnector,
   getConnectStatus,
   getConnectorConfig,
@@ -114,11 +116,13 @@ import {
   setConnectorSensitive,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
+import { DiscoverCatalogue } from './discover-catalogue';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
   mcp: Boxes,
   openapi: Globe,
+  postman: Globe,
   graphql: Globe,
   http: Globe,
   channel: MessageSquare,
@@ -139,6 +143,7 @@ function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
+  if (p === 'postman') return 'Postman';
   return p.toUpperCase();
 }
 
@@ -247,6 +252,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
+  const discoverEnabled = projectQuery.data?.experimental?.connectors_api_discover === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
   // mutating control (rename/remove/reconnect/credentials/permissions/channels/
@@ -346,6 +352,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           <AddAppPanel
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
+            discoverEnabled={discoverEnabled}
             canWrite={canWrite}
             onAdded={(slug) => {
               invalidate();
@@ -2760,19 +2767,19 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
 function AddAppPanel({
   projectId,
   emailChannelEnabled,
+  discoverEnabled,
   onAdded,
   canWrite = false,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
+  discoverEnabled: boolean;
   onAdded: (slug?: string) => void;
   canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Self-host without Pipedream configured (KORTIX_PUBLIC_CONNECTORS_ENABLED
-  // false) — hide the "Easy connect" tab outright instead of round-tripping
-  // to /connect-status just to disable it. Custom (OpenAPI/GraphQL/MCP/HTTP)
-  // and Channels don't depend on Pipedream, so they're unaffected.
+  // false) — hide Easy Connect while leaving Discover/direct sources available.
   const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
@@ -2792,18 +2799,17 @@ function AddAppPanel({
     );
   }
   const easyConnectHidden = !connectorsEnabled;
-  // Live-configured flag lagging the deploy-time env flag (rare) still gets
-  // the softer disabled-with-hint treatment instead of vanishing outright.
   const easyConnectDisabled = easyConnectHidden || connectStatus.data?.configured === false;
   const easyConnectLabel = tI18nHardcoded.raw(
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
+  const defaultTab = !easyConnectDisabled ? 'apps' : discoverEnabled ? 'discover' : 'channels';
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
       </header>
-      <Tabs defaultValue={easyConnectDisabled ? 'channels' : 'apps'}>
+      <Tabs defaultValue={defaultTab}>
         <TabsList type="underline">
           {easyConnectHidden ? null : easyConnectDisabled ? (
             <Hint
@@ -2818,12 +2824,18 @@ function AddAppPanel({
           ) : (
             <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
           )}
+          {discoverEnabled && <TabsTrigger value="discover">Discover</TabsTrigger>}
           <TabsTrigger value="channels">Channels</TabsTrigger>
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
         {!easyConnectDisabled && (
           <TabsContent value="apps" className="mt-4">
             <AppCatalogue projectId={projectId} onAdded={onAdded} />
+          </TabsContent>
+        )}
+        {discoverEnabled && (
+          <TabsContent value="discover" className="mt-4">
+            <DiscoverCatalogue projectId={projectId} onAdded={onAdded} />
           </TabsContent>
         )}
         <TabsContent value="channels" className="mt-4">
@@ -3247,7 +3259,12 @@ function ConnectorConfigFields({
                       ? 'slack'
                       : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
                     : undefined,
-                auth: provider === 'channel' ? { type: 'none' } : draft.auth,
+                auth:
+                  provider === 'channel'
+                    ? { type: 'none' }
+                    : p === 'channel'
+                      ? undefined
+                      : draft.auth,
               });
             }}
           >
@@ -3256,6 +3273,7 @@ function ConnectorConfigFields({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="openapi">OpenAPI</SelectItem>
+              <SelectItem value="postman">Postman</SelectItem>
               <SelectItem value="graphql">GraphQL</SelectItem>
               <SelectItem value="mcp">MCP</SelectItem>
               <SelectItem value="http">HTTP</SelectItem>
@@ -3286,22 +3304,29 @@ function ConnectorConfigFields({
           </Select>
         </div>
       )}
-      {p === 'openapi' && (
+      {(p === 'openapi' || p === 'postman') && (
         <Field>
           <FieldLabel htmlFor="connector-spec">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
-            )}
+            {p === 'postman'
+              ? 'Collection, repository, or workspace'
+              : tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
+                )}
           </FieldLabel>
           <Input
             id="connector-spec"
             value={draft.spec ?? ''}
             onChange={(e) => set({ spec: e.target.value })}
-            placeholder="https://…/openapi.json"
+            placeholder={p === 'postman' ? 'https://github.com/… or collection.json' : 'https://…/openapi.json'}
             variant="popover"
             disabled={readOnly}
             required
           />
+          {p === 'postman' ? (
+            <FieldDescription>
+              Supports Collection v2 JSON, Postman-managed Git repositories, and configured public workspaces.
+            </FieldDescription>
+          ) : null}
         </Field>
       )}
       {p === 'graphql' && (
@@ -3407,17 +3432,22 @@ function ConnectorConfigFields({
           <Field>
             <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
             <Select
-              value={draft.auth?.type ?? 'none'}
+              value={draft.auth?.type ?? 'auto'}
               disabled={readOnly}
-              onValueChange={(v) => setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' })}
+              onValueChange={(v) => {
+                if (v === 'auto') set({ auth: undefined });
+                else setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1' });
+              }}
             >
               <SelectTrigger id="connector-auth" className="w-full" variant="popover">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="auto">Auto-detect</SelectItem>
                 <SelectItem value="none">None</SelectItem>
                 <SelectItem value="bearer">Bearer</SelectItem>
                 <SelectItem value="basic">Basic</SelectItem>
+                <SelectItem value="oauth1">OAuth 1.0</SelectItem>
                 <SelectItem value="custom">
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCustomHeader1e0e82ed',
@@ -3425,6 +3455,9 @@ function ConnectorConfigFields({
                 </SelectItem>
               </SelectContent>
             </Select>
+            <FieldDescription>
+              Auto-detect reads authentication metadata from the source. Choose None to opt out.
+            </FieldDescription>
           </Field>
           {draft.auth?.type === 'custom' && (
             <Field>
@@ -3454,6 +3487,7 @@ function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): bo
   if (d.auth?.type === 'custom' && !d.auth.name?.trim()) return false;
   if (d.provider === 'mcp') return !!d.url?.trim();
   if (d.provider === 'openapi') return !!d.spec?.trim();
+  if (d.provider === 'postman') return !!d.spec?.trim();
   if (d.provider === 'graphql') return !!d.endpoint?.trim();
   if (d.provider === 'http') return !!d.baseUrl?.trim();
   if (d.provider === 'channel') {
@@ -3475,8 +3509,12 @@ export function CustomConnectorForm({
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
     provider: 'openapi',
-    auth: { type: 'none' },
   });
+  const [discoveryDraft, setDiscoveryDraft] = useState(draft);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDiscoveryDraft(draft), 400);
+    return () => window.clearTimeout(timer);
+  }, [draft]);
   useEffect(() => {
     if (!emailChannelEnabled && draft.provider === 'channel' && draft.platform === 'email') {
       setDraft((current) => ({ ...current, platform: 'slack' }));
@@ -3490,6 +3528,17 @@ export function CustomConnectorForm({
       onAdded(draft.slug);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to add connector'),
+  });
+  const discovery = useQuery<ConnectorAuthDiscovery>({
+    queryKey: ['connector-auth-discovery', projectId, discoveryDraft],
+    queryFn: () => discoverConnectorAuth(projectId, discoveryDraft),
+    enabled:
+      discoveryDraft.auth === undefined &&
+      connectionValid(discoveryDraft, emailChannelEnabled) &&
+      discoveryDraft.provider !== 'channel' &&
+      discoveryDraft.provider !== 'pipedream' &&
+      discoveryDraft.provider !== 'computer',
+    retry: false,
   });
   const authActive = !!draft.auth?.type && draft.auth.type !== 'none';
 
@@ -3508,6 +3557,30 @@ export function CustomConnectorForm({
             slugEditable
             emailChannelEnabled={emailChannelEnabled}
           />
+          {draft.auth === undefined && discovery.isFetching && (
+            <InfoBanner tone="info">Checking the source for authentication settings…</InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.data?.recommended && (
+            <InfoBanner tone="info">
+              Detected {discovery.data.recommended.type} authentication from the source
+              {discovery.data.candidates[0]?.parameterName
+                ? ` (${discovery.data.candidates[0].parameterName})`
+                : ''}. You only need to provide the credential after adding it.
+            </InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.data?.status === 'none' && (
+            <InfoBanner tone="neutral">The source does not advertise authentication.</InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.data?.status === 'unsupported' && (
+            <InfoBanner tone="warning">
+              The source advertises authentication Kortix cannot inject yet. Choose a manual override or None.
+            </InfoBanner>
+          )}
+          {draft.auth === undefined && discovery.error && (
+            <InfoBanner tone="warning">
+              Could not inspect authentication: {(discovery.error as Error).message}
+            </InfoBanner>
+          )}
           {authActive && (
             <InfoBanner tone="info">
               {tI18nHardcoded.raw(

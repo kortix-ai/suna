@@ -1,0 +1,154 @@
+---
+title: "How we handle GDPR data-subject requests on a deadline"
+description: The GDPR-DSAR agent we run on Kortix — it verifies each incoming access or deletion request, locates the subject's data across our product database, compiles the report inside the SLA, and flags it for legal to review before anything goes out.
+date: "2026-07-11"
+author: team
+tags:
+  - Legal
+  - Case Study
+  - Enterprise
+template: gdpr-dsar
+---
+
+A GDPR data subject access request starts a clock. From the day we can verify who's
+asking, we have one calendar month to tell them what we hold on them, or to delete
+it — and that data is never in one place. It's spread across a users table, an
+orders table, a support history, an events table, a dozen joins a person has to
+know to write by hand. Miss the deadline or miss a table, and the exposure is the
+regulator's, not just the requester's.
+
+We run a GDPR-DSAR agent on Kortix that reads each request out of our legal inbox,
+verifies it, locates the subject across the product database, and compiles the
+access-or-deletion report as a Google Doc — every day, well inside the SLA. It
+never deletes anything and never replies to the requester. It compiles and flags;
+legal decides and sends.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">Gmail · Postgres · Google Docs</Fact>
+  <Fact label="Mode">Compile + flag only · legal signs off before anything ships</Fact>
+</KeyFacts>
+
+## The problem
+
+A DSAR arrives as an email, but the data it's asking about lives in a relational
+schema built for the product, not for privacy law. "Everything you have on me"
+means rows in the users table, orders, invoices, support tickets, login history,
+marketing consent, and whatever else joins off a customer ID — tables that were
+never designed to be read together, by someone who has one month to do it and get
+it right every time.
+
+The common approaches don't hold up under repetition. A shared spreadsheet of
+"where subject data lives" goes stale the moment the schema changes. Assigning it
+to whoever's free that week means the verification step — confirming the requester
+actually is the subject, not someone phishing for their data — gets rushed or
+skipped. And a script that queries and deletes in the same run has no way to stop
+and ask a lawyer first.
+
+## What we built
+
+On Kortix, a daily cron triggers an agent. It spawns a fresh session that checks
+our legal inbox in Gmail for new DSAR emails, verifies each requester against the
+identity details we already hold, then queries Postgres read-only across every
+table keyed to that subject — account, orders, support history, consent records —
+and compiles the findings into a Google Doc formatted as an access report (or a
+deletion inventory, if that's what was asked for). The doc, and a recommended
+action, get flagged to legal for review. The agent never runs a delete and never
+emails the subject back.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox, so every DSAR is worked from a clean read of the
+inbox and the database — nothing from a prior day's run carries over, and a stale
+verification never gets reused.
+
+</Step>
+<Step title="Verify before locating anything">
+
+Verification lives as a **skill** that travels with the agent: what counts as
+proof the requester is the subject (matching the request email against the account
+on file, or the identity details supplied), what to do when verification fails or
+is ambiguous, and what the SLA clock actually is under GDPR — one month from a
+verified request, extendable once for complex cases. Nothing is located until a
+request passes this check.
+
+</Step>
+<Step title="Connect the systems it needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent:
+
+- **Reads the DSAR out of Gmail** — the inbound request and any identity details
+  attached, and labels the thread once it's been actioned.
+- **Queries Postgres read-only** — every table keyed to the subject: account,
+  orders, invoices, support tickets, consent and login history — to build a
+  complete picture of what we hold.
+- **Writes the report to Google Docs** — a structured access report or deletion
+  inventory, one doc per request, ready for a lawyer to read start to finish.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's only writes are the Google Doc it compiles and the label on the Gmail
+thread. Postgres access is read-only — there is no delete path the agent can reach,
+even for a request that explicitly asks for erasure. It never emails the requester.
+Credentials are encrypted in the Secrets Manager and injected at runtime, never
+shown to the model or written to logs.
+
+</Step>
+<Step title="Flag it for legal review">
+
+With the report compiled, the agent posts it to the legal team's review channel
+with a recommended action — fulfill the access request, or proceed with deletion —
+and the SLA deadline it's working against. Legal reviews the report, decides, and
+is the one who replies to the subject or authorizes any deletion. The agent's job
+ends at the flag.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a fresh session that verifies the request, reads Gmail for
+  the ask, queries Postgres read-only to locate the subject's data everywhere it
+  lives, and compiles a Google Doc report. The agent compiles and flags; legal
+  decides, deletes, and replies.
+</Callout>
+
+## Guardrails
+
+A DSAR touches the most sensitive data we hold, so the agent's access is scoped and
+its authority stops well short of the parts that matter:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Gmail, Postgres, and Google Docs, and only the compiled report and the
+  legal-channel flag leave the sandbox.
+- **Read-only on the data itself.** Postgres access is read-only. The agent can
+  locate a subject's data across every table; it cannot delete a row, update a
+  record, or run anything but a `SELECT`.
+- **Never replies to the subject.** The agent's only outbound message is the flag
+  to legal. It does not draft or send anything to the person who filed the
+  request — that response is legal's to write and send.
+- **Deletion always waits for approval.** Even when a request explicitly asks for
+  erasure, the agent only recommends it in the flagged report. No deletion happens
+  until a lawyer approves it and someone else executes it.
+- **Everything is code.** The verification rules, the table map, and the agent's
+  per-system permissions are files in the repo, versioned and changed through a
+  reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="DSAR inbox checked and any new request worked the same day" />
+  <Stat value="0 deletions" label="Every erasure held for a lawyer to approve and execute" />
+  <Stat value="1 flag" label="One compiled report and recommendation per request, in legal's queue" />
+</StatGrid>
+
+A request that used to mean someone manually joining tables under deadline pressure
+now arrives in legal's queue as a compiled report, well inside the SLA, with the
+data located and the action recommended. The agent verifies and compiles; the
+people decide, delete, and reply.

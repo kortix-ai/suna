@@ -75,6 +75,7 @@ import {
 } from '@/hooks/admin/use-admin-accounts';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { useDebounce } from '@/hooks/use-debounced-value';
 
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
@@ -109,15 +110,6 @@ const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'incomplete', label: 'Incomplete' },
   { value: 'trialing', label: 'Trialing' },
 ];
-
-function useDebounce<T>(value: T, delay = 300): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return debounced;
-}
 
 function formatCredits(value: string | number | null | undefined) {
   const n = Number(value ?? 0);

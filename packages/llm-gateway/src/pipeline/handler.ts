@@ -9,7 +9,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError } from '../errors';
+import { GatewayResolutionError, looksLikeTerminalAuthFailure } from '../errors';
 import type { FetchImpl } from '../http';
 import { type CircuitBreaker, backoffDelay, realSleep } from '../resilience';
 import {
@@ -77,6 +77,41 @@ function newRequestId(): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+// A dead credential (or other terminal, client-side-fixable failure) can reach
+// the gateway as a 200-status stream carrying a `data: {"error":{...}}` frame
+// instead of a non-2xx HTTP response — every OpenAI-compatible-shaped upstream
+// this gateway talks to can do this for a streaming call, so `callUpstream`
+// never throws and `probeStream`/`sseErrorFrame` exist to catch it in-band
+// instead. Blanket-502ing every one of those (this function's caller's old
+// behavior) tells an OpenAI-compatible client "transient, retry me" about a
+// failure that will NEVER succeed on retry — exactly what let a dead upstream
+// key retry silently (client-side, past the gateway's own control) until a
+// session gave up with no visible error surfaced (2026-07-17 incident; see
+// `looksLikeTerminalAuthFailure`'s doc comment for the sibling fix on the
+// THROWN-error side of the same class of bug — this is the in-band-SSE-frame
+// side). Reclassifying the response status makes it non-retryable to any
+// spec-compliant client (retry eligibility is keyed off HTTP status, not
+// response body) instead of silently retried into an empty, error-free turn.
+function statusForErrorFrame(frame: SseErrorFrame): number {
+  // The ai-sdk transport (transports/ai-sdk/sse.ts) already classifies its own
+  // upstream errors and, when it recognizes a terminal failure, embeds the
+  // real HTTP-equivalent status as a NUMERIC `code` on the frame (e.g. `401`
+  // for a dead credential, or a genuine `429`/`403` the provider itself
+  // returned mid-stream) — trust that pre-computed classification verbatim
+  // rather than re-deriving it from the message a second time. Restricted to
+  // the 4xx range: a 4xx is unambiguously "don't retry this", whereas trusting
+  // an arbitrary numeric 5xx here wouldn't change this branch's already-
+  // reasonable "transient, generic 502" default.
+  if (typeof frame.code === 'number' && frame.code >= 400 && frame.code < 500) {
+    return frame.code;
+  }
+  // Other transports (native openai-compat, OpenRouter, ...) embed a STRING
+  // code/type instead (`invalid_api_key`, `authentication_error`) — no
+  // numeric status to trust, so fall back to the same message-based
+  // classifier `toTransportError` uses for the thrown-error side.
+  return looksLikeTerminalAuthFailure(frame.message) ? 401 : 502;
 }
 
 function concatChunks(chunks: Uint8Array[]): Uint8Array {
@@ -375,6 +410,26 @@ export async function handleChatCompletions(
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
+  // Prefer the host's own per-candidate resolver; fall back to treating the
+  // (legacy, primary-only) `route.generationDefaults` as good for
+  // `primaryModel` alone and nothing else — matches what the gateway did
+  // before per-candidate re-validation existed, for a host/test that hasn't
+  // migrated to `generationDefaultsForModel` yet. A real host (apps/api's
+  // routing/resolve-route.ts) always supplies `generationDefaultsForModel`.
+  const generationDefaultsForModel =
+    route?.generationDefaultsForModel ??
+    ((model: string) => (model === routedModel ? route?.generationDefaults : undefined));
+  // Project/account-configured per-model generation defaults (reasoning
+  // effort, temperature, top_p, max output tokens) are DELIBERATELY NOT
+  // injected here. `body`/`payload` stay the raw client request through the
+  // whole dispatch loop below — each candidate the failover loop tries gets
+  // its OWN freshly-clamped defaults via `route?.generationDefaultsForModel`
+  // (passed into `runFailover`), because a fallback candidate can have
+  // different capabilities (temperature support, reasoning_options, output
+  // ceiling) than `routedModel`. Baking primary-model defaults in once, up
+  // front, would forward them unrevalidated to every fallback too. Only
+  // fills fields the client didn't already set — see
+  // `applyGenerationDefaults`'s doc comment.
   step('body_parsed', {
     model: requestedModel,
     routedModel,
@@ -544,6 +599,11 @@ export async function handleChatCompletions(
   let attempts = 0;
   let nonStreamBody: unknown;
   let streamProbe: StreamProbeResult | null = null;
+  // The actual payload sent to the currently-chosen candidate (its OWN
+  // freshly-clamped generation defaults, not necessarily the primary
+  // model's — see runFailover's `dispatchedPayload`). Used for tracing so
+  // the captured "request" reflects what really reached the wire.
+  let dispatchedPayload: Record<string, unknown> = payload;
   // The real upstream error behind an empty stream, if a candidate returned one
   // (see the error-frame branch below). Surfaced in place of the generic
   // empty-completion 502 when every candidate ends up producing nothing usable.
@@ -607,6 +667,7 @@ export async function handleChatCompletions(
       const message = lastErrorFrame
         ? lastErrorFrame.message
         : 'All upstream candidates returned an empty completion';
+      const status = lastErrorFrame ? statusForErrorFrame(lastErrorFrame) : 502;
       const failedCandidate = [...candidates].reverse().find((candidate) =>
         exhaustedCandidates.has(candidateKey(candidate)),
       );
@@ -616,7 +677,7 @@ export async function handleChatCompletions(
         requestedModel,
         resolvedModel: routedModel,
         streaming,
-        status: 502,
+        status,
         ok: false,
         errorCode,
         errorMessage: message,
@@ -633,9 +694,12 @@ export async function handleChatCompletions(
           requestedModel,
           resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
           requestId,
-          suggestion: 'Retry the request. If the error continues, switch to another model.',
+          suggestion:
+            status === 401
+              ? 'Check the provider credentials, or switch to another model.'
+              : 'Retry the request. If the error continues, switch to another model.',
         }),
-        502,
+        status,
       );
     }
 
@@ -657,6 +721,7 @@ export async function handleChatCompletions(
       capturedRequest: capture(payload),
       fallbackOn,
       signal: req.signal,
+      generationDefaultsForModel,
     });
 
     if (result.kind === 'response') {
@@ -671,11 +736,13 @@ export async function handleChatCompletions(
       tried: triedThisRound,
       modelsTried: modelsTriedThisRound,
       attempts: attemptsThisRound,
+      dispatchedPayload: dispatchedPayloadThisRound,
     } = result.value;
     tried = [...tried, ...triedThisRound];
     modelsTried = [...modelsTried, ...modelsTriedThisRound]
       .filter((model, index, all) => all.indexOf(model) === index);
     attempts += attemptsThisRound;
+    dispatchedPayload = dispatchedPayloadThisRound;
     const { descriptor: chosenDescriptor, routeModel: chosenRouteModel } = chosen;
 
     if (!streaming) {
@@ -904,7 +971,10 @@ export async function handleChatCompletions(
       usage: counts,
       upstreamCost,
       finalCost,
-      request: capture(payload),
+      // The candidate that actually WON, not the raw pre-dispatch payload —
+      // reflects that candidate's own freshly-clamped generation defaults
+      // (see the dispatch loop's `dispatchedPayload` assignment above).
+      request: capture(dispatchedPayload),
       response: capture(response),
       metadata: traceMetadata,
     });

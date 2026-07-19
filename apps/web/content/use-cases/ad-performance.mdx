@@ -1,0 +1,153 @@
+---
+title: "How we monitor ad performance"
+description: The ad-performance agent we run on Kortix — connected to Google Ads and Meta Ads, with alerts in Slack. Every day it checks budget pacing, CPA and ROAS drift, and underperforming ads and keywords, then posts ranked findings and optimization recommendations — it never changes a budget, pauses a campaign, or edits an ad itself.
+date: "2026-06-11"
+author: team
+tags:
+  - Marketing
+  - Case Study
+  - Growth
+template: ad-performance
+---
+
+Paid ad spend drifts quietly. A campaign paces ahead of budget three days into
+the month. A cost-per-acquisition creeps up for a week before anyone notices
+the trend line. A keyword that used to convert keeps taking budget from ones
+that still do. None of it is a single dramatic failure — it's a slow leak
+across two ad platforms that nobody has time to check line by line every
+morning.
+
+We run an ad-performance agent on Kortix that reads campaign spend and
+performance from Google Ads and Meta Ads every day and posts ranked findings
+and optimization recommendations to Slack. It never touches a budget, a
+campaign, or an ad — it only ever recommends.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">Google Ads · Meta Ads · Slack</Fact>
+  <Fact label="Mode">Read-only · recommend-only · one Slack post per day</Fact>
+</KeyFacts>
+
+## The problem
+
+Budget pacing, CPA/ROAS drift, and underperforming ads or keywords are each
+easy to catch on their own — if someone is looking. In practice they live
+split across two platforms with different dashboards, and checking both every
+day for every active campaign doesn't survive contact with a real workload. By
+the time a weekly review catches a campaign that's overspent its monthly
+budget by day ten, or a keyword whose CPA has doubled, the money is already
+spent.
+
+The usual fixes don't hold up. Each platform's native alerting fires on its
+own thresholds and only sees its own account. A weekly spreadsheet review is
+thorough but a week is a long time for a pacing problem or a CPA spike to
+compound. And automated bid/budget tools that act on their own remove the one
+thing a marketing team actually wants to keep: the decision.
+
+## What we built
+
+On Kortix, a daily cron spawns a fresh agent session. It reads campaign spend
+and performance from Google Ads and Meta Ads, checks budget pacing against
+each campaign's monthly target, computes CPA and ROAS drift against trailing
+performance, flags underperforming ads and keywords and any spend or
+click-through anomalies, and drafts prioritized optimization recommendations —
+pause a specific ad, shift budget toward a better performer, add a negative
+keyword — before posting the ranked list to Slack. It writes nothing back to
+either ad platform.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox. One day maps to one run on one disposable
+machine, so pacing and drift are recomputed from the current state of both
+platforms every time — nothing carries over.
+
+</Step>
+<Step title="Give the agent the optimization playbook">
+
+What counts as off-pace, how much CPA or ROAS drift is worth flagging, what
+makes an ad or a keyword "underperforming," and how a good recommendation is
+worded live as a **skill** that travels with the agent. When we tighten a
+threshold or add a new anomaly pattern, it's a change to the skill, not a
+one-off instruction.
+
+</Step>
+<Step title="Connect the ad platforms read-only">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches
+the model, the agent reads:
+
+- **Campaign spend and performance from Google Ads** — daily spend, clicks,
+  conversions, and cost per acquisition per campaign, ad, and keyword.
+- **Campaign spend and performance from Meta Ads** — the same, across Facebook
+  and Instagram placements.
+- **Posts to Slack** — the ranked findings and recommendations, once a day.
+
+It has no write access to either platform. It cannot change a budget, pause a
+campaign, or edit an ad.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's only actions are reading two ad platforms and posting to Slack. It
+**recommends** pausing an ad, shifting budget toward a better performer, or
+adding a negative keyword — it never pauses, edits, or reallocates spend
+itself. That decision, and the click that executes it, stays with the
+marketing team. Credentials are encrypted in the Secrets Manager and injected
+at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Post the ranked findings">
+
+Each day's message lists what needs attention: campaigns off their budget
+pace, ads or keywords with CPA/ROAS drifting the wrong way, underperformers
+worth pausing, and anything that looks anomalous — each with the numbers
+behind it and a specific recommended action. The marketing team reads it and
+decides what to actually change.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a fresh session with read-only **connectors** into
+  Google Ads and Meta Ads. The optimization rules live as a **skill**. The
+  agent reads spend and performance from both platforms and writes nothing but
+  the Slack post — every pause, budget shift, and keyword change is a
+  recommendation, never an action.
+</Callout>
+
+## Guardrails
+
+The agent reads live spend data across two ad platforms, so its access is
+scoped and one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only Google Ads and Meta Ads, and only the Slack post leaves the
+  sandbox.
+- **Scoped secrets.** The Google Ads and Meta Ads credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed
+  to the model or the logs.
+- **Recommend-only.** The agent has no write access to either ad platform. It
+  cannot change a budget, pause a campaign, or edit an ad — it can only
+  report and suggest.
+- **Everything is code.** The agent's optimization rules, thresholds, and
+  per-platform permissions are files in the repo, versioned and changed
+  through a reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="Spend and performance rechecked across both platforms" />
+  <Stat value="Recommend-only" label="Nothing is ever paused or reallocated automatically" />
+  <Stat value="2 platforms" label="Google Ads and Meta Ads watched in one daily post" />
+</StatGrid>
+
+The pacing check, the CPA/ROAS trend, and the underperformer scan that used to
+require opening two dashboards now arrive as one ranked Slack post every
+morning, each finding carrying the numbers and a specific recommendation. The
+agent only reads and recommends; the marketing team decides what to pause,
+shift, or exclude.

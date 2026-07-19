@@ -340,23 +340,6 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET:    optStr,
-  // Stateless LiteLLM translation sidecar (see packages/llm-gateway's
-  // GatewayConfig.translationSidecar): when set, the openai-compat/custom
-  // upstream candidates route through this sidecar instead of calling the
-  // provider directly, so param-quirk translation (e.g. OpenAI's max_tokens ->
-  // max_completion_tokens) is owned by LiteLLM's community-maintained tables
-  // instead of ours. Empty = current direct behavior — required for old
-  // self-host boxes and a gradual rollout. The sidecar itself holds no
-  // credentials; the resolved upstream key/base travel per-request. Base URL
-  // only — e.g. http://litellm:4000 in self-host, unset in cloud today (see
-  // the PR's cloud-rollout note; this is a code-path + env wire-up only).
-  LLM_TRANSLATION_SIDECAR_URL: optStr,
-  // Bearer token for the sidecar's OWN master-key auth (LiteLLM's
-  // `general_settings.master_key`) — never the upstream provider key, which
-  // travels in the request body instead. Optional only because a sidecar can
-  // technically run with no master key; self-host always sets one (see
-  // kortix-compose.yml).
-  LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: optStr,
   // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
   // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
   // service-specific credential for bedrock.amazonaws.com.
@@ -488,6 +471,9 @@ const envSchema = z.object({
   PIPEDREAM_PROJECT_ID:        optStr,
   PIPEDREAM_ENVIRONMENT:       optStrDefault('production'),
   PIPEDREAM_WEBHOOK_SECRET:    optStr,
+  // Optional: required only when importing a public Postman workspace URL.
+  // Exported collection JSON and Postman-managed Git repositories need no key.
+  POSTMAN_API_KEY:              optStr,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET:             optStr,
@@ -735,6 +721,7 @@ export const config = {
   PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
   PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
   PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
+  POSTMAN_API_KEY: env.POSTMAN_API_KEY,
 
   // ─── Search Providers ──────────────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,
@@ -816,8 +803,6 @@ export const config = {
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
-  LLM_TRANSLATION_SIDECAR_URL: env.LLM_TRANSLATION_SIDECAR_URL,
-  LLM_TRANSLATION_SIDECAR_AUTH_TOKEN: env.LLM_TRANSLATION_SIDECAR_AUTH_TOKEN,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
   AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,

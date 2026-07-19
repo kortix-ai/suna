@@ -101,7 +101,7 @@ try/catching every call.
 - catalog/budget: `GET /v1/llm/models`, `GET /v1/projects/:id/llm-catalog`
 - selection + persistence: `useOpenCodeLocal`, `useModelStore` ✅
 - **gateway observability** (`/v1/projects/:id/gateway/{overview,logs,keys,budgets,series,errors}`) → client fully in SDK (`projects-client/gateway.ts`) ✅; hooks still web-local 🟡
-- **gateway playground** — `project(id).gateway.playground(prompt, models)` → `POST /v1/projects/:id/gateway/playground` (run one prompt against up to 6 models side by side) ✅
+- **gateway playground** — `project(id).gateway.playground(prompt, models, system?)` → `POST /v1/projects/:id/gateway/playground` (run one prompt, plus an optional system prompt, against up to 6 models side by side) ✅; UI: Playground tab in `gateway-view.tsx` (`useGatewayPlayground` hook) ✅
 
 ### 8. Agents · commands · tools · skills · MCP
 | op | runtime | SDK |

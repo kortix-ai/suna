@@ -40,9 +40,12 @@ const BEDROCK_BYOK_ENV_VAR = 'AWS_BEARER_TOKEN_BEDROCK';
 // A discriminated union (rather than an optional `baseUrl` on one shape) lets
 // every OTHER caller narrow `kind !== 'bedrock'` and use `baseUrl` as a plain
 // `string` with no assertion.
+// `npm` is the models.dev `npm` field (verbatim) — it selects the AI SDK
+// provider package under the 'ai-sdk' transport engine; ignored by the native
+// transports.
 export type CatalogUpstream =
-  | { kind: 'bedrock'; envVar: string }
-  | { kind: Exclude<ProviderKind, 'bedrock'>; envVar: string; baseUrl: string };
+  | { kind: 'bedrock'; envVar: string; npm?: string }
+  | { kind: Exclude<ProviderKind, 'bedrock'>; envVar: string; baseUrl: string; npm?: string };
 
 /** Resolve provider transport metadata from the API-owned runtime catalog. */
 export function resolveCatalogUpstream(providerId: string): CatalogUpstream | null {
@@ -62,7 +65,7 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
   // resolved explicitly here rather than falling through to the generic
   // single-key path below.
   if (kind === 'bedrock') {
-    return { envVar: BEDROCK_BYOK_ENV_VAR, kind };
+    return { envVar: BEDROCK_BYOK_ENV_VAR, kind, npm: provider.npm ?? undefined };
   }
 
   const baseUrl =
@@ -70,5 +73,5 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
   const envVar = provider.env?.[0];
   if (!baseUrl || !envVar) return null;
 
-  return { baseUrl, envVar, kind };
+  return { baseUrl, envVar, kind, npm: provider.npm ?? undefined };
 }

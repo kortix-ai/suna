@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 490,
+  "count": 493,
   "routes": [
     {
       "method": "GET",
@@ -768,7 +768,19 @@
     },
     {
       "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
       "path": "/v1/executor/projects/:projectId/connectors/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/discover/integrations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/discover/integrations/detail"
     },
     {
       "method": "GET",
@@ -785,6 +797,10 @@
     {
       "method": "POST",
       "path": "/v1/executor/webhook/pipedream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/generation"
     },
     {
       "method": "POST",
@@ -815,8 +831,16 @@
       "path": "/v1/llm/health"
     },
     {
+      "method": "POST",
+      "path": "/v1/llm/messages"
+    },
+    {
       "method": "GET",
       "path": "/v1/llm/models"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/v1/messages"
     },
     {
       "method": "GET",
@@ -1291,6 +1315,10 @@
       "path": "/v1/projects/:projectId/gateway/playground"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/providers/:providerId/verify"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/gateway/routing-policy"
     },
@@ -1711,10 +1739,6 @@
       "path": "/v1/router/image-search"
     },
     {
-      "method": "POST",
-      "path": "/v1/router/messages"
-    },
-    {
       "method": "GET",
       "path": "/v1/router/models"
     },
@@ -1885,6 +1909,10 @@
     {
       "method": "POST",
       "path": "/v1/tunnel/rpc/:tunnelId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage"
     },
     {
       "method": "GET",

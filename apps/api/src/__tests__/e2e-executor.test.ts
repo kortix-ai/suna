@@ -18,6 +18,7 @@ import {
 } from '../executor/router';
 import type { GatewayAction, GatewayConnector, GatewayDeps, ExecutionRecord } from '../executor/gateway';
 import { resolveEffectiveAction, type Policy } from '../executor/policy';
+import type { ConnectorAuthDiscovery } from '../executor/auth-discovery';
 
 const ACCOUNT = 'acct-1';
 const PROJECT = 'proj-1';
@@ -39,6 +40,7 @@ interface World {
   upstream: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }>;
   upstreamStatus: number;
   upstreamBody: string;
+  connectorDrafts: Record<string, unknown>[];
 }
 
 let world: World;
@@ -73,8 +75,15 @@ function freshWorld(): World {
     upstream: [],
     upstreamStatus: 200,
     upstreamBody: '{"id":"ch_1","paid":true}',
+    connectorDrafts: [],
   };
 }
+
+const detectedBearer: ConnectorAuthDiscovery = {
+  status: 'detected',
+  recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
+  candidates: [], warnings: [], totalRequests: 12,
+};
 
 function credKey(connectorId: string, userId: string | null) {
   return `${connectorId}|${userId ?? 'shared'}`;
@@ -165,7 +174,19 @@ const deps: ExecutorRouterDeps = {
       // Always the shared credential — `per_user` was removed 2026-07-05.
       secretSet: conn.hasAuth ? world.credentials.has(credKey(conn.connectorId, null)) : true,
     })),
+  listDiscoverIntegrations: async ({ q, cursor }) => ({
+    items: [{ id: 'openapi/1forge-com', name: q ?? '1Forge' }],
+    total: 1,
+    nextCursor: cursor,
+    hasMore: false,
+  }),
+  getDiscoverIntegration: async (id) => ({ item: { id }, variants: [] }),
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
+  discoverConnectorAuth: async () => detectedBearer,
+  createConnector: async (_projectId, _accountId, draft) => {
+    world.connectorDrafts.push(draft);
+    return { ok: true, sync: { synced: 1, errors: [] } };
+  },
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
     defaultMode: world.defaultMode,
@@ -242,6 +263,33 @@ describe('POST /call', () => {
 });
 
 describe('admin routes', () => {
+  test('Discover list/detail are project-admin scoped and preserve query values', async () => {
+    const denied = await req(`/projects/${PROJECT}/discover/integrations?q=finance`);
+    expect(denied.status).toBe(403);
+
+    const pageResponse = await req(
+      `/projects/${PROJECT}/discover/integrations?q=finance&cursor=48`,
+      { headers: { 'x-test-admin': ALICE } },
+    );
+    expect(pageResponse.status).toBe(200);
+    expect(await pageResponse.json()).toEqual({
+      items: [{ id: 'openapi/1forge-com', name: 'finance' }],
+      total: 1,
+      nextCursor: '48',
+      hasMore: false,
+    });
+
+    const detailResponse = await req(
+      `/projects/${PROJECT}/discover/integrations/detail?id=${encodeURIComponent('openapi/1forge-com')}`,
+      { headers: { 'x-test-admin': ALICE } },
+    );
+    expect(detailResponse.status).toBe(200);
+    expect(await detailResponse.json()).toEqual({
+      item: { id: 'openapi/1forge-com' },
+      variants: [],
+    });
+  });
+
   test('list shows credential mode + secretSet', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
     const json = await (await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })).json();
@@ -250,6 +298,41 @@ describe('admin routes', () => {
 
   test('sync returns count', async () => {
     expect((await (await req(`/projects/${PROJECT}/connectors/sync`, { method: 'POST', headers: { 'x-test-admin': ALICE } })).json()).synced).toBe(1);
+  });
+
+  test('previews source authentication metadata', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors/auth-discovery`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'postman', spec: 'https://example.com/collection.json' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(detectedBearer);
+  });
+
+  test('omitted auth applies the source recommendation before create', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'hubspot', provider: 'postman', spec: 'https://example.com/repo' }),
+    });
+    expect(res.status).toBe(200);
+    expect(world.connectorDrafts[0]).toMatchObject({ auth: detectedBearer.recommended });
+    expect((await res.json()).authDiscovery).toEqual(detectedBearer);
+  });
+
+  test('explicit none is a durable opt-out and skips source discovery', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'public-api', provider: 'openapi', spec: 'https://example.com/openapi.json',
+        auth: { type: 'none' },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(world.connectorDrafts[0]).toMatchObject({ auth: { type: 'none' } });
+    expect((await res.json()).authDiscovery).toBeUndefined();
   });
 
   test('a read-tier member can LIST connectors (project.connector.read is member-baseline)', async () => {

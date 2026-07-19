@@ -45,6 +45,12 @@ export interface StepSchematic {
 export type StepBlock =
   | { kind: 'text'; text: string }
   | { kind: 'image'; src: string; alt: string; schematic?: StepSchematic }
+  /** A standalone schematic panel — OUR OWN rendering of a console screen, with
+   *  no backing screenshot file. Use when there is no captured PNG yet (e.g. the
+   *  SCIM provider guides): unlike an `image` block with a `schematic` fallback,
+   *  this references no asset, so it renders the panel directly and never trips
+   *  the "every referenced screenshot must ship" guard. */
+  | { kind: 'schematic'; schematic: StepSchematic }
   /** The copyable SP values (Entity ID + ACS), positioned inline. Labels are
    *  per-IdP: Entra says "Identifier (Entity ID)" / "Reply URL (ACS)", Okta
    *  says "Audience URI (SP Entity ID)" / "Single sign-on URL" — show the
@@ -128,7 +134,16 @@ export interface ProviderConfig {
 }
 
 export interface ProviderGuide {
-  id: 'entra' | 'okta' | 'google' | 'cloudflare' | 'custom';
+  id:
+    | 'entra'
+    | 'okta'
+    | 'google'
+    | 'cloudflare'
+    | 'onelogin'
+    | 'jumpcloud'
+    | 'pingone'
+    | 'auth0'
+    | 'custom';
   name: string;
   blurb: string;
   config: ProviderConfig;
@@ -1183,6 +1198,650 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     ],
   },
   {
+    id: 'onelogin',
+    name: 'OneLogin',
+    blurb: 'SAML via a OneLogin custom connector app',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'OneLogin sends the user’s Role names on the "groups" parameter — map those names in Kortix. The parameter MUST be flagged multi-value, or OneLogin collapses every role into one string.',
+      preferredMetadata: 'url',
+      metadataSource:
+        'The app’s SSO tab → Issuer URL (a hosted metadata link) — or download the same XML via More Actions → SAML Metadata.',
+      metadataUrlPlaceholder: 'https://<subdomain>.onelogin.com/saml/metadata/<app-id>',
+    },
+    steps: [
+      {
+        id: 'create-app',
+        title: 'Open the SAML connector app',
+        where: 'idp',
+        menuPath: 'OneLogin admin → Applications → Applications',
+        intro:
+          'In the OneLogin admin console: Applications → Applications → "Add App" (top-right) → search the catalog for "SAML Custom Connector (Advanced)" → select it → set the Display Name to "Kortix" → Save.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/onelogin/create-app-1.png',
+            alt: 'OneLogin Applications list with the SAML connector app',
+            schematic: {
+              title: 'Applications → Add App',
+              rows: [
+                { label: 'Search', value: 'SAML Custom Connector (Advanced)', as: 'field' },
+                { label: 'Display Name', value: 'Kortix', as: 'field' },
+                { label: 'Save', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'The Configuration / Parameters / SSO tabs only appear AFTER that first Save — save the app once, then reopen it to configure.',
+          },
+        ],
+        doneLabel: 'I’ve created the SAML connector app',
+      },
+      {
+        id: 'basic-saml',
+        title: 'Configuration',
+        where: 'idp',
+        menuPath: 'Your app → Configuration',
+        intro:
+          'On the Configuration tab, paste Kortix’s values. Note OneLogin uses several fields for the ACS URL.',
+        content: [
+          {
+            kind: 'sp-values',
+            acsLabel: 'Recipient (ACS URL)',
+            entityIdLabel: 'Audience (EntityID)',
+            acsFirst: true,
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/onelogin/basic-saml-1.png',
+            alt: 'OneLogin Configuration tab with Audience, Recipient and ACS URL fields',
+            schematic: {
+              title: 'Configuration',
+              rows: [
+                { label: 'Audience (EntityID)', value: '(Entity ID below)', as: 'field' },
+                { label: 'Recipient', value: '(ACS URL below)', as: 'field' },
+                { label: 'ACS (Consumer) URL', value: '(ACS URL below)', as: 'field' },
+                {
+                  label: 'ACS (Consumer) URL Validator',
+                  value: 'regex matching the ACS URL',
+                  as: 'field',
+                },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Put the ACS URL in both "Recipient" and "ACS (Consumer) URL". The "ACS (Consumer) URL Validator" is a REGEX field, not a plain URL: take the ACS URL above, escape every dot (. becomes \\.), and anchor it with ^ … $. For example, if the ACS URL is https://api.kortix.com/auth/v1/sso/saml/acs, paste ^https:\\/\\/api\\.kortix\\.com\\/auth\\/v1\\/sso\\/saml\\/acs$ — a pattern that doesn’t match the exact ACS URL makes the sign-in fail with no clear error.',
+          },
+        ],
+        warning:
+          '#1 OneLogin gotcha: the "ACS (Consumer) URL Validator" is a regex, not a plain URL. Escape the dots and anchor it so it matches the ACS URL exactly, or login fails with no clear error.',
+        doneLabel: 'I’ve filled in the configuration',
+      },
+      {
+        id: 'attributes',
+        title: 'Map parameters',
+        where: 'idp',
+        menuPath: 'Your app → Parameters',
+        intro:
+          'On the Parameters tab, add a SAML parameter for each attribute and map it to its OneLogin value from the dropdown. Tick "Include in SAML assertion" on every one, or the value is never sent.',
+        content: [
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'email', source: 'Email', required: true },
+              { name: 'id', source: 'UUID (the OneLogin user id)', required: true },
+              { name: 'firstName', source: 'First Name' },
+              { name: 'lastName', source: 'Last Name' },
+            ],
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/onelogin/attributes-1.png',
+            alt: 'OneLogin mapping a parameter to its value with Include in SAML assertion',
+            schematic: {
+              title: 'Parameters → Include in SAML assertion',
+              rows: [
+                { label: 'Field name', value: 'email / id / firstName / lastName', as: 'field' },
+                { label: 'Value', value: 'Email / UUID / First Name / Last Name', as: 'field' },
+                { label: 'Include in SAML assertion', value: 'checked', as: 'field' },
+              ],
+            },
+          },
+        ],
+        doneLabel: 'I’ve mapped the parameters',
+      },
+      {
+        id: 'group-claim',
+        title: 'Add the groups parameter',
+        where: 'idp',
+        menuPath: 'Your app → Parameters',
+        intro:
+          'Add one more parameter with Field name "groups". In its Value dropdown pick "User Roles" (that is the entry that emits the user’s role names — OneLogin’s separate "Groups" concept is a different attribute). Tick "Include in SAML assertion", AND enable the multi-value flag so every role is sent as its own value.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/onelogin/group-claim-1.png',
+            alt: 'OneLogin groups parameter with the multi-value flag enabled',
+            schematic: {
+              title: 'Parameters → groups',
+              rows: [
+                { label: 'Field name', value: 'groups', as: 'field' },
+                { label: 'Value', value: 'User Roles', as: 'field' },
+                { label: 'Multi-value parameter', value: 'checked', as: 'field' },
+              ],
+            },
+          },
+        ],
+        warning:
+          'Without the multi-value flag OneLogin collapses all roles into one delimited string — group sync then sees a single junk "group". Always enable it.',
+        note: 'The parameter name (groups) must match Kortix’s group claim, prefilled at connect.',
+        doneLabel: 'I’ve added the groups parameter',
+      },
+      {
+        id: 'assign-users',
+        title: 'Assign users to the app',
+        where: 'idp',
+        menuPath: 'OneLogin admin → Users',
+        intro:
+          'A OneLogin user can only sign into an app that is assigned to them — an unassigned user is rejected at sign-in ("app not available"). Assign your test user before testing.',
+        content: [
+          {
+            kind: 'text',
+            text: 'For a single tester: Users → open the test user → Applications tab → "+" → add "Kortix". For a team: Users → Roles → create or edit a Role that includes the Kortix app, then add members to that Role.',
+          },
+        ],
+        note: 'When group sync maps OneLogin Roles, those same Roles are what gate app access — so assigning via a Role does double duty (access + the "groups" value).',
+        doneLabel: 'I’ve assigned the test user to the app',
+      },
+      {
+        id: 'metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
+        where: 'idp',
+        menuPath: 'Your app → SSO → Issuer URL',
+        intro:
+          'On the SSO tab, copy the "Issuer URL" (it is a live, hosted metadata endpoint) and paste it below — keep the "Dynamic configuration" option selected. Prefer this over pasting XML: the hosted URL auto-refreshes if OneLogin rotates the signing certificate.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/onelogin/metadata-1.png',
+            alt: 'OneLogin SSO tab with the Issuer URL and the More Actions SAML Metadata download',
+            schematic: {
+              title: 'SSO',
+              rows: [
+                { label: 'Issuer URL', value: '(paste this — hosted metadata)', as: 'field' },
+                { label: 'More Actions → SAML Metadata', value: 'XML fallback', as: 'button' },
+              ],
+            },
+          },
+        ],
+        note: 'No hosted URL handy? Switch to "Manual configuration" and paste the XML from SSO → More Actions → SAML Metadata instead — it is the same metadata.',
+        doneLabel: 'I’ve added the identity provider metadata',
+      },
+      importStep('groups'),
+      testStep(),
+    ],
+  },
+  {
+    id: 'jumpcloud',
+    name: 'JumpCloud',
+    blurb: 'SAML via a JumpCloud SSO application',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'JumpCloud sends only the groups BOUND to this application, on the "groups" attribute — bind (and map) the groups you want before they appear.',
+      preferredMetadata: 'url',
+      metadataSource:
+        'The SSO app → Copy Metadata URL (a hosted link) — or Export Metadata for the same XML.',
+      metadataUrlPlaceholder: 'https://sso.jumpcloud.com/saml2/<app-id>',
+    },
+    steps: [
+      {
+        id: 'create-app',
+        title: 'Open the SSO application',
+        where: 'idp',
+        menuPath: 'JumpCloud admin → Access → SSO Applications',
+        intro:
+          'In the JumpCloud admin console: Access → SSO Applications → "+ Add New Application" → "Custom Application" (search "Custom SAML App") → "Configure SSO with SAML" → name it "Kortix". This opens the app’s SSO tab.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/jumpcloud/create-app-1.png',
+            alt: 'JumpCloud SSO applications list',
+            schematic: {
+              title: 'Access → SSO Applications',
+              rows: [
+                { label: '+ Add New Application', as: 'button' },
+                { label: 'Custom Application', value: 'search "Custom SAML App"', as: 'field' },
+              ],
+            },
+          },
+        ],
+        doneLabel: 'I’ve opened the SSO application',
+      },
+      {
+        id: 'basic-saml',
+        title: 'SSO configuration',
+        where: 'idp',
+        menuPath: 'Your app → SSO',
+        intro: 'On the SSO tab, paste Kortix’s ACS URL and Entity ID into the two SP fields.',
+        content: [
+          {
+            kind: 'sp-values',
+            acsLabel: 'ACS URL',
+            entityIdLabel: 'SP Entity ID',
+            acsFirst: true,
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/jumpcloud/basic-saml-1.png',
+            alt: 'JumpCloud SSO config with IdP Entity ID, SP Entity ID and ACS URL',
+            schematic: {
+              title: 'SSO configuration',
+              rows: [
+                { label: 'ACS URL', value: '(ACS URL below)', as: 'field' },
+                { label: 'SP Entity ID', value: '(Entity ID below)', as: 'field' },
+                { label: 'IdP Entity ID', value: 'leave as JumpCloud pre-filled it', as: 'field' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Paste the Kortix Entity ID into "SP Entity ID" ONLY. Leave "IdP Entity ID" as the value JumpCloud pre-populates — that is JumpCloud’s own identifier and it flows into the exported metadata for you. Then check "Sign Assertion".',
+          },
+        ],
+        doneLabel: 'I’ve entered the SSO configuration',
+      },
+      {
+        id: 'attributes',
+        title: 'User attribute mapping',
+        where: 'idp',
+        menuPath: 'Your app → SSO → User Attributes',
+        intro:
+          'Under "User Attributes", add each Service-Provider-Attribute-Name → JumpCloud-Attribute-Name pair. The left column is the SAML claim Kortix receives; the right is the JumpCloud user field.',
+        content: [
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'email', source: 'email', required: true },
+              { name: 'id', source: 'email', required: true },
+              { name: 'firstName', source: 'firstname' },
+              { name: 'lastName', source: 'lastname' },
+            ],
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/jumpcloud/attributes-1.png',
+            alt: 'JumpCloud User Attributes mapping',
+            schematic: {
+              title: 'User Attributes',
+              rows: [
+                { label: 'email', value: '→ email', as: 'field' },
+                { label: 'id', value: '→ email', as: 'field' },
+                { label: 'firstName', value: '→ firstname', as: 'field' },
+                { label: 'lastName', value: '→ lastname', as: 'field' },
+              ],
+            },
+          },
+        ],
+        doneLabel: 'I’ve mapped the user attributes',
+      },
+      {
+        id: 'group-claim',
+        title: 'Enable the group attribute',
+        where: 'idp',
+        menuPath: 'Your app → SSO → Group Attributes',
+        intro:
+          'Under "Group Attributes", check "include group attribute" and set the attribute name to "groups".',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/jumpcloud/group-claim-1.png',
+            alt: 'JumpCloud include group attribute set to groups',
+            schematic: {
+              title: 'Group Attributes',
+              rows: [
+                { label: 'include group attribute', value: 'checked', as: 'field' },
+                { label: 'attribute name', value: 'groups', as: 'field' },
+              ],
+            },
+          },
+        ],
+        note: 'JumpCloud only sends groups the application is BOUND to (User Groups tab). Bind each group you plan to map in Kortix; the name must match the connect-step claim.',
+        doneLabel: 'I’ve enabled the group attribute',
+      },
+      {
+        id: 'assign-users',
+        title: 'Bind a user group for access',
+        where: 'idp',
+        menuPath: 'Your app → User Groups',
+        intro:
+          'In JumpCloud a user can only reach an SSO app if a user GROUP they belong to is bound on the app’s "User Groups" tab — there is no per-user assignment. Bind a group before testing, or the sign-in is rejected as "not assigned".',
+        content: [
+          {
+            kind: 'text',
+            text: 'Open the app → "User Groups" tab → tick the group(s) whose members may sign in (create one under User Groups and add your test user first if you have none). Save.',
+          },
+        ],
+        note: 'Binding here does double duty: it grants sign-in access AND selects which groups get sent in the "groups" claim you enabled above.',
+        doneLabel: 'I’ve bound a user group to the app',
+      },
+      {
+        id: 'metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
+        where: 'idp',
+        menuPath: 'Your app → SSO → Copy Metadata URL',
+        intro:
+          'Tick "Declare Redirect Endpoint" FIRST (it changes the generated metadata), then click "Activate" / "Save" — that step generates the app’s signing certificate. Only AFTER saving, copy the "Metadata URL" and paste it below (keep "Dynamic configuration" selected).',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/jumpcloud/metadata-1.png',
+            alt: 'JumpCloud Declare Redirect Endpoint, Save, and Copy Metadata URL',
+            schematic: {
+              title: 'SSO configuration',
+              rows: [
+                { label: 'Declare Redirect Endpoint', value: 'check FIRST', as: 'field' },
+                { label: 'Activate / Save', value: 'generates the signing cert', as: 'button' },
+                { label: 'Copy Metadata URL', value: '(paste this)', as: 'button' },
+              ],
+            },
+          },
+        ],
+        warning:
+          'Order matters: tick "Declare Redirect Endpoint" and Save BEFORE copying metadata — copying before Save yields metadata with the wrong binding or a missing certificate, and Kortix silently gets the wrong SSO endpoint.',
+        note: 'No hosted URL? Switch to "Manual configuration" and paste the XML from "Export Metadata" instead — but the URL auto-refreshes when JumpCloud rotates the cert, so prefer it.',
+        doneLabel: 'I’ve added the identity provider metadata',
+      },
+      importStep('groups'),
+      testStep(),
+    ],
+  },
+  {
+    id: 'pingone',
+    name: 'PingOne',
+    blurb: 'SAML via a PingOne application',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'PingOne sends group NAMES when you map a "groups" attribute to "Group Names" — groups are OFF by default, add the mapping explicitly.',
+      preferredMetadata: 'url',
+      metadataSource: 'The app’s Configuration tab → IdP Metadata URL (a hosted link).',
+      metadataUrlPlaceholder: 'https://auth.pingone.com/<env-id>/saml20/metadata/<app-id>',
+    },
+    steps: [
+      {
+        id: 'create-app',
+        title: 'Open your SAML application',
+        where: 'idp',
+        menuPath: 'PingOne → Connections → Applications',
+        intro:
+          'In the PingOne admin console: Connections → Applications → open the app for Kortix, or click "+" to add one: enter the name "Kortix", choose the "SAML Application" type (not OIDC/SPA/Worker/Native), then Configure.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/pingone/create-app-1.png',
+            alt: 'PingOne Applications list',
+            schematic: {
+              title: 'Connections → Applications → +',
+              rows: [
+                { label: 'Application name', value: 'Kortix', as: 'field' },
+                { label: 'Application type', value: 'SAML Application', as: 'field' },
+              ],
+            },
+          },
+        ],
+        doneLabel: 'I’ve opened the SAML application',
+      },
+      {
+        id: 'basic-saml',
+        title: 'Import the SP metadata',
+        where: 'idp',
+        menuPath: 'Your app → Configuration → SAML',
+        intro:
+          'PingOne derives the ACS URL and Entity ID from Kortix’s SP metadata — you don’t type them separately. On the app’s SAML Configuration page, choose "Import from URL" (NOT the default "Manually Enter"), paste Kortix’s Identifier (Entity ID) into the metadata URL field, and click Import — PingOne auto-fills the ACS URLs and Entity ID.',
+        content: [
+          {
+            kind: 'sp-values',
+            entityIdLabel: 'Import from URL → metadata URL (paste this)',
+            acsLabel: 'ACS URLs — imported for you',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/pingone/basic-saml-1.png',
+            alt: 'PingOne SAML Configuration with the Import from URL option',
+            schematic: {
+              title: 'Configuration → SAML',
+              rows: [
+                { label: 'Provide App Metadata', value: 'Import from URL', as: 'field' },
+                { label: 'Metadata URL', value: '(the Entity ID below)', as: 'field' },
+                { label: 'Import', as: 'button' },
+              ],
+            },
+          },
+        ],
+        note: 'Kortix’s Entity ID IS the SP metadata endpoint, so importing it fills ACS + Audience for you. Pick "Manually Enter" instead and there is no "SP Metadata URL" field — you’d have to type the ACS URL and Entity ID by hand.',
+        doneLabel: 'I’ve imported the SP metadata',
+      },
+      {
+        id: 'attributes',
+        title: 'Attribute mapping',
+        where: 'idp',
+        menuPath: 'Your app → Attribute Mapping',
+        intro:
+          'In "Attribute Mapping", first set the SAML Subject (the "saml_subject" row / Name ID) to "Email Address" — it defaults to "User ID" (a GUID), but Kortix correlates accounts by email. Then add these outgoing SAML attributes (Kortix name → PingOne source):',
+        content: [
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'email', source: 'Email Address', required: true },
+              { name: 'id', source: 'User ID', required: true },
+              { name: 'firstName', source: 'Given Name' },
+              { name: 'lastName', source: 'Family Name' },
+            ],
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/pingone/attributes-1.png',
+            alt: 'PingOne Attribute Mapping with saml_subject, email, id, firstName, lastName',
+            schematic: {
+              title: 'Attribute Mapping',
+              rows: [
+                { label: 'saml_subject (Name ID)', value: 'Email Address', as: 'field' },
+                { label: 'email', value: 'Email Address', as: 'field' },
+                { label: 'id', value: 'User ID', as: 'field' },
+                { label: 'firstName', value: 'Given Name', as: 'field' },
+                { label: 'lastName', value: 'Family Name', as: 'field' },
+              ],
+            },
+          },
+        ],
+        note: 'The saml_subject / Name ID defaults to a GUID — set it to Email Address (format urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress) so the subject matches the email Kortix keys on, belt-and-braces with the email attribute.',
+        doneLabel: 'I’ve mapped the attributes',
+      },
+      {
+        id: 'group-claim',
+        title: 'Add the groups attribute',
+        where: 'idp',
+        menuPath: 'Your app → Attribute Mapping',
+        intro:
+          'Still in Attribute Mapping, add a "groups" attribute mapped to PingOne’s "Group Names" — this sends the names of the user’s groups.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/pingone/group-claim-1.png',
+            alt: 'PingOne groups attribute mapped to Group Names',
+            schematic: {
+              title: 'Attribute Mapping → groups',
+              rows: [{ label: 'groups', value: 'Group Names', as: 'field' }],
+            },
+          },
+        ],
+        note: 'Groups are off by default — without this mapping PingOne sends none. The attribute name (groups) must match the connect-step claim.',
+        doneLabel: 'I’ve added the groups attribute',
+      },
+      {
+        id: 'metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
+        where: 'idp',
+        menuPath: 'Your app → Configuration → IdP Metadata URL',
+        intro:
+          'On the Configuration tab, ENABLE the application, then copy the "IdP Metadata URL" and paste it below.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/pingone/metadata-1.png',
+            alt: 'PingOne Configuration tab with the IdP Metadata URL',
+            schematic: {
+              title: 'Configuration',
+              rows: [
+                { label: 'Enable application', value: 'on', as: 'field' },
+                { label: 'IdP Metadata URL', value: '(paste this)', as: 'field' },
+              ],
+            },
+          },
+        ],
+        note: 'Enable the app first — a disabled PingOne app rejects sign-ins even with correct metadata.',
+        doneLabel: 'I’ve added the identity provider metadata',
+      },
+      importStep('groups'),
+      testStep(),
+    ],
+  },
+  {
+    id: 'auth0',
+    name: 'Auth0',
+    blurb: 'SAML via the Auth0 SAML2 Web App addon',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Auth0’s SAML2 Web App addon does NOT send groups by default — you add a groups claim with an Auth0 Action/Rule. Until then, only email + name arrive.',
+      preferredMetadata: 'url',
+      metadataSource:
+        'The application’s Settings → Advanced Settings → Endpoints → SAML Metadata URL (hosted).',
+      metadataUrlPlaceholder: 'https://<your-tenant>.auth0.com/samlp/metadata/<client-id>',
+    },
+    steps: [
+      {
+        id: 'create-app',
+        title: 'Open your application',
+        where: 'idp',
+        menuPath: 'Auth0 Dashboard → Applications → Applications',
+        intro:
+          'In the Auth0 dashboard: Applications → Applications → open (or create) the application for Kortix. Creating a new one? Choose "Regular Web Application" — the SAML2 addon works regardless of type, but this avoids second-guessing the picker.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/auth0/create-app-1.png',
+            alt: 'Auth0 Applications list',
+            schematic: {
+              title: 'Applications → Applications',
+              rows: [{ label: 'Your application', as: 'field' }],
+            },
+          },
+        ],
+        doneLabel: 'I’ve opened the application',
+      },
+      {
+        id: 'addon',
+        title: 'Enable the SAML2 Web App addon',
+        where: 'idp',
+        menuPath: 'Your app → Addons',
+        intro:
+          'Open the app’s "Addons" tab — it sits in the tab strip at the top of the application page (Quickstart · Settings · Credentials · APIs · Organizations · Addons · Connections), NOT inside the Settings page — and toggle ON "SAML2 Web App". This opens the addon’s Settings modal.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/auth0/addon-1.png',
+            alt: 'Auth0 Addons tab with the SAML2 Web App toggle',
+            schematic: {
+              title: 'Application → Addons',
+              rows: [{ label: 'SAML2 Web App', value: 'toggle ON', as: 'field' }],
+            },
+          },
+        ],
+        doneLabel: 'I’ve enabled the SAML2 Web App addon',
+      },
+      {
+        id: 'basic-saml',
+        title: 'Callback URL and audience',
+        where: 'idp',
+        menuPath: 'SAML2 Web App → Settings',
+        intro:
+          'In the addon’s Settings modal, paste Kortix’s ACS URL into "Application Callback URL". The Entity ID is NOT a form field — it goes inside the JSON.',
+        content: [
+          {
+            kind: 'sp-values',
+            acsLabel: 'Application Callback URL (ACS)',
+            entityIdLabel: 'audience (put in the Settings JSON)',
+            acsFirst: true,
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/auth0/basic-saml-1.png',
+            alt: 'Auth0 SAML2 Web App Application Callback URL field',
+            schematic: {
+              title: 'SAML2 Web App → Settings',
+              rows: [{ label: 'Application Callback URL', value: '(ACS URL below)', as: 'field' }],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'In the "Settings" JSON object below the callback field, set TWO things: (1) "audience" = Kortix’s Entity ID, and (2) force the NameID to the user’s email — it defaults to the opaque Auth0 user_id (auth0|…), which Kortix can’t correlate. Add: "audience": "…/saml/metadata", "nameIdentifierFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress", "nameIdentifierProbes": ["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]. Then scroll down and click "Enable".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/auth0/audience-1.png',
+            alt: 'Auth0 SAML2 Web App Settings JSON with the audience and NameID values',
+            schematic: {
+              title: 'Settings JSON',
+              rows: [
+                { label: '"audience"', value: 'the Entity ID below', as: 'field' },
+                {
+                  label: '"nameIdentifierFormat"',
+                  value: '…nameid-format:emailAddress',
+                  as: 'field',
+                },
+              ],
+            },
+          },
+        ],
+        warning:
+          '#1 Auth0 gotcha: two easy-to-miss values live inside the Settings JSON, not labeled fields — the audience (Entity ID) AND the NameID format. The addon defaults NameID to the Auth0 user_id (auth0|…), so without the emailAddress nameIdentifierFormat above, Kortix correlates on the wrong subject and every sign-in mis-identifies or fails.',
+        doneLabel: 'I’ve set the callback URL, audience, and NameID',
+      },
+      {
+        id: 'metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
+        where: 'idp',
+        menuPath: 'Your app → Settings → Advanced Settings → Endpoints',
+        intro:
+          'Back on the application’s Settings page, expand "Advanced Settings" → "Endpoints" tab, and copy the "SAML Metadata URL". Paste it below.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/auth0/metadata-1.png',
+            alt: 'Auth0 Advanced Settings Endpoints tab with the SAML Metadata URL',
+            schematic: {
+              title: 'Advanced Settings → Endpoints',
+              rows: [{ label: 'SAML Metadata URL', value: '(paste this)', as: 'field' }],
+            },
+          },
+        ],
+        note: 'Groups: the default SAML2 Web App addon sends only email + name. To sync groups, add an Auth0 Action/Rule that emits a claim NAMED exactly "groups" (matching the connect-step claim). Auth0’s built-in group attribute URI "http://schemas.xmlsoap.org/claims/Group" will NOT match — map it to "groups". Then map those names in Kortix.',
+        doneLabel: 'I’ve added the identity provider metadata',
+      },
+      importStep('groups'),
+      testStep(),
+    ],
+  },
+  {
     id: 'custom',
     name: 'Custom SAML',
     blurb: 'Any SAML 2.0 identity provider',
@@ -1262,7 +1921,9 @@ const scimConnectStep = (step: {
   kind: 'scim-token',
 });
 
-const scimTestStep = (opts: { extra?: string; content?: StepBlock[] } = {}): GuideStep => ({
+const scimTestStep = (
+  opts: { extra?: string; content?: StepBlock[]; success?: string } = {},
+): GuideStep => ({
   id: 'test',
   title: 'Verify provisioning',
   kind: 'test',
@@ -1278,7 +1939,8 @@ const scimTestStep = (opts: { extra?: string; content?: StepBlock[] } = {}): Gui
     ...(opts.extra ? [opts.extra] : []),
   ],
   success:
-    'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
+    opts.success ??
+    'The member/group counts below tick up, and your IdP’s provisioning log shows the sync succeeded.',
 });
 
 export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
@@ -1410,6 +2072,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         doneLabel: 'I’ve configured, mapped, assigned, and started provisioning',
       }),
       scimTestStep({
+        success:
+          'The member/group counts below tick up, and in Entra’s Provisioning log every stage (Import, Scope, Match, Perform action) shows Success.',
         extra:
           'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again — or run "Provision on demand" to apply it immediately.',
         content: [
@@ -1545,6 +2209,296 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         doneLabel: 'I’ve assigned people and pushed groups',
       },
       scimTestStep(),
+    ],
+  },
+  {
+    id: 'onelogin',
+    name: 'OneLogin',
+    blurb: 'Automatic provisioning from OneLogin',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Groups pushed from OneLogin Rules are created in Kortix under their OneLogin names.',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        where: 'idp',
+        intro:
+          'OneLogin pushes users and groups to Kortix with its "SCIM Provisioner with SAML" connector — a SEPARATE app from the SAML-only connector. Outbound provisioning is a paid OneLogin tier; the Provisioning tab only appears when your plan includes it.',
+        bullets: [
+          'Connect SAML SSO first — provisioning creates accounts, but users still need SSO to sign in.',
+          'You will add a new SCIM connector app below; the SAML Custom Connector used for SSO does not push users.',
+        ],
+      },
+      scimConnectStep({
+        title: 'Mint a token & connect the SCIM connector',
+        where: 'idp',
+        menuPath: 'OneLogin admin → Applications → Add App',
+        intro: 'Add a OneLogin SCIM connector and point it at the two values shown above.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Applications → Applications → "Add App" → search "SCIM" → pick "SCIM Provisioner with SAML (SCIM v2 Core)" → name it "Kortix" → Save. Then open the app’s "Configuration" tab.',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'Configuration → API Connection',
+              rows: [
+                { label: 'SCIM Base URL', value: '(the Tenant URL above)', as: 'field' },
+                { label: 'SCIM Bearer Token', value: '(the secret above)', as: 'field' },
+                { label: 'Enable', as: 'button' },
+                { label: 'API Status', value: 'Enabled (read-only)', as: 'badge' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Under "API Connection": paste the Tenant URL into "SCIM Base URL" and the secret into "SCIM Bearer Token", then click the "Enable" button (save the app first if prompted). OneLogin validates the endpoint and "API Status" then shows a green "Enabled" — that field is a read-only indicator, not a control you set.',
+          },
+          {
+            kind: 'text',
+            text: 'On the "Parameters" tab, set the "SCIM Username" parameter’s value to the user’s Email — that makes SCIM userName the email Kortix correlates on. Leave the default externalId mapping as-is.',
+          },
+          {
+            kind: 'text',
+            text: 'On the "Provisioning" tab, tick "Enable provisioning". Then UNCHECK "Require admin approval before this action is performed" for Create, Update, and Delete — otherwise every change waits in a pending queue and nothing reaches Kortix until you approve it by hand.',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'Provisioning → Workflow',
+              rows: [
+                { label: 'Enable provisioning', value: 'checked', as: 'field' },
+                { label: 'Require admin approval — Create', value: 'unchecked', as: 'field' },
+                {
+                  label: 'Require admin approval — Update / Delete',
+                  value: 'unchecked',
+                  as: 'field',
+                },
+              ],
+            },
+          },
+        ],
+        success:
+          'API Status shows a green "Enabled", the "SCIM Username" parameter maps to Email, and provisioning is enabled without the admin-approval hold.',
+        warning:
+          '#1 OneLogin gotcha: users seem to sync but nothing lands in Kortix — the actions are stuck in the Provisioning "pending" queue because "Require admin approval" is still checked. Uncheck it for Create/Update/Delete (or approve the queue).',
+        doneLabel: 'I’ve connected and enabled provisioning',
+      }),
+      {
+        id: 'assign',
+        title: 'Assign users and push groups',
+        where: 'idp',
+        menuPath: 'Your app → Users / Rules',
+        intro:
+          'A user is provisioned only once this SCIM app is assigned to them; group membership is pushed with a Rule.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Assign the app: Users → open a user → "Applications" → "+" → add "Kortix" (or assign the app to a Role so everyone in that Role is provisioned).',
+          },
+          {
+            kind: 'text',
+            text: 'Push groups: on the app’s "Provisioning" tab, under "Entitlements", click "Refresh" so Kortix’s groups load. Then on the "Rules" tab add a Rule — a condition (e.g. member of a OneLogin Role) with the action "Set Groups in Kortix" → the group.',
+          },
+          {
+            kind: 'text',
+            text: 'After saving the rule, click "Reapply entitlement mappings" (app → Users → More Actions) to push groups to users who are ALREADY assigned — otherwise existing members’ groups only sync on their next change.',
+          },
+        ],
+        note: 'Only assigned users are provisioned; users created directly in Kortix are not linked back to OneLogin.',
+        doneLabel: 'I’ve assigned users and pushed groups',
+      },
+      scimTestStep({
+        success:
+          'The member/group counts below tick up, and OneLogin’s Provisioning log shows each user/group actioned (not left "pending").',
+      }),
+    ],
+  },
+  {
+    id: 'jumpcloud',
+    name: 'JumpCloud',
+    blurb: 'Automatic provisioning from JumpCloud',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'The JumpCloud user groups you bind to the app are created in Kortix under their JumpCloud names.',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        where: 'idp',
+        intro:
+          'JumpCloud pushes users and groups to Kortix from a "Custom Application" using its Identity Management (SCIM) tab. Provisioning needs the JumpCloud SSO entitlement.',
+        bullets: [
+          'Connect SAML SSO first so provisioned users can sign in.',
+          'You can reuse the same Custom Application you made for SAML SSO — SCIM lives on its "Identity Management" tab.',
+        ],
+      },
+      scimConnectStep({
+        title: 'Mint a token & connect Identity Management',
+        where: 'idp',
+        menuPath: 'JumpCloud admin → Access → SSO Applications → your app → Identity Management',
+        intro:
+          'On the app’s "Identity Management" tab, turn on SCIM and point it at the two values shown above.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Open the app → "Identity Management" tab. In its Configuration set "API Type" = "SCIM API" and "SCIM Version" = "SCIM 2.0".',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'Identity Management → Configuration',
+              rows: [
+                { label: 'API Type', value: 'SCIM API', as: 'field' },
+                { label: 'SCIM Version', value: 'SCIM 2.0', as: 'field' },
+                { label: 'Base URL', value: '(the Tenant URL above)', as: 'field' },
+                { label: 'Token Key', value: '(the secret above)', as: 'field' },
+                { label: 'Test Connection', as: 'button' },
+                { label: 'Activate', as: 'button' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Paste the Tenant URL into "Base URL" and the secret into "Token Key" (auth is HTTP Header → Authorization: Bearer). Enter a FRESH test-user email that does NOT already exist in Kortix, click "Test Connection", then click "Activate" — do NOT click Save during the test-user step or you lose the configuration.',
+          },
+          {
+            kind: 'text',
+            text: 'Under "Export Attribute Mapping", confirm the user’s email flows into SCIM "userName" — JumpCloud sets this by default, so there’s usually nothing to change. Kortix correlates on that email.',
+          },
+        ],
+        success:
+          'Test Connection passes with a fresh test email, and the app’s Identity Management shows Activated.',
+        warning:
+          '#1 JumpCloud gotcha: Test Connection fails because the test-user email already exists in Kortix — it must be a brand-new address. (And click "Activate", not "Save", during that step.)',
+        doneLabel: 'I’ve connected and activated Identity Management',
+      }),
+      {
+        id: 'assign',
+        title: 'Bind groups to provision users',
+        where: 'idp',
+        menuPath: 'Your app → Identity Management (enable the checkbox) + User Groups tab',
+        intro:
+          'JumpCloud provisions the members of the user groups BOUND to this app — binding a group both scopes who is pushed and syncs the group itself.',
+        content: [
+          {
+            kind: 'text',
+            text: 'On the "Identity Management" tab itself (once Test Connection has succeeded), check "Enable management of User Groups and Group Membership in this application" so bound groups (and their members) are pushed to Kortix.',
+          },
+          {
+            kind: 'text',
+            text: 'On the app’s "User Groups" tab, tick the JumpCloud user group(s) whose members should be provisioned, then Save. Bind at least one group — with none bound, no users are pushed.',
+          },
+        ],
+        note: 'Scope is group-based: membership of the bound groups defines who is provisioned. Unbinding a group deprovisions its members.',
+        doneLabel: 'I’ve bound the groups to provision',
+      },
+      scimTestStep({
+        success:
+          'The member/group counts below tick up as JumpCloud pushes the bound groups and their members.',
+      }),
+    ],
+  },
+  {
+    id: 'pingone',
+    name: 'PingOne',
+    blurb: 'Automatic provisioning from PingOne',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'The internal PingOne groups you select on the provisioning rule are created in Kortix under their PingOne names.',
+    },
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        where: 'idp',
+        intro:
+          'PingOne pushes users and groups to Kortix through a generic "SCIM Outbound" connection under Integrations → Provisioning. Use the modern PingOne cloud console (Workforce) — the legacy "PingOne for Enterprise" product does not have this.',
+        bullets: [
+          'Connect SAML SSO first so provisioned users can sign in.',
+          'Your PingOne environment needs the Provisioning service enabled (standard on PingOne cloud, no separate SCIM SKU).',
+        ],
+      },
+      scimConnectStep({
+        title: 'Mint a token & create the SCIM Outbound connection',
+        where: 'idp',
+        menuPath: 'PingOne → Integrations → Provisioning → New Connection',
+        intro:
+          'Create a "SCIM Outbound" provisioning connection and point it at the two values shown above.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Integrations → Provisioning → "+ New Connection" → on the "Identity Store" line click "Select" → choose the "SCIM Outbound" tile → "Select". Name it "Kortix", then "Configure Authentication".',
+          },
+          {
+            kind: 'schematic',
+            schematic: {
+              title: 'SCIM Outbound → Configuration',
+              rows: [
+                { label: 'SCIM Base URL', value: '(the Tenant URL above)', as: 'field' },
+                { label: 'Users Resource', value: '/Users', as: 'field' },
+                { label: 'Groups Resource', value: '/Groups', as: 'field' },
+                { label: 'SCIM Version', value: '2.0', as: 'field' },
+                { label: 'Authentication Method', value: 'OAuth 2 Bearer Token', as: 'field' },
+                { label: 'OAuth Access Token', value: '(the secret above)', as: 'field' },
+                { label: 'Test connection', as: 'button' },
+                { label: 'Enable connection (toggle)', value: 'on / blue', as: 'field' },
+              ],
+            },
+          },
+          {
+            kind: 'text',
+            text: 'Paste the Tenant URL into "SCIM Base URL", set "Users Resource" = /Users, "Groups Resource" = /Groups, "SCIM Version" = 2.0. Set "Authentication Method" = "OAuth 2 Bearer Token" and paste the secret into "OAuth Access Token". Click "Test connection", then Save.',
+          },
+          {
+            kind: 'text',
+            text: 'ENABLE the connection itself: click the toggle at the top of the connection’s details panel so it turns blue. A saved-but-disabled connection provisions NOTHING even with an Active rule — this is the easiest step to miss.',
+          },
+          {
+            kind: 'text',
+            text: 'Set userName to the email Kortix correlates on: open the "Attribute Mapping" section (separate from the auth screen), in the "PingOne Directory" column expand "Username" and select "Email Address". Then in the connection’s preferences/actions set "User Identifier" = userName and "User Filter Expression" = `userName eq "%s"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.',
+          },
+        ],
+        success:
+          'Test connection passes, the connection toggle is enabled (blue), and the Username attribute maps to Email Address with a `userName eq "%s"` filter.',
+        warning:
+          '#1 PingOne gotcha: everything looks configured but zero users sync — the CONNECTION toggle is still off (it defaults off), or PingOne is sending its internal username instead of the email. Enable the connection toggle, map "Username" → "Email Address", and set the filter `userName eq "%s"`.',
+        doneLabel: 'I’ve created, enabled, and tested the SCIM connection',
+      }),
+      {
+        id: 'assign',
+        title: 'Scope users and select groups',
+        where: 'idp',
+        menuPath: 'PingOne → Integrations → Provisioning → Rules',
+        intro: 'A provisioning Rule decides which users and groups this connection pushes.',
+        content: [
+          {
+            kind: 'text',
+            text: 'Go to Integrations → Provisioning → "Rules" tab → open (or add) the rule for this connection → its "Directory" tab. Scope which people are provisioned with a User Filter ("Add Condition" on a population or user attribute) and/or by selecting Populations.',
+          },
+          {
+            kind: 'text',
+            text: 'Push groups: still in the rule’s "Directory" tab, click the pencil next to "Groups" → "Search Group Name" → pick the internal groups → review under "Selected Groups" → Save. PingOne pushes those groups and their memberships to /Groups.',
+          },
+          {
+            kind: 'text',
+            text: 'Set the rule to Active/enabled — PingOne then runs an initial full sync and incremental syncs on directory changes.',
+          },
+        ],
+        note: 'Only internal PingOne groups can be pushed; membership scope follows the rule’s User Filter and Populations.',
+        doneLabel: 'I’ve scoped users, selected groups, and activated the rule',
+      },
+      scimTestStep({
+        success:
+          'The member/group counts below tick up once the rule is Active and PingOne runs its first sync.',
+      }),
     ],
   },
   {

@@ -535,6 +535,33 @@ claim is closed.
 
 ---
 
+### 2026-07-18 — session `connectors-discover-flag` (completion)
+
+Completed the additive Discover integration-catalog SDK restoration as a separate,
+per-project experimental connector marketplace. Existing Easy Connect remains intact
+and default; `connectors_api_discover` is available but off by default. Pipedream
+appears only as separately labelled OAuth alternatives. Runtime and type snapshots
+contain additions only; no current export was removed or renamed.
+
+**TDD and live evidence:** the focused contract/UI run passed **46 / 0** and the
+focused API/catalog/router run passed **56 / 0**. An authenticated local project
+round-tripped the flag false -> true -> false, queried live HubSpot catalogue and
+surface endpoints, and resolved MCP, CLI, REST, and official Postman variants with
+source-derived bearer auth. The official HubSpot Postman repository materialized as
+an active connector with **1,223 actions**, `authSecret: credential`, and no stored
+credential; live Pipedream HubSpot search returned OAuth records only. ke2e coverage
+passed at **409 / 497 routes**.
+
+**Final SDK gates after rebasing onto current `origin/main`:** typecheck exited 0;
+the full SDK suite reported **1128 pass / 0 fail** across 84 files with 5029
+assertions; and the packed install smoke built, packed, installed, imported, and
+constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
 ### 2026-07-13 — session `session-base-branches` (completion)
 
 Completed the additive session branch-environment surface in implementation
@@ -809,3 +836,189 @@ The exact self-host fast E2E also reported **24 pass / 0 fail**.
 snapshot-locked, install-verified, and the self-host CLI contract is green.
 
 - 2026-07-17 — additive: `PtyMutationOptions` + `ptyMutationOverrides`, `useCreatePty`/`useUpdatePty` accept optional `onError` so hosts can keep pty errors out of global toasts (web terminal UX). Surface snapshot re-recorded (adds only).
+
+---
+
+### 2026-07-17 — session `postman-connectors` (claim)
+
+Claimed the additive Postman connector surface within the user-directed
+end-to-end Postman ingestion rollout. The SDK scope is deliberately narrow: add
+`postman` to existing connector provider unions and preserve the current
+`ConnectorDraftInput` API. No exported name is renamed or removed. Design and
+execution plan: `docs/specs/2026-07-17-postman-connectors.md` and
+`docs/plans/2026-07-17-postman-connectors.md`.
+
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `postman-connectors` (completion)
+
+Completed the additive Postman connector provider contract. The published SDK
+now accepts and reports `postman` anywhere the existing connector surfaces
+accept a provider, without renaming or removing an exported symbol.
+
+**TDD evidence:** the focused connector contract initially rejected `postman`,
+then passed after the provider union was widened. **Final SDK gates:**
+`pnpm --filter @kortix/sdk typecheck` exited 0; `pnpm --filter @kortix/sdk test`
+reported **1113 pass / 0 fail** across 82 files with 4995 assertions; and
+`pnpm --filter @kortix/sdk smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the SDK change is additive, its complete
+runtime and type-level public surfaces remain snapshot-locked, and the packed
+consumer install path is verified. The enclosing API/CLI/UI Postman rollout
+retains its own merge, deploy, and live-dev gates.
+
+**Post-rebase gate addendum:** after rebasing onto `origin/main` at
+`bcb2a2afa`, the SDK typecheck remained green; the full suite reported
+**1121 pass / 0 fail** across 84 files with 5005 assertions; and the packed
+install smoke again passed. **Shippable to production: YES.**
+
+---
+
+### 2026-07-17 — session `discover-marketplace` (claim)
+
+Claimed the additive Discover integration-catalog SDK surface for the user-directed
+unified marketplace rollout. The SDK will expose integrations.sh catalog records and
+their executable variants, while Pipedream entries remain separate, explicitly
+labelled OAuth-only alternatives. Existing connector APIs and exported names remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and finish
+with typecheck, full-suite, and packed-install smoke evidence.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `discover-marketplace` (completion)
+
+Completed the additive Discover catalogue SDK surface. The published client now
+exposes typed integrations.sh list/detail calls plus
+`project(id).connectors.discover.{list,detail}`. Pipedream remains a separate
+existing catalogue surface and its app contract is narrowed to the OAuth-only
+records returned by the API. Runtime and type snapshots contain additions only;
+no exported name was removed or renamed.
+
+**TDD and live evidence:** the focused API/Postman/SDK/UI run passed **96 tests / 0
+failures**. A real authenticated local flow searched HubSpot through the Discover
+API, resolved its direct MCP/docs/CLI/Postman variants, verified the official
+Postman repository requires bearer auth, and materialized **1,223 actions** with
+zero sync errors. The live Pipedream search returned only `authType: oauth`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1121 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository merge, Deploy
+Dev, and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (claim)
+
+Claimed the user-directed rollback of the additive Discover catalogue SDK surface
+while preserving the earlier first-class Postman connector provider contract. The
+rollback removes only the integrations.sh list/detail APIs and facade bindings that
+shipped in PR #4920. Full SDK typecheck, suite, and packed-install smoke gates are
+required before completion.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-17 — session `revert-discover-marketplace` (completion)
+
+Completed the user-directed rollback of the Discover catalogue SDK surface from
+PR #4920. The earlier first-class Postman provider remains accepted by connector
+drafts and responses; only the integrations.sh list/detail functions and
+`project(id).connectors.discover` facade binding were removed.
+
+**Focused evidence:** executor/Postman tests passed **68 / 0**; the restored
+Connectors/Channels source regression passed **6 / 0**; API typecheck exited 0;
+and the ke2e coverage gate passed at **405 / 493 routes** with the two Discover
+routes absent.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1119 pass / 2 skip / 0 fail** across 84 files with 4999
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for this explicitly requested rollback. The two
+skips are the pre-existing browser-bundle tests that require a bundle build.
+
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (claim)
+
+Claimed the user-directed source-agnostic connector authentication discovery
+work. Postman, OpenAPI, and every other supported connector source will preserve
+usable authentication metadata, normalize it into one additive typed contract,
+and prefill connector setup while leaving secret values and interactive consent
+to the user. Existing connector draft fields and provider behavior remain
+backward compatible. Implementation will follow RED -> GREEN -> REFACTOR and
+finish with the full SDK typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-18 — session `connector-auth-discovery` (completion)
+
+Completed the additive connector authentication discovery surface. The SDK now
+exposes typed candidates and `project(id).connectors.auth.discover(input)`, while
+connector creation keeps omitted auth as auto-detect and explicit `none` as a
+durable opt-out. No exported name was removed or renamed.
+
+**TDD and live evidence:** the focused API/parser/discovery run passed **101 / 0**.
+The real HubSpot Postman-managed repository detected bearer auth across **1,223**
+operations; authenticated connector creation synced **1 / 0 errors** and
+materialized **1,223 actions** with `authSecret: credential` and `secretSet: false`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1120 pass / 2 skip / 0 fail** across 84 files with 5005
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository PR, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-18 — session `gateway-provider-key-verify` (completion)
+
+Self-contained addition (not part of the Now chain — outside its own PR/plan):
+`verifyGatewayProvider(projectId, providerId)` client fn +
+`GatewayProviderVerifyResult`/`GatewayProviderVerifyStatus` types, backing a new
+`POST /projects/:id/gateway/providers/:providerId/verify` endpoint that runs one
+cheap live completion through a connected BYOK provider's credential and
+classifies it `verified`/`invalid`/`unknown`/`not_connected` (closes the LLM
+provider UI's "Connected ≠ proven working" gap). No exported name renamed or
+removed — additive only.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1122 pass / 2 skip / 0 fail** across 84 files with 5009
+assertions; and `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully. Public-surface
+snapshots re-recorded — diff is additive only (`verifyGatewayProvider`,
+`GatewayProviderVerifyResult`, `GatewayProviderVerifyStatus`).
+
+**Shippable to production: YES** for the SDK surface. apps/api route + apps/web
+UI land in the same PR (#4990); see that PR for backend/frontend evidence.
+
+---
+
+### 2026-07-18 — session `connectors-discover-flag` (claim)
+
+Claimed the user-directed restoration of the additive Discover integration-catalog
+SDK surface as a separate, per-project experimental connector marketplace. Existing
+Easy Connect remains unchanged; Discover is explicit opt-in and Pipedream entries
+remain separate OAuth-only alternatives. The prior additive SDK names are restored
+without removing or renaming any current export. Implementation will finish with
+focused RED -> GREEN coverage, full SDK typecheck/test/packed-install gates, real
+local browser/API proof, and the repository merge/deploy/live-dev lifecycle.
+
+**Status:** IN PROGRESS.

@@ -29,6 +29,7 @@ export {
   UpstreamHttpError,
   defaultIsRetryable,
   indicatesUpstreamDown,
+  looksLikeTerminalAuthFailure,
 } from './errors';
 export type { NoUpstreamReasonCode, UpstreamErrorKind } from './errors';
 
@@ -38,8 +39,17 @@ export type { CostBreakdown, TokenUsage } from './usage';
 export { extractUsageFromJson, extractUsageFromSseBuffer } from './usage';
 export type { ExtractedUsage } from './usage';
 
-export { buildUpstreamRequest } from './transports';
-export type { UpstreamRequest } from './transports';
+export {
+  anthropicMessagesToChat,
+  chatJsonToAnthropicMessage,
+  chatSseToAnthropicSse,
+} from './ingress/anthropic-messages';
+export type {
+  AnthropicContentBlock,
+  AnthropicMessage,
+  AnthropicMessagesRequest,
+  AnthropicTool,
+} from './ingress/anthropic-messages';
 
 export { createModelFallbackPolicyEngine } from './routing';
 export type { ModelFallbackPolicyEngine } from './routing';
@@ -57,13 +67,17 @@ export type {
   ModelFallbackCondition,
   ModelFallbackPolicy,
   ModelFallbackPolicyMatch,
+  ModelGenerationDefaults,
   ModelRouteInput,
   ModelRoutePlan,
   ModelCatalog,
   ModelInfo,
+  ModelReasoningOption,
+  ModelCost,
+  ModelCostTier,
+  ModelModalities,
   ProviderKind,
   TokenCounts,
-  TranslationSidecarConfig,
   UpstreamDescriptor,
   UsageEvent,
 } from './domain';

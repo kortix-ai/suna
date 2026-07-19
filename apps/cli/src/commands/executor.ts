@@ -1,6 +1,6 @@
 /**
  * `kortix executor` — the agent's interface to every configured integration
- * (Pipedream / MCP / OpenAPI / GraphQL / HTTP), absorbed from the old in-sandbox
+ * (Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), absorbed from the old in-sandbox
  * `executor` shim into the one kortix CLI.
  *
  * Three faces over ONE core (see ../executor/gateway.ts):
@@ -27,7 +27,7 @@ import {
 import { runExecutorMcpServer } from '../executor/mcp.ts';
 import { CliError, out, parseExecArgs } from '../executor/io.ts';
 
-const PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
+const PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
 // Built-in channels are never added/connected through the executor — the
 // platform materializes their connectors automatically after the channel is
@@ -50,7 +50,7 @@ function rejectBuiltinChannel(slug: string): void {
 // Build a connector draft (ConnectorDraft on the API) from CLI flags.
 function connectorDraftFromFlags(slug: string, flags: Record<string, string | undefined>): Record<string, unknown> {
   const provider = flags.provider;
-  if (!provider) throw new CliError('--provider is required (pipedream|mcp|openapi|graphql|http)', 'USAGE');
+  if (!provider) throw new CliError('--provider is required (pipedream|mcp|openapi|postman|graphql|http)', 'USAGE');
   if (!PROVIDERS.includes(provider)) throw new CliError(`--provider must be one of ${PROVIDERS.join(', ')}`, 'USAGE');
   const draft: Record<string, unknown> = { slug, provider };
   if (flags.name) draft.name = flags.name;

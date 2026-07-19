@@ -1,0 +1,143 @@
+---
+title: "How we keep our content from going stale"
+description: The content-refresh agent we run on Kortix — a weekly agent that finds decaying marketing and blog pages via Search Console, refreshes the copy, stats, and internal links, and opens a PR for review.
+date: "2026-04-22"
+author: team
+tags:
+  - Marketing
+  - Case Study
+  - Enterprise
+template: content-refresh
+---
+
+Most published content doesn't die all at once. A comparison page that used to
+rank on page one slides to page two as a competitor updates their pricing. A
+blog post cites a stat from two years ago and a reader notices. A guide links
+to a feature we renamed six months back. None of it is broken enough to
+trigger an alert, so it just sits there, quietly losing impressions, until
+someone happens to look.
+
+We run a content-refresh agent on Kortix that watches for that decay every
+week and does something about it. It reads Search Console for pages losing
+impressions and clicks, cross-references them against our content repo,
+refreshes the copy, the stats, and the internal links, and opens a PR. It
+never publishes anything itself — a human reviews and merges.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Weekly cron</Fact>
+  <Fact label="Connected systems">Google Search Console · GitHub</Fact>
+  <Fact label="Mode">Reusable session · PR only, never publishes</Fact>
+</KeyFacts>
+
+## The problem
+
+Nobody schedules time to re-read a two-year-old blog post. Content gets
+written once, published, and then left alone unless it's actively broken.
+Meanwhile the world underneath it keeps moving: prices change, product names
+change, competitors update their own pages, and search intent drifts. Search
+Console sees all of that as a slow decline in impressions and clicks per page,
+but nobody is watching that report on a schedule, and even when someone is,
+"this page is declining" doesn't tell you what to fix.
+
+Doing it manually doesn't scale either. A content team can audit a handful of
+pages a quarter if they're disciplined about it, but a site with hundreds of
+pages generates decay faster than any manual process can keep up with, and the
+same handful of high-traffic pages get all the attention while the long tail
+quietly rots.
+
+## What we built
+
+On Kortix, a weekly cron re-prompts a **persistent session** — the same agent,
+picking up where last week left off. It pulls the pages losing the most
+impressions and clicks from Search Console, cross-references them against our
+content repo, and rotates through them so the same three pages don't get all
+the attention while the rest decay untouched. For each page it picks that
+week, it refreshes the copy that's gone stale, updates any numbers or stats
+that have aged out, fixes internal links that point at renamed or superseded
+pages, and opens one PR per run. It never pushes to the live branch and never
+merges its own work.
+
+## How it works
+
+<Steps>
+<Step title="Run on a weekly reusable session">
+
+A **cron trigger** fires the agent once a week, and it re-prompts a **reusable
+session** rather than starting fresh. That matters here: refreshing every
+decaying page at once would be disruptive, so the agent works through a
+rotation, and the only way to rotate fairly is to remember what it already
+touched.
+
+</Step>
+<Step title="Find what's decaying">
+
+Through a scoped **connector**, the agent reads Google Search Console for the
+site: impressions and clicks per page over the trailing window compared to the
+window before it. Pages with the sharpest decline, weighted by how much
+traffic they still carry, become candidates.
+
+</Step>
+<Step title="Cross-reference the content repo and rotate coverage">
+
+The agent checks its **ledger** — which pages it refreshed and when — before
+picking this week's targets. A page that was refreshed three weeks ago drops
+in priority even if it's still declining; a page that's never been touched
+moves up. This is what keeps the rotation from fixating on the same few
+high-traffic pages every week.
+
+</Step>
+<Step title="Refresh the copy, stats, and internal links">
+
+For each page in this week's batch, the agent opens the source in
+**GitHub**, updates copy that reads as dated, refreshes numbers and stats that
+have gone stale, and repoints internal links that reference renamed or
+retired pages. It works on an isolated branch, never on the live one.
+
+</Step>
+<Step title="Open a PR and stop">
+
+The agent opens one PR per run summarizing what changed on which pages and
+why, using the **`gh` CLI** authenticated with a scoped `GH_TOKEN`. It never
+publishes and never merges. A human reviews the diff and decides what ships.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly cron re-prompts a **reusable session** that reads decay signals
+  from Search Console, rotates coverage using its own **ledger**, and edits
+  content on an isolated branch. The only output is a PR — never a push to the
+  live branch.
+</Callout>
+
+## Guardrails
+
+The agent edits marketing and blog copy, so what it can do without a human is
+tightly bounded:
+
+- **PR only, never publish.** The agent opens a pull request and stops. It
+  never pushes to the live branch and never merges its own work.
+- **Isolation.** Every run happens in its own sandbox, on its own branch. The
+  live content branch is never touched directly.
+- **Scoped secrets.** The `GH_TOKEN` used by the `gh` CLI is encrypted in the
+  Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Read-only search data.** Search Console access is read-only; the agent
+  can see decay signals but cannot change anything in Search Console itself.
+- **Everything is code.** The rotation ledger, the refresh rules, and the
+  agent's permissions are files in the repo, changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every week" label="A new batch of decaying pages picked up and refreshed" />
+  <Stat value="PR only" label="Nothing published without a human review" />
+  <Stat value="0 repeats" label="Ledger-driven rotation so coverage doesn't fixate on the same pages" />
+</StatGrid>
+
+Pages that used to decay silently for months now get caught within weeks of
+losing traction, refreshed on a rotation that reaches the whole site instead
+of just the pages someone happened to remember. The agent finds the decay and
+does the editing; the team still decides what goes live.

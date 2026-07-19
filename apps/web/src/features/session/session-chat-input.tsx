@@ -23,6 +23,7 @@ import {
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { isImageFile } from '@/lib/utils/file-utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 import {
@@ -42,7 +43,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   mergeFailedSubmissionFiles,
@@ -57,6 +58,7 @@ import {
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
@@ -115,6 +117,29 @@ export interface FlatModel {
   free?: boolean;
   /** Provider source (env, api, config, custom) */
   providerSource?: string;
+  /**
+   * The REAL upstream provider this model resolves against ('anthropic',
+   * 'openai', 'codex', 'kortix', ...) — carried explicitly off the gateway's
+   * served model (`GatewayModel.provider`, apps/api's catalog-models.ts) so
+   * the picker never has to recover it by string-splitting `modelID`. Every
+   * gateway model is registered under `providerID: 'kortix'`; this is the
+   * field that identifies who ACTUALLY serves it. Falls back to undefined
+   * for providers/models predating this field (e.g. a stale baked catalog on
+   * an old sandbox image) — consumers should still fall back to splitting
+   * `modelID` in that case.
+   */
+  provider?: string;
+  /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
+   *  the model exposes one — same shape the composer's effort selector reads
+   *  off the baked/live catalog, threaded onto the live per-session model too. */
+  reasoningOptions?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  /** Free-text blurb models.dev publishes for the model. */
+  description?: string;
+  /** True when the model's weights are publicly released (open-weights) vs.
+   *  closed API-only. models.dev's `open_weights` field, mirrored. */
+  openWeights?: boolean;
+  /** When models.dev last refreshed this model's own entry. */
+  lastUpdated?: string;
 }
 
 function catalogModelFor(providerID: string, modelID: string) {
@@ -176,6 +201,16 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
           : undefined,
         free: (model as any).free === true,
         providerSource: (p as any).source,
+        provider: typeof (model as any).provider === 'string' ? (model as any).provider : undefined,
+        reasoningOptions: Array.isArray((model as any).reasoning_options)
+          ? (model as any).reasoning_options
+          : undefined,
+        description:
+          typeof (model as any).description === 'string' ? (model as any).description : undefined,
+        openWeights:
+          typeof (model as any).open_weights === 'boolean' ? (model as any).open_weights : undefined,
+        lastUpdated:
+          typeof (model as any).last_updated === 'string' ? (model as any).last_updated : undefined,
       });
     }
   }
@@ -528,25 +563,6 @@ export type AttachedFile =
       isImage: boolean;
     };
 
-function isImageFile(file: File): boolean {
-  if (file.type.startsWith('image/')) return true;
-  // Fallback: check extension for when MIME type is missing (e.g. pasted files)
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  return [
-    'jpg',
-    'jpeg',
-    'png',
-    'gif',
-    'webp',
-    'svg',
-    'bmp',
-    'ico',
-    'heic',
-    'heif',
-    'avif',
-  ].includes(ext);
-}
-
 // ============================================================================
 // Attachment Preview Strip — grid-style file cards
 // ============================================================================
@@ -716,8 +732,10 @@ function AttachmentPreview({
             </div>
             {/* Remove button */}
             <button
+              type="button"
               onClick={() => onRemove(i)}
               className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
+              aria-label={`Remove ${name}`}
             >
               <X className="h-3 w-3" />
             </button>
@@ -1146,6 +1164,9 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   /** Session ID — used for message queue, todo chip, and mention filtering */
   sessionId?: string;
+  /** Project ID — lets the reasoning-effort control read/write this
+   *  project's per-model generation config (see reasoning-effort-selector.tsx). */
+  projectId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
   /**
@@ -1222,7 +1243,7 @@ export interface SessionChatInputProps {
   escCount?: number;
 }
 
-export function SessionChatInput({
+function SessionChatInputImpl({
   onSend,
   isBusy = false,
   queuedMessages,
@@ -1246,6 +1267,7 @@ export function SessionChatInput({
   onVariantChange,
   messages,
   sessionId,
+  projectId,
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
@@ -2291,6 +2313,7 @@ export function SessionChatInput({
                   }
                 }}
                 placeholder=""
+                aria-label="Message input"
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
@@ -2322,6 +2345,7 @@ export function SessionChatInput({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                    aria-label="Attach files"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
@@ -2359,6 +2383,13 @@ export function SessionChatInput({
                   onSelect={onVariantChange}
                 />
               )}
+              {/* Reasoning-effort control — independent of the legacy opencode
+                  variant list above. Renders nothing unless the selected
+                  model actually exposes a reasoning_options effort knob (see
+                  reasoning-effort-selector.tsx for why this is capability-
+                  gated off the live catalog rather than the empty variant
+                  list models.dev models never populate). */}
+              <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
             </div>
 
             {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
@@ -2475,3 +2506,12 @@ export function SessionChatInput({
     </div>
   );
 }
+
+/**
+ * Memoized so the input subtree doesn't re-render on every streaming token.
+ * `SessionChat` passes hooked-up (`useCallback`/`useMemo`) props for exactly
+ * this reason — see the "Stable props for <SessionChatInput>" block in
+ * session-chat.tsx. If a new inline arrow/object/array literal prop is added
+ * to a `<SessionChatInput>` call site, this memo silently stops helping.
+ */
+export const SessionChatInput = memo(SessionChatInputImpl);

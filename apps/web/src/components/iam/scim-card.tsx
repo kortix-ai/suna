@@ -12,6 +12,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { listAccountMembers } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Users } from 'lucide-react';
@@ -127,11 +128,10 @@ function formatRelative(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
-  try {
-    await navigator.clipboard.writeText(value);
+async function copyValue(value: string, successMsg = 'Copied to clipboard') {
+  if (await copyToClipboard(value)) {
     successToast(successMsg);
-  } catch {
+  } else {
     errorToast('Copy failed — select and copy manually');
   }
 }
@@ -218,7 +218,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 variant="outline"
                 size="icon"
                 aria-label="Copy SCIM base URL"
-                onClick={() => copyToClipboard(scimBaseUrl, 'SCIM URL copied')}
+                onClick={() => copyValue(scimBaseUrl, 'SCIM URL copied')}
               >
                 <Copy className="size-3.5 shrink-0" />
               </Button>
@@ -437,7 +437,7 @@ function CreateScimTokenDialog({
                     variant="outline"
                     size="icon"
                     aria-label="Copy token"
-                    onClick={() => copyToClipboard(created.secret, 'Token copied')}
+                    onClick={() => copyValue(created.secret, 'Token copied')}
                   >
                     <Copy className="size-3.5 shrink-0" />
                   </Button>
@@ -453,7 +453,7 @@ function CreateScimTokenDialog({
                     variant="outline"
                     size="icon"
                     aria-label="Copy URL"
-                    onClick={() => copyToClipboard(scimBaseUrl, 'URL copied')}
+                    onClick={() => copyValue(scimBaseUrl, 'URL copied')}
                   >
                     <Copy className="size-3.5 shrink-0" />
                   </Button>

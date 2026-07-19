@@ -2,12 +2,14 @@ import type {
   GatewayConfig,
   GatewayLogger,
   ModelFallbackCondition,
+  ModelGenerationDefaults,
   UpstreamDescriptor,
 } from '../domain';
 import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
+import { applyGenerationDefaults } from './generation-defaults';
 import type { TraceEmitter, TraceFields } from './trace';
 
 // 4xx statuses that mean "this upstream won't serve you right now" rather than
@@ -66,6 +68,13 @@ function suggestionFor(status: number): string {
 }
 
 export interface FailoverContext {
+  /** The RAW request body — i.e. WITHOUT any project/account-configured
+   *  generation defaults injected. Each candidate attempt layers in its OWN
+   *  freshly-clamped defaults via `generationDefaultsForModel` below (see
+   *  the loop) rather than trusting a single pre-baked payload for every
+   *  candidate, which would silently forward the PRIMARY model's defaults
+   *  (temperature, reasoning_effort, max_tokens) to a fallback candidate
+   *  with different capabilities. */
   candidates: RoutedUpstreamCandidate[];
   payload: Record<string, unknown>;
   config: GatewayConfig;
@@ -80,6 +89,13 @@ export interface FailoverContext {
   /** Inbound client's abort signal — aborts an in-flight candidate attempt
    *  immediately if the caller disconnects before any upstream is chosen. */
   signal?: AbortSignal;
+  /** Re-derive `ModelGenerationDefaults` for a specific candidate's
+   *  `routeModel` right before dispatch — see `ModelRoutePlan`'s doc
+   *  comment (`domain/routing.ts`). Applied fresh per candidate via
+   *  `applyGenerationDefaults` (explicit client values still win; only
+   *  fields the client didn't already set get filled). Omitted entirely
+   *  when the host configured no generation defaults at all. */
+  generationDefaultsForModel?: (model: string) => ModelGenerationDefaults | undefined;
 }
 
 export interface RoutedUpstreamCandidate {
@@ -93,6 +109,12 @@ export interface FailoverSuccess {
   tried: string[];
   modelsTried: string[];
   attempts: number;
+  /** The ACTUAL payload sent to `chosen` — `ctx.payload` with `chosen`'s own
+   *  freshly-clamped generation defaults layered in (see
+   *  `generationDefaultsForModel`). Callers that need to know exactly what
+   *  reached the wire (tracing/capture) should use this instead of
+   *  `ctx.payload`. */
+  dispatchedPayload: Record<string, unknown>;
 }
 
 export type FailoverResult =
@@ -113,12 +135,14 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     capturedRequest,
     fallbackOn,
     signal,
+    generationDefaultsForModel,
   } = ctx;
   const tried: string[] = [];
   const modelsTried: string[] = [];
   let attempts = 0;
   let upstream: Response | null = null;
   let chosen: RoutedUpstreamCandidate | null = null;
+  let dispatchedPayload: Record<string, unknown> = payload;
   let lastError: unknown;
 
   const debug = (event: string, fields?: Record<string, unknown>): void =>
@@ -144,8 +168,16 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       breakerState: breaker.current,
       hasFallback,
     });
+    // Re-clamped for THIS candidate, never trusted from a prior candidate —
+    // see FailoverContext.generationDefaultsForModel's doc comment. `payload`
+    // itself carries no generation defaults (the host never bakes them in
+    // before routing), so this is the ONLY place they're injected, and it
+    // happens fresh for every candidate the loop tries.
+    const candidatePayload = generationDefaultsForModel
+      ? applyGenerationDefaults(payload, generationDefaultsForModel(routeModel))
+      : payload;
     try {
-      upstream = await callUpstream(payload, descriptor, {
+      upstream = await callUpstream(candidatePayload, descriptor, {
         retry: {
           ...config.retry,
           onRetry: (info) => {
@@ -161,11 +193,11 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         },
         binding: { provider: descriptor.provider, breaker },
         fetchImpl,
-        translationSidecar: config.translationSidecar,
         signal,
         requestId,
       });
       chosen = candidate;
+      dispatchedPayload = candidatePayload;
       debug('upstream_attempt_ok', {
         provider: descriptor.provider,
         status: upstream.status,
@@ -329,5 +361,8 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     };
   }
 
-  return { kind: 'success', value: { upstream, chosen, tried, modelsTried, attempts } };
+  return {
+    kind: 'success',
+    value: { upstream, chosen, tried, modelsTried, attempts, dispatchedPayload },
+  };
 }

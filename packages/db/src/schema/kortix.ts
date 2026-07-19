@@ -586,7 +586,23 @@ export const projectSessionRuntimeContexts = kortixSchema.table(
 // per-agent default (scope='agent', scope_key=agent_name) → the account default
 // (scope='account', scope_key='') → the platform default. The stored `model` is a
 // gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
-// or 'codex/<id>') — never the synthetic `auto`. One row per (account, scope, key).
+// or 'codex/<id>') — never the synthetic `auto`.
+//
+// `project_id` (added 2026-07-18, see 20260718*_account_model_preferences_project_id.sql)
+// scopes an agent-name pin to the ONE project that set it: agent names are declared
+// per-project (each project's own kortix.yaml), so without this, two unrelated
+// projects sharing an account and an agent name (almost always the conventional
+// 'kortix') would clobber each other's pin — the row was keyed only on
+// (account, scope, scope_key=agent_name), account-wide. `project_id` is NULL for
+// scope IN ('account','project') always, and for PRE-migration `scope='agent'` rows
+// (they keep applying account-wide as a fallback until the owning project explicitly
+// re-pins that agent, which writes a NEW project-scoped row — the legacy row is
+// never auto-migrated/deleted, so OTHER projects that never re-pin keep seeing it).
+// Two unique indexes replace the old single one so both shapes stay enforced:
+//   idx_account_model_preferences_scope_global  (account_id, scope, scope_key)
+//     WHERE project_id IS NULL   — account/project scope + legacy global agent pins
+//   idx_account_model_preferences_scope_project (account_id, scope, scope_key, project_id)
+//     WHERE project_id IS NOT NULL — new per-project agent pins
 export const accountModelPreferences = kortixSchema.table(
   'account_model_preferences',
   {
@@ -596,6 +612,8 @@ export const accountModelPreferences = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     scope: text('scope').notNull(),
     scopeKey: text('scope_key').default('').notNull(),
+    // Only ever set for scope='agent' — see doc comment above.
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
     model: varchar('model', { length: 128 }).notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -603,11 +621,12 @@ export const accountModelPreferences = kortixSchema.table(
   },
   (table) => [
     index('idx_account_model_preferences_account').on(table.accountId),
-    uniqueIndex('idx_account_model_preferences_scope').on(
-      table.accountId,
-      table.scope,
-      table.scopeKey,
-    ),
+    uniqueIndex('idx_account_model_preferences_scope_global')
+      .on(table.accountId, table.scope, table.scopeKey)
+      .where(sql`${table.projectId} is null`),
+    uniqueIndex('idx_account_model_preferences_scope_project')
+      .on(table.accountId, table.scope, table.scopeKey, table.projectId)
+      .where(sql`${table.projectId} is not null`),
   ],
 );
 
@@ -616,6 +635,26 @@ export interface ProjectLlmRoutingRule {
   fallbackModels: string[];
   fallbackOn: 'transient' | 'any-error';
 }
+
+// Per-model generation-parameter defaults a project configures (reasoning
+// effort, temperature, top_p, max output tokens, ...). Deliberately a single
+// generic blob keyed by wire model id rather than one column per param —
+// adding a new control later (e.g. a penalty knob) needs zero migration,
+// only a shape change to `@kortix/llm-catalog`'s `GenerationConfig`. Values
+// are clamped against the model's live catalog capabilities at BOTH the
+// write path (apps/api's routing-policy PUT handler) and the resolution-
+// layer injection path (routing/resolve-route.ts) — this column stores
+// whatever was clamped at write time, but is re-clamped on every read since
+// a model's capabilities (or the catalog itself) can change after the fact.
+export type ProjectModelGenerationConfig = Record<
+  string,
+  {
+    reasoningEffort?: string;
+    temperature?: number;
+    topP?: number;
+    maxOutputTokens?: number;
+  }
+>;
 
 // Project-owned gateway composition. A NULL default_fallback_models inherits
 // the operator policy while [] deliberately disables fallback for `auto`.
@@ -631,6 +670,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     defaultFallbackModels: jsonb('default_fallback_models').$type<string[] | null>(),
     defaultFallbackOn: text('default_fallback_on'),
     rules: jsonb('rules').default([]).$type<ProjectLlmRoutingRule[]>().notNull(),
+    modelGenerationConfig: jsonb('model_generation_config')
+      .default({})
+      .$type<ProjectModelGenerationConfig>()
+      .notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -643,6 +686,10 @@ export const projectLlmRoutingPolicies = kortixSchema.table(
     check(
       'project_llm_routing_policies_rules_array_check',
       sql`jsonb_typeof(${table.rules}) = 'array'`,
+    ),
+    check(
+      'project_llm_routing_policies_gen_config_object_check',
+      sql`jsonb_typeof(${table.modelGenerationConfig}) = 'object'`,
     ),
   ],
 );
@@ -3213,6 +3260,7 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   'pipedream',
   'mcp',
   'openapi',
+  'postman',
   'graphql',
   'http',
   // Chat platforms (Slack, later Telegram/Teams) as first-class connectors. The

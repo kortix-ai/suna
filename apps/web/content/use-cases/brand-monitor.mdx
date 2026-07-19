@@ -1,0 +1,147 @@
+---
+title: "How we monitor brand mentions"
+description: A daily agent that searches news, social platforms, and forums for new mentions of our brand, classifies sentiment, and posts a digest of the notable or negative ones to Slack — each with a suggested response drafted for a human to review.
+date: "2026-05-09"
+author: team
+tags:
+  - Marketing
+  - Case Study
+  - Enterprise
+template: brand-monitor
+---
+
+Brand mentions show up wherever people happen to be talking — a news writeup, a
+Reddit thread, a tweet, a forum post comparing us to a competitor. Most days
+nothing needs a response. Some days a single negative post with real reach needs
+one within the hour, and the team doesn't find out until it's already been seen
+by everyone else.
+
+We run a brand-monitor agent on Kortix that checks the web every day for new
+mentions, classifies each one's sentiment, and posts a digest to our marketing
+Slack channel. It never replies or posts anywhere itself — for anything notable,
+it drafts a suggested response and leaves the sending to a person.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron, reusable session</Fact>
+  <Fact label="Connected systems">The web · Slack</Fact>
+  <Fact label="Mode">Search-only · draft, never post</Fact>
+</KeyFacts>
+
+## The problem
+
+Brand mentions aren't confined to one platform. They land in news coverage,
+social posts, and forum threads on no predictable schedule, and most of them
+don't matter — a passing mention, a neutral comparison, a repost. The ones that
+do matter are indistinguishable from the noise until someone actually reads them,
+and by the time a person gets around to checking, a negative post with real reach
+has often already had its worst hour.
+
+The usual workarounds don't fix this. A Google Alert fires on keyword matches
+with no sense of sentiment or reach, so every alert looks the same regardless of
+whether it's a five-word tweet or a widely shared negative review. Checking
+manually catches yesterday's mentions today, if someone remembers to look. Either
+way, nothing tracks what's already been seen, so the same viral post gets flagged
+again tomorrow.
+
+## What we built
+
+A daily cron re-prompts a persistent agent session. Each run searches the web for
+new mentions of the brand across news, social platforms, and forums, checks each
+one against a ledger of mentions it has already reported, classifies the sentiment
+of anything new, and posts a digest to Slack — a one-line rollup for routine
+mentions, and a full callout with a suggested response draft for anything notable
+or negative. It never posts, replies, or comments anywhere; the only output is the
+Slack digest.
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily reusable session">
+
+A **cron trigger** fires the project once a day, re-prompting the same
+**session** rather than starting from a blank slate. Because the session is
+reusable, it remembers what it already reported yesterday and only surfaces
+what's new today.
+
+</Step>
+<Step title="Give the agent the brand to watch">
+
+The brand name, aliases, product names, and common misspellings to search for
+live as **skills** and **memory**, along with the running ledger of every
+mention already seen. When the brand adds a product line or a new alias starts
+getting used, the watch list is updated the same way.
+
+</Step>
+<Step title="Search and fetch the web">
+
+Through the sandbox's **built-in web search and fetch** — no connector, no
+login, no credential, because these are public pages — plus a scoped **Slack
+connector** for the digest, the agent can:
+
+- **Search news, social platforms, and forums** — for the brand terms on the
+  watch list, this run only.
+- **Fetch the full text of each candidate mention** — enough to classify
+  sentiment and reach, not just a search snippet.
+- **Post to Slack** — one digest per run, in the marketing channel.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent only searches and reads public pages, and it only ever writes to one
+Slack channel. It never replies to a post, comments, or publishes anywhere on
+the open web — for anything flagged as notable, it drafts a suggested response
+and clearly marks it as a draft awaiting human approval. Any credential it needs
+is encrypted in the secrets manager and injected at runtime, never shown to the
+model or written to logs.
+
+</Step>
+<Step title="Post the digest">
+
+Each run ends with one Slack message: how many new mentions were found, a
+sentiment breakdown, and — for anything negative or notable — the source, the
+excerpt, why it was flagged, and a suggested response draft. Routine mentions get
+a one-line rollup instead of a full callout. The team reads one digest and
+decides what, if anything, to say back.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** re-prompts a reusable **session** that searches the web for
+  brand mentions, dedupes against a **memory** ledger of what's already been
+  reported, classifies sentiment, and posts a Slack digest. Anything notable
+  gets a suggested response — drafted, never sent.
+</Callout>
+
+## Guardrails
+
+The agent watches public conversation about the brand, so its access is scoped
+to searching and reading, with a single, narrow output:
+
+- **Isolation.** Every run happens in its own microVM sandbox, and only the
+  Slack digest it's explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** Any credential the agent uses is encrypted in the secrets
+  manager and injected into the sandbox at runtime, never exposed to the model
+  or the logs.
+- **Draft, never post.** The agent's only external action is one Slack digest
+  per run. It never replies, comments, or posts on the platform where a mention
+  appeared — a suggested response is a draft for a human to review and send
+  themselves.
+- **Everything is code.** The brand terms, the watch scope, and the sentiment
+  and notability rules are files in the repo, versioned and changed through a
+  reviewed **change request** rather than a dashboard setting.
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="New mentions found without anyone remembering to check" />
+  <Stat value="Dedupe by design" label="Already-reported mentions never resurface" />
+  <Stat value="Draft only" label="A suggested response, never a reply the agent sends itself" />
+</StatGrid>
+
+The team no longer finds out about a negative mention secondhand, and no one
+re-reads yesterday's viral post because it was flagged twice. The channel gets
+one digest a day — quiet on quiet days, specific and actionable when something
+needs a response — and every response that goes out is one a person chose to
+send.

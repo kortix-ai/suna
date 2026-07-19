@@ -97,6 +97,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { downloadBlob } from "@/lib/utils/download"
 import { loadSharedPdfEngine } from "./pdf-thumbnail-utils"
 
 export type PDFViewerPageOverlayProps = {
@@ -248,19 +249,6 @@ function getPdfDownloadFileName(fileName: string | undefined, src: string) {
 
 function getRotatedPdfDownloadFileName(fileName: string) {
   return fileName.replace(/\.pdf$/i, "-rotated.pdf")
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement("a")
-
-  anchor.href = url
-  anchor.download = fileName
-  anchor.rel = "noopener"
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 async function downloadPdfWithPageRotations({
@@ -1962,33 +1950,32 @@ function PDFViewerInner({
 
       suppressActivePageSelectionSyncRef.current = pageIndex
 
-      setSelectedPageIndexes((previousSelection) => {
-        let nextSelection: Set<number>
+      const previousSelection = selectedPageIndexesRef.current
+      let nextSelection: Set<number>
 
-        if (mode === "range") {
-          const anchorPageIndex =
-            selectionAnchorPageIndexRef.current ??
-            (activePage > 0 ? activePage - 1 : pageIndex)
+      if (mode === "range") {
+        const anchorPageIndex =
+          selectionAnchorPageIndexRef.current ??
+          (activePage > 0 ? activePage - 1 : pageIndex)
 
-          nextSelection = getPageIndexRange(anchorPageIndex, pageIndex)
-        } else if (mode === "toggle") {
-          nextSelection = new Set(previousSelection)
+        nextSelection = getPageIndexRange(anchorPageIndex, pageIndex)
+      } else if (mode === "toggle") {
+        nextSelection = new Set(previousSelection)
 
-          if (nextSelection.has(pageIndex)) {
-            nextSelection.delete(pageIndex)
-          } else {
-            nextSelection.add(pageIndex)
-          }
-
-          selectionAnchorPageIndexRef.current = pageIndex
+        if (nextSelection.has(pageIndex)) {
+          nextSelection.delete(pageIndex)
         } else {
-          nextSelection = new Set([pageIndex])
-          selectionAnchorPageIndexRef.current = pageIndex
+          nextSelection.add(pageIndex)
         }
 
-        selectedPageIndexesRef.current = nextSelection
-        return nextSelection
-      })
+        selectionAnchorPageIndexRef.current = pageIndex
+      } else {
+        nextSelection = new Set([pageIndex])
+        selectionAnchorPageIndexRef.current = pageIndex
+      }
+
+      selectedPageIndexesRef.current = nextSelection
+      setSelectedPageIndexes(nextSelection)
 
       scrollToPage(pageNumber)
     },
