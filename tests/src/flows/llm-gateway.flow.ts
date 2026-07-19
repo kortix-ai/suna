@@ -9,6 +9,51 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }
   });
 });
 
+// GW-1b — the in-API-mounted LLM gateway health (apps/api/src/llm-gateway/wire.ts,
+// mountLlmGateway: `llm.get('/health', ...)` mounted at app.route('/v1/llm', llm)).
+// Distinct from GW-1's bare standalone-gateway-pod /health — this is served by
+// the in-process API when LLM_GATEWAY_ENABLED, with no auth in front of it.
+flow('GW-1b', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
+  await ctx.step('in-API LLM gateway health mount is public', async () => {
+    const r = await ctx.client.get('/v1/llm/health');
+    r.status(200)
+      .body()
+      .has('$.status', 'ok')
+      .has('$.service', 'kortix-llm-gateway')
+      .has('$.mode', 'in-process');
+  });
+});
+
+// GW-8 — /internal/gateway/resolve-route (apps/api/src/llm-gateway/internal-routes.ts):
+// control-plane RPC the OUT-OF-PROCESS standalone gateway pod calls to resolve a
+// routing decision. Gated by a single shared `GATEWAY_INTERNAL_TOKEN` bearer
+// (apps/api/src/llm-gateway/internal-auth.ts matchesInternalToken) — a
+// service-to-service secret the ke2e harness intentionally has no credential
+// for (KE2E_INTERNAL_SERVICE_KEY maps to the unrelated INTERNAL_SERVICE_KEY
+// used by /metrics + cron, not GATEWAY_INTERNAL_TOKEN). We can only exercise
+// the real auth boundary: no header, and a garbage bearer, both → 401 before
+// any routing/resolution logic runs — never a real "resolve" call.
+flow(
+  'GW-8',
+  { domain: 'llm-gateway', routes: ['POST /internal/gateway/resolve-route'] },
+  async (ctx) => {
+    const body = {
+      principal: { accountId: '00000000-0000-4000-a000-000000000000' },
+      input: { requestedModel: 'auto' },
+    };
+    await ctx.step('no internal token → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/resolve-route', body);
+      r.status(401);
+    });
+    await ctx.step('garbage internal bearer → 401', async () => {
+      const r = await ctx.client
+        .withBearer('definitely-not-the-gateway-internal-token', 'BOGUS')
+        .post('/internal/gateway/resolve-route', body);
+      r.status(401);
+    });
+  },
+);
+
 flow(
   'GW-2',
   {

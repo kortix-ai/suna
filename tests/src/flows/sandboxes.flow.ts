@@ -295,3 +295,37 @@ flow(
     });
   },
 );
+
+// ─── SBX-5: list sandbox templates ("sandboxes" surface) ──────────────────
+// Same underlying `listSandboxTemplates` read as SBX-3's sandbox-templates
+// route, exposed at the `/sandboxes` path the dashboard's Sandbox panel calls.
+// A fresh project has no sessions, so `items` is real content (the resolved
+// template set for this project), not literally empty.
+flow(
+  "SBX-5",
+  {
+    domain: "sandboxes",
+    routes: ["GET /v1/projects/:projectId/sandboxes"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("OWNER lists sandboxes → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.items").exists("$.provider_mode");
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);

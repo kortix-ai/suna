@@ -72,6 +72,23 @@ flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/r
   });
 });
 
+// SYS-8 — the kubelet liveness probe (apps/api/src/index.ts, livenessHandler):
+// samples ACTUAL event-loop lag rather than always answering instantly like
+// /health does, so a degraded-but-not-dead pod gets restarted. Unversioned +
+// /v1 forms both wired so either can be the chart's livenessPath. Under normal
+// load `event_loop_lag_ms` stays well under the 5000ms default threshold, so a
+// live run should always see {status:"ok", event_loop_lag_ms}.
+flow("SYS-8", { domain: "system", tags: ["smoke", "health"], routes: ["GET /health/live", "GET /v1/health/live"] }, async (ctx) => {
+  await ctx.step("GET /health/live", async () => {
+    const r = await ctx.client.get("/health/live");
+    r.status(200).body().has("$.status", "ok").exists("$.event_loop_lag_ms");
+  });
+  await ctx.step("GET /v1/health/live", async () => {
+    const r = await ctx.client.get("/v1/health/live");
+    r.status(200).body().has("$.status", "ok").exists("$.event_loop_lag_ms");
+  });
+});
+
 flow("SYS-5", { domain: "system", tags: ["smoke"], routes: ["GET /v1/accounts/me"] }, async (ctx) => {
   await ctx.step("404 shape on unknown route", async () => {
     const r = await ctx.client.get("/v1/this-route-does-not-exist");
@@ -98,5 +115,26 @@ flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-emai
   await ctx.step("POST /v1/access/check-email (valid) → 200 with flow mode", async () => {
     const r = await ctx.client.post("/v1/access/check-email", { email: `probe-${Date.now()}@ke2e.kortix.test` });
     r.status(200).body().exists("$.allowed").exists("$.mode");
+  });
+});
+
+flow("ACC-3", { domain: "access", tags: [], routes: ["POST /v1/access/request-access"] }, async (ctx) => {
+  // Public/unauthenticated early-access / waitlist submission — no principal,
+  // no fixtures (the 'access' domain never provisions the matrix).
+  await ctx.step("POST /v1/access/request-access (missing email) → 400", async () => {
+    const r = await ctx.client.post("/v1/access/request-access", { company: "KE2E Labs" });
+    r.status(400);
+  });
+  await ctx.step("POST /v1/access/request-access (invalid email) → 400", async () => {
+    const r = await ctx.client.post("/v1/access/request-access", { email: "not-an-email" });
+    r.status(400);
+  });
+  await ctx.step("POST /v1/access/request-access (valid, fresh throwaway email) → 200", async () => {
+    const r = await ctx.client.post("/v1/access/request-access", {
+      email: `ke2e-access-${Date.now()}@ke2e.kortix.test`,
+      company: "KE2E Labs",
+      useCase: "automated e2e coverage probe",
+    });
+    r.status(200).body().has("$.success", true).exists("$.message");
   });
 });

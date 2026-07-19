@@ -619,3 +619,59 @@ flow(
     });
   },
 );
+
+/**
+ * SESS-17 — session preview candidates (projects/routes/public-shares.ts). A
+ * human-friendly fallback list of preview ports/paths for a session; the
+ * frontend passes its own active tab when it has one. Same visibility gate as
+ * session detail (project read + `loadVisibleSession`).
+ */
+flow(
+  'SESS-17',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 90_000,
+    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/previews'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ seed: true });
+    const s = await ctx.fixtures.session(p);
+    const owner = ctx.client.as(ctx.P.OWNER);
+
+    await ctx.step('list preview candidates → 200', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/previews', {
+        params: { projectId: p.id, sessionId: s.id },
+      });
+      r.status(200).body().exists('$.candidates');
+    });
+    await ctx.step('non-uuid session id → 400', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/previews', {
+        params: { projectId: p.id, sessionId: 'not-a-uuid' },
+      });
+      r.status(400);
+    });
+    await ctx.step('unknown session → 404', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/previews', {
+        params: { projectId: p.id, sessionId: crypto.randomUUID() },
+      });
+      r.status(404);
+    });
+    await ctx.step('NONMEMBER → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/previews', {
+          params: { projectId: p.id, sessionId: s.id },
+        });
+      r.status(403);
+    });
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/previews', {
+          params: { projectId: p.id, sessionId: s.id },
+        });
+      r.status(401);
+    });
+  },
+);
