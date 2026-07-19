@@ -10,14 +10,16 @@ import type { FlatModel } from './session-chat-input';
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
-// model ids namespaced as `<provider>/<model>`. For the picker we split that
-// back out: platform-managed defaults stay under the "Kortix" group, while every
-// BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) — so a
-// connected provider reads as its own section, not buried in Kortix.
+// model ids namespaced as `<provider>/<model>`. For the picker we recover the
+// real provider: platform-managed defaults stay under the "Kortix" group, while
+// every BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …).
+// Prefer the explicit `FlatModel.provider` field; string-split `modelID` only as
+// a fallback for a stale catalog that predates that field.
 export function pickerGroupId(model: FlatModel): string {
   if (model.providerID !== 'kortix' || MANAGED_MODEL_IDS.has(model.modelID)) {
     return model.providerID;
   }
+  if (model.provider) return model.provider;
   const slash = model.modelID.indexOf('/');
   return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
 }

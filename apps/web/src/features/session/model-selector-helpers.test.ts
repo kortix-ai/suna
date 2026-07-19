@@ -30,6 +30,18 @@ describe('pickerGroupId', () => {
     ).toBe('anthropic');
   });
 
+  test('prefers the explicit `provider` field over string-splitting the wire id', () => {
+    expect(
+      pickerGroupId(
+        model({
+          providerID: 'kortix',
+          modelID: 'anthropic/claude-opus-4-8',
+          provider: 'anthropic',
+        }),
+      ),
+    ).toBe('anthropic');
+  });
+
   test('a kortix model id with no namespace and no managed match falls back to kortix', () => {
     expect(pickerGroupId(model({ providerID: 'kortix', modelID: 'glm-5.2' }))).toBe('kortix');
   });

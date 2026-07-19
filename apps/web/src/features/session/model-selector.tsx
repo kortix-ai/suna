@@ -38,7 +38,7 @@ import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
+import { AUTO_MODEL_ID, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
@@ -49,6 +49,7 @@ import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 export { Tag };
+export { pickerGroupId };
 
 // ─── Backward-compat wrappers ────────────────────────────────────────────────
 
@@ -79,50 +80,19 @@ export function ConnectProviderDialog({
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
 
-// `auto` is a synthetic managed entry (not a real upstream model): grouped under
-// Kortix and — when exposed (see featureFlags.enableAutoModel) — rendered as a
-// special "smart routing" affordance rather than a normal list item. It stays in
-// this set so it groups under Kortix and is recognised as managed even while the
-// toggle is hidden.
-const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
-
-// The gateway exposes its whole catalog through a single `kortix` provider, with
-// model ids namespaced as `<provider>/<model>`. For the picker we recover the
-// REAL provider: platform-managed defaults stay under the "Kortix" group, while
-// every BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) —
-// so a connected provider reads as its own section, not buried in Kortix.
+// The group's display name/label — NEVER the raw `FlatModel.providerName`
+// (always "Kortix" under the gateway). Prefer the canonical label for the
+// resolved real-provider id; only fall back to the model's own providerName
+// for a truly unknown id (e.g. `pickerGroupId` degrading to the raw
+// `providerID` because neither `provider` nor a `/` was present — at that
+// point `groupID === model.providerID` anyway).
 //
 // *** BUG THIS FIXES (every model showing under "Kortix", even BYOK Anthropic) ***
-// `pickerGroupId` always correctly computed the grouping KEY (it split
-// `modelID` on "/" and returned e.g. "anthropic"). The bug was never in the
-// key — it was that the group's DISPLAY NAME, built in `grouped` below, was
-// taken verbatim from `model.providerName` (opencode's raw provider name,
-// which is ALWAYS "Kortix" — every gateway model is registered under the one
-// synthetic `kortix` opencode provider). So the group's icon rendered
-// correctly (`ProviderLogo` is keyed off the correct `providerID`), but the
-// text label next to it always read "Kortix" regardless of which provider
-// actually served the model.
-//
-// The robust fix (per the live /v1/models trace): the gateway now serves an
-// EXPLICIT `provider` field per model (`GatewayModel.provider`, threaded onto
-// `FlatModel.provider` by flattenModels) — grouping/labeling should prefer
-// that over parsing the wire id at all. String-splitting `modelID` remains
-// ONLY as a fallback for a stale/older baked catalog that predates the field.
-export function pickerGroupId(model: FlatModel): string {
-  if (model.providerID !== 'kortix' || MANAGED_MODEL_IDS.has(model.modelID)) {
-    return model.providerID;
-  }
-  if (model.provider) return model.provider;
-  const slash = model.modelID.indexOf('/');
-  return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
-}
-
-// The group's display name/label — NEVER the raw `FlatModel.providerName`
-// (always "Kortix" under the gateway, see the bug note above). Prefer the
-// canonical label for the resolved real-provider id; only fall back to the
-// model's own providerName for a truly unknown id (e.g. `pickerGroupId`
-// degrading to the raw `providerID` because neither `provider` nor a `/` was
-// present — at that point `groupID === model.providerID` anyway).
+// `pickerGroupId` always correctly computed the grouping KEY. The bug was that
+// the group's DISPLAY NAME was taken from `model.providerName` (opencode's raw
+// name, always "Kortix" under the synthetic gateway provider). Icon keyed off
+// the right `providerID`; text always said "Kortix". Fix: resolve the label
+// from PROVIDER_LABELS by the real group id — never from raw providerName.
 export function pickerGroupLabel(groupID: string, model: FlatModel): string {
   return PROVIDER_LABELS[groupID] ?? model.providerName;
 }
