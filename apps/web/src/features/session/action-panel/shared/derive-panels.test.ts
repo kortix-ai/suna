@@ -1,6 +1,6 @@
 import type { ToolPart } from '@/ui';
 import { describe, expect, it } from 'bun:test';
-import { deriveContext, deriveOutputs } from './derive-panels';
+import { deriveContext, deriveOutputs, isSyntheticShowPart } from './derive-panels';
 
 function part(
   tool: string,
@@ -784,6 +784,93 @@ describe('deriveOutputs — last-write-wins + normalized keys (W11)', () => {
       partOf('write', 'c2', { filePath: 'report.md' }),
     ];
     expect(deriveOutputs(parts)).toHaveLength(1);
+  });
+});
+
+describe('deriveOutputs — synthetic (daemon-discovered) show parts', () => {
+  // The sandbox daemon emits its own `show` tool calls for files it discovers
+  // on disk, marked via `part.state.metadata.acp._meta.kortix.synthetic`. A
+  // machine finding a file on disk is not the same signal as the agent
+  // handing it to the user — it must never rank or dedupe like an explicit
+  // `show`.
+  const SYNTHETIC_METADATA = {
+    acp: { _meta: { kortix: { synthetic: 'filesystem-delta' } } },
+  };
+
+  it('isSyntheticShowPart recognizes the daemon marker and ignores a plain show', () => {
+    const synthetic = part('show', { path: '/workspace/found.txt' }, {
+      metadata: SYNTHETIC_METADATA,
+    });
+    const explicit = part('show', { path: '/workspace/made.txt' });
+    expect(isSyntheticShowPart(synthetic)).toBe(true);
+    expect(isSyntheticShowPart(explicit)).toBe(false);
+  });
+
+  it('a synthetic show yields a row with shown falsy; a normal show still yields shown: true', () => {
+    const synthetic = part('show', { path: '/workspace/found.txt' }, {
+      metadata: SYNTHETIC_METADATA,
+    });
+    const explicit = part('show', { path: '/workspace/made.txt' });
+    const out = deriveOutputs([synthetic, explicit]);
+
+    const bySynthetic = out.find((o) => o.name === 'found.txt');
+    const byExplicit = out.find((o) => o.name === 'made.txt');
+    expect(bySynthetic?.shown).toBeFalsy();
+    expect(byExplicit?.shown).toBe(true);
+  });
+
+  it('an explicit show wins over a synthetic rediscovery of the same path — explicit first', () => {
+    const explicitShow = part('show', {
+      path: '/workspace/report.pdf',
+      title: 'Q3 Report',
+    });
+    const syntheticShow = part(
+      'show',
+      { path: '/workspace/report.pdf' },
+      { metadata: SYNTHETIC_METADATA },
+    );
+
+    const out = deriveOutputs([explicitShow, syntheticShow]);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe('Q3 Report');
+    expect(out[0].shown).toBe(true);
+  });
+
+  it('an explicit show wins over a synthetic rediscovery of the same path — synthetic first', () => {
+    const syntheticShow = part(
+      'show',
+      { path: '/workspace/report.pdf' },
+      { metadata: SYNTHETIC_METADATA },
+    );
+    const explicitShow = part('show', {
+      path: '/workspace/report.pdf',
+      title: 'Q3 Report',
+    });
+
+    const out = deriveOutputs([syntheticShow, explicitShow]);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe('Q3 Report');
+    expect(out[0].shown).toBe(true);
+  });
+
+  it('a synthetic re-occurrence of an explicitly shown path in the latest run still marks the surviving row fresh: "updated"', () => {
+    const explicitShow = part('show', {
+      path: '/workspace/report.pdf',
+      title: 'Q3 Report',
+    });
+    const syntheticShow = part(
+      'show',
+      { path: '/workspace/report.pdf' },
+      { metadata: SYNTHETIC_METADATA },
+    );
+
+    const out = deriveOutputs([explicitShow, syntheticShow], {
+      latestRun: new Set([syntheticShow.callID]),
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].fresh).toBe('updated');
+    expect(out[0].shown).toBe(true);
+    expect(out[0].title).toBe('Q3 Report');
   });
 });
 
