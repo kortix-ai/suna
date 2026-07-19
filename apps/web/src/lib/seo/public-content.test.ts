@@ -217,6 +217,34 @@ describe('bounded public agent index', () => {
     }
   });
 
+  test('orders the index recency-first so freshest content leads each kind', async () => {
+    const response = getAgentIndex(
+      new Request('https://kortix.com/api/ai?kind=blog&limit=999', {
+        headers: { 'x-real-ip': '192.0.2.4' },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as any;
+    const dates: string[] = body.data
+      .map((item: any) => item.last_modified)
+      .filter((value: any) => typeof value === 'string');
+    expect(dates.length).toBeGreaterThan(1);
+    // Blog records are recency-desc by last_modified.
+    for (let index = 1; index < dates.length; index += 1) {
+      expect(dates[index - 1] >= dates[index]).toBe(true);
+    }
+    // In the unfiltered index, no dated record ever follows an undated one.
+    const unfiltered = getAgentIndex(
+      new Request('https://kortix.com/api/ai?limit=999', { headers: { 'x-real-ip': '192.0.2.5' } }),
+    );
+    const unfilteredBody = (await unfiltered.json()) as any;
+    let sawUndated = false;
+    for (const item of unfilteredBody.data as any[]) {
+      if (!item.last_modified) sawUndated = true;
+      else expect(sawUndated).toBe(false);
+    }
+  });
+
   test('rejects malformed pagination and enforces the documented rate limit', async () => {
     const invalid = getAgentIndex(
       new Request('https://kortix.com/api/ai?cursor=not-valid!', {
