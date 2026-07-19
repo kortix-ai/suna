@@ -40,6 +40,112 @@ flow('GW-2b', { domain: 'llm-gateway', routes: ['GET /v1/llm/models'] }, async (
 });
 
 flow(
+  'GW-2c',
+  {
+    domain: 'llm-gateway',
+    // The in-process mount also serves the `/v1/...`-prefixed aliases so a
+    // self-host whose public URL points at the API directly (tunnel/local
+    // mode, no Caddy /v1/llm* split) doesn't 404 every OpenAI-compat call.
+    routes: ['GET /v1/llm/v1/models'],
+  },
+  async (ctx) => {
+    await ctx.step('ANON cannot call the /v1/llm/v1/models alias', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/llm/v1/models');
+      r.status([401, 403]);
+    });
+  },
+);
+
+flow(
+  'GW-3b',
+  {
+    domain: 'llm-gateway',
+    routes: ['POST /v1/llm/v1/chat/completions'],
+  },
+  async (ctx) => {
+    const body = { model: 'gpt-5.5', messages: [{ role: 'user', content: 'ping' }] };
+    await ctx.step('ANON cannot call the /v1/llm/v1/chat/completions alias', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/llm/v1/chat/completions', body);
+      r.status([401, 403]);
+    });
+  },
+);
+
+// GW-5 — project-scoped LLM catalog surfaces read by the connect modal.
+//   GET /:projectId/llm-catalog           — model-level entries (Record<
+//                                          "provider/model", GatewayModel>),
+//                                          gated by the project's llm_gateway
+//                                          flag.
+//   GET /:projectId/llm-catalog/providers  — provider-level rows (id, name,
+//                                          env, docs, models), NOT gated by
+//                                          llm_gateway (BYOK connect modal
+//                                          applies to native projects too).
+// Both read the same 24h-refreshed runtimeModelCatalog; both enforce
+// project-read authz. Cover both in one flow so the gate can't drift between
+// the two shapes.
+flow(
+  'GW-5',
+  {
+    domain: 'llm-gateway',
+    routes: [
+      'GET /v1/projects/:projectId/llm-catalog',
+      'GET /v1/projects/:projectId/llm-catalog/providers',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const params = { projectId: project.id };
+
+    for (const path of [
+      '/v1/projects/:projectId/llm-catalog',
+      '/v1/projects/:projectId/llm-catalog/providers',
+    ] as const) {
+      await ctx.step(`ANON → 401 on ${path}`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).get(path, { params });
+        r.status(401);
+      });
+
+      await ctx.step(`NONMEMBER → 403/404 on ${path}`, async () => {
+        const r = await ctx.client.as(ctx.P.NONMEMBER).get(path, { params });
+        r.status([403, 404]);
+      });
+
+      await ctx.step(`unknown project id → 404 (not 500) on ${path}`, async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get(path, {
+          params: { projectId: '00000000-0000-0000-0000-000000000000' },
+        });
+        r.status(404);
+      });
+    }
+
+    await ctx.step('OWNER → 200 on the model-level catalog', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/llm-catalog', { params });
+      // /llm-catalog is gated by the project's llm_gateway flag. On a fresh
+      // fixture project the flag may be off → 404 (catalog disabled), or on
+      // → 200 with a `{models:...}` body. Either is a valid boundary; a 500
+      // is the only real failure.
+      r.status([200, 404]);
+    });
+
+    await ctx.step('OWNER → 200 with a provider catalog on /providers', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/llm-catalog/providers', { params });
+      r.status(200);
+      // The runtime catalog snapshot is an object (provider-keyed); assert it
+      // parsed to a non-null object so a future regression that returns
+      // `null`/`undefined`/an empty 200 body is caught.
+      const body = r.json<any>();
+      if (body === null || body === undefined || typeof body !== 'object') {
+        throw new Error(`expected a provider catalog object, got: ${JSON.stringify(body)}`);
+      }
+    });
+  },
+);
+
+flow(
   'GW-3',
   {
     domain: 'llm-gateway',

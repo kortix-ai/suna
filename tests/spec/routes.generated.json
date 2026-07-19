@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 493,
+  "count": 494,
   "routes": [
     {
       "method": "GET",
@@ -840,7 +840,15 @@
     },
     {
       "method": "POST",
+      "path": "/v1/llm/v1/chat/completions"
+    },
+    {
+      "method": "POST",
       "path": "/v1/llm/v1/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/v1/models"
     },
     {
       "method": "GET",
@@ -929,6 +937,34 @@
     {
       "method": "GET",
       "path": "/v1/platform"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/platform/github-app"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/app"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/install-callback"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/manifest-callback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/manifest-start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/github-app/pat"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/status"
     },
     {
       "method": "GET",
@@ -1379,32 +1415,16 @@
       "path": "/v1/projects/:projectId/llm-catalog"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/llm-catalog/providers"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/manifest/validate"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/marketplace"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/marketplace/:name"
-    },
-    {
       "method": "POST",
-      "path": "/v1/projects/:projectId/marketplace/install"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/marketplace/update"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/marketplace/update-all"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/marketplace/updates"
+      "path": "/v1/projects/:projectId/marketplace/install-session"
     },
     {
       "method": "DELETE",
@@ -1441,30 +1461,6 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/registry"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/registry/:name"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/registry/install"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/registry/update"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/registry/update-all"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/registry/updates"
     },
     {
       "method": "GET",
@@ -1703,6 +1699,10 @@
       "path": "/v1/projects/link-repository"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/managed-git/status"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/provision"
     },
@@ -1817,18 +1817,6 @@
     {
       "method": "GET",
       "path": "/v1/system/status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/templates"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/templates/:id"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/templates/:id/install"
     },
     {
       "method": "GET",
