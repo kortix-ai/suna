@@ -165,6 +165,28 @@ function isGatewayModel(value: unknown): value is KortixGatewayModel {
   return true
 }
 
+// OpenCode's own config schema expects `provider.<name>.models.<id>` to carry
+// only a fixed set of fields (and `provider` itself, if present, must be an
+// object). The baked org catalog's raw entries carry a `provider: "<slug>"`
+// STRING plus assorted metadata (`cost`, `modalities`, `released`, …) that
+// collide with that schema and crash `opencode acp` at boot. Project every
+// accepted entry into a fresh object containing ONLY the whitelisted
+// KortixGatewayModel fields, discarding everything else.
+function projectGatewayModel(model: KortixGatewayModel): KortixGatewayModel {
+  const projected: KortixGatewayModel = { name: model.name }
+  if (model.reasoning !== undefined) projected.reasoning = model.reasoning
+  if (model.tool_call !== undefined) projected.tool_call = model.tool_call
+  if (model.attachment !== undefined) projected.attachment = model.attachment
+  if (model.temperature !== undefined) projected.temperature = model.temperature
+  if (model.limit !== undefined) {
+    const limit: { context?: number; output?: number } = {}
+    if (model.limit.context !== undefined) limit.context = model.limit.context
+    if (model.limit.output !== undefined) limit.output = model.limit.output
+    projected.limit = limit
+  }
+  return projected
+}
+
 function readCatalogFile(path: string): Record<string, KortixGatewayModel> | null {
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
@@ -172,10 +194,13 @@ function readCatalogFile(path: string): Record<string, KortixGatewayModel> | nul
     const models = 'models' in parsed ? parsed.models : parsed
     if (!isRecord(models)) return null
     const entries = Object.entries(models)
-    if (entries.length === 0 || entries.some(([id, model]) => !id.trim() || !isGatewayModel(model))) {
-      return null
+    if (entries.length === 0) return null
+    const projected: Record<string, KortixGatewayModel> = {}
+    for (const [id, model] of entries) {
+      if (!id.trim() || !isGatewayModel(model)) return null
+      projected[id] = projectGatewayModel(model)
     }
-    return models as Record<string, KortixGatewayModel>
+    return projected
   } catch {
     return null
   }

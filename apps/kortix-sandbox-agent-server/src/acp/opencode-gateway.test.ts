@@ -120,6 +120,50 @@ describe('OpenCode managed-gateway provider mount', () => {
     expect(Object.keys(config.provider.kortix.models).length).toBeGreaterThan(1)
   })
 
+  it('projects baked catalog entries to the whitelisted gateway-model shape (regression: opencode schema collision on provider)', () => {
+    // Real failing shape from .superpowers/sdd/d3-opencode-init-diagnosis.md:
+    // the baked /opt/kortix/llm-catalog.json entry for "daoxe/gpt-5.5" carries a
+    // string `provider` field plus other passthrough metadata. OpenCode's own
+    // config schema expects `provider.<name>.models.<id>.provider` to be an
+    // object (or absent), so copying this raw entry verbatim crashes `opencode
+    // acp` at boot with "Expected object | undefined, got \"daoxe\" ...provider".
+    const catalogPath = catalogFileWith({
+      'daoxe/gpt-5.5': {
+        name: 'GPT-5.5',
+        provider: 'daoxe',
+        released: '2026-04-23',
+        family: 'gpt',
+        reasoning: true,
+        reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+        tool_call: true,
+        attachment: true,
+        temperature: false,
+        structured_output: true,
+        cost: { input: 5, output: 30, cache_read: 0.5 },
+        modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
+        limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+      },
+    })
+    const config = opencodeConfig({
+      ...GATEWAY_ENV,
+      KORTIX_RUNTIME_AUTH_KIND: 'managed_gateway',
+      KORTIX_LLM_CATALOG_FILE: catalogPath,
+    })
+    const model = config.provider.kortix.models['daoxe/gpt-5.5']
+    expect(model).toBeDefined()
+    expect(model.provider).toBeUndefined()
+    expect(model.released).toBeUndefined()
+    expect(model.family).toBeUndefined()
+    expect(model.cost).toBeUndefined()
+    expect(model.modalities).toBeUndefined()
+    expect(model.reasoning_options).toBeUndefined()
+    expect(model.structured_output).toBeUndefined()
+    expect(Object.keys(model).sort()).toEqual(
+      ['attachment', 'limit', 'name', 'reasoning', 'temperature', 'tool_call'].sort(),
+    )
+    expect(model.limit).toEqual({ context: 1_050_000, output: 128_000 })
+  })
+
   it('falls back when a readable catalog contains an invalid model entry', () => {
     const catalogPath = catalogFileWith({ broken: null })
     const config = opencodeConfig({
