@@ -358,3 +358,32 @@ flow(
     });
   },
 );
+
+// PROJ-20 — managed-git pre-flight status. GET /managed-git/status lets the
+// "Create project" UI pre-check whether the managed-git provision path is
+// usable BEFORE the user hits its 503 (self-host deploys with no
+// MANAGED_GIT_* configured). Auth-gated, account-scoped (NOT project-scoped —
+// the path has no :projectId, it reports the server-wide managed-git backend).
+// Read-only and safe to assert the happy path on staging.
+flow(
+  "PROJ-20",
+  { domain: "projects", routes: ["GET /v1/projects/managed-git/status"] },
+  async (ctx) => {
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/managed-git/status");
+      r.status(401);
+    });
+    await ctx.step("OWNER → 200 with {configured, provider}", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/managed-git/status");
+      r.status(200).body().exists("$.configured").exists("$.provider");
+      const provider = r.json<any>()?.provider;
+      if (typeof provider !== "string" || provider.length === 0) {
+        throw new Error(`expected a non-empty provider string, got: ${provider}`);
+      }
+      // `configured` is a boolean — never a 500, never an unset field.
+      if (typeof r.json<any>()?.configured !== "boolean") {
+        throw new Error(`expected configured to be a boolean, got: ${r.json<any>()?.configured}`);
+      }
+    });
+  },
+);
