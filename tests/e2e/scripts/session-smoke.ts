@@ -79,6 +79,20 @@ async function api(method: string, path: string, body?: unknown, token = JWT) {
   return { status: res.status, json, text };
 }
 
+async function eventuallyGet(
+  path: string,
+  accept: (result: Awaited<ReturnType<typeof api>>) => boolean,
+  timeoutMs = 90_000,
+) {
+  let last = await api('GET', path);
+  const end = Date.now() + timeoutMs;
+  while (!accept(last) && Date.now() < end) {
+    await sleep(2_000);
+    last = await api('GET', path);
+  }
+  return last;
+}
+
 async function main() {
   log(`=== Kortix session smoke === API=${API}`);
 
@@ -120,9 +134,18 @@ async function main() {
   }
   ok('GET /projects/:id (read)', (await api('GET', `/projects/${projectId}`)).status === 200);
   ok('PATCH /projects/:id (rename)', (await api('PATCH', `/projects/${projectId}`, { name: 'e2e renamed' })).status === 200);
-  const files = await api('GET', `/projects/${projectId}/files`);
+  // The first Code Storage mirror fetch can race provider propagation or a
+  // slow local Docker DB. Exercise the user-facing eventual contract without
+  // converting a transient 5xx/deadline into a permanent false negative.
+  const files = await eventuallyGet(
+    `/projects/${projectId}/files`,
+    (result) => result.status === 200 && Array.isArray(result.json) && result.json.some((file: any) => file.path === 'kortix.yaml'),
+  );
   ok('managed repo files cloned into API mirror', files.status === 200 && Array.isArray(files.json) && files.json.some((file: any) => file.path === 'kortix.yaml'), `${files.status} ${files.text.slice(0, 160)}`);
-  const manifest = await api('GET', `/projects/${projectId}/files/content?path=kortix.yaml`);
+  const manifest = await eventuallyGet(
+    `/projects/${projectId}/files/content?path=kortix.yaml`,
+    (result) => result.status === 200 && typeof result.json?.content === 'string' && result.json.content.length > 0,
+  );
   ok('managed repo manifest content readable', manifest.status === 200 && typeof manifest.json?.content === 'string' && manifest.json.content.length > 0, `${manifest.status} ${manifest.text.slice(0, 160)}`);
   const gitToken = await api('POST', `/projects/${projectId}/git-token`, {});
   ok('fresh managed git token', gitToken.status === 200 && !!gitToken.json?.push_token, `${gitToken.status}`);
