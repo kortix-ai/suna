@@ -293,6 +293,39 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
   });
 });
 
+// "Last sync" indicator — we're the SCIM server, so the honest signal is when
+// the IdP last called us (token last_used_at), paired with the provider's real
+// cadence instead of a made-up "next sync at" prediction.
+describe('SCIM last-sync indicator', () => {
+  test('every SCIM guide states its sync cadence', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      expect(g.config.syncCadenceHint, `${g.id} missing syncCadenceHint`).toBeTruthy();
+    }
+    // Entra is the one with a real scheduled cycle; the hint must say so.
+    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('40 minutes');
+    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('Provision on demand');
+    // Event-driven IdPs must NOT imply a cycle to wait for.
+    expect(getScimGuide('okta')!.config.syncCadenceHint).toContain('as they happen');
+  });
+
+  test('the wizard verify panel shows last sync activity from active-token usage', () => {
+    expect(wizardSource).toContain('latestScimSyncAt');
+    expect(wizardSource).toContain('Last sync activity');
+    // The per-provider cadence replaces the old Entra-hardcoded footer.
+    expect(wizardSource).toContain('cadenceHint={config.syncCadenceHint}');
+    expect(wizardSource).not.toContain("give Entra's provisioning cycle a minute");
+  });
+
+  test('the SCIM card health panel shows last sync activity and polls tokens', () => {
+    expect(scimCardSource).toContain('latestScimSyncAt(tokens)');
+    expect(scimCardSource).toContain('Last sync activity');
+    // The tokens list must poll, or last_used_at goes stale on an open card.
+    expect(scimCardSource).toMatch(
+      /queryFn: \(\) => listScimTokens\(accountId\)[\s\S]{0,200}refetchInterval/,
+    );
+  });
+});
+
 describe('SCIM scope trade-off copy (live confusion: "why only assigned?")', () => {
   test('the Entra configure step explains "sync only assigned" vs "sync all" in plain terms', () => {
     const text = JSON.stringify(getScimGuide('entra')!.steps);

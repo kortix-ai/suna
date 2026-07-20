@@ -46,6 +46,7 @@ import {
   listScimTokens,
   revokeScimToken,
 } from '@/lib/iam-client';
+import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {
   accountId: string;
@@ -59,7 +60,14 @@ interface ScimCardProps {
  * the wizard's verify-step panel (features/sso-setup/setup-wizard.tsx
  * ProvisionedStatusPanel).
  */
-function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
+function ProvisioningHealthPanel({
+  accountId,
+  lastSyncAt,
+}: {
+  accountId: string;
+  /** Newest last_used_at across active SCIM tokens — when the IdP last called us. */
+  lastSyncAt: string | null;
+}) {
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
     queryFn: () => listAccountMembers(accountId),
@@ -76,6 +84,7 @@ function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
   const scimGroups = (groupsQuery.data ?? []).filter((g) => g.source === 'scim');
   const scimMemberCount = scimGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
   const isLoading = membersQuery.isLoading || groupsQuery.isLoading;
+  const freshness = scimSyncFreshness(lastSyncAt);
 
   return (
     <div className="border-border/60 bg-muted/10 space-y-2 rounded-md border px-3 py-2.5">
@@ -109,6 +118,26 @@ function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
           </span>
         </p>
       )}
+      <p className="flex items-center gap-1.5 text-xs">
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            freshness === 'live' && 'bg-kortix-green',
+            freshness === 'recent' && 'bg-kortix-green/60',
+            freshness === 'quiet' && 'bg-muted-foreground/40',
+            freshness === 'never' && 'bg-amber-500',
+          )}
+        />
+        <span className="text-muted-foreground">Last sync activity</span>
+        <span className="text-foreground font-medium">
+          {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
+        </span>
+        <span className="text-muted-foreground">
+          {freshness === 'never'
+            ? '— your IdP hasn’t connected; check provisioning is running there'
+            : '— your IdP pushes on its own schedule (Entra ~every 40 min; most others as changes happen)'}
+        </span>
+      </p>
     </div>
   );
 }
@@ -145,6 +174,9 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
     queryKey: ['scim-tokens', accountId],
     queryFn: () => listScimTokens(accountId),
     staleTime: 30_000,
+    // Poll so "Last sync activity" (last_used_at, stamped by every IdP call)
+    // stays current while the card is open — a sync run shows up live.
+    refetchInterval: 30_000,
   });
   // Same query key SsoCard uses — React Query dedupes this, so checking
   // whether SAML is connected here costs no extra round-trip. Light-touch
@@ -206,7 +238,9 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
 
       <div className="bg-popover rounded-md border">
         <div className="space-y-4 px-4 py-5">
-          {tokens.length > 0 && <ProvisioningHealthPanel accountId={accountId} />}
+          {tokens.length > 0 && (
+            <ProvisioningHealthPanel accountId={accountId} lastSyncAt={latestScimSyncAt(tokens)} />
+          )}
           {/* Endpoint URL */}
           <div className="space-y-1.5">
             <Label className="text-xs">SCIM base URL</Label>
