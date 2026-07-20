@@ -136,7 +136,19 @@ export default function GroupDetailPage() {
             {groupQuery.isLoading ? (
               <Skeleton className="h-6 w-44" />
             ) : (
-              <h2 className="text-foreground truncate text-xl font-medium">{group?.name}</h2>
+              <div className="flex min-w-0 items-center gap-2">
+                <h2 className="text-foreground truncate text-xl font-medium">{group?.name}</h2>
+                {group?.source === 'scim' ? (
+                  <Badge
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    title="This group is pushed by your identity provider via Directory Sync — its name and membership are managed there."
+                  >
+                    Synced from IdP
+                  </Badge>
+                ) : null}
+              </div>
             )}
             {group?.description ? (
               <p className="text-muted-foreground truncate text-sm">{group.description}</p>
@@ -177,6 +189,7 @@ export default function GroupDetailPage() {
               accountId={account.account_id}
               groupId={group.group_id}
               canManage={canManageMembers}
+              idpManaged={group.source === 'scim'}
             />
           </TabsContent>
 
@@ -196,6 +209,7 @@ export default function GroupDetailPage() {
               initialDescription={group.description ?? ''}
               canEdit={canEditGroup}
               canDelete={canDeleteGroup}
+              idpManaged={group.source === 'scim'}
               onDeleted={() => router.push(`/accounts/${account.account_id}?tab=groups`)}
             />
           </TabsContent>
@@ -211,11 +225,17 @@ function GroupMembersCard({
   accountId,
   groupId,
   canManage,
+  idpManaged,
 }: {
   accountId: string;
   groupId: string;
   canManage: boolean;
+  /** SCIM-sourced group: membership is owned by the IdP — the API 409s local
+   *  edits (they'd be clobbered by the next push), so hide the affordances. */
+  idpManaged: boolean;
 }) {
+  // Local membership edits only make sense for locally-owned groups.
+  const canMutate = canManage && !idpManaged;
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
@@ -284,11 +304,18 @@ function GroupMembersCard({
             Members{members.length > 0 ? ` · ${members.length}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
-            Members of this group inherit every policy attached to it.
+            {idpManaged
+              ? 'Membership is synced from your identity provider — add or remove people there.'
+              : 'Members of this group inherit every policy attached to it.'}
           </p>
         </div>
-        {canManage ? (
-          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setAddOpen(true)}>
+        {canMutate ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="gap-1.5"
+            onClick={() => setAddOpen(true)}
+          >
             <Plus className="size-4" />
             Add members
           </Button>
@@ -309,7 +336,11 @@ function GroupMembersCard({
           size="sm"
           title="No members in this group"
           description={
-            canManage ? "Add account members to grant them this group's policies." : undefined
+            idpManaged
+              ? 'Members appear here as your identity provider pushes them.'
+              : canMutate
+                ? "Add account members to grant them this group's policies."
+                : undefined
           }
         />
       ) : null}
@@ -361,7 +392,7 @@ function GroupMembersCard({
                     </InlineMeta>
                   </span>
                 </div>
-                {canManage ? (
+                {canMutate ? (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -546,6 +577,7 @@ function GroupSettingsCard({
   initialDescription,
   canEdit,
   canDelete,
+  idpManaged,
   onDeleted,
 }: {
   accountId: string;
@@ -554,6 +586,9 @@ function GroupSettingsCard({
   initialDescription: string;
   canEdit: boolean;
   canDelete: boolean;
+  /** SCIM-sourced group: the NAME is owned by the IdP (claims match by name;
+   *  the API 409s a local rename). Description stays locally editable. */
+  idpManaged: boolean;
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -600,9 +635,15 @@ function GroupSettingsCard({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={128}
-                disabled={!canEdit || updateMutation.isPending}
+                disabled={!canEdit || updateMutation.isPending || idpManaged}
                 className="max-w-md"
               />
+              {idpManaged ? (
+                <p className="text-muted-foreground text-xs">
+                  The name is managed by your identity provider — rename the group there. Sign-in
+                  group claims match by name, so a local rename would orphan its access.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="group-description">Description</Label>
@@ -658,7 +699,11 @@ function GroupSettingsCard({
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete group"
-        description={`Delete "${initialName}"? This cannot be undone.`}
+        description={
+          idpManaged
+            ? `Delete "${initialName}"? This cannot be undone — and if your identity provider still pushes this group, the next sync recreates it (without its project roles).`
+            : `Delete "${initialName}"? This cannot be undone.`
+        }
         confirmLabel="Delete group"
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
@@ -741,8 +786,8 @@ function GroupProjectGrantsCard({
             Projects{grants.length > 0 ? ` · ${grants.length}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
-            Every group member inherits the chosen role on these projects. Account owners and
-            admins always have Manager.
+            Every group member inherits the chosen role on these projects. Account owners and admins
+            always have Manager.
           </p>
         </div>
         <Button

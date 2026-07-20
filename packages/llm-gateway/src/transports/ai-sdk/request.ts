@@ -1,3 +1,7 @@
+import type { BedrockProviderOptions } from '@ai-sdk/amazon-bedrock';
+import type { AnthropicProviderOptions } from '@ai-sdk/anthropic';
+import type { OpenAIChatLanguageModelOptions } from '@ai-sdk/openai';
+import { type CatalogModel, clampGenerationConfig } from '@kortix/llm-catalog';
 import {
   type JSONValue,
   type ModelMessage,
@@ -190,43 +194,6 @@ function toToolChoice(raw: unknown): ToolChoice<ToolSet> | undefined {
   return undefined;
 }
 
-// Which `providerOptions` key each family's AI-SDK provider PACKAGE itself
-// reads back out — NOT an arbitrary label. Getting this wrong means the
-// options object is built but never consumed (silently inert):
-//  - 'openai'/'anthropic'/'bedrock': each package's own name.
-//  - 'openai-compatible': `createOpenAICompatible`'s chat model reads
-//    `providerOptions[<the exact `name` model.ts passed to
-//    createOpenAICompatible>]` (its `providerOptionsName` getter — see
-//    @ai-sdk/openai-compatible's chat-language-model.js), i.e.
-//    `descriptor.provider` (e.g. 'openrouter'), never the literal string
-//    'openai'.
-//
-// Defect 5 (2026-07-17, found auditing this parity piece): the previous
-// version of this map sent 'openai-compatible' calls' reasoningEffort to
-// providerOptions.openai — a key @ai-sdk/openai-compatible's chat model
-// NEVER reads (it only parses `providerOptions['openai-compatible']`,
-// `['openaiCompatible']`, `[providerOptionsName]`, and the camelCase of the
-// last one — never a bare `'openai'`). reasoning_effort was therefore
-// silently dropped for every OpenRouter-class (openai-compatible) request
-// carrying one — a real request ↔ upstream-call parity gap, never caught
-// because the only existing reasoning_effort test drove family:'openai'.
-function providerOptionsKeyFor(family: AiSdkFamily, providerName: string | undefined): string {
-  if (family === 'openai-compatible') return providerName || 'openai-compatible';
-  if (family === 'anthropic') return 'anthropic';
-  if (family === 'bedrock') return 'bedrock';
-  return 'openai';
-}
-
-function mergeProviderOptions(
-  target: Record<string, Record<string, unknown>>,
-  key: string,
-  fields: Record<string, unknown>,
-): void {
-  const entries = Object.entries(fields).filter(([, value]) => value !== undefined);
-  if (!entries.length) return;
-  target[key] = { ...target[key], ...Object.fromEntries(entries) };
-}
-
 // OpenAI wire fields that carry no AI-SDK top-level CallSettings equivalent
 // (unlike temperature/topP/stopSequences/seed/frequencyPenalty/
 // presencePenalty, which the SDK core exposes directly — see the seed/
@@ -254,10 +221,8 @@ function mergeProviderOptions(
 // hook for it on streamText/generateText.
 function extraOpenAiFields(
   body: Record<string, unknown>,
-  family: AiSdkFamily,
+  family: 'openai' | 'openai-compatible',
 ): Record<string, unknown> {
-  if (family !== 'openai' && family !== 'openai-compatible') return {};
-
   const logitBias = body.logit_bias;
   const logprobs = body.logprobs;
   const topLogprobs = body.top_logprobs;
@@ -353,16 +318,6 @@ function buildResponseFormatOutput(responseFormat: AiSdkResponseFormat) {
 
 export type AiSdkOutput = ReturnType<typeof buildResponseFormatOutput>;
 
-// Only the two families whose NATIVE transport is openai-compat (the
-// verbatim body-forwarding path — see openai-compat/index.ts) ever actually
-// deliver `response_format` to an upstream today: genuine OpenAI and any
-// generic OpenAI-compatible upstream (OpenRouter, Groq, self-hosted...).
-// anthropic/bedrock's native transports (anthropic/request.ts's
-// buildAnthropicCorePayload, shared by bedrock) never read
-// `body.response_format` at all — it's silently dropped there too — so NOT
-// mapping it for those two families here is matching parity, not a gap.
-const RESPONSE_FORMAT_FAMILIES: ReadonlySet<AiSdkFamily> = new Set(['openai', 'openai-compatible']);
-
 interface OpenAiResponseFormatBody {
   type?: string;
   json_schema?: { schema?: unknown; name?: string; description?: string; strict?: boolean };
@@ -394,6 +349,30 @@ function responseFormatFromBody(body: Record<string, unknown>): AiSdkResponseFor
   return undefined;
 }
 
+// Only the two families whose NATIVE transport is openai-compat (the
+// verbatim body-forwarding path — see openai-compat/index.ts) ever actually
+// deliver `response_format` to an upstream today: genuine OpenAI and any
+// generic OpenAI-compatible upstream (OpenRouter, Groq, self-hosted...).
+// anthropic/bedrock's native transports (anthropic/request.ts's
+// buildAnthropicCorePayload, shared by bedrock) never read
+// `body.response_format` at all — it's silently dropped there too — so NOT
+// mapping it for those two families here is matching parity, not a gap. Lives
+// on the adapter as `supportsResponseFormat` now (see ProviderAdapter below)
+// instead of a standalone family Set.
+function strictJsonSchemaField(raw: Record<string, unknown>): boolean | undefined {
+  const responseFormat = responseFormatFromBody(raw);
+  if (responseFormat?.type !== 'json' || responseFormat.schema === undefined) return undefined;
+  // Both provider packages default `strictJsonSchema` to `true` (OpenAI
+  // Structured Outputs' stricter validation) when the key is absent — but
+  // native forwards the client's body verbatim, so an omitted `strict` field
+  // reaches OpenAI as ITS OWN default (`false` for chat/completions'
+  // json_schema mode), not the AI SDK's default. Only ever honor an EXPLICIT
+  // `strict:true` from the client; never let the ai-sdk engine be stricter
+  // than native would have been for the exact same request.
+  const rawStrict = raw.response_format as OpenAiResponseFormatBody | undefined;
+  return rawStrict?.json_schema?.strict === true;
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic / Bedrock extended-thinking + prompt-caching parity fix.
 //
@@ -403,37 +382,40 @@ function responseFormatFromBody(body: Record<string, unknown>): AiSdkResponseFor
 // raw Anthropic-shaped `body.thinking`) into Anthropic extended thinking,
 // bumped `max_tokens` to fit the thinking budget, and applied prompt-cache
 // breakpoints to the system prompt, the last tool definition, and the last
-// message. None of that existed on the ai-sdk engine: the generic
-// `reasoningEffort` merge below (see `providerOptionsKeyFor` /
-// `mergeProviderOptions` above) previously ran for EVERY family including
-// anthropic/bedrock, writing `providerOptions.anthropic.reasoningEffort` — a
-// field @ai-sdk/anthropic's zod schema (`anthropicLanguageModelOptions` in
-// node_modules/@ai-sdk/anthropic/dist/index.d.ts) does not define, so it was
-// silently stripped and thinking never actually turned on. Prompt caching had
-// no equivalent at all. Ported below, with the exact field names verified
-// against the installed package internals rather than assumed:
+// message. None of that existed on the ai-sdk engine: an earlier version of
+// this file merged `providerOptions.anthropic.reasoningEffort` for EVERY
+// family including anthropic/bedrock — a field @ai-sdk/anthropic's zod schema
+// (`AnthropicProviderOptions` in node_modules/@ai-sdk/anthropic/dist/index.d.ts)
+// does not define, so it was silently stripped and thinking never actually
+// turned on. Prompt caching had no equivalent at all. Ported below, with the
+// exact field names verified against the installed package internals rather
+// than assumed:
 //
-//  - @ai-sdk/anthropic (dist/index.d.ts's `anthropicLanguageModelOptions`,
-//    dist/index.js's `CacheControlValidator`/`getCacheControl`): thinking is
+//  - @ai-sdk/anthropic (its exported `AnthropicProviderOptions` type,
+//    `CacheControlValidator`/`getCacheControl` in dist/index.js): thinking is
 //    `providerOptions.anthropic.thinking = {type:'adaptive'}` + a top-level
 //    `providerOptions.anthropic.effort` tier (the package serializes `effort`
 //    to the wire's `output_config.effort`) — current-gen Claude rejects the
 //    legacy `{type:'enabled', budgetTokens}` shape (see applyAnthropicThinking);
 //    caching is `providerOptions.anthropic.cacheControl = {type:'ephemeral'}`,
 //    read PER message/part/tool, not once globally.
-//  - @ai-sdk/amazon-bedrock (dist/index.d.ts's
-//    `amazonBedrockLanguageModelChatOptions`, dist/index.js): thinking is
+//  - @ai-sdk/amazon-bedrock (its exported `BedrockProviderOptions` type,
+//    dist/index.js): thinking is
 //    `providerOptions.bedrock.reasoningConfig = {type:'enabled', budgetTokens}`.
 //    Caching is NOT `cacheControl` — model.ts's `resolveAiModel` builds the
 //    bedrock family via `createAmazonBedrock(...)`, i.e. AWS's own Converse
 //    API, not the Anthropic-shaped InvokeModel path native's bedrock
 //    transport used — so its cache primitive is a separate `cachePoint`
 //    content block: `providerOptions.bedrock.cachePoint = {type:'default'}`
-//    (dist/index.js's `getCachePoint`/`pushCachePoint`). Bedrock's own
-//    `prepareTools` (the Converse `toolConfig` builder) never reads a
-//    function tool's `providerOptions` at all, so there is no per-tool cache
-//    breakpoint available on this SDK version for Bedrock — only system +
-//    last-message caching apply there; last-tool caching is anthropic-only.
+//    (dist/index.js's `getCachePoint`/`pushCachePoint`) — a PER-MESSAGE/part
+//    provider option, which is why it's not part of `BedrockProviderOptions`
+//    (that type only covers the top-level generation options: reasoningConfig
+//    etc.) and is built by hand in applyAnthropicPromptCaching below instead.
+//    Bedrock's own `prepareTools` (the Converse `toolConfig` builder) never
+//    reads a function tool's `providerOptions` at all, so there is no
+//    per-tool cache breakpoint available on this SDK version for Bedrock —
+//    only system + last-message caching apply there; last-tool caching is
+//    anthropic-only.
 const REASONING_EFFORT_BUDGET_TOKENS: Record<string, number> = {
   minimal: 1024,
   low: 2048,
@@ -551,9 +533,10 @@ function resolveThinkingRequest(
 // Extended thinking is the one place the two Claude backends genuinely diverge:
 // they are DIFFERENT AI-SDK packages with DIFFERENT wire contracts. Direct
 // Anthropic (@ai-sdk/anthropic) and AWS Bedrock (@ai-sdk/amazon-bedrock, the
-// Converse API) each get their own applier below, keyed off `resolveThinkingRequest`'s
-// single result — no shared "is it anthropic or bedrock" branch inside the
-// request builder.
+// Converse API) each get their own builder below, keyed off
+// `resolveThinkingRequest`'s single result — no shared "is it anthropic or
+// bedrock" branch anywhere; each function below returns ONLY the fields its
+// own family's adapter (see ADAPTERS below) merges into its typed options.
 
 // @ai-sdk/anthropic — current-gen Claude (Opus 4.5+/4.8) REJECTS the legacy
 // `thinking.type:"enabled"` + budget_tokens shape ("`thinking.type.enabled` is
@@ -565,13 +548,9 @@ function resolveThinkingRequest(
 // The old `enabled` shape broke every explicit-reasoning-effort turn on
 // Anthropic; only AUTO worked because it sent no thinking block at all.
 function applyAnthropicThinking(
-  providerOptions: Record<string, Record<string, unknown>>,
   resolved: ResolvedThinking,
-): void {
-  mergeProviderOptions(providerOptions, 'anthropic', {
-    thinking: { type: 'adaptive' },
-    effort: resolved.effort,
-  });
+): Pick<AnthropicProviderOptions, 'thinking' | 'effort'> {
+  return { thinking: { type: 'adaptive' }, effort: resolved.effort };
 }
 
 // @ai-sdk/amazon-bedrock — Bedrock's Converse API still uses the
@@ -579,14 +558,11 @@ function applyAnthropicThinking(
 // Anthropic's adaptive/output_config surface). Converse rejects
 // budgetTokens >= max output tokens, so clamp below the answer headroom.
 function applyBedrockThinking(
-  providerOptions: Record<string, Record<string, unknown>>,
   resolved: ResolvedThinking,
   maxTokens: number,
-): void {
+): Pick<BedrockProviderOptions, 'reasoningConfig'> {
   const budgetTokens = Math.min(resolved.budgetTokens, Math.max(1024, maxTokens - 1024));
-  mergeProviderOptions(providerOptions, 'bedrock', {
-    reasoningConfig: { type: 'enabled', budgetTokens },
-  });
+  return { reasoningConfig: { type: 'enabled', budgetTokens } };
 }
 
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
@@ -666,6 +642,256 @@ function applyAnthropicPromptCaching(
   return { system: nextSystem, tools: nextTools };
 }
 
+// ---------------------------------------------------------------------------
+// Normalization: the incoming OpenAI chat.completions body, translated ONCE
+// into the family-agnostic shape every adapter below reads from. The four
+// capability-gated generation params (reasoning effort, temperature, top_p,
+// max output tokens) are ALSO clamped here, in one place, against the resolved
+// model's real models.dev capabilities — so adapters and the orchestrator only
+// ever read already-gated values. The remaining CallSettings-equivalent params
+// (stop/seed/penalties) carry no per-model capability, so they stay read
+// straight off `raw` in the orchestrator.
+interface NormalizedRequest {
+  // The original parsed body — adapters read family-specific raw fields
+  // (`thinking`, `reasoning`, `response_format`, the openai-only extra
+  // fields) directly off this rather than the orchestrator pre-extracting
+  // every possible field a family might want.
+  raw: Record<string, unknown>;
+  system: string | AiSdkSystemInstruction | undefined;
+  messages: ModelMessage[];
+  tools: ToolSet | undefined;
+  toolChoice: ToolChoice<ToolSet> | undefined;
+  // Accepts both the chat/completions field (`reasoning_effort: string`) and
+  // the Responses-style nested shape (`reasoning: { effort: string }`) some
+  // callers (opencode) send directly, folded with the caller's own default
+  // (Codex always sends a reasoning effort — see buildAiSdkArgs's opts doc).
+  // Dropped when a resolved model publishes no matching effort tier (gating).
+  reasoningEffort: string | undefined;
+  // Client-supplied sampling params. Dropped when the resolved model rejects a
+  // custom temperature/top_p (models.dev `temperature:false`, e.g. gpt-5.6-sol);
+  // clamped to [0,2]/[0,1] otherwise — read by the orchestrator instead of the
+  // raw body so gating lives in exactly one place.
+  temperature: number | undefined;
+  topP: number | undefined;
+  // `max_tokens` / `max_completion_tokens`, whichever is present — always
+  // wins over any family default (see each adapter's `defaultMaxTokens`).
+  // Clamped to the model's `limit.output` ceiling when one is known.
+  explicitMaxTokens: number | undefined;
+}
+
+function normalizeRequest(
+  body: Record<string, unknown>,
+  opts: { defaultReasoningEffort?: string; model?: CatalogModel },
+): NormalizedRequest {
+  const { system, messages } = toModelMessages(body.messages);
+  const tools = toToolSet(body.tools);
+  const toolChoice = tools ? toToolChoice(body.tool_choice) : undefined;
+
+  // Raw per-request generation params, before capability gating.
+  let reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
+  let temperature = typeof body.temperature === 'number' ? body.temperature : undefined;
+  let topP = typeof body.top_p === 'number' ? body.top_p : undefined;
+  let explicitMaxTokens =
+    (typeof body.max_tokens === 'number' ? body.max_tokens : undefined) ??
+    (typeof body.max_completion_tokens === 'number' ? body.max_completion_tokens : undefined);
+
+  // Gate ONCE against the resolved model's real capabilities, REUSING the
+  // canonical clamp from @kortix/llm-catalog — the exact gate the host already
+  // runs on route DEFAULTS (see routing/resolve-route.ts), now applied to the
+  // client-supplied values that path never touched. Only when a model is known:
+  // `clampGenerationConfig` treats an unknown model as "supports nothing" and
+  // would drop every field, so absence is a deliberate NO-OP (permissive —
+  // preserves the pre-gating behavior every existing caller relies on).
+  if (opts.model) {
+    const gated = clampGenerationConfig(
+      { reasoningEffort, temperature, topP, maxOutputTokens: explicitMaxTokens },
+      opts.model,
+    );
+    reasoningEffort = gated.reasoningEffort;
+    temperature = gated.temperature;
+    topP = gated.topP;
+    explicitMaxTokens = gated.maxOutputTokens;
+  }
+
+  return {
+    raw: body,
+    system,
+    messages,
+    tools,
+    toolChoice,
+    reasoningEffort,
+    temperature,
+    topP,
+    explicitMaxTokens,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-provider adapter registry.
+//
+// Each AI-SDK family (see model.ts's `AiSdkFamily`) has its own wire
+// contract — a different `providerOptions` key, a different reasoning
+// mechanism, different defaults, different caching primitives, and only two
+// of the four ever see `response_format`. Before this refactor all of that
+// lived as `if (family === ...)` branches sprinkled through one function
+// (see git history) — easy to update one branch and forget a sibling (that's
+// exactly how the openai-compatible reasoningEffort key and the Anthropic
+// legacy-thinking-shape defects both happened). Now each family owns ONE
+// adapter implementing this interface, keyed off `AiSdkFamily` in `ADAPTERS`
+// below; `buildAiSdkArgs` is a thin orchestrator that never branches on
+// family itself — it only ever asks "the adapter for this family" to do the
+// family-specific work.
+//
+// `buildProviderOptions`'s return type is intentionally `Record<string,
+// unknown>` at the interface level (the four families have four genuinely
+// different shapes, and TypeScript has no clean way to key an interface
+// method's return type off which family implements it) — but every
+// individual adapter below builds and returns a value first typed against
+// its OWN package's exported provider-options type
+// (`AnthropicProviderOptions`, `BedrockProviderOptions`,
+// `OpenAIChatLanguageModelOptions`), so assigning a field the SDK doesn't
+// recognize, or misspelling one, is a compile error at the point it's
+// constructed — precisely the class of defect (`thinking.type:'enabled'` vs
+// `'adaptive'`, `providerOptions.openai` vs the real per-provider key) that
+// motivated this refactor. openai-compatible is the one deliberate
+// exception: `createOpenAICompatible`'s schema only recognizes
+// user/reasoningEffort/textVerbosity/strictJsonSchema and forwards every
+// OTHER key onto the wire completely unvalidated (see extraOpenAiFields'
+// doc comment), so a loose `Record<string, unknown>` is the accurate type
+// for that family, not a narrower one that would falsely imply validation
+// exists.
+interface ProviderAdapter {
+  // Which `providerOptions` key this family's AI-SDK provider PACKAGE itself
+  // reads back out — NOT an arbitrary label. Getting this wrong means the
+  // options object is built but never consumed (silently inert). Only the
+  // 'openai-compatible' adapter needs `providerName` (createOpenAICompatible's
+  // chat model reads `providerOptions[<the exact `name` passed to it>]` — its
+  // `providerOptionsName` getter, see @ai-sdk/openai-compatible's
+  // chat-language-model.js — i.e. `descriptor.provider`, e.g. 'openrouter',
+  // never the literal string 'openai'); every other family ignores it.
+  optionsKey(providerName?: string): string;
+  // Reasoning/thinking + family-specific extra fields + strictJsonSchema,
+  // typed against this family's own SDK option type (see the interface doc
+  // comment above). Returned fields with value `undefined` are dropped by
+  // the orchestrator before being attached — an adapter never needs to omit
+  // a key itself just to avoid sending it.
+  buildProviderOptions(req: NormalizedRequest, providerName?: string): Record<string, unknown>;
+  // maxOutputTokens to use when the client sent no explicit max_tokens/
+  // max_completion_tokens. `undefined` (openai/openai-compatible) means
+  // "let the AI SDK / upstream default apply" — unlike anthropic/bedrock,
+  // neither family required an explicit ceiling before this transport
+  // existed.
+  defaultMaxTokens(req: NormalizedRequest): number | undefined;
+  // Whether this family's native transport ever forwarded `response_format`
+  // to the upstream (see the parity note above `strictJsonSchemaField`) —
+  // gates whether the orchestrator builds an `AiSdkOutput` at all.
+  supportsResponseFormat: boolean;
+  // Prompt-cache breakpoint insertion (anthropic/bedrock only). Absent on
+  // families with no caching primitive here (openai/openai-compatible).
+  applyCaching?(
+    system: string | AiSdkSystemInstruction | undefined,
+    messages: ModelMessage[],
+    tools: ToolSet | undefined,
+  ): { system: string | AiSdkSystemInstruction | undefined; tools: ToolSet | undefined };
+}
+
+const openAiAdapter: ProviderAdapter = {
+  optionsKey: () => 'openai',
+  buildProviderOptions(req, providerName) {
+    const options: OpenAIChatLanguageModelOptions = {};
+    // The AI SDK's OpenAI provider strips temperature and other unsupported
+    // params for reasoning models on its own — we only forward the effort.
+    if (typeof req.reasoningEffort === 'string') {
+      options.reasoningEffort =
+        req.reasoningEffort as OpenAIChatLanguageModelOptions['reasoningEffort'];
+    }
+    // Codex (ChatGPT subscription) upstream — `https://chatgpt.com/backend-api/codex`
+    // — is NOT the public OpenAI platform API. It is stricter, and it rejects a
+    // Responses body that omits `store` with a bare `{"error":{"message":"Bad
+    // Request","code":400}}` SSE frame naming no field. The deleted native
+    // transport set `store: false` UNCONDITIONALLY on every Codex request
+    // (transports/openai-responses/request.ts:156, removed in #4943 when the
+    // ai-sdk engine became the sole transport); that line was never ported, so
+    // the SDK left `store` undefined → dropped from the JSON → every codex/*
+    // model 400'd. Restoring exact parity with the transport that worked.
+    // Do NOT "clean this up" as redundant: omitted and `false` are different
+    // requests to this backend.
+    if (providerName === 'openai-codex') options.store = false;
+    Object.assign(options, extraOpenAiFields(req.raw, 'openai'));
+    const strict = strictJsonSchemaField(req.raw);
+    if (strict !== undefined) options.strictJsonSchema = strict;
+    return options;
+  },
+  defaultMaxTokens: () => undefined,
+  supportsResponseFormat: true,
+};
+
+const openAiCompatibleAdapter: ProviderAdapter = {
+  optionsKey: (providerName) => providerName || 'openai-compatible',
+  buildProviderOptions(req) {
+    const options: Record<string, unknown> = {};
+    // openai-compatible upstreams (OpenRouter) accept the same reasoning
+    // field under the provider namespace.
+    if (typeof req.reasoningEffort === 'string') options.reasoningEffort = req.reasoningEffort;
+    Object.assign(options, extraOpenAiFields(req.raw, 'openai-compatible'));
+    const strict = strictJsonSchemaField(req.raw);
+    if (strict !== undefined) options.strictJsonSchema = strict;
+    return options;
+  },
+  defaultMaxTokens: () => undefined,
+  supportsResponseFormat: true,
+};
+
+const anthropicAdapter: ProviderAdapter = {
+  optionsKey: () => 'anthropic',
+  buildProviderOptions(req) {
+    const options: AnthropicProviderOptions = {};
+    const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
+    if (thinking) Object.assign(options, applyAnthropicThinking(thinking));
+    return options;
+  },
+  defaultMaxTokens(req) {
+    const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
+    return thinking ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096;
+  },
+  supportsResponseFormat: false,
+  applyCaching: (system, messages, tools) =>
+    applyAnthropicPromptCaching(system, messages, tools, 'anthropic'),
+};
+
+const bedrockAdapter: ProviderAdapter = {
+  optionsKey: () => 'bedrock',
+  buildProviderOptions(req) {
+    const options: BedrockProviderOptions = {};
+    const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
+    if (thinking) {
+      // Mirrors this adapter's own `defaultMaxTokens`: when a thinking budget
+      // is present, the EFFECTIVE max tokens for this request is always
+      // `explicitMaxTokens ?? DEFAULT_MAX_TOKENS_WITH_THINKING` (the plain
+      // 4096 default never applies once thinking is on) — needed here too so
+      // the budget clamp below matches the ceiling the orchestrator actually
+      // sends as `maxOutputTokens`.
+      const maxTokens = req.explicitMaxTokens ?? DEFAULT_MAX_TOKENS_WITH_THINKING;
+      Object.assign(options, applyBedrockThinking(thinking, maxTokens));
+    }
+    return options;
+  },
+  defaultMaxTokens(req) {
+    const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
+    return thinking ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096;
+  },
+  supportsResponseFormat: false,
+  applyCaching: (system, messages, tools) =>
+    applyAnthropicPromptCaching(system, messages, tools, 'bedrock'),
+};
+
+const ADAPTERS: Record<AiSdkFamily, ProviderAdapter> = {
+  openai: openAiAdapter,
+  'openai-compatible': openAiCompatibleAdapter,
+  anthropic: anthropicAdapter,
+  bedrock: bedrockAdapter,
+};
+
 export function buildAiSdkArgs(
   body: Record<string, unknown>,
   family: AiSdkFamily,
@@ -678,102 +904,77 @@ export function buildAiSdkArgs(
     defaultReasoningEffort?: string;
     // The exact provider name model.ts passed to `createOpenAICompatible`
     // (`descriptor.provider`) — needed to key providerOptions correctly for
-    // the 'openai-compatible' family (see providerOptionsKeyFor above).
-    // Ignored for every other family.
+    // the 'openai-compatible' family (see the ProviderAdapter interface doc
+    // comment above). Ignored for every other family.
     providerName?: string;
+    // The resolved catalog model for this wire request (see index.ts, which
+    // resolves it via @kortix/llm-catalog's `catalogModelForWireModel`). When
+    // present, the four capability-gated generation params are clamped against
+    // its real models.dev capabilities in `normalizeRequest`. OPTIONAL: absent
+    // → no gating (permissive parity — every param passes through unchanged).
+    model?: CatalogModel;
   } = {},
 ): AiSdkCallArgs {
-  const { system: systemText, messages } = toModelMessages(body.messages);
-  const tools = toToolSet(body.tools);
-  const toolChoice = tools ? toToolChoice(body.tool_choice) : undefined;
+  const req = normalizeRequest(body, opts);
+  const adapter = ADAPTERS[family];
 
-  const isAnthropicOrBedrock = family === 'anthropic' || family === 'bedrock';
-
-  const providerOptionsKey = providerOptionsKeyFor(family, opts.providerName);
+  // The accumulator below is built with `unknown` values (an adapter's
+  // fields — logit_bias, metadata, prediction, a client-supplied JSON
+  // Schema — come straight from an already-parsed JSON request body, so
+  // they're structurally JSON-safe even though the body's declared type is
+  // `Record<string, unknown>`, not `JSONValue`) — cast once at the boundary
+  // below rather than threading `JSONValue` through every adapter.
   const providerOptions: Record<string, Record<string, unknown>> = {};
-
-  // Accepts both the chat/completions field (`reasoning_effort: string`) and
-  // the Responses-style nested shape (`reasoning: { effort: string }`) some
-  // callers (opencode) send directly — same helper route-kind.ts uses to make
-  // the identical decision for the native transport.
-  const reasoningEffort = reasoningEffortFromBody(body) ?? opts.defaultReasoningEffort;
-
-  // anthropic/bedrock never read a bare `reasoningEffort` providerOptions key
-  // (see the file-level comment above `resolveThinkingRequest`) — for
-  // those two families reasoning_effort/thinking is translated into a real
-  // thinking budget further below instead.
-  if (typeof reasoningEffort === 'string' && !isAnthropicOrBedrock) {
-    // The AI SDK's OpenAI provider strips temperature and other unsupported params
-    // for reasoning models on its own — we only forward the effort. openai-compatible
-    // upstreams (OpenRouter) accept the same field under the provider namespace.
-    mergeProviderOptions(providerOptions, providerOptionsKey, { reasoningEffort });
+  const rawFields = adapter.buildProviderOptions(req, opts.providerName);
+  const definedFields = Object.entries(rawFields).filter(([, value]) => value !== undefined);
+  if (definedFields.length) {
+    providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries(definedFields);
   }
 
-  const thinkingBudget = isAnthropicOrBedrock
-    ? resolveThinkingRequest(body, reasoningEffort)
-    : undefined;
-
-  const explicitMaxTokens =
-    (typeof body.max_tokens === 'number' ? body.max_tokens : undefined) ??
-    (typeof body.max_completion_tokens === 'number' ? body.max_completion_tokens : undefined);
-
+  // Codex's ChatGPT backend (`https://chatgpt.com/backend-api/codex/responses`)
+  // REJECTS `max_output_tokens` outright — it 400s the whole request with
+  // `{"detail":"Unsupported parameter: max_output_tokens"}` (captured live via
+  // the error-detail path). @ai-sdk/openai's `.responses()` serializes
+  // `maxOutputTokens` → wire `max_output_tokens`, so any turn that carries a
+  // token cap dies. Requests with NO cap (a bare "hi") slip through, which is
+  // why simple probes passed while every real opencode turn — which always
+  // sends one — 400'd. The backend manages its own output budget, so dropping
+  // the cap for Codex is the correct behaviour, not a workaround. Codex-only:
+  // the real OpenAI platform API DOES accept max_output_tokens, so plain
+  // `openai` must keep sending it.
   const maxTokens =
-    explicitMaxTokens ??
-    (isAnthropicOrBedrock ? (thinkingBudget ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096) : undefined);
-
-  // Hand the resolved thinking request to the family's OWN applier — the two
-  // backends' wire contracts diverge (see applyAnthropicThinking /
-  // applyBedrockThinking). openai/openai-compatible never reach here (their
-  // reasoningEffort was set above and thinkingBudget is undefined for them).
-  if (thinkingBudget && typeof maxTokens === 'number') {
-    if (family === 'anthropic') applyAnthropicThinking(providerOptions, thinkingBudget);
-    else if (family === 'bedrock') applyBedrockThinking(providerOptions, thinkingBudget, maxTokens);
-  }
+    opts.providerName === 'openai-codex'
+      ? undefined
+      : (req.explicitMaxTokens ?? adapter.defaultMaxTokens(req));
 
   const stop = body.stop;
   const stopSequences =
     typeof stop === 'string' ? [stop] : Array.isArray(stop) ? (stop as string[]) : undefined;
 
-  let system: string | AiSdkSystemInstruction | undefined = systemText;
-  let cacheableTools = tools;
-  if (isAnthropicOrBedrock) {
-    const cached = applyAnthropicPromptCaching(system, messages, tools, family);
+  let system = req.system;
+  let tools = req.tools;
+  if (adapter.applyCaching) {
+    const cached = adapter.applyCaching(system, req.messages, tools);
     system = cached.system;
-    cacheableTools = cached.tools;
+    tools = cached.tools;
   }
 
-  const responseFormat = RESPONSE_FORMAT_FAMILIES.has(family)
-    ? responseFormatFromBody(body)
-    : undefined;
   let output: AiSdkOutput | undefined;
-  if (responseFormat) {
-    output = buildResponseFormatOutput(responseFormat);
-    if (responseFormat.type === 'json' && responseFormat.schema !== undefined) {
-      // Both provider packages default `strictJsonSchema` to `true`
-      // (OpenAI Structured Outputs' stricter validation) when the key is
-      // absent — but native forwards the client's body verbatim, so an
-      // omitted `strict` field reaches OpenAI as ITS OWN default (`false`
-      // for chat/completions' json_schema mode), not the AI SDK's default.
-      // Only ever honor an EXPLICIT `strict:true` from the client; never let
-      // the ai-sdk engine be stricter than native would have been for the
-      // exact same request.
-      const rawStrict = (body.response_format as OpenAiResponseFormatBody | undefined)?.json_schema
-        ?.strict;
-      mergeProviderOptions(providerOptions, providerOptionsKey, {
-        strictJsonSchema: rawStrict === true,
-      });
-    }
+  if (adapter.supportsResponseFormat) {
+    const responseFormat = responseFormatFromBody(body);
+    if (responseFormat) output = buildResponseFormatOutput(responseFormat);
   }
-
-  mergeProviderOptions(providerOptions, providerOptionsKey, extraOpenAiFields(body, family));
 
   return {
     system,
-    messages,
-    tools: cacheableTools,
-    toolChoice,
-    temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
-    topP: typeof body.top_p === 'number' ? body.top_p : undefined,
+    messages: req.messages,
+    tools,
+    toolChoice: req.toolChoice,
+    // Already capability-gated in normalizeRequest (dropped/clamped per the
+    // resolved model) — read off `req`, never the raw body, so a model that
+    // rejects a custom temperature/top_p never sees one.
+    temperature: req.temperature,
+    topP: req.topP,
     maxOutputTokens: maxTokens,
     stopSequences,
     seed: typeof body.seed === 'number' ? body.seed : undefined,
@@ -781,12 +982,6 @@ export function buildAiSdkArgs(
       typeof body.frequency_penalty === 'number' ? body.frequency_penalty : undefined,
     presencePenalty: typeof body.presence_penalty === 'number' ? body.presence_penalty : undefined,
     output,
-    // The accumulator above is built with `unknown` values (its inputs —
-    // logit_bias, metadata, prediction, a client-supplied JSON Schema — come
-    // straight from an already-parsed JSON request body, so they're
-    // structurally JSON-safe even though the JSON body's declared type is
-    // `Record<string, unknown>`, not `JSONValue`) — cast once at the
-    // boundary rather than threading `JSONValue` through every helper above.
     providerOptions: (Object.keys(providerOptions).length ? providerOptions : undefined) as
       | Record<string, Record<string, JSONValue>>
       | undefined,

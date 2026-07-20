@@ -272,7 +272,30 @@ export function openAiSseFromFullStream(
                   : looksLikeTerminalAuthFailure(message)
                     ? 401
                     : undefined;
-              emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
+              // `@ai-sdk/*` wraps an HTTP failure in an APICallError whose
+              // `.message` is generic ("Bad Request") — the actionable part (WHICH
+              // field the upstream rejected) lives in `.responseBody` (raw string)
+              // / `.data` (parsed) / `.url`. Dropping those is exactly why Codex
+              // 400s read as an opaque "Bad Request" and had to be root-caused by
+              // git archaeology. Thread them into the emitted frame's error object
+              // so `sseErrorFrame`'s `detail` carries them to the logs. Bounded so
+              // a huge upstream body can't blow up a log line.
+              const detail: Record<string, unknown> = {};
+              const responseBody = errObj?.responseBody;
+              if (typeof responseBody === 'string' && responseBody.length > 0) {
+                detail.responseBody = responseBody.slice(0, 2000);
+              }
+              if (errObj?.data !== undefined) detail.data = errObj.data;
+              if (typeof errObj?.url === 'string') detail.url = errObj.url;
+              emit(
+                sse({
+                  error: {
+                    message,
+                    ...(code != null ? { code } : {}),
+                    ...(Object.keys(detail).length > 0 ? detail : {}),
+                  },
+                }),
+              );
               break;
             }
             default:

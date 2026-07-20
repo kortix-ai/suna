@@ -11,7 +11,10 @@ import {
 
 test('managed git auth headers honor the provider-selected username', () => {
   const args = authHeaderArgs('https://kortix.code.storage/demo.git', 'jwt-token', 't');
-  const encoded = args.at(-1)?.split('AUTHORIZATION: basic ')[1];
+  expect(args.at(-1)).toStartWith(
+    'http.https://kortix.code.storage/.extraheader=Authorization: Basic ',
+  );
+  const encoded = args.at(-1)?.split('Authorization: Basic ')[1];
   expect(encoded && Buffer.from(encoded, 'base64').toString('utf8')).toBe('t:jwt-token');
 });
 

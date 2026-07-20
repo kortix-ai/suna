@@ -8,7 +8,6 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/project-files';
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import type {
   Agent,
   Command,
@@ -20,7 +19,6 @@ import {
   useOpenCodeSessionTodo,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
@@ -89,133 +87,14 @@ function formatRelativeTime(timestamp: number): string {
 // ============================================================================
 // Flat model list helper
 // ============================================================================
+//
+// Extracted to ./model-flatten — it's data, not UI, and this file is already
+// far past the size where new logic belongs in it. Re-exported here so the
+// many existing `from '@/features/session/session-chat-input'` importers keep
+// working.
+import type { FlatModel } from './model-flatten';
 
-export interface FlatModel {
-  providerID: string;
-  providerName: string;
-  modelID: string;
-  modelName: string;
-  variants?: Record<string, Record<string, unknown>>;
-  /** Capabilities extracted from the provider API response */
-  capabilities?: {
-    reasoning?: boolean;
-    vision?: boolean;
-    toolcall?: boolean;
-  };
-  /** Context window size in tokens */
-  contextWindow?: number;
-  /** ISO date string for release date */
-  releaseDate?: string;
-  /** Model family (used for "latest" logic) */
-  family?: string;
-  /** Cost per token (input/output) */
-  cost?: {
-    input: number;
-    output: number;
-  };
-  /** True for zero-cost managed models exposed by the gateway. */
-  free?: boolean;
-  /** Provider source (env, api, config, custom) */
-  providerSource?: string;
-  /**
-   * The REAL upstream provider this model resolves against ('anthropic',
-   * 'openai', 'codex', 'kortix', ...) — carried explicitly off the gateway's
-   * served model (`GatewayModel.provider`, apps/api's catalog-models.ts) so
-   * the picker never has to recover it by string-splitting `modelID`. Every
-   * gateway model is registered under `providerID: 'kortix'`; this is the
-   * field that identifies who ACTUALLY serves it. Falls back to undefined
-   * for providers/models predating this field (e.g. a stale baked catalog on
-   * an old sandbox image) — consumers should still fall back to splitting
-   * `modelID` in that case.
-   */
-  provider?: string;
-  /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
-   *  the model exposes one — same shape the composer's effort selector reads
-   *  off the baked/live catalog, threaded onto the live per-session model too. */
-  reasoningOptions?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
-  /** Free-text blurb models.dev publishes for the model. */
-  description?: string;
-  /** True when the model's weights are publicly released (open-weights) vs.
-   *  closed API-only. models.dev's `open_weights` field, mirrored. */
-  openWeights?: boolean;
-  /** When models.dev last refreshed this model's own entry. */
-  lastUpdated?: string;
-}
-
-function catalogModelFor(providerID: string, modelID: string) {
-  let lookupProviderID = providerID;
-  let lookupModelID = modelID;
-  if (providerID === 'kortix') {
-    const slash = modelID.indexOf('/');
-    if (slash !== -1) {
-      lookupProviderID = modelID.slice(0, slash);
-      lookupModelID = modelID.slice(slash + 1);
-    }
-  }
-  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find(
-    (model) => model.id === lookupModelID,
-  );
-}
-
-export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
-  if (!providers) return [];
-  const normalized = normalizeProviderList(providers);
-  const all = Array.isArray(normalized.all) ? normalized.all : [];
-  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
-  const result: FlatModel[] = [];
-  for (const p of all) {
-    if (!connected.includes(p.id)) continue;
-    for (const [modelID, model] of Object.entries(p.models)) {
-      const caps = (model as any).capabilities;
-      const modalities = (model as any).modalities;
-      const catalogModel = catalogModelFor(p.id, modelID);
-      result.push({
-        providerID: p.id,
-        providerName: p.name,
-        modelID,
-        modelName: (model.name || catalogModel?.name || modelID).replace('(latest)', '').trim(),
-        variants: model.variants,
-        capabilities: caps
-          ? {
-              reasoning: caps.reasoning ?? false,
-              vision: caps.input?.image ?? false,
-              toolcall: caps.toolcall ?? false,
-            }
-          : {
-              reasoning: (model as any).reasoning ?? false,
-              vision: modalities?.input?.includes('image') ?? false,
-              toolcall: (model as any).tool_call ?? false,
-            },
-        contextWindow: (model as any).limit?.context,
-        releaseDate:
-          (model as any).release_date ??
-          (model as any).released ??
-          catalogModel?.released ??
-          undefined,
-        family: (model as any).family,
-        cost: (model as any).cost
-          ? {
-              input: (model as any).cost.input ?? 0,
-              output: (model as any).cost.output ?? 0,
-            }
-          : undefined,
-        free: (model as any).free === true,
-        providerSource: (p as any).source,
-        provider: typeof (model as any).provider === 'string' ? (model as any).provider : undefined,
-        reasoningOptions: Array.isArray((model as any).reasoning_options)
-          ? (model as any).reasoning_options
-          : undefined,
-        description:
-          typeof (model as any).description === 'string' ? (model as any).description : undefined,
-        openWeights:
-          typeof (model as any).open_weights === 'boolean' ? (model as any).open_weights : undefined,
-        lastUpdated:
-          typeof (model as any).last_updated === 'string' ? (model as any).last_updated : undefined,
-      });
-    }
-  }
-  return result;
-}
+export { type FlatModel, flattenModels } from './model-flatten';
 
 // ============================================================================
 // Agent Selector

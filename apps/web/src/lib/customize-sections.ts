@@ -13,7 +13,7 @@
  */
 
 export type CustomizeSection =
-  | 'changes'
+  | 'git'
   | 'review'
   | 'skills'
   | 'agents'
@@ -35,14 +35,13 @@ export type CustomizeSection =
   | 'channels'
   | 'meet'
   | 'sandbox'
-  | 'dev'
   | 'settings'
   | 'upgrade';
 
 export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'agents';
 
 export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
-  'changes',
+  'git',
   'review',
   'skills',
   'agents',
@@ -64,10 +63,20 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'channels',
   'meet',
   'sandbox',
-  'dev',
   'settings',
   'upgrade',
 ];
+
+export function legacyCustomizeFilesRedirect(
+  projectId: string,
+  rawSection: string | null | undefined,
+): string | null {
+  if (rawSection === 'files') return `/projects/${projectId}/files`;
+  if (rawSection === 'changes') {
+    return `/projects/${projectId}/files?panel=proposed-changes`;
+  }
+  return null;
+}
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {
   if (!raw) return null;

@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { defaultAgentFromSeedFiles } from './seed-files';
+import {
+  buildProjectSeedFilesFromItem,
+  defaultAgentFromSeedFiles,
+} from './seed-files';
 
 // Regression coverage for the "agent-scope model pins silently never apply"
 // bug: POST /projects/provision seeds a starter kortix.yaml that declares
@@ -45,5 +48,21 @@ describe('defaultAgentFromSeedFiles', () => {
   test('non-string default_agent (malformed manifest) → null, never throws', () => {
     const files = [{ path: 'kortix.yaml', content: 'default_agent: 42\n' }];
     expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBeNull();
+  });
+});
+
+describe("buildProjectSeedFilesFromItem", () => {
+  test("interpolates the destination name into the Kortix starter project", async () => {
+    const seed = await buildProjectSeedFilesFromItem({
+      id: "kortix-projects:starter",
+      projectName: "Company OS",
+      repoFullName: "acme/company-os",
+      extraMarketplaceItems: [],
+      now: "2026-07-19T00:00:00.000Z",
+    });
+
+    expect(
+      seed.files.find((file) => file.path === "kortix.yaml")?.content,
+    ).toContain('name: "Company OS"');
   });
 });

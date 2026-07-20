@@ -536,6 +536,29 @@ claim is closed.
 
 ---
 
+### 2026-07-19 — session `git-management-ux` (completion)
+
+Completed the additive GitHub repository-template input. The public
+`CreateProjectRepoInput` contract now accepts `source_item_id`, allowing the web
+project creator to seed a selected `registry:project` item into a newly created
+GitHub App repository. No exported name or existing field was removed or
+renamed.
+
+**TDD evidence:** the focused project-client test failed before
+`source_item_id` existed on `CreateProjectRepoInput`; after implementation the
+focused project-client suite passed, including the new marketplace-template
+contract assertion.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1141 pass / 0 fail** across 86 files with 5054 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository merge, Deploy
+Dev, and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
 ### 2026-07-18 — session `connectors-discover-flag` (completion)
 
 Completed the additive Discover integration-catalog SDK restoration as a separate,
@@ -1049,3 +1072,18 @@ Daytona session smoke **24 pass / 0 fail**.
 **Shippable to production: YES** for the SDK surface and local end-to-end path.
 Repository merge, Deploy Dev, and live-dev verification remain part of the parent
 feature lifecycle.
+
+---
+
+### 2026-07-19 — session `git-management-ux` (claim)
+
+Claimed the additive GitHub project-create template input needed by the
+user-directed Git provider default. `CreateProjectRepoInput` will accept the
+existing optional `source_item_id` concept so a selected marketplace project
+template is seeded into the user's newly created GitHub repository rather than
+silently falling back to the generic starter or Kortix-managed storage. No
+exported name or existing field will be removed or renamed. Implementation will
+follow RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test,
+and packed-install smoke gates.
+
+**Status:** IN PROGRESS.

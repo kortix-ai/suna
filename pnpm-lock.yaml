@@ -1376,6 +1376,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../llm-catalog
       '@kortix/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1436,9 +1439,15 @@ importers:
       '@types/react':
         specifier: ^19.1.17
         version: 19.1.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.1.17)
       react:
         specifier: ^19.1.0
         version: 19.1.0
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.1.0(react@19.1.0)
       tsc-alias:
         specifier: ^1.8.17
         version: 1.9.0

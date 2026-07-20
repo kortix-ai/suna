@@ -487,7 +487,8 @@ function buildStarterKitProjectItem(): RegistryItem {
     .map((it) => it.name)
     .sort((a, b) => a.localeCompare(b));
   const files = getStarterFiles({
-    projectName: "Kortix Starter",
+    projectName: "{{projectName}}",
+    repoFullName: "{{repoFullName}}",
     template: "general-knowledge-worker",
   }).map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content }));
   // Give the project a proper, curated marketplace README (the base template's

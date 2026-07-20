@@ -3,7 +3,7 @@
 // Malformed jsonb must be rejected (null), never fed into account_group_members.
 import { describe, expect, test } from 'bun:test';
 import { validateBootstrapGroup } from '../accounts/invites';
-import { resolveInviteMemberAction, stripGroupGrant } from '../scim/groups';
+import { parseGroupPut, resolveInviteMemberAction, stripGroupGrant } from '../scim/groups';
 
 const UUID = '5888c520-d8f0-489a-a807-d2f8bf007fd1';
 
@@ -35,24 +35,20 @@ describe('validateBootstrapGroup', () => {
 // membership forever. The decision must add live members directly.
 describe('resolveInviteMemberAction', () => {
   test('person already a member (SSO JIT or accepted invite) → add directly', () => {
-    expect(
-      resolveInviteMemberAction({ accepted: false, resolvedMemberUserId: UUID }),
-    ).toBe('add-member');
-    expect(
-      resolveInviteMemberAction({ accepted: true, resolvedMemberUserId: UUID }),
-    ).toBe('add-member');
+    expect(resolveInviteMemberAction({ accepted: false, resolvedMemberUserId: UUID })).toBe(
+      'add-member',
+    );
+    expect(resolveInviteMemberAction({ accepted: true, resolvedMemberUserId: UUID })).toBe(
+      'add-member',
+    );
   });
 
   test('truly pending (no member, not accepted) → park on the invite', () => {
-    expect(resolveInviteMemberAction({ accepted: false, resolvedMemberUserId: null })).toBe(
-      'park',
-    );
+    expect(resolveInviteMemberAction({ accepted: false, resolvedMemberUserId: null })).toBe('park');
   });
 
   test('accepted but membership since removed → skip (not a group PATCH decision)', () => {
-    expect(resolveInviteMemberAction({ accepted: true, resolvedMemberUserId: null })).toBe(
-      'skip',
-    );
+    expect(resolveInviteMemberAction({ accepted: true, resolvedMemberUserId: null })).toBe('skip');
   });
 });
 
@@ -87,5 +83,45 @@ describe('stripGroupGrant', () => {
     expect(stripGroupGrant(null, UUID)).toEqual({ changed: false, remaining: [] });
     expect(stripGroupGrant(undefined, UUID)).toEqual({ changed: false, remaining: [] });
     expect(stripGroupGrant([], UUID)).toEqual({ changed: false, remaining: [] });
+  });
+});
+
+// Group PUT body interpretation — Okta group-push renames arrive as PUT with
+// the full resource. Omitted fields must mean "leave alone" (a partial client
+// must not wipe a group), while a PRESENT members array — even empty — is the
+// IdP's authoritative member list.
+describe('parseGroupPut', () => {
+  test('a rename-only PUT changes the name and leaves members alone', () => {
+    expect(parseGroupPut({ displayName: 'Platform Team' })).toEqual({
+      displayName: 'Platform Team',
+      externalId: null,
+      members: null,
+    });
+  });
+
+  test('a full Okta-style body extracts name + member values', () => {
+    expect(
+      parseGroupPut({
+        schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+        id: UUID,
+        displayName: 'Engineers',
+        members: [{ value: 'user-1', display: 'A' }, { value: 'user-2' }],
+      }),
+    ).toEqual({ displayName: 'Engineers', externalId: null, members: ['user-1', 'user-2'] });
+  });
+
+  test('an EMPTY members array is authoritative (clears the group), absent is not', () => {
+    expect(parseGroupPut({ displayName: 'X', members: [] }).members).toEqual([]);
+    expect(parseGroupPut({ displayName: 'X' }).members).toBeNull();
+  });
+
+  test('junk member entries and whitespace names are dropped', () => {
+    expect(
+      parseGroupPut({
+        displayName: '   ',
+        externalId: '  ext-9 ',
+        members: [{ value: 42 }, { display: 'no value' }, { value: 'ok' }],
+      }),
+    ).toEqual({ displayName: null, externalId: 'ext-9', members: ['ok'] });
   });
 });

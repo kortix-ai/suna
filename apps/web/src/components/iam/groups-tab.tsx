@@ -104,12 +104,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
   const gated = canCreate && !rbacEnabled;
   const createAction = canCreate ? (
     rbacEnabled ? (
-      <Button
-        onClick={() => setCreateOpen(true)}
-        size="sm"
-        variant="secondary"
-        className="gap-1.5"
-      >
+      <Button onClick={() => setCreateOpen(true)} size="sm" variant="secondary" className="gap-1.5">
         <Plus className="size-4" />
         Create a group
       </Button>
@@ -228,11 +223,18 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
                 <EntityAvatar icon={Users} size="md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-foreground truncate text-sm font-medium">
-                      {g.name}
-                    </span>
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {g.source}
+                    <span className="text-foreground truncate text-sm font-medium">{g.name}</span>
+                    <Badge
+                      variant="outline"
+                      size="sm"
+                      className={g.source === 'scim' ? undefined : 'capitalize'}
+                      title={
+                        g.source === 'scim'
+                          ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
+                          : undefined
+                      }
+                    >
+                      {g.source === 'scim' ? 'Synced from IdP' : g.source}
                     </Badge>
                   </div>
                   <span className="text-muted-foreground text-xs">
