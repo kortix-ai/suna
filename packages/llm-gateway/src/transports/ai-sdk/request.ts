@@ -931,7 +931,21 @@ export function buildAiSdkArgs(
     providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries(definedFields);
   }
 
-  const maxTokens = req.explicitMaxTokens ?? adapter.defaultMaxTokens(req);
+  // Codex's ChatGPT backend (`https://chatgpt.com/backend-api/codex/responses`)
+  // REJECTS `max_output_tokens` outright — it 400s the whole request with
+  // `{"detail":"Unsupported parameter: max_output_tokens"}` (captured live via
+  // the error-detail path). @ai-sdk/openai's `.responses()` serializes
+  // `maxOutputTokens` → wire `max_output_tokens`, so any turn that carries a
+  // token cap dies. Requests with NO cap (a bare "hi") slip through, which is
+  // why simple probes passed while every real opencode turn — which always
+  // sends one — 400'd. The backend manages its own output budget, so dropping
+  // the cap for Codex is the correct behaviour, not a workaround. Codex-only:
+  // the real OpenAI platform API DOES accept max_output_tokens, so plain
+  // `openai` must keep sending it.
+  const maxTokens =
+    opts.providerName === 'openai-codex'
+      ? undefined
+      : (req.explicitMaxTokens ?? adapter.defaultMaxTokens(req));
 
   const stop = body.stop;
   const stopSequences =
