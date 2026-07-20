@@ -1087,3 +1087,18 @@ follow RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test,
 and packed-install smoke gates.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `project-session-inventory` (claim)
+
+Claimed the user-directed privileged project session inventory contract. The
+existing visible-session list remains backward compatible; an additive manager-
+only inventory mode will expose every durable project session, resolved human or
+agent ownership, and explicit viewer access/runtime availability so owners and
+admins can investigate private, stopped, unavailable, and soft-deleted sessions
+without granting ordinary members broader visibility. Implementation will follow
+RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test, and
+packed-install smoke gates.
+
+**Status:** IN PROGRESS.
