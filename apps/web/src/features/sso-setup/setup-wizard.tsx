@@ -1202,26 +1202,30 @@ function ProvisionedStatusPanel({
           <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
         </Button>
       </div>
-      <p className="flex items-center gap-1.5 text-xs">
-        <span
-          className={cn(
-            'size-1.5 shrink-0 rounded-full',
-            freshness === 'live' && 'bg-kortix-green',
-            freshness === 'recent' && 'bg-kortix-green/60',
-            freshness === 'quiet' && 'bg-muted-foreground/40',
-            freshness === 'never' && 'bg-amber-500',
-          )}
-        />
-        <span className="text-muted-foreground">Last sync activity</span>
-        <span className="text-foreground font-medium">
-          {lastSyncAt ? relativeTime(lastSyncAt) : 'none yet'}
-        </span>
-        {freshness === 'never' && !tokensQuery.isLoading && (
-          <span className="text-muted-foreground">
-            — your IdP hasn’t connected; check provisioning is running there
+      {/* Two lines on purpose — mirrors the SCIM card's panel so the label +
+          value never wrap mid-phrase on narrow layouts. */}
+      <div className="space-y-0.5 text-xs">
+        <p className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              freshness === 'live' && 'bg-kortix-green',
+              freshness === 'recent' && 'bg-kortix-green/60',
+              freshness === 'quiet' && 'bg-muted-foreground/40',
+              freshness === 'never' && 'bg-amber-500',
+            )}
+          />
+          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
+          <span className="text-foreground whitespace-nowrap font-medium">
+            {lastSyncAt ? relativeTime(lastSyncAt) : 'none yet'}
           </span>
+        </p>
+        {freshness === 'never' && !tokensQuery.isLoading && (
+          <p className="text-muted-foreground pl-3">
+            Your IdP hasn’t connected — check provisioning is running there.
+          </p>
         )}
-      </p>
+      </div>
       {isLoading ? (
         <Skeleton className="h-12 w-full rounded-md" />
       ) : (

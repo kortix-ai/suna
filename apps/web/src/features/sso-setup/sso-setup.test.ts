@@ -353,6 +353,8 @@ describe('identity page progressive disclosure', () => {
     expect(cardSource).toContain('DisclosureTrigger');
     // Not-connected leads with a call-to-action, not a wall of URLs.
     expect(cardSource).toContain('Not connected yet');
+    // Group mappings collapse too, with a count chip in the trigger.
+    expect(cardSource).toContain('{mappings.length}');
   });
 
   test('the SCIM card leads with a status chip and collapses setup values + tokens', () => {
@@ -366,6 +368,29 @@ describe('identity page progressive disclosure', () => {
     expect(scimCardSource.replace(/\s+/g, ' ')).toContain(
       "open={tokens.length > 0 && freshness === 'never'}",
     );
+  });
+});
+
+// "How do I start auto-sync?" — every SCIM guide carries the one-liner for
+// turning automatic provisioning ON, and the Identity card renders the full
+// cheat sheet with a deep link into each provider's guided setup.
+describe('SCIM start-sync guides', () => {
+  test('every SCIM guide states how to turn automatic provisioning on', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      expect(g.config.startSyncHint, `${g.id} missing startSyncHint`).toBeTruthy();
+    }
+    expect(getScimGuide('entra')!.config.startSyncHint).toContain('Start provisioning');
+    // PingOne's double switch — the fact-checked blocker (connection AND rule).
+    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('CONNECTION toggle');
+    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('Active');
+    // OneLogin's silent pending-queue trap.
+    expect(getScimGuide('onelogin')!.config.startSyncHint).toContain('Require admin approval');
+  });
+
+  test('the SCIM card renders the cheat sheet with deep links into each guide', () => {
+    expect(scimCardSource).toContain('Start automatic sync in your IdP');
+    expect(scimCardSource).toContain('startSyncHint');
+    expect(scimCardSource).toContain('scim-setup?provider=');
   });
 });
 
