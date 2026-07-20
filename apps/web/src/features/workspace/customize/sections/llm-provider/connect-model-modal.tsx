@@ -76,6 +76,8 @@ export function ConnectModelModal({
   connections,
   harnessFilter = null,
   initialKind = null,
+  initialProviderId = null,
+  tab = null,
   onConnected,
 }: {
   projectId: string;
@@ -87,6 +89,12 @@ export function ConnectModelModal({
   /** Pre-selects a form (used by "Reconnect"/"Replace key" from the manage
    *  modal) instead of landing on the method list. */
   initialKind?: HarnessAuthKind | null;
+  /** Pre-selects a specific "other provider" row (ignored when `initialKind`
+   *  is also set — a specific method always wins over a provider guess). */
+  initialProviderId?: string | null;
+  /** Narrows the method list to one section — `null` shows everything
+   *  `harnessFilter` allows, same as before this existed. */
+  tab?: 'subscriptions' | 'api-keys' | null;
   onConnected?: () => void;
 }) {
   const [method, setMethod] = useState<ConnectMethod | null>(null);
@@ -94,10 +102,16 @@ export function ConnectModelModal({
 
   useEffect(() => {
     if (open) {
-      setMethod(initialKind ? methodForKind(initialKind) : null);
+      setMethod(
+        initialKind
+          ? methodForKind(initialKind)
+          : initialProviderId
+            ? { kind: 'other_provider', providerId: initialProviderId }
+            : null,
+      );
       setSearch('');
     }
-  }, [open, initialKind]);
+  }, [open, initialKind, initialProviderId]);
 
   const handleConnected = () => {
     onConnected?.();
@@ -118,13 +132,16 @@ export function ConnectModelModal({
     [query],
   );
 
+  const tabAllowsSubscriptions = tab !== 'api-keys';
+  const tabAllowsApiKeys = tab !== 'subscriptions';
   const showSubscriptions =
-    compatibleWithFilter('claude_subscription', harnessFilter) ||
-    compatibleWithFilter('codex_subscription', harnessFilter);
-  const showAnthropicKey = compatibleWithFilter('anthropic_api_key', harnessFilter);
-  const showOpenaiKey = compatibleWithFilter('openai_api_key', harnessFilter);
-  const showOtherProviders = !harnessFilter;
-  const showOpenaiCompatible = compatibleWithFilter('openai_compatible', harnessFilter);
+    tabAllowsSubscriptions &&
+    (compatibleWithFilter('claude_subscription', harnessFilter) ||
+      compatibleWithFilter('codex_subscription', harnessFilter));
+  const showAnthropicKey = tabAllowsApiKeys && compatibleWithFilter('anthropic_api_key', harnessFilter);
+  const showOpenaiKey = tabAllowsApiKeys && compatibleWithFilter('openai_api_key', harnessFilter);
+  const showOtherProviders = tabAllowsApiKeys && !harnessFilter;
+  const showOpenaiCompatible = tabAllowsApiKeys && compatibleWithFilter('openai_compatible', harnessFilter);
   // Anthropic-compatible custom endpoints are parked (2026-07-15): no harness
   // is compatible with this kind, so it is never offered in the method list —
   // see METHOD_COMPATIBLE_HARNESSES.anthropic_compatible in ./harness-method-compat.

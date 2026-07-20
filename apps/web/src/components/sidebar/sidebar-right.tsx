@@ -36,7 +36,7 @@ import {
   type NavSubGroup,
 } from '@/lib/menu-registry';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { useConnectModal } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { toast } from '@/lib/toast';
 import { Button } from '../ui/button';
@@ -59,6 +59,7 @@ export function SidebarRight() {
 
   const router = useRouter();
   const pathname = normalizeAppPathname(usePathname());
+  const { open: openConnectModal } = useConnectModal();
 
   const { getServiceUrl } = useSandboxProxy();
 
@@ -138,12 +139,12 @@ export function SidebarRight() {
       case 'action':
         if (item.actionId === 'newTerminal') {
           handleNewTerminal();
-        } else if (item.actionId === 'openProviderModal') {
-          useProviderModalStore.getState().openProviderModal('connected');
+        } else if (item.actionId === 'connectModel') {
+          openConnectModal();
         }
         break;
     }
-  }, [router, openSandboxServiceTab, handleNewTerminal]);
+  }, [router, openSandboxServiceTab, handleNewTerminal, openConnectModal]);
 
   // Get registry items for the right sidebar
   const quickActionClusters = getNavItemsClustered('rightSidebar', 'quickActions');

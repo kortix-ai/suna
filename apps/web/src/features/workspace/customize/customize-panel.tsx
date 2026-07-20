@@ -43,7 +43,7 @@ import { LlmManagementView } from './sections/gateway-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailGroup, RailItem } from './type';
 
-const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
+const LLM_ITEM: RailItem = { section: 'llm-management', label: 'Models', icon: Boxes };
 
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 

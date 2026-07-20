@@ -9,17 +9,19 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import {
+  type HarnessAuthKind,
   deleteProjectSecret,
   getProjectLlmCatalog,
   setActiveHarnessConnection,
-  type HarnessAuthKind,
 } from '@kortix/sdk/projects-client';
 import {
+  CONNECTION_ICON_PROVIDER_ID,
+  type ModelsPageConnection,
+  type ModelsPageRuntime,
   connectionExplainer,
   harnessLabel,
   invalidateComposerCapabilityQueries,
-  type ModelsPageConnection,
-  type ModelsPageRuntime,
+  reconnectVerb,
 } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Unplug } from 'lucide-react';
@@ -32,14 +34,6 @@ import {
   LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
-
-const CONNECTION_ICON_PROVIDER_ID: Record<string, string> = {
-  managed_gateway: 'kortix',
-  claude_subscription: 'anthropic',
-  codex_subscription: 'codex',
-  anthropic_api_key: 'anthropic',
-  openai_api_key: 'openai',
-};
 
 const SUBSCRIPTION_COPY: Partial<Record<HarnessAuthKind, string>> = {
   claude_subscription:
@@ -57,13 +51,19 @@ const SECRET_NAMES_BY_KIND: Partial<Record<HarnessAuthKind, string[]>> = {
   anthropic_compatible: [...CUSTOM_LLM_SECRET_NAMES],
 };
 
-const MANAGEABLE_KINDS = new Set<HarnessAuthKind>(Object.keys(SECRET_NAMES_BY_KIND) as HarnessAuthKind[]);
+const MANAGEABLE_KINDS = new Set<HarnessAuthKind>(
+  Object.keys(SECRET_NAMES_BY_KIND) as HarnessAuthKind[],
+);
 
 function ModelChips({ names, count }: { names: string[]; count: number }) {
   const shown = names.slice(0, 8);
   const more = count - shown.length;
   if (shown.length === 0) {
-    return <p className="text-muted-foreground text-xs">{count} model{count === 1 ? '' : 's'} available</p>;
+    return (
+      <p className="text-muted-foreground text-xs">
+        {count} model{count === 1 ? '' : 's'} available
+      </p>
+    );
   }
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -183,7 +183,9 @@ export function ManageConnectionModal({
             {SUBSCRIPTION_COPY[connection.kind] ? (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium">Models</p>
-                <p className="text-muted-foreground text-xs text-pretty">{SUBSCRIPTION_COPY[connection.kind]}</p>
+                <p className="text-muted-foreground text-xs text-pretty">
+                  {SUBSCRIPTION_COPY[connection.kind]}
+                </p>
               </div>
             ) : connection.catalogState === 'available' ? (
               <div className="space-y-1.5">
@@ -199,11 +201,7 @@ export function ManageConnectionModal({
             {canWrite && manageable && (
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button size="sm" variant="outline" onClick={() => onReconnect(connection.kind)}>
-                  {connection.kind === 'openai_compatible' || connection.kind === 'anthropic_compatible'
-                    ? 'Replace endpoint'
-                    : connection.kind === 'anthropic_api_key' || connection.kind === 'openai_api_key'
-                      ? 'Replace key'
-                      : 'Reconnect'}
+                  {reconnectVerb(connection.kind)}
                 </Button>
                 <Button
                   size="sm"

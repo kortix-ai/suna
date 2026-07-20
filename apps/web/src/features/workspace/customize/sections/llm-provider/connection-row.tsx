@@ -3,23 +3,12 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { harnessLabel, type ModelsPageConnection } from '@kortix/sdk/react';
-
-const CONNECTION_ICON_PROVIDER_ID: Record<string, string> = {
-  managed_gateway: 'kortix',
-  claude_subscription: 'anthropic',
-  codex_subscription: 'codex',
-  anthropic_api_key: 'anthropic',
-  openai_api_key: 'openai',
-};
-
-// native_config reads as the repo's own setup, never a generic "Managed by
-// the harness" (2026-07-15 simplification — see connectionExplainer).
-const NOT_EXPOSED_TEXT: Record<string, string> = {
-  claude_subscription: 'Models managed by Claude Code',
-  codex_subscription: 'Models managed by Codex',
-  native_config: "Uses the repo's committed setup",
-};
+import {
+  CONNECTION_ICON_PROVIDER_ID,
+  type ModelsPageConnection,
+  harnessLabel,
+  notExposedCatalogText,
+} from '@kortix/sdk/react';
 
 function joinAnd(items: string[]): string {
   if (items.length === 0) return '';
@@ -30,7 +19,7 @@ function joinAnd(items: string[]): string {
 
 export function catalogLine(connection: ModelsPageConnection): string {
   if (connection.catalogState === 'not-exposed') {
-    return NOT_EXPOSED_TEXT[connection.kind] ?? 'Model catalog not exposed';
+    return notExposedCatalogText(connection.kind) ?? 'Model catalog not exposed';
   }
   if (connection.catalogState === 'loading') return 'Loading models…';
   if (connection.catalogState === 'error') return 'Could not load models';
@@ -75,7 +64,9 @@ export function ConnectionRow({
           />
           <div className="min-w-0 flex-1 space-y-0.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-foreground truncate text-sm font-medium">{connection.name}</span>
+              <span className="text-foreground truncate text-sm font-medium">
+                {connection.name}
+              </span>
               <Badge
                 variant={
                   connection.status === 'ready'
@@ -95,7 +86,9 @@ export function ConnectionRow({
                       : 'Checking'}
               </Badge>
             </div>
-            <p className="text-muted-foreground truncate text-xs text-pretty">{metadataLine(connection)}</p>
+            <p className="text-muted-foreground truncate text-xs text-pretty">
+              {metadataLine(connection)}
+            </p>
           </div>
         </div>
         <div className="shrink-0 sm:self-center">

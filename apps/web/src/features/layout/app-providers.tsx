@@ -6,6 +6,7 @@ import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { NewInstanceModal } from '@/features/billing/pricing/new-instance-modal';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { ConnectModalHost } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
 import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
@@ -152,6 +153,7 @@ export function AppProviders({
         {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
         {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
         {isBillingEnabled() && <GlobalUpgradeModal />}
+        <ConnectModalHost />
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );

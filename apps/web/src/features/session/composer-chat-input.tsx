@@ -50,7 +50,6 @@ export interface ComposerOptions {
     modelId?: string | null;
     connectionId?: HarnessAuthKind | null;
   };
-  variant?: string;
 }
 
 export function boundSessionAgentName(value?: string | null): string | null {
@@ -69,7 +68,6 @@ export function buildComposerOptions(input: {
   lockedAgentName?: string | null;
   model?: ModelKey;
   runtimeModel?: string | null;
-  variant?: string;
   connectionId?: HarnessAuthKind | null;
   presets?: Array<{ id: string }>;
 }): ComposerOptions {
@@ -97,7 +95,6 @@ export function buildComposerOptions(input: {
       connectionId: input.connectionId ?? null,
     };
   }
-  if (input.variant) options.variant = input.variant;
   return options;
 }
 
@@ -153,7 +150,7 @@ export function resolveUnifiedModelPickSelection(
 }
 
 /** Wiring for an already-started ACP session — passed instead of relying on
- *  the pre-session model/variant derivation, since a live session's agent and
+ *  the pre-session model derivation, since a live session's agent and
  *  (usually) its model are already fixed. See {@link ComposerChatInput}. */
 export interface LiveAcpComposer {
   configOptions: AcpSessionConfigOption[];
@@ -178,8 +175,8 @@ export interface LiveAcpComposer {
 
 /**
  * The canonical "compose a first message" input: {@link SessionChatInput}
- * pre-wired with the Runtime model / agent / variant / command selectors (the
- * four catalog queries + per-session selection state). Used by the home composer
+ * pre-wired with the Runtime model / agent / command selectors (the
+ * catalog queries + per-session selection state). Used by the home composer
  * and the instant session shell so neither hand-rolls the selector wiring.
  *
  * The current selections are handed to `onSend` / `onCommand` as `options`, so
@@ -407,7 +404,7 @@ export function ComposerChatInput({
     ? {
         vm: { ...modelPickerVm, select: handleUnifiedModelSelect },
         onConnect: (connectionId: HarnessAuthKind) =>
-          openConnectProvider('providers', { connectKind: connectionId }),
+          openConnectProvider(undefined, { connectKind: connectionId }),
       }
     : undefined;
 
@@ -452,7 +449,6 @@ export function ComposerChatInput({
       lockedAgentName,
       model: selectedCatalogModel ?? undefined,
       runtimeModel,
-      variant: local.model.variant.current,
       connectionId: capability.data?.auth.active,
       presets: capability.data?.model.presets,
     });
@@ -518,12 +514,6 @@ export function ComposerChatInput({
         composerBlockingActionLabel={composerBlockingActionLabel}
         composerConnectKind={composerConnectKind}
         composerCapabilityGoverned={composerCapabilityGoverned}
-        // Live sessions don't expose a local "thinking effort" toggle — any
-        // genuine per-turn reasoning/effort ACP config option surfaces as its
-        // own toolbar pill instead (see AcpSessionChat's config-option pills).
-        variants={live ? [] : local.model.variant.list}
-        selectedVariant={live ? null : (local.model.variant.current ?? null)}
-        onVariantChange={live ? undefined : (v) => local.model.variant.set(v ?? undefined)}
         commands={commands}
         messages={live?.messages}
         acpUsage={live?.acpUsage}

@@ -2,14 +2,6 @@
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
-import {
-  CommandGroup,
-  CommandItem,
-  CommandList,
-  CommandPopover,
-  CommandPopoverContent,
-  CommandPopoverTrigger,
-} from '@/components/ui/command';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,9 +15,9 @@ import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { MessageWithParts, QuestionAnswer, Turn } from '@/ui';
-import type { AcpChatItem, AcpSessionConfigOption } from '@kortix/sdk';
+import type { AcpChatItem } from '@kortix/sdk';
 import type { useSession } from '@kortix/sdk/react';
-import { AlertTriangle, ArrowDown, Check, ChevronDown, MessageCircle } from 'lucide-react';
+import { AlertTriangle, ArrowDown, MessageCircle } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -36,6 +28,7 @@ import {
   type ReactNode,
 } from 'react';
 import { AcpChatItemRow } from './acp-chat-item-row';
+import { AcpConfigOptionPill, AcpConfigOptionSegment } from './acp-config-option-pills';
 import {
   acpTodosFromPlanEntries,
   buildAcpQuestionContent,
@@ -470,16 +463,28 @@ export function AcpSessionChat({
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const lockForApproval = hasPendingApproval || (pendingPrompts.permissions.length > 0 && busy);
 
-  // ── Config options → composer toolbar pills (per merge policy P1). The
+  // Same busy/locked signals the composer's other controls key off (see
+  // `session-chat-input.tsx`'s `VoiceRecorder`, disabled on `submitDisabled
+  // || isBusy`) — no session yet, a terminal error, an in-flight turn, or a
+  // pending question/approval all mean "don't let the user change session
+  // config right now" just as much as they mean "don't let them send".
+  const configOptionsDisabled =
+    !acpSessionId || Boolean(errorInfo?.terminal) || busy || lockForQuestion || lockForApproval;
+
+  // ── Config options → composer toolbar controls (per merge policy P1). The
   // model option is owned by the composer's own model selector, so it's
-  // excluded here; every other select-typed option renders as a pill. ──
+  // excluded here; every other `select`- or `mode`-typed option renders in
+  // the toolbar — `select` as a popover pill (`AcpConfigOptionPill`), `mode`
+  // as a segmented control (`AcpConfigOptionSegment`, Task 22 — B1 calls for
+  // a segmented control over a dropdown for a mode's few, always-visible
+  // choices). ──
   const modelConfigOption = useMemo(() => findAcpModelConfigOption(configOptions), [configOptions]);
   const otherConfigOptions = useMemo(
     () =>
       configOptions.filter(
         (option) =>
           option !== modelConfigOption &&
-          option.type === 'select' &&
+          (option.type === 'select' || option.type === 'mode') &&
           (option.options?.length ?? 0) > 0,
       ),
     [configOptions, modelConfigOption],
@@ -805,13 +810,23 @@ export function AcpSessionChat({
           toolbarSlot={
             otherConfigOptions.length ? (
               <div className="flex items-center gap-0.5">
-                {otherConfigOptions.map((option) => (
-                  <AcpConfigOptionPill
-                    key={option.id}
-                    option={option}
-                    onChange={(value) => void setConfigOption(option.id, value)}
-                  />
-                ))}
+                {otherConfigOptions.map((option) =>
+                  option.type === 'mode' ? (
+                    <AcpConfigOptionSegment
+                      key={option.id}
+                      option={option}
+                      onChange={(value) => setConfigOption(option.id, value)}
+                      disabled={configOptionsDisabled}
+                    />
+                  ) : (
+                    <AcpConfigOptionPill
+                      key={option.id}
+                      option={option}
+                      onChange={(value) => void setConfigOption(option.id, value)}
+                      disabled={configOptionsDisabled}
+                    />
+                  ),
+                )}
               </div>
             ) : undefined
           }
@@ -917,82 +932,3 @@ function AcpBusyIndicator({ statusText }: { statusText?: string }) {
   );
 }
 
-/** A single non-model ACP session config option, rendered in the composer's
- *  bottom toolbar with the same pill affordance as the model/agent selectors
- *  (rounded-full trigger, popover select). Grafted from main (merge policy P1). */
-function AcpConfigOptionPill({
-  option,
-  onChange,
-}: {
-  option: AcpSessionConfigOption;
-  onChange: (value: unknown) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const choices = option.options ?? [];
-  if (choices.length === 0) return null;
-  const currentRaw = option.currentValue;
-  const currentChoice = choices.find(
-    (choice, index) => choiceValue(choice, index) === String(currentRaw ?? ''),
-  );
-  const currentLabel = currentChoice
-    ? choiceLabel(currentChoice)
-    : currentRaw != null
-      ? String(currentRaw)
-      : null;
-
-  return (
-    <CommandPopover open={open} onOpenChange={setOpen}>
-      <CommandPopoverTrigger>
-        <button
-          type="button"
-          data-testid="acp-config-option-pill"
-          data-option-id={option.id}
-          className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] duration-200 active:scale-[0.96]"
-        >
-          <span className="max-w-[140px] truncate">
-            {currentLabel ? <span className="text-muted-foreground/70">{currentLabel}</span> : null}
-          </span>
-          <ChevronDown
-            className={cn(
-              'size-3 shrink-0 opacity-50 transition-transform duration-200',
-              open && 'rotate-180',
-            )}
-          />
-        </button>
-      </CommandPopoverTrigger>
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[260px]">
-        <CommandList className="max-h-[280px]">
-          <CommandGroup heading={option.name ?? option.id} forceMount>
-            {choices.map((choice, index) => {
-              const value = choiceValue(choice, index);
-              const label = choiceLabel(choice);
-              const selected = value === String(currentRaw ?? '');
-              return (
-                <CommandItem
-                  key={value}
-                  value={label}
-                  className={selected ? 'bg-primary/[0.06]' : undefined}
-                  onSelect={() => {
-                    onChange(value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-                  {selected ? <Check className="text-foreground size-4 shrink-0" /> : null}
-                </CommandItem>
-              );
-            })}
-          </CommandGroup>
-        </CommandList>
-      </CommandPopoverContent>
-    </CommandPopover>
-  );
-}
-
-function choiceValue(choice: Record<string, unknown>, index: number): string {
-  return String(choice.value ?? choice.id ?? index);
-}
-
-function choiceLabel(choice: Record<string, unknown>): string {
-  return String(choice.name ?? choice.label ?? choice.value ?? choice.id ?? '');
-}

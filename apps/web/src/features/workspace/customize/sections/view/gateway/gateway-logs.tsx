@@ -13,7 +13,9 @@ import {
 } from 'lucide-react';
 import { forwardRef, type ReactNode, useEffect, useRef, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -223,8 +225,8 @@ function GatewayLogDetail({
       </div>
       {isLoading || !data ? (
         <div className="space-y-3 p-5">
-          <Skeleton className="h-24 rounded-2xl" />
-          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-24 rounded-md" />
+          <Skeleton className="h-40 rounded-md" />
         </div>
       ) : (
         <div className="flex w-full animate-in fade-in-0 flex-col gap-4 p-5">
@@ -309,7 +311,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'ok' | 'err'>('all');
   const [focused, setFocused] = useState(0);
-  const { data, isLoading } = useGatewayLogs(
+  const { data, isLoading, isError, refetch } = useGatewayLogs(
     projectId,
     filter === 'all' ? undefined : { ok: filter === 'ok' },
   );
@@ -432,6 +434,17 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
               </div>
             ))}
           </div>
+        ) : isError && logs.length === 0 ? (
+          <ErrorState
+            size="sm"
+            title="Couldn't load logs"
+            description="Something went wrong loading request logs for this project."
+            action={
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+          />
         ) : logs.length === 0 ? (
           <EmptyState
             icon={ScrollText}

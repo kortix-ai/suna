@@ -26,11 +26,13 @@ mock.module('@tanstack/react-query', () => ({
   useQuery: () => ({ data: undefined, isLoading: false, isError: false }),
   useMutation: () => ({ mutate: () => {}, mutateAsync: async () => {}, isPending: false }),
   useQueryClient: () => ({ invalidateQueries: async () => {} }),
+  useIsMutating: () => 0,
 }));
 
 let modelsPageState: ModelsPageState = {
   runtimes: [],
   connections: [],
+  connectedProviderIds: [],
   canWrite: true,
   isLoading: false,
   isError: false,
@@ -39,6 +41,14 @@ const actualSdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
   ...actualSdkReact,
   useModelsPage: () => modelsPageState,
+}));
+
+// The default-model picker (Task 17) pulls in a heavy dependency graph
+// (billing, live catalog revision, project secrets, …) irrelevant to this
+// suite, which is only about the "Manage runtimes ->" back-link — stub it to
+// a no-op, same convention `gateway-view.test.tsx` uses.
+mock.module('@/features/session/model-selector', () => ({
+  ModelSelector: () => null,
 }));
 
 // `ProviderLogo` (the harness mark on each runtime/connection row) renders
@@ -81,7 +91,14 @@ const CONNECTION: ModelsPageConnection = {
 
 afterEach(() => {
   cleanup();
-  modelsPageState = { runtimes: [], connections: [], canWrite: true, isLoading: false, isError: false };
+  modelsPageState = {
+    runtimes: [],
+    connections: [],
+    connectedProviderIds: [],
+    canWrite: true,
+    isLoading: false,
+    isError: false,
+  };
   useCustomizeStore.setState({ open: true, section: 'llm-management' });
 });
 
@@ -89,24 +106,26 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('ModelsView — "Manage runtimes ->" back-link (DISC-09 / WS5-P5-a)', () => {
-  test('the Agent runtimes list carries a "Manage runtimes" link to the Runtime section', () => {
+describe('ModelsView — "Manage agents ->" back-link (DISC-09 / WS5-P5-a / Task 17 relabel)', () => {
+  test('the Agent runtimes list carries a "Manage agents" link to the Runtime section', () => {
     modelsPageState = {
       runtimes: [RUNTIME],
       connections: [CONNECTION],
+      connectedProviderIds: [],
       canWrite: true,
       isLoading: false,
       isError: false,
     };
     render(<ModelsView projectId={PROJECT_ID} canWrite />);
 
-    expect(screen.getByText('Manage runtimes →')).toBeDefined();
+    expect(screen.getByText('Manage agents →')).toBeDefined();
   });
 
   test('clicking it switches the Customize overlay to the Runtime section without closing it', () => {
     modelsPageState = {
       runtimes: [RUNTIME],
       connections: [CONNECTION],
+      connectedProviderIds: [],
       canWrite: true,
       isLoading: false,
       isError: false,
@@ -114,7 +133,7 @@ describe('ModelsView — "Manage runtimes ->" back-link (DISC-09 / WS5-P5-a)', (
     useCustomizeStore.setState({ open: true, section: 'llm-management' });
     render(<ModelsView projectId={PROJECT_ID} canWrite />);
 
-    fireEvent.click(screen.getByText('Manage runtimes →'));
+    fireEvent.click(screen.getByText('Manage agents →'));
 
     expect(useCustomizeStore.getState().open).toBe(true);
     expect(useCustomizeStore.getState().section).toBe('runtime');
@@ -124,12 +143,13 @@ describe('ModelsView — "Manage runtimes ->" back-link (DISC-09 / WS5-P5-a)', (
     modelsPageState = {
       runtimes: [],
       connections: [CONNECTION],
+      connectedProviderIds: [],
       canWrite: true,
       isLoading: false,
       isError: false,
     };
     render(<ModelsView projectId={PROJECT_ID} canWrite />);
 
-    expect(screen.queryByText('Manage runtimes →')).toBeNull();
+    expect(screen.queryByText('Manage agents →')).toBeNull();
   });
 });

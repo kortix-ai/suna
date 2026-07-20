@@ -9,30 +9,24 @@ import {
   SelectTrigger,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { setActiveHarnessConnection, type HarnessAuthKind, type HarnessId } from '@kortix/sdk/projects-client';
 import {
-  connectionExplainer,
+  type HarnessAuthKind,
+  type HarnessId,
+  setActiveHarnessConnection,
+} from '@kortix/sdk/projects-client';
+import {
+  type ModelsPageConnection,
   harnessLabel,
   invalidateComposerCapabilityQueries,
-  type ModelsPageConnection,
+  notExposedCatalogText,
 } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const CONNECT_ANOTHER = '__connect_another__';
 
-// Subscription rows own their harness's name in the copy ("Models managed by
-// Claude Code"/"…Codex") so two "not-exposed" rows (a subscription + Project
-// config) never read as the same generic "Managed by the harness" line — see
-// docs/specs/2026-07-14-models-page-ui-handoff.md §2.
-const SUBSCRIPTION_META: Partial<Record<HarnessAuthKind, string>> = {
-  claude_subscription: 'Models managed by Claude Code',
-  codex_subscription: 'Models managed by Codex',
-};
-
 function connectionMetaLine(connection: ModelsPageConnection): string {
-  if (SUBSCRIPTION_META[connection.kind]) return SUBSCRIPTION_META[connection.kind]!;
-  const explainer = connectionExplainer(connection.kind);
-  if (explainer) return explainer;
+  const notExposed = notExposedCatalogText(connection.kind);
+  if (notExposed) return notExposed;
   if (connection.catalogState === 'loading') return 'Loading models…';
   if (connection.catalogState === 'error') return 'Could not load models';
   const count = connection.modelCount ?? 0;

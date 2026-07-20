@@ -54,6 +54,7 @@ mock.module('@tanstack/react-query', () => ({
 let modelsPageState: ModelsPageState = {
   runtimes: [],
   connections: [],
+  connectedProviderIds: [],
   canWrite: false,
   isLoading: false,
   isError: false,
@@ -87,15 +88,32 @@ mock.module('next/image', () => ({
 
 const { RuntimeView } = await import('./runtime-view');
 const { useCustomizeStore } = await import('@/stores/customize-store');
+const { useConnectModalStore } = await import(
+  '@/features/workspace/customize/sections/llm-provider/connect-modal-host'
+);
 
 const PROJECT_ID = 'proj_1';
 
 afterEach(() => {
   cleanup();
   runtimeProfiles = { schema_version: 3, editable: true, runtimes: {} };
-  modelsPageState = { runtimes: [], connections: [], canWrite: false, isLoading: false, isError: false };
+  modelsPageState = {
+    runtimes: [],
+    connections: [],
+    connectedProviderIds: [],
+    canWrite: false,
+    isLoading: false,
+    isError: false,
+  };
   canWriteMock = true;
   useCustomizeStore.setState({ open: true, section: 'runtime' });
+  useConnectModalStore.setState({
+    isOpen: false,
+    tab: undefined,
+    providerId: undefined,
+    connectKind: undefined,
+    harnessFilter: null,
+  });
 });
 
 afterAll(() => {
@@ -292,27 +310,26 @@ describe('RuntimeView — first-run EmptyState (WS5-P5-a)', () => {
 // ─── WS5-P2-b: guided runtime -> connect -> model flow ─────────────────────
 
 describe('RuntimeView — guided connect -> model flow (WS5-P2-b)', () => {
-  test('a Not-connected row\'s Connect opens ConnectModelModal pre-filtered to that harness\'s authKinds', () => {
-    setRuntimes({ 'runtime-1': { harness: 'claude' } });
-    render(<RuntimeView projectId={PROJECT_ID} />);
+  test(
+    'a Not-connected row\'s Connect opens the one shared connect surface (store), pre-filtered to ' +
+      'that row\'s harness — not a second local ConnectModelModal instance',
+    () => {
+      setRuntimes({ 'runtime-1': { harness: 'claude' } });
+      render(<RuntimeView projectId={PROJECT_ID} />);
 
-    const claudeRow = screen.getAllByRole('listitem').find((row) => within(row).queryByText('Claude Code'));
-    fireEvent.click(within(claudeRow!).getByRole('button', { name: 'Connect' }));
+      expect(useConnectModalStore.getState().isOpen).toBe(false);
 
-    // The modal opened, on the method list (no initialKind was passed).
-    expect(screen.getByText('Connect a model service')).toBeDefined();
+      const claudeRow = screen.getAllByRole('listitem').find((row) => within(row).queryByText('Claude Code'));
+      fireEvent.click(within(claudeRow!).getByRole('button', { name: 'Connect' }));
 
-    // claude's authKinds are claude_subscription + anthropic_api_key +
-    // native_config (see @kortix/shared/harnesses) — only those method rows
-    // are offered.
-    expect(screen.getByText('Claude Pro, Max, Team, or Enterprise')).toBeDefined();
-    expect(screen.getByText('Claude via your own API key')).toBeDefined();
-
-    // codex's methods (codex_subscription, openai_api_key) are NOT
-    // compatible with claude and must not appear.
-    expect(screen.queryByText('ChatGPT Plus, Pro, Business, Edu, or Enterprise')).toBeNull();
-    expect(screen.queryByText('GPT models via your own API key')).toBeNull();
-  });
+      // `RuntimeView` itself renders no modal — it only opens the shared
+      // store, which the root-mounted `ConnectModalHost` renders from.
+      expect(screen.queryByText('Connect a model service')).toBeNull();
+      const state = useConnectModalStore.getState();
+      expect(state.isOpen).toBe(true);
+      expect(state.harnessFilter).toBe('claude');
+    },
+  );
 
   test('a Connected row shows "Choose model" instead of "Connect"', () => {
     setRuntimes({ 'runtime-1': { harness: 'claude' } });

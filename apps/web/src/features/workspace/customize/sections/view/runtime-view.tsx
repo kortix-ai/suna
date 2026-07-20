@@ -20,10 +20,12 @@
  * directory nobody can click.
  *
  * WS5-P2-b wires the guided runtime -> connect -> model flow on top of this:
- * a Not-connected row's "Connect" opens `ConnectModelModal` pre-filtered to
- * that row's harness (reusing the exact modal + `harnessFilter` the Models
- * page's own runtime rows use — see `models-view.tsx`'s `connectFromRuntime`,
- * not re-invented here). Once `useModelsPage(...).connections` reports a
+ * a Not-connected row's "Connect" opens the one shared connect surface
+ * (`useConnectModal()` -> `ConnectModalHost`'s root-mounted `ConnectModelModal`,
+ * `connect-modal-host.tsx`) pre-filtered to that row's harness — the same
+ * `harnessFilter` option the Models page's own runtime rows use (see
+ * `models-view.tsx`'s `connectFromRuntime`), not a second local modal
+ * instance. Once `useModelsPage(...).connections` reports a
  * ready compatible connection, the same row's affordance flips to "Choose
  * model", which closes the Customize overlay (`useCustomizeStore.close()` —
  * the same action ESC/backdrop already use) and drops the viewer on the
@@ -61,7 +63,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { ConnectModelModal } from '@/features/workspace/customize/sections/llm-provider/connect-model-modal';
+import { useConnectModal } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
 import {
   ACP_HARNESSES,
   ACP_HARNESS_CONFIG_DIRS,
@@ -79,7 +81,6 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
-  type AcpHarness,
   enableAcpRuntimeProfiles,
   getRuntimeProfiles,
   type RuntimeProfile,
@@ -96,9 +97,11 @@ const RUNTIME_PROFILES_QUERY_KEY = (projectId: string) => ['runtime-profiles', p
 export function RuntimeView({ projectId }: { projectId: string }) {
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  // The one connect-modal instance the whole row list shares — `null` means
-  // closed, a harness id means open and pre-filtered to that row (WS5-P2-b).
-  const [connectHarness, setConnectHarness] = useState<AcpHarness | null>(null);
+  // Every row's "Connect" opens the one shared connect surface
+  // (`ConnectModalHost`, root-mounted in `app-providers.tsx`) pre-filtered to
+  // that row's harness — no local modal instance here (WS5-P2-b / one
+  // connect-surface rule).
+  const { open: openConnectModal } = useConnectModal();
 
   const profilesQuery = useQuery({
     queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId),
@@ -164,7 +167,7 @@ export function RuntimeView({ projectId }: { projectId: string }) {
                 row={row}
                 index={index}
                 canWrite={canWrite}
-                onConnect={() => setConnectHarness(row.harness)}
+                onConnect={() => openConnectModal({ harnessFilter: row.harness })}
                 onChooseModel={chooseModel}
               />
             ))}
@@ -205,22 +208,6 @@ export function RuntimeView({ projectId }: { projectId: string }) {
           </Disclosure>
         ) : null}
       </div>
-
-      {/* Deep-linked to the row's harness — the same `ConnectModelModal` +
-          `harnessFilter` the Models page's own runtime rows already use
-          (`models-view.tsx`), so the method list only ever offers the auth
-          kinds this harness declares (`METHOD_COMPATIBLE_HARNESSES`). */}
-      <ConnectModelModal
-        projectId={projectId}
-        open={connectHarness !== null}
-        onOpenChange={(open) => {
-          if (!open) setConnectHarness(null);
-        }}
-        runtimes={modelsPage.runtimes}
-        connections={modelsPage.connections}
-        harnessFilter={connectHarness}
-        onConnected={() => setConnectHarness(null)}
-      />
     </CustomizeSectionWrapper>
   );
 }

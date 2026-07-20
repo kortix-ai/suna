@@ -619,6 +619,189 @@ describe('AcpSessionChat — permission prompt in the composer', () => {
   });
 });
 
+describe('AcpSessionChat — config options in the composer toolbar', () => {
+  test('a mode-typed option renders AcpConfigOptionSegment, a select-typed option renders AcpConfigOptionPill (previously: the filter kept only `select`, so a mode option rendered nothing)', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const { AcpConfigOptionPill, AcpConfigOptionSegment } = await import('./acp-config-option-pills');
+    lastComposerChatInputProps = null;
+
+    const modeOption = {
+      id: 'thinking-mode',
+      name: 'Thinking mode',
+      type: 'mode',
+      currentValue: 'standard',
+      options: [
+        { id: 'quick', label: 'Quick' },
+        { id: 'standard', label: 'Standard' },
+        { id: 'deep', label: 'Deep' },
+      ],
+    };
+    const selectOption = {
+      id: 'reasoning',
+      name: 'Reasoning',
+      type: 'select',
+      currentValue: 'balanced',
+      options: [
+        { id: 'fast', label: 'Fast' },
+        { id: 'balanced', label: 'Balanced' },
+      ],
+    };
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ configOptions: [modeOption as any, selectOption as any] })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const slot = (lastComposerChatInputProps as Record<string, unknown> | null)
+        ?.toolbarSlot as ReactElement;
+      expect(slot).toBeTruthy();
+      const children = Children.toArray((slot.props as { children?: ReactNode }).children);
+
+      const segmentEl = children.find(
+        (child): child is ReactElement =>
+          isValidElement(child) && child.type === AcpConfigOptionSegment,
+      );
+      expect(segmentEl).toBeTruthy();
+      expect((segmentEl!.props as { option: { id: string } }).option.id).toBe('thinking-mode');
+
+      const pillEl = children.find(
+        (child): child is ReactElement => isValidElement(child) && child.type === AcpConfigOptionPill,
+      );
+      expect(pillEl).toBeTruthy();
+      expect((pillEl!.props as { option: { id: string } }).option.id).toBe('reasoning');
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('setConfigOption reaches the session with the mode option id when the segment fires onChange', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const { AcpConfigOptionSegment } = await import('./acp-config-option-pills');
+    lastComposerChatInputProps = null;
+
+    const setCalls: Array<[string, unknown]> = [];
+    const modeOption = {
+      id: 'thinking-mode',
+      name: 'Thinking mode',
+      type: 'mode',
+      currentValue: 'standard',
+      options: [
+        { id: 'quick', label: 'Quick' },
+        { id: 'standard', label: 'Standard' },
+      ],
+    };
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({
+            configOptions: [modeOption as any],
+            setConfigOption: async (id: string, value: unknown) => {
+              setCalls.push([id, value]);
+              return true;
+            },
+          })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const slot = (lastComposerChatInputProps as Record<string, unknown> | null)
+        ?.toolbarSlot as ReactElement;
+      const children = Children.toArray((slot.props as { children?: ReactNode }).children);
+      const segmentEl = children.find(
+        (child): child is ReactElement =>
+          isValidElement(child) && child.type === AcpConfigOptionSegment,
+      ) as ReactElement;
+      const onChange = (segmentEl.props as { onChange: (value: unknown) => unknown }).onChange;
+
+      await act(async () => {
+        await onChange('quick');
+      });
+
+      expect(setCalls).toEqual([['thinking-mode', 'quick']]);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('a busy session renders the config controls disabled — same lock the send/voice controls key off', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    const { AcpConfigOptionPill, AcpConfigOptionSegment } = await import('./acp-config-option-pills');
+    lastComposerChatInputProps = null;
+
+    const modeOption = {
+      id: 'thinking-mode',
+      name: 'Thinking mode',
+      type: 'mode',
+      currentValue: 'standard',
+      options: [
+        { id: 'quick', label: 'Quick' },
+        { id: 'standard', label: 'Standard' },
+      ],
+    };
+    const selectOption = {
+      id: 'reasoning',
+      name: 'Reasoning',
+      type: 'select',
+      currentValue: 'balanced',
+      options: [
+        { id: 'fast', label: 'Fast' },
+        { id: 'balanced', label: 'Balanced' },
+      ],
+    };
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({ busy: true, configOptions: [modeOption as any, selectOption as any] })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const slot = (lastComposerChatInputProps as Record<string, unknown> | null)
+        ?.toolbarSlot as ReactElement;
+      const children = Children.toArray((slot.props as { children?: ReactNode }).children);
+
+      const segmentEl = children.find(
+        (child): child is ReactElement =>
+          isValidElement(child) && child.type === AcpConfigOptionSegment,
+      ) as ReactElement;
+      const pillEl = children.find(
+        (child): child is ReactElement => isValidElement(child) && child.type === AcpConfigOptionPill,
+      ) as ReactElement;
+
+      expect((segmentEl.props as { disabled?: boolean }).disabled).toBe(true);
+      expect((pillEl.props as { disabled?: boolean }).disabled).toBe(true);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+});
+
 describe('AcpSessionChat — message queue while busy', () => {
   test('a message enqueued via the composer surfaces in live.queuedMessages, then flushes through acp.send once busy clears', async () => {
     const { AcpSessionChat } = await import('./acp-session-chat');

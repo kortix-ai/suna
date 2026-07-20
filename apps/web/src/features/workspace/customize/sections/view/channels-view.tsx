@@ -405,6 +405,7 @@ function ChannelBindingTableRow({
               )
             }
             disabled={!canManage || update.isPending}
+            projectId={projectId}
           />
         </div>
       </TableCell>

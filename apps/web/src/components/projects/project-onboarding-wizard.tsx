@@ -790,7 +790,7 @@ function ModelStep() {
               size="lg"
               variant={showUpgradeOption ? 'outline' : 'default'}
               className="gap-2"
-              onClick={() => openConnectProvider('providers')}
+              onClick={() => openConnectProvider()}
             >
               <KeyRound className="size-4" />
               Bring your own key

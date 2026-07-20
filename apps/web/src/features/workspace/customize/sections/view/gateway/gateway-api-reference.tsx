@@ -1,11 +1,9 @@
 'use client';
 
-import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Tabs,
   TabsContent,
@@ -161,14 +159,11 @@ const ENDPOINT_TABS: { id: EndpointTab; label: string }[] = [
 export function GatewayApiReference({
   apiKey,
   gatewayUrl,
-  onViewModels,
 }: {
   /** The real secret key when just created; a masked placeholder otherwise. */
   apiKey: string;
   /** Env-correct public gateway origin (dev vs prod); falls back to prod. */
   gatewayUrl: string | null;
-  /** Jump to the Providers/Models tab — omitted when there's nowhere to jump to. */
-  onViewModels?: () => void;
 }) {
   const base = gatewayUrl ?? 'https://gateway.kortix.com';
   const [tab, setTab] = useState<EndpointTab>('openai');
@@ -249,21 +244,8 @@ export function GatewayApiReference({
         Model ids are{' '}
         <code className="bg-muted rounded-sm px-1 py-0.5 font-mono">provider/model</code> from the
         live models.dev catalog (e.g. <code className="font-mono">{SAMPLE_MODEL}</code>,{' '}
-        <code className="font-mono">openai/gpt-5.6</code>).
-        {onViewModels ? (
-          <Button
-            type="button"
-            variant="transparent"
-            size="sm"
-            className="h-auto gap-1 px-1 py-0 align-baseline text-xs"
-            onClick={onViewModels}
-          >
-            See available models
-            <ArrowRight className="size-3" />
-          </Button>
-        ) : (
-          ' See the Providers tab for models available to this key.'
-        )}
+        <code className="font-mono">openai/gpt-5.6</code>). See the Models tab for models
+        available to this key.
       </p>
     </div>
   );

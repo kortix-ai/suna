@@ -794,6 +794,7 @@ function AgentModelSection({
             selectedAgent={trigger.agent}
             onSelect={(next) => next && saveAgent.mutate(next)}
             disabled={saveAgent.isPending}
+            projectId={projectId}
           />
         </div>
       </div>
@@ -1546,6 +1547,7 @@ function CreateTriggerModal({
                     agents={agents}
                     selectedAgent={agentName}
                     onSelect={setAgentName}
+                    projectId={projectId}
                   />
                 </div>
               </TriggerModalSection>

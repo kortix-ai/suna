@@ -60,6 +60,16 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain('Project default');
   });
 
+  test('agent picker threads this row\'s projectId into AgentSelector so the connection-status dot can render (Task 14)', () => {
+    // Robust to prop ordering/formatting — just requires the `<AgentSelector`
+    // call to carry a `projectId={projectId}` prop before its closing `/>`.
+    const agentSelectorCall = channelsSource.slice(
+      channelsSource.indexOf('<AgentSelector'),
+      channelsSource.indexOf('<AgentSelector') + channelsSource.slice(channelsSource.indexOf('<AgentSelector')).indexOf('/>'),
+    );
+    expect(agentSelectorCall).toContain('projectId={projectId}');
+  });
+
   test('model override reuses the shared ModelSelector (not a hand-rolled input) and labels the unset state "Project default"', () => {
     expect(channelsSource).toContain("from '@/features/session/model-selector'");
     expect(channelsSource).toContain('<ModelSelector');

@@ -1,18 +1,22 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { CATALOG, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
+import { useQuery } from '@tanstack/react-query';
 
 import {
-  getProjectLlmCatalog,
   type ConfiguredModelProvider,
   type HarnessAuthKind,
   type HarnessConnection,
   type HarnessId,
+  type ProjectSecretsResponse,
+  getProjectLlmCatalog,
+  listProjectSecrets,
 } from '../core/rest/projects-client';
 import type { Agent } from '../core/runtime/wire-types';
 import { agentHarness } from './harness-capabilities';
+import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { useHarnessConnections } from './use-composer-capabilities';
+import { projectSecretsKey } from './use-project-secrets';
 import { useRuntimeAgents } from './use-runtime-sessions';
 
 /**
@@ -62,14 +66,64 @@ const KORTIX_INCLUDED_EXPLAINER = 'Included — no setup needed';
  *  harness", which duplicates the subscription rows' copy. */
 const PROJECT_CONFIG_EXPLAINER = "Uses the repo's committed setup";
 
+/** Models landing view (Task 17) copy — the "you're set" reassurance shown
+ *  when a project has no user connections yet but the managed gateway is
+ *  healthy. Exported so `apps/web` never re-derives this wording; see
+ *  docs/specs/2026-07-14-models-page-ui-handoff.md. */
+export const KORTIX_INCLUDED_TITLE = 'Kortix models are included';
+
+/** Pairs with {@link KORTIX_INCLUDED_TITLE} — makes clear connecting a
+ *  provider is optional, not a setup requirement. */
+export const CONNECTIONS_OPTIONAL_DESCRIPTION =
+  'Optionally connect a Claude or ChatGPT subscription, or your own API key, to use those instead.';
+
 /** Subtitle copy for a connection kind, or `null` when the kind has none
- *  (subscription rows carry their own "Models managed by …" copy elsewhere —
- *  see `NOT_EXPOSED_TEXT` in connection-row.tsx and `connectionMetaLine` in
- *  connection-select.tsx, which must agree with this). */
+ *  (subscription rows carry their own "Models managed by …" copy — see
+ *  {@link notExposedCatalogText}, which layers that on top of this). */
 export function connectionExplainer(kind: HarnessAuthKind): string | null {
   if (kind === 'managed_gateway') return KORTIX_INCLUDED_EXPLAINER;
   if (kind === 'native_config') return PROJECT_CONFIG_EXPLAINER;
   return null;
+}
+
+/** Subscription rows own their harness's name in the copy ("Models managed by
+ *  Claude Code"/"…Codex") so two not-exposed connections (a subscription and
+ *  Project config) never read as the same generic line — see
+ *  docs/specs/2026-07-14-models-page-ui-handoff.md §2. */
+const SUBSCRIPTION_CATALOG_TEXT: Partial<Record<HarnessAuthKind, string>> = {
+  claude_subscription: 'Models managed by Claude Code',
+  codex_subscription: 'Models managed by Codex',
+};
+
+/** Copy for a connection whose model catalog isn't browsable (a subscription
+ *  or Project config) — `null` for any kind that exposes a real catalog. The
+ *  one definition connection-row.tsx and connection-select.tsx both read. */
+export function notExposedCatalogText(kind: HarnessAuthKind): string | null {
+  return SUBSCRIPTION_CATALOG_TEXT[kind] ?? connectionExplainer(kind);
+}
+
+/** Provider-branding logo id for a connection kind — falls back to the kind
+ *  itself when there's no dedicated icon. */
+export const CONNECTION_ICON_PROVIDER_ID: Partial<Record<HarnessAuthKind, string>> = {
+  managed_gateway: 'kortix',
+  claude_subscription: 'anthropic',
+  codex_subscription: 'codex',
+  anthropic_api_key: 'anthropic',
+  openai_api_key: 'openai',
+};
+
+/** Verb the manage-connection modal's reconnect button uses — endpoints get
+ *  replaced, API keys get replaced, everything else (subscriptions, Project
+ *  config) gets reconnected. */
+const RECONNECT_VERB: Partial<Record<HarnessAuthKind, string>> = {
+  openai_compatible: 'Replace endpoint',
+  anthropic_compatible: 'Replace endpoint',
+  anthropic_api_key: 'Replace key',
+  openai_api_key: 'Replace key',
+};
+
+export function reconnectVerb(kind: HarnessAuthKind): string {
+  return RECONNECT_VERB[kind] ?? 'Reconnect';
 }
 
 /** Kinds whose model list is owned by the authenticated harness itself — a
@@ -132,6 +186,9 @@ export interface ModelsPageConnection {
 export interface ModelsPageState {
   runtimes: ModelsPageRuntime[];
   connections: ModelsPageConnection[];
+  /** Gateway provider ids (e.g. 'anthropic', 'codex') the project's secrets
+   *  already satisfy — see `connectedGatewayProviderIdsFromSecretNames`. */
+  connectedProviderIds: readonly string[];
   canWrite: boolean;
   isLoading: boolean;
   isError: boolean;
@@ -149,6 +206,9 @@ export interface ModelsPageInputs {
    *  gateway's model count. */
   managedModels: Record<string, unknown> | undefined;
   managedModelsLoading: boolean;
+  /** `listProjectSecrets(projectId)` — the only source `connectedProviderIds`
+   *  derives from. */
+  projectSecrets: ProjectSecretsResponse | undefined;
   canWrite: boolean;
 }
 
@@ -184,14 +244,18 @@ function resolveActiveConnection(
     if (!selected || !selected.ready) return { status: 'needs-attention', connection: selected };
     return { status: 'ready', connection: selected };
   }
-  const managed = compatible.find((connection) => connection.id === 'managed_gateway' && connection.ready);
+  const managed = compatible.find(
+    (connection) => connection.id === 'managed_gateway' && connection.ready,
+  );
   if (managed) return { status: 'ready', connection: managed };
   const readyNonNative = compatible.filter(
     (connection) => connection.ready && connection.id !== 'native_config',
   );
   if (readyNonNative.length === 1) return { status: 'ready', connection: readyNonNative[0]! };
   if (readyNonNative.length > 1) return { status: 'ambiguous', connection: null };
-  const native = compatible.find((connection) => connection.id === 'native_config' && connection.ready);
+  const native = compatible.find(
+    (connection) => connection.id === 'native_config' && connection.ready,
+  );
   if (native) return { status: 'ready', connection: native };
   return { status: 'missing', connection: null };
 }
@@ -207,8 +271,12 @@ function buildRuntime(
   loading: boolean,
 ): ModelsPageRuntime {
   const label = HARNESS_LABEL[harness];
-  const compatible = connections.filter((connection) => connection.compatible_harnesses.includes(harness));
-  const compatibleConnectionIds = compatible.filter((connection) => connection.ready).map((c) => c.id);
+  const compatible = connections.filter((connection) =>
+    connection.compatible_harnesses.includes(harness),
+  );
+  const compatibleConnectionIds = compatible
+    .filter((connection) => connection.ready)
+    .map((c) => c.id);
 
   if (loading) {
     return {
@@ -223,7 +291,8 @@ function buildRuntime(
     };
   }
 
-  const explicitId = compatible.find((connection) => connection.active_for.includes(harness))?.id ?? null;
+  const explicitId =
+    compatible.find((connection) => connection.active_for.includes(harness))?.id ?? null;
   const resolved = resolveActiveConnection(compatible, explicitId);
 
   if (resolved.status === 'ready') {
@@ -250,7 +319,11 @@ function buildRuntime(
       selectedConnectionId: explicitId,
       modelSummary: `${name} needs to be reconnected`,
       compatibleConnectionIds,
-      blocker: { code: 'needs_attention', message: `${name} needs to be reconnected`, action: 'fix' },
+      blocker: {
+        code: 'needs_attention',
+        message: `${name} needs to be reconnected`,
+        action: 'fix',
+      },
     };
   }
 
@@ -325,12 +398,15 @@ function buildConnection(
   };
 }
 
-/** needs-attention first, then in-use, then unused ready — stable otherwise
- *  (today's data layer has no created-at to order "newest first" by). */
+/** needs-attention first, then a ready managed gateway ("Kortix" is always
+ *  pinned near the top — it's the built-in, no-setup option), then any other
+ *  in-use connection, then everything else — stable otherwise (today's data
+ *  layer has no created-at to order "newest first" by). */
 function connectionRank(connection: ModelsPageConnection): number {
   if (connection.status === 'needs-attention') return 0;
-  if (connection.usedBy.length > 0) return 1;
-  return 2;
+  if (connection.kind === 'managed_gateway' && connection.status === 'ready') return 1;
+  if (connection.usedBy.length > 0) return 2;
+  return 3;
 }
 
 function sortConnections(a: ModelsPageConnection, b: ModelsPageConnection): number {
@@ -360,8 +436,7 @@ export function projectModelsPageState(input: ModelsPageInputs): ModelsPageState
   const managedCount = managedModelCount(input.managedModels);
   const connectionRows = connections
     .filter(
-      (connection) =>
-        connection.configured || connection.ready || connection.active_for.length > 0,
+      (connection) => connection.configured || connection.ready || connection.active_for.length > 0,
     )
     .map((connection) =>
       buildConnection(connection, {
@@ -372,9 +447,13 @@ export function projectModelsPageState(input: ModelsPageInputs): ModelsPageState
     )
     .sort(sortConnections);
 
+  const secretNames = new Set((input.projectSecrets?.items ?? []).map((secret) => secret.name));
+  const connectedProviderIds = [...connectedGatewayProviderIdsFromSecretNames(secretNames)].sort();
+
   return {
     runtimes,
     connections: connectionRows,
+    connectedProviderIds,
     canWrite: input.canWrite,
     isLoading: loading,
     isError: input.connectionsError,
@@ -384,8 +463,9 @@ export function projectModelsPageState(input: ModelsPageInputs): ModelsPageState
 /**
  * The one query the Models page host consumes. Wraps today's
  * `useRuntimeAgents` + `useHarnessConnections` + the project llm-catalog
- * (only needed for the managed gateway's model count) into the
- * `ModelsPageState` shape above.
+ * (only needed for the managed gateway's model count) + the project's
+ * secrets (only needed for `connectedProviderIds`) into the `ModelsPageState`
+ * shape above.
  */
 export function useModelsPage(
   projectId: string | null | undefined,
@@ -399,6 +479,12 @@ export function useModelsPage(
     enabled: Boolean(projectId),
     staleTime: 30_000,
   });
+  const secretsQuery = useQuery({
+    queryKey: projectSecretsKey(projectId),
+    queryFn: () => listProjectSecrets(projectId as string),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
+  });
 
   return projectModelsPageState({
     agents: agentsQuery.data,
@@ -408,6 +494,7 @@ export function useModelsPage(
     connectionsError: connectionsQuery.isError,
     managedModels: catalogQuery.data?.models,
     managedModelsLoading: catalogQuery.isLoading,
+    projectSecrets: secretsQuery.data,
     canWrite,
   });
 }
