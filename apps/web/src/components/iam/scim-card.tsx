@@ -58,6 +58,7 @@ import {
   listScimTokens,
   revokeScimToken,
 } from '@/lib/iam-client';
+import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
 import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {
@@ -130,26 +131,31 @@ function ProvisioningHealthPanel({
           </span>
         </p>
       )}
-      <p className="flex items-center gap-1.5 text-xs">
-        <span
-          className={cn(
-            'size-1.5 shrink-0 rounded-full',
-            freshness === 'live' && 'bg-kortix-green',
-            freshness === 'recent' && 'bg-kortix-green/60',
-            freshness === 'quiet' && 'bg-muted-foreground/40',
-            freshness === 'never' && 'bg-amber-500',
-          )}
-        />
-        <span className="text-muted-foreground">Last sync activity</span>
-        <span className="text-foreground font-medium">
-          {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
-        </span>
-        <span className="text-muted-foreground">
+      {/* Two lines on purpose: label + value stay on one unbreakable line,
+          the schedule explainer wraps underneath — the old single-flex row
+          wrapped mid-label ("Last sync / activity") on narrow cards. */}
+      <div className="space-y-0.5 text-xs">
+        <p className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              freshness === 'live' && 'bg-kortix-green',
+              freshness === 'recent' && 'bg-kortix-green/60',
+              freshness === 'quiet' && 'bg-muted-foreground/40',
+              freshness === 'never' && 'bg-amber-500',
+            )}
+          />
+          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
+          <span className="text-foreground whitespace-nowrap font-medium">
+            {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
+          </span>
+        </p>
+        <p className="text-muted-foreground pl-3">
           {freshness === 'never'
-            ? '— your IdP hasn’t connected; check provisioning is running there'
-            : '— your IdP pushes on its own schedule (Entra ~every 40 min; most others as changes happen)'}
-        </span>
-      </p>
+            ? 'Your IdP hasn’t connected — check provisioning is running there.'
+            : 'Your IdP pushes on its own schedule — Entra ~every 40 min; most others as changes happen.'}
+        </p>
+      </div>
     </div>
   );
 }
@@ -300,7 +306,8 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 <div className="min-w-0 flex-1">
                   <p className="text-foreground text-sm font-medium">Setup values</p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
-                    The SCIM base URL and what to enter on the IdP side.
+                    The SCIM base URL, what to enter on the IdP side, and how each provider starts
+                    automatic sync.
                   </p>
                 </div>
                 <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
@@ -359,6 +366,32 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                       Push users &amp; groups; deactivation deprovisions
                     </span>
                   </div>
+                </div>
+
+                {/* Per-provider "flip this switch" cheat sheet — the guides
+                    registry is the single source of truth (startSyncHint),
+                    each row deep-links into that provider's guided setup. An
+                    admin stuck at "waiting for IdP" sees exactly what to turn
+                    on without re-entering the wizard. */}
+                <div className="bg-muted/20 text-muted-foreground space-y-2 rounded-md border px-3 py-2.5 text-xs">
+                  <p className="text-foreground text-xs font-medium">
+                    Start automatic sync in your IdP
+                  </p>
+                  {SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint).map((g) => (
+                    <div key={g.id} className="flex gap-2">
+                      <span className="w-24 shrink-0">{g.name.split(' (')[0]}</span>
+                      <span className="text-foreground min-w-0 flex-1">
+                        {g.config.startSyncHint}{' '}
+                        <Link
+                          href={`/accounts/${accountId}/scim-setup?provider=${g.id}`}
+                          className="text-muted-foreground hover:text-foreground underline underline-offset-2"
+                        >
+                          Guide
+                        </Link>
+                      </span>
+                    </div>
+                  ))}
+                  <p>Once enabled, users and groups sync on their own — no manual pushing.</p>
                 </div>
               </div>
             </DisclosureContent>

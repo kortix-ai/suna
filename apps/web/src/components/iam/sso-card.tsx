@@ -264,51 +264,53 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <div className="px-4 py-5">
             {/* No loading ternary here — `provider` truthy means the query
                 already resolved; the pre-connect skeleton lives above. */}
-            <dl className="divide-border divide-y text-sm">
-              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                <dt className="text-muted-foreground shrink-0">Provider</dt>
-                <dd className="text-foreground min-w-0 truncate text-right font-medium">
-                  {provider.name}
-                </dd>
+            {/* Compact facts grid (Vercel-style) — two columns instead of five
+                stacked full-width rows, so the connected summary reads at a
+                glance instead of eating half the card. */}
+            <dl className="grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
+              <div className="min-w-0">
+                <dt className="text-muted-foreground text-xs">Provider</dt>
+                <dd className="text-foreground mt-0.5 truncate font-medium">{provider.name}</dd>
               </div>
-              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                <dt className="text-muted-foreground shrink-0">Primary domain</dt>
-                <dd className="text-foreground min-w-0 truncate text-right font-mono text-xs">
+              <div className="min-w-0">
+                <dt className="text-muted-foreground text-xs">Primary domain</dt>
+                <dd className="text-foreground mt-1 truncate font-mono text-xs">
                   {provider.primary_domain}
                 </dd>
               </div>
-              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                <dt className="text-muted-foreground shrink-0">Group claim</dt>
-                <dd className="min-w-0 truncate text-right">
+              <div className="min-w-0">
+                <dt className="text-muted-foreground text-xs">Group claim</dt>
+                <dd className="mt-1">
                   <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-xs">
                     {provider.group_claim_name}
                   </code>
                 </dd>
               </div>
-              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                <dt className="text-muted-foreground shrink-0">Auto-create members</dt>
-                <dd className="text-right">
-                  {provider.auto_create_members ? (
-                    <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
+              <div className="min-w-0">
+                <dt className="text-muted-foreground text-xs">Provisioning</dt>
+                <dd className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  <span
+                    className={
+                      provider.auto_create_members
+                        ? 'text-kortix-green inline-flex items-center gap-1 font-medium'
+                        : 'text-muted-foreground inline-flex items-center gap-1'
+                    }
+                  >
+                    {provider.auto_create_members ? <Check className="size-3.5 shrink-0" /> : null}
+                    Auto-create members{provider.auto_create_members ? '' : ': off'}
+                  </span>
+                  <span
+                    className={
+                      provider.auto_provision_groups
+                        ? 'text-kortix-green inline-flex items-center gap-1 font-medium'
+                        : 'text-muted-foreground inline-flex items-center gap-1'
+                    }
+                  >
+                    {provider.auto_provision_groups ? (
                       <Check className="size-3.5 shrink-0" />
-                      Yes
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">No</span>
-                  )}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
-                <dd className="text-right">
-                  {provider.auto_provision_groups ? (
-                    <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
-                      <Check className="size-3.5 shrink-0" />
-                      Yes
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">No</span>
-                  )}
+                    ) : null}
+                    Auto-provision groups{provider.auto_provision_groups ? '' : ': off'}
+                  </span>
                 </dd>
               </div>
             </dl>
@@ -321,7 +323,8 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
               <div className="min-w-0 space-y-0.5">
                 <p className="text-foreground text-sm font-medium">Enforce SSO for this domain</p>
                 <p className="text-muted-foreground text-xs">
-                  Members must sign in with your identity provider — the password option disappears.
+                  Members must sign in with your identity provider — the password option disappears
+                  the moment this is on, and only your identity provider works after that.
                 </p>
               </div>
               {canManage && (
@@ -333,71 +336,88 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 />
               )}
             </div>
-            <p className="text-muted-foreground mt-2 text-xs">
-              Anyone on this domain who currently signs in with a password loses that option the
-              moment you turn this on — only your identity provider works after that.
-            </p>
           </div>
         )}
 
         {provider && (
           <div className="border-border border-t">
-            <div className="flex items-center justify-between gap-3 px-4 py-3">
-              <p className="text-foreground text-sm font-medium">Group mappings</p>
-              {canManage && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
-                  onClick={() => setMapOpen(true)}
-                >
-                  <Plus className="size-3.5 shrink-0" />
-                  Add mapping
-                </Button>
-              )}
-            </div>
-            <div className="border-border border-t">
-              {mappingsQuery.isLoading ? (
-                <div className="px-4 py-3">
-                  <Skeleton className="h-8 w-full rounded-md" />
-                </div>
-              ) : mappings.length === 0 ? (
-                <p className="text-muted-foreground px-4 py-4 text-xs">
-                  No mappings yet. Map IdP group/role values (from the{' '}
-                  <span className="font-mono">{provider.group_claim_name}</span> claim) to IAM
-                  groups so users land in the right group on sign-in.
-                </p>
-              ) : (
-                <div className="divide-border divide-y">
-                  {mappings.map((m) => (
-                    <div key={m.mapping_id} className="flex items-center gap-2.5 px-4 py-3">
-                      <code
-                        title={m.claim_value}
-                        className="text-foreground max-w-[42%] truncate font-mono text-xs"
-                      >
-                        {m.claim_value}
-                      </code>
-                      <ArrowRight className="text-muted-foreground/50 size-3.5 shrink-0" />
-                      <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
-                        {m.group_name}
-                      </Badge>
-                      <span className="flex-1" />
-                      {canManage && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive shrink-0"
-                          onClick={() => setMapDeleteTarget(m)}
-                          aria-label="Remove mapping"
-                        >
-                          <X className="size-3.5 shrink-0" />
-                        </Button>
+            <Disclosure className="group">
+              <DisclosureTrigger>
+                <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+                      Group mappings
+                      {mappings.length > 0 && (
+                        <Badge variant="muted" size="sm">
+                          {mappings.length}
+                        </Badge>
                       )}
-                    </div>
-                  ))}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      Route IdP group values (from the{' '}
+                      <span className="font-mono">{provider.group_claim_name}</span> claim) to
+                      specific IAM groups.
+                    </p>
+                  </div>
+                  <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
                 </div>
-              )}
-            </div>
+              </DisclosureTrigger>
+              <DisclosureContent contentClassName="border-border border-t">
+                {canManage && (
+                  <div className="flex justify-end px-4 pt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => setMapOpen(true)}
+                    >
+                      <Plus className="size-3.5 shrink-0" />
+                      Add mapping
+                    </Button>
+                  </div>
+                )}
+                {mappingsQuery.isLoading ? (
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-8 w-full rounded-md" />
+                  </div>
+                ) : mappings.length === 0 ? (
+                  <p className="text-muted-foreground px-4 py-4 text-xs">
+                    No mappings yet — with auto-provision on, your IdP&apos;s groups appear by
+                    themselves; add a mapping only to route a claim value into a specific existing
+                    group.
+                  </p>
+                ) : (
+                  <div className="divide-border divide-y">
+                    {mappings.map((m) => (
+                      <div key={m.mapping_id} className="flex items-center gap-2.5 px-4 py-3">
+                        <code
+                          title={m.claim_value}
+                          className="text-foreground max-w-[42%] truncate font-mono text-xs"
+                        >
+                          {m.claim_value}
+                        </code>
+                        <ArrowRight className="text-muted-foreground/50 size-3.5 shrink-0" />
+                        <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
+                          {m.group_name}
+                        </Badge>
+                        <span className="flex-1" />
+                        {canManage && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-destructive shrink-0"
+                            onClick={() => setMapDeleteTarget(m)}
+                            aria-label="Remove mapping"
+                          >
+                            <X className="size-3.5 shrink-0" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DisclosureContent>
+            </Disclosure>
           </div>
         )}
 
