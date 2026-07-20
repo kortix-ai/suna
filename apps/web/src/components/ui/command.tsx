@@ -242,10 +242,8 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[300px] overflow-hidden rounded-2xl p-0',
-        'bg-card text-popover-foreground relative',
-        'border-border/60 border',
-        'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+        'bg-sidebar text-sidebar-foreground hover:text-foreground relative w-[300px] overflow-hidden rounded-md border p-0 shadow-xs ease-out',
+        'border-border',
         'data-[state=closed]:duration-[140ms] data-[state=open]:duration-[180ms]',
         'data-[state=open]:zoom-in-[0.97] data-[state=closed]:zoom-out-[0.97]',
         '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:gap-2 [&_[data-slot=command-input-wrapper]]:px-3',

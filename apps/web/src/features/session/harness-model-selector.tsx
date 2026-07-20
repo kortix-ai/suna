@@ -160,7 +160,12 @@ export function HarnessModelSelector({
           </CommandPopoverTrigger>
         </Hint>
 
-        <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[340px]">
+        <CommandPopoverContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          className="bg-sidebar text-sidebar-foreground hover:text-foreground border-border w-[340px] rounded-md border shadow-xs"
+        >
           {contextLine ? (
             <div className="text-muted-foreground border-b px-4 py-2 text-xs">{contextLine}</div>
           ) : null}

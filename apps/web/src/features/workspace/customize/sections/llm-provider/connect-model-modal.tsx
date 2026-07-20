@@ -327,7 +327,7 @@ export function ConnectModelModal({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-[520px] flex-col gap-0 overflow-hidden lg:max-w-[520px]">
+      <ModalContent  className="flex max-h-[85vh] flex-col gap-0 overflow-hidden lg:max-w-xl">
         <ModalHeader>
           <ModalTitle>Connect a model service</ModalTitle>
           <ModalDescription>Use a subscription, API key, or compatible endpoint.</ModalDescription>
