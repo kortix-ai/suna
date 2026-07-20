@@ -153,7 +153,7 @@ export const ProjectCreateModal = ({
   const queryClient = useQueryClient();
 
   const [mode, setMode] = useState<'github-create' | 'github-import' | 'managed' | 'template'>(
-    'github-create',
+    'managed',
   );
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
   const [sourceNameApplied, setSourceNameApplied] = useState(false);
@@ -213,7 +213,7 @@ export const ProjectCreateModal = ({
   const selectedRepo = githubForm.watch('repo');
 
   function resetAndClose() {
-    setMode('github-create');
+    setMode('managed');
     setSourceNameApplied(false);
     setPickedAccountId(null);
     setPickedTemplateId(null);
@@ -243,7 +243,7 @@ export const ProjectCreateModal = ({
   function pickTemplate(itemId: string) {
     setSourceNameApplied(false);
     setPickedTemplateId(itemId);
-    setMode('github-create');
+    setMode('managed');
   }
 
   function clearPickedTemplate() {
@@ -569,7 +569,7 @@ export const ProjectCreateModal = ({
             templates={templates}
             loading={templatesQuery.isLoading}
             onPick={pickTemplate}
-            onCancel={switchToGitHubCreateMode}
+            onCancel={switchToManagedMode}
           />
         ) : mode === 'managed' || mode === 'github-create' ? (
           <Form {...managedForm}>
@@ -678,9 +678,11 @@ export const ProjectCreateModal = ({
                     <div className="border-border flex items-start gap-3 rounded-md border px-3.5 py-3">
                       <GitFork className="text-muted-foreground mt-0.5 size-4" />
                       <div>
-                        <div className="text-foreground text-sm font-medium">Managed by Kortix</div>
+                        <div className="text-foreground text-sm font-medium">
+                          Managed repository
+                        </div>
                         <p className="text-muted-foreground mt-0.5 text-xs">
-                          Kortix hosts the repository in Code Storage and manages its credentials.
+                          Kortix creates a private repository and manages its credentials.
                         </p>
                       </div>
                     </div>
@@ -772,7 +774,7 @@ export const ProjectCreateModal = ({
                           disabled={submitting}
                           onClick={switchToManagedMode}
                         >
-                          <GitFork className="size-4" /> Managed by Kortix
+                          <GitFork className="size-4" /> Use managed repository
                         </Button>
                       ) : (
                         <Button
@@ -1038,7 +1040,7 @@ export const ProjectCreateModal = ({
                   type="button"
                   variant="outline-ghost"
                   className="w-full sm:w-auto"
-                  onClick={switchToGitHubCreateMode}
+                  onClick={switchToManagedMode}
                 >
                   {tI18nHardcoded.raw(
                     'autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b',

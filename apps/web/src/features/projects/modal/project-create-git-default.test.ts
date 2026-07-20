@@ -5,18 +5,17 @@ import { join } from 'node:path';
 const source = readFileSync(join(import.meta.dir, 'project-create-modal.tsx'), 'utf8');
 
 describe('new project git provider default', () => {
-  test('starts with a user GitHub repository and keeps managed git explicit', () => {
+  test('starts with a managed repository and keeps user GitHub explicit', () => {
     expect(source).toContain("'github-create' | 'github-import' | 'managed' | 'template'");
-    expect(source).toMatch(/useState<[\s\S]*?>\(\s*'github-create'/);
+    expect(source).toMatch(/useState<[\s\S]*?>\(\s*'managed'/);
     expect(source).toContain('createProjectRepo');
     expect(source).toContain('Create in your GitHub');
-    expect(source).toContain('Managed by Kortix');
+    expect(source).not.toContain('Code Storage');
+    expect(source).not.toMatch(/<GitFork className="size-4" \/> Managed by Kortix/);
   });
 
-  test('keeps a selected marketplace template on the GitHub create path', () => {
-    const start = source.indexOf('githubCreateMutation.mutate({');
-    const end = source.indexOf('});', start);
-    expect(source.slice(start, end)).toContain('source_item_id: effectiveSourceItemId');
+  test('keeps a selected marketplace template on the managed path', () => {
+    expect(source).toMatch(/function pickTemplate[\s\S]*?setMode\('managed'\)/);
   });
 
   test('uses current project-modal list and radius primitives', () => {
