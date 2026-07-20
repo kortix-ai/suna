@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 494,
+  "count": 495,
   "routes": [
     {
       "method": "GET",
@@ -68,6 +68,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
+    },
+    {
+      "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
     },
     {
