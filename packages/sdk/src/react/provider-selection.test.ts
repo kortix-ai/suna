@@ -40,6 +40,17 @@ describe('connectedGatewayProviderIdsFromSecretNames (SDK native-mode path)', ()
     const ids = connectedGatewayProviderIdsFromSecretNames(new Set(['ANTHROPIC_API_KEY']));
     expect(ids.has('anthropic')).toBe(true);
   });
+
+  // Pinned from apps/web/src/hooks/runtime/provider-selection.test.ts before
+  // that web-side copy is retired in favor of this SDK helper.
+  test('maps ChatGPT subscription secrets to the codex gateway provider', () => {
+    expect([...connectedGatewayProviderIdsFromSecretNames(new Set(['CODEX_AUTH_JSON']))]).toEqual([
+      'codex',
+    ]);
+    expect([
+      ...connectedGatewayProviderIdsFromSecretNames(new Set(['OPENCODE_AUTH_JSON'])),
+    ]).toEqual(['codex']);
+  });
 });
 
 describe('mergeProjectSecretConnectedProviders (SDK native-mode provider merge)', () => {

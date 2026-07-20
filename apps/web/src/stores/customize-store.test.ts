@@ -6,7 +6,6 @@ beforeEach(() => {
   useCustomizeStore.setState({
     open: false,
     section: 'agents',
-    llmProvidersTab: 'catalog',
     membersTab: 'people',
   });
 });
@@ -29,16 +28,11 @@ describe('useCustomizeStore', () => {
     expect(useCustomizeStore.getState().membersTab).toBe('invite');
   });
 
-  test('membersTab and llmProvidersTab reset independently on open', () => {
-    useCustomizeStore.getState().openCustomize('llm-providers', {
-      llmProvidersTab: 'models',
-      membersTab: 'invite',
-    });
-    expect(useCustomizeStore.getState().llmProvidersTab).toBe('models');
+  test('membersTab resets to "people" on a subsequent open with no opts', () => {
+    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
     expect(useCustomizeStore.getState().membersTab).toBe('invite');
 
-    useCustomizeStore.getState().openCustomize('members');
-    expect(useCustomizeStore.getState().llmProvidersTab).toBe('catalog');
+    useCustomizeStore.getState().openCustomize('agents');
     expect(useCustomizeStore.getState().membersTab).toBe('people');
   });
 });

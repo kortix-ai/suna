@@ -2,9 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { useConnectModal } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
@@ -12,11 +12,6 @@ import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import { hasUsableModel } from '@/hooks/runtime/use-model-store';
 import { useProjectLlmGatewayEnabled } from '@/hooks/runtime/use-project-llm-gateway-enabled';
 import { isBillingEnabled } from '@/lib/config';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { useCustomizeStore } from '@/stores/customize-store';
-import type { ProviderModalTab } from '@/stores/provider-modal-store';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { listProjectSecrets, type HarnessAuthKind } from '@kortix/sdk/projects-client';
 import type { FlatModel } from './session-chat-input';
@@ -40,26 +35,13 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   // live-catalog fetch lands, since connectedProviderIds below reads the
   // module-level LLM_PROVIDERS binding.
   const catalogRevision = useLlmProviderCatalogRevision();
-  const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const { open: openConnectModal } = useConnectModal();
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
 
   const { llmGatewayEnabled, query: projectDetailQuery } = useProjectLlmGatewayEnabled(projectId);
-  const canWriteProviders =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
-      accountId: projectDetailQuery.data?.project.account_id,
-    }).allowed === true;
-
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
-  const [connectRequest, setConnectRequest] = useState<{ kind: HarnessAuthKind; nonce: number } | null>(
-    null,
-  );
 
   // Same entitlement inputs ModelSelector uses: which BYOK providers are
   // connected (from project secrets), and whether the account is on free
@@ -100,26 +82,17 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     (!!projectId && llmGatewayEnabled && secretsQuery.isPending) ||
     accountStatePending;
 
+  // One surface, regardless of route context: the old three-way fork here
+  // (Customize-panel deep link when the gateway's on, a locally-hosted modal
+  // when it's off, the account-wide provider-modal-store outside a project)
+  // is gone — every caller now just opens the root-mounted `ConnectModalHost`
+  // (mounted in `app-providers.tsx`) via this store. `tab`/`connectKind` pass
+  // straight through to `useConnectModal().open(...)`.
   const openConnectProvider = useCallback(
-    (tab: ProviderModalTab = 'providers', opts?: { connectKind?: HarnessAuthKind }) => {
-      if (projectId) {
-        if (llmGatewayEnabled) {
-          // Plus → "Add provider" (the core surface); the sliders / manage-models
-          // button → "Models". Both land on LLM → Providers, never Files.
-          openCustomize('llm-providers', {
-            llmProvidersTab: tab === 'models' ? 'models' : 'catalog',
-            llmProvidersConnectKind: opts?.connectKind,
-          });
-        } else {
-          setConnectRequest(opts?.connectKind ? { kind: opts.connectKind, nonce: Date.now() } : null);
-          setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-          setProjectModalOpen(true);
-        }
-        return;
-      }
-      openProviderModal(tab);
+    (tab?: 'subscriptions' | 'api-keys', opts?: { connectKind?: HarnessAuthKind }) => {
+      openConnectModal({ tab, connectKind: opts?.connectKind });
     },
-    [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
+    [openConnectModal],
   );
 
   const openUpgrade = useCallback(() => {
@@ -128,17 +101,6 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
       accountId: projectDetailQuery.data?.project.account_id,
     });
   }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
-
-  const modal = projectId ? (
-    <ProjectProviderModal
-      projectId={projectId}
-      open={projectModalOpen}
-      onOpenChange={setProjectModalOpen}
-      defaultTab={projectModalTab}
-      canWrite={canWriteProviders}
-      connectRequest={connectRequest}
-    />
-  ) : null;
 
   // Billing off (self-host default): there's no Kortix plan to upgrade to and
   // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
@@ -150,7 +112,14 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   return {
     openConnectProvider,
     openUpgrade,
-    modal,
+    // Kept for source-compat with call sites still destructuring/rendering it
+    // (`model-connection-gate.tsx`, `harness-model-selector.tsx`,
+    // `model-selector.tsx`, `composer-chat-input.tsx`,
+    // `project-onboarding-wizard.tsx`) — the connect modal is root-mounted
+    // now (`ConnectModalHost`), so there is nothing left for this hook to
+    // render locally. Cleaning up those now-dead render sites is left to a
+    // follow-up outside this task's file scope.
+    modal: null,
     hasSelectableModels,
     entitlementsPending,
     showUpgradeOption,

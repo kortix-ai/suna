@@ -26,6 +26,18 @@ import {
   wireToModelKey,
 } from './use-model-store';
 
+/**
+ * Shared React Query key for this project's model defaults — used as both the
+ * `queryKey` below and the set/clear mutations' `mutationKey`, same
+ * convention `gatewayRoutingPolicyKey` (`@kortix/sdk/react`) establishes.
+ * Exported so a consumer that doesn't own the mutation (e.g. `gateway-view.tsx`)
+ * can still observe an in-flight write via `useIsMutating({ mutationKey })`
+ * instead of a same-name-but-different-instance `useModelDefaults(...).isUpdating`,
+ * which is per-hook-instance and never reflects another component's mutation.
+ */
+export const modelDefaultsKey = (projectId: string | null | undefined) =>
+  ['model-defaults', projectId] as const;
+
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
   isLoading: boolean;
@@ -47,7 +59,7 @@ export interface UseModelDefaults {
 
 export function useModelDefaults(projectId: string | null | undefined): UseModelDefaults {
   const queryClient = useQueryClient();
-  const queryKey = useMemo(() => ['model-defaults', projectId], [projectId]);
+  const queryKey = useMemo(() => modelDefaultsKey(projectId), [projectId]);
 
   const { data, isLoading } = useQuery({
     queryKey,
@@ -76,6 +88,7 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
   }, [projectId, queryClient, queryKey]);
 
   const setMutation = useMutation({
+    mutationKey: queryKey,
     mutationFn: (input: {
       scope: 'account' | 'agent' | 'project';
       agentName?: string;
@@ -84,6 +97,7 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     onSuccess: invalidate,
   });
   const clearMutation = useMutation({
+    mutationKey: queryKey,
     mutationFn: (params: { scope: 'account' | 'agent' | 'project'; agentName?: string }) =>
       clearModelDefault(projectId as string, params),
     onSuccess: invalidate,

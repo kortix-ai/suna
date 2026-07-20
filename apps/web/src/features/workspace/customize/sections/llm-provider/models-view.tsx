@@ -3,23 +3,30 @@
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { ModelSelector } from '@/features/session/model-selector';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
-import { invalidateComposerCapabilityQueries, useModelsPage } from '@kortix/sdk/react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  CONNECTIONS_OPTIONAL_DESCRIPTION,
+  KORTIX_INCLUDED_TITLE,
+  gatewayRoutingPolicyKey,
+  invalidateComposerCapabilityQueries,
+  useModelsPage,
+  useProjectModels,
+} from '@kortix/sdk/react';
+import { useIsMutating, useQueryClient } from '@tanstack/react-query';
+import { Plug, Plus, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 
-import { ConnectModelModal } from './connect-model-modal';
+import { useConnectModal } from './connect-modal-host';
 import { ConnectionRow } from './connection-row';
 import { ManageConnectionModal } from './manage-connection-modal';
 import { RuntimeRow } from './runtime-row';
-
-type ConnectState = { open: boolean; harnessFilter: HarnessId | null; initialKind: HarnessAuthKind | null };
-const CONNECT_CLOSED: ConnectState = { open: false, harnessFilter: null, initialKind: null };
 
 /** The flagship connect method per harness — "Connect Claude Code" lands the
  *  user directly in this form (skipping the method list) as long as it isn't
@@ -33,34 +40,48 @@ const HARNESS_SUBSCRIPTION: Partial<Record<HarnessId, HarnessAuthKind>> = {
 export function ModelsView({
   projectId,
   canWrite = false,
-  connectRequest = null,
 }: {
   projectId: string;
   canWrite?: boolean;
-  /** Deep link: open the Connect modal directly on this method's form (used
-   *  by composer "Connect Claude Code"-style CTAs). The nonce distinguishes
-   *  repeat requests while the view stays mounted. */
-  connectRequest?: { kind: HarnessAuthKind; nonce: number } | null;
 }) {
   const queryClient = useQueryClient();
   const state = useModelsPage(projectId, canWrite);
-  const [connectState, setConnectState] = useState<ConnectState>(CONNECT_CLOSED);
+  const { open: openConnectModal } = useConnectModal();
   const [manageConnectionId, setManageConnectionId] = useState<HarnessAuthKind | null>(null);
 
-  useEffect(() => {
-    if (!connectRequest || !canWrite) return;
-    setConnectState({ open: true, harnessFilter: null, initialKind: connectRequest.kind });
-  }, [connectRequest?.nonce, connectRequest?.kind, canWrite]);
+  // Default model — relocated here from `gateway-view.tsx`'s tab bar
+  // (Task 17): same `useModelDefaults` write path, same inheritance chain
+  // (project -> account -> platform) and the same routing-mutation guard, so
+  // this is a mechanical move rather than a behavior change.
+  const models = useProjectModels(projectId);
+  const modelDefaults = useModelDefaults(projectId);
+  const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
+  const effectiveDefault =
+    modelDefaults.projectDefault ??
+    modelDefaults.accountDefault ??
+    modelDefaults.platformDefault ??
+    null;
+
+  // The managed gateway ("Kortix") is always included, so it never counts as
+  // a "user connection" for the empty-state decision below — only a
+  // subscription, an API key, or a custom endpoint the user actually set up
+  // does. Its presence here (with `status: 'ready'`) is also the only signal
+  // that the gateway itself is healthy: `useModelsPage` excludes it entirely
+  // when it's neither configured, ready, nor in use (see
+  // `packages/sdk/src/react/use-models-page.ts`'s connection filter), so an
+  // absent/not-ready row means genuinely unavailable, not just "not set up".
+  const managedGatewayConnection = state.connections.find((c) => c.kind === 'managed_gateway') ?? null;
+  const managedGatewayHealthy = managedGatewayConnection?.status === 'ready';
+  const userConnections = state.connections.filter((c) => c.kind !== 'managed_gateway');
 
   const connectFromRuntime = (harness: HarnessId) => {
     const subscription = HARNESS_SUBSCRIPTION[harness];
     const subscriptionReady =
       subscription != null &&
       state.connections.some((c) => c.id === subscription && c.status === 'ready');
-    setConnectState({
-      open: true,
+    openConnectModal({
       harnessFilter: harness,
-      initialKind: subscription && !subscriptionReady ? subscription : null,
+      connectKind: subscription && !subscriptionReady ? subscription : undefined,
     });
   };
 
@@ -85,7 +106,7 @@ export function ModelsView({
             size="sm"
             variant="secondary"
             className="gap-1.5 active:scale-[0.96] transition-transform"
-            onClick={() => setConnectState({ open: true, harnessFilter: null, initialKind: null })}
+            onClick={() => openConnectModal({})}
           >
             <Plus className="size-4 shrink-0" />
             Connect
@@ -93,109 +114,141 @@ export function ModelsView({
         ) : undefined
       }
     >
-      {state.isError ? (
-        <ErrorState
-          title="Couldn't load model connections"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void invalidateComposerCapabilityQueries(queryClient, projectId)}
-            >
-              Retry
-            </Button>
-          }
-        />
-      ) : initialLoad ? (
-        <div className="space-y-5">
-          <div className="space-y-2">
-            {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-16 rounded-md" />
-            ))}
-          </div>
-          <div className="space-y-2">
-            {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-16 rounded-md" />
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {state.runtimes.length > 0 && (
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label>Agent runtimes</Label>
-                <Button
-                  type="button"
-                  variant="text"
-                  size="xs"
-                  className="-mr-2.5 active:scale-[0.96] transition-transform"
-                  onClick={manageRuntimes}
-                >
-                  Manage runtimes →
-                </Button>
-              </div>
-              <ul className="space-y-2">
-                {state.runtimes.map((runtime) => (
-                  <RuntimeRow
-                    key={runtime.id}
-                    projectId={projectId}
-                    runtime={runtime}
-                    connections={state.connections}
-                    canWrite={canWrite}
-                    onConnect={connectFromRuntime}
-                    onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
-                  />
-                ))}
-              </ul>
-            </section>
-          )}
-
+      <div className="space-y-5">
+        {canWrite && (
           <section className="space-y-2">
-            <Label>Connections</Label>
-            {state.connections.length === 0 ? (
-              <EmptyState
-                size="sm"
-                icon={Plug}
-                title="No model services connected yet"
-                action={
-                  canWrite ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setConnectState({ open: true, harnessFilter: null, initialKind: null })}
-                    >
-                      Connect
-                    </Button>
-                  ) : undefined
+            <Label>Default model</Label>
+            <div className="bg-popover flex flex-col gap-3 rounded-md border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-muted-foreground text-xs text-pretty">
+                Used when an agent doesn&apos;t pick its own
+              </p>
+              <ModelSelector
+                models={models}
+                selectedModel={effectiveDefault}
+                unsetLabel="Project default"
+                disabled={
+                  modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0
                 }
+                onSelect={(m) => {
+                  if (!m) return;
+                  void modelDefaults
+                    .setProjectDefault(m)
+                    .catch(() => errorToast('Could not update the project default'));
+                }}
               />
-            ) : (
-              <ul className="space-y-2">
-                {state.connections.map((connection) => (
-                  <ConnectionRow
-                    key={connection.id}
-                    connection={connection}
-                    canWrite={canWrite}
-                    onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
-                  />
-                ))}
-              </ul>
-            )}
+            </div>
           </section>
-        </div>
-      )}
+        )}
 
-      <ConnectModelModal
-        projectId={projectId}
-        open={connectState.open}
-        onOpenChange={(open) => setConnectState((current) => ({ ...current, open }))}
-        runtimes={state.runtimes}
-        connections={state.connections}
-        harnessFilter={connectState.harnessFilter}
-        initialKind={connectState.initialKind}
-        onConnected={() => setConnectState(CONNECT_CLOSED)}
-      />
+        {state.isError ? (
+          <ErrorState
+            title="Couldn't load model connections"
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void invalidateComposerCapabilityQueries(queryClient, projectId)}
+              >
+                Retry
+              </Button>
+            }
+          />
+        ) : initialLoad ? (
+          <div className="space-y-5">
+            <div className="space-y-2">
+              {[0, 1].map((i) => (
+                <Skeleton key={i} className="h-16 rounded-md" />
+              ))}
+            </div>
+            <div className="space-y-2">
+              {[0, 1].map((i) => (
+                <Skeleton key={i} className="h-16 rounded-md" />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {state.runtimes.length > 0 && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Agent runtimes</Label>
+                  <Button
+                    type="button"
+                    variant="text"
+                    size="xs"
+                    className="-mr-2.5 active:scale-[0.96] transition-transform"
+                    onClick={manageRuntimes}
+                  >
+                    Manage agents →
+                  </Button>
+                </div>
+                <ul className="space-y-2">
+                  {state.runtimes.map((runtime) => (
+                    <RuntimeRow
+                      key={runtime.id}
+                      projectId={projectId}
+                      runtime={runtime}
+                      connections={state.connections}
+                      canWrite={canWrite}
+                      onConnect={connectFromRuntime}
+                      onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <section className="space-y-2">
+              <Label>Your connections</Label>
+              {userConnections.length === 0 ? (
+                managedGatewayHealthy ? (
+                  // The honest "you're set" reassurance: Kortix models work
+                  // out of the box, connecting anything else is optional —
+                  // never claim this when the managed gateway itself isn't
+                  // actually available (see the legacy branch below).
+                  <EmptyState
+                    size="sm"
+                    icon={Sparkles}
+                    title={KORTIX_INCLUDED_TITLE}
+                    description={CONNECTIONS_OPTIONAL_DESCRIPTION}
+                    action={
+                      canWrite ? (
+                        <Button variant="outline" size="sm" onClick={() => openConnectModal({})}>
+                          Connect
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    size="sm"
+                    icon={Plug}
+                    title="No model services connected yet"
+                    action={
+                      canWrite ? (
+                        <Button variant="outline" size="sm" onClick={() => openConnectModal({})}>
+                          Connect
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                )
+              ) : (
+                <ul className="space-y-2">
+                  {state.connections.map((connection) => (
+                    <ConnectionRow
+                      key={connection.id}
+                      connection={connection}
+                      canWrite={canWrite}
+                      onManage={(connectionId) => setManageConnectionId(connectionId as HarnessAuthKind)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
 
       <ManageConnectionModal
         projectId={projectId}
@@ -208,7 +261,7 @@ export function ModelsView({
         }}
         onReconnect={(kind) => {
           setManageConnectionId(null);
-          setConnectState({ open: true, harnessFilter: null, initialKind: kind });
+          openConnectModal({ connectKind: kind });
         }}
       />
     </CustomizeSectionWrapper>

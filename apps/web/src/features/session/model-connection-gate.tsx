@@ -42,7 +42,7 @@ export function ModelConnectionGate({
               Upgrade
             </Button>
           ) : (
-            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
+            <Button type="button" size="sm" onClick={() => openConnectProvider()}>
               <KeyRound className="size-3.5" />
               Bring your own key
             </Button>
@@ -54,7 +54,7 @@ export function ModelConnectionGate({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => openConnectProvider('providers')}
+              onClick={() => openConnectProvider()}
             >
               <KeyRound className="size-3.5" />
               Bring your own key
@@ -143,7 +143,7 @@ export function ModelConnectionBar({
                       size="toolbar"
                       className="rounded-full active:scale-[0.96]"
                       onClick={() =>
-                        openConnectProvider('providers', connectKind ? { connectKind } : undefined)
+                        openConnectProvider(undefined, connectKind ? { connectKind } : undefined)
                       }
                     >
                       {action}
@@ -166,7 +166,7 @@ export function ModelConnectionBar({
                         type="button"
                         size="toolbar"
                         className="rounded-full active:scale-[0.96]"
-                        onClick={() => openConnectProvider('providers')}
+                        onClick={() => openConnectProvider()}
                       >
                         Connect model
                       </Button>

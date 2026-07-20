@@ -303,7 +303,7 @@ describe('ComposerChatInput — unified_model_picker flag wiring', () => {
       modelPicker.onConnect('codex_subscription');
     });
 
-    expect(openConnectProviderMock).toHaveBeenCalledWith('providers', {
+    expect(openConnectProviderMock).toHaveBeenCalledWith(undefined, {
       connectKind: 'codex_subscription',
     });
   });

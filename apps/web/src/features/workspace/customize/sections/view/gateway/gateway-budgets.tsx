@@ -16,9 +16,11 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import {
   useDeleteGatewayBudget,
@@ -79,7 +81,7 @@ export function GatewayBudgets({
   projectId: string;
   canWrite?: boolean;
 }) {
-  const { data } = useGatewayBudgets(projectId);
+  const { data, isLoading, isError, refetch } = useGatewayBudgets(projectId);
   const setBudget = useSetGatewayBudget(projectId);
   const delBudget = useDeleteGatewayBudget(projectId);
   const [editing, setEditing] = useState<EditTarget | null>(null);
@@ -109,6 +111,36 @@ export function GatewayBudgets({
   }
   alerts.sort((a, b) => b.pct - a.pct);
   const exceeded = alerts.some((a) => a.pct >= 100);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <BudgetsSkeleton />
+      </div>
+    );
+  }
+
+  // Budgets and Keys both run mutations (set/delete budget here) whose
+  // onSuccess invalidates this same query. If that background refetch fails,
+  // React Query flips isError true while `data` still holds the last-good
+  // response — only fall back to the full-page ErrorState when there is no
+  // data left to render; otherwise keep showing the working panels.
+  if (isError && !data) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-5">
+        <ErrorState
+          size="sm"
+          title="Couldn't load budgets"
+          description="Something went wrong loading budgets for this project."
+          action={
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -400,6 +432,19 @@ function PillGroup<T extends string>({
         </FilterBarItem>
       ))}
     </FilterBar>
+  );
+}
+
+/**
+ * Loading placeholder shaped like the real page — the project-budget panel
+ * and the members panel — so the layout doesn't jump once the query resolves.
+ */
+function BudgetsSkeleton() {
+  return (
+    <div className="w-full space-y-4 p-5">
+      <Skeleton className="h-32 rounded-md" />
+      <Skeleton className="h-48 rounded-md" />
+    </div>
   );
 }
 

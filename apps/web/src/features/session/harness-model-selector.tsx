@@ -122,7 +122,7 @@ export function HarnessModelSelector({
 
   const handleManageModels = () => {
     setOpen(false);
-    openConnectProvider('models');
+    openConnectProvider();
   };
 
   const triggerLabel = selectedModel || defaultCopy.label;

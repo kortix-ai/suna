@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import {
   useCreateGatewayKey,
@@ -37,6 +38,7 @@ import {
   useRevokeGatewayKey,
 } from '@/hooks/projects/use-project-gateway';
 import type { CreatedGatewayKey } from '@/lib/projects-gateway-client';
+import { ApiError } from '@kortix/sdk';
 
 function fmtDate(s: string | null): string {
   if (!s) return 'never';
@@ -50,14 +52,11 @@ function fmtDate(s: string | null): string {
 export function GatewayKeys({
   projectId,
   canWrite = false,
-  onViewModels,
 }: {
   projectId: string;
   canWrite?: boolean;
-  /** Jump to the Providers/Models tab from the reveal dialog's reference panel. */
-  onViewModels?: () => void;
 }) {
-  const { data, isError } = useGatewayKeys(projectId);
+  const { data, isError, error, refetch } = useGatewayKeys(projectId);
   const createKey = useCreateGatewayKey(projectId);
   const revokeKey = useRevokeGatewayKey(projectId);
   const [creating, setCreating] = useState(false);
@@ -67,12 +66,32 @@ export function GatewayKeys({
 
   const keys = data?.keys ?? [];
 
-  if (isError) {
+  // `createKey`/`revokeKey` invalidate this same query on success. If that
+  // background refetch fails, React Query flips isError true while `data`
+  // still holds the last-good keys list — only fall back to the full-page
+  // ErrorState when there is no data left to render.
+  if (isError && !data) {
+    const forbidden = error instanceof ApiError && error.status === 403;
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-5">
-        <p className="text-muted-foreground text-sm">
-          You need the manage-keys permission to view gateway keys.
-        </p>
+      <div className="flex w-full items-center justify-center p-10">
+        {forbidden ? (
+          <ErrorState
+            size="sm"
+            title="API keys need admin access"
+            description="Ask a project admin."
+          />
+        ) : (
+          <ErrorState
+            size="sm"
+            title="Couldn't load API keys"
+            description="Something went wrong loading API keys for this project."
+            action={
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )}
       </div>
     );
   }
@@ -91,7 +110,7 @@ export function GatewayKeys({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex flex-col">
       <div className="w-full space-y-4 p-5">
         <section className="space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -227,14 +246,6 @@ export function GatewayKeys({
         <RevealKeyDialog
           created={created}
           gatewayUrl={data?.gateway_url ?? null}
-          onViewModels={
-            onViewModels
-              ? () => {
-                  setCreated(null);
-                  onViewModels();
-                }
-              : undefined
-          }
           onClose={() => setCreated(null)}
         />
       )}
@@ -271,13 +282,11 @@ export function GatewayKeys({
 function RevealKeyDialog({
   created,
   gatewayUrl,
-  onViewModels,
   onClose,
 }: {
   created: CreatedGatewayKey;
   /** Env-correct public gateway origin (dev vs prod); falls back to prod. */
   gatewayUrl: string | null;
-  onViewModels?: () => void;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -318,11 +327,7 @@ function RevealKeyDialog({
               </Button>
             </Hint>
           </div>
-          <GatewayApiReference
-            apiKey={created.secret_key}
-            gatewayUrl={gatewayUrl}
-            onViewModels={onViewModels}
-          />
+          <GatewayApiReference apiKey={created.secret_key} gatewayUrl={gatewayUrl} />
         </ModalBody>
         <ModalFooter>
           <Button onClick={onClose}>Done</Button>

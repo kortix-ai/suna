@@ -1,7 +1,6 @@
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
-import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
   if (provider.id === 'codex') return 'ChatGPT subscription';
@@ -65,16 +64,6 @@ export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmP
     models,
     featured: true,
   };
-}
-
-export function pickInitialTab(
-  defaultTab: ActiveTab | undefined,
-  hasConnections: boolean,
-): ActiveTab {
-  if (defaultTab === 'catalog') return 'catalog';
-  if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
-  if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';
-  return hasConnections ? 'connected' : 'catalog';
 }
 
 export function helpHostnameFromUrl(helpUrl: string | null): string | null {

@@ -36,8 +36,6 @@ import { useModelStore } from '@/hooks/runtime/use-model-store';
 import { useProjectLlmGatewayEnabled } from '@/hooks/runtime/use-project-llm-gateway-enabled';
 import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
-import type { ProviderModalTab } from '@/stores/provider-modal-store';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { AUTO_MODEL_ID, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
@@ -50,32 +48,6 @@ import { useModelConnectionGate } from './use-model-connection-gate';
 
 export { Tag };
 export { pickerGroupId };
-
-// ─── Backward-compat wrappers ────────────────────────────────────────────────
-
-export function ConnectProviderDialog({
-  open,
-  onOpenChange,
-  providers: _providers,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  providers: ProviderListResponse | undefined;
-}) {
-  const { openProviderModal, closeProviderModal } = useProviderModalStore();
-
-  useEffect(() => {
-    if (open) openProviderModal('providers');
-    else closeProviderModal();
-  }, [open, openProviderModal, closeProviderModal]);
-
-  const isStoreOpen = useProviderModalStore((s) => s.isOpen);
-  useEffect(() => {
-    if (!isStoreOpen && open) onOpenChange(false);
-  }, [isStoreOpen, open, onOpenChange]);
-
-  return null;
-}
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
@@ -323,13 +295,10 @@ export function ModelSelector({
     [onSelect],
   );
 
-  const handleOpenProviderModal = useCallback(
-    (tab: ProviderModalTab) => {
-      setOpen(false);
-      openConnectProvider(tab);
-    },
-    [openConnectProvider],
-  );
+  const handleOpenProviderModal = useCallback(() => {
+    setOpen(false);
+    openConnectProvider();
+  }, [openConnectProvider]);
 
   const handleUpgrade = useCallback(() => {
     setOpen(false);
@@ -534,7 +503,7 @@ export function ModelSelector({
                     type="button"
                     size="xs"
                     variant={showUpgradeOption ? 'outline' : 'default'}
-                    onClick={() => handleOpenProviderModal('providers')}
+                    onClick={() => handleOpenProviderModal()}
                   >
                     <KeyRound className="size-3.5" />
                     Connect a model service
@@ -589,7 +558,7 @@ export function ModelSelector({
               not in this picker. */}
           <button
             type="button"
-            onClick={() => handleOpenProviderModal('models')}
+            onClick={() => handleOpenProviderModal()}
             className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 border-t px-4 py-2.5 text-xs font-medium transition-colors duration-200"
           >
             <SlidersHorizontal className="size-3.5 shrink-0" />

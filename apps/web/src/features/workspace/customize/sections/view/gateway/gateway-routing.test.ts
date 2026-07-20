@@ -12,6 +12,14 @@ import {
 
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
+// The project default-model picker itself relocated from `gateway-view.tsx`'s
+// tab bar into the Models tab's own "Default model" section (Task 17) — the
+// wiring this suite pins (project-default scope, the routing-mutation race
+// guard) now lives here.
+const modelsViewSource = readFileSync(
+  join(import.meta.dir, '../../llm-provider/models-view.tsx'),
+  'utf8',
+);
 const modelDefaultsSource = readFileSync(
   join(import.meta.dir, '../../../../../../hooks/runtime/use-model-defaults.ts'),
   'utf8',
@@ -142,14 +150,18 @@ describe('gateway routing editor helpers', () => {
     ).toEqual(['glm-5.2']);
   });
 
-  test('the header selector reads and writes the project default scope', () => {
-    expect(gatewayViewSource).toContain('modelDefaults.projectDefault');
-    expect(gatewayViewSource).toContain('.setProjectDefault(m)');
-    expect(gatewayViewSource).toContain('useProjectModels(projectId)');
-    expect(gatewayViewSource).not.toContain('useOpenCodeProviders');
-    expect(gatewayViewSource).not.toContain('modelDefaults.setAccountDefault');
-    expect(gatewayViewSource).toContain('modelDefaults.isUpdating');
-    expect(gatewayViewSource).toContain("errorToast('Could not update the project default')");
+  test('the "Default model" section reads and writes the project default scope', () => {
+    // Task 17 relocated this picker into ModelsView's first section — see
+    // `models-view.tsx`. `gateway-view.tsx` still reads `modelDefaults.isUpdating`
+    // (to gate Routing below) but no longer owns the write path itself.
+    expect(modelsViewSource).toContain('modelDefaults.projectDefault');
+    expect(modelsViewSource).toContain('.setProjectDefault(m)');
+    expect(modelsViewSource).toContain('useProjectModels(projectId)');
+    expect(modelsViewSource).not.toContain('useOpenCodeProviders');
+    expect(modelsViewSource).not.toContain('modelDefaults.setAccountDefault');
+    expect(modelsViewSource).toContain('modelDefaults.isUpdating');
+    expect(modelsViewSource).toContain("errorToast('Could not update the project default')");
+    expect(gatewayViewSource).not.toContain('.setProjectDefault(m)');
   });
 
   test('default changes refresh routing and the shared compact picker cache', () => {
@@ -176,11 +188,25 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('routing cannot race a pending project-default write', () => {
-    expect(gatewayViewSource).toContain('projectDefaultPending={modelDefaults.isUpdating}');
+    // `gateway-view.tsx` no longer mounts its own `useModelDefaults` instance
+    // (Task 17 fix-wave finding: `useMutation().isPending` is per-instance, so
+    // a second hook instance here would never see the Models tab's mutation).
+    // It instead reads the shared `modelDefaultsKey` mutation key via
+    // `useIsMutating`, which observes any in-flight write regardless of which
+    // component's hook instance issued it.
+    expect(gatewayViewSource).not.toMatch(/import\s*\{[^}]*\buseModelDefaults\b/);
+    expect(gatewayViewSource).toContain('modelDefaultsKey');
+    expect(gatewayViewSource).toContain('useIsMutating({ mutationKey: modelDefaultsKey(projectId) })');
+    expect(gatewayViewSource).toContain('projectDefaultPending={projectDefaultPending}');
     expect(routingSource).toContain('projectDefaultPending: boolean');
     expect(routingSource).toContain('projectDefaultPending ||');
-    expect(gatewayViewSource).toContain('useIsMutating');
-    expect(gatewayViewSource).toContain('gatewayRoutingPolicyKey(projectId)');
+    // The picker's own routing-mutation guard moved along with it (Task 17).
+    expect(modelsViewSource).toContain('useIsMutating');
+    expect(modelsViewSource).toContain('gatewayRoutingPolicyKey(projectId)');
+    // The set/clear mutations carry an explicit shared mutationKey so a
+    // non-owning consumer (gateway-view) can observe them via useIsMutating.
+    expect(modelDefaultsSource).toContain('modelDefaultsKey');
+    expect(modelDefaultsSource).toContain('mutationKey: queryKey');
   });
 
   test('routing freezes edits in flight and refreshes the shared project default after save', () => {

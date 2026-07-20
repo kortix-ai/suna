@@ -24,6 +24,7 @@ import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { useConnectModal } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
 import { useRuntimeAgents, useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
@@ -290,6 +291,7 @@ export function CommandPalette() {
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
+  const { open: openConnectModal } = useConnectModal();
   const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
   const currentSessionId = useMemo(() => {
     if (params?.sessionId) return params.sessionId;
@@ -974,12 +976,10 @@ export function CommandPalette() {
     [triggerBackScale],
   );
 
-  const handleOpenProviderModal = useCallback(() => {
+  const handleConnectModel = useCallback(() => {
     close();
-    import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
-      useProviderModalStore.getState().openProviderModal('connected');
-    });
-  }, [close]);
+    openConnectModal();
+  }, [close, openConnectModal]);
 
   const handleGenerateSSHKey = useCallback(() => {
     close();
@@ -1057,7 +1057,7 @@ export function CommandPalette() {
       openSessionBrowser: handleOpenSessionBrowser,
       logout: handleLogout,
       openPlan: handleOpenPlan,
-      openProviderModal: handleOpenProviderModal,
+      connectModel: handleConnectModel,
       generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
       restartFull: handleRestartFull,
@@ -1075,7 +1075,7 @@ export function CommandPalette() {
       handleOpenSessionBrowser,
       handleLogout,
       handleOpenPlan,
-      handleOpenProviderModal,
+      handleConnectModel,
       handleGenerateSSHKey,
       handleRestartConfig,
       handleRestartFull,
