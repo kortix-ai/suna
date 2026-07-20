@@ -5,7 +5,7 @@
  * spec published admin credit-debit / tier-change / ops shapes to anyone.
  * These tests pin both the pure filter and the end-to-end served document.
  */
-import { createRoute, z } from '@hono/zod-openapi';
+import { createRoute } from '@hono/zod-openapi';
 import { describe, expect, test } from 'bun:test';
 import {
   INTERNAL_SPEC_PREFIXES,
