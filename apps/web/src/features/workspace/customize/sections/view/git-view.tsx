@@ -240,22 +240,6 @@ export function GitView({ projectId }: { projectId: string }) {
               label="Proxy URL"
             />
           </section>
-
-          <section className="border-border rounded-md border border-dashed px-4 py-3.5">
-            <div className="flex items-start gap-3">
-              <RefreshCw className="text-muted-foreground mt-0.5 size-4" />
-              <div>
-                <h3 className="text-foreground text-sm font-medium">Repository synchronization</h3>
-                <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                  Continuous mirroring to another Git provider will be configured here. Your current
-                  repository remains the source of truth.
-                </p>
-              </div>
-              <Badge variant="secondary" size="sm" className="ml-auto shrink-0">
-                Coming soon
-              </Badge>
-            </div>
-          </section>
         </div>
       ) : null}
     </CustomizeSectionWrapper>
