@@ -270,6 +270,40 @@ describe('OutputScanTracker workspace recovery (session/load)', () => {
     expect(published[0].params.update.rawInput.items.length).toBe(500)
     expect(published[0].params.update._meta.kortix.truncated).toBe(true)
   })
+
+  it('filters out deleted entries from git-status recovery (no clickable rows for missing files)', async () => {
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [
+        { path: 'kept.txt', status: 'modified' as const },
+        { path: 'gone.txt', status: 'deleted' as const },
+      ],
+      hasGitDir: () => true,
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    expect(published.length).toBe(1)
+    const items = published[0].params.update.rawInput.items
+    expect(items.length).toBe(1)
+    expect(items[0].path).toBe(join('/workspace', 'kept.txt'))
+  })
+
+  it('filters out entries with hidden-directory paths (not just basename)', async () => {
+    const { t, published } = recoveryTracker({
+      gitWorkingStatus: async () => [
+        { path: 'src/report.pdf', status: 'added' as const },
+        { path: '.config/settings.txt', status: 'modified' as const },
+        { path: '.env', status: 'modified' as const },
+        { path: 'src/.secret/key.txt', status: 'modified' as const },
+      ],
+      hasGitDir: () => true,
+    })
+    t.noteOutbound(load(1))
+    await flush()
+    expect(published.length).toBe(1)
+    const items = published[0].params.update.rawInput.items
+    expect(items.length).toBe(1)
+    expect(items[0].path).toBe(join('/workspace', 'src/report.pdf'))
+  })
 })
 
 describe('OutputScanTracker wired into AcpProcess', () => {

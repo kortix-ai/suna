@@ -15,9 +15,9 @@ const TERMINAL = new Set(['completed', 'failed'])
 const RECOVERY_TOOL_CALL_ID = 'kortix-outputs:recovery'
 
 type Scan = (workspace: string, sinceMs: number, isIgnored: (p: string[]) => Promise<Set<string>>) => Promise<ChangedScanResult>
-/** Only the field the recovery scan actually reads — real `gitWorkingStatus`
+/** Only the fields the recovery scan actually reads — real `gitWorkingStatus`
  * (which returns the richer `GitFileStatus[]`) satisfies this structurally. */
-type GitStatusEntry = { path: string }
+type GitStatusEntry = { path: string; status?: string }
 type GitStatusFn = (workspace: string) => Promise<GitStatusEntry[]>
 type HasGitDirFn = (workspace: string) => boolean
 
@@ -32,6 +32,12 @@ type PromptState = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** True if any segment in the path starts with '.' (hidden file or directory). */
+function hasHiddenPathSegment(pathStr: string): boolean {
+  const segments = pathStr.split('/')
+  return segments.some((seg) => seg.startsWith('.'))
 }
 
 export class OutputScanTracker {
@@ -195,6 +201,8 @@ export class OutputScanTracker {
     const isGitWorkspace = statuses.length > 0 || hasGitDir(workspace)
     if (isGitWorkspace) {
       const absolutes = statuses
+        .filter((entry) => entry.status !== 'deleted')
+        .filter((entry) => !hasHiddenPathSegment(entry.path))
         .map((entry) => path.join(workspace, entry.path))
         .filter((absolute) => !isDeniedChangeName(path.basename(absolute)))
       const truncated = absolutes.length > MAX_ITEMS
