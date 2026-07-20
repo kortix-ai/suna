@@ -369,6 +369,29 @@ describe('identity page progressive disclosure', () => {
   });
 });
 
+// "How do I start auto-sync?" — every SCIM guide carries the one-liner for
+// turning automatic provisioning ON, and the Identity card renders the full
+// cheat sheet with a deep link into each provider's guided setup.
+describe('SCIM start-sync guides', () => {
+  test('every SCIM guide states how to turn automatic provisioning on', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      expect(g.config.startSyncHint, `${g.id} missing startSyncHint`).toBeTruthy();
+    }
+    expect(getScimGuide('entra')!.config.startSyncHint).toContain('Start provisioning');
+    // PingOne's double switch — the fact-checked blocker (connection AND rule).
+    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('CONNECTION toggle');
+    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('Active');
+    // OneLogin's silent pending-queue trap.
+    expect(getScimGuide('onelogin')!.config.startSyncHint).toContain('Require admin approval');
+  });
+
+  test('the SCIM card renders the cheat sheet with deep links into each guide', () => {
+    expect(scimCardSource).toContain('Start automatic sync in your IdP');
+    expect(scimCardSource).toContain('startSyncHint');
+    expect(scimCardSource).toContain('scim-setup?provider=');
+  });
+});
+
 describe('SCIM scope trade-off copy (live confusion: "why only assigned?")', () => {
   test('the Entra configure step explains "sync only assigned" vs "sync all" in plain terms', () => {
     const text = JSON.stringify(getScimGuide('entra')!.steps);
