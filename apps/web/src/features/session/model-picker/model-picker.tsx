@@ -125,7 +125,7 @@ export function ModelPicker({ vm, onConnect, disabled = false, onManageModels }:
           )}
         >
           <Hint label={hintLabel}>
-            <span className="max-w-[180px] truncate">{vm.trigger.label}</span>
+            <span className="max-w-[92px] truncate sm:max-w-[180px]">{vm.trigger.label}</span>
           </Hint>
           <ChevronDown
             className={cn(

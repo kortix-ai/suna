@@ -63,6 +63,7 @@ import {
   COMPOSER_PILL_ACTIVE_CLASS,
   COMPOSER_PILL_DISABLED_CLASS,
   COMPOSER_PILL_TRIGGER_CLASS,
+  COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS,
 } from './composer-pill';
 import { resolveComposerResetOnSend } from './composer-reset';
 import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
@@ -369,7 +370,7 @@ export function AgentSelector({
               disabled && COMPOSER_PILL_DISABLED_CLASS,
             )}
           >
-            <span className="max-w-[100px] truncate capitalize">{displayName}</span>
+            <span className="max-w-[72px] truncate capitalize sm:max-w-[100px]">{displayName}</span>
             {currentHarness ? <HarnessIcon harness={currentHarness.id} /> : null}
             {disabled ? (
               <Lock className="size-3 shrink-0 opacity-60" />
@@ -521,7 +522,7 @@ function VariantSelector({
             selectedVariant && 'text-foreground',
           )}
         >
-          {displayName}
+          <span className="max-w-[64px] truncate sm:max-w-[96px]">{displayName}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">
@@ -2504,8 +2505,11 @@ function SessionChatInputImpl({
 
           {/* Bottom toolbar */}
           <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
-            {/* LEFT: Attach + Agent + Model + Variant */}
-            <div className="flex min-w-0 items-center gap-0 overflow-visible">
+            {/* LEFT: Attach + Agent + Model + Variant. On phones the pill row
+                scrolls horizontally instead of squishing — every pill is
+                shrink-0 (COMPOSER_PILL_TRIGGER_CLASS); see
+                COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS for why scrolling is safe. */}
+            <div className={cn(COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS, 'flex-1')}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2523,7 +2527,7 @@ function SessionChatInputImpl({
                     aria-label="Attach files"
                     data-testid="session-attach-files"
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
@@ -2582,17 +2586,24 @@ function SessionChatInputImpl({
               <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
             </div>
 
-            {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
-            <div className="flex shrink-0 items-center gap-0">
-              <TokenProgress
-                messages={messages}
-                acpUsage={acpUsage}
-                models={models}
-                selectedModel={selectedModel}
-                onContextClick={onContextClick}
-              />
+            {/* RIGHT: TokenProgress + Voice + Submit/Stop. Only the PRIMARY
+                actions (voice, submit/stop) are rigid — the secondary zone
+                (context ring + toolbarSlot, which can carry several wide
+                pills: ACP config options on live sessions, Branch/Sandbox
+                pickers on project home) shrinks and scrolls on phones so it
+                can never push the send button out of the card. */}
+            <div className="flex min-w-0 items-center gap-0">
+              <div className={COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS}>
+                <TokenProgress
+                  messages={messages}
+                  acpUsage={acpUsage}
+                  models={models}
+                  selectedModel={selectedModel}
+                  onContextClick={onContextClick}
+                />
 
-              {toolbarSlot}
+                {toolbarSlot}
+              </div>
 
               <VoiceRecorder
                 onTranscription={handleTranscription}

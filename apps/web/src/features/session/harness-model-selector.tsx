@@ -149,7 +149,7 @@ export function HarnessModelSelector({
                 disabled && 'cursor-not-allowed opacity-70',
               )}
             >
-              <span className="max-w-[150px] truncate">{triggerLabel}</span>
+              <span className="max-w-[92px] truncate sm:max-w-[150px]">{triggerLabel}</span>
               <ChevronDown
                 className={cn(
                   'size-3 shrink-0 opacity-50 transition-transform duration-200',

@@ -359,7 +359,7 @@ export function ModelSelector({
                   disabled && 'cursor-not-allowed opacity-60',
                 )}
               >
-                <span className="max-w-[120px] truncate">{displayName}</span>
+                <span className="max-w-[92px] truncate sm:max-w-[120px]">{displayName}</span>
                 <ChevronDown
                   className={cn(
                     'size-3 opacity-50 transition-transform duration-200',

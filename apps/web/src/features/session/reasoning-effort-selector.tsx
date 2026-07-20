@@ -182,7 +182,7 @@ export function ReasoningEffortSelector({
               aria-disabled={locked || pending || undefined}
               aria-label="Reasoning effort"
               className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
+                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
                 open && 'bg-muted text-foreground',
                 current && 'text-foreground',
                 (locked || pending) &&
@@ -190,7 +190,9 @@ export function ReasoningEffortSelector({
               )}
             >
               <Brain className="size-3.5 shrink-0" />
-              <span className="max-w-[80px] truncate">{displayValue}</span>
+              {/* Icon-only on phones — the Brain glyph + aria-label carry it;
+                  the value label returns from `sm:` up. */}
+              <span className="hidden max-w-[80px] truncate sm:inline">{displayValue}</span>
               <ChevronDown
                 className={cn(
                   'size-3 opacity-50 transition-transform duration-200',

@@ -128,6 +128,15 @@ describe('ModelPicker', () => {
     expect(screen.getByTestId('model-picker-trigger')).toBeTruthy();
   });
 
+  it('trigger label truncates with a phone-width cap that relaxes from sm: up — the composer toolbar contract that keeps the pill row scrollable instead of overflowing on mobile', () => {
+    const vm = buildVm();
+    renderPicker(vm);
+    const label = within(screen.getByTestId('model-picker-trigger')).getByText('Claude Sonnet 5');
+    expect(label.className).toContain('truncate');
+    expect(label.className).toContain('max-w-[92px]');
+    expect(label.className).toContain('sm:max-w-[180px]');
+  });
+
   it('renders one model-first list — no harness fork', async () => {
     const vm = buildVm();
     await openPicker(vm);
