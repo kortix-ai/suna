@@ -230,6 +230,7 @@ flow(
       'POST /scim/v2/accounts/:accountId/Groups',
       'GET /scim/v2/accounts/:accountId/Groups/:groupId',
       'PATCH /scim/v2/accounts/:accountId/Groups/:groupId',
+      'PUT /scim/v2/accounts/:accountId/Groups/:groupId',
       'DELETE /scim/v2/accounts/:accountId/Groups/:groupId',
     ],
   },
@@ -286,11 +287,37 @@ flow(
       r.status(200).body().has('$.displayName', next);
     });
 
+    await ctx.step('PUT full-resource rename (Okta group push) → 200', async () => {
+      // Okta renames pushed groups via PUT with the FULL resource. No members
+      // key here → membership must be left alone (only a present array is
+      // authoritative).
+      const next = ctx.fixtures.name('scim-group-put');
+      const r = await scim.put(
+        '/scim/v2/accounts/:accountId/Groups/:groupId',
+        {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+          id: groupId,
+          displayName: next,
+        },
+        { params: { accountId: team.id, groupId } },
+      );
+      r.status(200).body().has('$.displayName', next).has('$.id', groupId);
+    });
+
     await ctx.step('GET unknown Group → 404 SCIM error', async () => {
       const r = await scim.get('/scim/v2/accounts/:accountId/Groups/:groupId', {
         params: { accountId: team.id, groupId: '00000000-0000-4000-8000-000000000000' },
       });
       r.status(404).body().exists('$.detail');
+    });
+
+    await ctx.step('PUT unknown Group → 404', async () => {
+      const r = await scim.put(
+        '/scim/v2/accounts/:accountId/Groups/:groupId',
+        { displayName: 'x' },
+        { params: { accountId: team.id, groupId: '00000000-0000-4000-8000-000000000000' } },
+      );
+      r.status(404);
     });
 
     await ctx.step('PATCH unknown Group → 404', async () => {
@@ -411,31 +438,37 @@ flow(
     });
 
     let userId = '';
-    await ctx.step('POST Users for an unknown email → 201 invite (create the real user to PUT)', async () => {
-      const userName = `${ctx.fixtures.name('scim-put-user')}@ke2e.kortix.test`;
-      const r = await scim.post(
-        '/scim/v2/accounts/:accountId/Users',
-        { userName, externalId: 'ext-ke2e-put-1' },
-        { params: { accountId: team.id } },
-      );
-      r.status(201).body().has('$.active', true);
-      userId = r.json<any>().id;
-    });
+    await ctx.step(
+      'POST Users for an unknown email → 201 invite (create the real user to PUT)',
+      async () => {
+        const userName = `${ctx.fixtures.name('scim-put-user')}@ke2e.kortix.test`;
+        const r = await scim.post(
+          '/scim/v2/accounts/:accountId/Users',
+          { userName, externalId: 'ext-ke2e-put-1' },
+          { params: { accountId: team.id } },
+        );
+        r.status(201).body().has('$.active', true);
+        userId = r.json<any>().id;
+      },
+    );
 
-    await ctx.step('PUT full-replace with active:false → 200, actually deactivates (not idempotent 204 on an unknown id)', async () => {
-      const r = await scim.put(
-        '/scim/v2/accounts/:accountId/Users/:userId',
-        {
-          schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
-          userName: 'ke2e-put-replaced@ke2e.kortix.test',
-          active: false,
-        },
-        { params: { accountId: team.id, userId } },
-      );
-      // The pending invite is revoked by this PUT — 200 + active:false confirms
-      // the write landed (distinct from SCIM-2's PUT-on-unknown-id → 204 case).
-      r.status(200).body().has('$.active', false);
-    });
+    await ctx.step(
+      'PUT full-replace with active:false → 200, actually deactivates (not idempotent 204 on an unknown id)',
+      async () => {
+        const r = await scim.put(
+          '/scim/v2/accounts/:accountId/Users/:userId',
+          {
+            schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+            userName: 'ke2e-put-replaced@ke2e.kortix.test',
+            active: false,
+          },
+          { params: { accountId: team.id, userId } },
+        );
+        // The pending invite is revoked by this PUT — 200 + active:false confirms
+        // the write landed (distinct from SCIM-2's PUT-on-unknown-id → 204 case).
+        r.status(200).body().has('$.active', false);
+      },
+    );
 
     await ctx.step('DELETE the now-revoked invite → idempotent 204 (cleanup)', async () => {
       const r = await scim.del('/scim/v2/accounts/:accountId/Users/:userId', {

@@ -131,6 +131,11 @@ export interface ProviderConfig {
   metadataSource?: string;
   /** Placeholder for the metadata URL input (only when preferredMetadata is 'url'). */
   metadataUrlPlaceholder?: string;
+  /** SCIM guides: when the IdP pushes changes to Kortix — shown next to the
+   *  "Last sync activity" indicator. We're the SCIM SERVER, so we can't know
+   *  when the next call comes; this states the provider's real cadence
+   *  (Entra: ~40-min scheduled cycle; most others: event-driven pushes). */
+  syncCadenceHint?: string;
 }
 
 export interface ProviderGuide {
@@ -1952,6 +1957,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'memberOf',
       groupValueHint:
         'Groups pushed via SCIM are created in Kortix under their Entra display names.',
+      syncCadenceHint:
+        'Entra runs its scheduled provisioning cycle roughly every 40 minutes — changes apply on the next cycle, or instantly with "Provision on demand".',
     },
     steps: [
       {
@@ -2102,6 +2109,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint: 'Groups pushed via Push Groups are created in Kortix under their Okta names.',
+      syncCadenceHint:
+        'Okta pushes changes as they happen (assignments, profile updates, group pushes) — a quiet period just means nothing changed.',
     },
     steps: [
       {
@@ -2219,6 +2228,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'groups',
       groupValueHint:
         'Groups pushed from OneLogin Rules are created in Kortix under their OneLogin names.',
+      syncCadenceHint:
+        'OneLogin pushes changes as they happen once provisioning is enabled — a quiet period just means nothing changed (or actions are held in the approval queue).',
     },
     steps: [
       {
@@ -2326,6 +2337,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'groups',
       groupValueHint:
         'The JumpCloud user groups you bind to the app are created in Kortix under their JumpCloud names.',
+      syncCadenceHint:
+        'JumpCloud pushes changes as they happen (group binds, membership changes) — a quiet period just means nothing changed.',
     },
     steps: [
       {
@@ -2413,6 +2426,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'groups',
       groupValueHint:
         'The internal PingOne groups you select on the provisioning rule are created in Kortix under their PingOne names.',
+      syncCadenceHint:
+        'PingOne runs an initial full sync when the rule goes Active, then pushes incremental changes as your directory changes.',
     },
     steps: [
       {
@@ -2508,6 +2523,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint: 'Pushed groups are created in Kortix under their displayName.',
+      syncCadenceHint:
+        'Cadence depends on your IdP — most push changes as they happen; some run scheduled cycles. Check its provisioning log if nothing arrives.',
     },
     steps: [
       scimConnectStep({
