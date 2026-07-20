@@ -251,8 +251,8 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
               ))}
           </p>
           <p className="text-muted-foreground text-xs">
-            Connect Okta, Azure AD, or any SCIM 2.0 provider to sync users and groups into this
-            account.
+            Sync users and groups from Microsoft Entra, Okta, OneLogin, JumpCloud, PingOne, or any
+            SCIM 2.0 provider.
           </p>
         </div>
         {canManage && (
@@ -289,10 +289,12 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
           )}
         </div>
 
-        {/* Setup-time reference, collapsed: the guided setup hands these over
-            inline; this is the re-copy escape hatch, not the main path. */}
+        {/* Setup-time reference: collapsed once things work — but OPEN while a
+            minted token is still waiting for its first IdP call, because that
+            is exactly when the admin is pasting these values into the IdP. It
+            tucks itself away automatically on the first successful sync. */}
         <div className="border-border border-t">
-          <Disclosure className="group">
+          <Disclosure className="group" open={tokens.length > 0 && freshness === 'never'}>
             <DisclosureTrigger>
               <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">

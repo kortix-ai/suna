@@ -361,6 +361,11 @@ describe('identity page progressive disclosure', () => {
     // Amber only for the one genuinely wrong state: minted but never called.
     expect(scimCardSource).toContain('waiting for IdP');
     expect(scimCardSource).toContain("freshness === 'never'");
+    // Setup values auto-open while a minted token awaits its first IdP call —
+    // that is exactly when the admin is pasting them — and tuck away after.
+    expect(scimCardSource.replace(/\s+/g, ' ')).toContain(
+      "open={tokens.length > 0 && freshness === 'never'}",
+    );
   });
 });
 

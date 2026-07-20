@@ -262,58 +262,56 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
         {provider && (
           <div className="px-4 py-5">
-            {providerQuery.isLoading ? (
-              <Skeleton className="h-16 w-full rounded-md" />
-            ) : (
-              <dl className="divide-border divide-y text-sm">
-                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                  <dt className="text-muted-foreground shrink-0">Provider</dt>
-                  <dd className="text-foreground min-w-0 truncate text-right font-medium">
-                    {provider.name}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                  <dt className="text-muted-foreground shrink-0">Primary domain</dt>
-                  <dd className="text-foreground min-w-0 truncate text-right font-mono text-xs">
-                    {provider.primary_domain}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                  <dt className="text-muted-foreground shrink-0">Group claim</dt>
-                  <dd className="min-w-0 truncate text-right">
-                    <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-xs">
-                      {provider.group_claim_name}
-                    </code>
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                  <dt className="text-muted-foreground shrink-0">Auto-create members</dt>
-                  <dd className="text-right">
-                    {provider.auto_create_members ? (
-                      <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
-                        <Check className="size-3.5 shrink-0" />
-                        Yes
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">No</span>
-                    )}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                  <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
-                  <dd className="text-right">
-                    {provider.auto_provision_groups ? (
-                      <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
-                        <Check className="size-3.5 shrink-0" />
-                        Yes
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">No</span>
-                    )}
-                  </dd>
-                </div>
-              </dl>
-            )}
+            {/* No loading ternary here — `provider` truthy means the query
+                already resolved; the pre-connect skeleton lives above. */}
+            <dl className="divide-border divide-y text-sm">
+              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                <dt className="text-muted-foreground shrink-0">Provider</dt>
+                <dd className="text-foreground min-w-0 truncate text-right font-medium">
+                  {provider.name}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                <dt className="text-muted-foreground shrink-0">Primary domain</dt>
+                <dd className="text-foreground min-w-0 truncate text-right font-mono text-xs">
+                  {provider.primary_domain}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                <dt className="text-muted-foreground shrink-0">Group claim</dt>
+                <dd className="min-w-0 truncate text-right">
+                  <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-xs">
+                    {provider.group_claim_name}
+                  </code>
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                <dt className="text-muted-foreground shrink-0">Auto-create members</dt>
+                <dd className="text-right">
+                  {provider.auto_create_members ? (
+                    <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
+                      <Check className="size-3.5 shrink-0" />
+                      Yes
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
+                <dd className="text-right">
+                  {provider.auto_provision_groups ? (
+                    <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
+                      <Check className="size-3.5 shrink-0" />
+                      Yes
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
           </div>
         )}
 
