@@ -83,3 +83,12 @@ describe('toggle-panel-mode command palette item', () => {
     expect(matchesPaletteQuery(panelModeItem!, 'session')).toBe(true);
   });
 });
+
+describe('project sessions command palette item', () => {
+  test('falls back to the canonical project sessions page', () => {
+    const sessionsItem = paletteItems.find((item) => item.id === 'proj-sessions');
+
+    expect(sessionsItem).toBeDefined();
+    expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
+  });
+});

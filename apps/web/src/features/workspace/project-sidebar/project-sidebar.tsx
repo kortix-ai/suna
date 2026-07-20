@@ -221,12 +221,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {/* Sessions are always expanded — no collapse toggle. The header
-                label only carries the active filter; the ⋯ button opens the
-                filter menu. */}
+                label opens the full sessions page and carries the active
+                filter; the ⋯ button opens the filter menu. */}
             <div className="flex min-h-0 flex-1 flex-col space-y-2">
               <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
                 <div className="flex w-full flex-row items-center gap-0.5">
-                  <div className="flex min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
+                  <Link
+                    href={`/projects/${projectId}/sessions`}
+                    className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
+                  >
                     <span>Sessions</span>
                     {sessionFilter !== 'all' && (
                       <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
@@ -236,7 +239,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                         {activeFilterOption.label}
                       </span>
                     )}
-                  </div>
+                  </Link>
                   <DropdownMenu onOpenChange={holdPeek}>
                     <DropdownMenuContent align="start" className="w-44 p-1">
                       {SESSION_FILTER_OPTIONS.map((option) => {
