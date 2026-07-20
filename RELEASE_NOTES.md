@@ -1,16 +1,24 @@
-Reliable session starts + re-shipped LLM gateway
+Codex models fixed, gateway hardening, and a Git-first project flow
 
-This release fixes the session-start regression behind the v0.10.11 rollback and re-ships the rebuilt LLM gateway.
+## LLM gateway
+- **ChatGPT / Codex models work again.** Fixed the ChatGPT-subscription (`codex/*`) 400s end to end: restored the required `store: false`, stopped sending the unsupported `max_output_tokens`, and started surfacing the real upstream error detail instead of a bare "Bad Request".
+- **Anthropic extended thinking** now uses `adaptive` + effort (not the deprecated `enabled` + budget tokens), so non-AUTO reasoning effort no longer 400s on newer Claude models.
+- Reworked provider mapping into per-provider adapters typed against each SDK's own option types, with models.dev-driven capability gating — wrong wire shapes are now compile errors.
 
-### Fixed
-- New sessions could hang at "Starting the agent" and never become ready — the in-sandbox runtime was rejecting its own model configuration. Sessions now start reliably.
-- Sandbox images re-downloaded the browser engine on rebuilds, which slowed session startup under load; the browser layer is now cached deterministically.
-- Slack channels showing "Not connected" with no connector available.
+## Models & providers
+- Model picker labels BYOK groups by their real provider (e.g. **Amazon Bedrock**, not "Kortix").
+- Model show/hide visibility is now consistent across the picker and settings.
 
-### Improved
-- The LLM gateway is rebuilt on the Vercel AI SDK with a live models.dev catalog (re-shipped from 0.10.11).
-- Broader end-to-end test coverage and infrastructure monitoring.
+## Projects & Git
+- Git-provider-first project creation and management; new projects default to managed repositories.
+- Removed an unbuilt "Repository synchronization" placeholder from Git settings.
 
-### Internal
-- Groundwork for an alternate managed-git backend (off by default; deployments stay on GitHub).
-- Secrets-management hardening.
+## Marketplace
+- Fixed marketplace item pages returning 500 (they now render correctly, and a missing item 404s).
+
+## Identity (SCIM/IAM)
+- Okta group-push renames (`PUT /Groups`) now work; protection for IdP-synced groups; status-first Identity tab with last-sync activity and per-provider cadence.
+
+## CLI & docs
+- Avoids 502s on long chat turns; clearer "vision fallback" model labeling; dev CLI installer surfaced in Git settings.
+- New "Developing with Kortix" guide covering local instances and the CLI workflow.

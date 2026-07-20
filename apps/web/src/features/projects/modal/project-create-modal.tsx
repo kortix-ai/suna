@@ -35,7 +35,6 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
-import { List, ListRow } from '@/components/ui/list';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -57,6 +56,7 @@ import {
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
+  createProjectRepo,
   getManagedGitStatus,
   linkRepository,
   listAccounts,
@@ -72,7 +72,7 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
-import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
+import { Boxes, ChevronsUpDown, ExternalLink, GitFork, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -84,6 +84,10 @@ import {
 } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
+
+function isGitHubAppInstallationId(value: string | null): value is string {
+  return Boolean(value && /^\d+$/.test(value));
+}
 
 // Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255);
 // pasted prompts used to sail past the charset regex and 500 on the insert).
@@ -148,7 +152,9 @@ export const ProjectCreateModal = ({
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<'managed' | 'template' | 'github'>('managed');
+  const [mode, setMode] = useState<'github-create' | 'github-import' | 'managed' | 'template'>(
+    'managed',
+  );
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
   const [sourceNameApplied, setSourceNameApplied] = useState(false);
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
@@ -217,12 +223,17 @@ export const ProjectCreateModal = ({
   }
 
   function switchToGitHubMode() {
-    setMode('github');
+    setMode('github-import');
   }
 
   function switchToManagedMode() {
-    managedForm.setValue('name', githubForm.getValues('name'));
+    const importedName = githubForm.getValues('name').trim();
+    if (importedName) managedForm.setValue('name', importedName);
     setMode('managed');
+  }
+
+  function switchToGitHubCreateMode() {
+    setMode('github-create');
   }
 
   function switchToTemplateMode() {
@@ -241,9 +252,7 @@ export const ProjectCreateModal = ({
     managedForm.setValue('name', '');
   }
 
-  const createMutation = useMutation({
-    mutationFn: provisionProject,
-    onSuccess: async (project) => {
+  async function finishCreatedProject(project: KortixProject) {
       successToast('Project created');
       queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
         upsertProject(projects, project),
@@ -252,13 +261,8 @@ export const ProjectCreateModal = ({
         upsertProject(projects, project),
       );
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
-      void queryClient.refetchQueries({
-        queryKey: ['projects'],
-        type: 'active',
-      });
+    void queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' });
 
-      // Cloned from a marketplace item → route through the setup session
-      // instead of dropping the user on an empty project.
       if (effectiveSourceItemId) {
         const sessionId = await startTemplateSetupSession(project, {
           itemId: effectiveSourceItemId,
@@ -271,9 +275,6 @@ export const ProjectCreateModal = ({
         }
       }
 
-      // Plain new project → the "agent creation" default: start a first session
-      // that onboards + personalizes the preloaded starter, instead of landing
-      // the user on an empty project. Falls back to the project home if it fails.
       const onboardingSessionId = await startProjectOnboardingSession(project);
       if (onboardingSessionId) {
         resetAndClose();
@@ -283,7 +284,11 @@ export const ProjectCreateModal = ({
 
       resetAndClose();
       router.replace(`/projects/${project.project_id}`);
-    },
+  }
+
+  const createMutation = useMutation({
+    mutationFn: provisionProject,
+    onSuccess: finishCreatedProject,
     onError: async (error: Error) => {
       if (effectiveAccountId && isProjectLimitError(error)) {
         try {
@@ -325,10 +330,16 @@ export const ProjectCreateModal = ({
     },
   });
 
+  const githubCreateMutation = useMutation({
+    mutationFn: createProjectRepo,
+    onSuccess: finishCreatedProject,
+    onError: (error: Error) => errorToast(error.message || 'Failed to create GitHub repository'),
+  });
+
   const githubInstallationsQuery = useQuery({
     queryKey: ['github-installations', effectiveAccountId],
     queryFn: () => listGitHubInstallations(effectiveAccountId!),
-    enabled: open && mode === 'github' && !!effectiveAccountId,
+    enabled: open && (mode === 'github-create' || mode === 'github-import') && !!effectiveAccountId,
     staleTime: 0,
   });
 
@@ -361,36 +372,45 @@ export const ProjectCreateModal = ({
     () => githubInstallationsQuery.data?.installations ?? [],
     [githubInstallationsQuery.data?.installations],
   );
+  const githubAppInstallations = useMemo(
+    () =>
+      githubInstallations.filter((installation) =>
+        isGitHubAppInstallationId(installation.installation_id),
+      ),
+    [githubInstallations],
+  );
+  const selectableInstallations =
+    mode === 'github-create' ? githubAppInstallations : githubInstallations;
   const selectedInstallation =
-    githubInstallations.find(
+    selectableInstallations.find(
       (installation) => installation.installation_id === selectedInstallationId,
     ) ?? null;
 
   const githubReposQuery = useQuery({
     queryKey: ['github-repositories', effectiveAccountId, selectedInstallationId],
     queryFn: () => listGitHubRepositories(effectiveAccountId!, selectedInstallationId),
-    enabled: open && mode === 'github' && !!effectiveAccountId && !!selectedInstallationId,
+    enabled: open && mode === 'github-import' && !!effectiveAccountId && !!selectedInstallationId,
     staleTime: 30_000,
   });
 
   useEffect(() => {
-    if (!open || mode !== 'github') return;
+    if (!open || (mode !== 'github-create' && mode !== 'github-import')) return;
     if (
       selectedInstallationId &&
-      githubInstallations.some(
+      selectableInstallations.some(
         (installation) => installation.installation_id === selectedInstallationId,
       )
     ) {
       return;
     }
-    const first = githubInstallations[0]?.installation_id;
+    const first = selectableInstallations[0]?.installation_id;
     githubForm.setValue('installationId', first ?? '');
-  }, [githubForm, githubInstallations, mode, open, selectedInstallationId]);
+  }, [githubForm, mode, open, selectableInstallations, selectedInstallationId]);
 
   useEffect(() => {
     githubForm.setValue('repo', '');
-    githubForm.setValue('name', '');
-  }, [githubForm, selectedInstallationId]);
+    if (mode === 'github-import') githubForm.setValue('name', '');
+  }, [githubForm, mode, selectedInstallationId]);
 
   const linkMutation = useMutation({
     mutationFn: linkRepository,
@@ -418,6 +438,18 @@ export const ProjectCreateModal = ({
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
+    if (mode === 'github-create') {
+      if (!selectedInstallationId) return errorToast('Connect a GitHub account first');
+      githubCreateMutation.mutate({
+        account_id: effectiveAccountId,
+        installation_id: selectedInstallationId,
+        name: values.name.trim().replace(/\s+/g, '-'),
+        private: true,
+        starter_template: 'general-knowledge-worker',
+        source_item_id: effectiveSourceItemId ?? undefined,
+      });
+      return;
+    }
     if (cloningFromSource && effectiveSourceItemId) {
       createMutation.mutate({
         account_id: effectiveAccountId,
@@ -477,7 +509,8 @@ export const ProjectCreateModal = ({
     }
   }
 
-  const submitting = createMutation.isPending || linkMutation.isPending;
+  const submitting =
+    createMutation.isPending || githubCreateMutation.isPending || linkMutation.isPending;
   const installUrl = githubInstallationsQuery.data?.install_url;
   const repos = githubReposQuery.data?.repositories ?? [];
   const selectedRepository = repos.find((repo) => repo.full_name === selectedRepo);
@@ -506,7 +539,7 @@ export const ProjectCreateModal = ({
           />
         ) : null}
 
-        {mode !== 'github' && managedGitUnavailable ? (
+        {mode === 'managed' && managedGitUnavailable ? (
           <>
             <ModalBody>
               <GitHubSetupRequiredPanel
@@ -536,9 +569,9 @@ export const ProjectCreateModal = ({
             templates={templates}
             loading={templatesQuery.isLoading}
             onPick={pickTemplate}
-            onCancel={() => setMode('managed')}
+            onCancel={switchToManagedMode}
           />
-        ) : mode === 'managed' ? (
+        ) : mode === 'managed' || mode === 'github-create' ? (
           <Form {...managedForm}>
             <form onSubmit={managedForm.handleSubmit(handleCreate)} className="w-full">
               <ModalBody>
@@ -568,10 +601,97 @@ export const ProjectCreateModal = ({
                     )}
                   />
 
+                  {mode === 'github-create' ? (
+                    githubInstallationsQuery.isLoading ? (
+                      <div className="text-muted-foreground flex h-20 items-center justify-center gap-2 text-sm">
+                        <Loading /> Loading GitHub connections
+                      </div>
+                    ) : githubAppInstallations.length === 0 ? (
+                      !installUrl ? (
+                        <GitHubSetupRequiredPanel
+                          accountId={effectiveAccountId}
+                          isAdmin={isGitAdmin}
+                          onNavigate={resetAndClose}
+                          size="sm"
+                        />
+                      ) : (
+                        <Item variant="outline" className="items-start">
+                          <ItemMedia variant="icon" className="rounded-full bg-transparent">
+                            <Icon.Github />
+                          </ItemMedia>
+                          <ItemContent>
+                            <ItemTitle>Connect GitHub to create projects</ItemTitle>
+                            <ItemDescription>
+                              Install the Kortix GitHub App in your user account or organization.
+                              Kortix creates a private repository there.
+                            </ItemDescription>
+                          </ItemContent>
+                          <ItemActions>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={isConnectingGitHub}
+                              onClick={handleConnectGitHub}
+                            >
+                              {isConnectingGitHub ? <Loading /> : <Icon.Github />}
+                              {isConnectingGitHub ? 'Connecting' : 'Connect'}
+                            </Button>
+                          </ItemActions>
+                        </Item>
+                      )
+                    ) : (
+                      <div className="space-y-1.5">
+                        <Label>Repository owner</Label>
+                        <Select
+                          value={selectedInstallationId}
+                          onValueChange={(value) => githubForm.setValue('installationId', value)}
+                          disabled={submitting || githubAppInstallations.length < 2}
+                        >
+                          <SelectTrigger className="w-full">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <Icon.Github className="size-4" />
+                              <span className="truncate">
+                                github.com/{selectedInstallation?.owner_login}
+                              </span>
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {githubAppInstallations.map((installation) =>
+                              installation.installation_id ? (
+                                <SelectItem
+                                  key={installation.installation_id}
+                                  value={installation.installation_id}
+                                >
+                                  {installation.owner_login}
+                                </SelectItem>
+                              ) : null,
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-muted-foreground text-xs">
+                          A private repository is created in this GitHub account and connected
+                          through the App.
+                        </p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="border-border flex items-start gap-3 rounded-md border px-3.5 py-3">
+                      <GitFork className="text-muted-foreground mt-0.5 size-4" />
+                      <div>
+                        <div className="text-foreground text-sm font-medium">
+                          Managed repository
+                        </div>
+                        <p className="text-muted-foreground mt-0.5 text-xs">
+                          Kortix creates a private repository and manages its credentials.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {cloningFromSource ? (
-                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
+                    <div className="divide-border/60 divide-y overflow-hidden rounded-md border">
                       <div className="flex items-start gap-3 px-3.5 py-3">
-                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-sm">
                           <Boxes className="size-4" />
                         </span>
                         <div className="min-w-0 flex-1">
@@ -604,8 +724,8 @@ export const ProjectCreateModal = ({
                         Every new project ships with the full Kortix skill kit —
                         preinstalled into your repo and ready in the first session.
                       </p>
-                      <div className="flex items-center gap-3 rounded-2xl border px-3.5 py-3">
-                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                      <div className="flex items-center gap-3 rounded-md border px-3.5 py-3">
+                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-sm">
                           <Boxes className="size-4" />
                         </span>
                         <div className="min-w-0">
@@ -645,6 +765,29 @@ export const ProjectCreateModal = ({
                           'componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo',
                         )}
                       </Button>
+                      {mode === 'github-create' ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={submitting}
+                          onClick={switchToManagedMode}
+                        >
+                          <GitFork className="size-4" /> Use managed repository
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={submitting}
+                          onClick={switchToGitHubCreateMode}
+                        >
+                          <Icon.Github /> Create in your GitHub
+                        </Button>
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -653,12 +796,14 @@ export const ProjectCreateModal = ({
                 <Button
                   type="submit"
                   className="w-full sm:w-auto"
-                  disabled={submitting || !effectiveAccountId}
+                  disabled={
+                    submitting ||
+                    !effectiveAccountId ||
+                    (mode === 'github-create' && !selectedInstallationId)
+                  }
                 >
                   {submitting ? <Loading /> : <Icon.Plus />}
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectCreateModal.line320JsxTextCreateProject',
-                  )}
+                  {mode === 'github-create' ? 'Create in your GitHub' : 'Create project'}
                 </Button>
               </ModalFooter>
             </form>
@@ -1031,9 +1176,9 @@ function TemplatePicker({
                 key={item.id}
                 type="button"
                 onClick={() => onPick(item.id)}
-                className="hover:bg-muted/50 border-border/60 flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors"
+                className="hover:bg-muted/50 border-border/60 flex w-full items-start gap-3 rounded-md border px-3.5 py-3 text-left transition-colors"
               >
-                <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-sm">
                   <Boxes className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -1149,38 +1294,49 @@ function RepositoryPicker({
             )}
           </div>
         ) : (
-          <List className="max-h-[min(50vh,360px)] overflow-y-auto">
+          <ul className="max-h-[min(50vh,360px)] space-y-1 overflow-y-auto p-1">
             {filteredRepos.map((repo) => {
               const selected = repo.full_name === value;
               return (
-                <ListRow
-                  key={repo.id}
+                <li key={repo.id}>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
                   onClick={() => {
                     onValueChange(repo.full_name);
                     setOpen(false);
                   }}
-                  // leading={selected ? <CheckCircleSolid className='size-4' /> : <Icon.Github />}
-                  title={<span className="text-sm">{repo.full_name}</span>}
-                  badges={
-                    repo.private ? (
-                      <Badge variant="secondary" size="sm">
+                    className={cn(
+                      'hover:bg-muted/50 focus-visible:ring-ring flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-2',
+                      selected && 'bg-primary/[0.06]',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="text-foreground truncate text-sm font-medium">
+                          {repo.full_name}
+                        </span>
+                        {repo.private ? (
+                          <Badge variant="secondary" size="sm" className="shrink-0">
                         Private
                       </Badge>
-                    ) : null
-                  }
-                  subtitle={
-                    <InlineMeta className="font-sans">
+                        ) : null}
+                      </span>
+                      <InlineMeta className="mt-0.5 font-sans">
                       <span>{repo.default_branch}</span>
                       {repo.description ? (
                         <span className="truncate">{repo.description}</span>
                       ) : null}
                     </InlineMeta>
-                  }
-                  className={cn(selected && 'bg-muted/50')}
-                />
+                    </span>
+                    {selected ? (
+                      <CheckCircleSolid className="text-primary mt-0.5 size-4 shrink-0" />
+                    ) : null}
+                  </button>
+                </li>
               );
             })}
-          </List>
+          </ul>
         )}
       </PopoverContent>
     </Popover>

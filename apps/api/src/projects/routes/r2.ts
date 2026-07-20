@@ -8,6 +8,7 @@ import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, getFileSha } from '../github';
+import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
@@ -19,6 +20,7 @@ import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
 import { runProviderActions } from '../../snapshots/provider-actions';
+import { getCatalogItemDetail } from '../../marketplace/catalog';
 
 function templateProviderObservation(metadata: unknown) {
   const selectedProvider = resolveConfiguredProjectProviderPin(
@@ -188,6 +190,17 @@ projectsApp.openapi(
     return c.json({ error: 'name must contain only letters, numbers, hyphens, underscores or dots' }, 400);
   }
 
+  // Resolve through the public marketplace detail gate before creating
+  // anything upstream. Hidden/support items remain internal even when a caller
+  // knows their catalog id.
+  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+  if (sourceItemId) {
+    const sourceItem = await getCatalogItemDetail(sourceItemId);
+    if (!sourceItem || sourceItem.type !== 'registry:project') {
+      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+    }
+  }
+
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);
 
@@ -256,7 +269,15 @@ projectsApp.openapi(
   // A partial starter is not a usable project.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
   const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
-  const starter = buildStarterFiles({
+  const starter = sourceItemId
+    ? (await buildProjectSeedFilesFromItem({
+        id: sourceItemId,
+        projectName,
+        repoFullName: repo.full_name,
+        extraMarketplaceItems: [],
+        now: new Date().toISOString(),
+      })).files
+    : buildStarterFiles({
     projectName,
     repoFullName: repo.full_name,
     template: starterTemplate,
@@ -291,6 +312,7 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
+      managed: true,
     // The starter just committed above (buildStarterFiles) ships kortix.yaml
     // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',

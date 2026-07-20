@@ -1,7 +1,12 @@
 // One entry of models.dev's `reasoning_options` (mirrors
-// `@kortix/llm-catalog`'s `CatalogReasoningOption` — duplicated rather than
-// imported so this package stays dependency-free of `@kortix/llm-catalog`;
-// keep the shape identical). Three real shapes: `effort` (values), `toggle`
+// `@kortix/llm-catalog`'s `CatalogReasoningOption` — kept as a local shape for
+// this domain's descriptor capability flags; keep it identical). This package
+// DOES depend on `@kortix/llm-catalog` now (the ai-sdk transport reuses its
+// canonical `clampGenerationConfig`/`catalogModelForWireModel` to gate
+// per-request generation params — see transports/ai-sdk/request.ts), so this
+// duplication is no longer a dependency-avoidance measure; it just avoids
+// coupling this domain type to the catalog's evolving surface. Three real
+// shapes: `effort` (values), `toggle`
 // (neither), `budget_tokens` (min/max, no values — this is mainline
 // Anthropic's shape). All fields but `type` are optional so every shape
 // round-trips through this type without narrowing.

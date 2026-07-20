@@ -1,6 +1,9 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
-import { provisionProjectWithToken } from './projects';
+import {
+  provisionProjectWithToken,
+  type CreateProjectRepoInput,
+} from './projects';
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
 
@@ -10,6 +13,16 @@ beforeEach(() => {
 
 const opts = { backendUrl: 'http://backend.test/v1', accessToken: 'tok' };
 const input = { account_id: 'acc-1', name: 'My First Project', seed_starter: true };
+
+test('GitHub project creation accepts a marketplace project template', () => {
+  const createInput: CreateProjectRepoInput = {
+    account_id: 'acc-1',
+    name: 'support-agent',
+    source_item_id: 'kortix-projects:support-agent-kit',
+  };
+
+  expect(createInput.source_item_id).toBe('kortix-projects:support-agent-kit');
+});
 
 test('returns ok:true with the parsed project on a real 200 body', async () => {
   nextResponse = () =>

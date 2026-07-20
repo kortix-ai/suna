@@ -50,8 +50,10 @@ import {
   listScimTokens,
 } from '@/lib/iam-client';
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
+import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 import { buildScimBaseUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
+import { relativeTime } from '@/lib/utils/date';
 import { listAccountMembers } from '@kortix/sdk/projects-client';
 import {
   type GuideStep,
@@ -1137,7 +1139,14 @@ function SsoTestStatusPanel({
   );
 }
 
-function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
+function ProvisionedStatusPanel({
+  accountId,
+  cadenceHint,
+}: {
+  accountId: string;
+  /** Per-provider "when does the IdP push" copy (guide.config.syncCadenceHint). */
+  cadenceHint?: string;
+}) {
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
     queryFn: () => listAccountMembers(accountId),
@@ -1150,11 +1159,25 @@ function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
     refetchInterval: 8_000,
     staleTime: 4_000,
   });
+  // Same key as the connect step's resume query — this observer just adds
+  // polling so "Last sync activity" ticks while the admin watches the IdP run.
+  const tokensQuery = useQuery({
+    queryKey: ['scim-tokens', accountId],
+    queryFn: () => listScimTokens(accountId),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
 
   const scimGroups = (groupsQuery.data ?? []).filter((g) => g.source === 'scim');
   const scimMemberCount = scimGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
   const totalMembers = membersQuery.data?.length ?? null;
   const isLoading = membersQuery.isLoading || groupsQuery.isLoading;
+
+  // Kortix is the SCIM server: the freshest signal we own is when the IdP
+  // last made an authenticated SCIM call (stamped on every request, including
+  // no-change reconciliation reads). Active tokens only.
+  const lastSyncAt = latestScimSyncAt(tokensQuery.data ?? []);
+  const freshness = scimSyncFreshness(lastSyncAt);
 
   return (
     <div className="border-border/70 bg-popover space-y-3 rounded-md border p-4">
@@ -1173,10 +1196,35 @@ function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
           onClick={() => {
             membersQuery.refetch();
             groupsQuery.refetch();
+            tokensQuery.refetch();
           }}
         >
           <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
         </Button>
+      </div>
+      {/* Two lines on purpose — mirrors the SCIM card's panel so the label +
+          value never wrap mid-phrase on narrow layouts. */}
+      <div className="space-y-0.5 text-xs">
+        <p className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              freshness === 'live' && 'bg-kortix-green',
+              freshness === 'recent' && 'bg-kortix-green/60',
+              freshness === 'quiet' && 'bg-muted-foreground/40',
+              freshness === 'never' && 'bg-amber-500',
+            )}
+          />
+          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
+          <span className="text-foreground whitespace-nowrap font-medium">
+            {lastSyncAt ? relativeTime(lastSyncAt) : 'none yet'}
+          </span>
+        </p>
+        {freshness === 'never' && !tokensQuery.isLoading && (
+          <p className="text-muted-foreground pl-3">
+            Your IdP hasn’t connected — check provisioning is running there.
+          </p>
+        )}
       </div>
       {isLoading ? (
         <Skeleton className="h-12 w-full rounded-md" />
@@ -1206,8 +1254,9 @@ function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
         </div>
       )}
       <p className="text-muted-foreground text-xs">
-        Refreshes automatically every few seconds — give Entra's provisioning cycle a minute after
-        you click Start (or use Provision on demand for an instant push).
+        Refreshes automatically every few seconds.{' '}
+        {cadenceHint ??
+          'Your IdP pushes changes on its own schedule — no manual action needed on the Kortix side.'}
       </p>
     </div>
   );
@@ -1352,7 +1401,9 @@ function StepBody({
         />
       ) : step.kind === 'test' ? (
         <div className="space-y-4">
-          {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
+          {flow === 'scim' && (
+            <ProvisionedStatusPanel accountId={accountId} cadenceHint={config.syncCadenceHint} />
+          )}
           {flow === 'sso' && (
             <SsoTestStatusPanel accountId={accountId} baselineRef={ssoBaselineRef} />
           )}

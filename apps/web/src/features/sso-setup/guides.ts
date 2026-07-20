@@ -131,6 +131,17 @@ export interface ProviderConfig {
   metadataSource?: string;
   /** Placeholder for the metadata URL input (only when preferredMetadata is 'url'). */
   metadataUrlPlaceholder?: string;
+  /** SCIM guides: when the IdP pushes changes to Kortix — shown next to the
+   *  "Last sync activity" indicator. We're the SCIM SERVER, so we can't know
+   *  when the next call comes; this states the provider's real cadence
+   *  (Entra: ~40-min scheduled cycle; most others: event-driven pushes). */
+  syncCadenceHint?: string;
+  /** SCIM guides: the one-liner for turning AUTOMATIC provisioning on in this
+   *  IdP's console — the switch/steps after which no manual pushing is needed.
+   *  Rendered on the Identity card's Setup values next to a deep link into
+   *  this guide, so an admin stuck at "waiting for IdP" sees exactly what to
+   *  flip without re-entering the wizard. */
+  startSyncHint?: string;
 }
 
 export interface ProviderGuide {
@@ -1952,6 +1963,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'memberOf',
       groupValueHint:
         'Groups pushed via SCIM are created in Kortix under their Entra display names.',
+      syncCadenceHint:
+        'Entra runs its scheduled provisioning cycle roughly every 40 minutes — changes apply on the next cycle, or instantly with "Provision on demand".',
+      startSyncHint:
+        'Provisioning → "Start provisioning" (Provisioning Status: On). The scheduled cycle then runs every ~40 minutes on its own; "Provision on demand" pushes one user instantly.',
     },
     steps: [
       {
@@ -2102,6 +2117,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint: 'Groups pushed via Push Groups are created in Kortix under their Okta names.',
+      syncCadenceHint:
+        'Okta pushes changes as they happen (assignments, profile updates, group pushes) — a quiet period just means nothing changed.',
+      startSyncHint:
+        'Provisioning → "To App" → Edit → enable Create / Update / Deactivate Users → Save. Assignments and pushed groups then sync automatically as they change.',
     },
     steps: [
       {
@@ -2219,6 +2238,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'groups',
       groupValueHint:
         'Groups pushed from OneLogin Rules are created in Kortix under their OneLogin names.',
+      syncCadenceHint:
+        'OneLogin pushes changes as they happen once provisioning is enabled — a quiet period just means nothing changed (or actions are held in the approval queue).',
+      startSyncHint:
+        'Provisioning tab → tick "Enable provisioning" and UNCHECK "Require admin approval" for Create/Update/Delete — otherwise every change waits in the pending queue.',
     },
     steps: [
       {
@@ -2326,6 +2349,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'groups',
       groupValueHint:
         'The JumpCloud user groups you bind to the app are created in Kortix under their JumpCloud names.',
+      syncCadenceHint:
+        'JumpCloud pushes changes as they happen (group binds, membership changes) — a quiet period just means nothing changed.',
+      startSyncHint:
+        'Identity Management → "Test Connection" → "Activate", then bind user groups on the "User Groups" tab — bound groups and their members push automatically.',
     },
     steps: [
       {
@@ -2413,6 +2440,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
       groupClaimName: 'groups',
       groupValueHint:
         'The internal PingOne groups you select on the provisioning rule are created in Kortix under their PingOne names.',
+      syncCadenceHint:
+        'PingOne runs an initial full sync when the rule goes Active, then pushes incremental changes as your directory changes.',
+      startSyncHint:
+        'Enable the CONNECTION toggle (top of its details panel, turns blue) AND set the provisioning rule to Active — both are required; a saved-but-disabled connection provisions nothing.',
     },
     steps: [
       {
@@ -2508,6 +2539,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint: 'Pushed groups are created in Kortix under their displayName.',
+      syncCadenceHint:
+        'Cadence depends on your IdP — most push changes as they happen; some run scheduled cycles. Check its provisioning log if nothing arrives.',
+      startSyncHint:
+        'Enable provisioning/sync in your IdP’s SCIM client and scope the users/groups to push — it then runs on the IdP’s own schedule.',
     },
     steps: [
       scimConnectStep({
