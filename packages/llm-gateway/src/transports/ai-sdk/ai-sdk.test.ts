@@ -996,6 +996,54 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     });
   });
 
+  // REGRESSION (prod, 2026-07-20): every codex/* model 400'd with a bare
+  // `"Bad Request"` SSE frame. The deleted native transport set `store:false`
+  // unconditionally for Codex (openai-responses/request.ts:156); #4943 made
+  // ai-sdk the sole engine and never ported that line, so `store` went
+  // undefined → dropped from the wire body → the ChatGPT backend rejected it.
+  // Omitted and `false` are DIFFERENT requests to that backend.
+  describe('buildAiSdkArgs — Codex requires an explicit store:false', () => {
+    it('sets store:false for the openai-codex provider', () => {
+      const args = buildAiSdkArgs({ messages: [] }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.providerOptions?.openai).toMatchObject({ store: false });
+    });
+
+    it('keeps store:false alongside the reasoning effort Codex always sends', () => {
+      const args = buildAiSdkArgs({ messages: [] }, 'openai', {
+        providerName: 'openai-codex',
+        defaultReasoningEffort: 'low',
+      });
+      expect(args.providerOptions).toEqual({ openai: { reasoningEffort: 'low', store: false } });
+    });
+
+    it('does NOT set store for plain OpenAI — the platform API defaults it itself', () => {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+        providerName: 'openai',
+      });
+      expect(args.providerOptions?.openai).not.toHaveProperty('store');
+    });
+
+    it('does not set store when no provider name is passed at all', () => {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai');
+      expect(args.providerOptions?.openai).not.toHaveProperty('store');
+    });
+
+    // Deliberately UNCONDITIONAL, matching the native transport it replaces:
+    // `store` is not in extraOpenAiFields' allowlist, so a client-supplied
+    // `store` never reaches providerOptions in the first place, and Codex is
+    // the one backend where the wrong value fails the entire request. If a
+    // future change starts forwarding client `store`, this test fails and the
+    // Codex override must be re-examined rather than silently overridden.
+    it('forces store:false for Codex even when the client body sets store:true', () => {
+      const args = buildAiSdkArgs({ messages: [], store: true }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.providerOptions?.openai).toMatchObject({ store: false });
+    });
+  });
+
   // Codex's backend is stream-only (`stream:false` 400s — see
   // openai-responses/request.ts's chatToResponses comment). The AI SDK's
   // non-streaming `doGenerate` always sends `stream:false`, so

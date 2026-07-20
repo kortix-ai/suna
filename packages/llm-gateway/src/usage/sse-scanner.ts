@@ -68,11 +68,19 @@ export class IncrementalSseScanner {
     if (chunk?.model) this.lastModel = chunk.model;
     if (chunk?.usage) this.lastUsage = normalizeUsageChunk(chunk);
     if (!this.errorFrame && chunk?.error && typeof chunk.error === 'object') {
-      const { message, code } = chunk.error as { message?: unknown; code?: unknown };
+      const { message, code, ...rest } = chunk.error as {
+        message?: unknown;
+        code?: unknown;
+        [k: string]: unknown;
+      };
       if (typeof message === 'string' && message.length > 0) {
         this.errorFrame = {
           message,
           ...(typeof code === 'string' || typeof code === 'number' ? { code } : {}),
+          // Retain whatever else the upstream named (`type`, `param`, …) — see
+          // SseErrorFrame.detail. Only when non-empty, so a plain
+          // `{message, code}` frame keeps producing exactly the old object.
+          ...(Object.keys(rest).length > 0 ? { detail: rest } : {}),
         };
       }
     }

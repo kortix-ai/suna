@@ -42,6 +42,18 @@ export function jsonHasContent(data: unknown): boolean {
 export interface SseErrorFrame {
   message: string;
   code?: string | number;
+  /**
+   * Every REMAINING field of the upstream's `error` object, verbatim, minus
+   * `message`/`code` above. Upstreams put the actually-actionable part of a
+   * rejection here — OpenAI-shaped backends use `type`/`param` to name the
+   * offending field — and dropping it collapses a specific, fixable error into
+   * an unactionable one. That cost real debugging time: every Codex request
+   * 400'd with nothing in the logs but `"Bad Request"`, and finding the true
+   * cause (a missing `store: false`) needed git archaeology against a deleted
+   * transport rather than just reading the error. Kept as an opaque bag so any
+   * upstream's extra fields survive without this type having to know them.
+   */
+  detail?: Record<string, unknown>;
 }
 
 /** First in-stream error frame in an SSE buffer, if any. OpenRouter (and other
