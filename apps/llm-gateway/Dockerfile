@@ -5,8 +5,19 @@
 #   docker build -f apps/llm-gateway/Dockerfile -t kortix-gateway .
 #
 # Far simpler than apps/api — no sandbox-agent/CLI stages, no migrations. Just
-# the Bun+Hono server plus its two workspace packages (@kortix/llm-gateway →
-# @kortix/shared) and hono + langfuse.
+# the Bun+Hono server plus its workspace packages (@kortix/llm-gateway →
+# @kortix/shared + @kortix/llm-catalog) and hono + langfuse.
+#
+# LOAD-BEARING: every @kortix/* package that appears anywhere in the gateway's
+# transitive workspace dependency graph MUST be COPYed below. The synthetic
+# workspace root globs `packages/*`, but bun only sees the package dirs actually
+# copied into the image — a declared `workspace:*` dep whose directory is absent
+# fails install with "Workspace dependency not found", NOT a clear message. This
+# bit us once: the AI-SDK migration added @kortix/llm-catalog to
+# packages/llm-gateway's deps but not here, and because the gateway image only
+# rebuilds when something under it changes, the break stayed invisible until the
+# next gateway change and then blocked that deploy. If you add a @kortix/* dep to
+# the gateway or any package it pulls in, add its COPY to BOTH stages here.
 
 ARG BUN_VERSION=1.2
 
@@ -22,6 +33,7 @@ WORKDIR /app
 COPY apps/llm-gateway ./apps/llm-gateway
 COPY packages/llm-gateway ./packages/llm-gateway
 COPY packages/shared ./packages/shared
+COPY packages/llm-catalog ./packages/llm-catalog
 
 RUN printf '{"name":"kortix-gateway-build","private":true,"workspaces":["apps/llm-gateway","packages/*"]}\n' > package.json \
     && bun install --no-save
@@ -45,6 +57,7 @@ ENV KORTIX_COMMIT=${KORTIX_COMMIT}
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
 COPY --from=deps /app/packages/shared ./packages/shared
+COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
 COPY --from=deps /app/apps/llm-gateway ./apps/llm-gateway
 
