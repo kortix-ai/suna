@@ -81,7 +81,12 @@ export function sseErrorFrame(buffer: string): SseErrorFrame | null {
       const chunk = JSON.parse(payload) as { error?: unknown };
       const error = chunk.error;
       if (!error || typeof error !== 'object') continue;
-      const { message, code, type } = error as { message?: unknown; code?: unknown; type?: unknown };
+      const { message, code, ...rest } = error as {
+        message?: unknown;
+        code?: unknown;
+        [k: string]: unknown;
+      };
+      const type = rest.type;
       if (typeof message === 'string' && message.length > 0) {
         const resolvedCode =
           typeof code === 'string' || typeof code === 'number'
@@ -89,9 +94,15 @@ export function sseErrorFrame(buffer: string): SseErrorFrame | null {
             : typeof type === 'string' && type.length > 0
               ? type
               : undefined;
+        // Keep every remaining field (type/param, and the responseBody/data/url
+        // the ai-sdk transport threads in for @ai-sdk APICallErrors — see
+        // sse.ts) so a rejection's actionable detail survives to the logs
+        // instead of collapsing to a bare message. Only when non-empty, so a
+        // plain {message, code} frame keeps producing exactly the old object.
         return {
           message,
           ...(resolvedCode !== undefined ? { code: resolvedCode } : {}),
+          ...(Object.keys(rest).length > 0 ? { detail: rest } : {}),
         };
       }
     } catch {
