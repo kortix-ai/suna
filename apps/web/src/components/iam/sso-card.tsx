@@ -10,13 +10,14 @@ import { getEnv } from '@/lib/env-config';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, Copy, Plus, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, Copy, Plus, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -69,14 +70,28 @@ async function copyValue(value: string, successMsg = 'Copied to clipboard') {
  * dialog. Deliberately does not mention the delegated identity provider by
  * name — see sso-card.test.ts.
  */
-function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }) {
+function SpDetails({
+  urls,
+  className,
+  // The card's collapsed "Service provider values" section already titles this
+  // block — heading off there; the edit dialog still wants it.
+  heading = true,
+}: {
+  urls: SamlSpUrls;
+  className?: string;
+  heading?: boolean;
+}) {
   return (
     <div className={className}>
-      <h3 className="text-foreground text-sm font-medium">Service provider details</h3>
-      <p className="text-muted-foreground mt-0.5 text-xs">
-        Paste these into your identity provider's SAML configuration.
-      </p>
-      <div className="mt-3 space-y-3">
+      {heading && (
+        <>
+          <h3 className="text-foreground text-sm font-medium">Service provider details</h3>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            Paste these into your identity provider's SAML configuration.
+          </p>
+        </>
+      )}
+      <div className={heading ? 'mt-3 space-y-3' : 'space-y-3'}>
         <div className="space-y-1.5">
           <Label className="text-xs">Identifier (Entity ID)</Label>
           <div className="flex items-center gap-2">
@@ -227,9 +242,21 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       </div>
 
       <div className="bg-popover rounded-md border">
-        {!provider && spUrls && (
+        {/* Not connected → a calm call-to-action, not a wall of URLs. The
+            guided wizard hands over the SP values at the step that needs
+            them; the collapsed section below is the re-copy escape hatch. */}
+        {!provider && providerQuery.isLoading && (
           <div className="px-4 py-5">
-            <SpDetails urls={spUrls} />
+            <Skeleton className="h-12 w-full rounded-md" />
+          </div>
+        )}
+        {!provider && !providerQuery.isLoading && (
+          <div className="px-4 py-5">
+            <p className="text-foreground text-sm font-medium">Not connected yet</p>
+            <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+              Route your domain's sign-ins through your identity provider — Configure walks Entra,
+              Okta, Google and more step by step, including everything your IdP asks for.
+            </p>
           </div>
         )}
 
@@ -294,12 +321,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <div className="border-border border-t px-4 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 space-y-0.5">
-                <p className="text-foreground text-sm font-medium">
-                  Enforce SSO for this domain
-                </p>
+                <p className="text-foreground text-sm font-medium">Enforce SSO for this domain</p>
                 <p className="text-muted-foreground text-xs">
-                  Members must sign in with your identity provider — the password option
-                  disappears.
+                  Members must sign in with your identity provider — the password option disappears.
                 </p>
               </div>
               {canManage && (
@@ -376,6 +400,31 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Reference values, collapsed in BOTH states — needed only while
+            configuring the IdP side, so they stay out of the way otherwise. */}
+        {spUrls && (
+          <div className="border-border border-t">
+            <Disclosure className="group">
+              <DisclosureTrigger>
+                <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground text-sm font-medium">Service provider values</p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      The Entity ID and ACS URL your IdP's SAML config asks for.
+                    </p>
+                  </div>
+                  <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                </div>
+              </DisclosureTrigger>
+              <DisclosureContent contentClassName="border-border border-t">
+                <div className="px-4 py-4">
+                  <SpDetails urls={spUrls} heading={false} />
+                </div>
+              </DisclosureContent>
+            </Disclosure>
           </div>
         )}
 
@@ -474,7 +523,9 @@ function EditProviderDialog({
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
   // New connections default auto-provision ON (groups appear without
   // hand-mapping); an existing provider keeps whatever the admin chose.
-  const [autoProvision, setAutoProvision] = useState(existing ? existing.auto_provision_groups : true);
+  const [autoProvision, setAutoProvision] = useState(
+    existing ? existing.auto_provision_groups : true,
+  );
   // New providers register by importing the IdP metadata (XML or URL) — the
   // backend handles the identity-provider registration; no internals surface in
   // the UI. Edits reuse the stored provider id under the hood.
@@ -550,7 +601,9 @@ function EditProviderDialog({
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-          {spUrls && <SpDetails urls={spUrls} className="bg-muted/20 rounded-md border px-3 py-3" />}
+          {spUrls && (
+            <SpDetails urls={spUrls} className="bg-muted/20 rounded-md border px-3 py-3" />
+          )}
 
           <div className="space-y-1.5">
             <Label>Display name</Label>
@@ -625,14 +678,14 @@ function EditProviderDialog({
               variant="popover"
             />
             <p className="text-muted-foreground text-xs">
-              Every sign-in from this domain is routed to this identity provider instead of
-              password login — only add a domain your IdP actually controls. Users on other
-              domains are unaffected.
+              Every sign-in from this domain is routed to this identity provider instead of password
+              login — only add a domain your IdP actually controls. Users on other domains are
+              unaffected.
             </p>
             {adminEmailDomain && domain.trim().toLowerCase() === adminEmailDomain && (
               <p className="text-kortix-yellow text-xs">
-                This is your own email domain — saving this will route YOUR next sign-in to the
-                IdP too. Make sure your account exists there before you continue.
+                This is your own email domain — saving this will route YOUR next sign-in to the IdP
+                too. Make sure your account exists there before you continue.
               </p>
             )}
           </div>
@@ -654,11 +707,10 @@ function EditProviderDialog({
             <p className="text-muted-foreground text-xs leading-relaxed">
               <span className="text-kortix-yellow">Entra tip:</span> set your SAML{' '}
               <span className="font-mono">emailaddress</span> claim source to{' '}
-              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com users have
-              no <span className="font-mono">mail</span>, and an empty email breaks sign-in. Entra
-              also emits group <span className="font-mono">Object IDs</span> by default: map
-              those, or emit names via “Groups assigned to the application” (needs Entra ID
-              P1/P2).
+              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com users have no{' '}
+              <span className="font-mono">mail</span>, and an empty email breaks sign-in. Entra also
+              emits group <span className="font-mono">Object IDs</span> by default: map those, or
+              emit names via “Groups assigned to the application” (needs Entra ID P1/P2).
             </p>
           </div>
 
@@ -673,8 +725,8 @@ function EditProviderDialog({
             <span>
               <span className="font-medium">Auto-create members</span>
               <span className="text-muted-foreground block text-xs">
-                When off, only users an admin has already invited can sign in via SAML. Group
-                sync still runs for those members.
+                When off, only users an admin has already invited can sign in via SAML. Group sync
+                still runs for those members.
               </span>
             </span>
           </label>
@@ -690,8 +742,8 @@ function EditProviderDialog({
             <span>
               <span className="font-medium">Auto-provision groups</span>
               <span className="text-muted-foreground block text-xs">
-                Create an IAM group for every group the IdP sends and add users to it — no
-                per-group mapping. You just attach project roles to the auto-created groups.
+                Create an IAM group for every group the IdP sends and add users to it — no per-group
+                mapping. You just attach project roles to the auto-created groups.
               </span>
             </span>
           </label>
@@ -776,8 +828,8 @@ function AddMappingDialog({
         <ModalHeader>
           <ModalTitle>Add group mapping</ModalTitle>
           <ModalDescription>
-            Users with this claim value in their SAML token will be added to the chosen IAM group
-            on sign-in.
+            Users with this claim value in their SAML token will be added to the chosen IAM group on
+            sign-in.
           </ModalDescription>
         </ModalHeader>
 

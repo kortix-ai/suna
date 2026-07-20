@@ -35,6 +35,7 @@ import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { RolesTab } from '@/components/iam/roles-tab';
+import { IdentityIntro } from '@/components/iam/identity-intro';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -618,18 +619,9 @@ export default function AccountSettingsPage() {
                   <Skeleton className="h-40 w-full rounded-md" />
                 ) : enterpriseIdentityEnabled ? (
                   <>
-                    <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-md border px-4 py-3">
-                      <p className="text-foreground text-xs font-medium">Why connect both?</p>
-                      <p className="text-muted-foreground text-xs leading-relaxed">
-                        <span className="text-foreground font-medium">SAML SSO</span> is how people
-                        sign in — with your identity provider's own credentials and MFA, never a
-                        Kortix password.{' '}
-                        <span className="text-foreground font-medium">SCIM directory sync</span> is
-                        who exists — it keeps your Kortix roster matched to your IdP and
-                        automatically removes access the moment someone leaves. Most enterprises
-                        want both; set up SSO first, then Directory Sync.
-                      </p>
-                    </div>
+                    {/* Onboarding copy only — self-hides once either surface
+                        is configured (see IdentityIntro). */}
+                    <IdentityIntro accountId={account.account_id} />
                     <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
                     <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                   </>

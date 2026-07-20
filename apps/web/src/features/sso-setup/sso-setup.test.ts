@@ -203,7 +203,10 @@ describe('auto-provision groups default', () => {
   });
 
   test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    expect(cardSource).toContain('useState(existing ? existing.auto_provision_groups : true)');
+    // Whitespace-tolerant: the formatter may wrap the useState initializer.
+    expect(cardSource.replace(/\s+/g, ' ')).toContain(
+      'useState( existing ? existing.auto_provision_groups : true',
+    );
   });
 });
 
@@ -323,6 +326,41 @@ describe('SCIM last-sync indicator', () => {
     expect(scimCardSource).toMatch(
       /queryFn: \(\) => listScimTokens\(accountId\)[\s\S]{0,200}refetchInterval/,
     );
+  });
+});
+
+// Identity page progressive disclosure — the cards lead with STATE (chip +
+// health line + one action); setup-time reference values (SP URLs, SCIM base
+// URL, IdP table, token list) collapse behind disclosures. Pins the redesign
+// of the "messy, everything at once" Identity tab.
+describe('identity page progressive disclosure', () => {
+  const pageSource = readFileSync(join(dir, '../../app/(app)/accounts/[id]/page.tsx'), 'utf8');
+  const introSource = readFileSync(
+    join(dir, '../../components/iam/identity-intro.tsx'),
+    'utf8',
+  ).replace(/\s+/g, ' ');
+
+  test('the "Why connect both?" explainer self-hides once either surface is configured', () => {
+    expect(pageSource).toContain('<IdentityIntro');
+    expect(pageSource).not.toContain('Why connect both?');
+    expect(introSource).toContain('Why connect both?');
+    // Renders only while BOTH SSO and SCIM are unconfigured.
+    expect(introSource).toContain('(tokensQuery.data ?? []).length > 0) return null');
+  });
+
+  test('the SSO card collapses SP values behind a disclosure in both states', () => {
+    expect(cardSource).toContain('Service provider values');
+    expect(cardSource).toContain('DisclosureTrigger');
+    // Not-connected leads with a call-to-action, not a wall of URLs.
+    expect(cardSource).toContain('Not connected yet');
+  });
+
+  test('the SCIM card leads with a status chip and collapses setup values + tokens', () => {
+    expect(scimCardSource).toContain('Setup values');
+    expect(scimCardSource).toContain('DisclosureTrigger');
+    // Amber only for the one genuinely wrong state: minted but never called.
+    expect(scimCardSource).toContain('waiting for IdP');
+    expect(scimCardSource).toContain("freshness === 'never'");
   });
 });
 
