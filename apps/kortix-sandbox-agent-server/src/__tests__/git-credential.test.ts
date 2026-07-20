@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import type { Config } from '../config'
 import {
   __clearCloneTokenCacheForTests,
+  buildGitAuthArgs,
   configureGitCredentialHelper,
   configureRepoCredentialHelper,
   resolveGitCredentialOutput,
@@ -45,6 +46,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
 function startCloneCredentialServer(opts: {
   expectToken: string
   pushToken: string | null
+  username?: string
 }) {
   const calls: { auth: string | null; path: string }[] = []
   const server = Bun.serve({
@@ -61,7 +63,7 @@ function startCloneCredentialServer(opts: {
       return Response.json({
         repo_url: 'https://git.example.test/repo-abc',
         auth: opts.pushToken
-          ? { username: 'x-access-token', token: opts.pushToken, type: 'basic' }
+          ? { username: opts.username ?? 'x-access-token', token: opts.pushToken, type: 'basic' }
           : null,
         source: 'managed',
       })
@@ -91,6 +93,20 @@ describe('git credential helper', () => {
       // It authenticated with the sandbox KORTIX_TOKEN, not anything else.
       expect(srv.calls.at(-1)?.auth).toBe('Bearer kortix_sb_secret')
       expect(srv.calls.at(-1)?.path).toBe('/v1/projects/proj-1/git/clone-credential')
+    } finally {
+      srv.stop()
+    }
+  })
+
+  it('uses the provider-selected username for Code Storage credentials', async () => {
+    const srv = startCloneCredentialServer({
+      expectToken: 'kortix_sb_secret',
+      pushToken: 'code-storage-jwt',
+      username: 't',
+    })
+    try {
+      const out = await resolveGitCredentialOutput(baseConfig({ apiUrl: srv.url }))
+      expect(out).toBe('username=t\npassword=code-storage-jwt\n')
     } finally {
       srv.stop()
     }
@@ -193,6 +209,19 @@ describe('git credential helper', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it('uses the provider-selected username for direct-upstream auth', () => {
+    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
+
+    expect(buildGitAuthArgs(
+      'https://kortix.code.storage/project-123.git',
+      'code-storage-jwt',
+      't',
+    )).toEqual([
+      '-c',
+      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
   })
 
   it('skips configuration for a non-managed (no repo) sandbox', async () => {

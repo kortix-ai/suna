@@ -25,6 +25,8 @@ type RegistrationInput = {
   name?: string | null;
   defaultBranch: string;
   manifestPath: string;
+  /** True only when Kortix created the upstream repository for this project. */
+  managed?: boolean;
   auth: RegistrationAuth;
 };
 
@@ -42,6 +44,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       owner,
       name: input.repo.name,
       external_repo_id: String(input.repo.id),
+      managed: input.managed ?? false,
       auth: githubApp
         ? { method: authMethod, installation_id: githubApp.installationId }
         : { method: authMethod },
@@ -105,6 +108,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       repoOwner: owner,
       repoName: input.repo.name,
       externalRepoId: String(input.repo.id),
+      managed: input.managed ?? false,
       defaultBranch: input.defaultBranch,
       authMethod,
       installationId: githubApp?.installationId ?? null,

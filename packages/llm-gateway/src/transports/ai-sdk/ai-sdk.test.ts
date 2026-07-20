@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import type { CatalogModel } from '@kortix/llm-catalog';
 import { generateText, jsonSchema, streamText, tool } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import type { UpstreamDescriptor } from '../../domain';
@@ -323,73 +324,153 @@ describe('ai-sdk request conversion', () => {
   });
 });
 
+// buildAiSdkArgs is now models.dev-capability-driven: when the caller passes
+// the resolved CatalogModel (index.ts resolves it via @kortix/llm-catalog's
+// `catalogModelForWireModel`), the four generation params are clamped ONCE in
+// normalizeRequest through the CANONICAL `clampGenerationConfig` — the exact
+// same gate the host runs on route defaults, now also applied to the
+// client-supplied values that path never touched. With NO model the clamp is a
+// deliberate NO-OP (permissive parity), which is why every test above still
+// passes a body with no model and sees pre-gating behavior verbatim.
+describe('ai-sdk per-request capability gating (reuses @kortix/llm-catalog clampGenerationConfig)', () => {
+  // Fixtures use only capability shapes that derive identically in every
+  // catalog version (an explicit `effort` reasoning_options entry, a literal
+  // `temperature` flag, an explicit `limit.output`) — never a bare
+  // `reasoning:true`-with-no-options, whose effort-control synthesis is a
+  // catalog-internal heuristic, not the contract under test here.
+  const effortModel = (over: Partial<CatalogModel> = {}): CatalogModel => ({
+    id: 'test-model',
+    name: 'Test Model',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+    temperature: true,
+    limit: { output: 8000 },
+    ...over,
+  });
+
+  it('(a) drops a client temperature (and top_p) for a temperature:false model, keeps them for a capable one', () => {
+    const fixed = buildAiSdkArgs({ messages: [], temperature: 0.7, top_p: 0.9 }, 'openai', {
+      model: effortModel({ temperature: false }),
+    });
+    expect(fixed.temperature).toBeUndefined();
+    expect(fixed.topP).toBeUndefined();
+
+    const tunable = buildAiSdkArgs({ messages: [], temperature: 0.7, top_p: 0.9 }, 'openai', {
+      model: effortModel({ temperature: true }),
+    });
+    expect(tunable.temperature).toBe(0.7);
+    expect(tunable.topP).toBe(0.9);
+  });
+
+  it('(b) drops a reasoning_effort the model does not publish, keeps a published one, and clamps max_tokens to limit.output', () => {
+    // 'xhigh' is NOT in the model's effort values → dropped, so no reasoningEffort
+    // reaches providerOptions at all (providerOptions ends up empty → undefined).
+    const rejected = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'xhigh', max_tokens: 100000 },
+      'openai',
+      { model: effortModel() },
+    );
+    expect(rejected.providerOptions).toBeUndefined();
+    // max_tokens clamped down to the model's real output ceiling.
+    expect(rejected.maxOutputTokens).toBe(8000);
+
+    // A published tier survives verbatim.
+    const accepted = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+      model: effortModel(),
+    });
+    expect(accepted.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+  });
+
+  it('(c) a non-reasoning model suppresses thinking/reasoningEffort entirely (anthropic family)', () => {
+    // reasoning:false + no reasoning_options → the effort tier is dropped, so
+    // resolveThinkingRequest never turns extended thinking on and maxOutputTokens
+    // falls back to the plain (non-thinking) 4096 default, not the thinking bump.
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic', {
+      model: effortModel({ reasoning: false, reasoning_options: undefined }),
+    });
+    expect(args.providerOptions).toBeUndefined();
+    expect(args.maxOutputTokens).toBe(4096);
+  });
+
+  it('(d) parity: with NO model passed, gating is a no-op — output matches the pre-gating result exactly', () => {
+    const body = { messages: [], temperature: 1.5, top_p: 0.2, reasoning_effort: 'xhigh' };
+    const ungated = buildAiSdkArgs({ ...body }, 'openai');
+    // Every capability-relevant field passes through untouched — no model, no gate.
+    expect(ungated.temperature).toBe(1.5);
+    expect(ungated.topP).toBe(0.2);
+    // 'xhigh' would be dropped by a temperature:true/effort-limited model above,
+    // but with no model it survives verbatim — the exact permissive parity contract.
+    expect(ungated.providerOptions).toEqual({ openai: { reasoningEffort: 'xhigh' } });
+  });
+});
+
 // Regression coverage for the PR #4943 review finding: the deleted native
 // anthropic/bedrock transports translated reasoning_effort/raw `thinking`
 // into real Anthropic extended thinking and applied prompt-cache
 // breakpoints; the ai-sdk engine had neither. See request.ts's
-// `resolveAnthropicThinkingBudget` / `applyAnthropicPromptCaching` for the
+// `resolveThinkingRequest` / `applyAnthropicPromptCaching` for the
 // ported implementation and the exact @ai-sdk/anthropic +
 // @ai-sdk/amazon-bedrock field names it's built against.
 describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () => {
-  it('anthropic: reasoning_effort maps to providerOptions.anthropic.thinking (not reasoningEffort) and bumps maxOutputTokens', () => {
+  it('anthropic: reasoning_effort maps to adaptive thinking + effort (never enabled/budgetTokens) and bumps maxOutputTokens', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } },
+      anthropic: { thinking: { type: 'adaptive' }, effort: 'high' },
     });
+    // The legacy enabled/budgetTokens shape must NEVER be sent — current-gen
+    // Claude (Opus 4.5+/4.8) 400s on `thinking.type:"enabled"`.
+    expect((args.providerOptions as any)?.anthropic?.thinking?.type).not.toBe('enabled');
+    expect((args.providerOptions as any)?.anthropic?.thinking?.budgetTokens).toBeUndefined();
     // The bogus flat key from the generic (openai-shaped) path must never appear.
     expect((args.providerOptions as any)?.anthropic?.reasoningEffort).toBeUndefined();
     // No explicit max_tokens + thinking active → bumped to the thinking default,
-    // not the plain 4096 non-thinking default (mirrors native's
-    // DEFAULT_MAX_TOKENS_WITH_THINKING so budgetTokens < maxOutputTokens holds).
+    // not the plain 4096 non-thinking default, so there's headroom for thinking.
     expect(args.maxOutputTokens).toBe(32000);
   });
 
-  it('anthropic: every reasoning_effort level maps to the ported native budget table', () => {
-    const table: Record<string, number> = {
-      minimal: 1024,
-      low: 2048,
-      medium: 8192,
-      high: 16000,
-      // 'xhigh' sits above 'high' and below 'max' — some newer Claude/Bedrock
-      // reasoning models expose it as a fifth effort tier (see
-      // packages/llm-catalog's generated catalog reasoning_options). 24000 <
-      // the 30976 clamp ceiling below, so it passes through unclamped.
-      xhigh: 24000,
-      // 'max' maps to a 32000 budget, but with no explicit max_tokens the
-      // thinking default IS 32000 too — the clamp (budgetTokens < maxOutputTokens)
-      // brings it down to max(1024, 32000-1024) = 30976.
-      max: 30976,
+  it('anthropic: every reasoning_effort level maps to an adaptive effort tier (minimal folds to low)', () => {
+    const table: Record<string, string> = {
+      minimal: 'low', // Anthropic's effort enum has no 'minimal' tier
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
     };
-    for (const [effort, budgetTokens] of Object.entries(table)) {
+    for (const [effort, expected] of Object.entries(table)) {
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'anthropic');
-      expect((args.providerOptions as any)?.anthropic?.thinking).toEqual({
-        type: 'enabled',
-        budgetTokens,
+      expect((args.providerOptions as any)?.anthropic).toMatchObject({
+        thinking: { type: 'adaptive' },
+        effort: expected,
       });
     }
   });
 
-  it('anthropic: clamps budgetTokens below an explicit small max_tokens instead of leaving it >= max_tokens', () => {
+  it('anthropic: adaptive thinking carries no token budget, so a small explicit max_tokens is honored without a clamp', () => {
     const args = buildAiSdkArgs(
       { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
       'anthropic',
     );
     expect(args.maxOutputTokens).toBe(2000);
-    // max(1024, 2000-1024) = 1024 < the max-effort 32000 budget → clamped to 1024.
-    expect((args.providerOptions as any)?.anthropic?.thinking).toEqual({
-      type: 'enabled',
-      budgetTokens: 1024,
+    expect((args.providerOptions as any)?.anthropic).toMatchObject({
+      thinking: { type: 'adaptive' },
+      effort: 'max',
     });
+    // No budgetTokens to clamp — adaptive lets the model manage its own budget.
+    expect((args.providerOptions as any)?.anthropic?.thinking?.budgetTokens).toBeUndefined();
   });
 
-  it('anthropic: a raw Anthropic-shaped body.thinking passes through verbatim', () => {
+  it('anthropic: a raw Anthropic-shaped body.thinking budget maps onto an adaptive effort tier', () => {
     const args = buildAiSdkArgs(
       { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },
       'anthropic',
     );
+    // 5000 tokens → the 'medium' tier (<= 8192), emitted as adaptive + effort —
+    // never the raw enabled/budgetTokens shape current-gen Claude rejects.
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'enabled', budgetTokens: 5000 } },
+      anthropic: { thinking: { type: 'adaptive' }, effort: 'medium' },
     });
+    expect((args.providerOptions as any)?.anthropic?.thinking?.type).not.toBe('enabled');
     expect(args.maxOutputTokens).toBe(32000);
   });
 
@@ -411,6 +492,19 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     expect(args.providerOptions).not.toHaveProperty('anthropic');
     expect((args.providerOptions as any)?.bedrock?.reasoningEffort).toBeUndefined();
     expect(args.maxOutputTokens).toBe(32000);
+  });
+
+  it('bedrock: clamps budgetTokens below an explicit small max_tokens (Converse rejects budget >= max)', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
+      'bedrock',
+    );
+    expect(args.maxOutputTokens).toBe(2000);
+    // max(1024, 2000-1024) = 1024 < the max-effort 32000 budget → clamped to 1024.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
+      type: 'enabled',
+      budgetTokens: 1024,
+    });
   });
 
   it('does not set thinking/reasoningConfig or bump maxOutputTokens for openai/openai-compatible families', () => {

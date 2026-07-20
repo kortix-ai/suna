@@ -1406,6 +1406,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../llm-catalog
       '@kortix/shared':
         specifier: workspace:*
         version: link:../shared

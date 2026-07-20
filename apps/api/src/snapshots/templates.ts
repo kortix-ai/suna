@@ -171,7 +171,26 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // the v27 full-rebuild path unchanged. (b) Raised
 // PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT to 1800000 (30min, was 300000/5min) as
 // a safety net for that fallback path under a cold cache.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v28';
+// v29: fix the BASE default image rebuild (the gap v27/v28 left open). v27/v28
+// only moved Chromium above the per-project warm-repo clone + instance warm-up,
+// and made per-project bakes inherit Chromium FROM the base — but in the base
+// image's own build (kortixToolchainLayer with no warmRepo) Chromium STILL sat
+// BELOW the opencode install, the `opencode serve` migration-bake, and the
+// config-deps bun install. The migration-bake writes a sqlite db with live
+// timestamps and the config-deps install churns node_modules mtimes — both
+// non-deterministic — so on a content-addressed provider cache (Daytona) they
+// bust the cache for the Chromium layer chained below them. The kortix-agent
+// SOURCE feeds the snapshot fingerprint (AGENT_RUNTIME_ARTIFACTS below), so any
+// agent-server code change mints a brand-new base snapshot name → a full rebuild
+// on Daytona (no agent-swap) → Chromium re-download → the base image never
+// becomes ready inside the session window → "session never starts" (the actual
+// mechanism behind the v0.10.11 rollback: PR #5010 changed the agent-server and
+// re-minted the base hash). Fix: move the Chromium block to sit DIRECTLY on the
+// deterministic apt + pip floors, ABOVE opencode and every non-deterministic
+// layer. Chromium's content hash is now stable across agent-source churn — it is
+// fetched at most once per pinned Playwright/agent-browser version and
+// cache-reused for every base rebuild after.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v29';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

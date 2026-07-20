@@ -8,6 +8,7 @@ import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/buil
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
+import { parseBasicAuthHeader } from '../git-backends';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
@@ -18,7 +19,7 @@ import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
-import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
+import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
 
 projectsApp.openapi(
@@ -286,19 +287,21 @@ projectsApp.openapi(
   if (!projectRow) return c.json({ error: 'Not found' }, 404);
 
   const gitAuth = await resolveProjectGitAuth(projectRow);
-  if (!gitAuth.auth?.token) {
+  const upstream = await resolveProjectUpstream(projectRow, 'write');
+  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
+  if (!credential) {
     return c.json({
-      repo_url: projectRow.repoUrl,
+      repo_url: upstream?.url ?? projectRow.repoUrl,
       auth: null,
       source: gitAuth.authSource,
     });
   }
 
   return c.json({
-    repo_url: projectRow.repoUrl,
+    repo_url: upstream?.url ?? projectRow.repoUrl,
     auth: {
-      username: 'x-access-token',
-      token: gitAuth.auth.token,
+      username: credential.username,
+      token: credential.token,
       type: 'basic',
     },
     source: gitAuth.authSource,

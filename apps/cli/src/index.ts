@@ -9,6 +9,7 @@ import { runCr } from './commands/cr.ts';
 import { runEnv } from './commands/env.ts';
 import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
+import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
@@ -315,6 +316,11 @@ async function main(argv: string[]): Promise<number> {
     const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
     if (notice) process.stdout.write(`${notice}\n`);
     return 0;
+  }
+  // Machine-only Git credential-helper protocol. It must never print the
+  // human host/update notices that would corrupt key=value output on stdout.
+  if (argv[0] === 'git-credential') {
+    return runGitCredential(argv.slice(1));
   }
   // `executor` is a MACHINE surface (the in-sandbox agent parses stdout as JSON,
   // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host

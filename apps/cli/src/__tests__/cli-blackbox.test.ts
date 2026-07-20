@@ -529,6 +529,7 @@ describe('kortix CLI black-box behavior', () => {
     const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(removeProject.code).toBe(0);
     expect(removeProject.stdout).toContain('Archived');
+    expect(removeProject.stdout).toContain('managed git repo deleted');
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([

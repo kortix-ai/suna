@@ -203,7 +203,10 @@ describe('auto-provision groups default', () => {
   });
 
   test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    expect(cardSource).toContain('useState(existing ? existing.auto_provision_groups : true)');
+    // Whitespace-tolerant: the formatter may wrap the useState initializer.
+    expect(cardSource.replace(/\s+/g, ' ')).toContain(
+      'useState( existing ? existing.auto_provision_groups : true',
+    );
   });
 });
 
@@ -290,6 +293,79 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
       // And each pins userName to the email Kortix correlates on.
       expect(text.toLowerCase()).toContain('email');
     }
+  });
+});
+
+// "Last sync" indicator — we're the SCIM server, so the honest signal is when
+// the IdP last called us (token last_used_at), paired with the provider's real
+// cadence instead of a made-up "next sync at" prediction.
+describe('SCIM last-sync indicator', () => {
+  test('every SCIM guide states its sync cadence', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      expect(g.config.syncCadenceHint, `${g.id} missing syncCadenceHint`).toBeTruthy();
+    }
+    // Entra is the one with a real scheduled cycle; the hint must say so.
+    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('40 minutes');
+    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('Provision on demand');
+    // Event-driven IdPs must NOT imply a cycle to wait for.
+    expect(getScimGuide('okta')!.config.syncCadenceHint).toContain('as they happen');
+  });
+
+  test('the wizard verify panel shows last sync activity from active-token usage', () => {
+    expect(wizardSource).toContain('latestScimSyncAt');
+    expect(wizardSource).toContain('Last sync activity');
+    // The per-provider cadence replaces the old Entra-hardcoded footer.
+    expect(wizardSource).toContain('cadenceHint={config.syncCadenceHint}');
+    expect(wizardSource).not.toContain("give Entra's provisioning cycle a minute");
+  });
+
+  test('the SCIM card health panel shows last sync activity and polls tokens', () => {
+    expect(scimCardSource).toContain('latestScimSyncAt(tokens)');
+    expect(scimCardSource).toContain('Last sync activity');
+    // The tokens list must poll, or last_used_at goes stale on an open card.
+    expect(scimCardSource).toMatch(
+      /queryFn: \(\) => listScimTokens\(accountId\)[\s\S]{0,200}refetchInterval/,
+    );
+  });
+});
+
+// Identity page progressive disclosure — the cards lead with STATE (chip +
+// health line + one action); setup-time reference values (SP URLs, SCIM base
+// URL, IdP table, token list) collapse behind disclosures. Pins the redesign
+// of the "messy, everything at once" Identity tab.
+describe('identity page progressive disclosure', () => {
+  const pageSource = readFileSync(join(dir, '../../app/(app)/accounts/[id]/page.tsx'), 'utf8');
+  const introSource = readFileSync(
+    join(dir, '../../components/iam/identity-intro.tsx'),
+    'utf8',
+  ).replace(/\s+/g, ' ');
+
+  test('the "Why connect both?" explainer self-hides once either surface is configured', () => {
+    expect(pageSource).toContain('<IdentityIntro');
+    expect(pageSource).not.toContain('Why connect both?');
+    expect(introSource).toContain('Why connect both?');
+    // Renders only while BOTH SSO and SCIM are unconfigured.
+    expect(introSource).toContain('(tokensQuery.data ?? []).length > 0) return null');
+  });
+
+  test('the SSO card collapses SP values behind a disclosure in both states', () => {
+    expect(cardSource).toContain('Service provider values');
+    expect(cardSource).toContain('DisclosureTrigger');
+    // Not-connected leads with a call-to-action, not a wall of URLs.
+    expect(cardSource).toContain('Not connected yet');
+  });
+
+  test('the SCIM card leads with a status chip and collapses setup values + tokens', () => {
+    expect(scimCardSource).toContain('Setup values');
+    expect(scimCardSource).toContain('DisclosureTrigger');
+    // Amber only for the one genuinely wrong state: minted but never called.
+    expect(scimCardSource).toContain('waiting for IdP');
+    expect(scimCardSource).toContain("freshness === 'never'");
+    // Setup values auto-open while a minted token awaits its first IdP call —
+    // that is exactly when the admin is pasting them — and tuck away after.
+    expect(scimCardSource.replace(/\s+/g, ' ')).toContain(
+      "open={tokens.length > 0 && freshness === 'never'}",
+    );
   });
 });
 

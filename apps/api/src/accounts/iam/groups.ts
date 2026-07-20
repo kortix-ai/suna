@@ -5,10 +5,7 @@ import { json, errors, auth } from '../../openapi';
 import { and, asc, eq } from 'drizzle-orm';
 import { projectGroupGrants, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import {
-  ACCOUNT_ACTIONS,
-  assertAuthorized,
-} from '../../iam';
+import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import {
   invalidateIamCacheForGroup,
   invalidateIamCacheForUser,
@@ -39,6 +36,29 @@ import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './hel
 // (create group, rename, add members); reads and deletions stay open so a
 // downgraded account can still see and clean up leftover groups — revoking
 // access is never paywalled. See TierEntitlements in ../../types.
+//
+// SCIM-sourced groups (source === 'scim') are OWNED BY THE IdP: renames and
+// membership edits here would corrupt sync — sign-in group claims and
+// provisioning match by NAME, so a local rename orphans the group's grants
+// (the next sign-in auto-provisions a duplicate under the old name), and
+// local membership edits are silently clobbered by the IdP's next push
+// (worse than a refusal: a "removed" member quietly comes back). Those
+// writes 409 with code `group_idp_managed`; description edits and deletion
+// (cleanup — the IdP recreates it if still pushed) stay allowed.
+
+/** 409 for writes that would corrupt IdP-managed group state. */
+function idpManagedGroupError(c: any, what: 'rename' | 'membership') {
+  return c.json(
+    {
+      error:
+        what === 'rename'
+          ? 'This group is synced from your identity provider — rename it there. Sign-in group claims match by name, so a local rename would orphan its access.'
+          : 'Membership of this group is synced from your identity provider — change it there. Local edits are overwritten by the next sync.',
+      code: 'group_idp_managed',
+    },
+    409,
+  );
+}
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -56,24 +76,24 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
 
-  const rows = await listGroups(accountId);
-  return c.json({
-    groups: rows.map((g) => ({
-      group_id: g.groupId,
-      name: g.name,
-      description: g.description,
-      source: g.source,
-      member_count: g.memberCount,
-      // Number of project_group_grants for this group.
-      project_count: g.projectCount,
-      created_at: g.createdAt.toISOString(),
-      updated_at: g.updatedAt.toISOString(),
-    })),
-  });
+    const rows = await listGroups(accountId);
+    return c.json({
+      groups: rows.map((g) => ({
+        group_id: g.groupId,
+        name: g.name,
+        description: g.description,
+        source: g.source,
+        member_count: g.memberCount,
+        // Number of project_group_grants for this group.
+        project_count: g.projectCount,
+        created_at: g.createdAt.toISOString(),
+        updated_at: g.updatedAt.toISOString(),
+      })),
+    });
   },
 );
 
@@ -84,54 +104,62 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Create an account group',
     ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ name: z.string(), description: z.string().nullable().optional() }) } } } },
+    request: {
+      params: AccountIdParam,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ name: z.string(), description: z.string().nullable().optional() }),
+          },
+        },
+      },
+    },
     responses: {
       201: json(GroupSchema, 'The created group'),
       ...errors(400, 401, 403, 409),
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
-  const body = await readBody(c);
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (name.length > 128) return c.json({ error: 'name too long' }, 400);
+    const body = await readBody(c);
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return c.json({ error: 'name is required' }, 400);
+    if (name.length > 128) return c.json({ error: 'name too long' }, 400);
 
-  const description =
-    typeof body.description === 'string' ? body.description : null;
+    const description = typeof body.description === 'string' ? body.description : null;
 
-  try {
-    const group = await createGroup({ accountId, name, description, createdBy: userId });
+    try {
+      const group = await createGroup({ accountId, name, description, createdBy: userId });
 
-    await auditIam(c, {
-      accountId,
-      action: 'iam.group.create',
-      resourceType: 'account_group',
-      resourceId: group.groupId,
-      after: { name: group.name, description: group.description, source: group.source },
-    });
+      await auditIam(c, {
+        accountId,
+        action: 'iam.group.create',
+        resourceType: 'account_group',
+        resourceId: group.groupId,
+        after: { name: group.name, description: group.description, source: group.source },
+      });
 
-    return c.json(
-      {
-        group_id: group.groupId,
-        name: group.name,
-        description: group.description,
-        source: group.source,
-        created_at: group.createdAt.toISOString(),
-      },
-      201,
-    );
-  } catch (err: unknown) {
-    if (isUniqueViolation(err)) {
-      return c.json({ error: 'A group with this name already exists' }, 409);
+      return c.json(
+        {
+          group_id: group.groupId,
+          name: group.name,
+          description: group.description,
+          source: group.source,
+          created_at: group.createdAt.toISOString(),
+        },
+        201,
+      );
+    } catch (err: unknown) {
+      if (isUniqueViolation(err)) {
+        return c.json({ error: 'A group with this name already exists' }, 409);
+      }
+      throw err;
     }
-    throw err;
-  }
   },
 );
 
@@ -149,23 +177,23 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
 
-  const group = await getGroup(accountId, groupId);
-  if (!group) return c.json({ error: 'group not found' }, 404);
+    const group = await getGroup(accountId, groupId);
+    if (!group) return c.json({ error: 'group not found' }, 404);
 
-  return c.json({
-    group_id: group.groupId,
-    name: group.name,
-    description: group.description,
-    source: group.source,
-    external_id: group.externalId,
-    created_at: group.createdAt.toISOString(),
-    updated_at: group.updatedAt.toISOString(),
-  });
+    return c.json({
+      group_id: group.groupId,
+      name: group.name,
+      description: group.description,
+      source: group.source,
+      external_id: group.externalId,
+      created_at: group.createdAt.toISOString(),
+      updated_at: group.updatedAt.toISOString(),
+    });
   },
 );
 
@@ -176,56 +204,72 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Update a group',
     ...auth,
-    request: { params: GroupParams, body: { content: { 'application/json': { schema: z.object({ name: z.string(), description: z.string().nullable() }).partial() } } } },
+    request: {
+      params: GroupParams,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ name: z.string(), description: z.string().nullable() }).partial(),
+          },
+        },
+      },
+    },
     responses: {
       200: json(GroupSchema, 'The updated group'),
-      ...errors(400, 401, 403, 404),
+      ...errors(400, 401, 403, 404, 409),
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_UPDATE, {
-    type: 'group',
-    id: groupId,
-  });
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_UPDATE, {
+      type: 'group',
+      id: groupId,
+    });
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
-  const body = await readBody(c);
-  const patch: { name?: string; description?: string | null } = {};
-  if (typeof body.name === 'string') {
-    const name = body.name.trim();
-    if (!name || name.length > 128) return c.json({ error: 'invalid name' }, 400);
-    patch.name = name;
-  }
-  if (body.description !== undefined) {
-    patch.description = typeof body.description === 'string' ? body.description : null;
-  }
+    const body = await readBody(c);
+    const patch: { name?: string; description?: string | null } = {};
+    if (typeof body.name === 'string') {
+      const name = body.name.trim();
+      if (!name || name.length > 128) return c.json({ error: 'invalid name' }, 400);
+      patch.name = name;
+    }
+    if (body.description !== undefined) {
+      patch.description = typeof body.description === 'string' ? body.description : null;
+    }
 
-  const beforeGroup = await getGroup(accountId, groupId);
+    const beforeGroup = await getGroup(accountId, groupId);
+    if (!beforeGroup) return c.json({ error: 'group not found' }, 404);
+    // IdP-owned name: a local rename breaks claim-name matching (see header).
+    if (
+      beforeGroup.source === 'scim' &&
+      patch.name !== undefined &&
+      patch.name !== beforeGroup.name
+    ) {
+      return idpManagedGroupError(c, 'rename');
+    }
 
-  const updated = await updateGroup(accountId, groupId, patch);
-  if (!updated) return c.json({ error: 'group not found' }, 404);
+    const updated = await updateGroup(accountId, groupId, patch);
+    if (!updated) return c.json({ error: 'group not found' }, 404);
 
-  await auditIam(c, {
-    accountId,
-    action: 'iam.group.update',
-    resourceType: 'account_group',
-    resourceId: groupId,
-    before: beforeGroup
-      ? { name: beforeGroup.name, description: beforeGroup.description }
-      : null,
-    after: { name: updated.name, description: updated.description },
-  });
+    await auditIam(c, {
+      accountId,
+      action: 'iam.group.update',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      before: beforeGroup ? { name: beforeGroup.name, description: beforeGroup.description } : null,
+      after: { name: updated.name, description: updated.description },
+    });
 
-  return c.json({
-    group_id: updated.groupId,
-    name: updated.name,
-    description: updated.description,
-    updated_at: updated.updatedAt.toISOString(),
-  });
+    return c.json({
+      group_id: updated.groupId,
+      name: updated.name,
+      description: updated.description,
+      updated_at: updated.updatedAt.toISOString(),
+    });
   },
 );
 
@@ -243,37 +287,41 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_DELETE, {
-    type: 'group',
-    id: groupId,
-  });
-  // No entitlement gate: deletion is cleanup, always allowed (see file header).
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_DELETE, {
+      type: 'group',
+      id: groupId,
+    });
+    // No entitlement gate: deletion is cleanup, always allowed (see file header).
 
-  const beforeGroup = await getGroup(accountId, groupId);
+    const beforeGroup = await getGroup(accountId, groupId);
 
-  // Bust every member's cached decision BEFORE the delete: the cascade removes
-  // accountGroupMembers, so invalidateIamCacheForGroup (which reads that table)
-  // would find no one to bust if called afterwards. Otherwise the group's
-  // grants would keep applying for up to the cache TTL after deletion.
-  await invalidateIamCacheForGroup(groupId);
+    // Bust every member's cached decision BEFORE the delete: the cascade removes
+    // accountGroupMembers, so invalidateIamCacheForGroup (which reads that table)
+    // would find no one to bust if called afterwards. Otherwise the group's
+    // grants would keep applying for up to the cache TTL after deletion.
+    await invalidateIamCacheForGroup(groupId);
 
-  const ok = await deleteGroup(accountId, groupId);
-  if (!ok) return c.json({ error: 'group not found' }, 404);
+    const ok = await deleteGroup(accountId, groupId);
+    if (!ok) return c.json({ error: 'group not found' }, 404);
 
-  await auditIam(c, {
-    accountId,
-    action: 'iam.group.delete',
-    resourceType: 'account_group',
-    resourceId: groupId,
-    before: beforeGroup
-      ? { name: beforeGroup.name, description: beforeGroup.description, source: beforeGroup.source }
-      : null,
-  });
+    await auditIam(c, {
+      accountId,
+      action: 'iam.group.delete',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      before: beforeGroup
+        ? {
+            name: beforeGroup.name,
+            description: beforeGroup.description,
+            source: beforeGroup.source,
+          }
+        : null,
+    });
 
-  return c.json({ deleted: true });
+    return c.json({ deleted: true });
   },
 );
 
@@ -293,19 +341,19 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
 
-  const members = await listGroupMembers(accountId, groupId);
-  return c.json({
-    members: members.map((m) => ({
-      user_id: m.userId,
-      added_at: m.addedAt.toISOString(),
-      added_by: m.addedBy,
-    })),
-  });
+    const members = await listGroupMembers(accountId, groupId);
+    return c.json({
+      members: members.map((m) => ({
+        user_id: m.userId,
+        added_at: m.addedAt.toISOString(),
+        added_by: m.addedBy,
+      })),
+    });
   },
 );
 
@@ -316,51 +364,65 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Add members to a group',
     ...auth,
-    request: { params: GroupParams, body: { content: { 'application/json': { schema: z.object({ userIds: z.array(z.string()).optional(), userId: z.string().optional() }) } } } },
+    request: {
+      params: GroupParams,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              userIds: z.array(z.string()).optional(),
+              userId: z.string().optional(),
+            }),
+          },
+        },
+      },
+    },
     responses: {
       200: json(z.object({ added: z.number() }), 'Number of members added'),
-      ...errors(400, 401, 403, 404),
+      ...errors(400, 401, 403, 404, 409),
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
-    type: 'group',
-    id: groupId,
-  });
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
-
-  const group = await getGroup(accountId, groupId);
-  if (!group) return c.json({ error: 'group not found' }, 404);
-
-  const body = await readBody(c);
-  const userIds: string[] = Array.isArray(body.userIds)
-    ? body.userIds.filter((v): v is string => typeof v === 'string')
-    : typeof body.userId === 'string'
-      ? [body.userId]
-      : [];
-  if (userIds.length === 0) return c.json({ error: 'userIds required' }, 400);
-
-  const result = await addGroupMembers({ accountId, groupId, userIds, addedBy: userId });
-
-  // New members inherit the group's project grants immediately — bust their
-  // cached decisions so the added access isn't delayed by the cache TTL.
-  if (result.added > 0) invalidateIamCacheForUsers(userIds);
-
-  if (result.added > 0) {
-    await auditIam(c, {
-      accountId,
-      action: 'iam.group.members.add',
-      resourceType: 'account_group',
-      resourceId: groupId,
-      after: { added_user_ids: userIds, added_count: result.added },
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
+      type: 'group',
+      id: groupId,
     });
-  }
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
-  return c.json({ added: result.added });
+    const group = await getGroup(accountId, groupId);
+    if (!group) return c.json({ error: 'group not found' }, 404);
+    // IdP-owned membership: local adds get clobbered by the next push.
+    if (group.source === 'scim') return idpManagedGroupError(c, 'membership');
+
+    const body = await readBody(c);
+    const userIds: string[] = Array.isArray(body.userIds)
+      ? body.userIds.filter((v): v is string => typeof v === 'string')
+      : typeof body.userId === 'string'
+        ? [body.userId]
+        : [];
+    if (userIds.length === 0) return c.json({ error: 'userIds required' }, 400);
+
+    const result = await addGroupMembers({ accountId, groupId, userIds, addedBy: userId });
+
+    // New members inherit the group's project grants immediately — bust their
+    // cached decisions so the added access isn't delayed by the cache TTL.
+    if (result.added > 0) invalidateIamCacheForUsers(userIds);
+
+    if (result.added > 0) {
+      await auditIam(c, {
+        accountId,
+        action: 'iam.group.members.add',
+        resourceType: 'account_group',
+        resourceId: groupId,
+        after: { added_user_ids: userIds, added_count: result.added },
+      });
+    }
+
+    return c.json({ added: result.added });
   },
 );
 
@@ -371,42 +433,47 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Remove a member from a group',
     ...auth,
-    request: { params: z.object({ accountId: z.string(), groupId: z.string(), userId: z.string() }) },
+    request: {
+      params: z.object({ accountId: z.string(), groupId: z.string(), userId: z.string() }),
+    },
     responses: {
       200: json(z.object({ removed: z.boolean() }), 'Removal result'),
-      ...errors(401, 403, 404),
+      ...errors(401, 403, 404, 409),
     },
   }),
   async (c: any) => {
-  const callerId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  const targetUserId = c.req.param('userId');
-  await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
-    type: 'group',
-    id: groupId,
-  });
-  // No entitlement gate: removing a member is cleanup, always allowed.
+    const callerId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    const targetUserId = c.req.param('userId');
+    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
+      type: 'group',
+      id: groupId,
+    });
+    // No entitlement gate: removing a member is cleanup, always allowed.
 
-  const group = await getGroup(accountId, groupId);
-  if (!group) return c.json({ error: 'group not found' }, 404);
+    const group = await getGroup(accountId, groupId);
+    if (!group) return c.json({ error: 'group not found' }, 404);
+    // IdP-owned membership: a local remove is silently undone by the next push —
+    // a false sense of revocation. Deprovision the person in the IdP instead.
+    if (group.source === 'scim') return idpManagedGroupError(c, 'membership');
 
-  const ok = await removeGroupMember(groupId, targetUserId);
-  if (!ok) return c.json({ error: 'not a member of this group' }, 404);
+    const ok = await removeGroupMember(groupId, targetUserId);
+    if (!ok) return c.json({ error: 'not a member of this group' }, 404);
 
-  // Revocation must take effect now, not after the cache TTL: drop the removed
-  // user's cached decision so the group's grants stop applying immediately.
-  invalidateIamCacheForUser(targetUserId);
+    // Revocation must take effect now, not after the cache TTL: drop the removed
+    // user's cached decision so the group's grants stop applying immediately.
+    invalidateIamCacheForUser(targetUserId);
 
-  await auditIam(c, {
-    accountId,
-    action: 'iam.group.members.remove',
-    resourceType: 'account_group',
-    resourceId: groupId,
-    before: { removed_user_id: targetUserId },
-  });
+    await auditIam(c, {
+      accountId,
+      action: 'iam.group.members.remove',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      before: { removed_user_id: targetUserId },
+    });
 
-  return c.json({ removed: true });
+    return c.json({ removed: true });
   },
 );
 
@@ -433,46 +500,43 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
 
-  const group = await getGroup(accountId, groupId);
-  if (!group) return c.json({ error: 'group not found' }, 404);
+    const group = await getGroup(accountId, groupId);
+    if (!group) return c.json({ error: 'group not found' }, 404);
 
-  const rows = await db
-    .select({
-      projectId: projectGroupGrants.projectId,
-      projectName: projects.name,
-      role: projectGroupGrants.role,
-      grantedBy: projectGroupGrants.grantedBy,
-      createdAt: projectGroupGrants.createdAt,
-      expiresAt: projectGroupGrants.expiresAt,
-    })
-    .from(projectGroupGrants)
-    .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
-    .where(
-      and(
-        eq(projectGroupGrants.groupId, groupId),
-        eq(projectGroupGrants.accountId, accountId),
-      ),
-    )
-    // Deterministic order so the row position doesn't visibly shift after
-    // a role change. Without ORDER BY, Postgres can return rows in heap
-    // order, which moves UPDATEd rows around. See twin query in
-    // apps/api/src/projects/index.ts.
-    .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.projectId));
+    const rows = await db
+      .select({
+        projectId: projectGroupGrants.projectId,
+        projectName: projects.name,
+        role: projectGroupGrants.role,
+        grantedBy: projectGroupGrants.grantedBy,
+        createdAt: projectGroupGrants.createdAt,
+        expiresAt: projectGroupGrants.expiresAt,
+      })
+      .from(projectGroupGrants)
+      .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
+      .where(
+        and(eq(projectGroupGrants.groupId, groupId), eq(projectGroupGrants.accountId, accountId)),
+      )
+      // Deterministic order so the row position doesn't visibly shift after
+      // a role change. Without ORDER BY, Postgres can return rows in heap
+      // order, which moves UPDATEd rows around. See twin query in
+      // apps/api/src/projects/index.ts.
+      .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.projectId));
 
-  return c.json({
-    grants: rows.map((r) => ({
-      project_id: r.projectId,
-      project_name: r.projectName,
-      role: r.role,
-      granted_by: r.grantedBy,
-      created_at: r.createdAt.toISOString(),
-      expires_at: r.expiresAt?.toISOString() ?? null,
-    })),
-  });
+    return c.json({
+      grants: rows.map((r) => ({
+        project_id: r.projectId,
+        project_name: r.projectName,
+        role: r.role,
+        granted_by: r.grantedBy,
+        created_at: r.createdAt.toISOString(),
+        expires_at: r.expiresAt?.toISOString() ?? null,
+      })),
+    });
   },
 );

@@ -1,9 +1,4 @@
-import { listDefaultProjectMarketplaceItems } from '@/lib/marketplace-client';
-import {
-  listProjectsForAccount,
-  provisionProject,
-  type KortixProject,
-} from '@kortix/sdk/projects-client';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 
 export type FirstProjectAutoCreateState = {
   bootstrapRequested: boolean;
@@ -50,31 +45,13 @@ export function isManagedGitUnavailableError(err: unknown): boolean {
 }
 
 /**
- * Return the account's first project, creating "My First Project" when none
- * exist. If the free-tier cap is already consumed, recover by listing again
- * and returning the existing project instead of surfacing a dead-end error.
- * If managed git isn't configured on this server, there is nothing to
- * auto-create — return null so the caller falls back to its normal empty
- * "create a project" state instead of treating it as a hard failure.
+ * Return the account's first project. Empty accounts deliberately return null:
+ * repository ownership is a user choice, so onboarding opens the create flow
+ * and asks for a GitHub App installation (preferred) or explicit managed Git.
  */
 export async function ensureFirstProject(accountId: string): Promise<KortixProject | null> {
   const existing = await listProjectsForAccount(accountId);
-  if (existing.length > 0) return existing[0] ?? null;
-
-  try {
-    const marketplaceItems = await listDefaultProjectMarketplaceItems();
-    return await provisionProject({
-      account_id: accountId,
-      name: 'My First Project',
-      starter_template: 'general-knowledge-worker',
-      marketplace_items: marketplaceItems.map((item) => item.id),
-    });
-  } catch (err) {
-    if (isManagedGitUnavailableError(err)) return null;
-    if (!isProjectLimitError(err)) throw err;
-    const retry = await listProjectsForAccount(accountId);
-    return retry[0] ?? null;
-  }
+  return existing[0] ?? null;
 }
 
 export function shouldAutoCreateFirstProject(state: FirstProjectAutoCreateState): boolean {

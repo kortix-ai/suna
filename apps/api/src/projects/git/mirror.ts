@@ -38,18 +38,31 @@ const lastRefreshAt = new Map<string, number>();
  * this leaf module free of a static dependency on `../lib/git` (which transitively
  * pulls in the mirror), and the resolver itself never throws.
  */
-async function ensureMirrorAuthToken(project: GitBackedProject): Promise<string | null> {
-  if (project.gitAuthToken) return project.gitAuthToken;
+interface ResolvedMirrorAccess {
+  repoUrl: string;
+  token: string | null;
+  headers: Record<string, string>;
+}
+
+async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
+  if (project.gitAuthToken || Object.keys(project.gitAuthHeaders ?? {}).length > 0) {
+    return {
+      repoUrl: project.repoUrl,
+      token: project.gitAuthToken ?? null,
+      headers: project.gitAuthHeaders ?? {},
+    };
+  }
   try {
-    const { resolveProjectGitAuthTokenById } = await import('../lib/git');
-    return await resolveProjectGitAuthTokenById(project.projectId);
+    const { resolveProjectGitAccessById } = await import('../lib/git');
+    const resolved = await resolveProjectGitAccessById(project.projectId);
+    if (resolved) return resolved;
   } catch (err) {
     console.warn(
       `[git-mirror] lazy auth resolve failed for ${project.projectId}:`,
       err instanceof Error ? err.message : err,
     );
-    return null;
   }
+  return { repoUrl: project.repoUrl, token: null, headers: {} };
 }
 
 function cacheRoot() {
@@ -87,14 +100,24 @@ export function hostFromRepoUrl(repoUrl?: string | null): string {
   }
 }
 
-function gitAuthEnv(token?: string | null, authHost = 'github.com'): Record<string, string> {
-  if (!token) return {};
-  const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
-  return {
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: `http.https://${authHost}/.extraheader`,
-    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${encoded}`,
-  };
+function gitAuthEnv(
+  token?: string | null,
+  authHost = 'github.com',
+  headers?: Record<string, string>,
+): Record<string, string> {
+  const resolvedHeaders = Object.keys(headers ?? {}).length > 0
+    ? headers!
+    : token
+      ? { Authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` }
+      : {};
+  const entries = Object.entries(resolvedHeaders);
+  if (entries.length === 0) return {};
+  const env: Record<string, string> = { GIT_CONFIG_COUNT: String(entries.length) };
+  entries.forEach(([name, value], index) => {
+    env[`GIT_CONFIG_KEY_${index}`] = `http.https://${authHost}/.extraheader`;
+    env[`GIT_CONFIG_VALUE_${index}`] = `${name}: ${value}`;
+  });
+  return env;
 }
 
 /** Default per-op timeout for `runGit` (ms). Bare clones override this via `timeoutMs`. */
@@ -234,8 +257,9 @@ export async function runGit(
   extraEnv?: Record<string, string>,
   authHost = 'github.com',
   timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
+  authHeaders?: Record<string, string>,
 ) {
-  const authEnv = auth ? gitAuthEnv(authToken, authHost) : {};
+  const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
   try {
     const result = await execFileAsync('git', args, {
       cwd,
@@ -264,11 +288,12 @@ export async function runGitCapture(
   authToken?: string | null,
   extraEnv?: Record<string, string>,
   authHost = 'github.com',
+  authHeaders?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
     const result = await execFileAsync('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost), ...(extraEnv || {}) },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost, authHeaders), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 20_000,
     });
@@ -319,8 +344,8 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   // refresh lock, the shared clone/fetch is authenticated whenever the project
   // has a resolvable credential — eliminating the "tokenless caller poisons a
   // private-repo clone" race described on `ensureMirrorAuthToken`.
-  const authToken = await ensureMirrorAuthToken(project);
-  const authHost = hostFromRepoUrl(project.repoUrl);
+  const access = await ensureMirrorAccess(project);
+  const authHost = hostFromRepoUrl(access.repoUrl);
 
   if (needsClone) {
     // Bare clone with ALL branches — required for the version/checkpoint
@@ -336,11 +361,11 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     // wedging every reader for the process lifetime. So: give the cold clone a
     // longer budget, retry once on a transient timeout, and ALWAYS remove the
     // partial dir on failure so the next caller re-clones cleanly.
-    const cloneArgs = ['clone', '--bare', project.repoUrl, repoPath] as const;
+    const cloneArgs = ['clone', '--bare', access.repoUrl, repoPath] as const;
     let lastErr: unknown = null;
     for (let attempt = 1; attempt <= BARE_CLONE_MAX_ATTEMPTS; attempt++) {
       try {
-        await runGit([...cloneArgs], undefined, true, authToken, undefined, authHost, BARE_CLONE_TIMEOUT_MS);
+        await runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers);
         lastErr = null;
         break;
       } catch (err) {
@@ -357,10 +382,10 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     return repoPath;
   }
 
-  await runGit(['remote', 'set-url', 'origin', project.repoUrl], repoPath);
+  await runGit(['remote', 'set-url', 'origin', access.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, authToken, undefined, authHost);
+  await runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers);
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }

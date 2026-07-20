@@ -236,6 +236,9 @@ export async function previewMerge(
     ['merge-tree', '--write-tree', '--name-only', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
     repoPath,
     project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    project.gitAuthHeaders,
   );
 
   const conflicts: string[] = [];
@@ -320,6 +323,8 @@ export async function mergeBranches(
       project.gitAuthToken,
       undefined,
       hostFromRepoUrl(project.repoUrl),
+      undefined,
+      project.gitAuthHeaders,
     );
     return {
       merge_commit_sha: headSha,
@@ -334,6 +339,9 @@ export async function mergeBranches(
     ['merge-tree', '--write-tree', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
     repoPath,
     project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    project.gitAuthHeaders,
   );
   if (mergeTreeResult.exitCode !== 0) {
     throw new Error('Merge conflicts detected — resolve before merging');
@@ -376,6 +384,8 @@ export async function mergeBranches(
     project.gitAuthToken,
     undefined,
     hostFromRepoUrl(project.repoUrl),
+    undefined,
+    project.gitAuthHeaders,
   );
 
   return {

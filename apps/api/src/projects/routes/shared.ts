@@ -8,7 +8,7 @@ import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
-import { resolveProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../lib/git';
 import { resolveSessionMetadataModel } from '../lib/session-metadata';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
@@ -351,7 +351,7 @@ export async function allocateRuntimeOnOpen(
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
-    resolveGitAuthToken: async () => (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
+    resolveGitProject: async () => withProjectGitAuth(loaded.row),
   });
 }
 

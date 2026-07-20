@@ -41,6 +41,9 @@ import { DriveListView } from './drive-list-view';
 import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
+import { requestedFilesRightPanel, type FilesRightPanel } from './file-route-state';
+
+const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
 
 export function FileExplorerPage({ embedded = false }: { embedded?: boolean; shareContext?: unknown } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -89,8 +92,6 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean; sha
 
   const isRootPath = currentPath === '/' || currentPath === '.' || currentPath === '';
   const normalizedCurrentPath = isRootPath ? '' : currentPath.replace(/\/$/, '');
-
-  const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
 
   const { elevatedDirs, dirs, fileItems } = useMemo(() => {
     if (!files)
@@ -316,10 +317,9 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean; sha
 
   const [historyPopoverPath, setHistoryPopoverPath] = useState<string | null>(null);
 
-  type RightPanel = 'history' | 'proposed-changes' | null;
-  const [rightPanel, setRightPanel] = useState<RightPanel>(null);
+  const [rightPanel, setRightPanel] = useState<FilesRightPanel>(null);
   const [createdCrId, setCreatedCrId] = useState<string | null>(null);
-  const toggleRightPanel = (panel: RightPanel) =>
+  const toggleRightPanel = (panel: FilesRightPanel) =>
     setRightPanel((current) => (current === panel ? null : panel));
 
   const openCrCountQuery = useChangeRequests('open', { refetchInterval: 10_000 });
@@ -330,10 +330,13 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean; sha
   const pathname = usePathname();
   useEffect(() => {
     const cr = searchParams.get('cr');
-    if (!cr) return;
-    setCreatedCrId(cr);
+    const requestedPanel = requestedFilesRightPanel(searchParams.get('panel'));
+    if (!cr && !requestedPanel) return;
+    if (cr) setCreatedCrId(cr);
+    if (requestedPanel) setRightPanel(requestedPanel);
     const params = new URLSearchParams(searchParams.toString());
     params.delete('cr');
+    params.delete('panel');
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [searchParams, pathname, router]);

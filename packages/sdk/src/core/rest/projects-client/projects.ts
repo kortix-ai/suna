@@ -152,6 +152,8 @@ export interface CreateProjectRepoInput {
   private?: boolean;
   description?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
+  /** Clone a `registry:project` item into the new GitHub repository. */
+  source_item_id?: string;
 }
 
 export interface ProvisionProjectInput {
@@ -234,6 +236,8 @@ export async function validateProjectManifest(
 
 export interface ProjectGitToken {
   push_token: string;
+  /** Provider-selected HTTP Basic username (`x-access-token` for GitHub, `t` for Code Storage). */
+  git_username: string;
   repo_id: string | null;
   repo_url: string | null;
 }

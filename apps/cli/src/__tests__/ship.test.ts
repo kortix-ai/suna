@@ -3,10 +3,20 @@ import { describe, expect, test } from 'bun:test';
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
 import {
+  authHeaderArgs,
   linkGitHubBackedProject,
   resolveExistingShipGitTarget,
   resolveProvisionShipGitTarget,
 } from '../commands/ship.ts';
+
+test('managed git auth headers honor the provider-selected username', () => {
+  const args = authHeaderArgs('https://kortix.code.storage/demo.git', 'jwt-token', 't');
+  expect(args.at(-1)).toStartWith(
+    'http.https://kortix.code.storage/.extraheader=Authorization: Basic ',
+  );
+  const encoded = args.at(-1)?.split('Authorization: Basic ')[1];
+  expect(encoded && Buffer.from(encoded, 'base64').toString('utf8')).toBe('t:jwt-token');
+});
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {

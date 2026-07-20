@@ -14,6 +14,7 @@ import { RuntimeView } from '@/features/workspace/customize/sections/view/runtim
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
@@ -39,8 +40,6 @@ import { isRailItemActive } from './rail';
 import { GROUPS } from './rail-groups';
 import { RelatedProjectsSwitcher } from './related-projects-switcher';
 import { LlmManagementView } from './sections/gateway-view';
-import { ChangesView } from './sections/view/changes-view';
-import { DevView } from './sections/view/dev-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailGroup, RailItem } from './type';
 
@@ -79,11 +78,9 @@ function railGroups(
       if (llmGatewayAvailable) items.push(LLM_ITEM);
       return { ...g, items };
     }
-    if (g.label === 'Workspace' && reviewEnabled) {
-      // Slot Review right after Changes — both are review surfaces.
+    if (g.label === 'Build' && reviewEnabled) {
       const items = [...g.items];
-      const at = items.findIndex((it) => it.section === 'changes');
-      items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
+      items.push(REVIEW_ITEM);
       return { ...g, items };
     }
     return g;
@@ -445,14 +442,12 @@ function SectionContent({
       return <ScheduleView projectId={projectId} type="cron" />;
     case 'webhooks':
       return <ScheduleView projectId={projectId} type="webhook" />;
-    case 'changes':
-      return <ChangesView projectId={projectId} />;
+    case 'git':
+      return <GitView projectId={projectId} />;
     case 'review':
       return <ReviewView projectId={projectId} />;
     case 'sandbox':
       return <SandboxView projectId={projectId} />;
-    case 'dev':
-      return <DevView projectId={projectId} />;
     case 'members':
       return <MembersView projectId={projectId} />;
     case 'settings':

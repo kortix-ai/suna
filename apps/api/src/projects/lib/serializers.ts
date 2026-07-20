@@ -406,7 +406,16 @@ export function serializeGitHubInstallations(
       installation_url: null,
       updated_at: null,
     };
-    return { ...patInstallation, installations: [patInstallation] };
+    return {
+      ...patInstallation,
+      // The PAT is a valid existing-repository import option, but it is not a
+      // GitHub App installation and cannot back POST /projects/create-repo.
+      // Keep the App install URL visible so the default create flow can offer
+      // a real user/org installation alongside the legacy PAT fallback.
+      requires_installation: Boolean(installUrl),
+      install_url: installUrl,
+      installations: [patInstallation],
+    };
   }
 
   const primary = rows[0] ?? null;

@@ -8,6 +8,7 @@ import type { SandboxProviderName } from '../../config';
 import type { ProjectRow } from './serializers';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
+import type { GitBackedProject } from '../git';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -25,7 +26,7 @@ export interface AllocateSessionRuntimeInput {
   runtimeMetadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   buildEnvVars: () => Promise<Record<string, string>>;
-  resolveGitAuthToken: () => Promise<string | null>;
+  resolveGitProject: () => Promise<GitBackedProject>;
   beforeActive?: (externalId: string) => Promise<void>;
 }
 
@@ -43,9 +44,9 @@ export function allocateSessionRuntime(input: AllocateSessionRuntimeInput): void
 async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): Promise<void> {
   const tl = new ProvisionTimeline(input.sessionId, 'session-create');
   try {
-    const gitAuthPromise = input.resolveGitAuthToken().then((token) => {
+    const gitProjectPromise = input.resolveGitProject().then((project) => {
       tl.mark('git-auth');
-      return token;
+      return project;
     });
     const envPromise = input.buildEnvVars().then((envVars) => {
       tl.mark('env-vars');
@@ -75,7 +76,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         manifestPath: input.project.manifestPath,
         gitAuthToken: null,
       },
-      resolveGitAuthToken: async () => gitAuthPromise,
+      resolveGitProject: async () => gitProjectPromise,
       baseRef: input.baseRef,
       sandboxSlug: input.sandboxSlug,
       beforeActive: input.beforeActive,

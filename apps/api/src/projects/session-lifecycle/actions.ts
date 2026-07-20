@@ -202,8 +202,7 @@ export async function restartSession(input: {
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         }),
-      resolveGitAuthToken: async () =>
-        (await withProjectGitAuth(loaded.row as any)).gitAuthToken ?? null,
+      resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
     });
   };
 

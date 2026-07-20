@@ -35,7 +35,7 @@ import {
   resolveProjectComposerState,
   type HarnessAuthKind,
 } from './composer-capabilities';
-import { resolveProjectGitAuth, withProjectGitAuth } from './git';
+import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
@@ -832,14 +832,10 @@ export async function createProjectSession(input: {
       // Resolve git auth and user env concurrently. Git auth is needed for
       // background freshness checks / remote branch publishing, but a warm
       // session can boot from an existing ready snapshot without waiting for it.
-      const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
+      const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
         tl.mark('git-auth');
-        return gitAuth;
+        return gitProject;
       });
-      const projectWithGitAuthPromise = gitAuthPromise.then((gitAuth) => ({
-        ...project,
-        gitAuthToken: gitAuth.auth?.token ?? null,
-      }));
       // Resolve the base-branch tip SHA server-side (no tunnel) so the daemon
       // can skip the in-guest fetch when the baked scaffold already IS base.
       // Best-effort + timeout-guarded (never block create): on failure/timeout
@@ -947,7 +943,7 @@ export async function createProjectSession(input: {
           manifestPath: project.manifestPath,
           gitAuthToken: null,
         },
-        resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
+        resolveGitProject: async () => projectWithGitAuthPromise,
         baseRef,
         sandboxSlug,
       });

@@ -183,7 +183,7 @@ export async function provisionSessionSandbox(opts: {
    * is omitted, defaults to `gitProject.defaultBranch`.
    */
   gitProject: GitBackedProject;
-  resolveGitAuthToken?: () => Promise<string | null>;
+  resolveGitProject?: () => Promise<GitBackedProject>;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -212,12 +212,11 @@ export async function provisionSessionSandbox(opts: {
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
-  // Resolve the project + a fresh git auth token (the snapshot builder may need
-  // it to read the repo's Dockerfile when building a custom template).
+  // Resolve the project + fresh provider-neutral git access (the snapshot
+  // builder may need it to read the repo's Dockerfile).
   const resolveGitProject = async (): Promise<GitBackedProject> => {
-    if (!opts.resolveGitAuthToken) return opts.gitProject;
-    const token = await opts.resolveGitAuthToken();
-    return { ...opts.gitProject, gitAuthToken: token };
+    if (!opts.resolveGitProject) return opts.gitProject;
+    return opts.resolveGitProject();
   };
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.

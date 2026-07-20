@@ -96,11 +96,13 @@ interface ShipFlags {
 
 interface ProvisionResponse extends ProjectSummary {
   push_token: string | null;
+  git_username?: string | null;
   repo_id: string;
 }
 
 interface GitTokenResponse {
   push_token: string;
+  git_username?: string | null;
   repo_id: string;
   repo_url: string;
 }
@@ -592,6 +594,7 @@ async function shipFirstTime(
   let project: ProjectSummary;
   let repoUrl: string;
   let pushToken: string | null = null;
+  let pushUsername = 'x-access-token';
 
   if (byoUrl) {
     const github = isGitHubUrl(byoUrl);
@@ -634,6 +637,7 @@ async function shipFirstTime(
     const target = resolveProvisionShipGitTarget(prov);
     repoUrl = target.repoUrl;
     pushToken = prov.push_token;
+    pushUsername = prov.git_username ?? pushUsername;
     // Older/self-hosted provision responses may omit an exportable token even
     // though the managed project can mint a repo-scoped App token afterward.
     // Heal that boundary before attempting git push; never fall back to a
@@ -643,6 +647,7 @@ async function shipFirstTime(
         `/projects/${project.project_id}/git-token`,
       );
       pushToken = tok.push_token;
+      pushUsername = tok.git_username ?? pushUsername;
     }
     setOrigin(repoUrl);
   }
@@ -660,7 +665,7 @@ async function shipFirstTime(
 
   await ensureProjectEnv(client, project.project_id, env, flags);
 
-  const pushed = pushCurrentBranch(repoUrl, pushToken);
+  const pushed = pushCurrentBranch(repoUrl, pushToken, pushUsername);
   if (!pushed) return 1;
 
   await ensureConnectorsConnected(client, project.project_id, flags);
@@ -705,11 +710,13 @@ async function shipExisting(
   // Push credential: managed repos use a fresh provider token and push to the
   // managed upstream URL. Non-managed proxy pushes use the Kortix CLI token.
   let pushToken: string | null = null;
+  let pushUsername = 'x-access-token';
   if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
   } else if (target.credentialMode === 'managed-git-token') {
     const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
     pushToken = tok.push_token;
+    pushUsername = tok.git_username ?? pushUsername;
   }
   // Managed projects own the remote URL, so keep origin aligned with the
   // upstream that matches the freshly minted provider token. BYO repos may
@@ -723,7 +730,7 @@ async function shipExisting(
 
   await ensureProjectEnv(client, projectId, env, flags);
 
-  const pushed = pushCurrentBranch(repoUrl, pushToken);
+  const pushed = pushCurrentBranch(repoUrl, pushToken, pushUsername);
   if (!pushed) return 1;
 
   await ensureConnectorsConnected(client, projectId, flags);
@@ -825,7 +832,11 @@ function currentBranch(): string {
  * http.extraHeader so it never lands in .git/config; for BYO repos we rely on
  * the user's own git credentials. Returns the pushed branch, or null on error.
  */
-function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | null {
+function pushCurrentBranch(
+  repoUrl: string,
+  pushToken: string | null,
+  gitUsername = 'x-access-token',
+): string | null {
   const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   if (!branch || branch === 'HEAD') {
     process.stderr.write(
@@ -834,7 +845,7 @@ function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | 
     return null;
   }
   const refspec = `${branch}:refs/heads/${branch}`;
-  const args = pushToken ? [...authHeaderArgs(repoUrl, pushToken), 'push'] : ['push'];
+  const args = pushToken ? [...authHeaderArgs(repoUrl, pushToken, gitUsername), 'push'] : ['push'];
   args.push('-u', 'origin', refspec);
 
   const push = run('git', args, { inheritStdio: true });
@@ -852,7 +863,11 @@ function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | 
  *  mirrors the backend's git auth scheme (projects/git.ts). The extraheader
  *  key MUST carry the remote's actual scheme (http for a localhost proxy,
  *  https in prod) or git won't apply it (scheme-scoped config). */
-function authHeaderArgs(repoUrl: string, token: string): string[] {
+export function authHeaderArgs(
+  repoUrl: string,
+  token: string,
+  gitUsername = 'x-access-token',
+): string[] {
   let origin = 'https://github.com';
   try {
     const u = new URL(repoUrl);
@@ -860,8 +875,10 @@ function authHeaderArgs(repoUrl: string, token: string): string[] {
   } catch {
     /* keep default */
   }
-  const enc = Buffer.from(`x-access-token:${token}`).toString('base64');
-  return ['-c', `http.${origin}/.extraheader=AUTHORIZATION: basic ${enc}`];
+  const enc = Buffer.from(`${gitUsername}:${token}`).toString('base64');
+  // RFC 7617 treats the auth scheme case-insensitively, but Code Storage's
+  // Git endpoint currently requires the canonical `Basic` spelling.
+  return ['-c', `http.${origin}/.extraheader=Authorization: Basic ${enc}`];
 }
 
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {

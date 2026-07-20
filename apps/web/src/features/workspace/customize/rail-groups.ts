@@ -1,5 +1,5 @@
 import { AlarmClock, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
-import { Bot, Container, Cpu, History, KeyRound, Plug, Terminal, Webhook } from 'lucide-react';
+import { Bot, Container, Cpu, GitFork, KeyRound, Plug, Webhook } from 'lucide-react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 
 import type { RailGroup } from './type';
@@ -11,8 +11,7 @@ import type { RailGroup } from './type';
  *
  * WS5-P5-a: **Build** leads with the ACP core, in this exact order — Agents,
  * Runtime, Skills, Commands. Runtime (WS5-P2-a) landed provisionally right
- * after Agents; this ordering is now final, not a placeholder — rail item
- * count is unchanged this cycle (14 base + 6 flag-gated = 20 items stay; ordering + grouping only).
+ * after Agents; this ordering is now final, not a placeholder.
  */
 export const GROUPS: readonly RailGroup[] = [
   {
@@ -40,16 +39,10 @@ export const GROUPS: readonly RailGroup[] = [
     ],
   },
   {
-    label: 'Workspace',
-    items: [
-      { section: 'changes', label: 'Changes', icon: History },
-      { section: 'sandbox', label: 'Sandbox', icon: Container },
-      { section: 'dev', label: 'Dev', icon: Terminal },
-    ],
-  },
-  {
     label: 'Manage',
     items: [
+      { section: 'git', label: 'Git', icon: GitFork },
+      { section: 'sandbox', label: 'Sandbox templates', icon: Container },
       { section: 'members', label: 'Members', icon: LuUsersRound },
       { section: 'settings', label: 'Settings', icon: LuSettings },
     ],

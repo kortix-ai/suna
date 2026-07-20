@@ -26,20 +26,11 @@ describe('ensureFirstProject provisioning', () => {
     provisionError = null;
   });
 
-  test('creates the first project with default marketplace skill ids', async () => {
+  test('does not silently create a managed repository for a new account', async () => {
     const { ensureFirstProject } = await import('./ensure-first-project');
 
-    await expect(ensureFirstProject('acct_1')).resolves.toMatchObject({
-      project_id: 'proj_1',
-    });
-    expect(provisionCalls).toEqual([
-      {
-        account_id: 'acct_1',
-        name: 'My First Project',
-        starter_template: 'general-knowledge-worker',
-        marketplace_items: ['kortix-starter:agent-browser'],
-      },
-    ]);
+    await expect(ensureFirstProject('acct_1')).resolves.toBeNull();
+    expect(provisionCalls).toEqual([]);
   });
 
   test('returns an existing project without provisioning', async () => {
@@ -50,29 +41,6 @@ describe('ensureFirstProject provisioning', () => {
       project_id: 'proj_existing',
     });
     expect(provisionCalls).toEqual([]);
-  });
-
-  test('returns null (not a thrown error) when managed git is not configured (503)', async () => {
-    const err = new Error('Managed git provider "github" is not configured on this server');
-    (err as Error & { status: number }).status = 503;
-    provisionError = err;
-    const { ensureFirstProject } = await import('./ensure-first-project');
-
-    await expect(ensureFirstProject('acct_1')).resolves.toBeNull();
-  });
-
-  test('returns null when the 503 has no status but the message matches', async () => {
-    provisionError = new Error('Managed git provider "github" is not configured on this server');
-    const { ensureFirstProject } = await import('./ensure-first-project');
-
-    await expect(ensureFirstProject('acct_1')).resolves.toBeNull();
-  });
-
-  test('still rethrows unrelated failures', async () => {
-    provisionError = new Error('boom');
-    const { ensureFirstProject } = await import('./ensure-first-project');
-
-    await expect(ensureFirstProject('acct_1')).rejects.toThrow('boom');
   });
 });
 
