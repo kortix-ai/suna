@@ -201,6 +201,7 @@ export type {
   KortixProject,
   ProjectConfigSummary,
   ProjectDetail,
+  GatewayCatalogModel,
   ProjectLlmCatalogResponse,
   // Accounts / IAM
   KortixAccount,
