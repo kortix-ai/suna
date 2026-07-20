@@ -23,13 +23,13 @@ describe('GROUPS — customize rail ordering (WS5-P5-a)', () => {
     expect(runtimeIndex).toBe(agentsIndex + 1);
   });
 
-  test('rail item count is unchanged this cycle — every base group keeps its full item set', () => {
+  test('every base group keeps its full item set — count changes only with a deliberate rail restructure', () => {
     const totalBaseItems = GROUPS.reduce((sum, g) => sum + g.items.length, 0);
-    // Build(4) + Connect(3) + Automate(2) + Workspace(3) + Manage(2) = 14 base
-    // items; the 6 flag-gated extras (Marketplace, Meet, Computers, LLM,
-    // Review, Upgrades) bring the full rail to 20 — bounded scope, not a
-    // reduction (this test pins only the 14 base items).
-    expect(totalBaseItems).toBe(14);
+    // Build(4) + Connect(3) + Automate(2) + Manage(4) = 13 base items since
+    // the Git provider-first restructure dropped the Workspace group and
+    // moved Git + Sandbox templates into Manage (this test pins only the
+    // base items, not the flag-gated extras).
+    expect(totalBaseItems).toBe(13);
   });
 
   test('every Build item carries an icon and a human label', () => {
