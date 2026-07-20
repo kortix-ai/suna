@@ -131,26 +131,31 @@ function ProvisioningHealthPanel({
           </span>
         </p>
       )}
-      <p className="flex items-center gap-1.5 text-xs">
-        <span
-          className={cn(
-            'size-1.5 shrink-0 rounded-full',
-            freshness === 'live' && 'bg-kortix-green',
-            freshness === 'recent' && 'bg-kortix-green/60',
-            freshness === 'quiet' && 'bg-muted-foreground/40',
-            freshness === 'never' && 'bg-amber-500',
-          )}
-        />
-        <span className="text-muted-foreground">Last sync activity</span>
-        <span className="text-foreground font-medium">
-          {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
-        </span>
-        <span className="text-muted-foreground">
+      {/* Two lines on purpose: label + value stay on one unbreakable line,
+          the schedule explainer wraps underneath — the old single-flex row
+          wrapped mid-label ("Last sync / activity") on narrow cards. */}
+      <div className="space-y-0.5 text-xs">
+        <p className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              freshness === 'live' && 'bg-kortix-green',
+              freshness === 'recent' && 'bg-kortix-green/60',
+              freshness === 'quiet' && 'bg-muted-foreground/40',
+              freshness === 'never' && 'bg-amber-500',
+            )}
+          />
+          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
+          <span className="text-foreground whitespace-nowrap font-medium">
+            {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
+          </span>
+        </p>
+        <p className="text-muted-foreground pl-3">
           {freshness === 'never'
-            ? '— your IdP hasn’t connected; check provisioning is running there'
-            : '— your IdP pushes on its own schedule (Entra ~every 40 min; most others as changes happen)'}
-        </span>
-      </p>
+            ? 'Your IdP hasn’t connected — check provisioning is running there.'
+            : 'Your IdP pushes on its own schedule — Entra ~every 40 min; most others as changes happen.'}
+        </p>
+      </div>
     </div>
   );
 }

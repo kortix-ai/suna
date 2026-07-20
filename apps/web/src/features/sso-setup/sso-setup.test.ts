@@ -353,6 +353,8 @@ describe('identity page progressive disclosure', () => {
     expect(cardSource).toContain('DisclosureTrigger');
     // Not-connected leads with a call-to-action, not a wall of URLs.
     expect(cardSource).toContain('Not connected yet');
+    // Group mappings collapse too, with a count chip in the trigger.
+    expect(cardSource).toContain('{mappings.length}');
   });
 
   test('the SCIM card leads with a status chip and collapses setup values + tokens', () => {
