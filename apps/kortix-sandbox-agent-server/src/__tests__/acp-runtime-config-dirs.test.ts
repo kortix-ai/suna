@@ -95,8 +95,8 @@ describe('OpenCode spawn config delivery', () => {
       const expectedPath = join(root, '.config', 'kortix', 'kortix-opencode.json')
       expect(env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
       expect(env.OPENCODE_CONFIG).toBe(expectedPath)
-      expect(statSync(expectedPath).mode & 0o777).toBe(0o600)
       const written = JSON.parse(readFileSync(expectedPath, 'utf8'))
+      expect(statSync(expectedPath).mode & 0o777).toBe(0o600)
       expect(written.provider.kortix.models['provider-0/model-0'].name).toContain('Padded Model 0')
       for (const [name, value] of Object.entries(env)) {
         expect(`${name}=${value ?? ''}`.length).toBeLessThan(LINUX_MAX_ARG_STRLEN)
@@ -145,8 +145,8 @@ describe('OpenCode spawn config delivery', () => {
       materializeHarnessLaunchConfig('opencode', env)
 
       expect(readFileSync(sentinel, 'utf8')).toBe('{"sentinel":true}')
-      expect(lstatSync(file).isSymbolicLink()).toBe(false)
       expect(readFileSync(file, 'utf8')).toBe('{"new":true}')
+      expect(lstatSync(file).isSymbolicLink()).toBe(false)
       expect(statSync(file).mode & 0o777).toBe(0o600)
     } finally {
       rmSync(root, { recursive: true, force: true })
