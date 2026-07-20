@@ -1044,6 +1044,34 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     });
   });
 
+  // REGRESSION (prod, 2026-07-20): every REAL Codex turn 400'd with
+  // `{"detail":"Unsupported parameter: max_output_tokens"}` (captured via the
+  // error-detail path). @ai-sdk/openai serializes maxOutputTokens →
+  // max_output_tokens, which the ChatGPT backend rejects. Simple probes with no
+  // cap passed, masking it. Drop the cap for Codex; keep it for plain OpenAI.
+  describe('buildAiSdkArgs — Codex must NOT send max_output_tokens', () => {
+    it('drops an explicit max_tokens for openai-codex', () => {
+      const args = buildAiSdkArgs({ messages: [], max_tokens: 1024 }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.maxOutputTokens).toBeUndefined();
+    });
+
+    it('drops max_completion_tokens for openai-codex too', () => {
+      const args = buildAiSdkArgs({ messages: [], max_completion_tokens: 2048 }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.maxOutputTokens).toBeUndefined();
+    });
+
+    it('STILL forwards max_tokens for plain OpenAI (the platform API accepts it)', () => {
+      const args = buildAiSdkArgs({ messages: [], max_tokens: 1024 }, 'openai', {
+        providerName: 'openai',
+      });
+      expect(args.maxOutputTokens).toBe(1024);
+    });
+  });
+
   // Codex's backend is stream-only (`stream:false` 400s — see
   // openai-responses/request.ts's chatToResponses comment). The AI SDK's
   // non-streaming `doGenerate` always sends `stream:false`, so
