@@ -1,7 +1,6 @@
 'use client';
 
 import { CopyButton } from '@/components/markdown/copy-button';
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Button } from '@/components/ui/button';
 import {
   CommandGroup,
@@ -14,6 +13,7 @@ import {
 import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -67,7 +67,6 @@ import { QuestionPrompt, type QuestionAction, type QuestionPromptHandle } from '
 import { isPendingAction, useSessionAudit } from './session-audit-shared';
 import { type AttachedFile } from './session-chat-input';
 import { SessionContextModal } from './session-context-modal';
-import { TextShimmer } from '@/components/ui/text-shimmer';
 
 const EMPTY_CONVERSATION_COPY = 'Start a conversation with the selected native harness.';
 
@@ -911,7 +910,7 @@ function AcpBusyIndicator({ statusText }: { statusText?: string }) {
         <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
       </span>
       {/* <AnimatedThinkingText statusText={statusText ?? 'Thinking'} className="text-xs" /> */}
-      <TextShimmer className='text-xs'>{statusText ?? 'Thinking'}</TextShimmer>
+      <TextShimmer className="text-xs">{statusText ?? 'Thinking'}</TextShimmer>
       <span className="text-muted-foreground/50">·</span>
       <span className="text-muted-foreground/70 tabular-nums">{seconds}s</span>
     </div>
@@ -951,10 +950,7 @@ function AcpConfigOptionPill({
           className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] duration-200 active:scale-[0.96]"
         >
           <span className="max-w-[140px] truncate">
-            {option.name ?? option.id}
-            {currentLabel ? (
-              <span className="text-muted-foreground/70">: {currentLabel}</span>
-            ) : null}
+            {currentLabel ? <span className="text-muted-foreground/70">{currentLabel}</span> : null}
           </span>
           <ChevronDown
             className={cn(
