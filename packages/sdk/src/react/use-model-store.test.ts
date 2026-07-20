@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getRuntimeModel, setRuntimeModel } from './use-model-store';
+import type { FlatModel } from './model-flatten';
+import { getRuntimeModel, hasUsableModel, setRuntimeModel } from './use-model-store';
 
 describe('runtime model store — per-agent harness-native model', () => {
   test('round-trips a model id keyed by agent name', () => {
@@ -26,10 +27,6 @@ describe('runtime model store — per-agent harness-native model', () => {
     expect(getRuntimeModel('never-touched-agent')).toBeUndefined();
   });
 });
-import { describe, expect, test } from 'bun:test';
-
-import type { FlatModel } from './model-flatten';
-import { hasUsableModel } from './use-model-store';
 
 // Regression coverage for connection-gating (`hasUsableModel`/`isVisible`)
 // preferring the explicit `provider` field the gateway now serves per model
