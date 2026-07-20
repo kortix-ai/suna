@@ -360,6 +360,90 @@ describe('reduceEnvelope', () => {
     expect(projectAcpChatItems(fixture)).toEqual(state.chatItems);
   });
 
+  test('claude-shape replay: same-id fragments re-walking a finished stream after the load response are dropped', () => {
+    const keyedChunk = (ordinal: number, text: string, messageId: string): AcpStoredEnvelope =>
+      stored(ordinal, 'agent_to_client', {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 'claude-1', update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } } },
+      });
+
+    const fixture = [
+      // Live message streamed as token deltas under a claude msg_* id.
+      keyedChunk(1, 'Let me parse this task. ', 'msg_a'),
+      keyedChunk(2, 'The user wants a package.', 'msg_a'),
+      stored(3, 'client_to_agent', { jsonrpc: '2.0', id: 'load-1', method: 'session/load', params: { sessionId: 'claude-1', cwd: '/w' } }),
+      stored(4, 'agent_to_client', { jsonrpc: '2.0', id: 'load-1', result: {} }),
+      // Leaked replay re-delivers the SAME message id as paragraph-level
+      // fragments (claude granularity differs from the live token deltas).
+      keyedChunk(5, 'Let me parse this task. ', 'msg_a'),
+      keyedChunk(6, 'The user wants a package.', 'msg_a'),
+      // A second reconnect replays the whole message as ONE chunk.
+      stored(7, 'client_to_agent', { jsonrpc: '2.0', id: 'load-2', method: 'session/load', params: { sessionId: 'claude-1', cwd: '/w' } }),
+      stored(8, 'agent_to_client', { jsonrpc: '2.0', id: 'load-2', result: {} }),
+      keyedChunk(9, 'Let me parse this task. The user wants a package.', 'msg_a'),
+      // Live traffic after the replay flush must still render.
+      keyedChunk(10, 'Package is ready.', 'msg_b'),
+    ];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+    expect(state.chatItems).toEqual([
+      // `msg_b` folds onto the surviving item via the pre-existing
+      // consecutive-same-role merge (messageId does not split items today);
+      // the replayed copies of msg_a are gone entirely.
+      { kind: 'message', id: 'assistant-1', role: 'assistant', text: 'Let me parse this task. The user wants a package.Package is ready.' },
+    ]);
+  });
+
+  test('pi-shape replay: an id-less complete message byte-equal to an existing item is dropped after a load', () => {
+    const fixture = [
+      userPrompt(1, 'run the report', 'p-1', 'pi-1'),
+      // Pi live messages arrive as complete id-less chunks.
+      agentChunk(2, 'Report generated: 42 rows, 0 errors.'),
+      stored(3, 'client_to_agent', { jsonrpc: '2.0', id: 'load-1', method: 'session/load', params: { sessionId: 'pi-1', cwd: '/w' } }),
+      stored(4, 'agent_to_client', { jsonrpc: '2.0', id: 'load-1', result: {} }),
+      // Leaked pi replay: same complete text, still no messageId.
+      agentChunk(5, 'Report generated: 42 rows, 0 errors.'),
+      // A genuinely different follow-up must render.
+      agentChunk(6, 'Anything else?'),
+    ];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+    const assistants = state.chatItems.filter((i) => i.kind === 'message' && i.role === 'assistant');
+    expect(assistants).toEqual([
+      // The follow-up merges onto the surviving original per the existing
+      // consecutive-same-role rule; the replayed copy itself is gone.
+      { kind: 'message', id: 'assistant-2', role: 'assistant', text: 'Report generated: 42 rows, 0 errors.Anything else?' },
+    ]);
+  });
+
+  test('a live continuation delta echoing its message-opening token is NOT eaten by the replay walk', () => {
+    const keyedChunk = (ordinal: number, text: string, messageId: string): AcpStoredEnvelope =>
+      stored(ordinal, 'agent_to_client', {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 'claude-1', update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } } },
+      });
+
+    const fixture = [
+      keyedChunk(1, 'I', 'msg_a'),
+      keyedChunk(2, ' think', 'msg_a'),
+      stored(3, 'client_to_agent', { jsonrpc: '2.0', id: 'load-1', method: 'session/load', params: { sessionId: 'claude-1', cwd: '/w' } }),
+      stored(4, 'agent_to_client', { jsonrpc: '2.0', id: 'load-1', result: {} }),
+      // The stream KEEPS growing live across the reconnect: `grewAt` only
+      // predates the load for finished streams, so a walk may not start on
+      // this still-active one even though 'I' prefixes the accumulated text.
+      keyedChunk(5, ' so', 'msg_a'),
+      keyedChunk(6, 'I', 'msg_a'),
+    ];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'assistant-1', role: 'assistant', text: 'I think soI' },
+    ]);
+  });
+
   test('a same-id delta arriving after a session/load still extends its message (no false replay classification)', () => {
     const keyedChunk = (ordinal: number, text: string, messageId: string): AcpStoredEnvelope =>
       stored(ordinal, 'agent_to_client', {

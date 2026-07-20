@@ -1542,3 +1542,27 @@ but the bridge should eventually deliver RPC responses through the ordered SSE
 channel. A post-reconnect message that legitimately byte-equals an ENTIRE
 earlier same-role message under a brand-new id would be misclassified as replay
 — accepted, documented in the test.
+
+---
+
+### 2026-07-20 — session `acp-replay-dedup` (extended: all four harnesses)
+
+Generalized the content-identity replay classification beyond codex. Evidence
+per harness: codex replays NEW-id (`item-N`) consolidated chunks whose text is
+whitespace-trim-equal (not byte-equal — `item-14` drops a leading `\n\n`) to the
+live stream; claude (`@agentclientprotocol/claude-agent-acp` 0.58.1 + local
+session `9da04e0f`) replays SAME-id (`msg_*`) paragraph fragments; pi
+(`pi-acp` 0.0.31 `loadSession` source) replays id-LESS complete messages;
+opencode (sst/opencode `acp/service.ts`) re-delivers original stored message
+objects under their original ids without awaiting replay before the response.
+
+Mechanism: per-stream `{text, grewAt}` accumulation + replay prefix-walk
+cursors for same-id re-delivery (walks only START when the latest
+`session/load` postdates the stream's last growth, so live continuation deltas
+are never eaten), trimmed full-text match against finished streams for new-id
+consolidation, trimmed full-text match against chat items for id-less chunks.
+
+Gates: typecheck clean, SDK **1270 pass / 0 fail (97 files)**, smoke:install
+green, apps/web **2182 pass / 0 fail**. Real codex session projection:
+62 → 27 assistant/thought messages, 0 duplicated texts, every removed item id
+verified inside a replay-leak ordinal region, live items untouched.

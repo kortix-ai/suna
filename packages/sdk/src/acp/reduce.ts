@@ -128,22 +128,28 @@ export type AcpReducerState = {
    *  source compatibility with callers that persisted/constructed the
    *  previously-published reducer state shape. */
   openSessionLoadOrdinals?: Map<string, number>;
-  /** Accumulated full text per message/thought stream, keyed
-   *  `role:messageId`. Backs the content-identity replay classification
+  /** Accumulated full text + last-growth ordinal per message/thought stream,
+   *  keyed `role:messageId`. Backs the content-identity replay classification
    *  below: the API bridge splits the agent's single ordered stream into an
    *  SSE channel (notifications) and a POST round-trip (responses), so a
    *  `session/load` response row can overtake still-persisting replay frames
    *  — replayed chunks then land OUTSIDE the open-load window above and can
    *  only be recognized by what they carry, not by where they sit. Optional
    *  for source compatibility with previously-published state shapes. */
-  messageStreams?: Map<string, string>;
+  messageStreams?: Map<string, { text: string; grewAt: number }>;
   /** Stream keys (`role:messageId`) classified as `session/load` replay
    *  re-deliveries — every later chunk under such a key is dropped. */
   replayMessageIds?: Set<string>;
-  /** True once a client `session/load` request has been folded. Both replay
-   *  classifications below are gated on this so a session that never
-   *  reconnected can never misclassify a live chunk. */
-  sessionLoadSeen?: boolean;
+  /** Active replay prefix-walk cursor per stream key: a same-id replay
+   *  (claude paragraph fragments, opencode part re-delivery) re-walks the
+   *  stream's accumulated text from position 0 in arbitrary granularity;
+   *  each chunk matching the walk advances the cursor and is dropped. */
+  replayWalks?: Map<string, number>;
+  /** Ordinal of the most recent client `session/load` request. Every replay
+   *  classification below requires a load to exist — a session that never
+   *  reconnected can never misclassify a live chunk — and same-id walks
+   *  additionally require the load to POSTDATE the stream's last growth. */
+  lastSessionLoadOrdinal?: number;
 };
 
 export function emptyReducerState(): AcpReducerState {
@@ -166,7 +172,8 @@ export function emptyReducerState(): AcpReducerState {
     openSessionLoadOrdinals: new Map(),
     messageStreams: new Map(),
     replayMessageIds: new Set(),
-    sessionLoadSeen: false,
+    replayWalks: new Map(),
+    lastSessionLoadOrdinal: undefined,
   };
 }
 
@@ -233,9 +240,10 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   let openPromptOrdinals = state.openPromptOrdinals;
   let openPromptSessionIds = state.openPromptSessionIds;
   let openSessionLoadOrdinals = state.openSessionLoadOrdinals ?? new Map<string, number>();
-  let messageStreams = state.messageStreams ?? new Map<string, string>();
+  let messageStreams = state.messageStreams ?? new Map<string, { text: string; grewAt: number }>();
   let replayMessageIds = state.replayMessageIds ?? new Set<string>();
-  let sessionLoadSeen = state.sessionLoadSeen ?? false;
+  let replayWalks = state.replayWalks ?? new Map<string, number>();
+  let lastSessionLoadOrdinal = state.lastSessionLoadOrdinal;
 
   // ── chat items + turn-state bookkeeping: a client's `session/prompt` ──
   if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
@@ -298,7 +306,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
       openSessionLoadOrdinals = new Map(openSessionLoadOrdinals);
       openSessionLoadOrdinals.set(rpcIdKey(id), row.ordinal);
     }
-    sessionLoadSeen = true;
+    lastSessionLoadOrdinal = row.ordinal;
   } else if (row.direction === 'client_to_agent' && envelope.method === 'session/cancel') {
     // Busy-staleness policy, half (a): a `session/cancel` notification for a
     // session clears every currently-open prompt belonging to that session —
@@ -348,33 +356,67 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         // one must not be lost.
       } else if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
-        // Content-identity replay classification (codex duplicate-message
-        // bug, session 52cb3a2c): replay frames can land AFTER the load
-        // response row (see `messageStreams` on the state type), so the
-        // open-load window above cannot bracket them. A replayed item is a
-        // consolidated chunk under a NEW messageId (codex: `item-N`) whose
-        // full text byte-equals an already-accumulated stream of the same
-        // role, or a byte-identical re-delivery under a known id. Both
-        // checks are gated on `sessionLoadSeen`: a session that never sent
-        // `session/load` has no replay, so live behavior is untouched.
+        // Content-identity replay classification (duplicate-message bug,
+        // session 52cb3a2c): replay frames can land AFTER the load response
+        // row (see `messageStreams` on the state type), so the open-load
+        // window above cannot bracket them, and codex interleaves replay
+        // with live turn output so no ordering rule ever could. Each
+        // harness replays in one of three shapes, all gated on a
+        // `session/load` having been folded so a never-reconnected session
+        // is byte-for-byte unaffected:
+        //  - SAME-id re-walk (claude paragraph fragments, opencode parts):
+        //    the stream's accumulated text is re-delivered from position 0
+        //    in arbitrary granularity — matched by a prefix-walk cursor. A
+        //    walk may only START when the latest load postdates the
+        //    stream's last growth, so a live continuation delta that
+        //    happens to echo its message's opening token is never eaten.
+        //  - NEW-id consolidated chunk (codex `item-N`): full text
+        //    byte-equals another same-role stream that finished growing
+        //    before the latest load.
+        //  - Id-LESS complete message (pi): full text byte-equals an
+        //    existing complete same-role message item.
         const messageId = firstString(update.messageId);
         const streamKey = messageId ? `${role}:${messageId}` : null;
-        const accumulated = streamKey ? messageStreams.get(streamKey) : undefined;
-        const isKnownReplayId = streamKey != null && replayMessageIds.has(streamKey);
-        const isFullRedelivery = sessionLoadSeen && streamKey != null
-          && accumulated !== undefined && text.length > 0 && accumulated === text;
-        const isReplayOfLiveStream = sessionLoadSeen && streamKey != null
-          && accumulated === undefined && text.length > 0
-          && [...messageStreams].some(([key, full]) => key !== streamKey && key.startsWith(`${role}:`) && full === text);
-        if (isKnownReplayId || isFullRedelivery || isReplayOfLiveStream) {
-          if (isReplayOfLiveStream && streamKey) {
-            replayMessageIds = new Set(replayMessageIds);
-            replayMessageIds.add(streamKey);
+        const stream = streamKey ? messageStreams.get(streamKey) : undefined;
+        const loadOrdinal = lastSessionLoadOrdinal;
+        let isReplay = streamKey != null && replayMessageIds.has(streamKey);
+        if (!isReplay && loadOrdinal !== undefined && text.length > 0) {
+          if (streamKey && stream) {
+            const cursor = replayWalks.get(streamKey);
+            if (cursor !== undefined && cursor < stream.text.length && stream.text.startsWith(text, cursor)) {
+              replayWalks = new Map(replayWalks);
+              replayWalks.set(streamKey, cursor + text.length);
+              isReplay = true;
+            } else if (stream.grewAt < loadOrdinal && stream.text.startsWith(text)) {
+              replayWalks = new Map(replayWalks);
+              replayWalks.set(streamKey, text.length);
+              isReplay = true;
+            }
+          } else if (streamKey) {
+            // Codex consolidation is not byte-faithful (verified: `item-14`
+            // drops the live stream's leading `\n\n`) — compare trimmed.
+            const needle = text.trim();
+            const matchesFinishedStream = needle.length > 0 && [...messageStreams].some(([key, other]) =>
+              key !== streamKey && key.startsWith(`${role}:`) && other.grewAt < loadOrdinal && other.text.trim() === needle);
+            if (matchesFinishedStream) {
+              replayMessageIds = new Set(replayMessageIds);
+              replayMessageIds.add(streamKey);
+              isReplay = true;
+            }
+          } else {
+            const needle = text.trim();
+            isReplay = needle.length > 0 && chatItems.some((item) =>
+              item.kind === 'message' && item.role === role && item.text.trim() === needle);
           }
-        } else {
+        }
+        if (!isReplay) {
           if (streamKey) {
             messageStreams = new Map(messageStreams);
-            messageStreams.set(streamKey, (accumulated ?? '') + text);
+            messageStreams.set(streamKey, { text: (stream?.text ?? '') + text, grewAt: row.ordinal });
+            if (replayWalks.has(streamKey)) {
+              replayWalks = new Map(replayWalks);
+              replayWalks.delete(streamKey);
+            }
           }
           const previous = chatItems.at(-1);
           if (previous?.kind === 'message' && previous.role === role) {
@@ -598,7 +640,8 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     openSessionLoadOrdinals,
     messageStreams,
     replayMessageIds,
-    sessionLoadSeen,
+    replayWalks,
+    lastSessionLoadOrdinal,
   };
 }
 

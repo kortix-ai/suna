@@ -83,14 +83,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   classify load-scoped update notifications as bootstrap history. `AcpSession`
   applies the same rule to live SSE replay emitted while the load RPC is still
   in flight, so the active page does not show a transient extra copy.
-- Codex `session/load` replay frames that arrive AFTER the load response row —
-  the API bridge's split SSE/POST channels let the response overtake the
+- `session/load` replay frames that arrive AFTER the load response row — the
+  API bridge's split SSE/POST channels let the response overtake the
   still-persisting replay stream, so the load-window rule above cannot bracket
-  them — are now recognized by content identity instead of ordering: a
-  consolidated chunk under a new `messageId` whose full text byte-equals an
-  already-accumulated same-role stream (or a byte-identical re-delivery under a
-  known id) is classified as replay and dropped. Gated on a `session/load`
-  having been seen, so never-reconnected sessions render exactly as before.
+  them — are now recognized by content identity instead of ordering, covering
+  every harness replay shape: same-id re-walks (claude paragraph fragments,
+  opencode part re-delivery) via a per-stream prefix-walk cursor that may only
+  start when the latest load postdates the stream's last growth; new-id
+  consolidated chunks (codex `item-N`) via whitespace-trimmed full-text match
+  against a finished same-role stream; and id-less complete messages (pi) via
+  trimmed full-text match against an existing same-role chat item. All checks
+  require a `session/load` to have been folded, so never-reconnected sessions
+  render exactly as before.
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 - The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient
