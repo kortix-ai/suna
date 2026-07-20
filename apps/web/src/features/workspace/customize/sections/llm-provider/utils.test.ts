@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatPricePerMillion, formatTokenCount, gatewayModelId } from './utils';
+import {
+  envVarPlaceholder,
+  formatPricePerMillion,
+  formatTokenCount,
+  gatewayModelId,
+  helpHostnameFromUrl,
+  prettyFieldLabel,
+  releasedAgo,
+} from './utils';
 
 describe('gatewayModelId', () => {
   test('BYOK provider gets a provider/model wire id', () => {
@@ -68,9 +76,6 @@ describe('formatPricePerMillion', () => {
     expect(formatPricePerMillion(undefined)).toBe('');
   });
 });
-import { describe, expect, test } from 'bun:test';
-
-import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel, releasedAgo } from './utils';
 
 describe('helpHostnameFromUrl', () => {
   test('strips the leading www and scheme', () => {
