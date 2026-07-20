@@ -128,6 +128,22 @@ export type AcpReducerState = {
    *  source compatibility with callers that persisted/constructed the
    *  previously-published reducer state shape. */
   openSessionLoadOrdinals?: Map<string, number>;
+  /** Accumulated full text per message/thought stream, keyed
+   *  `role:messageId`. Backs the content-identity replay classification
+   *  below: the API bridge splits the agent's single ordered stream into an
+   *  SSE channel (notifications) and a POST round-trip (responses), so a
+   *  `session/load` response row can overtake still-persisting replay frames
+   *  — replayed chunks then land OUTSIDE the open-load window above and can
+   *  only be recognized by what they carry, not by where they sit. Optional
+   *  for source compatibility with previously-published state shapes. */
+  messageStreams?: Map<string, string>;
+  /** Stream keys (`role:messageId`) classified as `session/load` replay
+   *  re-deliveries — every later chunk under such a key is dropped. */
+  replayMessageIds?: Set<string>;
+  /** True once a client `session/load` request has been folded. Both replay
+   *  classifications below are gated on this so a session that never
+   *  reconnected can never misclassify a live chunk. */
+  sessionLoadSeen?: boolean;
 };
 
 export function emptyReducerState(): AcpReducerState {
@@ -148,6 +164,9 @@ export function emptyReducerState(): AcpReducerState {
     openPromptOrdinals: new Map(),
     openPromptSessionIds: new Map(),
     openSessionLoadOrdinals: new Map(),
+    messageStreams: new Map(),
+    replayMessageIds: new Set(),
+    sessionLoadSeen: false,
   };
 }
 
@@ -214,6 +233,9 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   let openPromptOrdinals = state.openPromptOrdinals;
   let openPromptSessionIds = state.openPromptSessionIds;
   let openSessionLoadOrdinals = state.openSessionLoadOrdinals ?? new Map<string, number>();
+  let messageStreams = state.messageStreams ?? new Map<string, string>();
+  let replayMessageIds = state.replayMessageIds ?? new Set<string>();
+  let sessionLoadSeen = state.sessionLoadSeen ?? false;
 
   // ── chat items + turn-state bookkeeping: a client's `session/prompt` ──
   if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
@@ -276,6 +298,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
       openSessionLoadOrdinals = new Map(openSessionLoadOrdinals);
       openSessionLoadOrdinals.set(rpcIdKey(id), row.ordinal);
     }
+    sessionLoadSeen = true;
   } else if (row.direction === 'client_to_agent' && envelope.method === 'session/cancel') {
     // Busy-staleness policy, half (a): a `session/cancel` notification for a
     // session clears every currently-open prompt belonging to that session —
@@ -325,22 +348,51 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         // one must not be lost.
       } else if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
-        const previous = chatItems.at(-1);
-        if (previous?.kind === 'message' && previous.role === role) {
-          const merged: AcpChatItem = {
-            ...previous,
-            text: previous.text + text,
-            ...(attachments.length ? { attachments: [...(previous.attachments ?? []), ...attachments] } : {}),
-          };
-          chatItems = [...chatItems.slice(0, -1), merged];
+        // Content-identity replay classification (codex duplicate-message
+        // bug, session 52cb3a2c): replay frames can land AFTER the load
+        // response row (see `messageStreams` on the state type), so the
+        // open-load window above cannot bracket them. A replayed item is a
+        // consolidated chunk under a NEW messageId (codex: `item-N`) whose
+        // full text byte-equals an already-accumulated stream of the same
+        // role, or a byte-identical re-delivery under a known id. Both
+        // checks are gated on `sessionLoadSeen`: a session that never sent
+        // `session/load` has no replay, so live behavior is untouched.
+        const messageId = firstString(update.messageId);
+        const streamKey = messageId ? `${role}:${messageId}` : null;
+        const accumulated = streamKey ? messageStreams.get(streamKey) : undefined;
+        const isKnownReplayId = streamKey != null && replayMessageIds.has(streamKey);
+        const isFullRedelivery = sessionLoadSeen && streamKey != null
+          && accumulated !== undefined && text.length > 0 && accumulated === text;
+        const isReplayOfLiveStream = sessionLoadSeen && streamKey != null
+          && accumulated === undefined && text.length > 0
+          && [...messageStreams].some(([key, full]) => key !== streamKey && key.startsWith(`${role}:`) && full === text);
+        if (isKnownReplayId || isFullRedelivery || isReplayOfLiveStream) {
+          if (isReplayOfLiveStream && streamKey) {
+            replayMessageIds = new Set(replayMessageIds);
+            replayMessageIds.add(streamKey);
+          }
         } else {
-          chatItems = [...chatItems, {
-            kind: 'message',
-            id: `${role}-${row.ordinal}`,
-            role,
-            text,
-            ...(attachments.length ? { attachments } : {}),
-          }];
+          if (streamKey) {
+            messageStreams = new Map(messageStreams);
+            messageStreams.set(streamKey, (accumulated ?? '') + text);
+          }
+          const previous = chatItems.at(-1);
+          if (previous?.kind === 'message' && previous.role === role) {
+            const merged: AcpChatItem = {
+              ...previous,
+              text: previous.text + text,
+              ...(attachments.length ? { attachments: [...(previous.attachments ?? []), ...attachments] } : {}),
+            };
+            chatItems = [...chatItems.slice(0, -1), merged];
+          } else {
+            chatItems = [...chatItems, {
+              kind: 'message',
+              id: `${role}-${row.ordinal}`,
+              role,
+              text,
+              ...(attachments.length ? { attachments } : {}),
+            }];
+          }
         }
       } else if (kind === 'tool_call' || kind === 'tool_call_update') {
         const id = String(update.toolCallId ?? update.id ?? `tool-${row.ordinal}`);
@@ -544,6 +596,9 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     openPromptOrdinals,
     openPromptSessionIds,
     openSessionLoadOrdinals,
+    messageStreams,
+    replayMessageIds,
+    sessionLoadSeen,
   };
 }
 

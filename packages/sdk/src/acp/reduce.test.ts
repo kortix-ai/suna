@@ -299,6 +299,90 @@ describe('reduceEnvelope', () => {
     expect(projectAcpChatItems(fixture)).toEqual(state.chatItems);
   });
 
+  // Codex duplicate-message repro (session 52cb3a2c, 2026-07-20): the API
+  // bridge splits the agent's single ordered stdio stream into an SSE channel
+  // (notifications) and a POST round-trip (RPC responses). codex-acp writes
+  // its whole `session/load` history replay BEFORE its response, but the tiny
+  // POST response overtakes the still-persisting SSE frames by hundreds of
+  // rows — so replayed chunks land AFTER the load-response row and escape the
+  // open-load-window guard above. Replayed items carry consolidated
+  // `item-N` messageIds whose full text byte-matches an already-streamed live
+  // message (`msg_tmp_*`/`rs_*` ids); the reducer must recognize them by
+  // content identity, not by ordering.
+  test('codex replay chunks that arrive AFTER the session/load response do not duplicate messages', () => {
+    const keyedChunk = (
+      ordinal: number,
+      text: string,
+      messageId: string,
+      sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk' = 'agent_message_chunk',
+    ): AcpStoredEnvelope => stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { sessionId: 'codex-1', update: { sessionUpdate, messageId, content: { type: 'text', text } } },
+    });
+    const load = (ordinal: number, id: string): AcpStoredEnvelope => stored(ordinal, 'client_to_agent', {
+      jsonrpc: '2.0', id, method: 'session/load', params: { sessionId: 'codex-1', cwd: '/workspace' },
+    });
+    const loadResult = (ordinal: number, id: string): AcpStoredEnvelope => stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0', id, result: {},
+    });
+
+    const fixture = [
+      userPrompt(1, 'make a package', 'p-1', 'codex-1'),
+      // Live message streamed as deltas under a codex streaming id.
+      keyedChunk(2, 'Hi. What do', 'msg_tmp_a'),
+      keyedChunk(3, ' you need?', 'msg_tmp_a'),
+      // Live thought streamed under a codex reasoning-stream id.
+      keyedChunk(4, 'planning the layout', 'rs_a', 'agent_thought_chunk'),
+      // First reconnect: the load RESPONSE row precedes the replay frames.
+      load(5, 'load-1'),
+      loadResult(6, 'load-1'),
+      keyedChunk(7, 'Hi. What do you need?', 'item-2'),
+      keyedChunk(8, 'planning the layout', 'item-3', 'agent_thought_chunk'),
+      // Second reconnect replays the same items again.
+      load(9, 'load-2'),
+      loadResult(10, 'load-2'),
+      keyedChunk(11, 'Hi. What do you need?', 'item-2'),
+      keyedChunk(12, 'planning the layout', 'item-3', 'agent_thought_chunk'),
+      // Live traffic resumed after the replay flush must still render.
+      keyedChunk(13, 'All done.', 'msg_tmp_b'),
+    ];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+
+    expect(state.envelopes).toEqual(fixture);
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'make a package' },
+      { kind: 'message', id: 'assistant-2', role: 'assistant', text: 'Hi. What do you need?' },
+      { kind: 'message', id: 'thought-4', role: 'thought', text: 'planning the layout' },
+      { kind: 'message', id: 'assistant-13', role: 'assistant', text: 'All done.' },
+    ]);
+    expect(projectAcpChatItems(fixture)).toEqual(state.chatItems);
+  });
+
+  test('a same-id delta arriving after a session/load still extends its message (no false replay classification)', () => {
+    const keyedChunk = (ordinal: number, text: string, messageId: string): AcpStoredEnvelope =>
+      stored(ordinal, 'agent_to_client', {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 'codex-1', update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } } },
+      });
+
+    const fixture = [
+      keyedChunk(1, 'Working on', 'msg_tmp_a'),
+      stored(2, 'client_to_agent', { jsonrpc: '2.0', id: 'load-1', method: 'session/load', params: { sessionId: 'codex-1', cwd: '/w' } }),
+      stored(3, 'agent_to_client', { jsonrpc: '2.0', id: 'load-1', result: {} }),
+      // The turn kept streaming across the reconnect: a genuine NEW delta for
+      // the same live stream id must still append, not be dropped as replay.
+      keyedChunk(4, ' the fix.', 'msg_tmp_a'),
+    ];
+
+    let state = emptyReducerState();
+    for (const row of fixture) state = reduceEnvelope(state, row);
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'assistant-1', role: 'assistant', text: 'Working on the fix.' },
+    ]);
+  });
+
   test('a genuinely-new tool_call that interleaves with an open session/load is NOT suppressed', () => {
     // Reproduces D2 (codex `8023ee8f…`): on an error-terminated run the client
     // fires repeated `session/load` auto-resume requests. The daemon's async

@@ -1509,3 +1509,36 @@ follow RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test,
 and packed-install smoke gates.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-20 — session `acp-replay-dedup` (done)
+
+Fixed the duplicate-assistant-message bug (repro: session `52cb3a2c`, codex
+harness, 3 reconnects). Root cause: the API bridge splits the agent's single
+ordered stdio stream into an SSE notification channel and a POST round-trip for
+RPC responses, so the `session/load` response row overtakes the still-persisting
+replay frames by hundreds of ordinals — replayed chunks then land OUTSIDE
+`reduce.ts`'s open-load window and rendered as fresh turns. Codex replay also
+interleaves with live turn output, so no ordering window can ever bracket it.
+
+Fix: content-identity replay classification in `reduceEnvelope` — accumulated
+full text per `role:messageId` stream (`messageStreams`), replay-classified keys
+(`replayMessageIds`), both gated on `sessionLoadSeen` so never-reconnected
+sessions are untouched. A consolidated chunk under a new id whose full text
+byte-equals an existing same-role stream, or a byte-identical re-delivery under
+a known id, is dropped as replay.
+
+Evidence: RED first (new `reduce.test.ts` codex-replay test failed on the
+duplicate), then `pnpm --filter @kortix/sdk typecheck` clean,
+`pnpm --filter @kortix/sdk test` **1267 pass / 0 fail (97 files)**,
+`smoke:install` green. Projecting the real 3585-envelope session through the
+fixed reducer: 36 assistant/thought messages, 0 duplicated texts (was 62
+messages, 12 texts duplicated up to 4×).
+
+Known residual (B-worthy): the SSE/POST channel split still destroys wire
+ordering for every consumer of the durable log; the reducer now compensates,
+but the bridge should eventually deliver RPC responses through the ordered SSE
+channel. A post-reconnect message that legitimately byte-equals an ENTIRE
+earlier same-role message under a brand-new id would be misclassified as replay
+— accepted, documented in the test.
