@@ -2,6 +2,7 @@
   "title": "Guides",
   "pages": [
     "index",
+    "developing",
     "managing-secrets",
     "connecting-tools",
     "automating-work",
