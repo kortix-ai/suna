@@ -10,6 +10,13 @@ import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
+// Full gateway catalog, independent of which providers are actually
+// connected — used ONLY to give `useModelStore` a canonical universe for
+// default/heuristic visibility resolution (see `catalogModels` below). Must
+// match what other surfaces (e.g. the session model picker) resolve
+// visibility against, or the same model silently defaults to a different
+// visibility depending on which tab/picker last computed it.
+import { flattenModels as flattenGatewayCatalog, useOpenCodeProviders } from '@kortix/sdk/react';
 import { ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
@@ -64,8 +71,21 @@ export function ModelsTab({
     return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
   }, [connectedProviders, llmGatewayEnabled]);
 
+  // Same route-scoped snapshot `useConnectedProviders` already reads (see
+  // use-connected-providers.ts) — reused here ONLY to give `useModelStore`
+  // the FULL gateway catalog as its default-resolution universe. `flatModels`
+  // above stays scoped to `connectedProviders` (what this tab actually
+  // renders); `catalogModels` must NOT be narrowed the same way, or a model
+  // present in the full catalog but outside this narrower list resolves a
+  // different (heuristic-default) visibility here than on other surfaces —
+  // the root cause of toggles reading differently between this tab and the
+  // session model picker.
+  const { data: ocProviders } = useOpenCodeProviders();
+  const catalogModels = useMemo(() => flattenGatewayCatalog(ocProviders), [ocProviders]);
+
   const modelStore = useModelStore(flatModels, {
     connectedProviderIds,
+    catalogModels,
   });
 
   const enabledCount = useMemo(

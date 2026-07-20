@@ -332,15 +332,32 @@ export function useModelStore(
     connectedProviderIds?: Set<string>;
     // Free tier (no active paid sub): hides every Kortix managed model.
     freeTier?: boolean;
+    /**
+     * Canonical universe used to resolve default/heuristic visibility (the
+     * "latest per family" set and each model's `releaseDate` lookup).
+     * Defaults to `allModels`.
+     *
+     * `isVisible` must NOT be a function of which (possibly narrowed) array
+     * a given call site happens to pass as `allModels` — different surfaces
+     * (session picker vs. Settings > Models vs. command palette) otherwise
+     * compute a different `latestSet`/`modelByKey` for the SAME model key,
+     * so the same model can silently resolve to a different default
+     * visibility (and therefore a different persisted 'show' write) on one
+     * surface vs. another. Pass the full gateway catalog here from every
+     * call site so default resolution is identical everywhere; `allModels`
+     * keeps its existing meaning (what's actually rendered/iterated).
+     */
+    catalogModels?: FlatModel[];
   },
 ) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const connectedProviderIds = opts?.connectedProviderIds;
   const freeTier = opts?.freeTier ?? false;
+  const catalogModels = opts?.catalogModels ?? allModels;
 
   // Compute latest set
-  const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
-  const modelByKey = useMemo(() => createModelLookup(allModels), [allModels]);
+  const latestSet = useMemo(() => computeLatestSet(catalogModels), [catalogModels]);
+  const modelByKey = useMemo(() => createModelLookup(catalogModels), [catalogModels]);
 
   // Visibility map from user preferences
   const visibilityMap = useMemo(() => {
