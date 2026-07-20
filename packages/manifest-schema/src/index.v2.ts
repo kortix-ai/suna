@@ -102,7 +102,7 @@ export type GrantSetV2 = 'all' | 'none' | string[];
  * One entry of the v2 `agents:` map — GOVERNANCE ONLY (decision 2026-07-05,
  * "one home per concern"). OpenCode behavior (mode, model, temperature,
  * top_p, steps, variant, color, hidden, permission, and the prompt itself)
- * lives entirely in the agent's native `.kortix/opencode/agents/<name>.md`
+ * lives entirely in the agent's native `.opencode/agents/<name>.md`
  * frontmatter + body — a stock OpenCode agent `.md` is valid as-is, with no
  * Kortix-specific split. The agent NAME is the join between this map key and
  * that `.md` filename; there is no `prompt:`/file-ref field here anymore.
@@ -129,7 +129,7 @@ export interface AgentBlockV2 {
    *  configuration error (ambiguous) — see resolveGrantedSecretEnv. This is the
    *  SOLE authorization gate on agent secret access. */
   secrets?: GrantSetV2;
-  /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
+  /** Which of the project's `.opencode/skills/*` this agent may invoke —
    *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
    *  deny-by-default when omitted. Unlike connectors/secrets/kortix_cli (pure
    *  Kortix governance with no runtime representation), `skills` DOES compile
@@ -405,7 +405,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     if ((entry as Record<string, unknown>)[key] !== undefined) {
       issues.push({
         path: `${where}.${key}`,
-        message: `"${key}" is OpenCode behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the agent's \`.kortix/opencode/agents/<name>.md\` frontmatter instead.`,
+        message: `"${key}" is OpenCode behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the agent's \`.opencode/agents/<name>.md\` frontmatter instead.`,
         severity: 'error',
       });
     }

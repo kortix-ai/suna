@@ -110,7 +110,7 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
   test('renders one row per declared runtime, each carrying the harness label', () => {
     setRuntimes({
       'runtime-1': { harness: 'claude', config_dir: '.claude' },
-      'runtime-2': { harness: 'opencode', config_dir: '.kortix/opencode' },
+      'runtime-2': { harness: 'opencode', config_dir: '.opencode' },
     });
     render(<RuntimeView projectId={PROJECT_ID} />);
 
@@ -202,7 +202,7 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
   test('primary DOM carries no manifest jargon — no schema_version, kortix.yaml/toml, profile slugs, or config-dir paths', () => {
     setRuntimes({
       'runtime-1': { harness: 'claude', config_dir: '.claude' },
-      'runtime-2': { harness: 'opencode', config_dir: '.kortix/opencode' },
+      'runtime-2': { harness: 'opencode', config_dir: '.opencode' },
     });
     const { container } = render(<RuntimeView projectId={PROJECT_ID} />);
     const html = container.innerHTML;
@@ -212,7 +212,7 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
     expect(html).not.toContain('kortix.toml');
     expect(html).not.toContain('[[agents]]');
     expect(html).not.toContain('.claude');
-    expect(html).not.toContain('.kortix/opencode');
+    expect(html).not.toContain('.opencode');
     // The profile-slug keys themselves (jargon identity) never surface either.
     expect(html).not.toContain('runtime-1');
     expect(html).not.toContain('runtime-2');

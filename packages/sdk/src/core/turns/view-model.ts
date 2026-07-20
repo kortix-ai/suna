@@ -13,7 +13,7 @@
  * specially, plus a `generic` fallback for everything else.
  *
  * Field shapes below are grounded in the real wire data, not guessed:
- *  - web_search / image_search: `.kortix/opencode/tools/web_search.ts` +
+ *  - web_search / image_search: `.opencode/tools/web_search.ts` +
  *    `image_search.ts` (this repo) — success shape
  *    `{query, success, answer, results:[{title,url,snippet,...}], images}`,
  *    failure shape `{query, success:false, error}`; image_search's images

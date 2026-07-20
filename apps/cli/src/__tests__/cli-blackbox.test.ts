@@ -446,17 +446,17 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'default-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
     // Managed / served-live skills still aren't committed into the repo.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, '.opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, '.opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'tools', 'memory.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'tools', 'image_search.ts'))).toBe(true);
     // The full kit is the default now, so domain skills like pdf ARE present.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('init can explicitly opt into the general knowledge worker skill pack', async () => {
@@ -471,8 +471,8 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('E2E: CLI project setup plus marketplace discovery, then unlink/relink/archive', async () => {
@@ -483,11 +483,11 @@ describe('kortix CLI black-box behavior', () => {
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'tools', 'show.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, '.opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'tools', 'web_search.ts'))).toBe(true);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);

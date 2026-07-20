@@ -234,17 +234,17 @@ describe('kortix skills — get', () => {
 
 describe('kortix skills — path', () => {
   test('resolves the on-disk skill dir under a project root', async () => {
-    mkdirSync(join(tmp, '.kortix', 'opencode'), { recursive: true });
+    mkdirSync(join(tmp, '.opencode'), { recursive: true });
     const code = await runSkills(['path', 'kortix-system']);
     expect(code).toBe(0);
-    expect(stdout.trim().endsWith('.kortix/opencode/skills/kortix-system')).toBe(true);
+    expect(stdout.trim().endsWith('.opencode/skills/kortix-system')).toBe(true);
   });
 
   test('--json reports the path and whether it exists', async () => {
     const code = await runSkills(['path', 'kortix-memory', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
-    expect(parsed.path.endsWith('.kortix/opencode/skills/kortix-memory')).toBe(true);
+    expect(parsed.path.endsWith('.opencode/skills/kortix-memory')).toBe(true);
     expect(parsed.exists).toBe(false);
   });
 });

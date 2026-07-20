@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+  mkdirSync,
+} from 'node:fs';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -10,17 +22,17 @@ let dir: string;
 const REQUIRED_BASE_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
-  '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/skills/kortix-system/SKILL.md',
-  '.kortix/opencode/tools/show.ts',
+  '.opencode/agents/kortix.md',
+  '.opencode/skills/kortix-system/SKILL.md',
+  '.opencode/tools/show.ts',
   'README.md',
   'kortix.yaml',
 ];
 
 const GKW_SKILL_PATHS = [
-  '.kortix/opencode/skills/account-research/SKILL.md',
-  '.kortix/opencode/skills/deep-research/SKILL.md',
-  '.kortix/opencode/skills/pdf/SKILL.md',
+  '.opencode/skills/account-research/SKILL.md',
+  '.opencode/skills/deep-research/SKILL.md',
+  '.opencode/skills/pdf/SKILL.md',
 ];
 
 function baseStarterPaths(): string[] {
@@ -67,12 +79,12 @@ describe('applyScaffold', () => {
     expect(manifest).not.toContain('{{projectName}}');
 
     expect(manifest).not.toMatch(/^sandbox:/m);
-    expect(manifest).toContain('config_dir: .kortix/opencode');
+    expect(manifest).toContain('config_dir: .opencode');
     expect(manifest).toContain('claude:\n    runtime: claude');
     expect(manifest).toContain('codex:\n    runtime: codex');
     expect(manifest).toContain('pi:\n    runtime: pi');
 
-    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
+    expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
     expect(result.written).not.toContain('.kortix/memory/overview.md');
   });
@@ -100,8 +112,8 @@ describe('applyScaffold', () => {
 
   test('preserveExisting leaves prior files alone, fills in the rest', () => {
     // Pre-seed shipped files we expect to be preserved.
-    mkdirSync(join(dir, '.kortix/opencode/agents'), { recursive: true });
-    writeFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'CUSTOM PERSONA', 'utf8');
+    mkdirSync(join(dir, '.opencode/agents'), { recursive: true });
+    writeFileSync(join(dir, '.opencode/agents/kortix.md'), 'CUSTOM PERSONA', 'utf8');
     writeFileSync(join(dir, 'README.md'), 'CUSTOM README', 'utf8');
 
     const result = applyScaffold({
@@ -110,12 +122,56 @@ describe('applyScaffold', () => {
       preserveExisting: true,
     });
 
-    expect(result.skipped.sort()).toEqual(['.kortix/opencode/agents/kortix.md', 'README.md']);
+    expect(result.skipped.sort()).toEqual(['.opencode/agents/kortix.md', 'README.md']);
     expect(result.written).toContain('kortix.yaml');
     expect(result.written).toContain('.kortix/memory/MEMORY.md');
 
-    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
+    expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('CUSTOM README');
+  });
+
+  test('clears a legacy .opencode symlink before writing, even when the un-migrated target still exists', () => {
+    // A pre-1.x scaffold left `.opencode` → `.kortix/opencode`. Whether or not
+    // the legacy target dir is still there, `applyScaffold` is about to write
+    // a real `.opencode` tree here and must supersede the compat link, not
+    // write through it (writing through a dangling one throws ENOENT; writing
+    // through a live one would silently land files in `.kortix/opencode`
+    // instead of creating the canonical real dir scaffold is supposed to own).
+    mkdirSync(join(dir, '.kortix/opencode'), { recursive: true });
+    symlinkSync('.kortix/opencode', join(dir, '.opencode'));
+
+    const result = applyScaffold({ repoRoot: dir, projectName: 'Cleared', template: 'minimal' });
+
+    expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(false);
+    expect(statSync(join(dir, '.opencode')).isDirectory()).toBe(true);
+    expect(result.written).toContain('.opencode/agents/kortix.md');
+    expect(
+      readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8'),
+    ).toContain('Cleared');
+  });
+
+  test('clears a DANGLING legacy .opencode symlink before writing (no target at all)', () => {
+    symlinkSync('.kortix/opencode', join(dir, '.opencode'));
+
+    const result = applyScaffold({ repoRoot: dir, projectName: 'Cleared', template: 'minimal' });
+
+    expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(false);
+    expect(result.written).toContain('.opencode/agents/kortix.md');
+  });
+
+  test('a custom .opencode symlink to some other target is left alone by applyScaffold', () => {
+    mkdirSync(join(dir, 'elsewhere'), { recursive: true });
+    symlinkSync('elsewhere', join(dir, '.opencode'));
+
+    // Not our legacy target — applyScaffold must not touch the symlink. It
+    // still writes the starter's `.opencode/*` files through it transparently
+    // (they land inside `elsewhere/`), exactly as they would for any real
+    // directory at that path; the point of this test is only that the
+    // symlink itself survives, untouched.
+    applyScaffold({ repoRoot: dir, projectName: 'X', template: 'minimal' });
+    expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(dir, '.opencode'))).toBe('elsewhere');
+    expect(existsSync(join(dir, 'elsewhere/agents/kortix.md'))).toBe(true);
   });
 
   test('without preserveExisting, overwrites prior files', () => {

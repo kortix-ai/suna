@@ -97,7 +97,7 @@ describe('validateManifest — [opencode]', () => {
   });
 
   test('a clean relative config_dir passes', () => {
-    expect(validateManifest('kortix_version = 1\n[opencode]\nconfig_dir = ".kortix/opencode"').valid).toBe(true);
+    expect(validateManifest('kortix_version = 1\n[opencode]\nconfig_dir = ".opencode"').valid).toBe(true);
   });
 });
 
@@ -613,7 +613,7 @@ describe('validateManifest — kortix_version 3 structural fuzz (coverage parity
       runtimes: {
         claude: { harness: 'claude', config_dir: '.claude' },
         codex: { harness: 'codex', config_dir: '.codex' },
-        opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+        opencode: { harness: 'opencode', config_dir: '.opencode' },
         pi: { harness: 'pi', config_dir: '.pi' },
       },
       agents: {

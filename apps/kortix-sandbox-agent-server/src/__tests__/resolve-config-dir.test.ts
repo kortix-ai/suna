@@ -1,7 +1,7 @@
 /**
  * resolveOpencodeConfigDir picks the opencode config dir for a sandbox. The
- * project's config lives INSIDE the cloned repo (`<projectTarget>/.kortix/
- * opencode`), so this only returns the project dir once the repo has been
+ * project's config lives INSIDE the cloned repo (`<projectTarget>/.opencode`),
+ * so this only returns the project dir once the repo has been
  * materialized — otherwise it falls back to the baked default. The boot path
  * (main.ts) MUST therefore resolve this AFTER the clone; resolving before the
  * clone always fell back and silently dropped the project's custom agents,
@@ -58,15 +58,25 @@ describe('resolveOpencodeConfigDir', () => {
   })
 
   test('returns the project config dir once the repo has opencode.jsonc', async () => {
-    mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true })
-    writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{"default_agent":"kortix"}')
-    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.kortix/opencode'))
+    mkdirSync(join(workspace, '.opencode'), { recursive: true })
+    writeFileSync(join(workspace, '.opencode/opencode.jsonc'), '{"default_agent":"kortix"}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.opencode'))
   })
 
   test('also accepts opencode.json (non-jsonc)', async () => {
+    mkdirSync(join(workspace, '.opencode'), { recursive: true })
+    writeFileSync(join(workspace, '.opencode/opencode.json'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.opencode'))
+  })
+
+  test('falls back to the baked default for a legacy .kortix/opencode dir with no manifest override', async () => {
+    // Old, un-migrated workspaces keep their real config at `.kortix/opencode`
+    // with no `opencode.config_dir` in the manifest — the bare default is now
+    // `.opencode`, so this legacy layout is NOT picked up here (a separate,
+    // deliberate legacy-fallback layer elsewhere in the daemon covers it).
     mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true })
-    writeFileSync(join(workspace, '.kortix/opencode/opencode.json'), '{}')
-    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.kortix/opencode'))
+    writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
   })
 
   test('honors a custom opencode.config_dir from kortix.yaml', async () => {

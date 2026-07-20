@@ -2,7 +2,7 @@
  * 06 — create an agent (config-file round-trip through the session workspace).
  *
  * An agent IS a markdown file with frontmatter. This writes
- * `.kortix/opencode/agents/sdk-test-agent.md` into the session's live
+ * `.opencode/agents/sdk-test-agent.md` into the session's live
  * workspace via `session.files`, reads it back, then deletes it (set
  * KEEP_TEST_FILES=1 to keep it and see it in the web UI's Customize → Agents
  * after committing).
@@ -23,7 +23,7 @@ import {
 } from "../_shared";
 
 const AGENT_NAME = "sdk-test-agent";
-const AGENT_DIR = "/workspace/.kortix/opencode/agents";
+const AGENT_DIR = "/workspace/.opencode/agents";
 const AGENT_PATH = `${AGENT_DIR}/${AGENT_NAME}.md`;
 const AGENT_MD = `---
 description: Throwaway agent created by the SDK playground to prove agent files round-trip.

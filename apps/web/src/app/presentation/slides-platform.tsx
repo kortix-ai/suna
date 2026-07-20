@@ -410,7 +410,7 @@ export function useSlides(): SlideDef[] {
                     )}
                   </>,
                   <>
-                    <Mono>.kortix/opencode/</Mono>{' '}
+                    <Mono>.opencode/</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheRuntimeAgentsSkillscceeb26a',
                     )}

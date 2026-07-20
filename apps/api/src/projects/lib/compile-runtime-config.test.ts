@@ -97,7 +97,7 @@ agents:
     expect(plan).toMatchObject({
       kind: 'acp',
       runtimes: {
-        open: { configDir: '.kortix/opencode' },
+        open: { configDir: '.opencode' },
         pi: { configDir: '.pi' },
       },
     });
@@ -112,7 +112,7 @@ agents:
 `) as Record<string, unknown>);
     expect(plan).toMatchObject({
       kind: 'acp', version: 2, defaultAgent: 'kortix',
-      runtimes: { opencode: { harness: 'opencode', configDir: '.kortix/opencode' } },
+      runtimes: { opencode: { harness: 'opencode', configDir: '.opencode' } },
       agents: { kortix: { runtime: 'opencode', harness: 'opencode', nativeAgent: 'kortix' } },
     });
   });
@@ -140,7 +140,7 @@ kortix_version: 2
 `) as Record<string, unknown>);
     expect(plan).toMatchObject({
       kind: 'acp', version: 2, defaultAgent: 'kortix',
-      runtimes: { opencode: { harness: 'opencode', configDir: '.kortix/opencode' } },
+      runtimes: { opencode: { harness: 'opencode', configDir: '.opencode' } },
       agents: {
         kortix: {
           runtime: 'opencode', harness: 'opencode', nativeAgent: null, enabled: true,

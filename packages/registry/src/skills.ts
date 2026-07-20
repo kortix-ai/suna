@@ -27,7 +27,7 @@ export interface SkillGroup {
 
 /**
  * Group a flat file list into skills under `rootPrefix` (e.g.
- * `.kortix/opencode/skills` or a sparse subdir). Returns one group per
+ * `.opencode/skills` or a sparse subdir). Returns one group per
  * `**​/SKILL.md`, each with its sibling files.
  */
 export function groupSkillFiles(paths: string[], rootPrefix: string): SkillGroup[] {

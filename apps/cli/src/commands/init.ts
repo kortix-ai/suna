@@ -1,4 +1,4 @@
-import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, statSync, mkdirSync, readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -23,11 +23,11 @@ import { appendGitExcludeEntries } from '../git-exclude.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'OpenCode harness compatibility: .opencode → .kortix/opencode';
+      return "OpenCode harness: this project's real .opencode/ config dir";
     case 'claude':
-      return 'Claude Code local compatibility: .claude → .kortix/opencode';
+      return 'Claude Code local compatibility: .claude → .opencode';
     case 'codex':
-      return 'Codex local compatibility: .agents → .kortix/opencode + AGENTS.md';
+      return 'Codex local compatibility: .agents → .opencode + AGENTS.md';
     case 'cursor':
       return 'AGENTS.md (read natively — no rule file)';
     default:
@@ -63,7 +63,8 @@ Options:
   --template <name>    Starter template: general-knowledge-worker (default, full
                        skill kit) or minimal (base plumbing only).
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
+                       Requires kortix.yaml (or kortix.toml) and .opencode
+                       (or, for an un-migrated legacy clone, .kortix/opencode).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -192,13 +193,43 @@ function gitAvailable(): boolean {
   return spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0;
 }
 
-/** Keep post-clone agent wiring local so setup never dirties the user's repo. */
+/** True if either OpenCode runtime layout is present: the canonical
+ * `.opencode` (lstat-based, so a real dir, a kept legacy compat symlink, or
+ * even a not-yet-reconciled dangling legacy symlink all pass and the latter
+ * gets reconciled downstream by `wireCodingAgents`), or the legacy
+ * `.kortix/opencode` real dir a fresh clone of an un-migrated project has
+ * instead — its old `.opencode` symlink was local-only wiring
+ * (`.git/info/exclude`), never committed, so a fresh clone has no
+ * `.opencode` entry at all. */
+function hasOpencodeRuntime(cwd: string): boolean {
+  try {
+    lstatSync(resolve(cwd, '.opencode'));
+    return true;
+  } catch {
+    // No entry at `.opencode` at all — fall through to the legacy layout.
+  }
+  return existsSync(resolve(cwd, '.kortix/opencode'));
+}
+
+/** Keep post-clone agent wiring local so setup never dirties the user's repo.
+ * `/.opencode` is only added when `.opencode` is the local legacy compat
+ * symlink (an un-migrated clone, reconciled by `wireCodingAgents` before
+ * this runs) — on a migrated repo `.opencode` is the real, committed config
+ * tree, and excluding it would hide new files written under it from `git
+ * status`/`git add`. */
 function excludeLocalAgentWiring(repoRoot: string): void {
-  appendGitExcludeEntries(
-    repoRoot,
-    ['/.agents', '/.claude', '/.opencode', '/AGENTS.md'],
-    'Kortix local coding-agent wiring',
-  );
+  const entries = ['/.agents', '/.claude'];
+  if (isOpencodeCompatSymlink(repoRoot)) entries.push('/.opencode');
+  entries.push('/AGENTS.md');
+  appendGitExcludeEntries(repoRoot, entries, 'Kortix local coding-agent wiring');
+}
+
+function isOpencodeCompatSymlink(repoRoot: string): boolean {
+  try {
+    return lstatSync(resolve(repoRoot, '.opencode')).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /** Layered: bright headline up top, dim supporting text below for the
@@ -216,7 +247,7 @@ function printAgentPreamble(): void {
     `  ${dim}This wires local editor/CLI compatibility. Cloud sessions use${reset}`,
     `  ${dim}kortix.yaml v3 runtime profiles and launch ACP harness adapters.${reset}`,
     `  ${dim}The default starter still includes an OpenCode harness profile at${reset}`,
-    `  ${dim}.kortix/opencode; add Claude/Codex native config as needed.${reset}`,
+    `  ${dim}.opencode; add Claude/Codex native config as needed.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -290,11 +321,11 @@ export async function runInit(argv: string[]): Promise<number> {
     const hasManifest =
       existsSync(resolve(cwd, "kortix.yaml")) ||
       existsSync(resolve(cwd, "kortix.toml"));
-    const hasRuntime = existsSync(resolve(cwd, ".kortix", "opencode"));
+    const hasRuntime = hasOpencodeRuntime(cwd);
     if (!hasManifest || !hasRuntime) {
       process.stderr.write(
         "kortix init --force: this directory is not a cloned Kortix project.\n" +
-          "Expected kortix.yaml (or kortix.toml) and .kortix/opencode.\n",
+          "Expected kortix.yaml (or kortix.toml) and .opencode (or .kortix/opencode).\n",
       );
       return 1;
     }

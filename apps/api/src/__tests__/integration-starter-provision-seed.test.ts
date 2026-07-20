@@ -105,7 +105,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     expect(compiled.runtimes).toMatchObject({
       claude: { harness: 'claude', configDir: '.claude' },
       codex: { harness: 'codex', configDir: '.codex' },
-      opencode: { harness: 'opencode', configDir: '.kortix/opencode' },
+      opencode: { harness: 'opencode', configDir: '.opencode' },
       pi: { harness: 'pi', configDir: '.pi' },
     });
   });

@@ -14,7 +14,7 @@ profile selects.
 
 | Harness | Manifest `harness` value | Default `config_dir` | ACP process | Stability |
 | --- | --- | --- | --- | --- |
-| OpenCode | `opencode` | `.kortix/opencode` | `opencode acp` (native) | Stable |
+| OpenCode | `opencode` | `.opencode` | `opencode acp` (native) | Stable |
 | Claude Code | `claude` | `.claude` | `@agentclientprotocol/claude-agent-acp` | Experimental |
 | Codex | `codex` | `.codex` | `@agentclientprotocol/codex-acp` | Experimental |
 | Pi | `pi` | `.pi` | `pi-acp` | Experimental |
@@ -37,7 +37,7 @@ default_agent: kortix
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   claude:
     harness: claude
     config_dir: .claude

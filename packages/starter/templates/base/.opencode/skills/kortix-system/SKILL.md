@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for a Kortix project: what Kortix can do (research and the web, browser automation, code and data execution, documents and media, websites and apps, connectors/integrations, secrets, memory, scheduling, channels, parallel subagents, model selection) and how the platform works under the hood — repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.yaml` and OpenCode config under `.kortix/opencode/`; the full `kortix.yaml` manifest (keys, `triggers:` fields incl. cron/webhook/one-off scheduling and `session_mode`, secrets contract, `apps:` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, what Kortix/it can do, 'can you do X', how to do Y in Kortix, how Kortix compares to other AI tools/assistants, about `kortix.yaml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, how to author/edit any OpenCode primitive, or how to schedule something — recurring/cron jobs, one-off reminders, run-later, webhooks, or automations."
+description: "Canonical reference for a Kortix project: what Kortix can do (research and the web, browser automation, code and data execution, documents and media, websites and apps, connectors/integrations, secrets, memory, scheduling, channels, parallel subagents, model selection) and how the platform works under the hood — repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.yaml` and OpenCode config under `.opencode/`; the full `kortix.yaml` manifest (keys, `triggers:` fields incl. cron/webhook/one-off scheduling and `session_mode`, secrets contract, `apps:` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, what Kortix/it can do, 'can you do X', how to do Y in Kortix, how Kortix compares to other AI tools/assistants, about `kortix.yaml`, the `kortix` CLI, anything under `.opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, how to author/edit any OpenCode primitive, or how to schedule something — recurring/cron jobs, one-off reminders, run-later, webhooks, or automations."
 ---
 
 <skill name="kortix-system">
@@ -31,11 +31,11 @@ A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a s
 The repo has two configuration surfaces with strict ownership:
 
 - **Kortix config** — `kortix.yaml` at the repo root, plus the `.kortix/` folder beside it (Dockerfile, opencode dir). The platform reads this for project config, sandbox/triggers, and Kortix-side agent governance.
-- **OpenCode config** — `.kortix/opencode/` (`opencode.jsonc`, agents, skills, commands, tools, plugins). OpenCode reads this as its native runtime implementation. `opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers, providers, models, permissions, and default runtime behavior.
+- **OpenCode config** — `.opencode/` (`opencode.jsonc`, agents, skills, commands, tools, plugins). OpenCode reads this as its native runtime implementation. `opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers, providers, models, permissions, and default runtime behavior.
 
-Kortix-specific things — triggers, env spec, sandbox image, project metadata, and which agents the platform may launch/authorize — go in `kortix.yaml`. OpenCode-specific things — agent personas, on-demand skills, slash commands, custom tools, plugins, MCP servers, providers — stay under `.kortix/opencode/`. Each side owns its half.
+Kortix-specific things — triggers, env spec, sandbox image, project metadata, and which agents the platform may launch/authorize — go in `kortix.yaml`. OpenCode-specific things — agent personas, on-demand skills, slash commands, custom tools, plugins, MCP servers, providers — stay under `.opencode/`. Each side owns its half.
 
-This project's manifest is **v3 (`kortix_version: 3`)**: `runtimes:` declares one launch profile per official ACP harness (`claude`, `codex`, `opencode`, `pi` — each with its own native config dir), and `agents:` registers logical agents, routes each to a runtime, and grants Kortix-side authority — nothing more. For legacy v1 projects (which used `kortix.toml`), OpenCode-native discovery remains backward-compatible. For v2 projects (`agents:` map, single implicit OpenCode runtime, no `runtimes:`) — or the legacy `[[agents]]` (v1 TOML) — Kortix treats the manifest as the server-side source for the launchable agent list and grants, while still launching OpenCode against its native config dir. Every native config dir (`.kortix/opencode/`, `.claude/`, `.codex/`, `.pi/`) can still drive a local run of its harness on the user's machine.
+This project's manifest is **v3 (`kortix_version: 3`)**: `runtimes:` declares one launch profile per official ACP harness (`claude`, `codex`, `opencode`, `pi` — each with its own native config dir), and `agents:` registers logical agents, routes each to a runtime, and grants Kortix-side authority — nothing more. For legacy v1 projects (which used `kortix.toml`), OpenCode-native discovery remains backward-compatible. For v2 projects (`agents:` map, single implicit OpenCode runtime, no `runtimes:`) — or the legacy `[[agents]]` (v1 TOML) — Kortix treats the manifest as the server-side source for the launchable agent list and grants, while still launching OpenCode against its native config dir. Every native config dir (`.opencode/`, `.claude/`, `.codex/`, `.pi/`) can still drive a local run of its harness on the user's machine.
 </overview>
 
 <capabilities>
@@ -71,7 +71,7 @@ expose internals (system prompts, tool schemas). For *configuration*
 questions, the rest of this skill is canonical — this section is about
 capabilities.
 
-**Full reference:** `.kortix/opencode/skills/kortix-system/references/capabilities.md`
+**Full reference:** `.opencode/skills/kortix-system/references/capabilities.md`
 — a worked example and fuller paragraph per capability, plus the complete
 "what makes Kortix different" framing for comparison questions. Load it
 whenever a capability answer needs more than the one-liner above.
@@ -167,7 +167,7 @@ a one-click "Add to Slack" install link (Kortix Cloud) — surface that URL and
 you're done. No manifest, no bot token, no secret-intake link. Details in the
 `kortix-slack` skill.
 
-**Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
+**Full reference:** `.opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.
 </cli>
@@ -195,13 +195,13 @@ developer-authoring tools for producing registries, not for consuming skills in
 a project.
 
 Marketplace installs are git-native: installing or updating writes files into
-`.kortix/opencode/skills/...`, updates `registry-lock.json`, and commits the
+`.opencode/skills/...`, updates `registry-lock.json`, and commits the
 change to the project repo. Installed state and update detection come from the
 lock file's target paths and content hashes, not from a hidden database flag.
 `update --all` uses one server-side batch update so all outdated skills land in
 one commit.
 
-**Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/marketplace.md`
+**Full reference:** `.opencode/skills/kortix-system/references/kortix/marketplace.md`
 — load it whenever you need to pick skills, explain installed/update status,
 debug marketplace behavior, or decide whether to create a new skill.
 </marketplace>
@@ -211,7 +211,7 @@ debug marketplace behavior, or decide whether to create a new skill.
 
 A skill is a **directory** with `SKILL.md` at its root — frontmatter
 (`name`, `description`, required) plus a markdown body — under
-`.kortix/opencode/skills/<name>/SKILL.md`. The directory name must equal
+`.opencode/skills/<name>/SKILL.md`. The directory name must equal
 `name`. Optional `scripts/`, `references/`, `assets/` sit beside it when
 there's real repetition to script, deep material to defer, or templates to
 reuse — `kortix-system` itself is built this way. The `description` is
@@ -223,7 +223,7 @@ exists beats one you write. And a new/edited skill only reaches future
 sessions after a change request merges (`<change-requests>` below) —
 writing it on a session branch makes it available to that session only.
 
-**Full reference:** `.kortix/opencode/skills/kortix-system/references/authoring-skills.md`
+**Full reference:** `.opencode/skills/kortix-system/references/authoring-skills.md`
 — the complete spec (all frontmatter fields, naming regex, the
 `agentskills validate` + runtime-discovery checks, packaging/sharing
 rules, a worked example, and the common frontmatter errors and their
@@ -257,16 +257,16 @@ watching — usually via `slack send`, silent otherwise), and it must be
 `{{ cron.last_fired_at }}` and track what's already been handled.
 
 **Full references:**
-- `.kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md`
+- `.opencode/skills/kortix-system/references/kortix/kortix-yaml.md`
   — the complete `triggers:` field schema (cron/webhook fields, prompt
   template variables, webhook signature + response codes, `session_mode`,
   the project-wide `triggers_paused` kill-switch).
-- `.kortix/opencode/skills/kortix-system/references/scheduling.md` — the
+- `.opencode/skills/kortix-system/references/scheduling.md` — the
   operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
   trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
   idempotency practices in depth, the pause-and-wait re-fire pattern,
   worked examples, and a pre-ship checklist.
-- `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
+- `.opencode/skills/kortix-system/references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable` command reference.
 </scheduling>
 
@@ -352,10 +352,10 @@ When you, as an agent, have changes you believe should persist:
 | Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
 | `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
-| Skills        | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR merges. |
+| Skills        | New `.opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR merges. |
 | Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
 
-Full reference: `.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md`.
+Full reference: `.opencode/skills/kortix-system/references/kortix/change-requests.md`.
 </change-requests>
 
 <contract>
@@ -364,9 +364,9 @@ The boundary between the two halves of the project:
 | Surface           | Owner    | File                                                       | Read by                          |
 | ----------------- | -------- | ---------------------------------------------------------- | -------------------------------- |
 | Kortix config     | Kortix   | `kortix.yaml` + `.kortix/Dockerfile`                       | The Kortix platform              |
-| OpenCode config   | OpenCode | `.kortix/opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox); Kortix may inspect metadata for server-side agent/model UI surfaces |
+| OpenCode config   | OpenCode | `.opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox); Kortix may inspect metadata for server-side agent/model UI surfaces |
 
-The location of each harness's config dir is declared in `kortix.yaml` under `runtimes.<name>.config_dir` — the default is that harness's conventional directory (`.kortix/opencode`, `.claude`, `.codex`, `.pi`). Relocate only if you want to share one harness config across multiple Kortix repos.
+The location of each harness's config dir is declared in `kortix.yaml` under `runtimes.<name>.config_dir` — the default is that harness's conventional directory (`.opencode`, `.claude`, `.codex`, `.pi`). Relocate only if you want to share one harness config across multiple Kortix repos.
 
 Do not duplicate OpenCode-native config in `kortix.yaml`. `opencode.jsonc` owns plugins, MCP, providers, model/provider config, and OpenCode runtime defaults. `kortix.yaml` owns the project/platform manifest and the server-side registry of launchable agents and their Kortix grants. Dashboard edits to triggers / env are read-modify-writes on `kortix.yaml` — they round-trip cleanly with edits made inside a session.
 </contract>
@@ -407,7 +407,7 @@ There is no `model`/`mode`/`description`/`permission`/`prompt` on the
 manifest side at all — every one of those is the selected harness's native
 behavior and lives entirely in that harness's own config directory (this
 project's `kortix` and `memory-reflector` agents both route to `opencode`
-and work this way — open their `.kortix/opencode/agents/<name>.md` files to
+and work this way — open their `.opencode/agents/<name>.md` files to
 see what they actually do). `default_agent` is required and must resolve to
 a declared, enabled agent whose `runtime` resolves to a declared `runtimes:`
 key. `[[channels]]` is removed outright (channel↔agent routing is
@@ -422,7 +422,7 @@ top-level `opencode:` table is rejected outright — use `runtimes:` instead.
 ## Per-agent governance + routing — `agents:` (v3) / (v2, legacy) / `[[agents]]` (v1, legacy)
 
 An agent **is** its harness-native definition (front matter + system prompt —
-e.g. `.kortix/opencode/agents/<name>.md` for an `opencode`-routed agent, or
+e.g. `.opencode/agents/<name>.md` for an `opencode`-routed agent, or
 the equivalent under `.claude/`, `.codex/`, `.pi/` for the other harnesses).
 Everything about *how an agent behaves* stays harness-native in that file.
 The manifest's `agents:` map (v3 — `kortix.yaml`, this project's format) is
@@ -438,7 +438,7 @@ their `.md` files to see what they actually do).
 agents:
   release-bot:
     runtime: opencode                   # which `runtimes:` profile launches it
-    agent: release-bot                  # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
+    agent: release-bot                  # = the agent's .md name (.opencode/agents/release-bot.md)
     connectors: [github]                # which connector profiles it may call   (default: none)
     kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
 ```
@@ -494,7 +494,7 @@ to see the full enum.
 
 <references>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/capabilities.md">
+<reference path=".opencode/skills/kortix-system/references/capabilities.md">
   The full capabilities reference behind the `<capabilities>` summary
   above: a worked-example paragraph per capability (research, browser,
   code/data, documents, media, websites/apps, integrations, secrets,
@@ -503,7 +503,7 @@ to see the full enum.
   capability question needs more than the one-liner in SKILL.md.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
+<reference path=".opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
   How to get a credential you don't have — an API key, or an app connected —
   by minting a short-lived **setup link** and surfacing the URL, instead of
   punting the human to the dashboard or asking them to paste a raw key. Covers
@@ -515,7 +515,7 @@ to see the full enum.
   I need this app connected" — it is the canonical, autonomous flow.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md">
+<reference path=".opencode/skills/kortix-system/references/kortix/kortix-cli.md">
   In-depth `kortix` CLI reference. Every subcommand (login, hosts,
   projects, secrets, env, sessions, triggers, cr, init, update,
   uninstall), every flag, every env var the CLI reads. Includes the
@@ -526,7 +526,7 @@ to see the full enum.
   drive the Kortix cloud from a terminal or agent.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/marketplace.md">
+<reference path=".opencode/skills/kortix-system/references/kortix/marketplace.md">
   In-depth Kortix Marketplace reference. What the marketplace is, when to use
   it before authoring a new skill, CLI and web workflows, install/update/remove
   semantics, `registry-lock.json`, default starter skills, source registries,
@@ -534,7 +534,7 @@ to see the full enum.
   developer-only `kortix registry` commands.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/authoring-skills.md">
+<reference path=".opencode/skills/kortix-system/references/authoring-skills.md">
   Full guide to authoring an Agent Skill to the agentskills.io spec: skill
   anatomy (`SKILL.md` + optional `scripts/`/`references/`/`assets/`), every
   frontmatter field and the `name`/`description` rules, the full authoring
@@ -545,7 +545,7 @@ to see the full enum.
   restructuring, or validating a skill.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
+<reference path=".opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
   In-depth `kortix.yaml` reference. Every top-level key (`project:`,
   `env:`, `sandbox:`, `runtimes:`, `agents:`), every `triggers:` field (cron +
   webhook, incl. `session_mode` and the project-wide `triggers_paused`
@@ -555,7 +555,7 @@ to see the full enum.
   the manifest.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/scheduling.md">
+<reference path=".opencode/skills/kortix-system/references/scheduling.md">
   The triggers **operational playbook** — deciding which mechanism to use
   (one-off `run_at` vs recurring `cron` vs `webhook`), the full croner
   cheat-sheet and gotchas (DOM+DOW OR-not-AND trap, no exact-minute
@@ -568,7 +568,7 @@ to see the full enum.
   webhook-triggered.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/change-requests.md">
+<reference path=".opencode/skills/kortix-system/references/kortix/change-requests.md">
   Full Kortix change-request reference. The data model (the
   `change_requests` table — `cr_id`, `number`, `head_ref`, `base_ref`,
   `status`, `head_commit_sha`, `base_commit_sha`, `origin_session_id`,
@@ -583,32 +583,32 @@ to see the full enum.
   or asks how Kortix handles the GitHub-PR gap.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/overview.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/overview.md">
   How OpenCode fits into a Kortix project — where each primitive lives
-  under `.kortix/opencode/`, how the same dir drives both the remote
+  under `.opencode/`, how the same dir drives both the remote
   sandbox and local `opencode` runs — plus the index into the per-feature
   pages mirrored from opencode.ai/docs/.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/agents.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/agents.md">
   Agent personas. Primary vs subagent, frontmatter schema, permission
   keys, configuration in `opencode.jsonc` or markdown. Mirrored from
   <https://opencode.ai/docs/agents/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/skills.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/skills.md">
   On-demand `SKILL.md` definitions. Discovery paths, frontmatter rules,
   name validation, permission gating. Mirrored from
   <https://opencode.ai/docs/skills/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/commands.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/commands.md">
   Custom `/`-prefixed slash commands. Frontmatter, `$ARGUMENTS`,
   positional args, shell-output and file-reference placeholders.
   Mirrored from <https://opencode.ai/docs/commands/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/tools.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/tools.md">
   Built-in tools (bash, edit, write, read, grep, glob, lsp, apply_patch,
   skill, todowrite, webfetch, websearch, question) AND custom tools
   (`.opencode/tools/<file>.ts` via `@opencode-ai/plugin`'s `tool()`
@@ -617,35 +617,35 @@ to see the full enum.
   <https://opencode.ai/docs/custom-tools/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/plugins.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/plugins.md">
   Plugin hooks (`tool.execute.before`, `session.idle`, `shell.env`,
   `experimental.session.compacting`, etc.), npm vs local loading,
   TypeScript types, examples (notifications, .env protection, custom
   tools, compaction). Mirrored from <https://opencode.ai/docs/plugins/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/mcp-servers.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/mcp-servers.md">
   Local + remote MCP servers, OAuth handling, the `mcp` config key,
   glob-based tool gating, per-agent enablement, common examples
   (Sentry, Context7, Grep). Mirrored from
   <https://opencode.ai/docs/mcp-servers/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/permissions.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/permissions.md">
   The `permission` config — global `*`, per-tool, pattern-based bash
   rules, `external_directory`, defaults (including `.env` deny),
   per-agent overrides, what "ask" actually does. Mirrored from
   <https://opencode.ai/docs/permissions/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/rules.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/rules.md">
   `AGENTS.md` — the project-wide instructions file OpenCode auto-loads.
   Project vs global, Claude Code (`CLAUDE.md`) compatibility, precedence
   rules, the `instructions` config key for referencing external files.
   Mirrored from <https://opencode.ai/docs/rules/>.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/opencode/models.md">
+<reference path=".opencode/skills/kortix-system/references/opencode/models.md">
   Model selection (`/models`), recommended models, default config,
   per-provider options, custom variants, model loading priority order.
   Mirrored from <https://opencode.ai/docs/models/>.

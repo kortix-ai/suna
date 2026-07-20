@@ -1,7 +1,7 @@
 /**
  * 05 — what agents does the project have, and what is their config?
  *
- * Agents are config files in the repo (`.kortix/opencode/agents/*.md` here).
+ * Agents are config files in the repo (`.opencode/agents/*.md` here).
  * The platform surfaces them read-only through `projects.detail().config`,
  * and `getAgentConfig()` returns one agent's resolved opencode config.
  *

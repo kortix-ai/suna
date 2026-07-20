@@ -232,7 +232,7 @@ describe('v3 ACP logical agent routing', () => {
     expect(applied.raw.kortix_version).toBe(3);
     expect(applied.raw).not.toHaveProperty('opencode');
     expect(applied.raw.runtimes).toEqual({
-      opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+      opencode: { harness: 'opencode', config_dir: '.opencode' },
       claude: { harness: 'claude', config_dir: '.claude' },
       codex: { harness: 'codex', config_dir: '.codex' },
       pi: { harness: 'pi', config_dir: '.pi' },

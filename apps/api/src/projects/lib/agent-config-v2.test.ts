@@ -111,7 +111,7 @@ describe('migrateManifestV2ToV3 — happy path', () => {
     // All four default runtime profiles are injected with the canonical
     // harness + config_dir pairing (DEFAULT_RUNTIME_PROFILES_V3).
     expect(applied.raw.runtimes).toEqual({
-      opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+      opencode: { harness: 'opencode', config_dir: '.opencode' },
       claude: { harness: 'claude', config_dir: '.claude' },
       codex: { harness: 'codex', config_dir: '.codex' },
       pi: { harness: 'pi', config_dir: '.pi' },

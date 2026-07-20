@@ -103,15 +103,15 @@ describe('validateRegistry', () => {
 // --- target expansion ------------------------------------------------------
 
 describe('expandTarget', () => {
-  const ctx = { configDir: '.kortix/opencode' };
+  const ctx = { configDir: '.opencode' };
   test('~ maps to repo root', () => {
     expect(expandTarget('~/AGENTS.md', ctx)).toBe('AGENTS.md');
   });
   test('@skills alias', () => {
-    expect(expandTarget('@skills/pdf/SKILL.md', ctx)).toBe('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(expandTarget('@skills/pdf/SKILL.md', ctx)).toBe('.opencode/skills/pdf/SKILL.md');
   });
   test('@agents alias', () => {
-    expect(expandTarget('@agents/researcher.md', ctx)).toBe('.kortix/opencode/agents/researcher.md');
+    expect(expandTarget('@agents/researcher.md', ctx)).toBe('.opencode/agents/researcher.md');
   });
   test('@memory alias', () => {
     expect(expandTarget('@memory/MEMORY.md', ctx)).toBe('.kortix/memory/MEMORY.md');
@@ -146,12 +146,12 @@ describe('buildRegistry', () => {
     const { registry, counts } = buildRegistry({
       name: 'test',
       source: memSource({
-        '.kortix/opencode/skills/pdf/SKILL.md': '---\nname: pdf\ndescription: PDFs\n---\nbody',
-        '.kortix/opencode/skills/pdf/libraries/reportlab.md': 'ref',
-        '.kortix/opencode/skills/GROUP/research/SKILL.md': '---\nname: research\n---\nx',
-        '.kortix/opencode/agents/kortix.md': '---\nname: kortix\nmode: primary\n---\n',
-        '.kortix/opencode/commands/review.md': '---\ndescription: review\n---\n',
-        '.kortix/opencode/tools/web_search.ts': 'export const x = 1',
+        '.opencode/skills/pdf/SKILL.md': '---\nname: pdf\ndescription: PDFs\n---\nbody',
+        '.opencode/skills/pdf/libraries/reportlab.md': 'ref',
+        '.opencode/skills/GROUP/research/SKILL.md': '---\nname: research\n---\nx',
+        '.opencode/agents/kortix.md': '---\nname: kortix\nmode: primary\n---\n',
+        '.opencode/commands/review.md': '---\ndescription: review\n---\n',
+        '.opencode/tools/web_search.ts': 'export const x = 1',
       }),
     });
     expect(counts).toMatchObject({ skill: 2, agent: 1, command: 1, tool: 1 });

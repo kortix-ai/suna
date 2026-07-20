@@ -7,7 +7,7 @@ import { sandboxEnvValue } from './api/sandbox-env.ts';
  * `.kortix/link.json` — the per-repo binding between a working
  * directory and a Kortix cloud project.
  *
- * Lives inside `.kortix/` (alongside `Dockerfile` + `opencode/`), so
+ * Lives inside `.kortix/` (alongside `Dockerfile` + `memory/`), so
  * the link travels with the branch when teammates clone the repo —
  * they don't have to re-link. Also stores which host the project
  * belongs to so commands always hit the right Kortix instance even if

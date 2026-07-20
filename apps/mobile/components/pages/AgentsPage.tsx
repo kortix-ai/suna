@@ -1,6 +1,6 @@
 /**
  * AgentsPage — the project's OpenCode agents (web parity: customize/sections
- * agents-view). Lists the agents declared under .kortix/opencode/agents/ and,
+ * agents-view). Lists the agents declared under .opencode/agents/ and,
  * on tap, shows the agent's markdown source. Read-only; agent authoring flows
  * through a session (to be wired next).
  *

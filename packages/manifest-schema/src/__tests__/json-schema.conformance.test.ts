@@ -67,7 +67,7 @@ required = ["ANTHROPIC_API_KEY"]
 optional = ["STRIPE_KEY"]
 
 [opencode]
-config_dir = ".kortix/opencode"
+config_dir = ".opencode"
 
 [[sandbox.templates]]
 slug = "py"
@@ -127,7 +127,7 @@ env:
   required: [ANTHROPIC_API_KEY]
   optional: [STRIPE_KEY]
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: .opencode
 sandbox:
   default: py
   templates:
@@ -646,7 +646,7 @@ default_agent: w
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
 agents:
   w:
     runtime: opencode
@@ -669,7 +669,7 @@ runtimes:
     config_dir: .codex
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   pi:
     harness: pi
     config_dir: .pi
@@ -719,7 +719,7 @@ default_agent: primary
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
 agents:
   primary:
     runtime: opencode

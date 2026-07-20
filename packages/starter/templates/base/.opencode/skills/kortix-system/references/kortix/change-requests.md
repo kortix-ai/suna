@@ -288,8 +288,8 @@ Validation rules on `POST /`:
 | Surface       | How the CR composes                                                                              |
 | ------------- | ------------------------------------------------------------------------------------------------ |
 | **Sessions**  | A CR's `origin_session_id` is back-filled from `$KORTIX_SESSION_ID` so the dashboard shows the session that opened it. Cascade is `ON DELETE SET NULL` — closing the session orphans the link, doesn't delete the CR. |
-| **Skills**    | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
-| **Agents**    | Same: new `.kortix/opencode/agents/<agent>.md` files need to land via CR.                       |
+| **Skills**    | New `.opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
+| **Agents**    | Same: new `.opencode/agents/<agent>.md` files need to land via CR.                       |
 | **Triggers**  | Edits to `triggers:` in `kortix.yaml` only reach the scheduler after the CR merges. The scheduler reads `kortix.yaml` on `main`. |
 | **Secrets**   | Decoupled. Secrets live in the Kortix Secrets Manager, not the manifest; CRs don't move secrets. |
 | **Dashboard** | Renders CR list / detail / diff / merge button. Same data as the CLI sees.                       |

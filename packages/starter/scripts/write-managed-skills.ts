@@ -15,7 +15,7 @@ import { getStarterFiles, isKortixManagedSkillName } from '../src/index';
 
 const outDir = process.argv[2] ?? join(import.meta.dir, '..', 'dist', 'managed-skills');
 
-const SKILLS_PREFIX = '.kortix/opencode/skills/';
+const SKILLS_PREFIX = '.opencode/skills/';
 
 function skillNameOf(path: string): string | null {
   if (!path.startsWith(SKILLS_PREFIX)) return null;

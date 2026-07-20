@@ -100,13 +100,12 @@ export function normalizeStarterTemplateId(value: unknown): StarterTemplateId {
   return DEFAULT_STARTER_TEMPLATE_ID;
 }
 
-const GENERAL_KNOWLEDGE_WORKER_SKILLS_PREFIX = '.kortix/opencode/skills/';
+const GENERAL_KNOWLEDGE_WORKER_SKILLS_PREFIX = '.opencode/skills/';
 
 export function listGeneralKnowledgeWorkerSkills(): string[] {
   const skillsDir = join(
     GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR,
-    '.kortix',
-    'opencode',
+    '.opencode',
     'skills',
   );
   try {

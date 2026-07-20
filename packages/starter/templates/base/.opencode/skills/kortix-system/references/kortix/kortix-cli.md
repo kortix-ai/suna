@@ -14,7 +14,7 @@ So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
 from any shell in the sandbox with no setup.
 
 This document lives under the `kortix-system` skill at
-`.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
+`.opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — it travels with your repo and is loaded on-demand whenever an agent
 needs CLI specifics.
 
@@ -342,7 +342,7 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.yaml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
+| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.yaml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.opencode`; codex wires `.agents` → `.opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
 
 ## Token scope
 
@@ -506,7 +506,7 @@ warns.
 
 ## See also
 
-- `.kortix/opencode/skills/kortix-system/SKILL.md` — entry point for
+- `.opencode/skills/kortix-system/SKILL.md` — entry point for
   the kortix-system skill. Mention the CLI from there.
 - `change-requests.md` (alongside this file) — full CR data model,
   lifecycle, REST API, and the "MUST open a CR" agent mandate.

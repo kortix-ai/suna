@@ -69,7 +69,7 @@ export const KORTIX_PRIMITIVE_TYPES: readonly KortixItemType[] = [
  * Target placeholders. A file's `target` may start with one of these aliases;
  * the installer expands it against the consuming project's resolved layout
  * (the OpenCode config dir comes from `opencode.config_dir` in kortix.yaml,
- * defaulting to `.kortix/opencode`).
+ * defaulting to `.opencode`).
  *
  *   ~/<path>            → repo root, relative                (shadcn-compatible)
  *   @opencode/<path>    → <configDir>/<path>

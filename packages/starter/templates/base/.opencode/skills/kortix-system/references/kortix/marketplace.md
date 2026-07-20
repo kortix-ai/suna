@@ -15,7 +15,7 @@ cover the user's need.
 - **Git owns the files.** A marketplace item resolves to source files from a
   registry repo or registry JSON endpoint.
 - **The project owns the install.** Installing copies files into the project
-  repo, usually under `.kortix/opencode/skills/<name>/`.
+  repo, usually under `.opencode/skills/<name>/`.
 - **The lock is the installed-state truth.** `registry-lock.json` records every
   installed item, source, target file, and SHA-256 content hash.
 - **Updates are file-hash diffs.** An update is available when fresh marketplace
@@ -85,7 +85,7 @@ the UI query/status mapping.
    ```sh
    kortix marketplace status --project <project-id> --json
    ```
-5. In the next session, the skill is available from `.kortix/opencode/skills/`.
+5. In the next session, the skill is available from `.opencode/skills/`.
 
 Install writes the item files plus `registry-lock.json`. It should be treated as
 a normal project code change: review the diff when needed and revert through git
@@ -181,7 +181,7 @@ Create a new skill only after these checks:
 2. Inspect likely matches with `kortix marketplace show`.
 3. Prefer installing an existing skill if it covers the workflow.
 4. If nothing fits, create a focused project-local skill under
-   `.kortix/opencode/skills/<name>/SKILL.md`.
+   `.opencode/skills/<name>/SKILL.md`.
 5. If the skill should be reused across projects, move it into a registry source
    and publish/index that source separately.
 

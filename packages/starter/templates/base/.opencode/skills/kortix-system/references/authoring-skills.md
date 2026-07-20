@@ -49,13 +49,13 @@ very file is one of its `references/`.)
 In a Kortix project, skills go under the OpenCode config dir:
 
 ```
-.kortix/opencode/skills/<name>/SKILL.md
+.opencode/skills/<name>/SKILL.md
 ```
 
 The directory name **must equal** the `name` in the frontmatter. At
 runtime, OpenCode also discovers skills from `.opencode/skills/`,
 `.claude/skills/`, and `.agents/skills/` (project and home directory). For
-a Kortix project, author under `.kortix/opencode/skills/` — that's the
+a Kortix project, author under `.opencode/skills/` — that's the
 canonical home and what the marketplace installs into.
 
 OpenCode lists every discovered skill in the `skill` tool description and
@@ -150,7 +150,7 @@ metadata:
    file. Get the triggers in.
 4. **Write instructions an agent can follow blind.** Imperative, ordered,
    specific. Prefer concrete commands and decision rules over prose.
-5. **Create the files.** `.kortix/opencode/skills/<name>/SKILL.md`,
+5. **Create the files.** `.opencode/skills/<name>/SKILL.md`,
    frontmatter starting on line 1. Add `scripts/`, `references/`, or
    `assets/` only if the skill genuinely needs them.
 6. **Validate** (below).
@@ -177,7 +177,7 @@ Two complementary checks — do both:
    file is in place:
 
    ```bash
-   agentskills validate .kortix/opencode/skills/<name>/
+   agentskills validate .opencode/skills/<name>/
    ```
 
    Read any error and fix it before moving on. Don't validate

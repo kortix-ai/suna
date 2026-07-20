@@ -75,7 +75,7 @@ source wins — re-copy it.
 |---|---|---|---|---|---|---|---|---|
 | `claude` | Claude Code | `@agentclientprotocol/claude-agent-acp` | `.claude` | experimental | bare | yes | no | `claude_subscription`, `anthropic_api_key`, `native_config` |
 | `codex` | Codex | `@agentclientprotocol/codex-acp` | `.codex` | experimental | bare | yes | no | `codex_subscription`, `openai_api_key`, `native_config` |
-| `opencode` | OpenCode | `opencode-ai` | `.kortix/opencode` | stable | gateway-prefixed | no | yes | `managed_gateway`, `anthropic_api_key`, `openai_api_key`, `openai_compatible`, `native_config` |
+| `opencode` | OpenCode | `opencode-ai` | `.opencode` | stable | gateway-prefixed | no | yes | `managed_gateway`, `anthropic_api_key`, `openai_api_key`, `openai_compatible`, `native_config` |
 | `pi` | Pi | `pi-acp` | `.pi` | experimental | bare | yes | no | `managed_gateway`, `anthropic_api_key`, `openai_api_key`, `openai_compatible`, `native_config` |
 
 `subscriptionAuth`: `claude` → `oauth-token`, `codex` → `oauth-device`,
@@ -250,7 +250,7 @@ directly and re-derive on their own — no code change needed:
   Get this wrong and the harness receives a model id it doesn't recognize.
 - **Template seed.** The starter template
   (`packages/starter/templates/base/`) ships one native config directory per
-  existing harness (`.claude`, `.codex`, `.kortix/opencode`, `.pi`) with seed
+  existing harness (`.claude`, `.codex`, `.opencode`, `.pi`) with seed
   agent files. Nothing derives this from the descriptor — add the new
   harness's config directory and seed content by hand if you want it to have
   out-of-the-box agent files.

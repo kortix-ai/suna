@@ -132,7 +132,7 @@ export {
  * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/
  * workspace/enabled); OpenCode behavior (mode/model/temperature/top_p/steps/
  * variant/color/hidden/permission/prompt) lives entirely in the agent's own
- * native `.kortix/opencode/agents/<name>.md` frontmatter + body, never in
+ * native `.opencode/agents/<name>.md` frontmatter + body, never in
  * this manifest. YAML-only, `[[channels]]` removed, deny-by-default grant
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").

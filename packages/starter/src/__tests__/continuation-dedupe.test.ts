@@ -4,7 +4,7 @@ import {
   continuationMessageId,
   countPassiveContinuationsAfter,
   hasContinuationMessageId,
-} from '../../templates/base/.kortix/opencode/continuation/dedupe';
+} from '../../templates/base/.opencode/continuation/dedupe';
 
 function userMessage(id: string, text: string) {
   return {

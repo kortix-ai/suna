@@ -54,10 +54,10 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           sb.exists('init-one/.kortix'),
         );
         check(
-          '.kortix/opencode/ runtime dir written (default agent + config)',
-          sb.exists('init-one/.kortix/opencode/opencode.jsonc'),
+          '.opencode/ runtime dir written (default agent + config)',
+          sb.exists('init-one/.opencode/opencode.jsonc'),
           true,
-          sb.exists('init-one/.kortix/opencode/opencode.jsonc'),
+          sb.exists('init-one/.opencode/opencode.jsonc'),
         );
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
@@ -118,16 +118,17 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           '--no-git',
         ]);
         check('exit 0', r.exitCode === 0, 0, r.exitCode);
-        // Selected agents' native dirs are symlinks onto the OpenCode config dir;
-        // existsSync follows the link, so a resolving path proves it works.
+        // .opencode is the canonical, real config dir; the other selected agents'
+        // native dirs are symlinks onto it — existsSync follows the link, so a
+        // resolving path proves it works.
         check(
-          '.opencode → .kortix/opencode resolves',
+          '.opencode/ (canonical config dir) written',
           sb.exists('wired/.opencode/opencode.jsonc'),
           true,
           sb.exists('wired/.opencode/opencode.jsonc'),
         );
         check(
-          '.claude → .kortix/opencode resolves to shared skills',
+          '.claude → .opencode resolves to shared skills',
           sb.exists('wired/.claude/skills/kortix-system/SKILL.md'),
           true,
           sb.exists('wired/.claude/skills/kortix-system/SKILL.md'),

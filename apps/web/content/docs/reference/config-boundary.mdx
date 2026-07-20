@@ -45,6 +45,6 @@ Full manifest field reference: [the manifest](/docs/reference/manifest). For beh
 
 The agent runtime runs in the Kortix cloud sandbox. The sandbox agent server launches the selected ACP harness with the compiled runtime profile and config dir. There is no Kortix command that runs the cloud session agent on your machine; the [CLI](/docs/reference/cli) is a cloud control plane, not a local runner.
 
-Because behavior stays harness-native, files remain portable to the harness that owns them. For example, an OpenCode runtime profile can still use `.kortix/opencode/`, while a Codex profile can use `.codex/`.
+Because behavior stays harness-native, files remain portable to the harness that owns them. For example, an OpenCode runtime profile can still use `.opencode/`, while a Codex profile can use `.codex/`.
 
 New runtime config files reach future sandbox sessions only after a [change request](/docs/reference/change-requests) merges them to `main`.

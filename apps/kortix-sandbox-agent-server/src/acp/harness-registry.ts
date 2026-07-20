@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { buildOpencodeKortixProvider, DEFAULT_KORTIX_MODEL } from './opencode-gateway'
@@ -82,7 +82,7 @@ export type AcpHarnessDescriptor = {
 export type AcpHarnessRegistry = ReadonlyMap<AcpHarnessId, AcpHarnessDescriptor>
 
 function nativeConfigEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> {
-  const dir = nativeConfigDir(env)
+  const dir = nativeConfigDir(env, id)
   if (!dir) return {}
   if (id === 'claude') return { CLAUDE_CONFIG_DIR: dir }
   if (id === 'codex') return { CODEX_HOME: dir }
@@ -90,11 +90,34 @@ function nativeConfigEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<strin
   return { PI_CODING_AGENT_DIR: dir }
 }
 
-export function nativeConfigDir(env: NodeJS.ProcessEnv): string | null {
+// Mirrors LEGACY_OPENCODE_CONFIG_DIR in apps/api/src/projects/git/config.ts —
+// the two packages don't share imports, so this is intentionally duplicated
+// rather than pulled through a shared module.
+const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode'
+
+export function nativeConfigDir(env: NodeJS.ProcessEnv, harness?: AcpHarnessId): string | null {
   const raw = env.KORTIX_RUNTIME_CONFIG_DIR?.trim()
   if (!raw) return null
   const workspace = env.KORTIX_WORKSPACE?.replace(/\/$/, '') || '/workspace'
-  return raw.startsWith('/') ? raw : `${workspace}/${raw.replace(/^\.\//, '')}`
+  const dir = raw.startsWith('/') ? raw : `${workspace}/${raw.replace(/^\.\//, '')}`
+  if (harness === 'opencode' && !existsSync(join(dir, 'opencode.jsonc'))) {
+    const legacy = join(workspace, LEGACY_OPENCODE_CONFIG_DIR)
+    if (existsSync(join(legacy, 'opencode.jsonc'))) return legacy
+  }
+  return dir
+}
+
+/** Resolve the native config dir for the harness named by KORTIX_RUNTIME_HARNESS
+ * — the same variable the boot sequence (main.ts) uses to pick the ACP child.
+ * This is the seam boot-time work that runs outside an ACP session (e.g. the
+ * managed-skills injection) must call instead of `nativeConfigDir(env)` with no
+ * harness: without it, a legacy `.kortix/opencode` workspace gets skills
+ * injected into `.opencode` while the opencode child — via
+ * `resolveAcpHarnessLaunchEnv('opencode', …)` — reads config from
+ * `.kortix/opencode`, silently defeating the injection. */
+export function nativeConfigDirForRuntimeHarness(env: NodeJS.ProcessEnv): string | null {
+  const harness = parseAcpHarnessId(env.KORTIX_RUNTIME_HARNESS)
+  return nativeConfigDir(env, harness ?? undefined)
 }
 
 function codexProfileConfig(env: NodeJS.ProcessEnv): Record<string, unknown> {

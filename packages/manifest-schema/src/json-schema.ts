@@ -151,7 +151,7 @@ function permissionConfigSchema(): JsonSchemaFragment {
   };
 }
 
-/** An agent's native `.kortix/opencode/agents/<name>.md` frontmatter — full
+/** An agent's native `.opencode/agents/<name>.md` frontmatter — full
  *  OpenCode `AgentConfig` parity (mirrors `validateAgentMdFrontmatter`). Not
  *  part of the manifest schema's own tree (frontmatter lives in a sibling
  *  file the manifest never embeds) — published as a `$defs` entry on the v2
@@ -162,7 +162,7 @@ function agentMdFrontmatterSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     description:
-      "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+      "OpenCode behavior for one agent — lives in .opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
     properties: {
       description: { type: 'string' },
       model: { type: 'string' },
@@ -582,7 +582,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       'GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must ' +
       'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
       'prompt itself) lives entirely in that agent’s own native ' +
-      '`.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields ' +
+      '`.opencode/agents/<name>.md` frontmatter + body — authoring any of those fields ' +
       'here is a hard error. `[[channels]]` is removed outright. See ' +
       'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
     type: 'object',

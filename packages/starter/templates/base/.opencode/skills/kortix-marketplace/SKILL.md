@@ -42,8 +42,8 @@ adding an item is the import flow below.
    - an agent definition (an `agents/*.md`) → an **agent**,
    - a tool file (a `tools/*.ts`) → a **tool**.
 3. **Merge what fits into this project**, in the right place:
-   - skills → `.kortix/opencode/skills/<name>/`,
-   - agents → `.kortix/opencode/agents/`, tools → `.kortix/opencode/tools/`,
+   - skills → `.opencode/skills/<name>/`,
+   - agents → `.opencode/agents/`, tools → `.opencode/tools/`,
    - for a **whole project**: pull in its skills/agents/tools and reconcile its
      `kortix.yaml` into this project's (merge connectors/triggers/agents — never
      blindly overwrite the user's manifest). Use judgment; keep what's relevant.

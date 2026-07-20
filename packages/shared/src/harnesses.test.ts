@@ -30,7 +30,7 @@ describe('HARNESSES descriptor', () => {
     expect(HARNESSES.pi.adapterPkg).toBe('pi-acp');
     expect(HARNESSES.claude.configDir).toBe('.claude');
     expect(HARNESSES.codex.configDir).toBe('.codex');
-    expect(HARNESSES.opencode.configDir).toBe('.kortix/opencode');
+    expect(HARNESSES.opencode.configDir).toBe('.opencode');
     expect(HARNESSES.pi.configDir).toBe('.pi');
   });
   it('matches the SDK presentation labels', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -7,6 +7,7 @@ import {
   applyAcpSessionDefaults,
   createAcpHarnessRegistry,
   isolateHarnessAuthEnv,
+  nativeConfigDirForRuntimeHarness,
   resolveAcpHarnessLaunchEnv,
 } from '../acp/harness-registry';
 
@@ -379,6 +380,116 @@ describe('ACP harness registry', () => {
     expect(registry.get('pi')?.launch.env).toEqual({
       PI_CODING_AGENT_DIR: '/workspace/.config/agent',
     });
+  });
+
+  test('opencode config dir falls back to the legacy .kortix/opencode when the new default lacks opencode.jsonc', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'kortix-ws-'));
+    try {
+      mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}');
+      const registry = createAcpHarnessRegistry({
+        KORTIX_WORKSPACE: workspace,
+        KORTIX_RUNTIME_CONFIG_DIR: '.opencode',
+      });
+      expect(registry.get('opencode')?.launch.env).toEqual({
+        OPENCODE_CONFIG_DIR: join(workspace, '.kortix/opencode'),
+      });
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('opencode config dir stays on the configured dir once it has its own opencode.jsonc', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'kortix-ws-'));
+    try {
+      mkdirSync(join(workspace, '.opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.opencode/opencode.jsonc'), '{}');
+      mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}');
+      const registry = createAcpHarnessRegistry({
+        KORTIX_WORKSPACE: workspace,
+        KORTIX_RUNTIME_CONFIG_DIR: '.opencode',
+      });
+      expect(registry.get('opencode')?.launch.env).toEqual({
+        OPENCODE_CONFIG_DIR: join(workspace, '.opencode'),
+      });
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('the legacy opencode fallback does not apply to other harnesses', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'kortix-ws-'));
+    try {
+      mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}');
+      const registry = createAcpHarnessRegistry({
+        KORTIX_WORKSPACE: workspace,
+        KORTIX_RUNTIME_CONFIG_DIR: '.claude',
+      });
+      expect(registry.get('claude')?.launch.env).toEqual({
+        CLAUDE_CONFIG_DIR: join(workspace, '.claude'),
+      });
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  // Guards the boot-time managed-skills injection (main.ts), which has no
+  // ACP session/harness of its own — it must resolve the exact same config
+  // dir the opencode child will read via resolveAcpHarnessLaunchEnv, or a
+  // legacy `.kortix/opencode` workspace gets skills injected into `.opencode`
+  // while the opencode child reads `.kortix/opencode`.
+  test('nativeConfigDirForRuntimeHarness resolves the legacy opencode dir for a legacy workspace', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'kortix-ws-'));
+    try {
+      mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}');
+      const env = {
+        KORTIX_WORKSPACE: workspace,
+        KORTIX_RUNTIME_CONFIG_DIR: '.opencode',
+        KORTIX_RUNTIME_HARNESS: 'opencode',
+      };
+      expect(nativeConfigDirForRuntimeHarness(env)).toBe(join(workspace, '.kortix/opencode'));
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('nativeConfigDirForRuntimeHarness does not apply the opencode fallback for other harnesses', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'kortix-ws-'));
+    try {
+      mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}');
+      const env = {
+        KORTIX_WORKSPACE: workspace,
+        KORTIX_RUNTIME_CONFIG_DIR: '.claude',
+        KORTIX_RUNTIME_HARNESS: 'claude',
+      };
+      expect(nativeConfigDirForRuntimeHarness(env)).toBe(join(workspace, '.claude'));
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('nativeConfigDirForRuntimeHarness ignores an unrecognized/missing KORTIX_RUNTIME_HARNESS', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'kortix-ws-'));
+    try {
+      mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true });
+      writeFileSync(join(workspace, '.kortix/opencode/opencode.jsonc'), '{}');
+      const env = {
+        KORTIX_WORKSPACE: workspace,
+        KORTIX_RUNTIME_CONFIG_DIR: '.opencode',
+      };
+      // No (or garbage) harness → same as nativeConfigDir(env) with no harness:
+      // no opencode-specific fallback applies.
+      expect(nativeConfigDirForRuntimeHarness(env)).toBe(join(workspace, '.opencode'));
+      expect(nativeConfigDirForRuntimeHarness({ ...env, KORTIX_RUNTIME_HARNESS: 'not-a-harness' })).toBe(
+        join(workspace, '.opencode'),
+      );
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });
 

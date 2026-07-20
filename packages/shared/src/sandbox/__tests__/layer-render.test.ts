@@ -200,7 +200,7 @@ describe('the /workspace wipe is scoped to the shared default image', () => {
     expect(custom).not.toContain(WIPE);
     // It still cleans up after ITSELF — only the config it staged, and only if it
     // was the one that staged it.
-    expect(custom).toContain('[ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode');
+    expect(custom).toContain('[ "$staged_starter_config" = 1 ] && rm -rf /workspace/.opencode');
   });
 
   test('a per-project warm keeps the baked checkout (unchanged)', () => {

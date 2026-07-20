@@ -294,7 +294,7 @@ Tools are defined as **TypeScript** or **JavaScript** files. The tool definition
 
 ### Location
 
-- Project-local: `.opencode/tools/` (or `.kortix/opencode/tools/` in a Kortix project)
+- Project-local: `.opencode/tools/` (or `.opencode/tools/` in a Kortix project)
 - Global: `~/.config/opencode/tools/`
 
 ---

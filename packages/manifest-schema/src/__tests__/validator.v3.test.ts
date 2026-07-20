@@ -18,7 +18,7 @@ runtimes:
     config_dir: .codex
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
 
 agents:
   kortix:

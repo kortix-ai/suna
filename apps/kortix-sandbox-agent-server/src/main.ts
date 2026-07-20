@@ -16,7 +16,7 @@ import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import { createAcpHarnessRegistry, nativeConfigDir, parseAcpHarnessId } from './acp/harness-registry'
+import { createAcpHarnessRegistry, nativeConfigDirForRuntimeHarness, parseAcpHarnessId } from './acp/harness-registry'
 import { AcpRuntime } from './acp/runtime'
 import { ensureInjectedManagedSkills } from './injected-skills'
 
@@ -65,7 +65,7 @@ async function main() {
     // Overlay the always-latest managed Kortix skills (kortix-cli + kortix-*)
     // into the runtime's config dir so no project goes stale on Kortix
     // internals, whatever the repo committed. Never throws.
-    const runtimeConfigDir = nativeConfigDir(process.env)
+    const runtimeConfigDir = nativeConfigDirForRuntimeHarness(process.env)
     if (runtimeConfigDir) await ensureInjectedManagedSkills(runtimeConfigDir)
   }
 

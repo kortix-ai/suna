@@ -203,6 +203,15 @@ function normalizedConfigDir(value: string): string {
   return value.replace(/^\.\//, "").replace(/\/+$/, "");
 }
 
+const LEGACY_OPENCODE_CONFIG_DIR = ".kortix/opencode";
+
+function resolveOpencodeConfigDir(configDir: string, paths: string[]): string {
+  if (paths.includes(`${configDir}/opencode.jsonc`)) return configDir;
+  return paths.includes(`${LEGACY_OPENCODE_CONFIG_DIR}/opencode.jsonc`)
+    ? LEGACY_OPENCODE_CONFIG_DIR
+    : configDir;
+}
+
 /** Pure file classifier for v3 native runtime profiles. Native formats remain
  * independent; this only tells the neutral project summary where they live. */
 export function discoverRuntimeProjectFiles(
@@ -217,12 +226,20 @@ export function discoverRuntimeProjectFiles(
   const seenCommand = new Set<string>();
 
   for (const [runtime, profile] of Object.entries(compiledRuntime.runtimes).sort(([a], [b]) => a.localeCompare(b))) {
-    const configDir = normalizedConfigDir(profile.configDir);
+    let configDir = normalizedConfigDir(profile.configDir);
+    // Only the opencode fallback is allowed to change what gets reported here.
+    // Every other harness surfaces its manifest-configured config_dir exactly
+    // as authored — normalization only feeds the internal path matching below.
+    let reportedConfigDir = profile.configDir;
+    if (profile.harness === "opencode") {
+      configDir = resolveOpencodeConfigDir(configDir, paths);
+      reportedConfigDir = configDir;
+    }
     const base = `${configDir}/`;
     found.configs.push({
       runtime,
       harness: profile.harness,
-      configDir: profile.configDir,
+      configDir: reportedConfigDir,
       path: `${base}${RUNTIME_CONFIG_FILE[profile.harness]}`,
     });
     for (const path of paths) {

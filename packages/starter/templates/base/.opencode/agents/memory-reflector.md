@@ -67,7 +67,7 @@ for every other agent.
 ## When configuration changes
 
 - To change **what** gets remembered: edit the **rubric** in
-  `.kortix/opencode/skills/kortix-memory/SKILL.md` and open a CR. You
+  `.opencode/skills/kortix-memory/SKILL.md` and open a CR. You
   read the skill fresh on every run, so the next reflection picks up
   the new rubric automatically.
 - To change **how often** you run: edit the `memory-reflector` block

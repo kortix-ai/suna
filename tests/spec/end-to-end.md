@@ -72,7 +72,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ## 2. CLI — local + auth (no/low API)
 
-`INIT-1` `kortix init <name> -y` → fresh standalone `<name>/` with `kortix.yaml` + `.kortix/` (Dockerfile, `.kortix/opencode/…`, canonical skill), agent wiring, and `git init -b main`. **Zero API calls.** Exit 0.
+`INIT-1` `kortix init <name> -y` → fresh standalone `<name>/` with `kortix.yaml` + `.kortix/` (Dockerfile), `.opencode/…` (canonical config dir + skill), agent wiring, and `git init -b main`. **Zero API calls.** Exit 0.
 `INIT-2` `kortix init <name>` when `<name>/` already exists and is non-empty → exit 1 (refuses).
 `INIT-3` `kortix init <name> --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (native dir → OpenCode config) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
 `INIT-4` `kortix init <name> --no-git` → scaffold created with no repository.

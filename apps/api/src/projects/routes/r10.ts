@@ -87,7 +87,7 @@ function buildRegistryProjectInstallPrompt(
   lines.push(
     '',
     'Steps:',
-    "1. Read this project's current kortix.yaml and .kortix/opencode/agents/ to see what already exists.",
+    "1. Read this project's current kortix.yaml and .opencode/agents/ to see what already exists.",
     '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
     "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
     '4. Install the marketplace skills listed above.',

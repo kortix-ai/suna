@@ -35,7 +35,7 @@ default_agent: kortix
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   claude:
     harness: claude
     config_dir: .claude
@@ -59,7 +59,7 @@ agents:
     connectors: [github]
 ```
 
-`runtimes:` names a set of ACP harness profiles — see [`runtimes:` (v3)](#runtimes-v3) below. `agents:` is a name→block map of logical agents, each bound to one of those runtimes — see [`agents:` (v3)](#agents-v3) below. Every behavioral field (prompt, model, provider, mode, permission tree) lives in the harness's own native config directory (`.claude`, `.codex`, `.kortix/opencode`, `.pi`, …), never in the manifest — see [Kortix vs runtime config](/docs/reference/config-boundary). `project:`, `env:`, `sandbox:`, `triggers:`, `connectors:`, and `apps:` keep the same shape as v2.
+`runtimes:` names a set of ACP harness profiles — see [`runtimes:` (v3)](#runtimes-v3) below. `agents:` is a name→block map of logical agents, each bound to one of those runtimes — see [`agents:` (v3)](#agents-v3) below. Every behavioral field (prompt, model, provider, mode, permission tree) lives in the harness's own native config directory (`.claude`, `.codex`, `.opencode`, `.pi`, …), never in the manifest — see [Kortix vs runtime config](/docs/reference/config-boundary). `project:`, `env:`, `sandbox:`, `triggers:`, `connectors:`, and `apps:` keep the same shape as v2.
 
 ## v2 example (`kortix.yaml`, legacy)
 
@@ -85,10 +85,10 @@ sandbox:
       memory: 16
 
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: .opencode
 
 agents:
-  kortix:                    # governance ONLY — behavior lives in .kortix/opencode/agents/kortix.md
+  kortix:                    # governance ONLY — behavior lives in .opencode/agents/kortix.md
     connectors: all
     secrets: all
     kortix_cli: all
@@ -146,7 +146,7 @@ cpu = 4
 memory = 16
 
 [opencode]
-config_dir = ".kortix/opencode"
+config_dir = ".opencode"
 
 [[triggers]]
 slug = "daily-digest"
@@ -200,7 +200,7 @@ A name→block map of runtime profiles, keyed by profile name. Each profile sele
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   claude:
     harness: claude
     config_dir: .claude
@@ -386,12 +386,12 @@ v1 and v2 projects may still declare where OpenCode's config dir lives. Optional
 
 ```yaml
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: .opencode
 ```
 
 | Field        | Type   | Default            | Notes                                                  |
 | ------------ | ------ | ------------------- | ------------------------------------------------------- |
-| `config_dir` | string | `.kortix/opencode` | Repo-relative dir. Same silent-fallback behavior as `sandbox.templates` paths. |
+| `config_dir` | string | `.opencode` | Repo-relative dir. Same silent-fallback behavior as `sandbox.templates` paths. |
 
 That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout the OpenCode harness reads by convention. OpenCode owns those harness-native semantics; Kortix may inspect metadata to build server-side agent/model UI surfaces. See [Kortix vs runtime config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
 
@@ -552,7 +552,7 @@ Optional per-tool gates. `match` (glob over tool names, required) + `action` =
 A name→block **map**, keyed by agent name — **governance only**. There is no
 `model`/`mode`/`description`/`permission`/`prompt` here at all: every behavioral
 field lives in that agent's own OpenCode `.md` file under
-`.kortix/opencode/agents/<name>.md` (frontmatter + body, a stock OpenCode agent
+`.opencode/agents/<name>.md` (frontmatter + body, a stock OpenCode agent
 file — no Kortix-specific split). The map key is the join to that `.md`'s
 filename. `default_agent` (top-level, required in v2) must name a declared,
 enabled agent here. New projects should use [`agents:` (v3)](#agents-v3) instead,
@@ -591,7 +591,7 @@ v2 is **deny-by-default**: an omitted `connectors`/`secrets`/`kortix_cli`/`skill
 
 Array of tables. Optional — with no `[[agents]]` section, every session is capped only by the launching human's role (the project hasn't adopted per-agent governance). Adding **any** `[[agents]]` entry opts the whole project into declarative, server-side agent governance: any agent name not listed here is then default-denied — it still runs its OpenCode `.md` behavior, but with no connectors, no `kortix_cli` powers, and no project secrets.
 
-An agent's *behavior* (prompt, mode, tools, permission tree) still lives entirely in its OpenCode `.md` file under `.kortix/opencode/agents/`. `[[agents]]` is a governance overlay on top of that: which agent names the platform will launch, and what each one may touch.
+An agent's *behavior* (prompt, mode, tools, permission tree) still lives entirely in its OpenCode `.md` file under `.opencode/agents/`. `[[agents]]` is a governance overlay on top of that: which agent names the platform will launch, and what each one may touch.
 
 ```toml
 [[agents]]
@@ -637,7 +637,7 @@ no-ops if the project is already on v3. The promotion:
   at their default config directories, so every official harness becomes
   selectable;
 - drops the legacy top-level `opencode:` key. The `opencode` runtime profile
-  uses the default `.kortix/opencode` — a customized legacy `config_dir` is
+  uses the default `.opencode` — a customized legacy `config_dir` is
   not carried over, so re-add it to the profile after migrating if your
   project moved that directory;
 - sets `kortix_version: 3` and re-validates before writing — a validation

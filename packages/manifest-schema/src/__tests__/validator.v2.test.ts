@@ -8,7 +8,7 @@ import {
 
 // v2's `agents:` map is GOVERNANCE ONLY (decision 2026-07-05, "one home per
 // concern") — behavior (mode/model/temperature/permission/…) lives entirely
-// in the agent's own `.kortix/opencode/agents/<name>.md` frontmatter, which
+// in the agent's own `.opencode/agents/<name>.md` frontmatter, which
 // this validator never reads. See the `validateAgentMdFrontmatter` describe
 // block below for the behavioral-field rules, now exercised against that
 // function directly instead of through `validateManifest`.
@@ -72,7 +72,7 @@ required = ["ANTHROPIC_API_KEY"]
 optional = ["STRIPE_KEY"]
 
 [opencode]
-config_dir = ".kortix/opencode"
+config_dir = ".opencode"
 
 [[sandbox.templates]]
 slug = "py"
@@ -141,7 +141,7 @@ env:
   required: [ANTHROPIC_API_KEY]
   optional: [STRIPE_KEY]
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: .opencode
 sandbox:
   default: py
   templates:

@@ -4,7 +4,7 @@
  */
 
 export interface TargetContext {
-  /** The OpenCode config dir, e.g. ".kortix/opencode". */
+  /** The OpenCode config dir, e.g. ".opencode". */
   configDir: string;
   /** Memory dir, e.g. ".kortix/memory". */
   memoryDir?: string;

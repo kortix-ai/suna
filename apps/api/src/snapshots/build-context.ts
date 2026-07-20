@@ -44,11 +44,11 @@ const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
-// Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
+// Canonical starter `.opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
-  || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+  || resolve(REPO_ROOT, 'packages/starter/templates/base/.opencode');
 const agentSrcDir = () => resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
 const agentPackageDir = () => resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server');
 

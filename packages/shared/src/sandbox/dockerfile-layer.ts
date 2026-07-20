@@ -79,7 +79,7 @@ export interface KortixToolchainLayerOpts {
    */
   agentBrowserVersion?: string;
   /**
-   * Path (in the build context) to the canonical starter `.kortix/opencode`
+   * Path (in the build context) to the canonical starter `.opencode`
    * config tree (pty plugin + standard tools + skills). When provided, the
    * layer warms a real opencode PROJECT INSTANCE against it at build time so the
    * costly first-instance work (Bun plugin auto-install/transpile, models.dev
@@ -267,7 +267,7 @@ function buildWarmRepoCloneLines(warmRepo: WarmRepoConfig | undefined): string[]
 
 /**
  * Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
- * creates an instance for a project dir it loads that dir's .kortix/opencode
+ * creates an instance for a project dir it loads that dir's .opencode
  * surface — importing the pty plugin + tools — which makes Bun auto-install /
  * transpile the plugin dep tree and opencode fetch its model catalog +
  * ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
@@ -298,7 +298,7 @@ function buildOpencodeInstanceWarmupLines(opts: {
   const { opencodeConfigPath, warmRepo, isSharedDefault } = opts;
   if (!opencodeConfigPath) return [];
   return [
-    `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+    `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.opencode/`,
     // Same "does it actually bundle" check as the opencode-config-deps
     // verification above, but exercised against the REAL starter tool
     // files (web_search / scrape_webpage / image_search / memory / show)
@@ -310,7 +310,7 @@ function buildOpencodeInstanceWarmupLines(opts: {
     // breaks every session's first prompt, not just startup latency, so
     // it must fail the build — the warm-up readiness probe below stays
     // best-effort as before.
-    'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
+    'RUN cd /opt/kortix/warm-config/.opencode \\',
     '    && rm -rf node_modules \\',
     '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
     '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
@@ -323,20 +323,19 @@ function buildOpencodeInstanceWarmupLines(opts: {
     '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
     '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
     '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
-    '    mkdir -p /workspace/.kortix; \\',
     // Stage the canonical starter opencode config so the instance warm-up
     // has the pty plugin + tools to load. For a per-project warm the baked
-    // repo may already ship its own .kortix/opencode — keep it (its config
+    // repo may already ship its own .opencode — keep it (its config
     // is what the session actually resolves at runtime) and only fall back
     // to the staged starter when the repo has none.
     // `staged_starter_config` records whether the starter config in
     // /workspace is OURS (we copied it) or the image's own — it decides what
     // the non-shared cleanup below is allowed to delete.
     '    staged_starter_config=0; \\',
-    '    [ -d /workspace/.kortix/opencode ] || { cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode && staged_starter_config=1; }; \\',
-    '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
-    '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
-    '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
+    '    [ -d /workspace/.opencode ] || { cp -a /opt/kortix/warm-config/.opencode /workspace/.opencode && staged_starter_config=1; }; \\',
+    '    rm -rf /workspace/.opencode/node_modules; \\',
+    '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.opencode/node_modules; \\',
+    '    export OPENCODE_CONFIG_DIR=/workspace/.opencode; \\',
     '    cd /workspace; \\',
     '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
     '    ready=0; \\',
@@ -356,14 +355,12 @@ function buildOpencodeInstanceWarmupLines(opts: {
     //    WORKDIR), so wiping it is exact, and it also clears anything opencode
     //    itself dropped while serving. The session clones into it at boot.
     //  • CUSTOM template: the user's Dockerfile owns /workspace. Remove ONLY
-    //    the starter config we staged (and the .kortix dir if that leaves it
-    //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
-    //    purpose; a user's own /workspace/.kortix survives untouched.
+    //    the starter config we staged — never their bytes.
     warmRepo
       ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
       : isSharedDefault
         ? '    find /workspace -mindepth 1 -delete 2>/dev/null; \\'
-        : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode; rmdir /workspace/.kortix 2>/dev/null; \\',
+        : '    [ "$staged_starter_config" = 1 ] && rm -rf /workspace/.opencode; \\',
     '    rm -rf /opt/kortix/warm-config; \\',
     '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
     '    rm -f /tmp/oc-warm.log; true',
@@ -670,7 +667,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
+    // below) is duplicated in packages/starter/templates/base/.opencode/package.json.
     // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the

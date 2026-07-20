@@ -1,10 +1,10 @@
 # OpenCode reference — overview
 
 OpenCode is the agent runtime that powers every Kortix session. The
-same `.kortix/opencode/` config dir drives both surfaces:
+same `.opencode/` config dir drives both surfaces:
 
 - **Remote** — when a Kortix session boots, the platform points OpenCode
-  at this dir via `OPENCODE_CONFIG_DIR=.kortix/opencode` and launches
+  at this dir via `OPENCODE_CONFIG_DIR=.opencode` and launches
   the agent inside the sandbox VM.
 - **Local** — when you (or anyone) runs `opencode` in this repo on
   their machine, the same config dir drives that session too.
@@ -34,22 +34,22 @@ linked upstream page wins.
 ## Where OpenCode looks for things in a Kortix project
 
 OpenCode discovers its config from `OPENCODE_CONFIG_DIR`, which the
-Kortix runtime sets to `.kortix/opencode/`. So everything below is
+Kortix runtime sets to `.opencode/`. So everything below is
 rooted there.
 
 | Surface       | Path inside the Kortix project                                                              |
 | ------------- | ------------------------------------------------------------------------------------------- |
-| Config root   | `.kortix/opencode/opencode.jsonc`                                                           |
-| Agents        | `.kortix/opencode/agents/<name>.md`                                                         |
-| Skills        | `.kortix/opencode/skills/<name>/SKILL.md`                                                   |
-| Commands      | `.kortix/opencode/commands/<name>.md`                                                       |
-| Custom tools  | `.kortix/opencode/tools/<file>.ts`                                                          |
-| Plugins       | `.kortix/opencode/plugins/<file>.ts` (+ `.kortix/opencode/package.json` for npm deps)       |
-| MCP servers   | `.kortix/opencode/opencode.jsonc` → `mcp` key                                               |
+| Config root   | `.opencode/opencode.jsonc`                                                           |
+| Agents        | `.opencode/agents/<name>.md`                                                         |
+| Skills        | `.opencode/skills/<name>/SKILL.md`                                                   |
+| Commands      | `.opencode/commands/<name>.md`                                                       |
+| Custom tools  | `.opencode/tools/<file>.ts`                                                          |
+| Plugins       | `.opencode/plugins/<file>.ts` (+ `.opencode/package.json` for npm deps)       |
+| MCP servers   | `.opencode/opencode.jsonc` → `mcp` key                                               |
 
 ## The contract with Kortix
 
-OpenCode owns everything under `.kortix/opencode/`. The Kortix platform
+OpenCode owns everything under `.opencode/`. The Kortix platform
 never reads any of it — those files only matter to OpenCode itself.
 
 Conversely, Kortix-specific config (triggers, secrets schema, sandbox

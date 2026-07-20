@@ -6,7 +6,7 @@
     "opencode": {
       "name": "opencode",
       "harness": "opencode",
-      "configDir": ".kortix/opencode"
+      "configDir": ".opencode"
     }
   },
   "agents": {

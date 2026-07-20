@@ -27,7 +27,7 @@ default_agent: kortix
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   claude:
     harness: claude
     config_dir: .claude
@@ -117,7 +117,7 @@ checks (`AgentsV3Scan.disabledNames`).
 ### The native `agent:` id
 
 `agents.<name>.agent` is the optional harness-native identifier — e.g. which
-`.claude/agents/<id>.md` or `.kortix/opencode/agents/<id>.md` the runtime
+`.claude/agents/<id>.md` or `.opencode/agents/<id>.md` the runtime
 should boot for this logical agent. When provided it must be a non-empty
 string; there is no further validation here because its legality is entirely
 the harness's own concern.
@@ -195,7 +195,7 @@ manifest's governance to v3 ACP-native routing:
   agent keeps its original name as its native OpenCode agent id.
 - Injects 4 default runtime profiles regardless of what the project uses,
   so every official harness becomes selectable going forward:
-  `DEFAULT_RUNTIME_PROFILES_V3` = `opencode` (`.kortix/opencode`), `claude`
+  `DEFAULT_RUNTIME_PROFILES_V3` = `opencode` (`.opencode`), `claude`
   (`.claude`), `codex` (`.codex`), `pi` (`.pi`).
 - Drops the legacy singular `opencode:` key from the manifest (destructured
   out before writing `runtimes`).

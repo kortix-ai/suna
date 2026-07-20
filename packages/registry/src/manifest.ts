@@ -10,7 +10,7 @@
  * where things live and how their metadata is read.
  */
 
-export const DEFAULT_OPENCODE_CONFIG_DIR = '.kortix/opencode';
+export const DEFAULT_OPENCODE_CONFIG_DIR = '.opencode';
 
 /**
  * Read a scalar `key` out of a top-level `[section]` (TOML) or `section:` (YAML)

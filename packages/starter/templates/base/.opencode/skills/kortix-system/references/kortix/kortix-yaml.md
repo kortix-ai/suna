@@ -79,7 +79,7 @@ sandbox:
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
 
 # ─── Triggers ─────────────────────────────────────────────────────
 # Each `triggers:` entry spawns a fresh session that runs `prompt`
@@ -129,7 +129,7 @@ A map of runtime-profile name → `{ harness, config_dir? }`. Each entry is a
 **launch profile**: which official ACP harness (`claude`, `codex`,
 `opencode`, or `pi`) to boot, and the repo-relative directory holding that
 harness's own native config (defaults to the harness's conventional
-directory — `.claude`, `.codex`, `.kortix/opencode`, `.pi` — when omitted).
+directory — `.claude`, `.codex`, `.opencode`, `.pi` — when omitted).
 `kortix.yaml` never translates that harness's prompts, models, providers,
 hooks, or agent definitions — the config dir is read natively by the
 harness's own ACP adapter. At least one runtime profile is required, and no
@@ -139,7 +139,7 @@ key other than `harness`/`config_dir` is legal on an entry.
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   claude:
     harness: claude
     config_dir: .claude
@@ -203,7 +203,7 @@ takes effect only once a CR is merged (read from the default branch).
 
 **Discovery direction:** declaring `agents:` is server-side, declarative
 agent discovery — it is not a rule that every native agent file (under
-`.kortix/opencode/agents/`, `.claude/agents/`, etc.) must be registered.
+`.opencode/agents/`, `.claude/agents/`, etc.) must be registered.
 Unregistered files can exist for local experiments or runtime internals.
 Kortix product UI (chat input, triggers, channels) fetches the server-side
 registered agent list rather than querying a sandbox harness directly.

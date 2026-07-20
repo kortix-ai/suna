@@ -23,7 +23,7 @@ Memory is **continuously CRUD'd**:
 
 - Regular sessions add or update memory whenever they discover
   something durable worth keeping.
-- The `memory-reflector` agent (`.kortix/opencode/agents/memory-reflector.md`)
+- The `memory-reflector` agent (`.opencode/agents/memory-reflector.md`)
   runs on a cron, surveys recent activity, and curates the folder.
 - Both consult this skill for the rubric.
 
@@ -171,7 +171,7 @@ The user reviews and merges. Don't merge your own CR.
 <reflector>
 
 The `memory-reflector` agent
-(`.kortix/opencode/agents/memory-reflector.md`) is a thin wrapper
+(`.opencode/agents/memory-reflector.md`) is a thin wrapper
 around this skill — its job is to:
 
 1. Load this skill.

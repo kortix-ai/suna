@@ -114,7 +114,7 @@ export interface BuildLayeredDockerfileOpts {
    */
   executorSdkPath: string;
   /**
-   * Path (in the build context) to the canonical starter `.kortix/opencode`
+   * Path (in the build context) to the canonical starter `.opencode`
    * config tree (pty plugin + standard tools + skills). When provided, the
    * layer warms a real opencode PROJECT INSTANCE against it at build time so the
    * costly first-instance work (Bun plugin auto-install/transpile, models.dev
@@ -397,7 +397,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
+    // below) is duplicated in packages/starter/templates/base/.opencode/package.json.
     // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the
@@ -430,7 +430,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // default image warmRepo is absent → /workspace stays empty (unchanged).
     ...warmRepoClone,
     // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
-    // creates an instance for a project dir it loads that dir's .kortix/opencode
+    // creates an instance for a project dir it loads that dir's .opencode
     // surface — importing the pty plugin + tools — which makes Bun auto-install /
     // transpile the plugin dep tree and opencode fetch its model catalog +
     // ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
@@ -448,7 +448,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // set +e + trailing `true` keep the image build green.
     ...(opencodeConfigPath
       ? [
-          `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+          `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.opencode/`,
           // Same "does it actually bundle" check as the opencode-config-deps
           // verification above, but exercised against the REAL starter tool
           // files (web_search / scrape_webpage / image_search / memory / show)
@@ -460,7 +460,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           // breaks every session's first prompt, not just startup latency, so
           // it must fail the build — the warm-up readiness probe below stays
           // best-effort as before.
-          'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
+          'RUN cd /opt/kortix/warm-config/.opencode \\',
           '    && rm -rf node_modules \\',
           '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
           '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
@@ -473,17 +473,16 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
           '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
           '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
-          '    mkdir -p /workspace/.kortix; \\',
           // Agent processes are session-selected from kortix.yaml v3. Do not
           // start or prime a specific harness while capturing the shared image;
           // all four pinned ACP adapters were verified in the runtime layer.
           // Three cases, and only one of them may delete indiscriminately:
           //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
           //    the daemon boots off it with no clone.
-          //  • SHARED default: /workspace contains only the empty .kortix dir
-          //    this step just created (the base is
-          //    `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a WORKDIR), so
-          //    wiping it is exact. The session clones into it at boot.
+          //  • SHARED default: /workspace stays empty (this step stages nothing
+          //    there — the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM
+          //    and a WORKDIR), so wiping it is exact. The session clones into it
+          //    at boot.
           //  • CUSTOM template: the user's Dockerfile owns /workspace and this
           //    layer staged nothing of its own there — never touch their bytes.
           warmRepo

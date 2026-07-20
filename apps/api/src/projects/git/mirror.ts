@@ -611,6 +611,14 @@ async function scrubGeneratedSnapshotFiles(root: string): Promise<void> {
   };
 
   await Promise.all([
+    removeIfPresent('.opencode/node_modules'),
+    removeIfPresent('.opencode/package-lock.json'),
+    removeIfPresent('.opencode/npm-shrinkwrap.json'),
+    removeIfPresent('.opencode/pnpm-lock.yaml'),
+    removeIfPresent('.opencode/yarn.lock'),
+    removeIfPresent('.opencode/bun.lockb'),
+    // Legacy `.kortix/opencode` layout — un-migrated projects may still carry
+    // these generated artifacts under the old config dir.
     removeIfPresent('.kortix/opencode/node_modules'),
     removeIfPresent('.kortix/opencode/package-lock.json'),
     removeIfPresent('.kortix/opencode/npm-shrinkwrap.json'),

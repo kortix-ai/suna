@@ -6,7 +6,7 @@
 # official ACP harness and its native config directory; `agents` registers
 # logical Kortix identities, routes each one to a runtime, and owns only
 # platform governance. Prompts, models, providers, hooks, modes, and runtime
-# permissions stay in `.claude`, `.codex`, `.kortix/opencode`, or `.pi`.
+# permissions stay in `.claude`, `.codex`, `.opencode`, or `.pi`.
 kortix_version: 3
 
 # The agent a session/trigger boots when it names no concrete agent (the
@@ -65,7 +65,7 @@ env:
 runtimes:
   opencode:
     harness: opencode
-    config_dir: .kortix/opencode
+    config_dir: .opencode
   claude:
     harness: claude
     config_dir: .claude

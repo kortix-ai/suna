@@ -1,7 +1,7 @@
 /**
  * CommandsPage — the project's OpenCode slash-commands (web parity:
  * customize/sections commands-view). Lists the commands declared under
- * .kortix/opencode/commands/ and, on tap, shows the command's markdown
+ * .opencode/commands/ and, on tap, shows the command's markdown
  * source. Read-only; authoring flows through a session (to be wired next).
  *
  * Mobile branding: PageHeader chrome, square "thing" avatar, design-system

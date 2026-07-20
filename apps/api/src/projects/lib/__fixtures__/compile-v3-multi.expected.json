@@ -16,7 +16,7 @@
     "opencode": {
       "name": "opencode",
       "harness": "opencode",
-      "configDir": ".kortix/opencode"
+      "configDir": ".opencode"
     },
     "pi": {
       "name": "pi",

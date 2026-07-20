@@ -147,29 +147,29 @@ describe('getStarterFiles', () => {
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
     // The one user-facing starter (the default) carries the full skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(true);
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === '.opencode/skills/account-research/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === '.opencode/skills/pdf/SKILL.md')).toBe(true);
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
-    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === '.opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === '.opencode/skills/pdf/SKILL.md')).toBe(false);
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
-    expect(paths.has('.kortix/opencode/tools/show.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
-    expect(paths.has('.kortix/opencode/skills/agent-browser/SKILL.md')).toBe(false);
-    expect(paths.has('.kortix/opencode/plugins/pty.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/memory.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/web_search.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/scrape_webpage.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/image_search.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/lib/get-env.ts')).toBe(true);
+    expect(paths.has('.opencode/tools/show.ts')).toBe(true);
+    expect(paths.has('.opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    expect(paths.has('.opencode/skills/agent-browser/SKILL.md')).toBe(false);
+    expect(paths.has('.opencode/plugins/pty.ts')).toBe(true);
+    expect(paths.has('.opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
+    expect(paths.has('.opencode/tools/memory.ts')).toBe(true);
+    expect(paths.has('.opencode/tools/web_search.ts')).toBe(true);
+    expect(paths.has('.opencode/tools/scrape_webpage.ts')).toBe(true);
+    expect(paths.has('.opencode/tools/image_search.ts')).toBe(true);
+    expect(paths.has('.opencode/tools/lib/get-env.ts')).toBe(true);
   });
 
   test('marketplace source contains optional first-party skills only', () => {

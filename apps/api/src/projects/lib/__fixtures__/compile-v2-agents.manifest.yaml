@@ -5,8 +5,6 @@
 # regenerate from the compiler and re-certify by hand instead.
 kortix_version: 2
 default_agent: kortix
-opencode:
-  config_dir: .kortix/opencode
 agents:
   # Grants: "all" across every grant dimension (connectors/secrets/skills/kortix_cli).
   kortix:

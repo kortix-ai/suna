@@ -90,7 +90,7 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
   opencode: {
     id: 'opencode',
     label: 'OpenCode',
-    configDir: '.kortix/opencode',
+    configDir: '.opencode',
     adapterPkg: 'opencode-ai',
     stability: 'stable',
     modelNamespacing: 'gateway-prefixed',

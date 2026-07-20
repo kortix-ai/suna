@@ -1611,7 +1611,7 @@
         "$defs": {
           "agentMdFrontmatter": {
             "type": "object",
-            "description": "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+            "description": "OpenCode behavior for one agent — lives in .opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
             "properties": {
               "description": {
                 "type": "string"

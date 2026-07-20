@@ -221,6 +221,73 @@ describe("project config agent discovery", () => {
     });
   });
 
+  test("opencode config falls back to the legacy .kortix/opencode dir when the new default lacks opencode.jsonc", () => {
+    const compiled = compileRuntimeConfig({
+      kortix_version: 3,
+      default_agent: "open",
+      runtimes: { opencode: { harness: "opencode", config_dir: ".opencode" } },
+      agents: { open: { runtime: "opencode", agent: "kortix" } },
+    });
+    const result = discoverRuntimeProjectFiles(compiled, [
+      ".kortix/opencode/opencode.jsonc",
+      ".kortix/opencode/agents/kortix.md",
+    ]);
+    expect(result.configs).toEqual([
+      {
+        runtime: "opencode",
+        harness: "opencode",
+        configDir: ".kortix/opencode",
+        path: ".kortix/opencode/opencode.jsonc",
+      },
+    ]);
+  });
+
+  test("opencode config prefers the new dir over the legacy one when both exist", () => {
+    const compiled = compileRuntimeConfig({
+      kortix_version: 3,
+      default_agent: "open",
+      runtimes: { opencode: { harness: "opencode", config_dir: ".opencode" } },
+      agents: { open: { runtime: "opencode", agent: "kortix" } },
+    });
+    const result = discoverRuntimeProjectFiles(compiled, [
+      ".opencode/opencode.jsonc",
+      ".kortix/opencode/opencode.jsonc",
+    ]);
+    expect(result.configs).toEqual([
+      {
+        runtime: "opencode",
+        harness: "opencode",
+        configDir: ".opencode",
+        path: ".opencode/opencode.jsonc",
+      },
+    ]);
+  });
+
+  test("a non-opencode harness's custom config_dir is reported verbatim, not normalized like the opencode fallback", () => {
+    const compiled = compileRuntimeConfig({
+      kortix_version: 3,
+      default_agent: "claude-reviewer",
+      runtimes: {
+        claude: { harness: "claude", config_dir: "./tools/claude/" },
+      },
+      agents: {
+        "claude-reviewer": { runtime: "claude", agent: "reviewer" },
+      },
+    });
+    const result = discoverRuntimeProjectFiles(compiled, [
+      "tools/claude/settings.json",
+      "tools/claude/agents/reviewer.md",
+    ]);
+    expect(result.configs).toEqual([
+      {
+        runtime: "claude",
+        harness: "claude",
+        configDir: "./tools/claude/",
+        path: "tools/claude/settings.json",
+      },
+    ]);
+  });
+
   test("invalid agents: adoption disables legacy discovery instead of silently exposing all agents", () => {
     const result = resolveConfigAgents(nativeAgents, {
       specs: [],

@@ -25,14 +25,14 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:
     'I want to configure a new agent for this project. Ask me what it should ' +
     'specialize in and how it should behave, then create its config at ' +
-    '`.kortix/opencode/agents/<name>.md` and open a change request so I can review and merge it.',
+    '`.opencode/agents/<name>.md` and open a change request so I can review and merge it.',
   skill:
     'I want to add a new skill to this project. Ask me what capability it ' +
     'should provide and when it should trigger, then scaffold ' +
-    '`.kortix/opencode/skills/<name>/SKILL.md` and open a change request so I can review and merge it.',
+    '`.opencode/skills/<name>/SKILL.md` and open a change request so I can review and merge it.',
   command:
     'I want to create a new slash command for this project. Ask me what it ' +
-    'should do, then add it at `.kortix/opencode/commands/<name>.md` and open a ' +
+    'should do, then add it at `.opencode/commands/<name>.md` and open a ' +
     'change request so I can review and merge it.',
 };
 
