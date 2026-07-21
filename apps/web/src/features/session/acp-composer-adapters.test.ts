@@ -7,6 +7,7 @@ import {
   findAcpModelConfigOption,
   isAcpModelConfigOption,
   isWritableAcpModelConfigOption,
+  otherAcpConfigOptions,
   resolveDeferredModelApply,
   shouldAttemptDeferredModelApply,
   toQuestionRequest,
@@ -37,6 +38,36 @@ describe('findAcpModelConfigOption', () => {
 
   test('returns null when no option matches', () => {
     expect(findAcpModelConfigOption([{ id: 'reasoning_effort' }])).toBeNull();
+  });
+});
+
+describe('otherAcpConfigOptions', () => {
+  // Real payload shape (verified live against codex-acp, local DB, 2026-07-22).
+  const MODE: AcpSessionConfigOption = { id: 'mode', type: 'select', options: [{ value: 'agent', name: 'Agent' }] };
+  const MODEL: AcpSessionConfigOption = { id: 'model', type: 'select', options: [{ value: 'gpt-5.6-sol', name: 'GPT-5.6-Sol' }] };
+  const REASONING: AcpSessionConfigOption = {
+    id: 'reasoning_effort',
+    type: 'select',
+    options: [{ value: 'low', name: 'Low' }],
+  };
+
+  test('excludes the model option by reference, keeps every other select/mode option with real choices', () => {
+    const result = otherAcpConfigOptions([MODE, MODEL, REASONING], MODEL);
+    expect(result).toEqual([MODE, REASONING]);
+  });
+
+  test('a null modelOption (harness declared none) still filters correctly — nothing to exclude by reference', () => {
+    expect(otherAcpConfigOptions([MODE, REASONING], null)).toEqual([MODE, REASONING]);
+  });
+
+  test('drops an option with zero choices — nothing to pick, never a dead pill', () => {
+    const empty: AcpSessionConfigOption = { id: 'empty', type: 'select', options: [] };
+    expect(otherAcpConfigOptions([MODE, empty], null)).toEqual([MODE]);
+  });
+
+  test('drops a non-select/mode-typed option', () => {
+    const info: AcpSessionConfigOption = { id: 'info', type: 'info', options: [{ value: 'x', name: 'X' }] };
+    expect(otherAcpConfigOptions([MODE, info], null)).toEqual([MODE]);
   });
 });
 

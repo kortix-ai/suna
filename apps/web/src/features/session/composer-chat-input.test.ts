@@ -6,6 +6,7 @@ import {
   catalogAgentModelKey,
   catalogSessionModelKey,
   firstModelOptionValue,
+  otherConfigOptionDeferredKey,
   presetToFlatModel,
   resolveExplicitCatalogModel,
   resolvePresetProviderId,
@@ -443,5 +444,25 @@ describe('firstModelOptionValue — the blank-pill fix (2026-07-22)', () => {
     expect(firstModelOptionValue({ options: [] })).toBeUndefined();
     expect(firstModelOptionValue(null)).toBeUndefined();
     expect(firstModelOptionValue(undefined)).toBeUndefined();
+  });
+});
+
+describe('otherConfigOptionDeferredKey — generic pre-session store for mode/effort/etc (2026-07-22)', () => {
+  test('composes agent name and option id, distinct per option', () => {
+    expect(otherConfigOptionDeferredKey('claude', 'mode')).toBe('claude::config-option:mode');
+    expect(otherConfigOptionDeferredKey('claude', 'effort')).toBe('claude::config-option:effort');
+    expect(otherConfigOptionDeferredKey('claude', 'mode')).not.toBe(
+      otherConfigOptionDeferredKey('claude', 'effort'),
+    );
+  });
+
+  test('never collides with the bare per-agent key the model pick uses (`runtimeModelStore.getRuntimeModel(agentName)`)', () => {
+    expect(otherConfigOptionDeferredKey('claude', 'mode')).not.toBe('claude');
+  });
+
+  test('distinct per agent, same option id', () => {
+    expect(otherConfigOptionDeferredKey('claude', 'mode')).not.toBe(
+      otherConfigOptionDeferredKey('codex', 'mode'),
+    );
   });
 });

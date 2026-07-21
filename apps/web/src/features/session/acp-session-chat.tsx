@@ -33,6 +33,7 @@ import {
   acpTodosFromPlanEntries,
   buildAcpQuestionContent,
   findAcpModelConfigOption,
+  otherAcpConfigOptions,
   toQuestionRequest,
 } from './acp-composer-adapters';
 import { AcpSessionPermissionPrompt } from './acp-session-permission-prompt';
@@ -479,14 +480,11 @@ export function AcpSessionChat({
   // a segmented control over a dropdown for a mode's few, always-visible
   // choices). ──
   const modelConfigOption = useMemo(() => findAcpModelConfigOption(configOptions), [configOptions]);
+  // Shared with `composer-chat-input.tsx`'s pre-session equivalent
+  // (`use-harness-config-options-store.ts`) — one filter rule for "which
+  // options render as pills", so live and pre-session can never drift.
   const otherConfigOptions = useMemo(
-    () =>
-      configOptions.filter(
-        (option) =>
-          option !== modelConfigOption &&
-          (option.type === 'select' || option.type === 'mode') &&
-          (option.options?.length ?? 0) > 0,
-      ),
+    () => otherAcpConfigOptions(configOptions, modelConfigOption),
     [configOptions, modelConfigOption],
   );
 

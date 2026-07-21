@@ -29,6 +29,29 @@ export function findAcpModelConfigOption(
 }
 
 /**
+ * Every `select`-/`mode`-typed config option a session advertises BESIDES
+ * its model option (see {@link findAcpModelConfigOption}) — `mode`/`effort`/
+ * `reasoning_effort`/`fast-mode`/etc., whatever the harness sends, with at
+ * least one real choice. Extracted verbatim from `acp-session-chat.tsx`'s
+ * live-only `otherConfigOptions` derivation (2026-07-14, Task 22/B1) so
+ * `composer-chat-input.tsx` can reuse the SAME rule for the pre-session
+ * cache/fallback path (`use-harness-config-options-store.ts`) — one filter,
+ * shared by both states, so "which options render as pills" can never drift
+ * between live and pre-session.
+ */
+export function otherAcpConfigOptions(
+  options: readonly AcpSessionConfigOption[],
+  modelOption: AcpSessionConfigOption | null,
+): AcpSessionConfigOption[] {
+  return options.filter(
+    (option) =>
+      option !== modelOption &&
+      (option.type === 'select' || option.type === 'mode') &&
+      (option.options?.length ?? 0) > 0,
+  );
+}
+
+/**
  * Whether a model-shaped config option is actually something a user can pick
  * from — i.e. worth mounting a real selector for, vs. falling back to the
  * static harness-managed label. `type === 'select'` matches every real

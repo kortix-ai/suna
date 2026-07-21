@@ -5,9 +5,11 @@ import { type ReactNode, useEffect, useRef } from 'react';
 import {
   findAcpModelConfigOption,
   isWritableAcpModelConfigOption,
+  otherAcpConfigOptions,
   resolveDeferredModelApply,
   shouldAttemptDeferredModelApply,
 } from '@/features/session/acp-composer-adapters';
+import { AcpConfigOptionPill, AcpConfigOptionSegment } from '@/features/session/acp-config-option-pills';
 import type { HarnessManagedModelState } from '@/features/session/composer-model-controls';
 import { deriveComposerBlockingAction } from '@/features/session/model-availability';
 import {
@@ -36,6 +38,7 @@ import {
   formatModelString,
   harnessPresentation,
   useComposerCapabilities,
+  useHarnessConfigOptionsCache,
   useHarnessModelOptionsCache,
   useProjectConfig,
 } from '@kortix/sdk/react';
@@ -254,6 +257,17 @@ export function firstModelOptionValue(
   if (first.value != null) return String(first.value);
   if (first.id != null) return String(first.id);
   return undefined;
+}
+
+/** Persisted-pick key for a pre-session pick of a native harness's OTHER
+ *  (non-model) config option — `mode`/`effort`/etc. — reusing the SAME
+ *  `runtimeModelStore.getRuntimeModel`/`setRuntimeModel` KV surface the
+ *  harness-native MODEL pick uses (`packages/sdk/src/react/use-model-store.ts`),
+ *  just under a composite key so it never collides with a real agent name or
+ *  with that model slot. Generic across every option id a harness advertises
+ *  — one mechanism, not a per-option store. */
+export function otherConfigOptionDeferredKey(agentName: string, optionId: string): string {
+  return `${agentName}::config-option:${optionId}`;
 }
 
 /**
@@ -606,6 +620,101 @@ export function ComposerChatInput({
     runtimeModelStore,
   ]);
 
+  // ── Pre-session pills for every OTHER advertised config option ──────────
+  // 2026-07-22 extension: "the model selector when the session is started
+  // and when it's not started should always be identical" — mode/effort/
+  // reasoning_effort/fast-mode/etc. pills exist LIVE already
+  // (`acp-session-chat.tsx`'s `otherConfigOptions`, unchanged by this file)
+  // but had no pre-session equivalent at all, so a fresh composer could only
+  // ever show the model pill. `harnessConfigOptions` is the SAME cache-first/
+  // fallback-second policy `harnessModelOptions` above established for
+  // `model`, generalized to the array of everything ELSE
+  // (`use-harness-config-options-store.ts`) — one mechanism, not a
+  // per-option copy-paste. `[]` for catalog harnesses (this store doesn't
+  // speak for them) and for a native harness this store has no cache/
+  // fallback for (never claude/codex).
+  const harnessConfigOptions = useHarnessConfigOptionsCache();
+  const preSessionOtherConfigOptions = nativeHarness ? harnessConfigOptions.resolve(nativeHarness) : [];
+
+  // Deferred-apply, generalized: the SAME `resolveDeferredModelApply`/
+  // `shouldAttemptDeferredModelApply` pair the model pill uses above is
+  // already option-agnostic (keys off `option.id`/`option.options`, never
+  // hardcodes "model") — reused here per-option via a Map instead of a
+  // single ref, since there can be several. Fires AT MOST ONCE per
+  // (sessionId, optionId) pair, same guarantee as the model deferred-apply.
+  const otherDeferredApplyRef = useRef<Map<string, string | null>>(new Map());
+  useEffect(() => {
+    if (!live || !nativeHarness || !capabilityAgentName) return;
+    for (const option of otherAcpConfigOptions(live.configOptions, liveModelOption)) {
+      const alreadyAttemptedSessionId = otherDeferredApplyRef.current.get(option.id) ?? null;
+      if (
+        !shouldAttemptDeferredModelApply({
+          sessionId,
+          alreadyAttemptedSessionId,
+          optionAvailable: isWritableAcpModelConfigOption(option),
+        })
+      ) {
+        continue;
+      }
+      otherDeferredApplyRef.current.set(option.id, sessionId ?? null);
+      const deferredValue = runtimeModelStore.getRuntimeModel(
+        otherConfigOptionDeferredKey(capabilityAgentName, option.id),
+      );
+      const toApply = resolveDeferredModelApply({ deferredValue, option });
+      if (toApply) live.onConfigOptionChange(option.id, toApply);
+    }
+  }, [live, nativeHarness, capabilityAgentName, liveModelOption, sessionId, runtimeModelStore]);
+
+  // Pre-session render rows — live rendering of these same option ids stays
+  // owned by `acp-session-chat.tsx`'s existing `otherConfigOptions` (its own
+  // pending-spinner/optimistic-revert plumbing around the REAL
+  // `setConfigOption` promise stays untouched here — this file only fires
+  // `live.onConfigOptionChange` as a one-shot boot-time apply above, never as
+  // an interactive pill's own `onChange`). Pre-session, there is no live
+  // pending state to manage — picking a choice just persists the deferred
+  // value, applied automatically by the effect above the instant the
+  // session's own writable match arrives.
+  const otherConfigOptionRows =
+    !live && nativeHarness
+      ? preSessionOtherConfigOptions.map((cached) => {
+          const deferredKey = capabilityAgentName
+            ? otherConfigOptionDeferredKey(capabilityAgentName, cached.id)
+            : null;
+          const deferredValue = deferredKey ? runtimeModelStore.getRuntimeModel(deferredKey) : undefined;
+          const option: AcpSessionConfigOption = {
+            ...cached,
+            currentValue: deferredValue ?? firstModelOptionValue(cached) ?? undefined,
+          };
+          return {
+            option,
+            onChange: (value: unknown) => {
+              if (typeof value === 'string' && deferredKey) {
+                runtimeModelStore.setRuntimeModel(deferredKey, value);
+              }
+            },
+          };
+        })
+      : [];
+
+  // Same trigger anatomy `acp-session-chat.tsx`'s LIVE `otherConfigOptions`
+  // block uses (`select` → `AcpConfigOptionPill`, `mode` →
+  // `AcpConfigOptionSegment`) — pre-session only; live rendering of these
+  // same option ids stays owned by that file so its pending-spinner/
+  // optimistic-revert plumbing around the real `setConfigOption` promise is
+  // never duplicated or forked. The RESULT is the same pill family in the
+  // same toolbar slot either way — see this block's own doc comment above.
+  const otherConfigOptionsSlot = otherConfigOptionRows.length ? (
+    <div className="flex items-center gap-0.5">
+      {otherConfigOptionRows.map(({ option, onChange }) =>
+        option.type === 'mode' ? (
+          <AcpConfigOptionSegment key={option.id} option={option} onChange={onChange} />
+        ) : (
+          <AcpConfigOptionPill key={option.id} option={option} onChange={onChange} />
+        ),
+      )}
+    </div>
+  ) : null;
+
   // `harnessManagedModel` is ALWAYS either `undefined` (catalog harnesses —
   // OpenCode, Pi — in every state, and a native harness this store has no
   // cache/fallback for, which should be impossible for claude/codex) or a
@@ -759,7 +868,14 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       inputSlot={inputSlot}
-      toolbarSlot={toolbarSlot}
+      toolbarSlot={
+        otherConfigOptionsSlot || toolbarSlot ? (
+          <>
+            {otherConfigOptionsSlot}
+            {toolbarSlot}
+          </>
+        ) : undefined
+      }
       cardClassName={cardClassName}
       sessionId={sessionId}
       projectId={projectId}

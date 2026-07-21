@@ -37,6 +37,7 @@ export * from "./use-runtime-pty";
 export * from "./use-runtime-config";
 export * from "./use-model-store";
 export * from "./use-harness-model-options-store";
+export * from "./use-harness-config-options-store";
 // Runtime health has three independent layers, each covering a failure mode
 // the others can't see — do not collapse them:
 //   1. Boot readiness is server-truth: `useSession`'s /start resolves
