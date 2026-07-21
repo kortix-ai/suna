@@ -1148,3 +1148,18 @@ API regression run reported **41 pass / 0 fail** with 83 assertions.
 
 **Shippable to production: YES** for the rollback. The owner-scoped binding
 feature itself is **NOT YET** shippable and remains open as WIP.
+
+---
+
+### 2026-07-21 — session `service-account-profile-hardening` (claim)
+
+Claimed the user-directed restoration of owner-scoped connector-profile bindings
+after the security rollback, including the late Strix findings on both #5139 and
+#5143. The restored additive SDK contract will remain unchanged; API enforcement
+will additionally prove that service-account principals cannot create, list,
+mutate, OAuth-connect, bind, or execute human `member` profiles, including
+queued session creation and pre-existing forged bindings. Work will follow
+RED → GREEN → REFACTOR and finish with the full SDK typecheck, test, and packed-
+install smoke gates plus real HTTP/Executor proof.
+
+**Status:** IN PROGRESS.
