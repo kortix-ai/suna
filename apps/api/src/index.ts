@@ -37,6 +37,10 @@ import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
+import {
+  isDaytonaTransientProviderError,
+  primeDaytonaTransientClassifier,
+} from './shared/daytona-transient';
 import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
@@ -934,6 +938,43 @@ app.onError((err, c) => {
     );
   }
 
+  // A transient Daytona provider gateway / connection / timeout failure is
+  // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
+  // gateway) momentarily 502/503/504-ing, a socket reset mid-call, or the
+  // SDK's own bounded call timing out. The SDK surfaces these as a generic
+  // `DaytonaError` whose `message` is the raw upstream response body — when
+  // the gateway 502s with an HTML error page, that HTML becomes the error
+  // message verbatim, which is exactly what produced the recurring Better
+  // Stack pattern `e98d61f1…` (`DaytonaError` with message
+  // `<html>…<h1>502 Bad Gateway</h1>…</html>`, thrown from the SDK's axios
+  // response interceptor at `createDaytonaError`). The 429 throttler case
+  // is owned by `shared/daytona-rate-limit.ts` (`isDaytonaRateLimitError`)
+  // and is NOT matched here — this classifier is the sibling for transient
+  // gateway / connection / timeout failures. It downgrades those to a
+  // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the
+  // Platinum / git-timeout / request-deadline patterns), so a forgotten
+  // try/catch at any Daytona call site (preview-link resolution, lease
+  // discover, reaper health, env-sync fan-out, snapshot reconciliation, …)
+  // can no longer page Better Stack for an upstream blip. Other Daytona
+  // failures (404 missing box, 409 conflict, 401/403 auth, 400 validation,
+  // disk quota, unexpected 5xx with a JSON body) still throw a generic
+  // error and fall through to the generic capture below, so unexpected
+  // failures stay loud. See shared/daytona-transient.ts.
+  if (isDaytonaTransientProviderError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`, {
+      method,
+      path,
+      errorType: 'DaytonaError',
+      errorName: err.name,
+      statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+    });
+    c.header('Retry-After', '10');
+    return c.json(
+      { error: true, message: 'sandbox provider is temporarily unavailable', status: 503 },
+      503,
+    );
+  }
+
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
       statusCode: err.statusCode,
@@ -1047,6 +1088,16 @@ app.notFound((c) => {
 // name/statusCode/message fallbacks already cover the rare race where a 429
 // throws before this resolves, so we never block startup on it.
 void primeDaytonaRateLimitClassifier();
+
+// Pre-load the Daytona SDK's `DaytonaTimeoutError` / `DaytonaConnectionError`
+// classes so the synchronous `isDaytonaTransientProviderError` classifier (on
+// the global `app.onError` hot path) has its strongest instanceof signal
+// available the first time a transient gateway / connection / timeout failure
+// throws — see shared/daytona-transient.ts. Fire-and-forget: the classifier's
+// name / statusCode / message fallbacks already cover the rare race where a
+// transient failure throws before this resolves, so we never block startup on
+// it.
+void primeDaytonaTransientClassifier();
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
