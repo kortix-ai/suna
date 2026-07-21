@@ -99,6 +99,7 @@ import {
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
+  connectWhatsApp,
   createConnector,
   discoverConnectorAuth,
   deleteConnector,
@@ -108,6 +109,7 @@ import {
   getProject,
   listConnectors,
   listPipedreamApps,
+  listWhatsAppConnections,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -115,6 +117,7 @@ import {
   setConnectorPolicies,
   setConnectorSensitive,
   syncConnectors,
+  type WhatsAppConnection,
 } from '@kortix/sdk/projects-client';
 import { Icon } from '@/features/icon/icon';
 import { DiscoverCatalogue } from './discover-catalogue';
@@ -2891,27 +2894,50 @@ function AddWhatsAppProfileCard({
   onAdded: (slug?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('WhatsApp number');
-  const [label, setLabel] = useState('');
-  const add = useMutation({
-    mutationFn: () => {
-      const base = slugifyConnector(label || name);
-      const slug = `whatsapp_${base}_${Date.now().toString(36).slice(-4)}`;
-      return createConnector(projectId, {
-        slug,
-        name: name.trim() || 'WhatsApp number',
-        provider: 'channel',
-        platform: 'whatsapp',
-        credential: 'shared',
-      }).then(() => slug);
+  const [gatewayUrl, setGatewayUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [connections, setConnections] = useState<WhatsAppConnection[] | null>(null);
+  const [accountId, setAccountId] = useState('');
+
+  const reset = () => {
+    setGatewayUrl('');
+    setApiKey('');
+    setConnections(null);
+    setAccountId('');
+  };
+
+  // Step 1 — ask the gateway which numbers this key can reach.
+  const load = useMutation({
+    mutationFn: () =>
+      listWhatsAppConnections(projectId, { gateway_url: gatewayUrl.trim(), api_key: apiKey.trim() }),
+    onSuccess: (result) => {
+      setConnections(result.connections);
+      setAccountId(result.connections[0]?.id ?? '');
+      if (result.connections.length === 0) {
+        errorToast('That key cannot reach any connections. Pair a number on the gateway first.');
+      }
     },
-    onSuccess: (slug) => {
-      successToast('Added WhatsApp number');
-      setOpen(false);
-      onAdded(slug);
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add WhatsApp number'),
+    onError: (err: Error) => errorToast(err.message || 'Could not reach that gateway'),
   });
+
+  // Step 2 — bind the chosen number and register the webhook.
+  const connect = useMutation({
+    mutationFn: () =>
+      connectWhatsApp(projectId, {
+        gateway_url: gatewayUrl.trim(),
+        api_key: apiKey.trim(),
+        account_id: accountId,
+      }),
+    onSuccess: () => {
+      successToast('WhatsApp connected');
+      setOpen(false);
+      reset();
+      onAdded('kortix_whatsapp');
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to connect WhatsApp'),
+  });
+
+  const busy = load.isPending || connect.isPending;
 
   return (
     <>
@@ -2919,54 +2945,131 @@ function AddWhatsAppProfileCard({
         <div className="flex items-center gap-3">
           <EntityAvatar icon={Icon.WhatsApp} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">WhatsApp number</div>
-            <div className="text-muted-foreground truncate text-xs">Channel profile</div>
+            <div className="text-foreground truncate text-sm font-medium">WhatsApp</div>
+            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
           </div>
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          Route a WhatsApp number connected through the Kortix WhatsApp Gateway into agent sessions.
+          Route a WhatsApp number into agent sessions. Needs your own Kortix WhatsApp Gateway.
         </p>
       </button>
-      <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
-        <ModalContent className="lg:max-w-md">
+      <Modal
+        open={open}
+        onOpenChange={(next) => {
+          if (busy) return;
+          setOpen(next);
+          if (!next) reset();
+        }}
+      >
+        <ModalContent className="lg:max-w-lg">
           <ModalHeader>
-            <ModalTitle>Add WhatsApp number</ModalTitle>
+            <ModalTitle>Connect WhatsApp</ModalTitle>
             <ModalDescription>
-              Create the connector profile. You pick the gateway connection when connecting it.
+              Requires your own deployment of the Kortix WhatsApp Gateway. Pair a number there,
+              create an API key, then paste the details below.
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+            <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs leading-relaxed">
+              <li>
+                Deploy the gateway from{' '}
+                <a
+                  href="https://github.com/kortix-ai/whatsapp-gateway"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  github.com/kortix-ai/whatsapp-gateway
+                </a>
+                .
+              </li>
+              <li>Pair a phone number there through WhatsApp → Linked Devices.</li>
+              <li>Create an API key in the gateway console and paste it here.</li>
+            </ol>
+
             <Field>
+              <Label htmlFor="whatsapp-gateway-url">Gateway URL</Label>
               <Input
-                id="whatsapp-profile-name"
-                name="whatsapp-profile-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Support line"
-              />
-            </Field>
-            <Field>
-              <Input
-                id="whatsapp-profile-label"
-                name="whatsapp-profile-label"
-                value={label}
-                onChange={(e) => setLabel(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
-                placeholder="support"
+                id="whatsapp-gateway-url"
+                name="whatsapp-gateway-url"
+                value={gatewayUrl}
+                onChange={(e) => {
+                  setGatewayUrl(e.target.value);
+                  setConnections(null);
+                }}
+                placeholder="https://wag.example.com"
                 autoComplete="off"
                 spellCheck={false}
+                disabled={busy}
+              />
+            </Field>
+            <Field>
+              <Label htmlFor="whatsapp-api-key">API key</Label>
+              <Input
+                id="whatsapp-api-key"
+                name="whatsapp-api-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setConnections(null);
+                }}
+                placeholder="wag_..."
+                autoComplete="off"
+                spellCheck={false}
+                disabled={busy}
               />
               <p className="text-muted-foreground text-xs">
-                Names the connector profile, for example whatsapp_support.
+                An account-scoped key lists every paired number; a connection-scoped key returns
+                just its own. The key is stored encrypted and never leaves the server.
               </p>
             </Field>
+
+            {connections === null ? (
+              <Button
+                variant="outline"
+                onClick={() => load.mutate()}
+                disabled={!gatewayUrl.trim() || !apiKey.trim() || busy}
+                className="gap-1.5"
+              >
+                {load.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                Load connections
+              </Button>
+            ) : (
+              <Field>
+                <Label htmlFor="whatsapp-connection">Phone number</Label>
+                <Select value={accountId} onValueChange={setAccountId} disabled={busy}>
+                  <SelectTrigger id="whatsapp-connection">
+                    <SelectValue placeholder="Select a connection" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {connections.map((connection) => (
+                      <SelectItem key={connection.id} value={connection.id}>
+                        {connection.displayName}
+                        {connection.phoneNumber ? ` — +${connection.phoneNumber}` : ''} (
+                        {connection.status})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  Connecting registers a webhook on the gateway pointing back at Kortix. Every chat
+                  on this number maps to its own Kortix session.
+                </p>
+              </Field>
+            )}
           </ModalBody>
           <ModalFooter className="sm:justify-between">
-            <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
+            <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
-              {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Add number
+            <Button
+              onClick={() => connect.mutate()}
+              disabled={busy || connections === null || !accountId}
+              className="gap-1.5"
+            >
+              {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              Connect
             </Button>
           </ModalFooter>
         </ModalContent>
