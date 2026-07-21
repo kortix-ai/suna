@@ -79,7 +79,7 @@ Base case (shared agent, no per-user connectors) = steps 1–2 only.
 1. ✅ **SHIPPED (PR #5147)** — `origin` field + resolver + `canOverride` policy gate, incl. REV 3 backend credentials (PAT/SA/user-apiKey), sandbox+agent-scope exclusions, queued-create signal carry, and the Tokens-UI "Using the API" story.
 2. Document + expose the shipping path (connectors/model/agent/context) as the "backend" contract, with §4 gotchas. **This alone makes base-agent wrapping real today.**
 3. Server-to-server connector-profile mint + all-or-nothing softening (4.1).
-4. Secret-bundle by reference — hot-push merge + scope split (4.2). *(in design — per-session allowlist by identifier, pure narrowing, enforced at boot + hot-push)*
+4. ✅ **SHIPPED (PR #5154, stacked on #5147)** — Secret-bundle by reference: a backend-only per-session `secrets` allowlist by identifier. Pure NARROWING — injected env = (agent grant) ∩ (allowlist), enforced at BOTH sandbox boot and hot-push (the clobber fix); `[]` = zero secrets; null = byte-identical to today. Immutable first-class column, 403/400/404/409 validation. (Deferred: create-time ambiguity 409, silent-drop warning, web UX.)
 5. Skills subset (v2, optional).
 
 Each new contract field needs a schema add + a ke2e route-coverage test (the `.strict()` contract + coverage gate); transport is free (body flows verbatim to the core).
