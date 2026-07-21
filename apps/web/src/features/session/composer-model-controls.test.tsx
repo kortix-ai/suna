@@ -1,19 +1,21 @@
 // Render suite for `ComposerModelControls` — the wiring/branching layer that
-// decides which of the THREE mutually-exclusive model controls renders:
-// main's `ModelSelector` (catalog mode, OpenCode), the interactive
-// `HarnessManagedModelSelector` (Claude Code / Codex live, with a declared
-// model config option), or the static `HarnessManagedModelLabel` (not live
-// yet, or the harness declared none — see `HarnessManagedModelState`'s doc
-// comment). `ModelSelector` itself is stubbed to a props-capturing marker (it
-// has its own render suite via `model-selector.test.ts`'s pure-function
-// coverage and the other `ModelSelector` call sites' tests) — this file only
-// tests the branching `ComposerModelControls` owns. `HarnessManagedModelLabel`
-// and `HarnessManagedModelSelector` render for real (a plain `Hint`+`span`,
-// and a real `AcpConfigOptionPill` respectively — no query/router
-// dependency), so this needs a real DOM — same happy-dom + testing-library
-// harness `model-selector.test.ts` used before it was folded into this
-// restore. The empty export makes this file a module, so `await` is legal at
-// the top level.
+// decides which of the TWO mutually-exclusive model controls renders: main's
+// `ModelSelector` (catalog mode, OpenCode/Pi — live or pre-session, one
+// control either way) or the interactive `HarnessManagedModelSelector`
+// (Claude Code / Codex, live or pre-session, always with a real modelOption —
+// see `HarnessManagedModelState`'s doc comment). The static
+// `HarnessManagedModelLabel` this file used to also cover is DELETED
+// (2026-07-22 decree: every harness, in every state, renders a real
+// interactive selector — never a dead label). `ModelSelector` itself is
+// stubbed to a props-capturing marker (it has its own render suite via
+// `model-selector.test.ts`'s pure-function coverage and the other
+// `ModelSelector` call sites' tests) — this file only tests the branching
+// `ComposerModelControls` owns. `HarnessManagedModelSelector` renders for
+// real (a real `AcpConfigOptionPill` — no query/router dependency), so this
+// needs a real DOM — same happy-dom + testing-library harness
+// `model-selector.test.ts` used before it was folded into this restore. The
+// empty export makes this file a module, so `await` is legal at the top
+// level.
 export {};
 
 const { GlobalRegistrator } = await import('@happy-dom/global-registrator');
@@ -90,8 +92,8 @@ function renderControls(props: Partial<Parameters<typeof ComposerModelControls>[
   );
 }
 
-describe('ComposerModelControls — catalog mode (OpenCode)', () => {
-  test('mounts with representative catalog props: ONE ModelSelector renders, no harness label', () => {
+describe('ComposerModelControls — catalog mode (OpenCode, Pi — live or pre-session, same control)', () => {
+  test('mounts with representative catalog props: ONE ModelSelector renders, never a harness-managed selector', () => {
     resetCaptures();
     renderControls({ projectId: 'proj_1' });
 
@@ -101,6 +103,7 @@ describe('ComposerModelControls — catalog mode (OpenCode)', () => {
     expect(capturedReasoningEffortSelectorProps).not.toBeNull();
     expect(capturedReasoningEffortSelectorProps?.model).toBe(SELECTED_MODEL);
     expect(capturedReasoningEffortSelectorProps?.projectId).toBe('proj_1');
+    expect(screen.queryByTestId('harness-managed-model-selector')).toBeNull();
     expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
   });
 
@@ -122,44 +125,18 @@ describe('ComposerModelControls — catalog mode (OpenCode)', () => {
   });
 });
 
-describe('ComposerModelControls — harness-managed mode (Claude Code / Codex / Pi)', () => {
-  test('a harnessManagedModel prop renders the static label INSTEAD of ModelSelector — never both, never a mode switch inside the picker', () => {
-    resetCaptures();
-    renderControls({
-      harnessManagedModel: { harness: 'claude', connectionLabel: 'Claude subscription' },
-    });
-
-    expect(capturedModelSelectorProps).toBeNull();
-    const label = screen.getByTestId('harness-managed-model-label');
-    expect(label.textContent).toBe('Claude subscription');
-    expect(label.getAttribute('data-harness')).toBe('claude');
-  });
-
-  test('an explicit recorded override takes priority over the connection label', () => {
-    resetCaptures();
-    renderControls({
-      harnessManagedModel: {
-        harness: 'codex',
-        selectedModel: 'gpt-5.4',
-        connectionLabel: 'ChatGPT subscription',
-      },
-    });
-
-    expect(screen.getByTestId('harness-managed-model-label').textContent).toBe('gpt-5.4');
-  });
-
-  test('no connection and no override falls back to "<Harness> default"', () => {
-    resetCaptures();
-    renderControls({ harnessManagedModel: { harness: 'pi' } });
-
-    expect(screen.getByTestId('harness-managed-model-label').textContent).toBe('Pi default');
-  });
-
-  test('the reasoning-effort control still renders alongside the harness label', () => {
-    resetCaptures();
-    renderControls({ harnessManagedModel: { harness: 'claude' } });
-
-    expect(capturedReasoningEffortSelectorProps).not.toBeNull();
+// The static `HarnessManagedModelLabel` is deleted (2026-07-22 decree: every
+// harness, in every state — pre-session, connecting, live — renders a REAL
+// interactive selector, never a static "X manages its own model" pill).
+// `harnessManagedModel` itself is now always either `undefined` (catalog
+// harnesses: OpenCode, Pi, in every state) or a fully-populated object with a
+// real `modelOption` (claude/codex) — there is no third "declared, nothing to
+// render" shape left, so there is nothing here to unit-test beyond the
+// selector-render coverage below.
+describe('ComposerModelControls — the static label no longer exists', () => {
+  test('no prop shape can produce #harness-managed-model-label — it is not in the module at all', async () => {
+    const module = await import('./composer-model-controls');
+    expect((module as Record<string, unknown>).HarnessManagedModelLabel).toBeUndefined();
   });
 });
 
@@ -190,7 +167,7 @@ const CLAUDE_MODEL_OPTION = {
 };
 
 describe('ComposerModelControls — harness-native live selector (Claude Code / Codex, live session)', () => {
-  test('a writable modelOption renders a REAL interactive selector, not the static label', () => {
+  test('a writable modelOption renders a REAL interactive selector', () => {
     resetCaptures();
     renderControls({
       harnessManagedModel: {
@@ -228,23 +205,6 @@ describe('ComposerModelControls — harness-native live selector (Claude Code / 
     expect(onModelOptionChange).toHaveBeenCalledWith('opus');
     // The catalog's own onModelChange must never fire for a harness-native pick.
     expect(capturedModelSelectorProps).toBeNull();
-  });
-
-  test('a live session whose harness declared NO model option falls back to the static label — never a selector with nothing to pick', () => {
-    resetCaptures();
-    renderControls({
-      harnessManagedModel: {
-        harness: 'claude',
-        selectedModel: 'claude-sonnet-5',
-        connectionLabel: 'Claude subscription',
-        disabled: true,
-        // No `modelOption` — the live session's harness advertised no
-        // writable model config option (or none has loaded yet).
-      },
-    });
-
-    expect(screen.queryByTestId('harness-managed-model-selector')).toBeNull();
-    expect(screen.getByTestId('harness-managed-model-label').textContent).toBe('claude-sonnet-5');
   });
 
   test('a modelOption with zero choices renders nothing from the selector wrapper (defensive — ComposerModelControls itself never passes one, per isWritableAcpModelConfigOption)', () => {
@@ -359,5 +319,100 @@ describe('ComposerModelControls — pre-session (no live ACP session yet, static
 
     expect(screen.getByText('Sonnet')).toBeTruthy();
     expect(screen.queryByText('Opus')).toBeNull();
+  });
+});
+
+// 2026-07-22 decree, ship test: "component renders a selector for every
+// harness × {pre-session, live}". `ComposerModelControls` itself can't tell
+// pre-session from live (see the describe block above) — the matrix that
+// actually matters is HOW `composer-chat-input.tsx` feeds it per harness, so
+// this exercises every harness's REALISTIC prop shape in both states and
+// asserts a real selector renders every time, never the (deleted) label.
+describe('ComposerModelControls — always a selector, every harness × {pre-session, live}', () => {
+  test('claude: pre-session (fallback, no pick) renders the native selector', () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.claude);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: { ...fallback, currentValue: undefined },
+        onModelOptionChange: () => {},
+      },
+    });
+    expect(screen.getByTestId('harness-managed-model-selector')).toBeTruthy();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+  });
+
+  test('claude: live with a writable ACP model option renders the native selector', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: CLAUDE_MODEL_OPTION,
+        onModelOptionChange: () => {},
+      },
+    });
+    expect(screen.getByTestId('harness-managed-model-selector')).toBeTruthy();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+  });
+
+  test('codex: pre-session (fallback, no pick) renders the native selector', () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.codex);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'codex',
+        modelOption: { ...fallback, currentValue: undefined },
+        onModelOptionChange: () => {},
+      },
+    });
+    expect(screen.getByTestId('harness-managed-model-selector')).toBeTruthy();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+  });
+
+  test('codex: live with a writable ACP model option renders the native selector', () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.codex);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'codex',
+        modelOption: { ...fallback, currentValue: 'gpt-5.6-sol' },
+        onModelOptionChange: () => {},
+      },
+    });
+    expect(screen.getByTestId('harness-managed-model-selector')).toBeTruthy();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+  });
+
+  // OpenCode/Pi never construct `harnessManagedModel` at all (catalog-driven
+  // — see `harness-capabilities.ts`'s `agentRequiresCatalogModel`) — their
+  // "selector" IS the catalog `ModelSelector`, fed identically pre-session
+  // and live by `composer-chat-input.tsx` (no more `live ? [] : …` gate —
+  // see that file's fix). `ComposerModelControls` itself is state-agnostic,
+  // so exercising "no harnessManagedModel, real models feed" once covers
+  // both pre-session and live for both harnesses — there's nothing about
+  // OpenCode vs. Pi, or live vs. pre-session, this component could branch on
+  // even if it wanted to.
+  test('opencode/pi: no harnessManagedModel + a real models feed renders the catalog ModelSelector (covers both pre-session and live)', () => {
+    resetCaptures();
+    renderControls({ harnessManagedModel: undefined, models: MODELS, selectedModel: SELECTED_MODEL });
+
+    expect(screen.queryByTestId('harness-managed-model-selector')).toBeNull();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+    expect(capturedModelSelectorProps).not.toBeNull();
+    expect(capturedModelSelectorProps?.models).toBe(MODELS);
+  });
+
+  test('opencode/pi: an empty models feed (e.g. a live session whose capability catalog has not resolved yet) still renders — never a dead state, `modelRequired` forces the selector open on an empty catalog', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: undefined,
+      models: [],
+      selectedModel: null,
+      modelRequired: true,
+    });
+
+    expect(capturedModelSelectorProps).not.toBeNull();
+    expect(capturedModelSelectorProps?.models).toEqual([]);
   });
 });

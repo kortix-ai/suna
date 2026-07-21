@@ -53,11 +53,20 @@ export function AcpConfigOptionPill({
   const currentChoice = choices.find(
     (choice, index) => choiceValue(choice, index) === String(currentRaw ?? ''),
   );
+  // The pill must never render blank (2026-07-22): a caller that genuinely
+  // has no explicit `currentValue` yet (e.g. the pre-session harness-native
+  // model selector before any pick has been made — see
+  // `HarnessManagedModelState`'s doc comment) still has SOMETHING to show —
+  // the harness's own first advertised choice, which live evidence
+  // (`kortix.acp_session_envelopes`, local DB, 2026-07-22) shows is exactly
+  // what a fresh claude-agent-acp/codex-acp session's own `currentValue`
+  // settles on with no override. Only an option with zero choices (already
+  // handled above) has truly nothing to fall back to.
   const currentLabel = currentChoice
     ? choiceLabel(currentChoice)
     : currentRaw != null
       ? String(currentRaw)
-      : null;
+      : choiceLabel(choices[0] as Record<string, unknown>);
 
   const trigger = (
     <button

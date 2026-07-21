@@ -25,7 +25,7 @@ import {
   useModelsPage,
 } from '@kortix/sdk/react';
 
-import { Check, ChevronDown, Lock } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isHarnessDisconnected } from './agent-selector-helpers';
 import {
@@ -207,9 +207,14 @@ export function AgentSelector({
             <span className="max-w-[96px] truncate capitalize sm:max-w-[130px]">
               {agentDisplayName(currentAgent)}
             </span>
-            {disabled ? (
-              <Lock className="size-3 shrink-0 opacity-60" />
-            ) : (
+            {/* Locked state drops the chevron too — per the pill law's
+                "chevron ⇔ popover" rule (composer-pill.ts): the popover
+                genuinely doesn't open while locked, so a trailing glyph here
+                would promise an interaction that isn't available. The lock
+                icon itself is gone (2026-07-22 decree — "the lock just looks
+                ass"); the locked semantics live ONLY in the wrapping `Hint`'s
+                hover tooltip above, never a glyph on the trigger. */}
+            {disabled ? null : (
               <ChevronDown
                 className={cn(
                   'size-3 opacity-50 transition-transform duration-200',

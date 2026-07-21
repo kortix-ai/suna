@@ -161,6 +161,16 @@ export const AcpSameToolGroup = memo(function AcpSameToolGroup({
  *  the step's own disclosure. Unknown frames never appear in the perf fixture
  *  (it only replays known methods), and the step body mounts nothing until
  *  opened, so this costs nothing on the hot path either way. */
+/** Synthetic `raw` method tags this card recognizes as something OTHER than
+ *  a genuinely unrecognized protocol event — same quiet/collapsed treatment,
+ *  honest label. `harness_startup_notice`: a harness's own startup/update
+ *  banner (`isHarnessStartupNoticeText`, `packages/sdk/src/acp/reduce.ts`)
+ *  filtered out of the transcript's message stream — still inspectable
+ *  behind this step's disclosure, never a chat bubble. */
+const KNOWN_RAW_LABELS: Record<string, string> = {
+  harness_startup_notice: 'Harness startup notice',
+};
+
 export const AcpUnknownMethodCard = memo(function AcpUnknownMethodCard({
   method,
   data,
@@ -168,16 +178,21 @@ export const AcpUnknownMethodCard = memo(function AcpUnknownMethodCard({
   method: string;
   data: unknown;
 }) {
+  const knownLabel = KNOWN_RAW_LABELS[method];
   return (
     <AcpTranscriptStep
       icon={<CircleHelp className="text-muted-foreground/50 size-3.5" />}
       label={
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          <span className="shrink-0">Unrecognized agent event</span>
-          <span className="text-muted-foreground/60 min-w-0 truncate font-mono" title={method}>
-            {method}
+        knownLabel ? (
+          <span className="shrink-0">{knownLabel}</span>
+        ) : (
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="shrink-0">Unrecognized agent event</span>
+            <span className="text-muted-foreground/60 min-w-0 truncate font-mono" title={method}>
+              {method}
+            </span>
           </span>
-        </span>
+        )
       }
     >
       <pre className="text-muted-foreground overflow-x-auto text-xs">

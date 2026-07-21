@@ -717,6 +717,88 @@ describe('session_info_update / config_option_update', () => {
   });
 });
 
+// Pi startup/update-notice suppression (2026-07-22 decree): the pi adapter
+// sends its own "pi vX.Y.Z" / "New version available…" banner as a genuine
+// `agent_message_chunk`, which used to render as a real chat bubble — twice
+// per reconnect. Payload captured VERBATIM from a real live session
+// (`kortix.acp_session_envelopes`, local DB, 2026-07-22).
+describe('pi startup/update-notice suppression', () => {
+  const REAL_PI_BANNER =
+    'pi v0.80.6\n---\n\n---\nNew version available: v0.81.1 (installed v0.80.6). Run: `npm i -g @earendil-works/pi-coding-agent`\n';
+
+  test('the real captured pi startup banner is filtered out of the message stream — routed to a raw, inspectable item instead', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentChunk(1, REAL_PI_BANNER));
+
+    expect(state.chatItems).toHaveLength(1);
+    expect(state.chatItems[0]?.kind).toBe('raw');
+    expect((state.chatItems[0] as { method: string }).method).toBe('harness_startup_notice');
+    // Inspectable, not swallowed — the full update is still on the item.
+    expect((state.chatItems[0] as { data: { content: { text: string } } }).data.content.text).toBe(
+      REAL_PI_BANNER,
+    );
+  });
+
+  test('the banner does not merge with, or get mistaken as a replay of, a real adjacent message', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentChunk(1, REAL_PI_BANNER));
+    state = reduceEnvelope(state, agentChunk(2, 'Here is the real answer to your question.'));
+
+    expect(state.chatItems).toHaveLength(2);
+    expect(state.chatItems[0]?.kind).toBe('raw');
+    expect(state.chatItems[1]?.kind).toBe('message');
+    expect((state.chatItems[1] as { text: string }).text).toBe(
+      'Here is the real answer to your question.',
+    );
+  });
+
+  test('a version banner heading alone (no update-notice sentence — already on the latest version) is still filtered', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentChunk(1, 'pi v0.81.1\n---\n'));
+
+    expect(state.chatItems).toHaveLength(1);
+    expect(state.chatItems[0]?.kind).toBe('raw');
+  });
+
+  test('a real agent message that merely mentions a version number is NEVER caught — the filter is scoped to the exact banner shapes', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(
+      state,
+      agentChunk(1, 'I upgraded pi v0.80.6 in the sandbox and reran the tests — all green.'),
+    );
+
+    expect(state.chatItems).toHaveLength(1);
+    expect(state.chatItems[0]?.kind).toBe('message');
+  });
+
+  test('an agent_thought_chunk with the same banner text is left alone — the filter is scoped to agent_message_chunk only', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(
+      state,
+      stored(1, 'agent_to_client', {
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: { update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: REAL_PI_BANNER } } },
+      }),
+    );
+
+    expect(state.chatItems).toHaveLength(1);
+    expect(state.chatItems[0]?.kind).toBe('message');
+    expect((state.chatItems[0] as { role: string }).role).toBe('thought');
+  });
+
+  test('two reconnects each emit the banner once — both are filtered (documents the real "TWO New version available blocks" report)', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, agentChunk(1, REAL_PI_BANNER));
+    state = reduceEnvelope(state, agentChunk(2, 'first reply'));
+    state = reduceEnvelope(state, agentChunk(3, REAL_PI_BANNER));
+    state = reduceEnvelope(state, agentChunk(4, 'second reply'));
+
+    const kinds = state.chatItems.map((item) => item.kind);
+    expect(kinds).toEqual(['raw', 'message', 'raw', 'message']);
+  });
+});
+
 // WS3-P2-b, part 2: bounded `dedupeKeys`.
 describe('dedupeKeys bound', () => {
   // Each row gets its own `toolCallId` (derived from `streamEventId`), so —

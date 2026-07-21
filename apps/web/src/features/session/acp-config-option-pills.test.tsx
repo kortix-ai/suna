@@ -109,6 +109,49 @@ describe('AcpConfigOptionPill — select-typed option', () => {
 
     expect(onChange).toHaveBeenCalledWith('fast');
   });
+
+  // 2026-07-22 fix: no stored pick + a real advertised option list used to
+  // render an EMPTY, chevron-only trigger (`currentValue` unset → the old
+  // `currentLabel` fell through to `null`) — live-reproduced on the
+  // pre-session Claude model pill despite the popover itself correctly
+  // listing "Default (recommended)/Sonnet/Opus/Haiku". The trigger must
+  // never render blank: with no explicit `currentValue`, it falls back to
+  // the option's own FIRST advertised choice's label.
+  test('no currentValue (no pick made yet): the trigger shows the first advertised choice, never an empty label', () => {
+    renderWithTooltip(
+      <AcpConfigOptionPill
+        option={selectOption({ currentValue: undefined })}
+        onChange={() => {}}
+      />,
+    );
+
+    const trigger = screen.getByTestId('acp-config-option-pill');
+    expect(trigger.textContent?.trim().length).toBeGreaterThan(0);
+    expect(screen.getByText('Fast')).toBeTruthy();
+  });
+
+  test('the real claude fallback shape (no pick yet) shows "Default (recommended)", never blank', () => {
+    renderWithTooltip(
+      <AcpConfigOptionPill
+        option={{
+          id: 'model',
+          name: 'Model',
+          type: 'select',
+          category: 'model',
+          currentValue: undefined,
+          options: [
+            { name: 'Default (recommended)', value: 'default' },
+            { name: 'Sonnet', value: 'sonnet' },
+            { name: 'Opus', value: 'opus' },
+            { name: 'Haiku', value: 'haiku' },
+          ],
+        }}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Default (recommended)')).toBeTruthy();
+  });
 });
 
 describe('AcpConfigOptionSegment — mode-typed option', () => {

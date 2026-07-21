@@ -148,7 +148,7 @@ describe('AgentSelector', () => {
     expect(screen.queryAllByTestId('agent-option')).toHaveLength(0);
   });
 
-  it('locked (disabled) state shows a Lock icon on the trigger and never opens the popover', async () => {
+  it('locked (disabled) state never opens the popover', async () => {
     renderSelector({ disabled: true });
     const trigger = screen.getByTestId('agent-selector');
     expect(trigger.getAttribute('aria-disabled')).toBe('true');
@@ -157,6 +157,43 @@ describe('AgentSelector', () => {
     await flush();
 
     expect(screen.queryAllByTestId('agent-option')).toHaveLength(0);
+  });
+
+  // 2026-07-22 decree: "Remove that little lock around the model, the agent,
+  // always. Just on hover, keep the 'agent is fixed for the session' info."
+  // — the lock GLYPH is gone; the locked semantics live only in the
+  // trigger's wrapping `Hint` tooltip.
+  it('locked (disabled) state renders no icon glyph on the trigger — no lock, no chevron (nothing to open)', () => {
+    renderSelector({ disabled: true });
+    const trigger = screen.getByTestId('agent-selector');
+    // Only the harness brand mark (an `<img>`, stubbed from `next/image`)
+    // remains — no trailing `<svg>` icon (lucide's `Lock` or `ChevronDown`).
+    expect(trigger.querySelectorAll('svg')).toHaveLength(0);
+    expect(trigger.querySelector('img')).toBeTruthy();
+  });
+
+  it('unlocked state keeps the ChevronDown (popover really does open)', () => {
+    renderSelector({ disabled: false });
+    const trigger = screen.getByTestId('agent-selector');
+    expect(trigger.querySelectorAll('svg')).toHaveLength(1);
+  });
+
+  it('locked (disabled) state still exposes the "fixed for this session" explanation via the Hint tooltip prop, not a rendered glyph', async () => {
+    renderSelector({ disabled: true });
+    const trigger = screen.getByTestId('agent-selector');
+    // Radix mounts `TooltipContent` into a portal only once open — focusing
+    // the trigger (kept hoverable/focusable even though the popover itself
+    // is gated shut, see the component's own comment) opens it with this
+    // suite's `delayDuration={0}` `TooltipProvider`.
+    fireEvent.focus(trigger);
+    await flushHoverOpen();
+
+    // Radix renders the tooltip's text twice (the visible bubble plus a
+    // visually-hidden accessibility mirror) — assert at least one is present.
+    expect(
+      screen.getAllByText('Agent is fixed for this session — start a new session to switch')
+        .length,
+    ).toBeGreaterThan(0);
   });
 });
 

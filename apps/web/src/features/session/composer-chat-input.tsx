@@ -238,6 +238,24 @@ export function catalogSessionModelKey(sessionId: string): string {
   return `composer-capabilities-model:${sessionId}`;
 }
 
+/** The harness's own bootstrap default for a `model` config option — its
+ *  first advertised choice. Verified live (`kortix.acp_session_envelopes`,
+ *  local DB, 2026-07-22) to equal the REAL `currentValue` a fresh
+ *  claude-agent-acp/codex-acp session settles on with no prior pick (codex:
+ *  `gpt-5.6-sol`, options[0]; claude: `default`, options[0]) — used as the
+ *  last-resort stand-in for a pre-session/still-bootstrapping pill's
+ *  `currentValue` so it's never left unset (see `harnessManagedModel` below
+ *  and `acp-config-option-pills.tsx`'s own blank-pill fallback). */
+export function firstModelOptionValue(
+  option: Pick<AcpSessionConfigOption, 'options'> | null | undefined,
+): string | undefined {
+  const first = option?.options?.[0] as Record<string, unknown> | undefined;
+  if (!first) return undefined;
+  if (first.value != null) return String(first.value);
+  if (first.id != null) return String(first.id);
+  return undefined;
+}
+
 /**
  * The composer-capabilities catalog picker's resolved explicit selection: the
  * persisted per-session pick (survives reload for THIS session) if set, else
@@ -588,73 +606,99 @@ export function ComposerChatInput({
     runtimeModelStore,
   ]);
 
-  const harnessManagedModel: HarnessManagedModelState | undefined = live
-    ? activeHarness
-      ? liveModelOptionWritable && liveModelOption
+  // `harnessManagedModel` is ALWAYS either `undefined` (catalog harnesses —
+  // OpenCode, Pi — in every state, and a native harness this store has no
+  // cache/fallback for, which should be impossible for claude/codex) or a
+  // fully-populated `HarnessManagedModelState` with a real `modelOption` —
+  // 2026-07-22 decree: no state ever falls through to a dead label.
+  //
+  // *** THE BUG THIS FIXES *** (live-reproduced on BOTH OpenCode and Pi,
+  // 2026-07-22): the old version keyed the live branch on `activeHarness`
+  // (any harness with an ACP session) rather than `nativeHarness`
+  // (`!catalogModelRequired` — only claude/codex). Since
+  // `liveModelOptionWritable` is unconditionally `false` for a catalog
+  // harness (`!catalogModelRequired &&
+  // isWritableAcpModelConfigOption(liveModelOption)`), EVERY live OpenCode
+  // or Pi session fell into the "no modelOption" branch and rendered the
+  // (now-deleted) static label — "OpenCode manages its own model" / "Pi
+  // manages its own model" — even though both are gateway/catalog-driven and
+  // were never meant to hit this branch at all. Keying on `nativeHarness`
+  // instead means a catalog harness never constructs `harnessManagedModel`
+  // in the first place, live or not — it always falls through to
+  // `ComposerModelControls`'s OTHER branch, the same catalog `ModelSelector`
+  // pre-session uses (see the `models`/`selectedModel`/`onModelChange`
+  // derivation below, no longer forced empty while live either).
+  const harnessManagedModel: HarnessManagedModelState | undefined = !nativeHarness
+    ? undefined
+    : live && liveModelOptionWritable && liveModelOption
+      ? {
+          harness: nativeHarness,
+          selectedModel: liveResolvedModel,
+          connectionLabel,
+          connectionKind,
+          disabled: liveModelOptionDisabled,
+          modelOption: liveModelOption,
+          onModelOptionChange: (value) => {
+            live.onConfigOptionChange(liveModelOption.id, value);
+            // Seed the harness-native launch-model store (the SAME
+            // per-agent namespace the pre-session branch reads via
+            // `runtimeModel` below — see `getRuntimeModel`/`setRuntimeModel`'s
+            // doc comment, packages/sdk/src/react/use-model-store.ts) so a
+            // FUTURE fresh session for this agent launches with the
+            // last-picked model instead of resetting to the harness
+            // default. Best-effort/optimistic: this is a convenience seed
+            // for the NEXT session's launch env, not the live session's own
+            // source of truth (that's always the ACP `configOptions`
+            // round-trip above) — a value that fails to apply server-side
+            // only means the seed is briefly wrong, never that this
+            // session's actual model silently changed.
+            if (typeof value === 'string' && capabilityAgentName) {
+              runtimeModelStore.setRuntimeModel(capabilityAgentName, value);
+            }
+          },
+        }
+      : preSessionModelOption
         ? {
-            harness: activeHarness,
-            selectedModel: liveResolvedModel,
+            harness: nativeHarness,
+            // Live-but-not-yet-writable (still bootstrapping) prefers the
+            // session's own in-flight resolved value over the stored
+            // deferred pick — pre-session, there's no live value yet, so the
+            // deferred pick is all there is.
+            selectedModel: live ? (liveResolvedModel ?? runtimeModel) : runtimeModel,
             connectionLabel,
             connectionKind,
-            disabled: liveModelOptionDisabled,
-            modelOption: liveModelOption,
+            // Live-but-not-yet-writable still gates on the same busy/error/
+            // lock signals as the writable branch (nothing to round-trip
+            // through yet either way); pure pre-session is never disabled.
+            disabled: live ? liveModelOptionDisabled : false,
+            // Same control as the live-writable case
+            // (`HarnessManagedModelSelector`, via `ComposerModelControls`'s
+            // single render branch) — `currentValue` is stamped from, in
+            // priority order: the live session's own in-flight value, the
+            // stored deferred pick, or the option's own first advertised
+            // choice (verified live to equal the harness's real bootstrap
+            // default for both claude and codex — see
+            // `acp-config-option-pills.tsx`'s own blank-pill fallback for
+            // the second half of this guarantee). Never left unset.
+            modelOption: {
+              ...preSessionModelOption,
+              currentValue:
+                (live ? (liveResolvedModel ?? runtimeModel) : runtimeModel) ??
+                firstModelOptionValue(preSessionModelOption) ??
+                undefined,
+            },
             onModelOptionChange: (value) => {
-              live.onConfigOptionChange(liveModelOption.id, value);
-              // Seed the harness-native launch-model store (the SAME
-              // per-agent namespace the pre-session label reads via
-              // `runtimeModel` below — see `getRuntimeModel`/`setRuntimeModel`'s
-              // doc comment, packages/sdk/src/react/use-model-store.ts) so a
-              // FUTURE fresh session for this agent launches with the
-              // last-picked model instead of resetting to the harness
-              // default. Best-effort/optimistic: this is a convenience seed
-              // for the NEXT session's launch env, not the live session's own
-              // source of truth (that's always the ACP `configOptions`
-              // round-trip above) — a value that fails to apply server-side
-              // only means the seed is briefly wrong, never that this
-              // session's actual model silently changed.
+              // No live, writable ACP session to round-trip through yet —
+              // persist the pick in the SAME per-agent store the live path
+              // seeds (`getRuntimeModel`/`setRuntimeModel`), applied
+              // automatically the moment a session for this agent goes live
+              // (see the deferred-apply effect above).
               if (typeof value === 'string' && capabilityAgentName) {
                 runtimeModelStore.setRuntimeModel(capabilityAgentName, value);
               }
             },
           }
-        : {
-            harness: activeHarness,
-            selectedModel: liveResolvedModel,
-            connectionLabel,
-            connectionKind,
-            disabled: true,
-          }
-      : undefined
-    : nativeHarness
-      ? preSessionModelOption
-        ? {
-            harness: nativeHarness,
-            selectedModel: runtimeModel,
-            connectionLabel,
-            connectionKind,
-            // Same control as the live case (`HarnessManagedModelSelector`,
-            // via `ComposerModelControls`'s `modelOption`-gated render) — the
-            // synthetic `currentValue` is the stored deferred pick (or unset,
-            // a real "nothing chosen yet" state, never a fabricated one).
-            modelOption: { ...preSessionModelOption, currentValue: runtimeModel ?? undefined },
-            onModelOptionChange: (value) => {
-              // No live ACP session to round-trip through yet — persist the
-              // pick in the SAME per-agent store the live path seeds
-              // (`getRuntimeModel`/`setRuntimeModel`), applied automatically
-              // the moment a session for this agent goes live (see the
-              // deferred-apply effect above).
-              if (typeof value === 'string' && capabilityAgentName) {
-                runtimeModelStore.setRuntimeModel(capabilityAgentName, value);
-              }
-            },
-          }
-        : {
-            harness: nativeHarness,
-            selectedModel: runtimeModel,
-            connectionLabel,
-            connectionKind,
-          }
-      : undefined;
+        : undefined;
 
   // Server-authoritative auth/model preflight — the ONLY hard send gate for a
   // real project + resolved agent (composer-capabilities). `null` while live
@@ -725,30 +769,42 @@ export function ComposerChatInput({
       selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}
-      models={live ? [] : catalogModelRequired ? capabilityModels : []}
-      selectedModel={live ? null : catalogModelRequired ? selectedCatalogModel : null}
+      // No `live ?` gate here (2026-07-22 fix, same bug as
+      // `harnessManagedModel` above): a catalog harness's (OpenCode, Pi)
+      // model control is the SAME `ModelSelector`, fed by the SAME
+      // composer-capabilities catalog, whether or not a session is live —
+      // `useComposerCapabilities` above isn't gated on `live` either, so
+      // `capabilityModels`/`selectedCatalogModel` are already populated by
+      // the time a session goes live. Forcing these to empty/null/undefined
+      // while live used to leave the composer with NOTHING to render for a
+      // live catalog-harness session (the catalog branch had zero models,
+      // and `harnessManagedModel` was undefined too before that fix) — which
+      // is exactly what made `ComposerModelControls` fall through to a dead
+      // state. Picking a model on a live catalog session persists to the
+      // same per-agent/per-session store pre-session does (below) — there is
+      // no live ACP round-trip for a catalog pick (unlike claude/codex's
+      // `session/set_config_option`); that remains a known gap, tracked
+      // separately, not a regression this fix introduces.
+      models={catalogModelRequired ? capabilityModels : []}
+      selectedModel={catalogModelRequired ? selectedCatalogModel : null}
       onModelChange={
-        live
-          ? undefined
-          : catalogModelRequired
-            ? (m) => {
-                // Persist in the SAME identity vocabulary the catalog is
-                // rendered in — see `catalogAgentModelKey`'s doc comment.
-                // `m` can be `null` (ModelSelector's onSelect signature
-                // allows clearing); either way both slots are written so
-                // per-session takes priority over per-agent on next read.
-                if (catalogAgentKey)
-                  runtimeModelStore.setSelectedModel(catalogAgentKey, m ?? undefined);
-                if (catalogSessionKey)
-                  runtimeModelStore.setSessionModel(catalogSessionKey, m ?? undefined);
-                if (m) runtimeModelStore.pushRecent(m);
-              }
-            : undefined
+        catalogModelRequired
+          ? (m) => {
+              // Persist in the SAME identity vocabulary the catalog is
+              // rendered in — see `catalogAgentModelKey`'s doc comment.
+              // `m` can be `null` (ModelSelector's onSelect signature
+              // allows clearing); either way both slots are written so
+              // per-session takes priority over per-agent on next read.
+              if (catalogAgentKey)
+                runtimeModelStore.setSelectedModel(catalogAgentKey, m ?? undefined);
+              if (catalogSessionKey)
+                runtimeModelStore.setSessionModel(catalogSessionKey, m ?? undefined);
+              if (m) runtimeModelStore.pushRecent(m);
+            }
+          : undefined
       }
       harnessManagedModel={harnessManagedModel}
-      modelRequired={
-        live ? false : capability.data ? !capability.data.model.default_allowed : false
-      }
+      modelRequired={capability.data ? !capability.data.model.default_allowed : false}
       modelsLoading={capability.isLoading || providersLoading}
       composerBlockingReason={composerBlockingReason}
       composerBlockingActionLabel={composerBlockingActionLabel}

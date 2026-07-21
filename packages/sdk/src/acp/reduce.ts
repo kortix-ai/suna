@@ -17,6 +17,41 @@ import type {
   AcpUsageProjection,
 } from './transcript';
 
+/**
+ * The pi adapter's own startup/update-notice banner, smuggled through as if
+ * it were a real assistant message. Verified live
+ * (`kortix.acp_session_envelopes`, local DB, 2026-07-22): pi-acp sends this
+ * VERBATIM on every session bootstrap (`session/new`/`session/load`) as a
+ * genuine `agent_message_chunk` — e.g.
+ * `"pi v0.80.6\n---\n\n---\nNew version available: v0.81.1 (installed
+ * v0.80.6). Run: \`npm i -g @earendil-works/pi-coding-agent\`\n"` — DUPLICATING
+ * the same string it separately (and correctly) stamps on the bootstrap RPC
+ * response's own non-visual `_meta.piAcp.startupInfo` field (never rendered —
+ * it isn't a `session/update` at all, so it never reaches this reducer's
+ * chat-item path in the first place). Only the `agent_message_chunk` copy is
+ * the bug: it renders as a real chat bubble — a "pi v0.80.6" heading plus a
+ * "New version available…" block the user never asked for and the agent
+ * never said, once per reconnect (`session/load`), which is why a session
+ * with two reconnects shows it twice.
+ *
+ * Matched narrowly on pi's own two-part shape — a `<name> vX.Y.Z` version
+ * heading immediately followed by its literal `---` separator, OR an
+ * update-notice sentence naming pi's own install command verbatim — so a
+ * real agent reply that happens to mention a version number, or another
+ * harness's own startup chatter, is never caught by accident. Scoped to
+ * `agent_message_chunk` only (never `agent_thought_chunk` — a thought this
+ * shape would be a wildly unlikely coincidence worth keeping visible).
+ */
+const PI_VERSION_HEADING = /^[\w.-]+ v\d+\.\d+\.\d+\s*\n---/;
+const PI_UPDATE_NOTICE =
+  /New version available: v?\d+\.\d+\.\d+ \(installed v?\d+\.\d+\.\d+\)\. Run: `npm i -g @earendil-works\/pi-coding-agent`/;
+
+export function isHarnessStartupNoticeText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return PI_VERSION_HEADING.test(trimmed) || PI_UPDATE_NOTICE.test(trimmed);
+}
+
 /** `Array.prototype.findLastIndex` (ES2023) reimplemented as a manual reverse
  *  scan — this package targets an ES2017-safe runtime floor, and apps/api
  *  compiles this source through workspace paths under an older `lib`. Same
@@ -390,6 +425,17 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         // still consume the row in their dedicated blocks below. Tool calls are
         // exempt (see above): they dedupe by id, so replay is safe and a new
         // one must not be lost.
+      } else if (kind === 'agent_message_chunk' && isHarnessStartupNoticeText(text)) {
+        // See `isHarnessStartupNoticeText`'s doc comment — pi's own startup/
+        // update-notice banner, never a real assistant message. Routed to
+        // the SAME quiet, disclosure-gated `raw` treatment every other
+        // non-visual/unrecognized protocol event already gets
+        // (`AcpUnknownMethodCard`, apps/web/src/features/session/
+        // acp-transcript-groups.tsx) — inspectable, never silently dropped,
+        // never mistaken for something the agent said. Deliberately skips
+        // the message-stream/replay bookkeeping below: this text must never
+        // merge with, or be walked as a replay of, a real message.
+        chatItems = [...chatItems, { kind: 'raw', method: 'harness_startup_notice', data: update }];
       } else if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
         // Content-identity replay classification (duplicate-message bug,

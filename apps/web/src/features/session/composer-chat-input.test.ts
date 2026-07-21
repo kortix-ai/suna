@@ -5,6 +5,7 @@ import {
   capFeedModels,
   catalogAgentModelKey,
   catalogSessionModelKey,
+  firstModelOptionValue,
   presetToFlatModel,
   resolveExplicitCatalogModel,
   resolvePresetProviderId,
@@ -408,5 +409,39 @@ describe('catalogAgentModelKey / catalogSessionModelKey', () => {
     // always 'native' or 'gateway' — see modelProviderMode).
     expect(catalogAgentModelKey('kortix')).not.toBe('gateway:kortix');
     expect(catalogAgentModelKey('kortix')).not.toBe('native:kortix');
+  });
+});
+
+describe('firstModelOptionValue — the blank-pill fix (2026-07-22)', () => {
+  test('the real claude fallback shape: first option is "default", matching its real live bootstrap currentValue', () => {
+    expect(
+      firstModelOptionValue({
+        options: [
+          { name: 'Default (recommended)', value: 'default' },
+          { name: 'Sonnet', value: 'sonnet' },
+        ],
+      }),
+    ).toBe('default');
+  });
+
+  test('the real codex fallback shape: first option is "gpt-5.6-sol", matching its real live bootstrap currentValue', () => {
+    expect(
+      firstModelOptionValue({
+        options: [
+          { name: 'GPT-5.6-Sol', value: 'gpt-5.6-sol' },
+          { name: 'GPT-5.6-Terra', value: 'gpt-5.6-terra' },
+        ],
+      }),
+    ).toBe('gpt-5.6-sol');
+  });
+
+  test('falls back to `id` when a choice has no `value`', () => {
+    expect(firstModelOptionValue({ options: [{ id: 'only-id' }] })).toBe('only-id');
+  });
+
+  test('no options, or nothing passed at all: undefined, never throws', () => {
+    expect(firstModelOptionValue({ options: [] })).toBeUndefined();
+    expect(firstModelOptionValue(null)).toBeUndefined();
+    expect(firstModelOptionValue(undefined)).toBeUndefined();
   });
 });
