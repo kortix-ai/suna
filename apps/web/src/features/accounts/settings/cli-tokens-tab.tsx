@@ -27,6 +27,7 @@ import {
   type AccountToken,
   type CreatedAccountToken,
 } from '@/lib/api/account-tokens';
+import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
@@ -261,6 +262,9 @@ export function CliTokensTab() {
   const active = tokens.filter((t) => t.status === 'active');
   const revoked = tokens.filter((t) => t.status !== 'active');
 
+  // Env-correct public API base (already includes /v1), e.g. https://api.kortix.com/v1.
+  const apiBase = (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
+
   return (
     <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
       <CreateApiKeyAction
@@ -352,6 +356,23 @@ export function CliTokensTab() {
           {`kortix login --token <paste-from-above>
 kortix whoami
 kortix projects ls`}
+        </pre>
+      </div>
+
+      <div className="bg-foreground/5 overflow-hidden rounded-lg border text-sm">
+        <div className="px-4 py-2">
+          <span className="font-medium">Using the API</span>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            The same key is a Bearer credential for the REST API — use it to run Kortix as a
+            backend. Sessions it starts are tracked with a <code>backend</code> origin, and{' '}
+            <code>origin_ref</code> attributes each one to your own end-user.
+          </p>
+        </div>
+        <pre className="bg-foreground text-background overflow-x-auto rounded-t-lg px-4 py-3 font-mono text-xs">
+          {`curl -X POST ${apiBase}/projects/<project-id>/sessions \\
+  -H "Authorization: Bearer <api-key>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"initial_prompt": "Summarize new signups", "origin_ref": "your-user-123"}'`}
         </pre>
       </div>
     </div>
