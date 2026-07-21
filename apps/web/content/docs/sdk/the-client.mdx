@@ -89,7 +89,12 @@ signed in) yet, so these take only an `inviteId`, not an `accountId`.
 | `modelPicker(id)`                            | compact connected models for interactive selectors                |
 | `sandboxTemplates(id)`                       | sandbox build templates (Dockerfile/image/warm-pool)              |
 | `sandboxHealth(id)`                          | sandbox-image build health                                        |
-| `sessions(id)` · `createSession(id, input?)` | list · create sessions                                            |
+| `sessions(id)` · `createSession(id, input?)` | list visible sessions · create sessions                           |
+
+The id-bound project handle also exposes
+`project(id).sessions.list({ scope: 'project' })`, a manager-only durable
+inventory that includes private, unavailable, and soft-deleted session records
+with ownership, viewer-access, and runtime-state metadata.
 
 ## GitHub — `kortix.github`
 

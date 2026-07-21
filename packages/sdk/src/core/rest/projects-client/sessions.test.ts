@@ -48,6 +48,13 @@ test('listProjectSessions hits GET /projects/:id/sessions', async () => {
   expect(result).toEqual([]);
 });
 
+test('listProjectSessions requests the manager-only project inventory scope', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { scope: 'project' });
+  expect(last().url).toContain('/projects/P1/sessions?scope=project');
+  expect(last().method).toBe('GET');
+});
+
 test('listProjectSessions throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listProjectSessions('P1')).rejects.toBeTruthy();

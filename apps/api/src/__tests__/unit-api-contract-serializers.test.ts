@@ -165,10 +165,22 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       viewerId: 'someone-else',
       canManageProject: true,
       ownerEmail: 'owner@acme.dev',
+      ownerName: 'Build Agent',
+      ownerType: 'service_account',
+      canAccess: false,
+      runtimeStatus: 'stopped',
+      deletedAt: '2026-07-20T10:00:00.000Z',
+      deletedBy: USER_ID,
     });
     const parsed = ProjectSessionSchema.strict().parse(out);
     expect(parsed.sharing).toEqual({ mode: 'members', memberIds: [USER_ID], groupIds: [] });
     expect(parsed.owner_email).toBe('owner@acme.dev');
+    expect(parsed.owner_name).toBe('Build Agent');
+    expect(parsed.owner_type).toBe('service_account');
+    expect(parsed.can_access).toBe(false);
+    expect(parsed.runtime_status).toBe('stopped');
+    expect(parsed.deleted_at).toBe('2026-07-20T10:00:00.000Z');
+    expect(parsed.deleted_by).toBe(USER_ID);
     expect(parsed.is_owner).toBe(false);
   });
 

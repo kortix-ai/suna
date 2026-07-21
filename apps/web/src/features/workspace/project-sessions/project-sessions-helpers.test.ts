@@ -5,6 +5,8 @@ import {
   filterProjectSessions,
   matchesProjectSessionsFilter,
   projectSessionsFilterCounts,
+  sessionAccessMeta,
+  sessionOwnerLabel,
 } from './project-sessions-helpers';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
@@ -49,6 +51,54 @@ describe('matchesProjectSessionsFilter', () => {
     expect(matchesProjectSessionsFilter(shared, 'shared')).toBe(true);
     expect(matchesProjectSessionsFilter(makeSession(), 'shared')).toBe(false);
   });
+
+  test('separates deleted and inaccessible sessions for inventory debugging', () => {
+    expect(
+      matchesProjectSessionsFilter(
+        makeSession({ deleted_at: '2026-07-20T10:00:00.000Z' }),
+        'deleted',
+      ),
+    ).toBe(true);
+    expect(matchesProjectSessionsFilter(makeSession({ can_access: false }), 'inaccessible')).toBe(
+      true,
+    );
+  });
+});
+
+describe('session inventory identity and access labels', () => {
+  test('labels human and agent owners without pretending an unknown owner is the viewer', () => {
+    expect(
+      sessionOwnerLabel(
+        makeSession({ owner_type: 'user', owner_name: 'Ari', owner_email: 'ari@kortix.ai' }),
+      ),
+    ).toBe('Ari');
+    expect(
+      sessionOwnerLabel(
+        makeSession({ owner_type: 'service_account', owner_name: 'backend-debugger' }),
+      ),
+    ).toBe('backend-debugger');
+    expect(
+      sessionOwnerLabel(
+        makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+      ),
+    ).toBe('Unknown owner');
+  });
+
+  test('distinguishes permission from a missing or archived runtime', () => {
+    expect(sessionAccessMeta(makeSession({ can_access: false }))).toMatchObject({
+      label: 'Metadata only',
+      canOpen: false,
+    });
+    expect(
+      sessionAccessMeta(makeSession({ can_access: true, runtime_status: 'archived' })),
+    ).toMatchObject({ label: 'Runtime unavailable', canOpen: false });
+    expect(
+      sessionAccessMeta(makeSession({ can_access: true, status: 'stopped', runtime_status: null })),
+    ).toMatchObject({ label: 'Runtime unavailable', canOpen: false });
+    expect(
+      sessionAccessMeta(makeSession({ can_access: true, runtime_status: 'active' })),
+    ).toMatchObject({ label: 'Can open', canOpen: true });
+  });
 });
 
 describe('filterProjectSessions', () => {
@@ -86,7 +136,7 @@ describe('projectSessionsFilterCounts', () => {
   test('reports counts for every filter', () => {
     const counts = projectSessionsFilterCounts([
       makeSession({ status: 'running' }),
-      makeSession({ session_id: 'two', status: 'failed', is_owner: false }),
+      makeSession({ session_id: 'two', status: 'failed', is_owner: false, can_access: false }),
       makeSession({
         session_id: 'three',
         status: 'completed',
@@ -102,6 +152,8 @@ describe('projectSessionsFilterCounts', () => {
       failed: 1,
       automated: 1,
       shared: 1,
+      deleted: 0,
+      inaccessible: 1,
     });
   });
 });

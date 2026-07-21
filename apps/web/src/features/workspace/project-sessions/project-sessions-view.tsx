@@ -71,6 +71,8 @@ import {
   filterProjectSessions,
   PROJECT_SESSIONS_FILTERS,
   projectSessionsFilterCounts,
+  sessionAccessMeta,
+  sessionOwnerLabel,
   type ProjectSessionsFilter,
 } from './project-sessions-helpers';
 
@@ -131,7 +133,7 @@ function DetailItem({ label, value, mono }: { label: string; value: string; mono
       <dt className="text-muted-foreground text-xs">{label}</dt>
       <dd
         className={cn(
-          'text-foreground text-sm break-words',
+          'text-foreground break-words text-sm',
           mono && 'font-mono text-xs tabular-nums',
         )}
       >
@@ -168,7 +170,20 @@ function SessionRow({
   const SourceIcon = SOURCE_ICONS[source.kind];
   const status = STATUS_META[session.status];
   const visibility = sessionVisibilityMeta(session);
-  const ownerLabel = session.owner_email || (session.is_owner === false ? 'Project member' : 'You');
+  const ownerLabel = sessionOwnerLabel(session);
+  const access = sessionAccessMeta(session);
+  const isDeleted = Boolean(session.deleted_at);
+  const canManageSharing = session.can_manage_sharing !== false && !isDeleted;
+  const hasLifecycleActions = access.canOpen && !isDeleted;
+  const hasActions = canManageSharing || hasLifecycleActions;
+  const ownerTypeLabel =
+    session.owner_type === 'user'
+      ? 'Person'
+      : session.owner_type === 'service_account'
+        ? 'Agent / service account'
+        : session.owner_type === 'unknown'
+          ? 'Unknown principal'
+          : 'Unattributed';
   const created = formatTimestamp(session.created_at);
   const updated = formatTimestamp(session.updated_at || session.created_at);
   const conversationCount = (session.opencode_sessions ?? []).length;
@@ -199,7 +214,15 @@ function SessionRow({
               <span className="text-foreground max-w-full truncate text-sm font-medium">
                 {title}
               </span>
-              {session.is_owner === false ? (
+              {isDeleted ? (
+                <Badge variant="destructive" size="xs">
+                  Deleted
+                </Badge>
+              ) : session.can_access === false ? (
+                <Badge variant="outline" size="xs">
+                  Metadata only
+                </Badge>
+              ) : session.is_owner === false ? (
                 <Badge variant="kortix" size="xs">
                   Shared
                 </Badge>
@@ -240,7 +263,14 @@ function SessionRow({
             <DetailItem label="Created" value={created.exact} />
             <DetailItem label="Last activity" value={updated.exact} />
             <DetailItem label="Status" value={status.label} />
-            <DetailItem label="Owner" value={ownerLabel} />
+            <DetailItem label="Session / resource owner" value={ownerLabel} />
+            <DetailItem label="Owner identity" value={ownerTypeLabel} />
+            <DetailItem
+              label="Owner ID"
+              value={session.created_by || 'Unattributed'}
+              mono={Boolean(session.created_by)}
+            />
+            <DetailItem label="Your access" value={access.label} />
             <DetailItem label="Visibility" value={visibility.label} />
             <DetailItem
               label="Source"
@@ -248,6 +278,10 @@ function SessionRow({
             />
             <DetailItem label="Agent" value={session.agent_name || 'Project default'} />
             <DetailItem label="Runtime" value={session.sandbox_provider || 'Not provisioned'} />
+            <DetailItem
+              label="Runtime resource state"
+              value={session.runtime_status || 'Missing'}
+            />
             <DetailItem
               label="Conversations"
               value={`${conversationCount} OpenCode session${conversationCount === 1 ? '' : 's'}${
@@ -257,6 +291,7 @@ function SessionRow({
             <DetailItem label="Base ref" value={session.base_ref || 'Default branch'} mono />
             <DetailItem label="Branch" value={session.branch_name || 'Not created'} mono />
             <DetailItem label="Session ID" value={session.session_id} mono />
+            <DetailItem label="Sandbox ID" value={session.sandbox_id || 'Missing'} mono />
             <DetailItem
               label="Root conversation ID"
               value={session.opencode_session_id || 'Not synced'}
@@ -270,6 +305,24 @@ function SessionRow({
             </InfoBanner>
           ) : null}
 
+          {isDeleted ? (
+            <InfoBanner tone="neutral" title="Soft-deleted session">
+              <span>
+                Deleted{' '}
+                {session.deleted_at
+                  ? formatTimestamp(session.deleted_at).exact
+                  : 'at an unknown time'}
+                {session.deleted_by ? ` by ${session.deleted_by}` : ''}. The durable record remains
+                visible here for investigation.
+              </span>
+            </InfoBanner>
+          ) : session.can_access === false ? (
+            <InfoBanner tone="neutral" title="Metadata-only access">
+              You can inspect this inventory record, but the owner has not shared the session
+              content with you.
+            </InfoBanner>
+          ) : null}
+
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
             <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
               <GitBranch className="size-3.5 shrink-0" />
@@ -278,55 +331,69 @@ function SessionRow({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href={href}>
-                  Open session
-                  <ExternalLink className="size-3.5 shrink-0" />
-                </Link>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="secondary" size="sm">
-                    <MoreHorizontal className="size-3.5 shrink-0" />
-                    Actions
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem onSelect={() => onRename(session.session_id, title)}>
-                    <Pencil />
-                    Rename
-                  </DropdownMenuItem>
-                  {session.can_manage_sharing !== false ? (
-                    <DropdownMenuItem onSelect={() => onShare(session)}>
-                      <Share />
-                      Share
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem
-                    disabled={restarting}
-                    onSelect={() => onRestart(session.session_id, title)}
-                  >
-                    {restarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-                    Restart
-                  </DropdownMenuItem>
-                  {session.status === 'running' && session.can_manage_sharing !== false ? (
-                    <DropdownMenuItem
-                      disabled={stopping}
-                      onSelect={() => onStop(session.session_id, title)}
-                    >
-                      {stopping ? <Loading className="size-4 shrink-0" /> : <Square />}
-                      Stop
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => onDelete(session.session_id, title)}
-                  >
-                    <TrashSolid />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {access.canOpen ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={href}>
+                    Open session
+                    <ExternalLink className="size-3.5 shrink-0" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
+                  {access.label}
+                </Button>
+              )}
+              {hasActions ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="secondary" size="sm">
+                      <MoreHorizontal className="size-3.5 shrink-0" />
+                      Actions
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    {hasLifecycleActions ? (
+                      <DropdownMenuItem onSelect={() => onRename(session.session_id, title)}>
+                        <Pencil />
+                        Rename
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canManageSharing ? (
+                      <DropdownMenuItem onSelect={() => onShare(session)}>
+                        <Share />
+                        Share
+                      </DropdownMenuItem>
+                    ) : null}
+                    {hasLifecycleActions ? (
+                      <DropdownMenuItem
+                        disabled={restarting}
+                        onSelect={() => onRestart(session.session_id, title)}
+                      >
+                        {restarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+                        Restart
+                      </DropdownMenuItem>
+                    ) : null}
+                    {session.status === 'running' && hasLifecycleActions ? (
+                      <DropdownMenuItem
+                        disabled={stopping}
+                        onSelect={() => onStop(session.session_id, title)}
+                      >
+                        {stopping ? <Loading className="size-4 shrink-0" /> : <Square />}
+                        Stop
+                      </DropdownMenuItem>
+                    ) : null}
+                    {hasLifecycleActions ? (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => onDelete(session.session_id, title)}
+                      >
+                        <TrashSolid />
+                        Delete
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </div>
           </div>
         </div>
@@ -347,8 +414,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const newSession = useNewProjectSession(projectId);
 
   const sessionsQuery = useQuery({
-    queryKey: ['project-sessions', projectId],
-    queryFn: () => listProjectSessions(projectId),
+    queryKey: ['project-session-inventory', projectId],
+    queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
     staleTime: 10_000,
     refetchInterval: (query) =>
       shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
@@ -367,6 +434,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`Restarting "${label}"…`);
+      queryClient.invalidateQueries({ queryKey: ['project-session-inventory', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     },
     onError: (error) =>
@@ -378,6 +446,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`"${label}" stopped`);
+      queryClient.invalidateQueries({ queryKey: ['project-session-inventory', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     },
     onError: (error) =>
@@ -400,7 +469,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   return (
     <CustomizeSectionWrapper
       title="Sessions"
-      description="Every chat, shared thread, and automation run in this project."
+      description="Manager inventory of every durable session and its owner, access, and runtime state."
       action={action}
       className="max-w-5xl"
     >
@@ -419,7 +488,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
         </InputGroupSearch>
 
-        <div className="[scrollbar-width:none] overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
+        <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <FilterBar className="h-8 rounded-md">
             {PROJECT_SESSIONS_FILTERS.map((option) => (
               <FilterBarItem
@@ -517,7 +586,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         session={sessionToShare}
         open={!!sessionToShare}
         onOpenChange={(open) => !open && setSessionToShare(null)}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ['project-session-inventory', projectId] });
+          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        }}
       />
       <RenameSessionModal
         projectId={projectId}

@@ -80,6 +80,8 @@ const kortix = createKortix({
 const projects = await kortix.projects.list();
 const detail   = await kortix.project(pid).detail();
 await kortix.project(pid).secrets.upsert({ name: 'STRIPE_API_KEY', value });
+const visibleSessions = await kortix.project(pid).sessions.list();
+const projectInventory = await kortix.project(pid).sessions.list({ scope: 'project' }); // manager only
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
