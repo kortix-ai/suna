@@ -2,10 +2,8 @@
 
 import type { ReactNode } from 'react';
 
-import {
-  acpConfigOptionPresets,
-  findAcpModelConfigOption,
-} from '@/features/session/acp-composer-adapters';
+import { findAcpModelConfigOption } from '@/features/session/acp-composer-adapters';
+import type { HarnessManagedModelState } from '@/features/session/composer-model-controls';
 import { deriveComposerBlockingAction } from '@/features/session/model-availability';
 import {
   type AttachedFile,
@@ -34,6 +32,7 @@ import {
   useComposerCapabilities,
   useProjectConfig,
 } from '@kortix/sdk/react';
+import { CATALOG } from '@kortix/llm-catalog';
 
 export interface ComposerOptions {
   agent?: string;
@@ -58,6 +57,132 @@ export function boundSessionAgentName(value?: string | null): string | null {
 // `allModels`. A fresh `[]` literal every render would defeat that hook's own
 // `useMemo`s (referential inequality on every render).
 const NO_MODELS: FlatModel[] = [];
+
+// Provider whose api-key auth kind serves BARE (non-namespaced) preset ids —
+// see `modelPresets()` in apps/api/src/projects/lib/composer-capabilities.ts:
+// `anthropic_api_key`/`openai_api_key` presets are the newest few models.dev
+// entries for that ONE provider with no `<provider>/` prefix at all, unlike
+// `managed_gateway`'s `kortix/<id>` or `native_config`'s `<provider>/<id>`.
+const BARE_PRESET_PROVIDER_ID: Partial<Record<HarnessAuthKind, string>> = {
+  anthropic_api_key: 'anthropic',
+  openai_api_key: 'openai',
+};
+
+/**
+ * The provider id a composer-capabilities preset resolves to for the model
+ * picker.
+ *
+ * *** BUG THIS FIXES *** (verified live on a project routed through
+ * `anthropic_api_key`: the server returned 6 real, `can_start: true`
+ * presets, but the picker showed "No models available"). A bare preset id
+ * (no `/`) used to default its `providerID` to the HARNESS name
+ * (`activeHarness` — e.g. `'opencode'`), not the real upstream provider.
+ * Main's `ModelSelector` filters BYOK visibility by the real provider id
+ * parsed from connected secret names (`ANTHROPIC_API_KEY` → `'anthropic'`,
+ * see `connectedGatewayProviderIdsFromSecretNames`) — a model tagged
+ * `providerID: 'opencode'` can never match any connected provider, so every
+ * preset silently disappeared.
+ *
+ * `preset.provider` (verified live on the running dev API: every
+ * `modelPresets()` branch now stamps it — apps/api/src/projects/lib/
+ * composer-capabilities.ts, the 2026-07-21 model-resolution refactor) is the
+ * server's own ground truth and always wins when present. The `/`-split and
+ * `connectionKind`-keyed fallbacks below only cover a preset from an older
+ * (pre-refactor) API build that hasn't stamped the field yet — the SDK's
+ * `ComposerCapabilities['model']['presets']` type (packages/sdk) hadn't
+ * caught up to the field at the time of this fix, so it's read defensively
+ * rather than relied on via the type.
+ */
+export function resolvePresetProviderId(input: {
+  presetId: string;
+  presetProvider?: string | null;
+  connectionKind: HarnessAuthKind | null | undefined;
+  harnessFallback: string;
+}): string {
+  if (input.presetProvider) return input.presetProvider;
+  const slash = input.presetId.indexOf('/');
+  if (slash > 0) return input.presetId.slice(0, slash);
+  return (
+    (input.connectionKind && BARE_PRESET_PROVIDER_ID[input.connectionKind]) || input.harnessFallback
+  );
+}
+
+/**
+ * Enrich a resolved provider/model id pair with the catalog's
+ * `released`/`family` metadata so main's `useModelStore.isVisible` "latest
+ * per family" heuristic can actually place it in the default (no-search)
+ * view. Without this, every BYOK preset lacks `releaseDate` and degrades to
+ * search-only — the provider-id fix alone (`resolvePresetProviderId`) is
+ * necessary but not sufficient to make these models VISIBLE by default.
+ * `kortix`-namespaced ids skip the lookup: the gateway catalog is keyed by
+ * its own wire ids, not models.dev's.
+ */
+function catalogMetadata(providerID: string, modelID: string): { releaseDate?: string; family?: string } {
+  if (providerID === 'kortix') return {};
+  const provider = CATALOG.providers.find((entry) => entry.id === providerID);
+  const model = provider?.models.find((entry) => entry.id === modelID);
+  return { releaseDate: model?.released ?? undefined, family: model?.family };
+}
+
+/** A composer-capabilities preset, tagged with its real provider id and
+ *  (when resolvable) catalog release metadata — see `resolvePresetProviderId`
+ *  and `catalogMetadata`'s doc comments for the two bugs this fixes. */
+export function presetToFlatModel(
+  preset: { id: string; name: string; source: string; provider?: string | null },
+  ctx: { connectionKind: HarnessAuthKind | null | undefined; harnessFallback: string },
+): FlatModel & { providerSource: string } {
+  const providerID = resolvePresetProviderId({
+    presetId: preset.id,
+    presetProvider: preset.provider,
+    connectionKind: ctx.connectionKind,
+    harnessFallback: ctx.harnessFallback,
+  });
+  const slash = preset.id.indexOf('/');
+  const modelID = slash > 0 ? preset.id.slice(slash + 1) : preset.id;
+  const { releaseDate, family } = catalogMetadata(providerID, modelID);
+  return {
+    providerID,
+    providerName: preset.source,
+    modelID,
+    modelName: preset.name,
+    providerSource: preset.source,
+    releaseDate,
+    family,
+  };
+}
+
+/** Most rows the composer's model popover can mount before opening/typing
+ *  visibly stutters — a `managed_gateway` preset list is the gateway's
+ *  ENTIRE routable catalog (thousands of entries, unconditioned on what this
+ *  project can actually reach — see `gatewayModelCatalog`), and main's
+ *  `ModelSelector` has no cap of its own (it wasn't built against a catalog
+ *  this size). Capping the FEED here — not inside the restored file — keeps
+ *  every internal list in the picker's own render pipeline (open, search,
+ *  filter) small everywhere, with no separate `useDeferredValue`/cap logic
+ *  needed inside it. */
+export const RENDERED_MODEL_CAP = 50;
+
+/** Bound how many of an already-built `FlatModel[]` feed actually reach the
+ *  picker, keeping the selected model present even when the cap would
+ *  otherwise drop it (its check mark must never silently disappear). */
+export function capFeedModels(
+  models: FlatModel[],
+  selected: { providerID: string; modelID: string } | null,
+  cap: number = RENDERED_MODEL_CAP,
+): FlatModel[] {
+  if (models.length <= cap) return models;
+  const visible = models.slice(0, cap);
+  const alreadyVisible = selected
+    ? visible.some((m) => m.providerID === selected.providerID && m.modelID === selected.modelID)
+    : true;
+  if (selected && !alreadyVisible) {
+    const match = models.find(
+      (m) => m.providerID === selected.providerID && m.modelID === selected.modelID,
+    );
+    if (match) visible.push(match);
+  }
+  return visible;
+}
 
 export function buildComposerOptions(input: {
   agent: Agent | undefined;
@@ -211,7 +336,15 @@ export function ComposerChatInput({
   const lockedAgentName = boundSessionAgentName(boundAgentName);
   const catalogModelRequired = agentRequiresCatalogModel(local.agent.current);
   const activeHarness = agentHarness(local.agent.current);
-  const nativeHarness = activeHarness && activeHarness !== 'opencode' ? activeHarness : null;
+  // Single-sourced off `agentRequiresCatalogModel` (not an independent
+  // `!== 'opencode'` check) so the composer's render mode (catalog picker vs.
+  // static harness-managed label) can never disagree with `buildComposerOptions`'s
+  // send-time gateway-model-vs-runtime-model choice, which reads the same
+  // predicate. No behavior change today (`agentRequiresCatalogModel` is still
+  // OpenCode-only) — see docs/specs/2026-07-21-model-resolution-refactor-plan.md
+  // for the in-flight decision to make Pi catalog-driven too; this keeps both
+  // flags moving together automatically once that lands.
+  const nativeHarness = activeHarness && !catalogModelRequired ? activeHarness : null;
   const capabilityAgentName = lockedAgentName ?? local.agent.current?.name ?? null;
   // Harness-native launch model (Claude/Codex/Pi) — persisted per AGENT NAME
   // in the shared SDK model store, not per harness: two agents on the same
@@ -223,67 +356,64 @@ export function ComposerChatInput({
       ? (runtimeModelStore.getRuntimeModel(capabilityAgentName) ?? null)
       : null;
   const capability = useComposerCapabilities(projectId, capabilityAgentName);
-  const capabilityModels = (capability.data?.model.presets ?? []).map((preset) => {
-    const slash = preset.id.indexOf('/');
-    const providerID = slash > 0 ? preset.id.slice(0, slash) : (activeHarness ?? 'runtime');
-    const modelID = slash > 0 ? preset.id.slice(slash + 1) : preset.id;
-    return {
-      providerID,
-      providerName: preset.source,
-      modelID,
-      modelName: preset.name,
-      providerSource: preset.source,
-    };
-  });
+  // Locked language for the resolved connection — never the raw auth-kind id
+  // (`claude_subscription`) or a mechanical `replaceAll('_', ' ')` — shared by
+  // the harness-managed model label and the blocking-action copy.
+  const connectionKind = capability.data?.auth.active ?? null;
+  const connectionLabel = connectionKind ? connectionDisplayName(connectionKind) : null;
+  const harnessLabel = activeHarness ? harnessPresentation(activeHarness).label : null;
+  const capabilityModelsRaw = (capability.data?.model.presets ?? []).map((preset) =>
+    presetToFlatModel(preset, { connectionKind, harnessFallback: activeHarness ?? 'runtime' }),
+  );
   const selectedCatalogModel =
     catalogModelRequired &&
     local.model.currentKey &&
-    capabilityModels.some(
+    capabilityModelsRaw.some(
       (model) =>
         model.providerID === local.model.currentKey?.providerID &&
         model.modelID === local.model.currentKey?.modelID,
     )
       ? local.model.currentKey
       : null;
+  // The gateway's `managed_gateway` preset list is its ENTIRE routable
+  // catalog (thousands of entries, unconditioned on what this project can
+  // actually reach — see `gatewayModelCatalog`). Main's `ModelSelector` has
+  // no cap of its own; bound the FEED so every internal list in its render
+  // pipeline (open, search, filter) stays small — see `capFeedModels`'s doc
+  // comment for why this lives here instead of inside the restored file.
+  const capabilityModels = capFeedModels(capabilityModelsRaw, selectedCatalogModel);
 
   // ── Live-session model pill ──────────────────────────────────────────────
-  // Always rendered via HarnessModelSelector (never the gateway-catalog
-  // ModelSelector) — a live session's model isn't "pick from the connected
-  // provider catalog", it's "does this ACP session expose a writable model
-  // config option". Presence of that option is the ONLY thing that makes it
-  // interactive; otherwise it's a read-only label of the session's resolved
-  // model, matching every other harness's actual capability (Claude/Codex/Pi
-  // never support a live model change; opencode's `live_change` says whether
-  // this launched session actually advertised one).
+  // A live session's model isn't "pick from the connected provider catalog" —
+  // it's whatever the ACP session resolved at launch. This composer doesn't
+  // wire up live mid-session model edits (Claude/Codex/Pi never support one;
+  // OpenCode's `live_change` capability, when a session actually advertises a
+  // writable option, is a follow-up — `findAcpModelConfigOption`/
+  // `acpConfigOptionPresets` in `acp-composer-adapters.ts` already carry the
+  // data for it), so every harness renders the same read-only
+  // `HarnessManagedModelState` label while live, showing the session's
+  // resolved model.
   const liveModelOption = live ? findAcpModelConfigOption(live.configOptions) : null;
-  // The ACP session's own advertised config options are ground truth for
-  // "can this session's model change live" — more authoritative than the
-  // agent-level `composer-capabilities` policy prediction, which describes
-  // what a NEW session would support, not necessarily this launched one.
-  const liveModelWritable = !!liveModelOption;
-  // Locked language for the resolved connection — never the raw auth-kind id
-  // (`claude_subscription`) or a mechanical `replaceAll('_', ' ')` — shared by
-  // the live and pre-session harness-model pills and the blocking-action copy.
-  const connectionKind = capability.data?.auth.active ?? null;
-  const connectionLabel = connectionKind ? connectionDisplayName(connectionKind) : null;
-  const harnessLabel = activeHarness ? harnessPresentation(activeHarness).label : null;
-  const liveHarnessModel = live
-    ? {
-        harness: activeHarness ?? 'opencode',
-        selectedModel:
-          liveModelOption?.currentValue != null ? String(liveModelOption.currentValue) : null,
-        onSelect: (model: string | null) => {
-          if (!liveModelWritable || !liveModelOption || !model) return;
-          live.onConfigOptionChange(liveModelOption.id, model);
-        },
-        presets: liveModelOption
-          ? acpConfigOptionPresets(liveModelOption)
-          : (capability.data?.model.presets ?? []),
-        connectionLabel,
-        connectionKind,
-        disabled: !liveModelWritable,
-      }
-    : undefined;
+  const liveResolvedModel =
+    liveModelOption?.currentValue != null ? String(liveModelOption.currentValue) : null;
+  const harnessManagedModel: HarnessManagedModelState | undefined = live
+    ? activeHarness
+      ? {
+          harness: activeHarness,
+          selectedModel: liveResolvedModel,
+          connectionLabel,
+          connectionKind,
+          disabled: true,
+        }
+      : undefined
+    : nativeHarness
+      ? {
+          harness: nativeHarness,
+          selectedModel: runtimeModel,
+          connectionLabel,
+          connectionKind,
+        }
+      : undefined;
 
   // Server-authoritative auth/model preflight — the ONLY hard send gate for a
   // real project + resolved agent (composer-capabilities). `null` while live
@@ -363,22 +493,7 @@ export function ComposerChatInput({
             ? (m) => local.model.set(m ?? undefined, { recent: true })
             : undefined
       }
-      harnessModel={
-        live
-          ? liveHarnessModel
-          : nativeHarness
-            ? {
-                harness: nativeHarness,
-                selectedModel: runtimeModel,
-                onSelect: (model) =>
-                  capabilityAgentName &&
-                  runtimeModelStore.setRuntimeModel(capabilityAgentName, model ?? undefined),
-                presets: capability.data?.model.presets ?? [],
-                connectionLabel,
-                connectionKind,
-              }
-            : undefined
-      }
+      harnessManagedModel={harnessManagedModel}
       modelRequired={
         live ? false : capability.data ? !capability.data.model.default_allowed : false
       }

@@ -45,7 +45,7 @@ import {
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
-import { ComposerModelControls } from './composer-model-controls';
+import { ComposerModelControls, type HarnessManagedModelState } from './composer-model-controls';
 import { COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS } from './composer-pill';
 import { resolveComposerResetOnSend } from './composer-reset';
 import {
@@ -53,7 +53,7 @@ import {
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import type { HarnessModelSelection, ModelDefaultControls } from './model-selector';
+import type { ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
@@ -816,17 +816,9 @@ export interface SessionChatInputProps {
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
-  /** Harness-owned default/custom model selection for Claude, Codex, and Pi. */
-  harnessModel?: Pick<
-    HarnessModelSelection,
-    | 'harness'
-    | 'selectedModel'
-    | 'onSelect'
-    | 'presets'
-    | 'connectionLabel'
-    | 'connectionKind'
-    | 'disabled'
-  >;
+  /** Static state for a harness that manages its own model (Claude Code,
+   *  Codex, Pi) — see {@link HarnessManagedModelState}. */
+  harnessManagedModel?: HarnessManagedModelState;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;
   messages?: MessageWithParts[];
@@ -952,7 +944,7 @@ function SessionChatInputImpl({
   models = [],
   selectedModel = null,
   onModelChange,
-  harnessModel,
+  harnessManagedModel,
   modelDefaultControls,
   messages,
   acpUsage,
@@ -2091,7 +2083,7 @@ function SessionChatInputImpl({
                 onModelChange={onModelChange}
                 providers={providers}
                 modelDefaultControls={modelDefaultControls}
-                harnessModel={harnessModel}
+                harnessManagedModel={harnessManagedModel}
                 modelRequired={modelRequired}
                 projectId={projectId}
               />

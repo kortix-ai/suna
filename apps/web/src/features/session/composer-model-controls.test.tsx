@@ -1,16 +1,26 @@
-import { describe, expect, mock, test } from 'bun:test';
-import { act, create } from 'react-test-renderer';
+// Render suite for `ComposerModelControls` — the wiring/branching layer that
+// decides which of the two mutually-exclusive model controls renders: main's
+// `ModelSelector` (catalog mode, OpenCode) or the static
+// `HarnessManagedModelLabel` (Claude Code / Codex / Pi — see
+// `HarnessManagedModelState`'s doc comment). `ModelSelector` itself is
+// stubbed to a props-capturing marker (it has its own render suite via
+// `model-selector.test.ts`'s pure-function coverage and the other
+// `ModelSelector` call sites' tests) — this file only tests the branching
+// `ComposerModelControls` owns. `HarnessManagedModelLabel` renders for real
+// (it's a plain `Hint`+`span`, no query/router dependency), so this needs a
+// real DOM — same happy-dom + testing-library harness `model-selector.test.ts`
+// used before it was folded into this restore. The empty export makes this
+// file a module, so `await` is legal at the top level.
+export {};
 
-import type { FlatModel } from './session-chat-input';
+const { GlobalRegistrator } = await import('@happy-dom/global-registrator');
+delete (globalThis as any).window;
+delete (globalThis as any).document;
+GlobalRegistrator.register();
 
-// Same DOM-free harness `composer-chat-input.test.tsx` uses for composer
-// wiring: no jsdom in this workspace, so `react-test-renderer` + manual
-// `act()`. `ModelSelector` is stubbed to a props-capturing marker, so this
-// file tests the WIRING/branching `ComposerModelControls` owns (whether the
-// picker renders at all, catalog vs harness props) — not `ModelSelector`'s/
-// `ReasoningEffortSelector`'s own rendering (that's each file's own test's
-// job).
-(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { TooltipProvider } = await import('@/components/ui/tooltip');
 
 let capturedModelSelectorProps: Record<string, unknown> | null = null;
 mock.module('./model-selector', () => ({
@@ -29,6 +39,15 @@ mock.module('./reasoning-effort-selector', () => ({
 }));
 
 const { ComposerModelControls } = await import('./composer-model-controls');
+type FlatModel = Parameters<typeof ComposerModelControls>[0]['models'][number];
+
+afterEach(() => {
+  cleanup();
+});
+
+afterAll(() => {
+  GlobalRegistrator.unregister();
+});
 
 function resetCaptures() {
   capturedModelSelectorProps = null;
@@ -46,54 +65,39 @@ const MODELS: FlatModel[] = [
 const SELECTED_MODEL = { providerID: 'anthropic', modelID: 'claude-sonnet-5' };
 
 function renderControls(props: Partial<Parameters<typeof ComposerModelControls>[0]> = {}) {
-  let renderer: ReturnType<typeof create>;
-  act(() => {
-    renderer = create(
+  return render(
+    <TooltipProvider>
       <ComposerModelControls
         models={MODELS}
         selectedModel={SELECTED_MODEL}
         onModelChange={() => {}}
         {...props}
-      />,
-    );
-  });
-  return renderer!;
+      />
+    </TooltipProvider>,
+  );
 }
 
-describe('ComposerModelControls', () => {
-  test('mounts with representative catalog props: ONE ModelSelector renders in catalog mode', () => {
+describe('ComposerModelControls — catalog mode (OpenCode)', () => {
+  test('mounts with representative catalog props: ONE ModelSelector renders, no harness label', () => {
     resetCaptures();
     renderControls({ projectId: 'proj_1' });
 
     expect(capturedModelSelectorProps).not.toBeNull();
     expect(capturedModelSelectorProps!.models).toBe(MODELS);
     expect(capturedModelSelectorProps!.selectedModel).toBe(SELECTED_MODEL);
-    expect(capturedModelSelectorProps!.harnessModel).toBeUndefined();
     expect(capturedReasoningEffortSelectorProps).not.toBeNull();
     expect(capturedReasoningEffortSelectorProps!.model).toBe(SELECTED_MODEL);
     expect(capturedReasoningEffortSelectorProps!.projectId).toBe('proj_1');
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
   });
 
-  test('a harnessModel prop switches the SAME ModelSelector into harness mode, forwarded verbatim', () => {
-    resetCaptures();
-    const harnessModel = {
-      harness: 'claude' as const,
-      selectedModel: null,
-      onSelect: () => {},
-    };
-    renderControls({ harnessModel });
-
-    expect(capturedModelSelectorProps).not.toBeNull();
-    expect(capturedModelSelectorProps!.harnessModel).toBe(harnessModel);
-    expect(capturedModelSelectorProps!.models).toBeUndefined();
-  });
-
-  test('empty models + no modelRequired + no harnessModel: ModelSelector does not render, ReasoningEffortSelector still does', () => {
+  test('empty models + no modelRequired + no harnessManagedModel: nothing renders, ReasoningEffortSelector still does', () => {
     resetCaptures();
     renderControls({ models: [], onModelChange: undefined });
 
     expect(capturedModelSelectorProps).toBeNull();
     expect(capturedReasoningEffortSelectorProps).not.toBeNull();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
   });
 
   test('modelRequired renders ModelSelector even with an empty catalog', () => {
@@ -102,5 +106,46 @@ describe('ComposerModelControls', () => {
 
     expect(capturedModelSelectorProps).not.toBeNull();
     expect(capturedModelSelectorProps!.models).toEqual([]);
+  });
+});
+
+describe('ComposerModelControls — harness-managed mode (Claude Code / Codex / Pi)', () => {
+  test('a harnessManagedModel prop renders the static label INSTEAD of ModelSelector — never both, never a mode switch inside the picker', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: { harness: 'claude', connectionLabel: 'Claude subscription' },
+    });
+
+    expect(capturedModelSelectorProps).toBeNull();
+    const label = screen.getByTestId('harness-managed-model-label');
+    expect(label.textContent).toBe('Claude subscription');
+    expect(label.getAttribute('data-harness')).toBe('claude');
+  });
+
+  test('an explicit recorded override takes priority over the connection label', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: {
+        harness: 'codex',
+        selectedModel: 'gpt-5.4',
+        connectionLabel: 'ChatGPT subscription',
+      },
+    });
+
+    expect(screen.getByTestId('harness-managed-model-label').textContent).toBe('gpt-5.4');
+  });
+
+  test('no connection and no override falls back to "<Harness> default"', () => {
+    resetCaptures();
+    renderControls({ harnessManagedModel: { harness: 'pi' } });
+
+    expect(screen.getByTestId('harness-managed-model-label').textContent).toBe('Pi default');
+  });
+
+  test('the reasoning-effort control still renders alongside the harness label', () => {
+    resetCaptures();
+    renderControls({ harnessManagedModel: { harness: 'claude' } });
+
+    expect(capturedReasoningEffortSelectorProps).not.toBeNull();
   });
 });
