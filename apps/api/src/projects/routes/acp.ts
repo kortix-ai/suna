@@ -5,8 +5,9 @@ import { and, asc, eq, gt } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
-import { isAcpPromptEnvelope } from '../lib/acp-envelope';
+import { extractFallbackTitleFromPrompt, extractHarnessSessionTitle, isAcpPromptEnvelope } from '../lib/acp-envelope';
 import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
+import { persistFallbackSessionTitle, persistHarnessSessionTitle } from '../lib/acp-session-title';
 import { createPersistedSseProxy } from '../lib/acp-sse-proxy';
 import { projectsApp } from '../lib/app';
 import { decodedResponseHeaders } from '../lib/proxy-headers';
@@ -68,12 +69,26 @@ async function persistSseBlock(
   target: NonNullable<Awaited<ReturnType<typeof resolveAcpTarget>>>,
 ) {
   try {
+    const envelope = JSON.parse(block.data.join('\n')) as Envelope;
     await appendEnvelope({
       ...target,
       direction: 'agent_to_client',
       streamEventId: block.id,
-      envelope: JSON.parse(block.data.join('\n')) as Envelope,
+      envelope,
     });
+    // Best-effort title sync: a harness-emitted `session_info_update` title
+    // (claude-agent-acp only — see extractHarnessSessionTitle's doc comment)
+    // arrives exclusively over this SSE stream, never as a POST response.
+    // Failure here must never break envelope persistence — same catch below.
+    const titleUpdate = extractHarnessSessionTitle(envelope);
+    if (titleUpdate) {
+      await persistHarnessSessionTitle({ db }, {
+        projectSessionId: target.sessionId,
+        projectId: target.projectId,
+        title: titleUpdate.title,
+        updatedAt: titleUpdate.updatedAt,
+      });
+    }
   } catch (error) {
     console.warn(`[acp] failed to persist SSE event ${block.id} for ${target.sessionId}:`, error);
   }
@@ -133,6 +148,24 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return c.json({ error: 'project env sync failed', detail: message }, 502);
+      }
+      // Fallback title sync (best-effort, never blocks the prompt): the
+      // cheapest-correct substitute for harnesses that never emit a title
+      // over ACP (codex, pi, opencode). No-op once the row already has a
+      // title from any source — see persistFallbackSessionTitle's doc
+      // comment — so this is safe to attempt on every prompt, not just the
+      // first.
+      const fallbackTitle = extractFallbackTitleFromPrompt(envelope);
+      if (fallbackTitle) {
+        try {
+          await persistFallbackSessionTitle({ db }, {
+            projectSessionId: target.sessionId,
+            projectId: target.projectId,
+            title: fallbackTitle,
+          });
+        } catch (error) {
+          console.warn(`[acp] failed to persist fallback title for ${target.sessionId}:`, error);
+        }
       }
     }
     headers.set('Content-Type', 'application/json');

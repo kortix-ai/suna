@@ -170,6 +170,21 @@ export default function ProjectSessionPage() {
     }
   }, [session.switched, sandbox, queryClient, projectId]);
 
+  // Same idea, for the session's TITLE: the harness-emitted title (or the
+  // server's first-prompt fallback — see apps/api's acp-session-title.ts)
+  // lands seconds after the first prompt, well after the sidebar's own
+  // polling has usually already stopped (its window is bounded — see
+  // shouldPollProjectSessions). While this exact session is open, its ACP
+  // `session_info_update` title is already streaming through the reducer
+  // (`session.acp.sessionInfo`) — the instant it changes, refresh the SAME
+  // sidebar query so "New session" flips to the real title without a manual
+  // refresh, instead of inventing a second push channel.
+  const liveSessionTitle = session.acp.sessionInfo?.title;
+  useEffect(() => {
+    if (!liveSessionTitle) return;
+    queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+  }, [liveSessionTitle, queryClient, projectId]);
+
   // The moment we know there's no plan, pop the one Team plan modal.
   const billingGatedRef = useRef(false);
   useEffect(() => {

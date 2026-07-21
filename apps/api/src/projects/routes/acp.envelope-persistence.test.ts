@@ -89,6 +89,15 @@ mock.module('../lib/acp-session-identity', () => ({
   persistAcpSessionIdentity: async () => {},
 }));
 
+// Title-sync wiring is pinned separately (./acp.title-sync.test.ts) — stubbed
+// here as a no-op so this file's fake db (which only models the
+// sessionSandboxes lookup + the acpSessionEnvelopes insert/transcript query)
+// isn't also asked to model the title module's own select/update shape.
+mock.module('../lib/acp-session-title', () => ({
+  persistHarnessSessionTitle: async () => false,
+  persistFallbackSessionTitle: async () => false,
+}));
+
 mock.module('../../shared/db', () => ({
   db: {
     select: (_proj?: unknown) => ({
