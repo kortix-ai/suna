@@ -1145,6 +1145,63 @@ describe('project session API contract', () => {
     expect(await executorRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
   });
 
+  test('secrets allowlist is backend-only, existence-checked, and persisted', async () => {
+    const app = createApp();
+
+    // Seed a runtime secret so the allowlist has a valid identifier to name.
+    const seed = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'GMAIL_TOKEN', value: 'g' }),
+    });
+    expect(seed.status).toBe(200);
+
+    // A non-backend (human/supabase) caller may NOT narrow secrets.
+    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    // A backend (PAT) caller naming an unknown identifier fails fast at create.
+    const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['DOES_NOT_EXIST'] }),
+    });
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_NOT_FOUND' });
+
+    // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
+    const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+    });
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
+
+    // An empty allowlist (inject ZERO project secrets) is a valid backend request.
+    const zero = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: [] }),
+    });
+    expect(zero.status).toBe(201);
+    expect((await zero.json()).secrets_allowlist).toEqual([]);
+  });
+
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
     projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};

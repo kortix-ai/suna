@@ -17,6 +17,7 @@ import { projectSecrets } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   AmbiguousSecretGrantError,
+  intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   writeSharedProjectSecret,
 } from '../projects/secrets';
@@ -85,6 +86,25 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     if (!ctx) return;
     const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [UNSCOPED]);
     expect(env).toEqual({ [UNSCOPED]: 'open-val' });
+  });
+
+  test('a KaaB per-session allowlist narrows an "all" agent grant (the boot/hot-push composition)', async () => {
+    if (!ctx) return;
+    // Both sandbox boot (buildSessionSandboxEnvVars) and hot-push
+    // (resolveOwnerRawEnv) compose intersectSecretGrants(grant, allowlist) and
+    // pass the result to this resolver. An "all" agent grant narrowed by a
+    // session allowlist of [UNSCOPED] must inject ONLY that secret — proving the
+    // narrowing against the real DB, end-to-end with the functions in the path.
+    const narrowed = intersectSecretGrants('all', [UNSCOPED]);
+    const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, narrowed);
+    expect(env).toEqual({ [UNSCOPED]: 'open-val' });
+
+    // A null allowlist is a passthrough — every secret the grant already allowed
+    // (byte-identical to pre-KaaB).
+    const passthrough = intersectSecretGrants('all', null);
+    const { names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, passthrough);
+    expect(names).toContain(UNSCOPED);
+    expect(names).toContain(KEY);
   });
 });
 
