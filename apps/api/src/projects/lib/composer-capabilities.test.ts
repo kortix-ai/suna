@@ -5,12 +5,14 @@ import {
   buildHarnessConnections,
   computeDefaultAllowed,
   isExperimentalHarnessGated,
+  managedGatewayHasNothingToRouteTo,
   modelPresets,
   newestCatalogModels,
   readHarnessAuthRoutes,
   resolveActiveHarnessConnection,
   writeHarnessAuthRoute,
   type HarnessAuthKind,
+  type HarnessConnection,
 } from './composer-capabilities';
 
 describe('composer capability auth resolution', () => {
@@ -247,6 +249,124 @@ describe('computeDefaultAllowed', () => {
     expect(
       computeDefaultAllowed({ active: 'openai_compatible', harness: 'opencode', presetsLength: 0 }),
     ).toBe(false);
+  });
+});
+
+describe('managedGatewayHasNothingToRouteTo', () => {
+  function connection(overrides: Partial<HarnessConnection>): HarnessConnection {
+    return {
+      id: 'managed_gateway',
+      kind: 'managed_gateway',
+      label: 'Kortix managed gateway',
+      compatible_harnesses: ['opencode', 'pi'],
+      configured: true,
+      ready: true,
+      active_for: [],
+      reason: null,
+      source: 'kortix',
+      ...overrides,
+    };
+  }
+
+  test('never fires for a non-managed-gateway route', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: 'anthropic_api_key',
+        harness: 'opencode',
+        managedModelCount: 0,
+        connections: [],
+      }),
+    ).toBe(false);
+  });
+
+  test('never fires when no route is active at all', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: null,
+        harness: 'opencode',
+        managedModelCount: 0,
+        connections: [],
+      }),
+    ).toBe(false);
+  });
+
+  test('never fires when this deployment has a managed-model lineup', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: 'managed_gateway',
+        harness: 'opencode',
+        managedModelCount: 3,
+        connections: [],
+      }),
+    ).toBe(false);
+  });
+
+  test('fires when the gateway flag is on but there is no managed lineup and no fallback connection — the reported "no model connected" hang', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: 'managed_gateway',
+        harness: 'opencode',
+        managedModelCount: 0,
+        connections: [connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true })],
+      }),
+    ).toBe(true);
+  });
+
+  test('does not fire when a BYOK connection is ready as a fallback', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: 'managed_gateway',
+        harness: 'opencode',
+        managedModelCount: 0,
+        connections: [
+          connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
+          connection({
+            id: 'anthropic_api_key',
+            kind: 'anthropic_api_key',
+            ready: true,
+            compatible_harnesses: ['claude', 'opencode', 'pi'],
+          }),
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  test('ignores a ready BYOK connection that is NOT compatible with this harness', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: 'managed_gateway',
+        harness: 'pi',
+        managedModelCount: 0,
+        connections: [
+          connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
+          connection({
+            id: 'codex_subscription',
+            kind: 'codex_subscription',
+            ready: true,
+            compatible_harnesses: ['codex'],
+          }),
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  test('a ready native_config does not count as a managed-gateway fallback — it is a separate routing path', () => {
+    expect(
+      managedGatewayHasNothingToRouteTo({
+        active: 'managed_gateway',
+        harness: 'opencode',
+        managedModelCount: 0,
+        connections: [
+          connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
+          connection({
+            id: 'native_config',
+            kind: 'native_config',
+            ready: true,
+            compatible_harnesses: [...HARNESS_IDS],
+          }),
+        ],
+      }),
+    ).toBe(true);
   });
 });
 

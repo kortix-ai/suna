@@ -1238,4 +1238,148 @@ describe('AcpSession', () => {
       expect(internals.historyHighWaterMark).toBe(4);
     });
   });
+
+  // ── The "Connecting" infinite-spinner fix: a hung bootstrap RPC must
+  // become a terminal, typed error within a bounded budget instead of
+  // leaving `runBootstrap` (and every consumer keyed off its outcome —
+  // `useSession`'s `phase`, the boot loader) pending forever. See
+  // `ACP_BOOTSTRAP_TIMEOUT_MS`'s doc comment for the real-world trigger
+  // (a harness with no connected model/credentials that never answers
+  // `session/new`). ──
+  describe('bootstrap timeout (ACP_BOOTSTRAP_TIMEOUT_MS)', () => {
+    /** Wraps `makeSessionFetchMock` so `session/new` HANGS (never resolves
+     *  or rejects) until the test calls `releaseSessionNew()` — this is what
+     *  a harness that can't complete its handshake looks like on the wire,
+     *  as opposed to `makeFlakyInitializeFetchMock`'s outright HTTP 500
+     *  (which already produces a normal rejected promise `runBootstrap`
+     *  handles fine without a timeout). */
+    function makeHungSessionNewFetchMock({ transcript = [] as unknown[] } = {}) {
+      const base = makeSessionFetchMock({ transcript });
+      let release: (() => void) | null = null;
+      let newSessionCalls = 0;
+      const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        if (init?.method === 'POST') {
+          const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+          if (body.method === 'session/new') {
+            newSessionCalls += 1;
+            return new Promise<Response>((resolve) => {
+              release = () =>
+                resolve(
+                  Response.json({
+                    jsonrpc: '2.0',
+                    id: body.id,
+                    result: { sessionId: 'acp-new-1', configOptions: [] },
+                  }),
+                );
+            });
+          }
+        }
+        return base.fetch(input, init);
+      };
+      return {
+        ...base,
+        fetch: fetchImpl as unknown as typeof fetch,
+        releaseSessionNew() {
+          if (!release) throw new Error('releaseSessionNew: session/new not yet requested');
+          release();
+          release = null;
+        },
+        get newSessionCalls() {
+          return newSessionCalls;
+        },
+      };
+    }
+
+    test('a harness that never answers session/new becomes a terminal error instead of hanging forever', async () => {
+      const fetchMock = makeHungSessionNewFetchMock();
+      const session = createAcpSession({
+        endpoint: 'https://api.test/acp/s1',
+        fetch: fetchMock.fetch,
+        scheduleFlush: (f) => f(),
+        bootstrapTimeoutMs: 20,
+      });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error !== null);
+
+      const snapshot = session.getSnapshot();
+      expect(snapshot.ready).toBe(false);
+      expect(snapshot.connection).toBe('failed');
+      expect(snapshot.error?.kind).toBe('bootstrap');
+      expect(snapshot.error?.terminal).toBe(true);
+      expect(snapshot.error?.message).toMatch(/did not respond in time/i);
+    });
+
+    test('a since-timed-out session/new resolving LATE cannot resurrect ready — the generation guard holds', async () => {
+      const fetchMock = makeHungSessionNewFetchMock();
+      const session = createAcpSession({
+        endpoint: 'https://api.test/acp/s1',
+        fetch: fetchMock.fetch,
+        scheduleFlush: (f) => f(),
+        bootstrapTimeoutMs: 20,
+      });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error !== null);
+      expect(session.getSnapshot().ready).toBe(false);
+
+      // The abandoned `session/new` call finally answers AFTER the timeout
+      // already reported failure (`performBootstrap` keeps running in the
+      // background — there is no way to cancel the in-flight fetch). Without
+      // the `generation` guard in `performBootstrap`, this would flip
+      // `ready: true` back on top of the terminal error the UI already
+      // surfaced, silently resurrecting a session nothing is actually
+      // listening on.
+      fetchMock.releaseSessionNew();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const snapshot = session.getSnapshot();
+      expect(snapshot.ready).toBe(false);
+      expect(snapshot.connection).toBe('failed');
+      expect(snapshot.error?.kind).toBe('bootstrap');
+    });
+
+    test('connect() after a bootstrap timeout re-arms and a fresh attempt can still succeed', async () => {
+      const fetchMock = makeHungSessionNewFetchMock();
+      const session = createAcpSession({
+        endpoint: 'https://api.test/acp/s1',
+        fetch: fetchMock.fetch,
+        scheduleFlush: (f) => f(),
+        bootstrapTimeoutMs: 20,
+      });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().error !== null);
+
+      // A retry (e.g. the model/provider issue got fixed) re-arms bootstrap
+      // from scratch — mirrors `useSession`'s dead-runtime recovery loop
+      // calling `acp.retry()`.
+      session.connect();
+      await waitUntil(() => fetchMock.newSessionCalls === 2);
+      fetchMock.releaseSessionNew();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      const snapshot = session.getSnapshot();
+      expect(snapshot.ready).toBe(true);
+      expect(snapshot.error).toBeNull();
+      expect(snapshot.connection).toBe('open');
+      expect(snapshot.acpSessionId).toBe('acp-new-1');
+    });
+
+    test('a bootstrap that answers well within budget is unaffected', async () => {
+      const fetchMock = makeSessionFetchMock();
+      const session = createAcpSession({
+        endpoint: 'https://api.test/acp/s1',
+        fetch: fetchMock.fetch,
+        scheduleFlush: (f) => f(),
+        bootstrapTimeoutMs: 20,
+      });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      expect(session.getSnapshot().error).toBeNull();
+      expect(session.getSnapshot().connection).toBe('open');
+    });
+  });
 });

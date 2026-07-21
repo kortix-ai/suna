@@ -4,6 +4,7 @@ import { HARNESS_IDS, HARNESSES, harnessesByStability, type HarnessId } from '@k
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { RUNTIME_MANAGED_MODELS } from '../../llm-gateway/models/managed-models';
 import type { GitBackedProject } from '../git/types';
 import { listRepoFiles } from '../git/files';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
@@ -328,14 +329,61 @@ export function computeDefaultAllowed(input: {
   return input.presetsLength > 0 || input.active === 'native_config' || input.active === 'managed_gateway';
 }
 
+/**
+ * Whether a resolved `managed_gateway` route has genuinely NOTHING to route a
+ * turn to, despite `computeDefaultAllowed` trusting it unconditionally (see
+ * that function's doc comment). `managed_gateway` being "ready" only means
+ * the project's gateway-routing FLAG is on (`connectionConfigured`) — it says
+ * nothing about whether this deployment's managed-model lineup is non-empty
+ * (`KORTIX_MANAGED_PROVIDER_ENABLED`, off by default for self-host/local-dev
+ * — see `managed-models.ts`) or the project has any BYOK/codex connection to
+ * fall back through. `modelPresets('managed_gateway', …)`'s length can't
+ * detect this either — it lists the gateway's full theoretically-routable
+ * catalog (every provider/model models.dev knows a transport for), not what
+ * THIS project can actually reach, so it stays non-empty regardless of real
+ * credentials.
+ *
+ * `resolveActiveHarnessConnection` prefers a "ready" `managed_gateway` over
+ * every other connection, so a project in exactly this state (gateway flag
+ * on, nothing behind it) resolves `active: 'managed_gateway'` with no other
+ * candidate ever considered — leaving `can_start` true with no usable model.
+ * That is precisely how a session provisions, boots its harness, and then
+ * hangs on "Connecting" forever with nothing to generate with (see
+ * `AcpSession.runBootstrap`'s bootstrap timeout in `@kortix/sdk/acp` — the
+ * backstop for every OTHER way that hang can happen; this is the one root
+ * cause worth failing on up front instead).
+ *
+ * Pure (aside from its inputs) so it's unit-testable without a compiled
+ * runtime config or a DB.
+ */
+export function managedGatewayHasNothingToRouteTo(input: {
+  active: HarnessAuthKind | null;
+  harness: HarnessId;
+  managedModelCount: number;
+  connections: HarnessConnection[];
+}): boolean {
+  if (input.active !== 'managed_gateway') return false;
+  if (input.managedModelCount > 0) return false;
+  return !input.connections.some(
+    (connection) =>
+      connection.ready &&
+      connection.id !== 'managed_gateway' &&
+      connection.id !== 'native_config' &&
+      connection.compatible_harnesses.includes(input.harness),
+  );
+}
+
 // Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
 // `HARNESSES.opencode.stability === 'stable'`, the sole entry never in this
 // set. Claude/Codex/Pi (`harnessesByStability('experimental')`, zero
 // hardcoded harness lists) are selectable ONLY once a project opts into the
 // `experimental_harnesses` feature (`experimental/features.ts`). This gates
-// SELECTION/START only — parsing/compiling a manifest that declares all four
-// runtimes (the shipped base template) is never gated, see
-// `compile-runtime-config.ts` and `agent-config-v2.ts`'s `migrateManifestV2ToV3`.
+// SELECTION/START only — parsing/compiling a manifest that already declares
+// an experimental harness (e.g. hand-added before the flag was on) is never
+// gated, see `compile-runtime-config.ts` and `agent-config-v2.ts`'s
+// `migrateManifestV2ToV3`. The shipped base template and the migration
+// default both declare `opencode` only, so this carve-out is dormant unless
+// a manifest explicitly names claude/codex/pi.
 const EXPERIMENTAL_HARNESSES = new Set<HarnessId>(harnessesByStability('experimental'));
 
 /** Whether `harness` may currently be SELECTED to start a session under
@@ -433,26 +481,38 @@ export async function resolveProjectComposerState(input: {
           ? 'harness-catalog'
           : 'launch-override';
       const defaultAllowed = computeDefaultAllowed({ active, harness: agent.harness, presetsLength: presets.length });
+      const noManagedRoute = managedGatewayHasNothingToRouteTo({
+        active,
+        harness: agent.harness,
+        managedModelCount: RUNTIME_MANAGED_MODELS.length,
+        connections: agentConnections,
+      });
+      const usableDefault = defaultAllowed && !noManagedRoute;
       const harnessGated = isExperimentalHarnessGated(agent.harness, input.metadata);
       const blockingReason = harnessGated
         ? `${HARNESSES[agent.harness].label} is an experimental harness — enable "Experimental harnesses" for this project in Settings → Experimental before selecting it.`
-        : (resolved.reason ?? (!defaultAllowed ? `No usable model is available for ${agent.harness}.` : null));
+        : (resolved.reason ??
+            (noManagedRoute
+              ? 'No model is connected for this project — connect a model provider to start a session.'
+              : !usableDefault
+                ? `No usable model is available for ${agent.harness}.`
+                : null));
       return {
         agent,
         auth: {
           compatible,
           active,
-          ready: Boolean(resolved.active),
-          reason: resolved.reason,
+          ready: Boolean(resolved.active) && !noManagedRoute,
+          reason: noManagedRoute ? blockingReason : resolved.reason,
         },
         model: {
           policy,
-          default_allowed: defaultAllowed,
+          default_allowed: usableDefault,
           custom_allowed: true,
           live_change: HARNESSES[agent.harness].liveModelChange,
           presets,
         },
-        can_start: !harnessGated && Boolean(resolved.active) && defaultAllowed,
+        can_start: !harnessGated && Boolean(resolved.active) && usableDefault,
         blocking_reason: blockingReason,
       };
     },

@@ -69,6 +69,10 @@ export type AcpSessionOptions = {
   streamTransport?: 'auto' | 'sse' | 'poll';
   /** Default `queueMicrotask`; tests inject a synchronous or manually-driven flush. */
   scheduleFlush?: (flush: () => void) => void;
+  /** Default {@link ACP_BOOTSTRAP_TIMEOUT_MS}; tests override with a small
+   *  value so a deliberately-hung bootstrap RPC doesn't make the suite wait
+   *  out the real production budget. */
+  bootstrapTimeoutMs?: number;
 };
 
 const DEFAULT_CLIENT_INFO = { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' };
@@ -148,6 +152,66 @@ function isAlreadyInitializedError(error: unknown): boolean {
       ? String((error.data as Record<string, unknown>).details ?? '')
       : '';
   return /already initialized/i.test(details) || /already initialized/i.test(error.message);
+}
+
+/**
+ * Bounded wall-clock budget for ONE bootstrap attempt (`initialize` →
+ * `session/new`|`session/load`, plus the `transcript()` fetch ahead of it).
+ * Deliberately NOT applied to `send()`/`session/prompt` — a turn can
+ * legitimately run for minutes once the session is live (see `send()`'s doc
+ * comment).
+ *
+ * By the time bootstrap runs, the sandbox's own health check has already
+ * reported the harness process running (`useSession`'s `switched` gate on
+ * the backend's `/start` stage — see `openSession` in
+ * `apps/api/src/projects/routes/shared.ts`), so a normal bootstrap answers
+ * in well under this budget. Without a bound, a harness that never responds
+ * to `session/new` — e.g. it blocks trying to resolve a model with no
+ * connected provider, or the in-sandbox proxy silently drops the request —
+ * leaves `runBootstrap` permanently pending: `error` never gets patched,
+ * `connection` never reaches `'failed'`, and every consumer keyed off a
+ * terminal state (the boot loader, `useSession`'s `phase`) spins on
+ * "Connecting" forever instead of surfacing a failure the user can act on.
+ */
+export const ACP_BOOTSTRAP_TIMEOUT_MS = 30_000;
+
+/** Thrown by `withBootstrapTimeout` when a bootstrap attempt outruns
+ *  {@link ACP_BOOTSTRAP_TIMEOUT_MS}. Always terminal (see `toSessionError`'s
+ *  `kind === 'bootstrap'` fallback) — a hung handshake has no automatic
+ *  retry loop of its own, so `connect()`/`retry()` must be called again
+ *  explicitly. */
+export class AcpBootstrapTimeoutError extends Error {
+  constructor() {
+    super(
+      'The session runtime did not respond in time. It may have no model or ' +
+        'provider connected, or the sandbox may be stuck starting.',
+    );
+    this.name = 'AcpBootstrapTimeoutError';
+  }
+}
+
+/**
+ * Races `promise` against a timer. The loser's outcome is discarded (a
+ * settled `Promise` ignores every subsequent `resolve`/`reject` call), but
+ * `promise` itself keeps running in the background if the timer wins —
+ * there is no way to cancel an in-flight `fetch` awaited deep inside it —
+ * so callers that patch external state from within `promise` MUST guard
+ * that with their own identity/generation check (see `performBootstrap`).
+ */
+function withBootstrapTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new AcpBootstrapTimeoutError()), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function toSessionError(kind: AcpSessionError['kind'], error: unknown): AcpSessionError {
@@ -285,6 +349,10 @@ export class AcpSession {
    * orthogonal concern from "should a second respond call hit the network".
    */
   private respondingOrAnsweredIds = new Set<string>();
+  /** Bumped once per `runBootstrap()` call — the identity guard `performBootstrap`
+   *  and the timeout-race catch use to ignore a superseded attempt's result.
+   *  See `runBootstrap`'s doc comment. */
+  private bootstrapGeneration = 0;
 
   constructor(private readonly options: AcpSessionOptions) {
     this.client = createAcpClient({
@@ -472,78 +540,30 @@ export class AcpSession {
   }
 
   private async runBootstrap(): Promise<void> {
+    // Identity guard for the timeout race below: `performBootstrap()` keeps
+    // running in the background even after `withBootstrapTimeout` gives up
+    // on it (there is no way to cancel an in-flight `fetch` awaited deep
+    // inside it), so a generation stamp — not just "did this promise
+    // resolve" — is what stops a since-abandoned attempt's eventual result
+    // from clobbering a NEWER attempt's (or the timeout's own) patched
+    // state. Mirrors the `this.stream !== handle` identity guards in
+    // `connect()` above.
+    const generation = ++this.bootstrapGeneration;
     try {
-      const history = await this.client.transcript();
-      this.enqueueHistory(history.envelopes);
-      // A reload/reconnect reaches a harness process that already completed
-      // its handshake; codex-acp (and other adapters) reject the repeat
-      // `initialize` with `-32603` / "Already initialized". That is a healthy
-      // process, not a failed bootstrap — proceed to `session/load` and keep
-      // the capabilities/agentInfo already reduced from the persisted
-      // transcript's original `initialize` result.
-      let initialized: Awaited<ReturnType<AcpClient['initialize']>> | null = null;
-      try {
-        initialized = await this.client.initialize({
-          protocolVersion: this.options.protocolVersion ?? 1,
-          clientCapabilities: this.options.clientCapabilities ?? { auth: { _meta: { gateway: true } } },
-          clientInfo: this.options.clientInfo ?? DEFAULT_CLIENT_INFO,
-        });
-      } catch (error) {
-        if (!isAlreadyInitializedError(error)) throw error;
-      }
-      let id = this.options.acpSessionId ?? this.createdSessionId;
-      let result: Awaited<ReturnType<AcpClient['loadSession']>>;
-      if (id) {
-        try {
-          this.sessionLoadInFlight = true;
-          try {
-            result = await this.client.loadSession({ sessionId: id, cwd: this.cwd(), mcpServers: [] });
-          } finally {
-            this.sessionLoadInFlight = false;
-          }
-        } catch (error) {
-          // The harness could not resume this ACP session (process restarted,
-          // rollout/thread state gone — e.g. codex-acp's "no rollout found
-          // for thread id …"). The DURABLE identity is the Kortix session and
-          // its platform-persisted envelope log, not the harness-native ACP
-          // session id — so mint a fresh one and continue instead of bricking
-          // the session. Only RPC rejections take this path; transport
-          // failures still abort bootstrap for the retry loop.
-          if (!(error instanceof AcpRpcError)) throw error;
-          id = null;
-          result = await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
-        }
-      } else {
-        result = await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
-      }
-      if (!id) {
-        if (!result.sessionId) throw new Error('ACP session/new returned no sessionId');
-        id = result.sessionId;
-        this.createdSessionId = id;
-      }
-      this.patch({
-        ready: true,
-        connection: 'open',
-        // A retried bootstrap that reaches here has, by definition,
-        // superseded whatever BOOTSTRAP failure got it retried in the first
-        // place — leaving `error` set would strand a stale failure message
-        // (e.g. a consumer's error banner) next to a now fully-ready session.
-        // Scoped to `kind === 'bootstrap'` only (mirrors `onStreamState`'s
-        // same `kind`-gated clear for `'transport'`): a DIFFERENT error kind
-        // — e.g. a live transport hiccup on the stream half of `connect()`,
-        // racing concurrently with this same bootstrap — must not be wiped
-        // out just because bootstrap happened to resolve after it landed.
-        error: this.snapshot.error?.kind === 'bootstrap' ? null : this.snapshot.error,
-        acpSessionId: id,
-        configOptions: result.configOptions ?? [],
-        // On a skipped re-initialize ("Already initialized"), keep whatever
-        // the persisted transcript's original `initialize` result already
-        // populated on the snapshot instead of blanking it.
-        capabilities: initialized?.agentCapabilities ?? this.snapshot.capabilities,
-        agentInfo: initialized?.agentInfo ?? this.snapshot.agentInfo,
-        authMethods: initialized?.authMethods ?? this.snapshot.authMethods,
-      });
+      await withBootstrapTimeout(
+        this.performBootstrap(generation),
+        this.options.bootstrapTimeoutMs ?? ACP_BOOTSTRAP_TIMEOUT_MS,
+      );
     } catch (error) {
+      if (generation !== this.bootstrapGeneration) return;
+      // Bump the generation HERE too, not only at the top of the next
+      // `runBootstrap()` call: when the TIMEOUT is what won this race,
+      // `performBootstrap(generation)` is still running in the background
+      // and will eventually reach its own `generation !==
+      // this.bootstrapGeneration` check before patching `ready: true` — this
+      // is what makes that check actually fire instead of comparing the
+      // still-current `generation` against itself.
+      this.bootstrapGeneration += 1;
       const sessionError = toSessionError('bootstrap', error);
       this.patch({ error: sessionError, connection: 'failed' });
       // Wedge guard (see `clearStalePersistedBusy`'s doc): only a TERMINAL
@@ -557,6 +577,91 @@ export class AcpSession {
       // Allow a subsequent connect() to retry bootstrap from scratch.
       this.bootstrap = null;
     }
+  }
+
+  /**
+   * The actual bootstrap handshake (`initialize` → `session/new`|
+   * `session/load`), split out of `runBootstrap` so the latter can race it
+   * against `ACP_BOOTSTRAP_TIMEOUT_MS` (see that constant's doc comment for
+   * WHY: a hung harness must become a terminal error, never an infinite
+   * "Connecting"). Every `this.patch(...)` call here is gated on `generation`
+   * still being the CURRENT attempt — see `runBootstrap`'s guard comment.
+   */
+  private async performBootstrap(generation: number): Promise<void> {
+    const history = await this.client.transcript();
+    this.enqueueHistory(history.envelopes);
+    // A reload/reconnect reaches a harness process that already completed
+    // its handshake; codex-acp (and other adapters) reject the repeat
+    // `initialize` with `-32603` / "Already initialized". That is a healthy
+    // process, not a failed bootstrap — proceed to `session/load` and keep
+    // the capabilities/agentInfo already reduced from the persisted
+    // transcript's original `initialize` result.
+    let initialized: Awaited<ReturnType<AcpClient['initialize']>> | null = null;
+    try {
+      initialized = await this.client.initialize({
+        protocolVersion: this.options.protocolVersion ?? 1,
+        clientCapabilities: this.options.clientCapabilities ?? { auth: { _meta: { gateway: true } } },
+        clientInfo: this.options.clientInfo ?? DEFAULT_CLIENT_INFO,
+      });
+    } catch (error) {
+      if (!isAlreadyInitializedError(error)) throw error;
+    }
+    let id = this.options.acpSessionId ?? this.createdSessionId;
+    let result: Awaited<ReturnType<AcpClient['loadSession']>>;
+    if (id) {
+      try {
+        this.sessionLoadInFlight = true;
+        try {
+          result = await this.client.loadSession({ sessionId: id, cwd: this.cwd(), mcpServers: [] });
+        } finally {
+          this.sessionLoadInFlight = false;
+        }
+      } catch (error) {
+        // The harness could not resume this ACP session (process restarted,
+        // rollout/thread state gone — e.g. codex-acp's "no rollout found
+        // for thread id …"). The DURABLE identity is the Kortix session and
+        // its platform-persisted envelope log, not the harness-native ACP
+        // session id — so mint a fresh one and continue instead of bricking
+        // the session. Only RPC rejections take this path; transport
+        // failures still abort bootstrap for the retry loop.
+        if (!(error instanceof AcpRpcError)) throw error;
+        id = null;
+        result = await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
+      }
+    } else {
+      result = await this.client.newSession({ cwd: this.cwd(), mcpServers: [] });
+    }
+    if (!id) {
+      if (!result.sessionId) throw new Error('ACP session/new returned no sessionId');
+      id = result.sessionId;
+      this.createdSessionId = id;
+    }
+    // A since-abandoned attempt (superseded by a newer `runBootstrap()`, or
+    // one the timeout race already reported as failed) must not resurrect
+    // `ready: true` after the fact — see `runBootstrap`'s guard comment.
+    if (generation !== this.bootstrapGeneration) return;
+    this.patch({
+      ready: true,
+      connection: 'open',
+      // A retried bootstrap that reaches here has, by definition,
+      // superseded whatever BOOTSTRAP failure got it retried in the first
+      // place — leaving `error` set would strand a stale failure message
+      // (e.g. a consumer's error banner) next to a now fully-ready session.
+      // Scoped to `kind === 'bootstrap'` only (mirrors `onStreamState`'s
+      // same `kind`-gated clear for `'transport'`): a DIFFERENT error kind
+      // — e.g. a live transport hiccup on the stream half of `connect()`,
+      // racing concurrently with this same bootstrap — must not be wiped
+      // out just because bootstrap happened to resolve after it landed.
+      error: this.snapshot.error?.kind === 'bootstrap' ? null : this.snapshot.error,
+      acpSessionId: id,
+      configOptions: result.configOptions ?? [],
+      // On a skipped re-initialize ("Already initialized"), keep whatever
+      // the persisted transcript's original `initialize` result already
+      // populated on the snapshot instead of blanking it.
+      capabilities: initialized?.agentCapabilities ?? this.snapshot.capabilities,
+      agentInfo: initialized?.agentInfo ?? this.snapshot.agentInfo,
+      authMethods: initialized?.authMethods ?? this.snapshot.authMethods,
+    });
   }
 
   private onStreamError(error: unknown): void {

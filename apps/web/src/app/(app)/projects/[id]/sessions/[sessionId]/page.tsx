@@ -16,7 +16,11 @@ import { isAutoResuming, isSandboxResumable } from '@/features/session/session-r
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
-import { shouldMountAcpChat } from '@/features/session/session-page-lifecycle';
+import {
+  shouldMountAcpChat,
+  shouldShowAcpBootstrapErrorCard,
+  shouldShowSessionBootLoader,
+} from '@/features/session/session-page-lifecycle';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -341,6 +345,43 @@ export default function ProjectSessionPage() {
       );
     }
 
+    // A terminal ACP bootstrap failure BEFORE the session was ever ready —
+    // most commonly the runtime never got a usable model/provider connected,
+    // or the bootstrap handshake outran `ACP_BOOTSTRAP_TIMEOUT_MS` (see
+    // `AcpSession.runBootstrap` in `@kortix/sdk/acp`). `useSession`'s
+    // dead-runtime recovery loop already retried this automatically a few
+    // times (`runtimeRecoveryDelayMs`); reaching here means it gave up.
+    // Without this branch the boot loader had nothing that ever flipped it
+    // out of boot mode, so "Connecting" spun forever with no way out — see
+    // `session.phase`'s doc comment for why this can only fire pre-readiness
+    // (a mid-session failure keeps `phase: 'ready'` and is the chat
+    // surface's job to show instead).
+    if (shouldShowAcpBootstrapErrorCard({ isError: session.isError, fatal })) {
+      return (
+        <InlineSessionError
+          title="Couldn't connect to your Kortix Computer"
+          message={
+            session.acp.errorInfo?.message ||
+            'The session runtime never became ready. This usually means no model or provider is connected to this project — connect one and try again.'
+          }
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                session.retry();
+                session.acp.retry();
+              }}
+              disabled={restartMutation.isPending}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Try again
+            </Button>
+          }
+        />
+      );
+    }
+
     // Dual-layer: the real chat mounts under the instant shell (fresh sessions) or
     // the staged loader (resumes) and crossfades in once it's ready. useSession
     return (
@@ -402,13 +443,16 @@ export default function ProjectSessionPage() {
         sessionId={session.runtimeId ?? sessionId}
         projectId={projectId}
         projectSessionId={sessionId}
-        // Boot chrome is for BOOT only: once the ACP session has ever been
-        // ready this mount (`acp.ready` is sticky-true), the panel never
-        // regresses to the "Kortix Session is starting" loader — a
-        // mid-session failure (hibernated sandbox, dropped stream) is
-        // surfaced by the chat and healed by useSession's runtime-recovery
-        // loop, with the action panel staying put.
-        bootStage={session.phase === 'ready' || session.acp.ready ? null : startStage}
+        // See `shouldShowSessionBootLoader`'s doc comment: boot chrome drops
+        // once the ACP session has ever been ready OR on a terminal
+        // pre-readiness error (the `InlineSessionError` branch above
+        // replaces `inner` in that case — leaving `bootStage` set here would
+        // otherwise keep the loader mounted underneath/behind it forever).
+        bootStage={
+          shouldShowSessionBootLoader({ phase: session.phase, acpReady: session.acp.ready })
+            ? startStage
+            : null
+        }
         acpItems={acpItems}
         isSessionBusy={session.acp?.busy ?? false}
       >
