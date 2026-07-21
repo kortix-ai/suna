@@ -149,6 +149,8 @@ describe('draftToSpec — new trigger spec path uses the real manifest file', ()
     slug: 'nightly', name: 'Nightly', type: 'cron' as const, agent: 'kortix', model: null,
     enabled: true, promptTemplate: 'do it', cron: '0 0 3 * * *', runAt: null,
     timezone: 'UTC', secretEnv: null, sessionMode: 'fresh' as const, pinnedSessionId: null,
+        sessionKey: null,
+        filter: null,
   };
 
   test('YAML project → path is kortix.yaml#triggers.<slug> (not hardcoded toml)', () => {

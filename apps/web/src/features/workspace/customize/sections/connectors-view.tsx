@@ -99,7 +99,6 @@ import {
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
-  connectWhatsApp,
   createConnector,
   discoverConnectorAuth,
   deleteConnector,
@@ -109,9 +108,6 @@ import {
   getProject,
   listConnectors,
   listPipedreamApps,
-  disconnectWhatsApp,
-  getWhatsAppInstallation,
-  listWhatsAppConnections,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -119,7 +115,6 @@ import {
   setConnectorPolicies,
   setConnectorSensitive,
   syncConnectors,
-  type WhatsAppConnection,
 } from '@kortix/sdk/projects-client';
 import { Icon } from '@/features/icon/icon';
 import { DiscoverCatalogue } from './discover-catalogue';
@@ -258,7 +253,6 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
-  const whatsappChannelEnabled = projectQuery.data?.experimental?.whatsapp === true;
   const discoverEnabled = projectQuery.data?.experimental?.connectors_api_discover === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
@@ -359,7 +353,6 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           <AddAppPanel
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
-            whatsappChannelEnabled={whatsappChannelEnabled}
             discoverEnabled={discoverEnabled}
             canWrite={canWrite}
             onAdded={(slug) => {
@@ -1077,22 +1070,15 @@ function ConnectorDetail({
 
 // ─── Channel connection profile (Email / Slack install state) ───────────────
 
-type ChannelPlatform = 'slack' | 'email' | 'whatsapp';
+type ChannelPlatform = 'slack' | 'email';
 
 function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
-  if (
-    connector.platform === 'slack' ||
-    connector.platform === 'email' ||
-    connector.platform === 'whatsapp'
-  ) {
+  if (connector.platform === 'slack' || connector.platform === 'email') {
     return connector.platform;
   }
   if (connector.slug === 'kortix_slack') return 'slack';
   if (connector.slug === 'kortix_email') return 'email';
   if (connector.slug.startsWith('email_')) return 'email';
-  if (connector.slug === 'kortix_whatsapp' || connector.slug.startsWith('whatsapp_')) {
-    return 'whatsapp';
-  }
   return null;
 }
 
@@ -1116,16 +1102,6 @@ function ChannelConnectionSection({
         projectId={projectId}
         connector={connector}
         onChanged={onChanged}
-        onRemoved={onRemoved}
-        canWrite={canWrite}
-      />
-    );
-  }
-  if (platform === 'whatsapp') {
-    return (
-      <WhatsAppChannelProfile
-        projectId={projectId}
-        connector={connector}
         onRemoved={onRemoved}
         canWrite={canWrite}
       />
@@ -1682,103 +1658,6 @@ export function EmailConnectForm({
         </Button>
       </div>
     </div>
-  );
-}
-
-function WhatsAppChannelProfile({
-  projectId,
-  connector,
-  onRemoved,
-  canWrite = false,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onRemoved: () => void;
-  canWrite?: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const install = useQuery({
-    queryKey: ['whatsapp-installation', projectId],
-    queryFn: () => getWhatsAppInstallation(projectId),
-  });
-
-  const disconnect = useMutation({
-    mutationFn: async () => {
-      await disconnectWhatsApp(projectId);
-      await deleteConnector(projectId, connector.slug);
-    },
-    onSuccess: () => {
-      successToast('WhatsApp disconnected');
-      queryClient.invalidateQueries({ queryKey: ['whatsapp-installation', projectId] });
-      onRemoved();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect WhatsApp'),
-  });
-
-  return (
-    <section className="space-y-4">
-      <Label>WhatsApp connection</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">
-        The gateway number routed into this project.
-      </p>
-      <div className="bg-popover rounded-md border px-4 py-5">
-        {install.isLoading ? (
-          <Skeleton className="h-20 w-full rounded-2xl" />
-        ) : install.data ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <EntityAvatar icon={Icon.WhatsApp} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
-                  {install.data.displayName || 'WhatsApp'}
-                  {install.data.phoneNumber ? ` — +${install.data.phoneNumber}` : ''}
-                </div>
-                <div className="text-muted-foreground truncate text-xs">
-                  {install.data.gatewayUrl}
-                </div>
-              </div>
-            </div>
-            <p className="text-muted-foreground text-xs">
-              Events arrive at <code className="text-[11px]">{install.data.webhookUrl}</code>. Each
-              chat on this number maps to its own Kortix session.
-            </p>
-            {canWrite && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => disconnect.mutate()}
-                disabled={disconnect.isPending}
-                className="gap-1.5"
-              >
-                {disconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                Disconnect
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <InfoBanner tone="warning">
-              This profile is not connected to a gateway number yet.
-            </InfoBanner>
-            <p className="text-muted-foreground text-xs">
-              Connect it from Add a connector → Channels → WhatsApp, or remove this profile.
-            </p>
-            {canWrite && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => disconnect.mutate()}
-                disabled={disconnect.isPending}
-                className="gap-1.5"
-              >
-                {disconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                Remove profile
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -2891,14 +2770,12 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
 function AddAppPanel({
   projectId,
   emailChannelEnabled,
-  whatsappChannelEnabled,
   discoverEnabled,
   onAdded,
   canWrite = false,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
-  whatsappChannelEnabled: boolean;
   discoverEnabled: boolean;
   onAdded: (slug?: string) => void;
   canWrite?: boolean;
@@ -2968,7 +2845,6 @@ function AddAppPanel({
           <ChannelCatalogue
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
-            whatsappChannelEnabled={whatsappChannelEnabled}
             onAdded={onAdded}
           />
         </TabsContent>
@@ -2987,212 +2863,17 @@ function AddAppPanel({
 function ChannelCatalogue({
   projectId,
   emailChannelEnabled,
-  whatsappChannelEnabled,
   onAdded,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
-  whatsappChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}
-      {whatsappChannelEnabled && <AddWhatsAppProfileCard projectId={projectId} onAdded={onAdded} />}
       <AddSlackProfileCard projectId={projectId} onAdded={onAdded} />
     </div>
-  );
-}
-
-function AddWhatsAppProfileCard({
-  projectId,
-  onAdded,
-}: {
-  projectId: string;
-  onAdded: (slug?: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [gatewayUrl, setGatewayUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [connections, setConnections] = useState<WhatsAppConnection[] | null>(null);
-  const [accountId, setAccountId] = useState('');
-
-  const reset = () => {
-    setGatewayUrl('');
-    setApiKey('');
-    setConnections(null);
-    setAccountId('');
-  };
-
-  // Step 1 — ask the gateway which numbers this key can reach.
-  const load = useMutation({
-    mutationFn: () =>
-      listWhatsAppConnections(projectId, { gateway_url: gatewayUrl.trim(), api_key: apiKey.trim() }),
-    onSuccess: (result) => {
-      setConnections(result.connections);
-      setAccountId(result.connections[0]?.id ?? '');
-      if (result.connections.length === 0) {
-        errorToast('That key cannot reach any connections. Pair a number on the gateway first.');
-      }
-    },
-    onError: (err: Error) => errorToast(err.message || 'Could not reach that gateway'),
-  });
-
-  // Step 2 — bind the chosen number and register the webhook.
-  const connect = useMutation({
-    mutationFn: () =>
-      connectWhatsApp(projectId, {
-        gateway_url: gatewayUrl.trim(),
-        api_key: apiKey.trim(),
-        account_id: accountId,
-      }),
-    onSuccess: () => {
-      successToast('WhatsApp connected');
-      setOpen(false);
-      reset();
-      onAdded('kortix_whatsapp');
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect WhatsApp'),
-  });
-
-  const busy = load.isPending || connect.isPending;
-
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
-        <div className="flex items-center gap-3">
-          <EntityAvatar icon={Icon.WhatsApp} size="sm" />
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">WhatsApp</div>
-            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
-          </div>
-        </div>
-        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          Route a WhatsApp number into agent sessions. Needs your own Kortix WhatsApp Gateway.
-        </p>
-      </button>
-      <Modal
-        open={open}
-        onOpenChange={(next) => {
-          if (busy) return;
-          setOpen(next);
-          if (!next) reset();
-        }}
-      >
-        <ModalContent className="lg:max-w-lg">
-          <ModalHeader>
-            <ModalTitle>Connect WhatsApp</ModalTitle>
-            <ModalDescription>
-              Requires your own deployment of the Kortix WhatsApp Gateway. Pair a number there,
-              create an API key, then paste the details below.
-            </ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-            <ol className="text-muted-foreground list-decimal space-y-1 pl-4 text-xs leading-relaxed">
-              <li>
-                Deploy the gateway from{' '}
-                <a
-                  href="https://github.com/kortix-ai/whatsapp-gateway"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-2"
-                >
-                  github.com/kortix-ai/whatsapp-gateway
-                </a>
-                .
-              </li>
-              <li>Pair a phone number there through WhatsApp → Linked Devices.</li>
-              <li>Create an API key in the gateway console and paste it here.</li>
-            </ol>
-
-            <Field>
-              <Label htmlFor="whatsapp-gateway-url">Gateway URL</Label>
-              <Input
-                id="whatsapp-gateway-url"
-                name="whatsapp-gateway-url"
-                value={gatewayUrl}
-                onChange={(e) => {
-                  setGatewayUrl(e.target.value);
-                  setConnections(null);
-                }}
-                placeholder="https://wag.example.com"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={busy}
-              />
-            </Field>
-            <Field>
-              <Label htmlFor="whatsapp-api-key">API key</Label>
-              <Input
-                id="whatsapp-api-key"
-                name="whatsapp-api-key"
-                type="password"
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setConnections(null);
-                }}
-                placeholder="wag_..."
-                autoComplete="off"
-                spellCheck={false}
-                disabled={busy}
-              />
-              <p className="text-muted-foreground text-xs">
-                An account-scoped key lists every paired number; a connection-scoped key returns
-                just its own. The key is stored encrypted and never leaves the server.
-              </p>
-            </Field>
-
-            {connections === null ? (
-              <Button
-                variant="outline"
-                onClick={() => load.mutate()}
-                disabled={!gatewayUrl.trim() || !apiKey.trim() || busy}
-                className="gap-1.5"
-              >
-                {load.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                Load connections
-              </Button>
-            ) : (
-              <Field>
-                <Label htmlFor="whatsapp-connection">Phone number</Label>
-                <Select value={accountId} onValueChange={setAccountId} disabled={busy}>
-                  <SelectTrigger id="whatsapp-connection">
-                    <SelectValue placeholder="Select a connection" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {connections.map((connection) => (
-                      <SelectItem key={connection.id} value={connection.id}>
-                        {connection.displayName}
-                        {connection.phoneNumber ? ` — +${connection.phoneNumber}` : ''} (
-                        {connection.status})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-muted-foreground text-xs">
-                  Connecting registers a webhook on the gateway pointing back at Kortix. Every chat
-                  on this number maps to its own Kortix session.
-                </p>
-              </Field>
-            )}
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
-            <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => connect.mutate()}
-              disabled={busy || connections === null || !accountId}
-              className="gap-1.5"
-            >
-              {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Connect
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </>
   );
 }
 

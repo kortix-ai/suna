@@ -19,6 +19,7 @@ import {
   sessionBackpressureState,
 } from '../session-lifecycle';
 import {
+  GIT_TRIGGER_SESSION_MODES,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
   MANIFEST_FILENAME,
@@ -99,6 +100,23 @@ export function verifyWebhookToken(token: string | null, secret: string): boolea
   return timingSafeEqual(actual, expected);
 }
 
+// Pure payload helpers live in ./trigger-payload (no config/db imports, so they
+// stay unit-testable without booting the server env). Re-exported here because
+// this module has always been their import site.
+import {
+  renderPromptTemplate,
+  renderSessionKey,
+} from './trigger-payload';
+
+export {
+  isPlainPayloadObject,
+  renderPromptTemplate,
+  renderSessionKey,
+  templateValue,
+  triggerFilterMatches,
+  valueAtPath,
+} from './trigger-payload';
+
 export function parseWebhookJsonBody(rawBody: string): unknown {
   if (!rawBody.trim()) return {};
   try {
@@ -108,30 +126,8 @@ export function parseWebhookJsonBody(rawBody: string): unknown {
   }
 }
 
-export function valueAtPath(source: unknown, path: string[]): unknown {
-  let current = source;
-  for (const segment of path) {
-    if (!isPlainObject(current)) return undefined;
-    current = current[segment];
-  }
-  return current;
-}
 
-export function templateValue(value: unknown): string {
-  if (value === undefined || value === null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value);
-}
 
-export function renderPromptTemplate(template: string, payload: Record<string, unknown>) {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, token: string) => {
-    const [root, ...path] = token.split('.');
-    if (!root) return '';
-    const value = path.length === 0 ? payload[root] : valueAtPath(payload[root], path);
-    return templateValue(value);
-  });
-}
 
 export function webhookPayload(c: Context, rawBody: string) {
   const body = parseWebhookJsonBody(rawBody);
@@ -665,6 +661,39 @@ export async function findReusableTriggerSession(
 }
 
 /**
+ * The `session_mode = "keyed"` analogue of {@link findReusableTriggerSession}:
+ * the most recent non-failed session this trigger created *for this key*. Uses
+ * the same `project_sessions.metadata` stamping trick, so keyed routing needs
+ * no extra column and no migration.
+ *
+ * The key is matched exactly and is caller-supplied data (a chat id, a customer
+ * id) — it goes through a bound parameter, never string interpolation.
+ */
+export async function findKeyedTriggerSession(
+  projectId: string,
+  slug: string,
+  sessionKey: string,
+): Promise<{ sessionId: string } | null> {
+  const [row] = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        ne(projectSessions.status, 'failed'),
+        sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
+        sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+        sql`${projectSessions.metadata} ->> 'trigger_session_key' = ${sessionKey}`,
+      ),
+    )
+    .orderBy(desc(projectSessions.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+
+
+/**
  * Durable prompt hand-off into an EXISTING session (`session_mode` pinned /
  * reuse). The direct in-process continueSession() call this replaces was the
  * silent-loss hole: 'pending' (runtime never ready inside the deadline) was
@@ -779,6 +808,31 @@ export async function fireGitTrigger(input: {
   // exists yet, or the last one is gone/failed, we fall through to createSession
   // below and that fresh session becomes the canonical one for next time. Also
   // the graceful-degradation path for a `pinned` trigger whose pin is dead.
+  // Session keying — `session_mode = "keyed"` is `reuse` bucketed by a value
+  // rendered from the payload, so one trigger drives one session PER chat /
+  // customer / repo. A key that renders empty falls through to a fresh session
+  // rather than blending every keyless delivery into a shared one.
+  const sessionKey = renderSessionKey(spec, payload);
+  if (sessionKey) {
+    const keyed = await findKeyedTriggerSession(project.projectId, spec.slug, sessionKey);
+    if (keyed) {
+      const outcome = await enqueueTriggerPrompt({
+        project,
+        sessionId: keyed.sessionId,
+        actor,
+        text: renderedPrompt,
+        source,
+        triggerSlug: spec.slug,
+        idempotencyKey: input.idempotencyKey ?? null,
+      });
+      if (outcome === 'queued') {
+        return { status: 'queued', sessionId: keyed.sessionId, reason: 'prompt queued for delivery' };
+      }
+      // Unusable session for this key → fall through and create a fresh one,
+      // which becomes the canonical session for the key going forward.
+    }
+  }
+
   if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
@@ -826,6 +880,9 @@ export async function fireGitTrigger(input: {
         trigger_kind: 'git',
         trigger_slug: spec.slug,
         trigger_type: spec.type,
+        // Stamped so findKeyedTriggerSession can route the NEXT delivery for
+        // this key back into this session.
+        ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       },
     },
     metadata: {
@@ -833,6 +890,7 @@ export async function fireGitTrigger(input: {
       trigger_kind: 'git',
       trigger_slug: spec.slug,
       trigger_type: spec.type,
+      ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       payload_summary: summarizeTriggerPayload(payload),
     },
   });
@@ -1128,6 +1186,8 @@ export async function loadTriggersForResponse(
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
       session_id: spec.pinnedSessionId,
+      session_key: spec.sessionKey,
+      filter: spec.filter,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
@@ -1158,6 +1218,10 @@ export interface TriggerDraft {
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
+  /** For sessionMode === 'keyed' only: the template deriving one session per key. */
+  sessionKey: string | null;
+  /** Payload paths that must match for a delivery to fire. Null when unfiltered. */
+  filter: Record<string, string> | null;
 }
 
 export function parseTriggerDraft(
@@ -1190,20 +1254,47 @@ export function parseTriggerDraft(
   const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
   if (
     sessionModeRaw &&
-    sessionModeRaw !== 'fresh' &&
-    sessionModeRaw !== 'reuse' &&
-    sessionModeRaw !== 'pinned'
+    !(GIT_TRIGGER_SESSION_MODES as readonly string[]).includes(sessionModeRaw)
   ) {
-    return { error: 'session_mode must be "fresh", "reuse", or "pinned"' };
+    return {
+      error: `session_mode must be one of ${GIT_TRIGGER_SESSION_MODES.map((m) => `"${m}"`).join(', ')}`,
+    };
   }
-  const sessionMode: GitTriggerSessionMode =
-    sessionModeRaw === 'reuse' ? 'reuse' : sessionModeRaw === 'pinned' ? 'pinned' : 'fresh';
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw
+    ? (sessionModeRaw as GitTriggerSessionMode)
+    : 'fresh';
   const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
   }
   const pinnedSessionId: string | null =
     sessionMode === 'pinned' ? (pinnedSessionIdRaw ?? null) : null;
+
+  const sessionKeyRaw = normalizeString((body as any).session_key ?? (body as any).sessionKey);
+  if (sessionMode === 'keyed' && !sessionKeyRaw) {
+    return {
+      error: 'session_mode "keyed" requires a session_key template (e.g. "{{ body.data.chat_jid }}")',
+    };
+  }
+  const sessionKey: string | null = sessionMode === 'keyed' ? (sessionKeyRaw ?? null) : null;
+
+  const filterRaw = (body as any).filter;
+  let filter: Record<string, string> | null = null;
+  if (filterRaw !== undefined && filterRaw !== null) {
+    if (!isPlainObject(filterRaw)) {
+      return { error: 'filter must be an object mapping payload paths to expected values' };
+    }
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(filterRaw)) {
+      const trimmed = key.trim();
+      if (!trimmed) return { error: 'filter keys must be non-empty payload paths' };
+      if (value === null || typeof value === 'object') {
+        return { error: `filter.${trimmed} must be a string, number, or boolean` };
+      }
+      entries[trimmed] = String(value);
+    }
+    if (Object.keys(entries).length > 0) filter = entries;
+  }
 
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
@@ -1228,6 +1319,8 @@ export function parseTriggerDraft(
         secretEnv: null,
         sessionMode,
         pinnedSessionId,
+      sessionKey,
+      filter,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -1247,6 +1340,8 @@ export function parseTriggerDraft(
       secretEnv: null,
       sessionMode,
       pinnedSessionId,
+      sessionKey,
+      filter,
     };
   }
 
@@ -1269,6 +1364,8 @@ export function parseTriggerDraft(
     secretEnv,
     sessionMode,
     pinnedSessionId,
+    sessionKey,
+    filter,
   };
 }
 
@@ -1289,6 +1386,8 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     secret_env: spec.secretEnv,
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
+    session_key: spec.sessionKey,
+    filter: spec.filter,
   };
 }
 
@@ -1321,6 +1420,8 @@ export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST
     secretEnv: draft.secretEnv,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
+    sessionKey: draft.sessionKey,
+    filter: draft.filter,
   };
 }
 

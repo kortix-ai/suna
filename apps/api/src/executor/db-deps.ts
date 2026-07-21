@@ -31,7 +31,6 @@ import {
   loadTeamsBotCredentials,
   loadTeamsInstall,
   loadTeamsTenantForProject,
-  loadWhatsAppCredentials,
 } from '../channels/install-store';
 import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
@@ -324,10 +323,6 @@ async function channelToken(
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
   if (platform === 'meet') return loadMeetTokenForProject(projectId);
-  if (platform === 'whatsapp') {
-    const credentials = await loadWhatsAppCredentials(projectId);
-    return credentials?.apiKey ?? null;
-  }
   return null;
 }
 

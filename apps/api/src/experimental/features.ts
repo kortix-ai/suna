@@ -100,16 +100,6 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => false,
   },
   {
-    key: 'whatsapp',
-    name: 'WhatsApp',
-    description:
-      'Route a WhatsApp number into agent sessions. Requires your own deployment of the open-source Kortix WhatsApp Gateway (github.com/kortix-ai/whatsapp-gateway): pair a number there, create an API key, then connect it under Channels. Each WhatsApp chat maps to its own Kortix session. Still experimental.',
-    stability: 'experimental',
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    available: () => true,
-    platformDefault: () => false,
-  },
-  {
     key: 'meet',
     name: 'Meetings',
     description:

@@ -49,7 +49,6 @@ export const ExperimentalFeatureMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  whatsapp: z.boolean(),
   meet: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
@@ -465,9 +464,16 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse', 'pinned']),
+  session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
   session_id: z.string().nullable(),
+  /**
+   * For session_mode === 'keyed' only: the `{{ body.path }}` template rendered
+   * per delivery to pick one session per key. Null otherwise.
+   */
+  session_key: z.string().nullable(),
+  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
+  filter: z.record(z.string(), z.string()).nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

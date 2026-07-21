@@ -408,7 +408,10 @@ prompt = "x"
 `));
     const { specs, errors } = extractTriggers(parsed);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/session_mode must be "fresh", "reuse", or "pinned"/);
+    expect(errors[0]!.error).toMatch(/session_mode must be one of/);
+    // The message enumerates the live mode list, so adding a mode can't leave
+    // this assertion silently pinned to a stale set.
+    expect(errors[0]!.error).toContain('"keyed"');
   });
 
   test('session_mode = "reuse" round-trips through serialize', () => {

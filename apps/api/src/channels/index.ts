@@ -31,17 +31,6 @@ export {
   type AgentMailInstallSummary,
   type AgentMailInstallInput,
   type AgentMailSenderPolicy,
-  saveWhatsAppInstall,
-  deleteWhatsAppInstall,
-  loadWhatsAppInstall,
-  loadWhatsAppCredentials,
-  loadWhatsAppWebhookSecretForAccount,
-  WHATSAPP_GATEWAY_URL,
-  WHATSAPP_GATEWAY_API_KEY,
-  WHATSAPP_ACCOUNT_ID,
-  WHATSAPP_WEBHOOK_SECRET,
-  type WhatsAppInstallSummary,
-  type WhatsAppInstallInput,
 } from "./install-store";
 export {
   buildSlackManifest,
@@ -74,7 +63,6 @@ export {
   type TeamsInstallInput,
 } from "./install-store";
 export { emailWebhookApp } from "./email-webhook";
-export { whatsappWebhookApp } from "./whatsapp-webhook";
 export { telegramWebhookApp } from "./telegram-webhook";
 export { slackOauthApp, buildSlackInstallUrl } from "./slack-oauth";
 export { slackIdentityApp } from "./slack/identity-routes";

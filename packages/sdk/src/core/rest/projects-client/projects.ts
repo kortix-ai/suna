@@ -18,7 +18,6 @@ export type ExperimentalFeatureKey =
   | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
-  | 'whatsapp'
   | 'meet'
   | 'llm_gateway'
   | 'review_center';

@@ -20,12 +20,4 @@ describe('synthesizeChannelConnectors covers every channel platform', () => {
     });
   }
 
-  test('WhatsApp is materialized before the email early-return', () => {
-    const whatsappAt = SOURCE.indexOf("resolveExperimentalFeature(project.metadata, 'whatsapp')");
-    const emailReturnAt = SOURCE.indexOf("'agentmail_email')) {");
-    expect(whatsappAt).toBeGreaterThan(-1);
-    expect(emailReturnAt).toBeGreaterThan(-1);
-    // Otherwise a project without the email flag never gets its WhatsApp connector.
-    expect(whatsappAt).toBeLessThan(emailReturnAt);
-  });
 });

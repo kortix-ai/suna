@@ -388,8 +388,7 @@
               "slack",
               "teams",
               "email",
-              "meet",
-              "whatsapp"
+              "meet"
             ]
           },
           "credential": {},
@@ -494,22 +493,6 @@
               "properties": {
                 "slug": {
                   "const": "kortix_meet"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "provider": {
-                  "const": "channel"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "slug": {
-                  "const": "kortix_whatsapp"
                 }
               }
             },

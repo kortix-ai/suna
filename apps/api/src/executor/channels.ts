@@ -27,7 +27,6 @@ export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
 export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
 export const MEET_CHANNEL_CONNECTOR_SLUG = 'kortix_meet';
-export const WHATSAPP_CHANNEL_CONNECTOR_SLUG = 'kortix_whatsapp';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
@@ -39,8 +38,6 @@ export function channelDefaultSlug(platform: string): string {
       return EMAIL_CHANNEL_CONNECTOR_SLUG;
     case 'meet':
       return MEET_CHANNEL_CONNECTOR_SLUG;
-    case 'whatsapp':
-      return WHATSAPP_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
@@ -107,8 +104,6 @@ export function channelLabel(platform: string): string {
       return 'Email';
     case 'meet':
       return 'Google Meet';
-    case 'whatsapp':
-      return 'WhatsApp';
     default:
       return platform;
   }
@@ -704,159 +699,6 @@ const TEAMS_ACTIONS: ChannelActionDef[] = [
 ];
 
 
-/**
- * WhatsApp actions map straight onto the gateway's REST API — the same routes
- * published at <gateway>/openapi.json. The connector's baseUrl is the project's
- * own gateway deployment and the API key is resolved server-side, so the agent
- * needs no CLI, no skill file, and no credential in the sandbox.
- */
-const WHATSAPP_ACTIONS: ChannelActionDef[] = [
-  {
-    path: 'send_text',
-    method: 'v1/accounts/{account_id}/messages',
-    verb: 'POST',
-    name: 'Send a WhatsApp message',
-    description:
-      'Send a text message to a chat. `to` accepts a chat JID (…@s.whatsapp.net or …@g.us) or an E.164 phone number. WhatsApp markup is *bold*, _italic_, ~strike~ — not Markdown.',
-    risk: 'write',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id (wa_…).' },
-      to: { type: 'string', description: 'Chat JID or E.164 phone number.' },
-      text: { type: 'string', description: 'Message body.' },
-    },
-    required: ['account_id', 'to', 'text'],
-  },
-  {
-    path: 'set_presence',
-    method: 'v1/accounts/{account_id}/presence',
-    verb: 'POST',
-    name: 'Set presence',
-    description:
-      'Broadcast presence. Send composing before writing a reply so the other side sees a typing indicator, then available when done.',
-    risk: 'write',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      state: {
-        type: 'string',
-        description: 'available | unavailable | composing | recording | paused.',
-      },
-      to: { type: 'string', description: 'Optional chat JID to scope typing to.' },
-    },
-    required: ['account_id', 'state'],
-  },
-  {
-    path: 'react',
-    method: 'v1/accounts/{account_id}/messages/{message_id}/reaction',
-    verb: 'POST',
-    name: 'React to a message',
-    description: 'Add an emoji reaction to a message. An empty string removes the reaction.',
-    risk: 'write',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      message_id: { type: 'string', description: 'Gateway message id (msg_…).' },
-      emoji: { type: 'string', description: 'Emoji to apply, or "" to remove.' },
-    },
-    required: ['account_id', 'message_id', 'emoji'],
-  },
-  {
-    path: 'mark_read',
-    method: 'v1/accounts/{account_id}/messages/{message_id}/read',
-    verb: 'POST',
-    name: 'Mark a message read',
-    description: 'Send a read receipt for one message once you have handled it.',
-    risk: 'write',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      message_id: { type: 'string', description: 'Gateway message id.' },
-    },
-    required: ['account_id', 'message_id'],
-  },
-  {
-    path: 'list_messages',
-    method: 'v1/accounts/{account_id}/messages',
-    verb: 'GET',
-    name: 'List or search messages',
-    description:
-      'List synchronized messages. Filter with chat_jid, direction, type, unread or limit, or full-text search with q.',
-    risk: 'read',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      chat_jid: { type: 'string', description: 'Restrict to one chat.' },
-      q: { type: 'string', description: 'Full-text search over message text.' },
-      direction: { type: 'string', description: 'inbound or outbound.' },
-      limit: { type: 'integer', description: 'Max messages (default 50).' },
-    },
-    required: ['account_id'],
-  },
-  {
-    path: 'get_media',
-    method: 'v1/accounts/{account_id}/messages/{message_id}/media',
-    verb: 'GET',
-    name: 'Download message media',
-    description: 'Fetch the decrypted image, video, audio, or document attached to a message.',
-    risk: 'read',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      message_id: { type: 'string', description: 'Gateway message id.' },
-    },
-    required: ['account_id', 'message_id'],
-  },
-  {
-    path: 'list_chats',
-    method: 'v1/accounts/{account_id}/chats',
-    verb: 'GET',
-    name: 'List chats',
-    description: 'List synchronized chats. Filter with q, unread, or archived.',
-    risk: 'read',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      q: { type: 'string', description: 'Search by name or JID.' },
-    },
-    required: ['account_id'],
-  },
-  {
-    path: 'list_contacts',
-    method: 'v1/accounts/{account_id}/contacts',
-    verb: 'GET',
-    name: 'List contacts',
-    description: 'List synchronized contacts. Filter with q to resolve a person by name.',
-    risk: 'read',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      q: { type: 'string', description: 'Search by name, notify name, phone, or JID.' },
-    },
-    required: ['account_id'],
-  },
-  {
-    path: 'list_groups',
-    method: 'v1/accounts/{account_id}/groups',
-    verb: 'GET',
-    name: 'List groups',
-    description: 'List synchronized groups. Filter with q.',
-    risk: 'read',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      q: { type: 'string', description: 'Search by subject or JID.' },
-    },
-    required: ['account_id'],
-  },
-  {
-    path: 'run_action',
-    method: 'v1/accounts/{account_id}/actions/{action}',
-    verb: 'POST',
-    name: 'Run any managed Baileys action',
-    description:
-      'Escape hatch for the full managed surface, including chat state (chats.modify), groups, and profile. Discover names with GET /v1/baileys-actions on the gateway; pass ordered arguments in args.',
-    risk: 'write',
-    properties: {
-      account_id: { type: 'string', description: 'Gateway connection id.' },
-      action: { type: 'string', description: 'Action name, e.g. chats.modify.' },
-      args: { type: 'array', description: 'Ordered arguments for the action.' },
-    },
-    required: ['account_id', 'action', 'args'],
-  },
-];
-
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
 export function channelCatalog(platform: string): NormalizedAction[] {
   switch (platform) {
@@ -868,8 +710,6 @@ export function channelCatalog(platform: string): NormalizedAction[] {
       return EMAIL_ACTIONS.map(toAction);
     case 'meet':
       return MEET_ACTIONS.map(toAction);
-    case 'whatsapp':
-      return WHATSAPP_ACTIONS.map(toAction);
     default:
       return [];
   }

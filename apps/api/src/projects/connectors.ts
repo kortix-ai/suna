@@ -62,17 +62,15 @@ export { RESERVED_SLUG_PROVIDERS };
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
 export const MEET_RESERVED_SLUG = 'kortix_meet';
-export const WHATSAPP_RESERVED_SLUG = 'kortix_whatsapp';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
   'meet',
-  'whatsapp',
   ...Object.keys(RESERVED_SLUG_PROVIDERS),
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'meet' | 'whatsapp';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'meet';
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'oauth1', 'none'];
