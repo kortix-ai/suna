@@ -5,10 +5,10 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast } from '@/components/ui/toast';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { ClaimPerSeatCard } from '@/features/billing/claim-per-seat-card';
+import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { SeatManagementCard } from '@/features/billing/seat-management-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
@@ -17,36 +17,20 @@ import {
   invalidateAccountState,
   useCreatePortalSession,
 } from '@/hooks/billing';
-import { AccountState, billingApi } from '@/lib/api/billing';
+import { type AccountState, billingApi } from '@/lib/api/billing';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
-import { formatCredits } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
-
-const CREDIT_PACKAGES: { credits: number; price: number }[] = [
-  { credits: 1000, price: 10 },
-  { credits: 2500, price: 25 },
-  { credits: 5000, price: 50 },
-  { credits: 10000, price: 100 },
-  { credits: 25000, price: 250 },
-  { credits: 50000, price: 500 },
-];
+import { useEffect, useRef } from 'react';
 
 export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { session, isLoading: authLoading } = useAuth();
   const highlight = useUserSettingsModalStore((s) => s.highlight);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
-  const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(
-    null,
-  );
-  const [isPurchasing, setIsPurchasing] = useState(false);
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const billingAccountId = useBillingAccountId();
 
@@ -86,34 +70,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
   const handleManageSubscription = () => {
     createPortalSessionMutation.mutate({ return_url: returnUrl });
-  };
-
-  const handlePurchaseCredits = async () => {
-    if (!selectedPackage) return;
-    setIsPurchasing(true);
-    setPurchaseError(null);
-    try {
-      const response = await billingApi.purchaseCredits(
-        {
-          amount: selectedPackage.price,
-          success_url: `${window.location.origin}/dashboard?credit_purchase=success`,
-          cancel_url: window.location.href,
-        },
-        billingAccountId,
-      );
-      if (response.checkout_url) {
-        window.location.href = response.checkout_url;
-      } else {
-        throw new Error('No checkout URL received');
-      }
-    } catch (err: unknown) {
-      const error = err as { details?: { detail?: string }; message?: string };
-      const msg = error?.details?.detail || error?.message || 'Failed to create checkout session';
-      setPurchaseError(msg);
-      errorToast(msg);
-    } finally {
-      setIsPurchasing(false);
-    }
   };
 
   const isLoading = isLoadingSubscription || authLoading;
@@ -231,43 +187,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                   )}
                 </p>
               </div>
-              <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
-                <div className="grid grid-cols-3 gap-2">
-                  {CREDIT_PACKAGES.map((pkg) => {
-                    const isSelected = selectedPackage?.price === pkg.price;
-                    return (
-                      <Button
-                        key={pkg.price}
-                        type="button"
-                        onClick={() => setSelectedPackage(pkg)}
-                        disabled={isPurchasing}
-                        variant="outline"
-                        className={cn(
-                          'h-auto flex-col rounded-md p-3 text-center',
-                          isSelected && 'border-primary bg-primary/[0.06]',
-                        )}
-                      >
-                        <span className="text-lg font-semibold tabular-nums">${pkg.price}</span>
-                        <span className="text-muted-foreground text-xs">
-                          {formatCredits(pkg.credits)} credits
-                        </span>
-                      </Button>
-                    );
-                  })}
-                </div>
-                {purchaseError && <InfoBanner tone="destructive">{purchaseError}</InfoBanner>}
-                <Button
-                  onClick={handlePurchaseCredits}
-                  disabled={isPurchasing || !selectedPackage}
-                  className="w-full gap-1.5"
-                >
-                  {isPurchasing ? <Loading className="size-4 shrink-0" /> : null}
-                  {isPurchasing
-                    ? 'Processing'
-                    : selectedPackage
-                      ? `Buy $${selectedPackage.price} in credits`
-                      : 'Select a package'}
-                </Button>
+              <div className="bg-popover rounded-md border px-4 py-5">
+                <CreditTopupSection />
               </div>
             </section>
           )}

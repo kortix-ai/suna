@@ -64,6 +64,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
+import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
@@ -295,6 +296,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectFilesNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              <SidebarBalanceWarning accountId={accountId} />
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
