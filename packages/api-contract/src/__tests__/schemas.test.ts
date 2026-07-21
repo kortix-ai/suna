@@ -76,6 +76,8 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
     visibility: 'private',
+    origin: 'user',
+    origin_ref: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,
     can_manage_sharing: true,
