@@ -574,6 +574,29 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
       } else {
         chatItems = [...chatItems, { kind: 'raw', method: String(kind ?? envelope.method), data: update }];
       }
+    } else if (envelope.method === '$/cancel_request') {
+      // Generic cancellation (`protocol/v1/cancellation.md`, v1-stable since
+      // 2026-06-29): the AGENT is withdrawing one of its own still-pending
+      // outbound requests — in practice, a `session/request_permission` it
+      // sent and no longer needs answered (e.g. because the client just
+      // cancelled the turn that request belonged to). This is protocol
+      // bookkeeping, not a chat event — real captured evidence
+      // (`kortix.acp_session_envelopes`, local DB, 2026-07-22, ordinal 10774)
+      // shows this previously falling through to the generic `raw` branch
+      // below and rendering as an "Unrecognized agent event" card. No
+      // response is owed back (the agent has already stopped waiting for
+      // one) — this only needs to close the matching open permission/question
+      // locally so the UI drops it instead of leaving it stuck forever.
+      const requestId = isRecord(envelope.params) ? envelope.params.requestId : undefined;
+      if (requestId !== undefined && requestId !== null) {
+        const key = rpcIdKey(requestId);
+        if (openRequests.has(key)) {
+          openRequests = new Map(openRequests);
+          openRequests.delete(key);
+          openRequestOrdinals = new Map(openRequestOrdinals);
+          openRequestOrdinals.delete(key);
+        }
+      }
     } else if ('id' in envelope && classifyMethod(envelope.method) === 'permission') {
       const item: AcpChatItem = { kind: 'permission', id: envelope.id, method: envelope.method, params: envelope.params ?? {} };
       chatItems = [...chatItems, item];

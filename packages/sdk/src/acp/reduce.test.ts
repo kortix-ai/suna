@@ -810,6 +810,65 @@ describe('available_commands_update', () => {
   });
 });
 
+// `$/cancel_request` (protocol/v1/cancellation.md, generic cancellation,
+// v1-stable since 2026-06-29) — payload captured VERBATIM from a real
+// session (`kortix.acp_session_envelopes`, local DB, 2026-07-22, ordinal
+// 10774): the agent withdrawing its own still-open `session/request_permission`
+// (id 7) after the client cancelled the turn it belonged to. Previously fell
+// through to the generic `raw` branch and rendered as an "Unrecognized agent
+// event" card; now closes the matching open request silently instead.
+describe('$/cancel_request', () => {
+  function permissionRequest(ordinal: number, id: number, sessionId = 'sess-1'): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0',
+      id,
+      method: 'session/request_permission',
+      params: { sessionId, toolCall: { title: 'Write file' }, options: [{ optionId: 'allow', kind: 'allow_once' }] },
+    });
+  }
+
+  function cancelRequest(ordinal: number, requestId: number): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0',
+      method: '$/cancel_request',
+      params: { requestId },
+    });
+  }
+
+  test('closes the matching open permission request without producing a chat item', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, permissionRequest(1, 7));
+    expect(pendingFromState(state).permissions).toHaveLength(1);
+
+    const beforeChatItems = state.chatItems;
+    state = reduceEnvelope(state, cancelRequest(2, 7));
+
+    expect(pendingFromState(state).permissions).toEqual([]);
+    // No new chat item — this is protocol bookkeeping, not a raw fallback.
+    expect(state.chatItems).toBe(beforeChatItems);
+    // Still logged in the lossless envelope log.
+    expect(state.envelopes).toHaveLength(2);
+  });
+
+  test('the real captured ordinal-10774 sequence: permission opens, then the agent cancels its own request', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, permissionRequest(10742, 7));
+    state = reduceEnvelope(state, cancelRequest(10774, 7));
+
+    expect(pendingFromState(state).permissions).toEqual([]);
+  });
+
+  test('a requestId with no matching open request is a harmless no-op', () => {
+    let state = emptyReducerState();
+    const beforeOpenRequests = state.openRequests;
+
+    state = reduceEnvelope(state, cancelRequest(1, 999));
+
+    expect(state.openRequests).toBe(beforeOpenRequests);
+    expect(state.chatItems).toEqual([]);
+  });
+});
+
 // Pi startup/update-notice suppression (2026-07-22 decree): the pi adapter
 // sends its own "pi vX.Y.Z" / "New version available…" banner as a genuine
 // `agent_message_chunk`, which used to render as a real chat bubble — twice

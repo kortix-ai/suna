@@ -633,6 +633,122 @@ describe('AcpSession', () => {
     expect(echoed).toBeDefined();
   });
 
+  // Spec MUST (protocol/v1/prompt-turn.md, cancellation): "the client must
+  // respond to any pending `session/request_permission` requests with a
+  // `cancelled` outcome" once the turn they belong to is cancelled. Fixture
+  // replays the SHAPE of a real captured session (`kortix.acp_session_envelopes`,
+  // local DB, 2026-07-22, ordinals 10742-10778) that proved this was broken:
+  // a permission request (id 7) opened, `session/cancel` fired, and the
+  // request survived it entirely — only closed by a manual response at the
+  // session's very last row.
+  describe('cancel() resolves pending permission requests (spec MUST)', () => {
+    function historyRows() {
+      return [
+        {
+          ordinal: 10742,
+          direction: 'agent_to_client',
+          streamEventId: 10742,
+          envelope: {
+            jsonrpc: '2.0',
+            id: 7,
+            method: 'session/request_permission',
+            params: {
+              sessionId: 'acp-new-1',
+              toolCall: { title: 'Write marko-kraemer.html' },
+              options: [{ optionId: 'allow', kind: 'allow_once' }],
+            },
+          },
+          createdAt: new Date().toISOString(),
+        },
+        {
+          ordinal: 10743,
+          direction: 'client_to_agent',
+          streamEventId: null,
+          envelope: {
+            jsonrpc: '2.0', id: 'req-1', method: 'session/prompt',
+            params: { sessionId: 'acp-new-1', prompt: [{ type: 'text', text: 'go' }] },
+          },
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
+
+    test('cancel() sends a cancelled outcome for every still-open permission request', async () => {
+      const fetchMock = makeSessionFetchMock({ transcript: historyRows() });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+      expect(session.getSnapshot().pendingPrompts.permissions).toHaveLength(1);
+
+      await session.cancel();
+
+      const respondCalls = fetchMock.calls('respond');
+      expect(respondCalls).toHaveLength(1);
+      expect(respondCalls[0].body).toEqual({
+        jsonrpc: '2.0',
+        id: 7,
+        result: { outcome: { outcome: 'cancelled' } },
+      });
+    });
+
+    test('the permission prompt disappears from pendingPrompts once cancel() resolves it — the web UI follows automatically', async () => {
+      const fetchMock = makeSessionFetchMock({ transcript: historyRows() });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+      expect(session.getSnapshot().pendingPrompts.permissions).toHaveLength(1);
+
+      await session.cancel();
+
+      expect(session.getSnapshot().pendingPrompts.permissions).toEqual([]);
+    });
+
+    test('a cancel() with no pending permissions is a no-op beyond the existing session/cancel notification', async () => {
+      const fetchMock = makeSessionFetchMock();
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+
+      await session.cancel();
+
+      expect(fetchMock.calls('session/cancel')).toHaveLength(1);
+      expect(fetchMock.calls('respond')).toHaveLength(0);
+    });
+
+    test('two permission requests open at once each get resolved', async () => {
+      const rows = [
+        ...historyRows(),
+        {
+          ordinal: 10744,
+          direction: 'agent_to_client',
+          streamEventId: 10744,
+          envelope: {
+            jsonrpc: '2.0',
+            id: 8,
+            method: 'session/request_permission',
+            params: { sessionId: 'acp-new-1', toolCall: { title: 'Run command' }, options: [{ optionId: 'allow', kind: 'allow_once' }] },
+          },
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      const fetchMock = makeSessionFetchMock({ transcript: rows });
+      const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });
+
+      session.connect();
+      await waitUntil(() => session.getSnapshot().ready);
+      expect(session.getSnapshot().pendingPrompts.permissions).toHaveLength(2);
+
+      await session.cancel();
+
+      const respondCalls = fetchMock.calls('respond');
+      expect(respondCalls.map((call) => call.body?.id).sort()).toEqual([7, 8]);
+      expect(session.getSnapshot().pendingPrompts.permissions).toEqual([]);
+    });
+  });
+
   test('connect() after close() reopens the stream without re-running bootstrap', async () => {
     const fetchMock = makeSessionFetchMock();
     const session = createAcpSession({ endpoint: 'https://api.test/acp/s1', fetch: fetchMock.fetch, scheduleFlush: (f) => f() });

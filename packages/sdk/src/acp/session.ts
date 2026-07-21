@@ -512,6 +512,26 @@ export class AcpSession {
       streamEventId: null,
       envelope: { jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } },
     });
+    // Spec MUST (`protocol/v1/prompt-turn.md`, cancellation): "the client
+    // must respond to any pending `session/request_permission` requests with
+    // a `cancelled` outcome" once the turn they belong to is cancelled.
+    // Without this, a permission prompt open at the moment Stop is pressed
+    // survives the cancel and hangs the harness on an answer it will never
+    // get — PROVEN against a real captured session (`kortix.acp_session_envelopes`,
+    // local DB, 2026-07-22, ordinals 10742-10778): a permission request
+    // opened at 10742, outlived `session/cancel` at 10773 entirely, and was
+    // only ever closed by a manual response at ordinal 10778 — the session's
+    // very last row — i.e. the user had to notice the stuck prompt and
+    // dismiss it by hand. `respondPermission` is already de-duped
+    // (`respondingOrAnsweredIds`), so resolving a permission the UI is
+    // concurrently auto-approving/answering is a safe no-op, never a double
+    // response. Read off `this.snapshot` at call time (not a value captured
+    // before the `await this.client.cancel(...)` above) so this reflects
+    // whatever is ACTUALLY still open, not a stale pre-network-round-trip
+    // snapshot.
+    await Promise.all(
+      this.snapshot.pendingPrompts.permissions.map((permission) => this.respondPermission(permission.id)),
+    );
   }
 
   /**
