@@ -6,7 +6,7 @@ const DIRS = ['src/features/session'];
 const ALLOW: Record<string, RegExp[]> = {
   // Restored byte-identical from origin/main (2026-07-21 selector restoration)
   // — keep main's 13px label rather than mutate the verbatim file.
-  'auto-model-toggle.tsx': [/text-\[13px\]/],
+  'auto-model-toggle.tsx': [/text-\[13px\]/, /rounded-xl/],
   'acp-chat-item-row.tsx': [/rounded-3xl/], // user bubble — deliberate chat idiom
   'session-chat-input.tsx': [/rounded-\[24px\]/], // composer card — deliberate
   // instant-session-shell.tsx pre-submit hero composer intentionally overrides
