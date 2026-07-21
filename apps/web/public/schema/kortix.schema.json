@@ -532,6 +532,22 @@
                   "if": {
                     "properties": {
                       "slug": {
+                        "const": "kortix_whatsapp"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "const": "channel"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
                         "const": "computer"
                       }
                     }
@@ -1473,6 +1489,22 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_meet"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "const": "channel"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
+                        "const": "kortix_whatsapp"
                       }
                     }
                   },
