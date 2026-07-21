@@ -619,9 +619,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           'pipedream connector has no connected account (run `kortix connectors connect`)',
         );
       }
-      // Always the shared (project-wide) Pipedream external-user binding —
-      // `per_user` (each member's own) was removed 2026-07-05.
-      const userId = null;
+      // A session-selected profile gets its own stable Pipedream external-user
+      // identity. The legacy/default profile preserves the existing shared
+      // `${projectId}:${slug}` identity for backwards compatibility.
+      const userId =
+        connector.profileId && !connector.profileIsDefault ? connector.profileId : null;
       if (b.kind === 'pipedream') {
         if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
         result = await deps.executePipedream({

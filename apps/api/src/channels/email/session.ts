@@ -197,6 +197,7 @@ async function createThreadSession(
       },
     },
     enforceAccountCap: false,
+    mayManageSystemConnectorProfiles: true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: claimKey,
     postCreate: [
