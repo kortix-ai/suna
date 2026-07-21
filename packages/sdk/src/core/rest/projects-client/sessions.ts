@@ -2,7 +2,7 @@
 
 import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
-import { unwrap, type ConnectorSharing } from './shared';
+import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -88,7 +88,9 @@ export interface CreateProjectSessionInput {
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
   runtime_context?: SessionRuntimeContext;
-  /** Manager-authorized logical connector alias -> concrete connection profile. */
+  /** Logical connector alias -> active profile available to the caller: their
+   * own member profile, a project default, or an operator-managed profile when
+   * the caller holds the management capability. */
   connector_bindings?: SessionConnectorBindings;
 }
 

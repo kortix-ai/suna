@@ -192,6 +192,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
 | B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.** | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`. | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green |
 | B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials. | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`. | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green |
+| B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -230,6 +231,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `4003a41b` | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252` |
 | 2026-07-11 | `4003a41b` | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`) |
 | 2026-07-11 | `4003a41b` | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33` |
+| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path. | `apps/api/src/executor/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 
 ---
@@ -1131,6 +1133,49 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK and local end-to-end contract.
 Repository PR, Deploy Dev, and live-dev verification remain part of the parent
 feature lifecycle.
+
+---
+
+### 2026-07-21 — session `profile-owned-bindings` (B11 completion)
+
+Completed the additive member-owned connection-profile and session-binding
+surface in implementation commit `3eb18b361`. A member can reconcile a profile
+whose owner is derived from the bearer token, connect/finalize its distinct
+Pipedream identity, and select it explicitly when starting a private session.
+Project defaults remain shared. External, agent, and subject profiles retain the
+management-capability path; that capability never exposes or mutates another
+member's profile. Runtime resolution fails closed on owner or visibility drift.
+No exported SDK name or existing field was removed or renamed.
+
+**TDD and focused evidence:** profile/Postgres integration reported **15 pass / 0
+fail**; authenticated HTTP authorization reported **5 pass / 0 fail**; Executor
+gateway reported **32 pass / 0 fail**; and the computer connector regression
+reported **8 pass / 0 fail**. The public runtime and type snapshots contain
+additions only.
+
+**Real local E2E:** two real Supabase users created, listed, mutated, and bound
+only their own profiles; two real session starts persisted distinct bindings;
+project/public sharing was rejected for the personal-profile session; and two
+real Executor calls resolved distinct hidden credentials. The black-box proof
+reported **21 pass / 0 fail**. Cleanup then verified zero synthetic projects,
+users, tokens, and sandbox rows remained.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** across 86 files with 5077 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully. API typecheck exited 0 and `git diff
+--check` was clean.
+
+**Post-rebase addendum:** after rebasing onto current `origin/main` at
+`962498c4f`, SDK typecheck and packed-install smoke remained green; the full SDK
+suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; API
+typecheck exited 0; and the focused profile/authorization/Executor run reported
+**52 pass / 0 fail**. The unrelated computer integration finding is recorded in
+Discovered this session rather than changed inside B11.
+
+**Shippable to production: YES** for the SDK surface and local end-to-end path.
+Repository PR, Deploy Dev, deployed-SHA proof, and live-dev verification remain
+the parent feature lifecycle.
 
 ---
 
