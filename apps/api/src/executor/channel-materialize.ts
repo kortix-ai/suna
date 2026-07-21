@@ -4,6 +4,7 @@ import {
   listAgentMailInstalls,
   loadMeetInstall,
   loadSlackInstall,
+  loadWhatsAppInstall,
   loadTeamsInstall,
 } from '../channels/install-store';
 import { resolveExperimentalFeature } from '../experimental/features';
@@ -108,6 +109,18 @@ export async function synthesizeChannelConnectors(
     if (!channelAlreadyDeclared(declared, 'meet', meetSlug)) {
       const install = await loadMeetInstall(projectId).catch(() => null);
       if (install) specs.push(channelSpec('meet', meetSlug));
+    }
+  }
+
+  // WhatsApp — gated on the per-project `whatsapp` flag. A saved gateway
+  // install IS the registration, exactly like Slack and Meet. This must stay
+  // ABOVE the email early-return below, or a project without the email flag
+  // would never materialize its WhatsApp connector.
+  if (project && resolveExperimentalFeature(project.metadata, 'whatsapp')) {
+    const whatsappSlug = channelDefaultSlug('whatsapp');
+    if (!channelAlreadyDeclared(declared, 'whatsapp', whatsappSlug)) {
+      const install = await loadWhatsAppInstall(projectId).catch(() => null);
+      if (install) specs.push(channelSpec('whatsapp', whatsappSlug));
     }
   }
 
