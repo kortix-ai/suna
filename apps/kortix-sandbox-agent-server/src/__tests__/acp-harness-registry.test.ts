@@ -266,7 +266,12 @@ describe('ACP harness registry', () => {
         },
       }),
     });
-    expect(registry.get('opencode')?.launch.env).toBeUndefined();
+    // OpenCode always carries a PATH fallback too (see the `id === 'opencode'`
+    // branch of resolveAcpHarnessLaunchEnv) — it's the one harness `AcpProcess`
+    // spawns by bare command name, so it needs it even more than Pi does.
+    expect(registry.get('opencode')?.launch.env).toEqual({
+      PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    });
     expect(registry.get('pi')?.launch.env).toMatchObject({
       PI_TELEMETRY: '0',
       KORTIX_PI_MODELS_JSON: expect.stringContaining('gpt-5.4'),
@@ -409,6 +414,7 @@ describe('ACP harness registry', () => {
     });
     expect(registry.get('opencode')?.launch.env).toEqual({
       OPENCODE_CONFIG_DIR: '/workspace/.config/agent',
+      PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     });
     expect(registry.get('pi')?.launch.env).toEqual({
       PI_CODING_AGENT_DIR: '/workspace/.config/agent',
@@ -427,6 +433,7 @@ describe('ACP harness registry', () => {
       });
       expect(registry.get('opencode')?.launch.env).toEqual({
         OPENCODE_CONFIG_DIR: join(workspace, '.kortix/opencode'),
+        PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       });
     } finally {
       rmSync(workspace, { recursive: true, force: true });
@@ -446,6 +453,7 @@ describe('ACP harness registry', () => {
       });
       expect(registry.get('opencode')?.launch.env).toEqual({
         OPENCODE_CONFIG_DIR: join(workspace, '.opencode'),
+        PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       });
     } finally {
       rmSync(workspace, { recursive: true, force: true });

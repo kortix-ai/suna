@@ -199,8 +199,16 @@ describe('OpenCode managed-gateway provider mount', () => {
     expect(launchEnv?.OPENCODE_CONFIG_CONTENT).toBeUndefined()
   })
 
+  // OpenCode always carries a PATH fallback (see the `id === 'opencode'`
+  // branch of resolveAcpHarnessLaunchEnv — Platinum microVMs can boot with no
+  // PATH at all, and `AcpProcess` spawns OpenCode by bare command name), so
+  // "no gateway config" now means "launch env with only PATH", not undefined.
+  const PATH_ONLY = {
+    PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+  }
+
   it('preserves native OpenCode behavior when gateway credentials are absent', () => {
-    expect(resolveAcpHarnessLaunchEnv('opencode', isolateHarnessAuthEnv({}))).toBeUndefined()
+    expect(resolveAcpHarnessLaunchEnv('opencode', isolateHarnessAuthEnv({}))).toEqual(PATH_ONLY)
   })
 
   it('does not emit an explicit managed model when gateway credentials are incomplete', () => {
@@ -220,7 +228,7 @@ describe('OpenCode managed-gateway provider mount', () => {
         KORTIX_LLM_API_KEY: GATEWAY_ENV.KORTIX_LLM_API_KEY,
       },
     ]) {
-      expect(resolveAcpHarnessLaunchEnv('opencode', isolateHarnessAuthEnv(env))).toBeUndefined()
+      expect(resolveAcpHarnessLaunchEnv('opencode', isolateHarnessAuthEnv(env))).toEqual(PATH_ONLY)
     }
   })
 })

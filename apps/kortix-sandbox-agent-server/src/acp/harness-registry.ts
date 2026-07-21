@@ -202,9 +202,9 @@ export function applyAcpSessionDefaults(
 // Sane fallback PATH matching what the Dockerfile actually installs into
 // (`/usr/local/bin` for npm-global harness binaries and the toolchain, plus
 // the standard Debian/Ubuntu system dirs). Only used when the process env's
-// own PATH is empty/unset — see the `id === 'pi'` branch of
-// resolveAcpHarnessLaunchEnv for why that happens on Platinum.
-const PI_HARNESS_DEFAULT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+// own PATH is empty/unset — see the `id === 'pi'` and `id === 'opencode'`
+// branches of resolveAcpHarnessLaunchEnv for why that happens on Platinum.
+const HARNESS_DEFAULT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   claude: {
@@ -290,6 +290,20 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
   const runtimeModel = env.KORTIX_RUNTIME_MODEL?.trim()
   const authKind = runtimeAuthKind(env)
   if (id === 'opencode') {
+    // Platinum microVMs have been observed booting the ENTIRE sandbox process
+    // tree with NO `PATH` env var at all (see the `id === 'pi'` branch below
+    // for the full live-verified writeup). OpenCode is hit HARDER than the
+    // other harnesses by this: unlike claude-agent-acp/codex-acp/pi-acp
+    // (Node entrypoints launched by absolute path), `AcpProcess` spawns
+    // OpenCode by its BARE command name (`DEFAULTS.opencode.launch.command
+    // === 'opencode'`, resolved via runtime.ts's `spawn()`) — with no PATH at
+    // all, that lookup fails immediately with Bun's own
+    // `Executable not found in $PATH: "opencode"`, before the harness ever
+    // gets a chance to run. Only inject a fallback when PATH is genuinely
+    // absent; a real (possibly customized) PATH from the host env always
+    // wins. Reassigned (not mutated) so every return path below — including
+    // the two early returns — carries it.
+    const native = { ...outerNative, PATH: env.PATH?.trim() || HARNESS_DEFAULT_PATH }
     const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
     const gatewayProvider =
       custom || (authKind && authKind !== 'managed_gateway')
@@ -483,7 +497,7 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // (command: pi)" even though the binary is present on disk. Only inject a
     // fallback when PATH is genuinely absent; a real (possibly customized)
     // PATH from the host env always wins.
-    const native = { ...outerNative, PATH: env.PATH?.trim() || PI_HARNESS_DEFAULT_PATH }
+    const native = { ...outerNative, PATH: env.PATH?.trim() || HARNESS_DEFAULT_PATH }
     if (authKind === 'native_config') return Object.keys(native).length ? native : undefined
     if (custom?.protocol === 'openai') {
       return {

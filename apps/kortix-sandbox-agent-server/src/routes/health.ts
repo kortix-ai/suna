@@ -91,8 +91,39 @@ export function createHealthRouter(
     const wantBranch = repoRequired ? wantedSessionBranch() : ''
     const repoReady =
       !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
-    const runtimeError = bootState.acpRuntimeError ?? null
-    const runtimeReady = repoReady && !bootState.repoMaterializationError && !runtimeError && !!bootState.acpRuntimeReady
+    // `bootState.acpRuntimeReady` is a ONE-TIME flag set the instant `main.ts`'s
+    // single boot-time `getOrCreate` call resolved without throwing — it is
+    // NEVER updated again for the rest of this daemon's life. A harness that
+    // spawned fine at boot but has since died (crashed, was OOM-killed, or was
+    // recycled after a credential rotation — see `AcpRuntime.recycleIdle`) left
+    // this flag stuck at `true` forever, so `/kortix/health` kept reporting
+    // `acp_ready: true` / `runtimeReady: true` long after the actual process
+    // was gone (`acpRuntime.list()` empty). `/start`'s polling loop
+    // (routes/shared.ts) trusts this field verbatim to decide `stage: 'ready'`
+    // — a lying "ready" here means the session page's ACP handshake gate opens
+    // for a harness that isn't running, the client's own `initialize` POSTs
+    // fail against a dead/respawning process, and — because `session.phase`
+    // is ALREADY `'ready'` from this stale signal — the web app's 90s
+    // wall-clock boot backstop (`hasSessionBootTimedOut`) never even arms
+    // (it explicitly no-ops once `ready` is true, deferring to the ACP layer's
+    // own error handling). Net effect: "Connecting" spins forever with no
+    // terminal signal anywhere in the stack. Cross-check the boot flag against
+    // the RUNTIME'S OWN CURRENT registry (`acpRuntime.get`, already used below
+    // for `acp_busy`) so a harness that has since died is reported honestly on
+    // every poll — the next `/acp` request still transparently respawns it
+    // (this is just a status report, not a control action).
+    const acpProcessLive = !!(bootState.acpServerId && acpRuntime?.get(bootState.acpServerId))
+    const runtimeError =
+      bootState.acpRuntimeError ??
+      (bootState.acpRuntimeReady && !acpProcessLive
+        ? 'ACP harness process is not currently running (it will respawn on the next request)'
+        : null)
+    const runtimeReady =
+      repoReady &&
+      !bootState.repoMaterializationError &&
+      !runtimeError &&
+      !!bootState.acpRuntimeReady &&
+      acpProcessLive
     const status = runtimeReady
       ? 'ok'
       : bootState.repoMaterializationError || runtimeError
@@ -106,7 +137,7 @@ export function createHealthRouter(
       runtime: 'acp',
       acp_harness: bootState.acpHarness ?? null,
       acp_server_id: bootState.acpServerId ?? null,
-      acp_ready: !!bootState.acpRuntimeReady,
+      acp_ready: runtimeReady,
       acp_busy: acpRuntime?.get(bootState.acpServerId ?? '')?.busy ?? false,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       // Static web server (preview/static files). The bound port when up, else
