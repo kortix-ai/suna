@@ -1,6 +1,6 @@
 # Session Context and Connector-Profile Bindings
 
-**Status:** Phase 1 implemented; connector-profile binding phases specified.
+**Status:** Phase 1 and owner-scoped connector-profile bindings implemented.
 
 **Audience:** Kortix API/SDK/runtime owners and wrapper-backend authors such as VEYRIS.
 
@@ -30,9 +30,10 @@ sandbox and model output therefore cannot be an authorization source.
 
 The implementation MUST preserve these invariants:
 
-1. A session cannot select a connector profile owned by another project,
-   account, member or external subject unless the caller has an explicit
-   administrative binding capability.
+1. A session cannot select a connector profile owned by another project or
+   account. A member profile is usable only by that exact member, including
+   when the caller is a project manager. External/agent/subject profiles require
+   the explicit administrative binding capability.
 2. A model-supplied workspace/customer id is never trusted. Authorization is
    derived from a server-validated capability/profile binding.
 3. Connector credentials are decrypted only in the Executor control plane and
@@ -45,6 +46,8 @@ The implementation MUST preserve these invariants:
    without sandbox restart or token remint.
 7. Runtime context contains only bounded JSON scalars and is never security
    significant.
+8. A session bound to a member profile remains private and cannot create public
+   preview/file shares; collaborative sessions use project/shared profiles.
 
 ## 3. Phase 1: durable non-secret runtime context
 
@@ -173,11 +176,18 @@ Phase 2 extends session create with a typed structure, never raw MCP JSON:
 }
 ```
 
-Initial rollout requires a dedicated `project.session.bindings.write`
-capability held by project managers and operator service accounts. A later
-self-service path may allow an interactive member/subject to select only a
-profile they own. The floor `project.session.start` permission alone is not
-enough to select arbitrary project profiles.
+Binding authorization is owner-aware:
+
+- any project member may select their own `owner_type=member` profile;
+- project-default profiles preserve the shared compatibility path;
+- external/agent/subject profiles require
+  `project.session.bindings.write` (project managers/operator service accounts);
+- that management capability never permits selecting or rotating another
+  member's profile.
+
+Member-profile creation uses `POST /connector-profiles/me`; the server derives
+`owner_id` from the authenticated bearer token. Member-profile sessions must be
+private at creation and reject later project/restricted/public sharing.
 
 An idempotent create replay with the same idempotency key but different binding
 payload must return a conflict. Binding rows are written before provisioning.
@@ -261,6 +271,9 @@ There is no silent promotion of personal OAuth credentials to a shared profile.
   context and future bindings.
 - Phase 2 backfills default profiles before switching reads. Omitted bindings
   have exactly today's shared-project behavior.
+- Existing shared Pipedream connect/finalize retains the project-default
+  external-user identity. Non-default profiles use `profile_id` as their stable
+  Pipedream identity across OAuth connect, finalize, webhook and execution.
 - Existing session PAT claims do not need profile ids. Binding resolution uses
   the already-enforced `sessionId`, permitting live revoke/rebind.
 - In-place provider restart keeps its existing environment. Since credentials
