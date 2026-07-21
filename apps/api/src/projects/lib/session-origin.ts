@@ -71,6 +71,10 @@ export function resolveSessionOrigin(input: {
   if (input.inSession) return 'user';
   if (input.authType === 'service_account') return 'backend';
   if (input.authType === 'pat') return 'backend';
+  // Forward-looking: no session-create surface authenticates a `kortix_` 'user'
+  // API key today (supabaseAuth only admits sandbox-type kortix tokens, on four
+  // non-create paths); this branch goes live when a combinedAuth-mounted backend
+  // create route (or a 'user' key issuance path) lands. Harmless until then.
   if (input.authType === 'apiKey' && input.apiKeyType === 'user') return 'backend';
   return 'user';
 }

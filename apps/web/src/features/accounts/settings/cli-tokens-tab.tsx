@@ -263,7 +263,14 @@ export function CliTokensTab() {
   const revoked = tokens.filter((t) => t.status !== 'active');
 
   // Env-correct public API base (already includes /v1), e.g. https://api.kortix.com/v1.
-  const apiBase = (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
+  // BACKEND_URL can be root-relative in the sandbox-preview deploy mode ('/v1');
+  // absolutize it against the current origin so the curl example is copy-pasteable.
+  const rawApiBase = getEnv().BACKEND_URL || 'http://localhost:8008/v1';
+  const apiBase = (
+    rawApiBase.startsWith('/') && typeof window !== 'undefined'
+      ? window.location.origin + rawApiBase
+      : rawApiBase
+  ).replace(/\/+$/, '');
 
   return (
     <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">

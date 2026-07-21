@@ -1114,6 +1114,10 @@ describe('project session API contract', () => {
 
     // The INTERNAL sandbox key (KORTIX_TOKEN inside every sandbox) must never
     // be backend — an in-sandbox agent can't vouch for a phantom end-user.
+    // Defense-in-depth: in prod the real supabaseAuth 401s a kortix_sb_ token on
+    // POST /sessions (not in its sandbox-token path allowlist), so this gate is
+    // only load-bearing if session-create is ever mounted under combinedAuth —
+    // but the resolver contract is asserted here regardless.
     const sandboxRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {

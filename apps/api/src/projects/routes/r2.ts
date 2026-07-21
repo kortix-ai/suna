@@ -784,7 +784,14 @@ projectsApp.openapi(
     body: {
       initial_prompt: prompt,
       name: 'Fix sandbox build',
-      metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
+      // Platform-maintenance session — stamp the system source so its origin
+      // resolves to 'system' (source wins first in resolveSessionOrigin), not
+      // 'user'. This is the declared source literal for this exact flow.
+      metadata: {
+        kind: 'sandbox-build-fix',
+        failed_slug: failed.slug,
+        source: 'system:sandbox-build-fix',
+      },
       // hostBuild.slug is a BUILD slug — for a warm bake it reads `default-warm`,
       // which names no template, so session creation rejected it with a 400.
       sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
