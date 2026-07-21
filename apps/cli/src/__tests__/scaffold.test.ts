@@ -80,9 +80,12 @@ describe('applyScaffold', () => {
 
     expect(manifest).not.toMatch(/^sandbox:/m);
     expect(manifest).toContain('config_dir: .opencode');
-    expect(manifest).toContain('claude:\n    runtime: claude');
-    expect(manifest).toContain('codex:\n    runtime: codex');
-    expect(manifest).toContain('pi:\n    runtime: pi');
+    // OpenCode is the only harness a fresh project declares — Claude Code,
+    // Codex, and Pi are experimental and get added explicitly, never scaffolded.
+    expect(manifest).toContain('kortix:\n    runtime: opencode');
+    expect(manifest).not.toContain('runtime: claude');
+    expect(manifest).not.toContain('runtime: codex');
+    expect(manifest).not.toContain('runtime: pi');
 
     expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
