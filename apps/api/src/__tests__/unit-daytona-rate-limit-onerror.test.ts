@@ -73,10 +73,6 @@ function makeClassifyingOnError() {
   };
   const app = new Hono();
   app.onError((err, c) => {
-    const method = c.req.method;
-    const path = c.req.path;
-    const errName = err.constructor?.name || 'Error';
-
     // (abort / sandbox-proxy branch omitted — not exercised here)
 
     if (isPlatinumSandboxNotRunningError(err)) {
