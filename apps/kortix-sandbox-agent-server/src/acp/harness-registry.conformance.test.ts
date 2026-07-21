@@ -58,7 +58,15 @@ describe('sandbox harness registry conforms to the canonical descriptor', () => 
     for (const id of HARNESS_IDS) {
       const launchEnv = resolveAcpHarnessLaunchEnv(id as (typeof ACP_HARNESS_IDS)[number], env)
       expect(launchEnv).toBeDefined()
-      const keys = Object.keys(launchEnv ?? {})
+      // Pi carries one extra, harness-specific key here: PATH. Platinum
+      // microVMs have been observed booting the whole sandbox process tree
+      // with no PATH at all, and pi-acp (unlike the other adapters) shells
+      // out to a separate `pi` CLI by bare command name — so it always gets a
+      // fallback PATH injected regardless of auth kind (see the `id === 'pi'`
+      // branch of resolveAcpHarnessLaunchEnv). Excluded here so this test
+      // keeps asserting its real point: exactly one *native-config* var per
+      // harness, each distinct.
+      const keys = Object.keys(launchEnv ?? {}).filter((key) => key !== 'PATH')
       expect(keys).toHaveLength(1)
       const [varName] = keys as [string]
       expect(varName.length).toBeGreaterThan(0)

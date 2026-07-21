@@ -199,6 +199,13 @@ export function applyAcpSessionDefaults(
   }
 }
 
+// Sane fallback PATH matching what the Dockerfile actually installs into
+// (`/usr/local/bin` for npm-global harness binaries and the toolchain, plus
+// the standard Debian/Ubuntu system dirs). Only used when the process env's
+// own PATH is empty/unset — see the `id === 'pi'` branch of
+// resolveAcpHarnessLaunchEnv for why that happens on Platinum.
+const PI_HARNESS_DEFAULT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
 const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   claude: {
     displayName: 'Claude Code',
@@ -275,7 +282,8 @@ function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEn
 }
 
 export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> | undefined {
-  const native = nativeConfigEnv(id, env)
+  const outerNative = nativeConfigEnv(id, env)
+  const native = outerNative
   const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
   const token = env.KORTIX_TOKEN?.trim()
   const custom = customProvider(env)
@@ -460,6 +468,22 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     }
   }
   if (id === 'pi') {
+    // Platinum microVMs have been observed booting the ENTIRE sandbox process
+    // tree — pt-init (pid 1), the entrypoint shell, and the daemon itself —
+    // with NO `PATH` env var at all (verified live via /proc/<pid>/environ on
+    // a running sandbox). That empty PATH propagates verbatim into every ACP
+    // harness child (`{...isolatedEnv, ...launchEnv}` never adds PATH back).
+    // For claude-agent-acp/codex-acp this is harmless: they're self-contained
+    // ACP-native adapters. `pi-acp` is different — it's a thin protocol
+    // wrapper that shells out to the separate `pi` CLI by bare command name
+    // (`spawn('pi', …)`). With no PATH, Node's execvp() falls back to a bare
+    // glibc default (`/bin:/usr/bin`) that excludes `/usr/local/bin` — where
+    // this Dockerfile actually installs `pi` — so the spawn fails ENOENT and
+    // pi-acp surfaces it as "Could not start pi: executable not found
+    // (command: pi)" even though the binary is present on disk. Only inject a
+    // fallback when PATH is genuinely absent; a real (possibly customized)
+    // PATH from the host env always wins.
+    const native = { ...outerNative, PATH: env.PATH?.trim() || PI_HARNESS_DEFAULT_PATH }
     if (authKind === 'native_config') return Object.keys(native).length ? native : undefined
     if (custom?.protocol === 'openai') {
       return {

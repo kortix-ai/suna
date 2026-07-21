@@ -92,7 +92,13 @@ describe('ACP harness registry', () => {
     };
     expect(resolveAcpHarnessLaunchEnv('codex', env)).toEqual({ CODEX_HOME: '/workspace/.codex' });
     expect(resolveAcpHarnessLaunchEnv('claude', env)).toEqual({ CLAUDE_CONFIG_DIR: '/workspace/.codex' });
-    expect(resolveAcpHarnessLaunchEnv('pi', env)).toEqual({ PI_CODING_AGENT_DIR: '/workspace/.codex' });
+    // Pi always carries a PATH fallback (see the pi-executable-not-found
+    // PATH-injection tests below) — every other field matches the sibling
+    // harnesses above.
+    expect(resolveAcpHarnessLaunchEnv('pi', env)).toEqual({
+      PI_CODING_AGENT_DIR: '/workspace/.codex',
+      PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    });
   });
 
   test('native config does not inherit unrelated provider credentials', () => {
@@ -406,6 +412,7 @@ describe('ACP harness registry', () => {
     });
     expect(registry.get('pi')?.launch.env).toEqual({
       PI_CODING_AGENT_DIR: '/workspace/.config/agent',
+      PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     });
   });
 
