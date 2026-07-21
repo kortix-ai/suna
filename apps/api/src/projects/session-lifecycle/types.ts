@@ -73,6 +73,13 @@ export interface QueuedCreateSessionPayload {
   visibility?: 'private' | 'project' | 'restricted';
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
+  // Origin-derivation signals captured at ENQUEUE time. Without them a queued
+  // backend create would replay as origin 'user' and 403 its origin_ref
+  // asynchronously — after the caller already got a 202. Absent on rows queued
+  // before this field existed → 'user', matching their pre-origin behavior.
+  authType?: string | null;
+  apiKeyType?: string | null;
+  agentScoped?: boolean | null;
 }
 
 export interface ContinueSessionCommand {

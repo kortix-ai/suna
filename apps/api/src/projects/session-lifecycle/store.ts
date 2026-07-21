@@ -18,6 +18,9 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
     visibility: command.visibility,
     enforceAccountCap: command.enforceAccountCap,
     postCreate: command.postCreate,
+    authType: command.authType,
+    apiKeyType: command.apiKeyType,
+    agentScoped: command.agentScoped,
   };
 }
 
