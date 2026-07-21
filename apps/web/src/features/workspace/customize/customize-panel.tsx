@@ -10,9 +10,7 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
-import { RuntimeView } from '@/features/workspace/customize/sections/view/runtime-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
@@ -420,12 +418,8 @@ function SectionContent({
   switch (section) {
     case 'agents':
       return <AgentsView projectId={projectId} />;
-    case 'runtime':
-      return <RuntimeView projectId={projectId} />;
     case 'skills':
       return <SkillsView projectId={projectId} />;
-    case 'commands':
-      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'connectors':

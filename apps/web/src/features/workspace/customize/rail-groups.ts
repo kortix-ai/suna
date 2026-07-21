@@ -1,5 +1,5 @@
-import { AlarmClock, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
-import { Bot, Container, Cpu, GitFork, KeyRound, Plug, Webhook } from 'lucide-react';
+import { AlarmClock, ChatMessages, Sparkles } from '@mynaui/icons-react';
+import { Bot, Container, GitFork, KeyRound, Plug, Webhook } from 'lucide-react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 
 import type { RailGroup } from './type';
@@ -9,18 +9,22 @@ import type { RailGroup } from './type';
  * Review) are spliced in by `customize-panel.tsx`'s `railGroups()`, but this
  * is the fixed, always-present shape every project sees.
  *
- * WS5-P5-a: **Build** leads with the ACP core, in this exact order — Agents,
- * Runtime, Skills, Commands. Runtime (WS5-P2-a) landed provisionally right
- * after Agents; this ordering is now final, not a placeholder.
+ * **Build** is exactly Agents + Skills. The Commands tab (legacy opencode-native
+ * slash-command CRUD) and the standalone Runtime tab/section were both removed —
+ * native harness slash-commands will surface via ACP in the composer instead
+ * (separate work), and which harness/runtime an agent uses is now shown
+ * directly on the agent row/detail in Agents (see `agents-view.tsx`) rather
+ * than living as its own section. The Runtime section's sole-path capability
+ * — declaring/renaming runtime profiles — moved into Agents too (see
+ * `runtime-profiles-manager.tsx`); per-harness model connections were already
+ * fully covered by the Models page and needed no relocation.
  */
 export const GROUPS: readonly RailGroup[] = [
   {
     label: 'Build',
     items: [
       { section: 'agents', label: 'Agents', icon: Bot },
-      { section: 'runtime', label: 'Runtime', icon: Cpu },
       { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
     ],
   },
   {

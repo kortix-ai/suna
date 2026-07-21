@@ -106,8 +106,8 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('ModelsView — "Manage agents ->" back-link (DISC-09 / WS5-P5-a / Task 17 relabel)', () => {
-  test('the Agent runtimes list carries a "Manage agents" link to the Runtime section', () => {
+describe('ModelsView — "Manage agents ->" back-link', () => {
+  test('the Agent runtimes list carries a "Manage agents" link to the Agents section', () => {
     modelsPageState = {
       runtimes: [RUNTIME],
       connections: [CONNECTION],
@@ -121,7 +121,7 @@ describe('ModelsView — "Manage agents ->" back-link (DISC-09 / WS5-P5-a / Task
     expect(screen.getByText('Manage agents →')).toBeDefined();
   });
 
-  test('clicking it switches the Customize overlay to the Runtime section without closing it', () => {
+  test('clicking it switches the Customize overlay to the Agents section without closing it', () => {
     modelsPageState = {
       runtimes: [RUNTIME],
       connections: [CONNECTION],
@@ -136,7 +136,7 @@ describe('ModelsView — "Manage agents ->" back-link (DISC-09 / WS5-P5-a / Task
     fireEvent.click(screen.getByText('Manage agents →'));
 
     expect(useCustomizeStore.getState().open).toBe(true);
-    expect(useCustomizeStore.getState().section).toBe('runtime');
+    expect(useCustomizeStore.getState().section).toBe('agents');
   });
 
   test('no runtime rows means no "Agent runtimes" section, so the link is absent — nothing to cross-link from', () => {

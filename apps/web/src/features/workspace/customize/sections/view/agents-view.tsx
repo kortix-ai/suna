@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
@@ -20,12 +21,18 @@ import {
   type ManifestVersion,
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { RuntimeProfilesManager } from '@/features/workspace/customize/sections/view/runtime-profiles-manager';
+import {
+  ACP_HARNESS_ICON_PROVIDER_ID,
+  ACP_HARNESS_LABELS,
+} from '@/features/workspace/customize/sections/view/runtime-profile-options';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
 import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import type { AcpHarness } from '@kortix/sdk/projects-client';
 import {
   type AgentGrantSet,
   type ProjectConfigSummary,
@@ -63,12 +70,14 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderContext={(config) => (
         <div className="space-y-4">
           <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
+          <RuntimeProfilesManager projectId={projectId} canWrite={canWrite} />
         </div>
       )}
       renderTriggerLabel={(agent) => agent.name}
       className=' p-4  lg:py-0'
       renderRowTrailing={(agent, config) => (
         <>
+          <AgentHarnessBadge harness={agent.harness} />
           {agent.mode ? (
             <Badge variant="muted" size="xs">
               {formatMode(agent.mode)}
@@ -82,6 +91,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailTitle={(agent) => agent.name}
       renderDetailMeta={(agent, config) => (
         <>
+          <AgentHarnessBadge harness={agent.harness} size="sm" />
           {agent.mode ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
               {formatMode(agent.mode)}
@@ -126,6 +136,43 @@ export function AgentsView({ projectId }: { projectId: string }) {
         </div>
       )}
     />
+  );
+}
+
+/**
+ * Which ACP harness this agent runs on — the harness icon + label, same
+ * presentation idiom the composer's `AgentSelector` uses for its own harness
+ * marks (`features/session/agent-selector.tsx`'s `HarnessIcon` +
+ * `harnessPresentation`). Reused here rather than imported: the composer
+ * lives in a different lane and keys its icon lookup off `KortixHarness`
+ * (the SDK's live-session harness id), while this row reads the manifest's
+ * resolved `agent.harness` directly — same four values, same marks
+ * (`ACP_HARNESS_ICON_PROVIDER_ID` / `ACP_HARNESS_LABELS`, the canonical
+ * `@kortix/shared` harness descriptor this file already pulls from for the
+ * per-agent runtime-profile picker in `agent-editor.tsx`).
+ *
+ * `null`/`undefined` (a legacy or Runtime-discovered agent with no resolved
+ * harness) renders nothing rather than a placeholder — never claim a harness
+ * that isn't actually known.
+ */
+function AgentHarnessBadge({
+  harness,
+  size = 'xs',
+}: {
+  harness?: AcpHarness | null;
+  size?: 'xs' | 'sm';
+}) {
+  if (!harness) return null;
+  return (
+    <Badge variant="outline" size={size} className="text-muted-foreground gap-1 font-medium">
+      <ProviderLogo
+        providerID={ACP_HARNESS_ICON_PROVIDER_ID[harness]}
+        name={ACP_HARNESS_LABELS[harness]}
+        size="small"
+        className="size-3 shrink-0 rounded-none bg-transparent dark:bg-transparent"
+      />
+      {ACP_HARNESS_LABELS[harness]}
+    </Badge>
   );
 }
 

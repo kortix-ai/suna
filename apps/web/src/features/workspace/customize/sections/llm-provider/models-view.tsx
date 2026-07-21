@@ -88,13 +88,15 @@ export function ModelsView({
   const manageConnection = state.connections.find((c) => c.id === manageConnectionId) ?? null;
   const initialLoad = state.isLoading && state.runtimes.length === 0 && state.connections.length === 0;
 
-  // DISC-09: the deferred half of WS5-P2-b's guided runtime -> connect ->
-  // model flow — a back-link from here to the Runtime section, where
-  // profiles are declared/renamed (this list only shows what's already
-  // declared). Same `setSection` action `agent-editor.tsx`'s "Manage
-  // runtimes ->" cross-link uses, not a new navigation primitive; this is an
-  // in-overlay switch, not a close, so there's nothing to close first.
-  const manageRuntimes = () => useCustomizeStore.getState().setSection('runtime');
+  // Back-link from here to Agents, where runtime profiles are
+  // declared/renamed (this list only shows what's already declared) — the
+  // standalone Runtime section this used to point at was removed; profile
+  // management now lives in Agents' section context
+  // (`runtime-profiles-manager.tsx`). Same `setSection` action
+  // `agent-editor.tsx` used for its now-retired "Manage runtimes ->"
+  // cross-link; this is an in-overlay switch, not a close, so there's
+  // nothing to close first.
+  const manageRuntimes = () => useCustomizeStore.getState().setSection('agents');
 
   return (
     <CustomizeSectionWrapper

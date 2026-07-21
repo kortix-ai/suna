@@ -46,7 +46,7 @@ export type ConfigEntity = { name: string; path: string; description: string | n
 const SKELETON_ROWS = ['a', 'b', 'c', 'd', 'e'];
 
 /** The kind of artifact this view edits — drives the configure-thread prompts. */
-type ConfigKind = 'agent' | 'skill' | 'command';
+type ConfigKind = 'agent' | 'skill';
 
 export interface ConfigEntityViewProps<T extends ConfigEntity> {
   projectId: string;
@@ -97,7 +97,7 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
 
   /**
    * 'accordion' — a vertical list where each row expands its detail inline.
-   * 'split' (the standard for agents, skills & commands) — a master-detail
+   * 'split' (the standard for agents & skills) — a master-detail
    * layout: a separate, self-scrolling sidebar that lists every entity on the
    * LEFT, the selected entity's source in the MIDDLE, and (when provided)
    * `renderDetailExtra` as a right aside — e.g. agents surface their

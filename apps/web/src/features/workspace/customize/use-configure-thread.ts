@@ -19,7 +19,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { writeStartStash } from '@kortix/sdk/react';
 import { useCustomizeStore } from '@/stores/customize-store';
 
-export type ConfigureKind = 'agent' | 'skill' | 'command';
+export type ConfigureKind = 'agent' | 'skill';
 
 const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:
@@ -30,10 +30,6 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
     'I want to add a new skill to this project. Ask me what capability it ' +
     'should provide and when it should trigger, then scaffold ' +
     '`.opencode/skills/<name>/SKILL.md` and open a change request so I can review and merge it.',
-  command:
-    'I want to create a new slash command for this project. Ask me what it ' +
-    'should do, then add it at `.opencode/commands/<name>.md` and open a ' +
-    'change request so I can review and merge it.',
 };
 
 export function newConfigPrompt(kind: ConfigureKind): string {

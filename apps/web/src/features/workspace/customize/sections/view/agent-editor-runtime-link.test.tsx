@@ -71,15 +71,10 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('AgentConfigEditor — "Manage runtimes ->" cross-link (WS5-P2-b)', () => {
-  test('the runtime profile field carries a "Manage runtimes" link to the Runtime section', () => {
+describe('AgentConfigEditor — "Manage runtimes ->" cross-link', () => {
+  test('the runtime profile field carries a "Manage runtimes" link', () => {
     render(
-      <AgentConfigEditor
-        projectId={PROJECT_ID}
-        agent={AGENT}
-        skillsOptions={[]}
-        fallback={null}
-      />,
+      <AgentConfigEditor projectId={PROJECT_ID} agent={AGENT} skillsOptions={[]} fallback={null} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit configuration' }));
@@ -87,15 +82,10 @@ describe('AgentConfigEditor — "Manage runtimes ->" cross-link (WS5-P2-b)', () 
     expect(screen.getByText('Manage runtimes →')).toBeDefined();
   });
 
-  test('clicking it closes this modal and switches the Customize overlay to the Runtime section', () => {
+  test('clicking it closes this modal — the runtime-profiles manager already lives in this same Agents section', () => {
     useCustomizeStore.setState({ open: true, section: 'agents' });
     render(
-      <AgentConfigEditor
-        projectId={PROJECT_ID}
-        agent={AGENT}
-        skillsOptions={[]}
-        fallback={null}
-      />,
+      <AgentConfigEditor projectId={PROJECT_ID} agent={AGENT} skillsOptions={[]} fallback={null} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit configuration' }));
@@ -103,10 +93,12 @@ describe('AgentConfigEditor — "Manage runtimes ->" cross-link (WS5-P2-b)', () 
 
     fireEvent.click(screen.getByText('Manage runtimes →'));
 
-    // The overlay stays open (this is an in-overlay cross-link, not a close)
-    // — only the section changes, and the nested agent-editor modal unmounts.
+    // There's no separate Runtime section to switch to anymore — the
+    // profile manager (`runtime-profiles-manager.tsx`) is already visible in
+    // this same Agents section's context, above the agent list. Closing this
+    // modal is the whole cross-link; the overlay stays open and on 'agents'.
     expect(useCustomizeStore.getState().open).toBe(true);
-    expect(useCustomizeStore.getState().section).toBe('runtime');
+    expect(useCustomizeStore.getState().section).toBe('agents');
     expect(screen.queryByText(`Configure ${AGENT.name}`)).toBeNull();
   });
 

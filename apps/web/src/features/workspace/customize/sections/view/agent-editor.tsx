@@ -50,7 +50,6 @@ import {
   useUpdateAgentConfig,
 } from '@/hooks/projects/use-agent-config';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type AgentConfigBlock,
   type AgentConfigResponse,
@@ -166,16 +165,12 @@ function AgentEditorModal({
       return next;
     });
 
-  // "Manage runtimes ->" cross-link (WS5-P2-b) — the runtime `Select` here
-  // only offers profiles the project already declared; the Runtime section
-  // is where they're declared/connected/renamed. Closes this modal and
-  // switches the still-open Customize overlay to that section — the same
-  // `setSection` action `marketplace-section-button.tsx` uses, not a new
-  // navigation primitive.
-  const manageRuntimes = () => {
-    onOpenChange(false);
-    useCustomizeStore.getState().setSection('runtime');
-  };
+  // "Manage runtimes ->" cross-link — the runtime `Select` here only offers
+  // profiles the project already declared; profiles are declared/renamed in
+  // this same Agents section's context header (`RuntimeProfilesManager`,
+  // `runtime-profiles-manager.tsx` — there is no separate Runtime section
+  // anymore). Closing this modal is enough to reveal it.
+  const manageRuntimes = () => onOpenChange(false);
 
   const onSave = async () => {
     try {
