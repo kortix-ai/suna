@@ -64,6 +64,7 @@ mock.module('./sandbox-reaper', () => ({
     billingClosed: 0,
     errors: 0,
   }),
+  reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
   reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
 }));

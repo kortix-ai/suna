@@ -11,9 +11,9 @@ import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
-  continueSession,
   createSession,
   drainSessionLifecycleQueue,
+  enqueueContinueSessionCommand,
   resolveAgentRunAttribution,
   resolveProjectAutomationActor,
   sessionBackpressureState,
@@ -665,6 +665,57 @@ export async function findReusableTriggerSession(
 }
 
 /**
+ * Durable prompt hand-off into an EXISTING session (`session_mode` pinned /
+ * reuse). The direct in-process continueSession() call this replaces was the
+ * silent-loss hole: 'pending' (runtime never ready inside the deadline) was
+ * TERMINAL on that path — no durable row, no retry, no error log, prompt gone,
+ * session showing "queued" forever. Enqueue a durable continue_session command
+ * instead: the scheduler's drain tick executes it with retry/backoff, and a
+ * dead-letter ships a real error AND parks the session 'failed' (see
+ * store.markCommandFailed) so the next fire self-heals via a fresh session.
+ * The immediate drain kick keeps the happy path feeling instant.
+ *
+ * Only liveness is pre-checked here (mirrors continueSession's own guards) —
+ * a missing/failed/deleted session must keep falling through to the create
+ * path exactly like the old direct call's 'no-session'/'failed' outcomes.
+ */
+async function enqueueTriggerPrompt(input: {
+  project: ProjectRow;
+  sessionId: string;
+  actor: string;
+  text: string;
+  source: 'cron' | 'webhook' | 'manual';
+  triggerSlug: string;
+  idempotencyKey?: string | null;
+}): Promise<'queued' | 'no-session' | 'failed'> {
+  const [session] = await db
+    .select({ status: projectSessions.status, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+  if (!session) return 'no-session';
+  if (session.status === 'failed') return 'failed';
+  const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
+  if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+
+  await enqueueContinueSessionCommand({
+    source: `trigger:${input.source}`,
+    projectId: input.project.projectId,
+    accountId: input.project.accountId,
+    sessionId: input.sessionId,
+    actorUserId: input.actor,
+    text: input.text,
+    triggerSlug: input.triggerSlug,
+    // Same per-due-slot key the create path uses — a fire the sweep timed out
+    // on but that actually enqueued isn't duplicated when the next tick retries.
+    idempotencyKey: input.idempotencyKey ?? null,
+  });
+  // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
+  drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+  return 'queued';
+}
+
+/**
  * Fire a git-backed trigger. Triggers are file-defined (kortix.yaml), so there
  * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
  * in metadata so audits can still reconstruct the firing path.
@@ -701,20 +752,20 @@ export async function fireGitTrigger(input: {
   // is gone/unresumable we degrade gracefully: fall through to the `reuse` block
   // (the trigger's own last session), then to a brand-new session.
   if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
-    const outcome = await continueSession({
-      source: `trigger:${source}`,
+    const outcome = await enqueueTriggerPrompt({
+      project,
       sessionId: spec.pinnedSessionId,
+      actor,
       text: renderedPrompt,
-      userId: actor,
+      source,
+      triggerSlug: spec.slug,
+      idempotencyKey: input.idempotencyKey ?? null,
     });
-    if (outcome === 'delivered') {
-      return { status: 'fired', sessionId: spec.pinnedSessionId };
-    }
-    if (outcome === 'pending') {
+    if (outcome === 'queued') {
       return {
         status: 'queued',
         sessionId: spec.pinnedSessionId,
-        reason: 'pinned session resuming',
+        reason: 'prompt queued for delivery',
       };
     }
     // outcome === 'no-session' | 'failed' → pinned session is gone/unusable;
@@ -731,20 +782,20 @@ export async function fireGitTrigger(input: {
   if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
-      const outcome = await continueSession({
-        source: `trigger:${source}`,
+      const outcome = await enqueueTriggerPrompt({
+        project,
         sessionId: reusable.sessionId,
+        actor,
         text: renderedPrompt,
-        userId: actor,
+        source,
+        triggerSlug: spec.slug,
+        idempotencyKey: input.idempotencyKey ?? null,
       });
-      if (outcome === 'delivered') {
-        return { status: 'fired', sessionId: reusable.sessionId };
-      }
-      if (outcome === 'pending') {
-        // Runtime still spinning up (e.g. resuming an archived sandbox). The
-        // prompt will land once it's ready — treat as a successful fire so the
-        // scheduler records last_fired_at and doesn't immediately create a dupe.
-        return { status: 'queued', sessionId: reusable.sessionId, reason: 'session resuming' };
+      if (outcome === 'queued') {
+        // The prompt is durably queued (drain retries until delivered or
+        // dead-letters loudly) — treat as a successful fire so the scheduler
+        // records last_fired_at and doesn't immediately create a dupe.
+        return { status: 'queued', sessionId: reusable.sessionId, reason: 'prompt queued for delivery' };
       }
       // outcome === 'no-session' | 'failed' → canonical session is unusable;
       // fall through to create a fresh one below.
