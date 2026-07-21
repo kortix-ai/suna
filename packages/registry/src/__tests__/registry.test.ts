@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseItemAddress, parseRegistryAddress, rawGithubUrl } from '../address';
 import { validateRegistry } from '../validate';
-import { expandTarget } from '../paths';
+import { expandTarget, trimTrailingSlashes } from '../paths';
 import { buildRegistry, type BuildSource } from '../build';
 import { loadItem, loadRegistry } from '../fetch';
 
@@ -101,6 +101,20 @@ describe('validateRegistry', () => {
 });
 
 // --- target expansion ------------------------------------------------------
+
+describe('trimTrailingSlashes', () => {
+  test('strips one or many trailing slashes', () => {
+    expect(trimTrailingSlashes('.opencode/')).toBe('.opencode');
+    expect(trimTrailingSlashes('a/b////')).toBe('a/b');
+  });
+  test('leaves interior slashes and slashless strings alone', () => {
+    expect(trimTrailingSlashes('a/b/c')).toBe('a/b/c');
+    expect(trimTrailingSlashes('')).toBe('');
+  });
+  test('trims an all-slash string to empty', () => {
+    expect(trimTrailingSlashes('/////')).toBe('');
+  });
+});
 
 describe('expandTarget', () => {
   const ctx = { configDir: '.opencode' };

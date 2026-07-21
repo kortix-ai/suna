@@ -10,9 +10,16 @@ export interface TargetContext {
   memoryDir?: string;
 }
 
+/** Linear-time trailing-slash trim (regex `\/+$` backtracks polynomially). */
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  return value.slice(0, end);
+}
+
 export function expandTarget(target: string, ctx: TargetContext): string {
-  const cd = ctx.configDir.replace(/\/+$/, '');
-  const mem = (ctx.memoryDir ?? '.kortix/memory').replace(/\/+$/, '');
+  const cd = trimTrailingSlashes(ctx.configDir);
+  const mem = trimTrailingSlashes(ctx.memoryDir ?? '.kortix/memory');
   let out: string;
 
   if (target === '~' || target === '~/') {
