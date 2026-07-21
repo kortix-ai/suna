@@ -42,6 +42,16 @@ mock.module('./reasoning-effort-selector', () => ({
 }));
 
 const { ComposerModelControls } = await import('./composer-model-controls');
+const { HARNESS_MODEL_OPTION_FALLBACK } = await import('@kortix/sdk/react');
+
+/** Asserts + narrows a static fallback entry — used instead of a non-null
+ *  assertion (Biome's `noNonNullAssertion`) in the pre-session tests below. */
+function requireFallback(
+  option: (typeof HARNESS_MODEL_OPTION_FALLBACK)[keyof typeof HARNESS_MODEL_OPTION_FALLBACK],
+) {
+  if (!option) throw new Error('expected a static harness model fallback entry');
+  return option;
+}
 type FlatModel = Parameters<typeof ComposerModelControls>[0]['models'][number];
 
 afterEach(() => {
@@ -86,11 +96,11 @@ describe('ComposerModelControls — catalog mode (OpenCode)', () => {
     renderControls({ projectId: 'proj_1' });
 
     expect(capturedModelSelectorProps).not.toBeNull();
-    expect(capturedModelSelectorProps!.models).toBe(MODELS);
-    expect(capturedModelSelectorProps!.selectedModel).toBe(SELECTED_MODEL);
+    expect(capturedModelSelectorProps?.models).toBe(MODELS);
+    expect(capturedModelSelectorProps?.selectedModel).toBe(SELECTED_MODEL);
     expect(capturedReasoningEffortSelectorProps).not.toBeNull();
-    expect(capturedReasoningEffortSelectorProps!.model).toBe(SELECTED_MODEL);
-    expect(capturedReasoningEffortSelectorProps!.projectId).toBe('proj_1');
+    expect(capturedReasoningEffortSelectorProps?.model).toBe(SELECTED_MODEL);
+    expect(capturedReasoningEffortSelectorProps?.projectId).toBe('proj_1');
     expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
   });
 
@@ -108,7 +118,7 @@ describe('ComposerModelControls — catalog mode (OpenCode)', () => {
     renderControls({ models: [], modelRequired: true });
 
     expect(capturedModelSelectorProps).not.toBeNull();
-    expect(capturedModelSelectorProps!.models).toEqual([]);
+    expect(capturedModelSelectorProps?.models).toEqual([]);
   });
 });
 
@@ -249,5 +259,105 @@ describe('ComposerModelControls — harness-native live selector (Claude Code / 
 
     // `AcpConfigOptionPill` itself renders null for zero choices.
     expect(screen.queryByTestId('acp-config-option-pill')).toBeNull();
+  });
+});
+
+describe('ComposerModelControls — pre-session (no live ACP session yet, static fallback)', () => {
+  // `composer-chat-input.tsx` resolves the SAME `modelOption` shape
+  // pre-session (from `use-harness-model-options-store.ts`'s cache/fallback)
+  // as it does live — `ComposerModelControls` genuinely cannot tell the two
+  // apart, and that's the point: ONE control, not a pre-session/live mode
+  // switch. These tests exercise the real static fallback constant to prove
+  // the "static fallback should never leave Claude/Codex on the dead label"
+  // guarantee end-to-end.
+  test('claude pre-session (no live session): the static fallback renders a REAL interactive selector, not the dead label', () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.claude);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        // No stored deferred pick yet — nothing chosen, an honest state.
+        modelOption: { ...fallback, currentValue: undefined },
+        onModelOptionChange: () => {},
+      },
+    });
+
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+    const selector = screen.getByTestId('harness-managed-model-selector');
+    expect(selector.getAttribute('data-harness')).toBe('claude');
+  });
+
+  test('codex pre-session: the static fallback renders a REAL interactive selector too', () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.codex);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'codex',
+        modelOption: { ...fallback, currentValue: undefined },
+        onModelOptionChange: () => {},
+      },
+    });
+
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+    expect(screen.getByTestId('harness-managed-model-selector').getAttribute('data-harness')).toBe(
+      'codex',
+    );
+  });
+
+  test("a stored deferred pick shows as the pill's current value pre-session", () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.claude);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: { ...fallback, currentValue: 'opus' },
+        onModelOptionChange: () => {},
+      },
+    });
+
+    expect(screen.getByText('Opus')).toBeTruthy();
+  });
+
+  test('picking a choice pre-session calls onModelOptionChange (persists the deferred pick) without touching the catalog selector', async () => {
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.claude);
+    const onModelOptionChange = mock((_value: unknown) => {});
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: { ...fallback, currentValue: undefined },
+        onModelOptionChange,
+      },
+    });
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    fireEvent.click(screen.getByText('Haiku'));
+    await flush();
+
+    expect(onModelOptionChange).toHaveBeenCalledWith('haiku');
+    expect(capturedModelSelectorProps).toBeNull();
+  });
+
+  test('a live-confirmed value later WINS over a stale pre-session pick — same control, honest state', () => {
+    // Once live, `composer-chat-input.tsx` swaps `modelOption.currentValue`
+    // to the harness's own confirmed value (never the deferred pick it may
+    // have started from) — simulated here directly since ComposerModelControls
+    // itself is source-agnostic.
+    resetCaptures();
+    const fallback = requireFallback(HARNESS_MODEL_OPTION_FALLBACK.claude);
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        // The harness settled on 'sonnet' even though a prior deferred pick
+        // (say, 'opus') may have been rejected/superseded — the control must
+        // show what actually happened, never the stale pick.
+        modelOption: { ...fallback, currentValue: 'sonnet' },
+        onModelOptionChange: () => {},
+      },
+    });
+
+    expect(screen.getByText('Sonnet')).toBeTruthy();
+    expect(screen.queryByText('Opus')).toBeNull();
   });
 });

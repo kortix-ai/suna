@@ -1,8 +1,13 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 
-import { findAcpModelConfigOption, isWritableAcpModelConfigOption } from '@/features/session/acp-composer-adapters';
+import {
+  findAcpModelConfigOption,
+  isWritableAcpModelConfigOption,
+  resolveDeferredModelApply,
+  shouldAttemptDeferredModelApply,
+} from '@/features/session/acp-composer-adapters';
 import type { HarnessManagedModelState } from '@/features/session/composer-model-controls';
 import { deriveComposerBlockingAction } from '@/features/session/model-availability';
 import {
@@ -21,6 +26,7 @@ import {
   useRuntimeProviders,
   useRuntimeSessions,
 } from '@/hooks/runtime/use-runtime-sessions';
+import { CATALOG } from '@kortix/llm-catalog';
 import type { AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
 import type { FlatModel } from '@kortix/sdk/react';
 import {
@@ -30,9 +36,9 @@ import {
   formatModelString,
   harnessPresentation,
   useComposerCapabilities,
+  useHarnessModelOptionsCache,
   useProjectConfig,
 } from '@kortix/sdk/react';
-import { CATALOG } from '@kortix/llm-catalog';
 
 export interface ComposerOptions {
   agent?: string;
@@ -117,7 +123,10 @@ export function resolvePresetProviderId(input: {
  * `kortix`-namespaced ids skip the lookup: the gateway catalog is keyed by
  * its own wire ids, not models.dev's.
  */
-function catalogMetadata(providerID: string, modelID: string): { releaseDate?: string; family?: string } {
+function catalogMetadata(
+  providerID: string,
+  modelID: string,
+): { releaseDate?: string; family?: string } {
   if (providerID === 'kortix') return {};
   const provider = CATALOG.providers.find((entry) => entry.id === providerID);
   const model = provider?.models.find((entry) => entry.id === modelID);
@@ -485,7 +494,8 @@ export function ComposerChatInput({
   // what keeps that surface untouched here rather than silently gaining a
   // second, ACP-native model control alongside whatever OpenCode's own path
   // does or doesn't do.
-  const liveModelOptionWritable = !catalogModelRequired && isWritableAcpModelConfigOption(liveModelOption);
+  const liveModelOptionWritable =
+    !catalogModelRequired && isWritableAcpModelConfigOption(liveModelOption);
   const liveResolvedModel =
     liveModelOption?.currentValue != null ? String(liveModelOption.currentValue) : null;
   // Same lock signals `acp-session-chat.tsx`'s `configOptionsDisabled` gates
@@ -494,7 +504,90 @@ export function ComposerChatInput({
   // `configOptions` in the first place), a terminal error, an in-flight turn,
   // or a pending question/approval all mean "don't let the user change the
   // model right now" just as much as they mean "don't let them send".
-  const liveModelOptionDisabled = Boolean(disabled) || Boolean(isBusy) || Boolean(live?.lockForQuestion) || Boolean(live?.lockForApproval);
+  const liveModelOptionDisabled =
+    Boolean(disabled) ||
+    Boolean(isBusy) ||
+    Boolean(live?.lockForQuestion) ||
+    Boolean(live?.lockForApproval);
+
+  // ── Pre-session model choices (cache + static fallback) ─────────────────
+  // Claude Code/Codex never expose the ACP `model` config option until a
+  // session is actually LIVE (`liveModelOption` above) — but the composer the
+  // user types into BEFORE that exists is exactly when they're most likely to
+  // try to pick one. `harnessModelOptions` answers "what would this harness
+  // advertise" with no live session at all: the last real advertised list
+  // this browser cached from an earlier live session of the SAME harness, or
+  // (when this browser has never seen one) a static, version-pinned fallback
+  // captured from a real live payload — see `use-harness-model-options-store.ts`
+  // for the full policy and its evidence. `null` only for a harness this
+  // store genuinely knows nothing about (never claude/codex, since the
+  // fallback always exists for them) — the composer keeps its honest static
+  // label in that case, same as before this store existed.
+  const harnessModelOptions = useHarnessModelOptionsCache();
+  const preSessionModelOption = nativeHarness ? harnessModelOptions.resolve(nativeHarness) : null;
+
+  // Cache a LIVE session's own advertised `model` option the instant it
+  // arrives, so the NEXT pre-session composer for this harness (a fresh
+  // session, a different tab) sees the real thing instead of only the static
+  // fallback. `cache()` itself no-ops when the shape hasn't actually changed
+  // (see the store's `sameCachedOption` check), so this doesn't write
+  // localStorage on every unrelated live-session render.
+  useEffect(() => {
+    if (!activeHarness || !liveModelOptionWritable || !liveModelOption) return;
+    harnessModelOptions.cache(activeHarness, liveModelOption);
+  }, [activeHarness, liveModelOptionWritable, liveModelOption, harnessModelOptions]);
+
+  // ── Deferred-apply: a pre-session pick, sent the moment the session goes live ──
+  // The seam: the FIRST render where a live session's `configOptions` include
+  // a genuinely writable `model` option (`liveModelOptionWritable` flipping
+  // true — upstream, that's `AcpSession.performBootstrap`'s `this.patch({
+  // ready: true, configOptions: result.configOptions, ... })` in
+  // `packages/sdk/src/acp/session.ts`, the first place the harness's real
+  // advertised list ever lands). At that instant, if the user picked a model
+  // BEFORE the session existed (`runtimeModelStore.getRuntimeModel`, the same
+  // per-agent store the live selector's own `onModelOptionChange` seeds — see
+  // below), send it through the real `session/set_config_option` round-trip
+  // so the session actually launches with what was picked instead of quietly
+  // reverting to the harness default. `resolveDeferredModelApply` (see its
+  // doc comment) is what keeps this from ever misbehaving: it drops the pick
+  // silently when the harness didn't actually advertise it (a stale pick from
+  // an old adapter version) and no-ops when it already matches — so the
+  // control never shows a lie, and a value the harness rejects at apply time
+  // is simply never sent, leaving the pill to reflect whatever the harness
+  // actually settled on. Fires AT MOST ONCE per `sessionId` — a later
+  // out-of-band change (the user picking something else live, or the harness
+  // itself changing it via a `config_option_update`) must never be
+  // overwritten by re-sending a now-stale deferred pick.
+  const deferredApplyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!live || !nativeHarness || !capabilityAgentName) return;
+    if (
+      !shouldAttemptDeferredModelApply({
+        sessionId,
+        alreadyAttemptedSessionId: deferredApplyRef.current,
+        optionAvailable: liveModelOptionWritable && !!liveModelOption,
+      })
+    ) {
+      return;
+    }
+    deferredApplyRef.current = sessionId ?? null;
+    // `shouldAttemptDeferredModelApply`'s `optionAvailable` already implies
+    // `liveModelOption` is non-null (the check above returned `true`) — this
+    // re-check is for TypeScript's narrowing, not runtime behavior.
+    if (!liveModelOption) return;
+    const deferredValue = runtimeModelStore.getRuntimeModel(capabilityAgentName);
+    const toApply = resolveDeferredModelApply({ deferredValue, option: liveModelOption });
+    if (toApply) live.onConfigOptionChange(liveModelOption.id, toApply);
+  }, [
+    live,
+    nativeHarness,
+    capabilityAgentName,
+    liveModelOptionWritable,
+    liveModelOption,
+    sessionId,
+    runtimeModelStore,
+  ]);
+
   const harnessManagedModel: HarnessManagedModelState | undefined = live
     ? activeHarness
       ? liveModelOptionWritable && liveModelOption
@@ -533,12 +626,34 @@ export function ComposerChatInput({
           }
       : undefined
     : nativeHarness
-      ? {
-          harness: nativeHarness,
-          selectedModel: runtimeModel,
-          connectionLabel,
-          connectionKind,
-        }
+      ? preSessionModelOption
+        ? {
+            harness: nativeHarness,
+            selectedModel: runtimeModel,
+            connectionLabel,
+            connectionKind,
+            // Same control as the live case (`HarnessManagedModelSelector`,
+            // via `ComposerModelControls`'s `modelOption`-gated render) — the
+            // synthetic `currentValue` is the stored deferred pick (or unset,
+            // a real "nothing chosen yet" state, never a fabricated one).
+            modelOption: { ...preSessionModelOption, currentValue: runtimeModel ?? undefined },
+            onModelOptionChange: (value) => {
+              // No live ACP session to round-trip through yet — persist the
+              // pick in the SAME per-agent store the live path seeds
+              // (`getRuntimeModel`/`setRuntimeModel`), applied automatically
+              // the moment a session for this agent goes live (see the
+              // deferred-apply effect above).
+              if (typeof value === 'string' && capabilityAgentName) {
+                runtimeModelStore.setRuntimeModel(capabilityAgentName, value);
+              }
+            },
+          }
+        : {
+            harness: nativeHarness,
+            selectedModel: runtimeModel,
+            connectionLabel,
+            connectionKind,
+          }
       : undefined;
 
   // Server-authoritative auth/model preflight — the ONLY hard send gate for a

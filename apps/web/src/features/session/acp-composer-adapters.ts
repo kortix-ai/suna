@@ -5,8 +5,13 @@
  * mapping rules stay honest as harnesses evolve — no React here.
  */
 
-import type { AcpPendingOption, AcpPendingQuestion, AcpPlan, AcpSessionConfigOption } from '@kortix/sdk';
 import type { QuestionAnswer, QuestionRequest } from '@/ui';
+import type {
+  AcpPendingOption,
+  AcpPendingQuestion,
+  AcpPlan,
+  AcpSessionConfigOption,
+} from '@kortix/sdk';
 
 /** Heuristic: does this ACP session config option represent the model choice?
  *  There's no fixed `id`/`category` vocabulary across harness bridges yet, so
@@ -39,6 +44,76 @@ export function isWritableAcpModelConfigOption(option: AcpSessionConfigOption | 
   if (!option) return false;
   if (option.type !== undefined && option.type !== 'select') return false;
   return (option.options?.length ?? 0) > 0;
+}
+
+/** The raw `value`/`id`/`optionId` (falling back to index, matching
+ *  `acp-config-option-pills.tsx`'s own `choiceValue`) of one entry in a
+ *  `select`-typed config option's `options` array, as a string — the same
+ *  identity space `AcpConfigOptionPill`'s `onChange`/`currentValue` compare
+ *  against. */
+function configOptionChoiceValue(raw: Record<string, unknown>, index: number): string {
+  return String(raw.value ?? raw.id ?? raw.optionId ?? index);
+}
+
+/**
+ * Decides whether a deferred (pre-session) harness-native model pick should
+ * actually be sent over `session/set_config_option` once a live session's
+ * writable `model` option first arrives — the seam this backs is
+ * `composer-chat-input.tsx`'s bootstrap-ready effect (see its doc comment for
+ * exactly where that fires).
+ *
+ * Returns the value to apply, or `null` when nothing should happen:
+ * - no deferred pick was ever stored for this agent,
+ * - `option` isn't a genuinely writable model option (see
+ *   {@link isWritableAcpModelConfigOption}) — nothing to apply it TO,
+ * - the deferred pick already matches `option.currentValue` (a no-op RPC call
+ *   would just be wasted round-trip latency for zero effect),
+ * - the deferred pick isn't one of `option.options`' real advertised values —
+ *   a stale pick from a prior adapter version, or from the OTHER harness's
+ *   fallback list bleeding in through a bug. Applying an unadvertised value
+ *   would either silently no-op server-side or (worse) desync the pill from
+ *   what the harness actually has selected — dropping it silently and
+ *   letting the harness's own `currentValue` win is the honest behavior the
+ *   composer's "never lie" rule requires (see `HarnessManagedModelState`'s
+ *   doc comment, `composer-model-controls.tsx`).
+ */
+export function resolveDeferredModelApply(input: {
+  deferredValue: string | null | undefined;
+  option: AcpSessionConfigOption | null;
+}): string | null {
+  if (!input.deferredValue) return null;
+  if (!isWritableAcpModelConfigOption(input.option)) return null;
+  const option = input.option as AcpSessionConfigOption;
+  if (String(option.currentValue ?? '') === input.deferredValue) return null;
+  const advertised = (option.options ?? []).some(
+    (choice, index) =>
+      configOptionChoiceValue(choice as Record<string, unknown>, index) === input.deferredValue,
+  );
+  return advertised ? input.deferredValue : null;
+}
+
+/**
+ * The "at most once per session" gate around {@link resolveDeferredModelApply}
+ * — a pure extraction of `composer-chat-input.tsx`'s deferred-apply effect's
+ * guard, so the "a later live change is never clobbered by re-sending a stale
+ * deferred pick" behavior is testable without mounting the component. `false`
+ * whenever `sessionId` is missing (no live session to apply anything to), the
+ * writable option hasn't arrived yet (nothing to apply against), or this
+ * exact `sessionId` was already attempted — `alreadyAttemptedSessionId` is
+ * the effect's own ref value, unconditionally overwritten to `sessionId` the
+ * moment this returns `true` (see the call site), so a later render for the
+ * SAME session — whether the option's `currentValue` moved because the user
+ * picked something else live, or a `config_option_update` changed it
+ * out-of-band — always returns `false` here and the stale deferred pick is
+ * never resent.
+ */
+export function shouldAttemptDeferredModelApply(input: {
+  sessionId: string | null | undefined;
+  alreadyAttemptedSessionId: string | null;
+  optionAvailable: boolean;
+}): boolean {
+  if (!input.sessionId || !input.optionAvailable) return false;
+  return input.alreadyAttemptedSessionId !== input.sessionId;
 }
 
 /** `AcpSessionConfigOption.options` (generic `{value,label,...}` records) into

@@ -7,6 +7,8 @@ import {
   findAcpModelConfigOption,
   isAcpModelConfigOption,
   isWritableAcpModelConfigOption,
+  resolveDeferredModelApply,
+  shouldAttemptDeferredModelApply,
   toQuestionRequest,
 } from './acp-composer-adapters';
 
@@ -18,7 +20,9 @@ describe('isAcpModelConfigOption', () => {
   });
 
   test('does not match unrelated options', () => {
-    expect(isAcpModelConfigOption({ id: 'reasoning_effort', name: 'Reasoning effort' })).toBe(false);
+    expect(isAcpModelConfigOption({ id: 'reasoning_effort', name: 'Reasoning effort' })).toBe(
+      false,
+    );
   });
 });
 
@@ -120,6 +124,104 @@ describe('acpTodosFromPlanEntries', () => {
   });
 });
 
+describe('resolveDeferredModelApply', () => {
+  // Real payload shape (verified live against claude-agent-acp,
+  // `kortix.acp_session_envelopes`, dev DB, 2026-07-21).
+  const modelOption: AcpSessionConfigOption = {
+    id: 'model',
+    name: 'Model',
+    type: 'select',
+    category: 'model',
+    currentValue: 'default',
+    options: [
+      { name: 'Default (recommended)', value: 'default' },
+      { name: 'Sonnet', value: 'sonnet' },
+      { name: 'Opus', value: 'opus' },
+      { name: 'Haiku', value: 'haiku' },
+    ],
+  };
+
+  test('applies a deferred pick that differs from currentValue and is advertised', () => {
+    expect(resolveDeferredModelApply({ deferredValue: 'opus', option: modelOption })).toBe('opus');
+  });
+
+  test('drops a deferred pick the harness never advertised — a stale pick from an old adapter version', () => {
+    expect(resolveDeferredModelApply({ deferredValue: 'gpt-5.4', option: modelOption })).toBeNull();
+  });
+
+  test('no-ops when the deferred pick already matches currentValue — nothing to apply', () => {
+    expect(resolveDeferredModelApply({ deferredValue: 'default', option: modelOption })).toBeNull();
+  });
+
+  test('no-ops when there is no deferred pick at all', () => {
+    expect(resolveDeferredModelApply({ deferredValue: null, option: modelOption })).toBeNull();
+    expect(resolveDeferredModelApply({ deferredValue: undefined, option: modelOption })).toBeNull();
+  });
+
+  test('never applies against a non-writable option (no session to apply to yet)', () => {
+    expect(resolveDeferredModelApply({ deferredValue: 'opus', option: null })).toBeNull();
+    expect(
+      resolveDeferredModelApply({ deferredValue: 'opus', option: { ...modelOption, options: [] } }),
+    ).toBeNull();
+  });
+});
+
+describe('shouldAttemptDeferredModelApply', () => {
+  test('attempts once a writable option is available for a real session that has not been attempted yet', () => {
+    expect(
+      shouldAttemptDeferredModelApply({
+        sessionId: 'session-1',
+        alreadyAttemptedSessionId: null,
+        optionAvailable: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('never attempts without a session id', () => {
+    expect(
+      shouldAttemptDeferredModelApply({
+        sessionId: undefined,
+        alreadyAttemptedSessionId: null,
+        optionAvailable: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('never attempts before the writable option has arrived', () => {
+    expect(
+      shouldAttemptDeferredModelApply({
+        sessionId: 'session-1',
+        alreadyAttemptedSessionId: null,
+        optionAvailable: false,
+      }),
+    ).toBe(false);
+  });
+
+  test('a later live change is never clobbered by re-sending a stale deferred pick — already-attempted sessions never re-attempt', () => {
+    // Simulates: the deferred pick applied once, the user (or the harness
+    // itself, via config_option_update) later changed the live value — the
+    // effect must NOT fire again for the same session and re-send the old
+    // deferred pick over the harness's own subsequent choice.
+    expect(
+      shouldAttemptDeferredModelApply({
+        sessionId: 'session-1',
+        alreadyAttemptedSessionId: 'session-1',
+        optionAvailable: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('a NEW session (different id) gets its own fresh attempt', () => {
+    expect(
+      shouldAttemptDeferredModelApply({
+        sessionId: 'session-2',
+        alreadyAttemptedSessionId: 'session-1',
+        optionAvailable: true,
+      }),
+    ).toBe(true);
+  });
+});
+
 describe('toQuestionRequest / buildAcpQuestionContent', () => {
   const pending: AcpPendingQuestion = {
     id: 'q1',
@@ -166,7 +268,10 @@ describe('toQuestionRequest / buildAcpQuestionContent', () => {
   });
 
   test('falls back to a positional key when the question has none', () => {
-    const noKey: AcpPendingQuestion = { ...pending, questions: [{ ...pending.questions[0]!, key: undefined }] };
+    const noKey: AcpPendingQuestion = {
+      ...pending,
+      questions: [{ ...pending.questions[0]!, key: undefined }],
+    };
     expect(buildAcpQuestionContent(noKey, [['staging']])).toEqual({ answer_1: 'staging' });
   });
 

@@ -9,10 +9,7 @@ import { harnessPresentation } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 
 import { AcpConfigOptionPill } from './acp-config-option-pills';
-import {
-  COMPOSER_PILL_DISABLED_CLASS,
-  COMPOSER_PILL_TRIGGER_CLASS,
-} from './composer-pill';
+import { COMPOSER_PILL_DISABLED_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
 import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import type { FlatModel } from './session-chat-input';
@@ -41,15 +38,23 @@ import type { FlatModel } from './session-chat-input';
  *   ({@link HarnessManagedModelSelector}) instead of the label, and picking a
  *   choice round-trips through `session/set_config_option` (ACP's own
  *   mechanism), never the gateway catalog.
- * - **Not live yet (no ACP session to query), or live but the harness
- *   genuinely declared no model option**: {@link modelOption} is unset — the
+ * - **Not live yet (no ACP session to query)**: `composer-chat-input.tsx`
+ *   resolves {@link modelOption} from a small pre-session store instead —
+ *   either the last real advertised list this browser cached from an earlier
+ *   LIVE session of the same harness, or (first time ever) a static,
+ *   version-pinned fallback captured from a real payload (see
+ *   `packages/sdk/src/react/use-harness-model-options-store.ts`). For
+ *   Claude Code/Codex this resolves EVERY time (the fallback always exists
+ *   for them), so the same interactive {@link HarnessManagedModelSelector}
+ *   renders pre-session too — picking a choice there has no live ACP session
+ *   to round-trip through yet, so it persists into the per-agent deferred-pick
+ *   store instead, applied automatically the instant a session for that
+ *   agent goes live (see `composer-chat-input.tsx`'s deferred-apply effect).
+ * - **Live but the harness genuinely declared no model option, or a harness
+ *   this store has no cache/fallback for**: {@link modelOption} is unset — the
  *   composer falls back to the honest, non-interactive
- *   {@link HarnessManagedModelLabel}. There is no protocol-level way to know a
- *   pre-launch harness's model list without a running session (Zed's own
- *   `AgentConnection::model_selector()` is likewise per-connection, never
- *   per-agent-definition — see docs/specs/2026-07-21-zed-acp-ux-comparison.md
- *   §1.2), so this is a real capability gap, not a UI omission — faking a
- *   selector here would silently no-op, which is worse than the label.
+ *   {@link HarnessManagedModelLabel}. Faking a selector here would silently
+ *   no-op, which is worse than the label.
  */
 export interface HarnessManagedModelState {
   harness: KortixHarness;
@@ -97,12 +102,13 @@ export interface ComposerModelControlsProps {
  * picker itself — main's `ModelSelector` stays a single provider-grouped
  * catalog popover with no mode switch):
  *
- * - `harnessManagedModel.modelOption` set (Claude Code / Codex live, with a
- *   declared model config option): a real interactive selector — see
- *   {@link HarnessManagedModelSelector}.
- * - `harnessManagedModel` set with no `modelOption` (not live yet, or the
- *   harness declared none): a static label, no popover — see
- *   {@link HarnessManagedModelLabel}.
+ * - `harnessManagedModel.modelOption` set (Claude Code / Codex, live OR
+ *   pre-session with a cached/fallback option resolved — see
+ *   `HarnessManagedModelState`'s doc comment): a real interactive selector —
+ *   see {@link HarnessManagedModelSelector}.
+ * - `harnessManagedModel` set with no `modelOption` (the harness declared
+ *   none live, or this store has neither a cache nor a fallback for it): a
+ *   static label, no popover — see {@link HarnessManagedModelLabel}.
  * - otherwise: the ONE `ModelSelector`, gateway/BYOK catalog mode (OpenCode).
  *
  * Extracted verbatim from `session-chat-input.tsx`'s bottom toolbar — see
@@ -142,18 +148,23 @@ export function ComposerModelControls({
   );
 }
 
-/** Interactive harness-native model selector — renders when a LIVE ACP
- *  session's harness declared a writable `model` session config option (see
- *  {@link HarnessManagedModelState}'s doc comment for the live evidence this
- *  is built against). A thin harness-labeled wrapper around
- *  `AcpConfigOptionPill` (`acp-config-option-pills.tsx`) — the same popover
- *  pill the composer already uses for a live session's `mode`/`effort`/etc.
- *  config options, so "model" reads as one more entry in that family rather
- *  than a bespoke picker with its own interaction language. `onChange` goes
- *  straight to `AcpSession.setConfigOption(modelOption.id, value)` — ACP's
- *  own mechanism, never the gateway catalog (`onModelChange` in
- *  `ComposerModelControlsProps` is for the OTHER, catalog-mode branch and is
- *  never called here). */
+/** Interactive harness-native model selector — renders whenever a `model`
+ *  session config option is resolved for the harness, live OR pre-session
+ *  (see {@link HarnessManagedModelState}'s doc comment: live, it's the ACP
+ *  session's own advertised option; pre-session, it's the cache/fallback
+ *  `composer-chat-input.tsx` resolves via `use-harness-model-options-store.ts`).
+ *  A thin harness-labeled wrapper around `AcpConfigOptionPill`
+ *  (`acp-config-option-pills.tsx`) — the same popover pill the composer
+ *  already uses for a live session's `mode`/`effort`/etc. config options, so
+ *  "model" reads as one more entry in that family rather than a bespoke
+ *  picker with its own interaction language. `onChange` goes straight to
+ *  `onModelOptionChange` — live, that's `AcpSession.setConfigOption(
+ *  modelOption.id, value)` (ACP's own mechanism); pre-session, there's no
+ *  live session to round-trip through yet, so it persists into the per-agent
+ *  deferred-pick store instead, applied automatically the moment a session
+ *  for that agent goes live. Never the gateway catalog either way
+ *  (`onModelChange` in `ComposerModelControlsProps` is for the OTHER,
+ *  catalog-mode branch and is never called here). */
 function HarnessManagedModelSelector({
   harness,
   modelOption,
@@ -170,7 +181,11 @@ function HarnessManagedModelSelector({
   // pill belongs to for tests/debugging.
   return (
     <span data-testid="harness-managed-model-selector" data-harness={harness}>
-      <AcpConfigOptionPill option={modelOption} onChange={onModelOptionChange} disabled={disabled} />
+      <AcpConfigOptionPill
+        option={modelOption}
+        onChange={onModelOptionChange}
+        disabled={disabled}
+      />
     </span>
   );
 }
@@ -196,7 +211,11 @@ function HarnessManagedModelLabel({
         aria-label={`${presentation.label} model`}
         data-testid="harness-managed-model-label"
         data-harness={harness}
-        className={cn(COMPOSER_PILL_TRIGGER_CLASS, 'cursor-default', disabled && COMPOSER_PILL_DISABLED_CLASS)}
+        className={cn(
+          COMPOSER_PILL_TRIGGER_CLASS,
+          'cursor-default',
+          disabled && COMPOSER_PILL_DISABLED_CLASS,
+        )}
       >
         <span className="max-w-[120px] truncate">{label}</span>
       </span>
