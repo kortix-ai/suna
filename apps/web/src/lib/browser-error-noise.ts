@@ -649,33 +649,79 @@ export function isStorageSecurityErrorNoise(input: {
 //
 // A real first-party regression — `throw new Error()` /
 // `Promise.reject(new Error())` in our own code — keeps reporting: its frames
-// resolve (via uploaded sourcemaps) to a real source file:line, so the
-// "any resolved frame" negative guard preserves the event. Only events with
-// NEITHER a message NOR a single resolvable frame are dropped.
-function isFrameUnresolved(frame: {
-  filename?: unknown;
-  function?: unknown;
-  lineno?: unknown;
-}): boolean {
-  const fn = normalizeString(frame.function).trim();
-  const lineno = typeof frame.lineno === 'number' ? frame.lineno : 0;
-  return (fn === '' || fn === '?') && lineno <= 0;
+// resolve (via uploaded sourcemaps) to a real `apps/web/src/…` source file
+// (Sentry uploads sourcemaps and rewrites the frame filename), so the
+// "any resolved first-party source frame" negative guard preserves the event.
+// Only events with NEITHER a real message NOR a single resolvable first-party
+// source frame are dropped.
+//
+// --- 2026-07-21 extension (post-0.10.13 recurrence, chunk 21544 again) ---
+// Sentry SDK 10.x (`@sentry/nextjs@10.63.0`) changed how it serializes an
+// onerror capture whose thrown value has NO `.message`: instead of leaving
+// `exception.values[0].value` empty/undefined, it now sets the literal
+// placeholder string `"No error message"` there (which is also what Better
+// Stack displays). The new production patterns
+//   `141dcca3d176082360456b74d56119f59acdf806ae0f3ab1e7e7bd8218bca8d2`
+//   (8 occ / 0 users / last 2026-07-20 21:21:55 UTC, dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2)
+//   `19ee7c2fe89a3f3302fb8209574d906a7b7c8f04d55746e9b443e9bf078c64ca`
+//   (6 occ / 0 users / last 2026-07-21 17:03:18 UTC, dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno)
+// are the SAME noise class as #4540 (window.onerror, value-less throw, call
+// site the chunk-21544 frame) but the original matcher missed them for TWO
+// reasons:
+//   1. The placeholder `"No error message"` is a NON-EMPTY string, so the
+//      `message.trim() !== ''` negative guard #1 bailed immediately.
+//   2. The SDK 10.x frames are mostly NAMED minified functions (`iX`, `iu`,
+//      `ib`, `ik`, `oq`, `o_`, `l9`, `l`, `MessagePort.x`) with real linenos,
+//      so the "every frame unresolved" negative guard #3 also bailed. The
+//      LAST frame (chunk 21544, `?` function, lineno 1) is still unresolved —
+//      that's the call-site frame Better Stack surfaces — but the older
+//      "all frames must be unresolved" rule no longer holds.
+// The fix treats the literal `"No error message"` placeholder as equivalent
+// to an empty message (it is Sentry's own "no message" marker, never a real
+// app error message), and relaxes the frame guard from "every frame
+// unresolved" to "no frame resolves to a first-party `apps/web/src/…` source
+// path". The first-party-source negative guard is the load-bearing one: a
+// real `throw new Error(...)` / `Promise.reject(new Error(...))` in our own
+// code de-minifies to `apps/web/src/…` and is preserved; only events whose
+// frames are ALL raw minified chunk paths (sourcemap resolution produced no
+// first-party source path) keep being dropped. A non-browser-bundle frame
+// (extension / injected / cross-origin) still keeps the event reporting.
+//
+// The literal placeholder Sentry SDK 10.x writes into
+// `exception.values[0].value` when a `window.onerror` capture has no
+// `error.message` (the thrown value was a non-Error, or an Error with an
+// empty message). It is the SDK's own "no message" marker — never a real
+// app error message — so it is equivalent to an empty message for the noise
+// matcher. Better Stack displays this exact string as the error's "Message".
+const SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER = 'No error message';
+
+function isMessageEmptyOrPlaceholder(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return (
+    normalized === ''
+    || normalized === SENTRY_NO_ERROR_MESSAGE_PLACEHOLDER
+  );
 }
 
 /**
  * Whether a Sentry event is the unactionable "No error message" + unresolved
  * minified-chunk-frame class from our browser bundle — empty exception value
- * AND every frame an unresolved (`?` function, no line) `_next/static/chunks`
- * frame. Real errors (non-empty message, or any resolvable frame, or any
- * non-browser-bundle frame) are never matched. See
+ * (or the Sentry 10.x `"No error message"` placeholder string) AND every
+ * frame a raw `_next/static/chunks` minified-chunk frame with NO resolved
+ * first-party `apps/web/src/…` source path. Real errors (a real non-placeholder
+ * message, or any frame that sourcemap-resolved to a first-party source path,
+ * or any non-browser-bundle frame) are never matched. See
  * `isEmptyMessageUnresolvedBrowserChunkNoise` for the full rationale.
  */
 export function isEmptyMessageUnresolvedBrowserChunkNoise(input: {
   message?: unknown;
   frames?: Array<{ filename?: unknown; function?: unknown; lineno?: unknown }>;
 }): boolean {
-  // Negative guard #1: a real, actionable message always reports.
-  if (normalizeString(input.message).trim() !== '') {
+  // Negative guard #1: a real, actionable message always reports. The Sentry
+  // 10.x `"No error message"` placeholder is the SDK's own "no message"
+  // marker (a window.onerror capture whose thrown value had no `.message`),
+  // NOT a real app error message, so it is treated as empty here.
+  if (!isMessageEmptyOrPlaceholder(input.message)) {
     return false;
   }
   const frames = input.frames ?? [];
@@ -689,9 +735,16 @@ export function isEmptyMessageUnresolvedBrowserChunkNoise(input: {
   if (!frames.every((frame) => isBrowserBundleSource(frame.filename))) {
     return false;
   }
-  // Negative guard #3: any resolvable frame (real source line via sourcemap,
-  // or a named function) → an actionable error; keep it.
-  if (frames.some((frame) => !isFrameUnresolved(frame))) {
+  // Negative guard #3: any frame that sourcemap-resolved to a real first-party
+  // `apps/web/src/…` source path → an actionable error with a fixable call
+  // site; keep it. A real `throw new Error(...)` / `Promise.reject(new Error())`
+  // in our own code de-minifies to `apps/web/src/…`, so it is preserved.
+  // (Sentry SDK 10.x frames may be named minified functions like `iX`/`oq`
+  // with real linenos but STILL not resolve to a first-party source path —
+  // those are raw chunk frames with no actionable source location, so they
+  // do not trip this guard. The load-bearing signal is the resolved
+  // first-party source path, not the function-name/lineno resolution.)
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
   return true;

@@ -1378,26 +1378,51 @@ test('does NOT suppress a real error that has a message', () => {
   )
 })
 
-test('does NOT suppress an empty-message error whose frame resolves to a source line', () => {
+test('does NOT suppress an empty-message error whose frame resolves to a first-party source path', () => {
   // `throw new Error()` / `Promise.reject(new Error())` in first-party code:
-  // sourcemaps resolve the frame to a real file:line → actionable, keep it.
+  // Sentry's sourcemap resolution rewrites the frame filename to a real
+  // `apps/web/src/…` source path → actionable, keep it. A named minified
+  // function in a RAW chunk path (e.g. `handleClick` in `chunks/21544-…js`)
+  // is NOT a resolved source path — the minifier may preserve names, and the
+  // lineno is the chunk's single-line bundle line, not a source line — so it
+  // does not by itself make an empty-message event actionable. The load-
+  // bearing signal is the sourcemap-resolved first-party source path.
   assert.equal(
     isEmptyMessageUnresolvedBrowserChunkNoise({
       message: '',
-      frames: [{ filename: CHUNK_21544, function: 'handleClick', lineno: 42 }],
+      frames: [{ filename: 'app:///apps/web/src/features/auth/use-auth.ts', function: 'handleClick', lineno: 42 }],
     }),
     false,
   )
-  // Mixed: one unresolved chunk frame + one resolved frame → keep.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: 'apps/web/src/lib/foo.ts', function: '?', lineno: 0 }],
+    }),
+    false,
+  )
+  // Mixed: one unresolved chunk frame + one sourcemap-resolved first-party
+  // frame → keep (our own code is the throw site → actionable).
   assert.equal(
     isEmptyMessageUnresolvedBrowserChunkNoise({
       message: '',
       frames: [
         { filename: CHUNK_21544, function: '?', lineno: 0 },
-        { filename: 'app:///_next/static/chunks/76904-c52ab52c4900447c.js', function: 'render', lineno: 17 },
+        { filename: 'app:///apps/web/src/components/markdown/unified-markdown.tsx', function: 'render', lineno: 17 },
       ],
     }),
     false,
+  )
+  // A named minified function in a RAW chunk path (no `apps/web/src/…`
+  // resolution) is NOT actionable on its own — the minifier may preserve
+  // names and the lineno is the bundle line, so an empty-message event with
+  // only such frames is still the unactionable noise class.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: 'handleClick', lineno: 42 }],
+    }),
+    true,
   )
 })
 
@@ -1431,6 +1456,204 @@ test('does NOT suppress a frameless empty-message event (origin unverifiable)', 
   )
   assert.equal(
     isEmptyMessageUnresolvedBrowserChunkNoise({ message: '' }),
+    false,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Post-0.10.13 recurrence (Sentry SDK 10.x `"No error message"` placeholder),
+// chunk 21544 again. Better Stack patterns:
+//   141dcca3d176082360456b74d56119f59acdf806ae0f3ab1e7e7bd8218bca8d2
+//     (8 occ / 0 users / last 2026-07-20 21:21:55 UTC, dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2)
+//   19ee7c2fe89a3f3302fb8209574d906a7b7c8f04d55746e9b443e9bf078c64ca
+//     (6 occ / 0 users / last 2026-07-21 17:03:18 UTC, dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno)
+// Siblings in the same now-3d window:
+//   8e9a9022fabcc836b3e8f561a722430ff452536daae6b893d2ce3eab406849a9
+//     (1 occ / 0 users / last 2026-07-21 01:58:52 UTC)
+//   c9457126bec6355b76b4fef6c62f4e212f1271b3f3df6cb80c97a60b8e473305
+//     (1 occ / 0 users / last 2026-07-20 06:23:46 UTC)
+// All are `auto.browser.global_handlers.onerror` captures whose thrown value
+// had no `.message`, so Sentry SDK 10.x (`@sentry/nextjs@10.63.0`) writes the
+// literal placeholder string `"No error message"` into
+// `exception.values[0].value` (the pre-10.x SDK left it empty/undefined,
+// which is the shape #4540's original matcher handled). The frames are mostly
+// NAMED minified functions (`iX`/`iu`/`ib`/`ik`/`oq`/`o_`/`l9`/`l`/
+// `MessagePort.x`) with real linenos — NOT the all-`?`-and-`lineno:0` shape
+// #4540 required — but NONE resolve to a first-party `apps/web/src/…` source
+// path (sourcemap resolution produced no first-party source location), so
+// there is still no actionable call site. The last frame (chunk 21544, `?`
+// function, lineno 1) is the call-site frame Better Stack surfaces.
+// ---------------------------------------------------------------------------
+
+// Exact frames of the 2026-07-20 21:21:55 UTC occurrence of pattern
+// `141dcca3…` (release `22e12080d2b37642aa92a839da6b37f30fc21b9d`,
+// dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2, request `/auth?redirect=…`, Chrome 150).
+const CHUNK_66499_BEo2 = 'app:///_next/static/chunks/66499-30a0e6805d268c02.js?dpl=dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2'
+const CHUNK_5CCD075D_BEo2 = 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2'
+const CHUNK_GLOBAL_ERROR_BEo2 = 'app:///_next/static/chunks/app/global-error-ae7fee8d93446b5c.js?dpl=dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2'
+const CHUNK_21544_BEo2 = 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js?dpl=dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2'
+
+const PATTERN_141DCCA3_FRAMES = [
+  { filename: CHUNK_66499_BEo2, function: 'MessagePort.x', lineno: 3 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'iX', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'iu', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'ib', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: '?', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'ik', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'oq', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'o_', lineno: 1 },
+  { filename: CHUNK_5CCD075D_BEo2, function: 'l9', lineno: 1 },
+  { filename: CHUNK_GLOBAL_ERROR_BEo2, function: 'l', lineno: 1 },
+  { filename: CHUNK_21544_BEo2, function: '?', lineno: 1 },
+]
+
+test('suppresses the post-0.10.13 Sentry 10.x "No error message" placeholder event (pattern 141dcca3…)', () => {
+  // The placeholder `"No error message"` is Sentry SDK 10.x's "no message"
+  // marker (a window.onerror capture whose thrown value had no `.message`),
+  // NOT a real app error message — so it must be treated as empty by the
+  // noise matcher. The frames are mostly NAMED minified functions with real
+  // linenos but NONE resolve to a first-party `apps/web/src/…` source path,
+  // so there is no actionable call site. The event is the same unactionable
+  // noise class #4540 suppressed for the pre-10.x empty-value shape.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'No error message',
+      frames: PATTERN_141DCCA3_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2F038ce7cd-c239-47eb-9ad3-83f2e5345aa6%2Fthread%2F75e8053d-85f9-4f18-a6e5-2ac4f0600e44' },
+      exception: {
+        values: [
+          {
+            value: 'No error message',
+            stacktrace: { frames: PATTERN_141DCCA3_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the sibling post-0.10.13 pattern 19ee7c2f… (different dpl, same shape)', () => {
+  // Same shape as 141dcca3… but a different Vercel deployment id
+  // (dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno) and release
+  // (470fe6f3c88460212c3b187f6f86fb4ad456c4d6). Confirms the matcher is not
+  // anchored on one specific dpl/release hash.
+  const dpl = 'dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno'
+  const frames = PATTERN_141DCCA3_FRAMES.map((f) => ({
+    ...f,
+    filename: f.filename.replace(/dpl=dpl_[A-Za-z0-9]+/, `dpl=${dpl}`),
+  }))
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'No error message',
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2F59aa5850-de1d-4e56-81fb-34d532146f01%2Fthread%2F2149cad0-e79e-4d38-84ac-273364cfb434' },
+      exception: {
+        values: [
+          {
+            value: 'No error message',
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a "No error message" event whose frame resolves to a first-party source path', () => {
+  // A real `throw new Error()` / `Promise.reject(new Error())` in first-party
+  // code de-minifies (via uploaded sourcemaps) to an `apps/web/src/…` frame —
+  // even when the Sentry 10.x placeholder `"No error message"` is the value.
+  // The first-party source resolution is the load-bearing actionable signal.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'No error message',
+      frames: [
+        ...PATTERN_141DCCA3_FRAMES.slice(0, 5),
+        { filename: 'app:///apps/web/src/components/markdown/unified-markdown.tsx', function: 'highlightAsync', lineno: 142 },
+      ],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'No error message',
+            stacktrace: {
+              frames: [
+                { filename: 'apps/web/src/lib/foo.ts' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a "No error message" event with a non-browser-bundle frame', () => {
+  // A wallet-extension `app:///inpage.js` frame at the top of the stack (the
+  // EVM-wallet onGlobalMessage → runIfPresent → run → our chunk chain, e.g.
+  // sibling pattern d371a1e2…) is a DIFFERENT noise class with a real
+  // extension-origin anchor. Leave it reporting so a future triage can
+  // address it specifically; the assigned class (141dcca3…/19ee7c2f…) is
+  // pure browser-bundle frames.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'No error message',
+      frames: [
+        { filename: 'app:///inpage.js', function: 'onGlobalMessage', lineno: 59 },
+        { filename: 'app:///inpage.js', function: 'runIfPresent', lineno: 59 },
+        { filename: 'app:///inpage.js', function: 'run', lineno: 59 },
+        ...PATTERN_141DCCA3_FRAMES,
+      ],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress an event with a real, non-placeholder message even from chunk 21544', () => {
+  // The placeholder is the EXACT literal `"No error message"`; any other
+  // non-empty message is a real app error and keeps reporting, even if its
+  // frames are the same chunk-21544 shape.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'No error message: chunk 21544 failed to load',
+      frames: PATTERN_141DCCA3_FRAMES,
+    }),
+    false,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'No error',
+      frames: PATTERN_141DCCA3_FRAMES,
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a frameless "No error message" event (origin unverifiable)', () => {
+  // No frames at all → can't confirm it's our browser chunk; keep reporting.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({ message: 'No error message', frames: [] }),
+    false,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({ message: 'No error message' }),
     false,
   )
 })
