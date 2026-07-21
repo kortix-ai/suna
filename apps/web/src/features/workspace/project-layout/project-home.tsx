@@ -2,7 +2,16 @@
 
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, CalendarClock, Container, FileCode, GitBranch, Package, type LucideIcon } from 'lucide-react';
+import {
+  Bell,
+  CalendarClock,
+  Check,
+  Container,
+  FileCode,
+  GitBranch,
+  Package,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
@@ -10,13 +19,14 @@ import type { IconType } from 'react-icons/lib';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  CommandGroup,
+  CommandItem,
+  CommandItemHoverCard,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
+} from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -198,7 +208,6 @@ export function ProjectHome({
                     <BranchPicker
                       response={branchesQuery.data}
                       activeRef={activeBaseRef}
-                      overridden={selectedBaseRef !== null}
                       onSelect={(ref) => setSelectedBaseRef(ref === effectiveBaseRef ? null : ref)}
                     />
                   ) : null}
@@ -219,67 +228,80 @@ export function ProjectHome({
   );
 }
 
-function BranchPicker({
+export function BranchPicker({
   response,
   activeRef,
-  overridden,
   onSelect,
 }: {
   response: Awaited<ReturnType<typeof listProjectBranches>> | undefined;
   activeRef: string;
-  overridden: boolean;
   onSelect: (ref: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const branchNames = Array.from(
     new Set(
-      [
-        response?.default_branch,
-        ...(response?.branches.map((branch) => branch.name) ?? []),
-      ].filter((value): value is string => Boolean(value)),
+      [response?.default_branch, ...(response?.branches.map((branch) => branch.name) ?? [])].filter(
+        (value): value is string => Boolean(value),
+      ),
     ),
   );
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Session branch: ${activeRef}`}
-          className={cn(COMPOSER_PILL_TRIGGER_CLASS, 'max-w-44')}
-        >
-          <GitBranch className="size-3.5 shrink-0" />
-          <span className="truncate font-mono">{activeRef}</span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80">
-        <DropdownMenuLabel>Session branch</DropdownMenuLabel>
-        <p className="text-muted-foreground px-2 pb-2 text-xs text-pretty">
-          Fork this session from an environment branch. Its work still lands on a separate session
-          branch.
-        </p>
-        <DropdownMenuSeparator />
-        {branchNames.map((ref) => {
-          const isSelected = ref === activeRef;
-          const isEffectiveDefault = ref === response?.default_branch;
-          return (
-            <DropdownMenuItem key={ref} onSelect={() => onSelect(ref)} className="gap-2">
-              <GitBranch className="text-muted-foreground size-4 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-sm">{ref}</div>
-                {isEffectiveDefault ? (
-                  <div className="text-muted-foreground text-xs">Project default</div>
-                ) : null}
-              </div>
-              {isSelected ? (
-                <Badge variant="outline" size="xs">
-                  {overridden ? 'this session' : 'default'}
-                </Badge>
-              ) : null}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <CommandPopover open={open} onOpenChange={setOpen}>
+      <Hint
+        side="top"
+        className="max-w-[260px] text-xs"
+        label="Start this session from a branch — its work still lands on its own session branch"
+      >
+        <CommandPopoverTrigger>
+          <button
+            type="button"
+            aria-label={`Session branch: ${activeRef}`}
+            data-testid="branch-picker"
+            className={cn(COMPOSER_PILL_TRIGGER_CLASS, 'max-w-44')}
+          >
+            <GitBranch className="size-3.5 shrink-0" />
+            <span className="truncate font-mono">{activeRef.slice(0, 8)}</span>
+          </button>
+        </CommandPopoverTrigger>
+      </Hint>
+      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[260px]">
+        <CommandList className="max-h-[280px]">
+          <CommandGroup forceMount>
+            {branchNames.map((ref) => {
+              const isSelected = ref === activeRef;
+              const isDefault = ref === response?.default_branch;
+              return (
+                <CommandItem
+                  key={ref}
+                  value={`branch-${ref}`}
+                  data-testid="branch-option"
+                  data-branch={ref}
+                  className={cn('gap-2', isSelected && 'bg-primary/[0.06]')}
+                  onSelect={() => {
+                    onSelect(ref);
+                    setOpen(false);
+                  }}
+                >
+                  <span
+                    className={cn(
+                      'min-w-0 flex-1 truncate font-mono text-sm leading-tight',
+                      isSelected ? 'text-foreground font-semibold' : 'text-foreground/90',
+                    )}
+                  >
+                    {ref.slice(0, 8)}
+                  </span>
+                  {isDefault ? (
+                    <span className="text-muted-foreground/60 shrink-0 text-xs">default</span>
+                  ) : null}
+                  {isSelected && <Check className="text-foreground size-4 shrink-0" />}
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        </CommandList>
+      </CommandPopoverContent>
+    </CommandPopover>
   );
 }
 
@@ -373,7 +395,21 @@ export function StarterPromptChips({ onPick }: { onPick: (text: string) => void 
   );
 }
 
-function SandboxPicker({
+/** Dot color + hover-card copy per sandbox build state — the dot carries the
+ *  live state on the one-line row; the words live in the hover card. */
+function sandboxStatePresentation(state: SandboxTemplate['daytona_state']): {
+  dot: string;
+  label: string;
+} {
+  if (state === 'active') return { dot: 'bg-kortix-green', label: 'Ready' };
+  if (state === 'pulling' || state === 'building')
+    return { dot: 'bg-kortix-blue', label: 'Building — session will wait' };
+  if (state === 'missing')
+    return { dot: 'bg-muted-foreground/40', label: 'Not built — first session will build it' };
+  return { dot: 'bg-kortix-red', label: state.replace('_', ' ') };
+}
+
+export function SandboxPicker({
   items,
   activeSlug,
   onSelect,
@@ -383,84 +419,93 @@ function SandboxPicker({
   onSelect: (slug: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const [open, setOpen] = useState(false);
   const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
   if (!active) return null;
   const ActiveIcon = active.is_default ? Container : active.has_image ? Package : FileCode;
-  const activeStateTone =
-    active.daytona_state === 'active'
-      ? 'bg-kortix-green'
-      : ['pulling', 'building'].includes(active.daytona_state)
-        ? 'bg-kortix-blue'
-        : active.daytona_state === 'missing'
-          ? 'bg-muted-foreground/40'
-          : 'bg-destructive';
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria4acf4ecd',
-          )}
-          className={COMPOSER_PILL_TRIGGER_CLASS}
-        >
-          <ActiveIcon className="size-3.5 shrink-0" />
-          <span className="max-w-[7rem] truncate">{active.name}</span>
-          <span className={cn('size-1.5 shrink-0 rounded-full', activeStateTone)} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80">
-        <DropdownMenuLabel>
-          {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSandboxe9c5fbaa')}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {items.map((tpl) => {
-          const Icon = tpl.is_default ? Container : tpl.has_image ? Package : FileCode;
-          const subtitle = tpl.is_default
-            ? 'Platform default · clones workspace at boot'
-            : tpl.has_image
-              ? `Image: ${tpl.image}`
-              : `Dockerfile: ${tpl.dockerfile_path}`;
-          const stateTone =
-            tpl.daytona_state === 'active'
-              ? 'text-kortix-green'
-              : ['pulling', 'building'].includes(tpl.daytona_state)
-                ? 'text-kortix-blue'
-                : tpl.daytona_state === 'missing'
-                  ? 'text-muted-foreground'
-                  : 'text-destructive';
-          const stateLabel =
-            tpl.daytona_state === 'active'
-              ? 'Ready'
-              : ['pulling', 'building'].includes(tpl.daytona_state)
-                ? 'Building — session will wait'
-                : tpl.daytona_state === 'missing'
-                  ? 'Not built — first session will build it'
-                  : tpl.daytona_state.replace('_', ' ');
-          return (
-            <DropdownMenuItem
-              key={tpl.template_id ?? `tpl-${tpl.slug}`}
-              className="flex items-start gap-2"
-              onSelect={() => onSelect(tpl.slug)}
-            >
-              <Icon className="text-muted-foreground mt-0.5 size-4" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{tpl.name}</span>
-                  {tpl.slug === activeSlug && (
-                    <Badge variant="outline" size="xs">
-                      selected
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-muted-foreground truncate text-xs">{subtitle}</div>
-                <div className={cn('mt-0.5 text-xs capitalize', stateTone)}>{stateLabel}</div>
-              </div>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <CommandPopover open={open} onOpenChange={setOpen}>
+      <Hint
+        side="top"
+        className="max-w-[260px] text-xs"
+        label="Choose the sandbox this session runs in"
+      >
+        <CommandPopoverTrigger>
+          <button
+            type="button"
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria4acf4ecd',
+            )}
+            data-testid="sandbox-picker"
+            className={COMPOSER_PILL_TRIGGER_CLASS}
+          >
+            <ActiveIcon className="size-3.5 shrink-0" />
+            <span className="max-w-[7rem] truncate">{active.name}</span>
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                sandboxStatePresentation(active.daytona_state).dot,
+              )}
+            />
+          </button>
+        </CommandPopoverTrigger>
+      </Hint>
+      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[260px]">
+        <CommandList className="max-h-[280px]">
+          <CommandGroup forceMount>
+            {items.map((tpl) => {
+              const isSelected = tpl.slug === activeSlug;
+              const state = sandboxStatePresentation(tpl.daytona_state);
+              const subtitle = tpl.is_default
+                ? 'Platform default · clones workspace at boot'
+                : tpl.has_image
+                  ? `Image: ${tpl.image}`
+                  : `Dockerfile: ${tpl.dockerfile_path}`;
+              return (
+                <CommandItemHoverCard
+                  key={tpl.template_id ?? `tpl-${tpl.slug}`}
+                  content={
+                    <div data-testid="sandbox-hover-card">
+                      <p className="text-sm font-medium">{tpl.name}</p>
+                      <p className="text-muted-foreground mt-1 text-xs leading-snug text-pretty">
+                        {subtitle}
+                      </p>
+                      <p className="text-muted-foreground mt-1 text-xs leading-snug">
+                        {state.label}
+                      </p>
+                    </div>
+                  }
+                >
+                  <CommandItem
+                    value={`sandbox-${tpl.slug}`}
+                    data-testid="sandbox-option"
+                    data-sandbox={tpl.slug}
+                    className={cn('gap-2', isSelected && 'bg-primary/[0.06]')}
+                    onSelect={() => {
+                      onSelect(tpl.slug);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className={cn('size-1.5 shrink-0 rounded-full', state.dot)} />
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate text-sm leading-tight',
+                        isSelected
+                          ? 'text-foreground font-semibold'
+                          : 'text-foreground/90 font-medium',
+                      )}
+                    >
+                      {tpl.name}
+                    </span>
+                    {isSelected && <Check className="text-foreground size-4 shrink-0" />}
+                  </CommandItem>
+                </CommandItemHoverCard>
+              );
+            })}
+          </CommandGroup>
+        </CommandList>
+      </CommandPopoverContent>
+    </CommandPopover>
   );
 }
 

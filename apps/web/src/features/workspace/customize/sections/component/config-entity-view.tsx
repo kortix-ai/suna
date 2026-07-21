@@ -19,7 +19,12 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { splitFrontmatter, toArray } from '@/features/workspace/customize/shared/utils';
+import {
+  extractYamlFragment,
+  splitFragmentPath,
+  splitFrontmatter,
+  toArray,
+} from '@/features/workspace/customize/shared/utils';
 import {
   editConfigPrompt,
   newConfigPrompt,
@@ -515,16 +520,31 @@ function EntityDetail<T extends ConfigEntity>({
   split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
+  // Manifest entities (v2/v3 agents) carry fragment paths like
+  // `kortix.yaml#agents.claude` — a pointer INTO the manifest, not a file.
+  // Fetching that literal path 404s the files/content endpoint (the "file
+  // not found on opening the Agents view" bug), so fetch the real manifest
+  // file and slice the named block out client-side.
+  const fragmentPath = splitFragmentPath(entity.path);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, entity.path],
-    queryFn: () => readProjectFile(projectId, entity.path),
+    queryFn: () => readProjectFile(projectId, fragmentPath ? fragmentPath.file : entity.path),
     staleTime: 30_000,
   });
 
+  const fragmentSource = useMemo(
+    () =>
+      fragmentPath && fileQuery.data?.content
+        ? extractYamlFragment(fileQuery.data.content, fragmentPath.fragment)
+        : null,
+    [fragmentPath, fileQuery.data?.content],
+  );
+  const copyText = fragmentPath ? fragmentSource : (fileQuery.data?.content ?? null);
+
   const onCopy = async () => {
-    if (!fileQuery.data?.content) return;
+    if (!copyText) return;
     try {
-      await navigator.clipboard.writeText(fileQuery.data.content);
+      await navigator.clipboard.writeText(copyText);
       successToast('Source copied');
     } catch {
       errorToast('Copy failed');
@@ -560,6 +580,14 @@ function EntityDetail<T extends ConfigEntity>({
     >
       {(fileQuery.error as Error)?.message ?? 'Failed to read source'}
     </InfoBanner>
+  ) : fragmentPath ? (
+    fragmentSource ? (
+      <UnifiedMarkdown content={`\`\`\`yaml\n${fragmentSource}\n\`\`\``} />
+    ) : (
+      <p className="text-muted-foreground/60 text-sm italic">
+        Declared in <span className="font-mono">{fragmentPath.file}</span>.
+      </p>
+    )
   ) : body.trim() ? (
     <UnifiedMarkdown content={body} />
   ) : (
@@ -584,7 +612,7 @@ function EntityDetail<T extends ConfigEntity>({
         onCopy={onCopy}
         onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
         editing={configure.pending}
-        copyDisabled={!fileQuery.data?.content}
+        copyDisabled={!copyText}
         canWrite={canWrite}
       />
     </div>

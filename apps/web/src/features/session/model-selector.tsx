@@ -369,7 +369,7 @@ export function ModelSelector({
                   <CommandItem
                     value="model-automatic"
                     data-testid="model-auto-option"
-                    className={isAutoSelected ? 'bg-foreground/[0.06]' : undefined}
+                    className={cn('!pl-2', isAutoSelected ? 'bg-foreground/[0.06]' : undefined)}
                     onSelect={() => handleSelect(autoModel)}
                   >
                     <span
@@ -445,7 +445,7 @@ export function ModelSelector({
                           key={`${model.providerID}:${model.modelID}`}
                           value={`model-${model.providerID}-${model.modelID}`}
                           className={cn(
-                            '!pl-3',
+                            '!pl-2',
                             isSelected && 'bg-foreground/[0.06]',
                             !isLatestModel && !isModelVisible && 'opacity-60',
                           )}
