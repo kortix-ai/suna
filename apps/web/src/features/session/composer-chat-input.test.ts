@@ -3,7 +3,10 @@ import {
   boundSessionAgentName,
   buildComposerOptions,
   capFeedModels,
+  catalogAgentModelKey,
+  catalogSessionModelKey,
   presetToFlatModel,
+  resolveExplicitCatalogModel,
   resolvePresetProviderId,
 } from './composer-chat-input';
 
@@ -137,7 +140,11 @@ describe('resolvePresetProviderId', () => {
       }),
     ).toBe('pi');
     expect(
-      resolvePresetProviderId({ presetId: 'claude-sonnet-4-6', connectionKind: null, harnessFallback: 'claude' }),
+      resolvePresetProviderId({
+        presetId: 'claude-sonnet-4-6',
+        connectionKind: null,
+        harnessFallback: 'claude',
+      }),
     ).toBe('claude');
   });
 });
@@ -147,7 +154,12 @@ describe('presetToFlatModel', () => {
     // Captured live from apps/api/src/projects/lib/composer-capabilities.ts's
     // `modelPresets('anthropic_api_key', ...)` against this dev stack.
     const model = presetToFlatModel(
-      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', source: 'models.dev', provider: 'anthropic' },
+      {
+        id: 'claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        source: 'models.dev',
+        provider: 'anthropic',
+      },
       { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
     );
     expect(model.providerID).toBe('anthropic');
@@ -202,11 +214,180 @@ describe('capFeedModels', () => {
     const selected = { providerID: 'anthropic', modelID: 'model-199' };
     const result = capFeedModels(many, selected, 50);
     expect(result).toHaveLength(51);
-    expect(result.some((m) => m.providerID === 'anthropic' && m.modelID === 'model-199')).toBe(true);
+    expect(result.some((m) => m.providerID === 'anthropic' && m.modelID === 'model-199')).toBe(
+      true,
+    );
   });
 
   test('a selected model already within the cap is not duplicated', () => {
     const selected = { providerID: 'anthropic', modelID: 'model-0' };
     expect(capFeedModels(many, selected, 50)).toHaveLength(50);
+  });
+});
+
+// Regression coverage for the "OpenCode model picker selection doesn't take
+// effect" bug (2026-07-21): clicking a model persisted it via
+// `useRuntimeLocal.model.set`, but the picker's `selectedModel` was read back
+// through `useRuntimeLocal.model.currentKey`, which only resolves against
+// `flattenModels(providers)` — a catalog where every model's `providerID` is
+// literally `'kortix'`. Composer-capabilities presets (what the picker
+// actually renders, via `presetToFlatModel`) carry the REAL resolved
+// provider id instead (`'anthropic'`, `'openai'`, ...) for BYOK routes, and
+// `kortix/`-prefixed but differently-shaped ids for managed routes — neither
+// ever appears in `flattenModels(providers)`, so the pick could never read
+// back as selected. `resolveExplicitCatalogModel` is the fix: it validates a
+// persisted pick against the SAME catalog the picker renders
+// (`capabilityModelsRaw`), not a foreign one.
+describe('resolveExplicitCatalogModel', () => {
+  test('a bare BYOK preset (anthropic_api_key, provider-tagged) round-trips: persisted matches the rendered catalog', () => {
+    const models = [
+      presetToFlatModel(
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'models.dev',
+          provider: 'anthropic',
+        },
+        { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
+      ),
+    ];
+    const resolved = resolveExplicitCatalogModel({
+      sessionModel: undefined,
+      agentModel: { providerID: 'anthropic', modelID: 'claude-sonnet-5' },
+      models,
+    });
+    expect(resolved).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-5' });
+  });
+
+  test('a `kortix/`-prefixed managed preset round-trips', () => {
+    const models = [
+      presetToFlatModel(
+        { id: 'kortix/auto', name: 'Auto', source: 'kortix-gateway' },
+        { connectionKind: 'managed_gateway', harnessFallback: 'opencode' },
+      ),
+    ];
+    const resolved = resolveExplicitCatalogModel({
+      sessionModel: undefined,
+      agentModel: { providerID: 'kortix', modelID: 'auto' },
+      models,
+    });
+    expect(resolved).toEqual({ providerID: 'kortix', modelID: 'auto' });
+  });
+
+  test('a stale/unknown persisted id degrades to undefined instead of wedging the picker', () => {
+    const models = [
+      presetToFlatModel(
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'models.dev',
+          provider: 'anthropic',
+        },
+        { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
+      ),
+    ];
+    const resolved = resolveExplicitCatalogModel({
+      sessionModel: undefined,
+      agentModel: { providerID: 'openai', modelID: 'gpt-5.4-nonexistent' },
+      models,
+    });
+    expect(resolved).toBeUndefined();
+  });
+
+  test('a pre-fix `useRuntimeLocal`-vocabulary value (always providerID "kortix") never cross-matches the composer-capabilities catalog', () => {
+    const models = [
+      presetToFlatModel(
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'models.dev',
+          provider: 'anthropic',
+        },
+        { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
+      ),
+    ];
+    // This is exactly the shape `flattenModels(providers)` would have produced
+    // for this same upstream model — the OLD (broken) identity this composer
+    // no longer reads selection through.
+    const resolved = resolveExplicitCatalogModel({
+      sessionModel: undefined,
+      agentModel: { providerID: 'kortix', modelID: 'anthropic/claude-sonnet-5' },
+      models,
+    });
+    expect(resolved).toBeUndefined();
+  });
+
+  test('no persisted selection at all resolves to undefined (picker shows its default/unset state)', () => {
+    const models = [
+      presetToFlatModel(
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'models.dev',
+          provider: 'anthropic',
+        },
+        { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
+      ),
+    ];
+    expect(
+      resolveExplicitCatalogModel({ sessionModel: undefined, agentModel: undefined, models }),
+    ).toBeUndefined();
+  });
+
+  test('a valid per-session pick wins over a valid per-agent pick', () => {
+    const models = [
+      presetToFlatModel(
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'models.dev',
+          provider: 'anthropic',
+        },
+        { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
+      ),
+      presetToFlatModel(
+        { id: 'gpt-5.4', name: 'GPT-5.4', source: 'models.dev', provider: 'openai' },
+        { connectionKind: 'openai_api_key', harnessFallback: 'opencode' },
+      ),
+    ];
+    const resolved = resolveExplicitCatalogModel({
+      sessionModel: { providerID: 'openai', modelID: 'gpt-5.4' },
+      agentModel: { providerID: 'anthropic', modelID: 'claude-sonnet-5' },
+      models,
+    });
+    expect(resolved).toEqual({ providerID: 'openai', modelID: 'gpt-5.4' });
+  });
+
+  test('an invalid per-session pick does not fall back to a valid per-agent pick (session, once present, is authoritative)', () => {
+    const models = [
+      presetToFlatModel(
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'models.dev',
+          provider: 'anthropic',
+        },
+        { connectionKind: 'anthropic_api_key', harnessFallback: 'opencode' },
+      ),
+    ];
+    // Documented here so a future change to session-vs-agent precedence is a
+    // deliberate decision, not a silent drift.
+    const resolved = resolveExplicitCatalogModel({
+      sessionModel: { providerID: 'openai', modelID: 'nonexistent' },
+      agentModel: { providerID: 'anthropic', modelID: 'claude-sonnet-5' },
+      models,
+    });
+    expect(resolved).toBeUndefined();
+  });
+});
+
+describe('catalogAgentModelKey / catalogSessionModelKey', () => {
+  test('keys are namespaced apart from `useRuntimeLocal`s own `${providerMode}:${name}` scheme', () => {
+    expect(catalogAgentModelKey('kortix')).toBe('composer-capabilities-model:kortix');
+    expect(catalogSessionModelKey('ses_123')).toBe('composer-capabilities-model:ses_123');
+    // Never collides with `${providerMode}:${agentName}` (providerMode is
+    // always 'native' or 'gateway' — see modelProviderMode).
+    expect(catalogAgentModelKey('kortix')).not.toBe('gateway:kortix');
+    expect(catalogAgentModelKey('kortix')).not.toBe('native:kortix');
   });
 });

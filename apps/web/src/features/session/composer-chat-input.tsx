@@ -184,6 +184,75 @@ export function capFeedModels(
   return visible;
 }
 
+/**
+ * Persisted-selection keys for the composer-capabilities catalog picker
+ * (OpenCode/Pi — `catalogModelRequired`). Deliberately namespaced apart from
+ * `useRuntimeLocal`'s own selection keys (`${providerMode}:${agentName}`,
+ * `scopedModelSelectionKey`) — those are validated inside `useRuntimeLocal`
+ * against `flattenModels(providers)` (the gateway's own `/model-picker`
+ * catalog, where every model's `providerID` is the literal string `'kortix'`
+ * — see `GATEWAY_PROVIDER_IDS`/`projectLlmCatalogToProviderList`), a
+ * completely different identity vocabulary than composer-capabilities
+ * presets (`presetToFlatModel`'s resolved REAL provider id, e.g.
+ * `providerID: 'anthropic'` for a bare `anthropic_api_key` preset — see its
+ * doc comment).
+ *
+ * *** THE REGRESSION THIS FIXES *** (live-reproduced 2026-07-21): clicking a
+ * model in the picker called `local.model.set(model, ...)`
+ * (`useRuntimeLocal`, packages/sdk/src/react/use-runtime-local.ts), which
+ * persists fine, but `local.model.currentKey` — read right back as the
+ * picker's `selectedModel` — only resolves through
+ * `explicitModelKey`/`isModelValid`, both gated on `flatModels =
+ * flattenModels(providers)`. That catalog's entries are ALWAYS `providerID:
+ * 'kortix'`; a composer-capabilities model like `{providerID: 'anthropic',
+ * modelID: 'claude-sonnet-5'}` never appears in it, so `isModelValid` always
+ * returns false for it and `currentKey` reverts to some unrelated fallback
+ * (or `undefined`) instead of the model just clicked. The picker's trigger
+ * label — driven by matching `selectedModel` against the rendered list —
+ * never shows the pick, no matter how many times you click.
+ *
+ * The fix: OpenCode/Pi's catalog selection never goes through
+ * `useRuntimeLocal.model` at all. It's tracked here, in the SAME identity
+ * vocabulary as what's actually rendered (`capabilityModelsRaw`), persisted
+ * through the raw (validity-agnostic) `useModelStore` KV surface
+ * (`getSelectedModel`/`setSelectedModel`/`getSessionModel`/`setSessionModel`
+ * — already instantiated in this file as `runtimeModelStore` for the
+ * harness-native launch model). A distinct key prefix means a value written
+ * under either scheme is simply invisible to the other — never crashes,
+ * never wedges on a foreign shape.
+ */
+export function catalogAgentModelKey(agentName: string): string {
+  return `composer-capabilities-model:${agentName}`;
+}
+
+export function catalogSessionModelKey(sessionId: string): string {
+  return `composer-capabilities-model:${sessionId}`;
+}
+
+/**
+ * The composer-capabilities catalog picker's resolved explicit selection: the
+ * persisted per-session pick (survives reload for THIS session) if set, else
+ * the per-agent pick — validated against the catalog actually rendered
+ * (`models`, i.e. `capabilityModelsRaw`/`capabilityModels`). A persisted value
+ * that doesn't resolve to any model in the current preset list — a stale pick
+ * from a prior agent/connection, an older catalog shape, or (pre-fix) a value
+ * written under `useRuntimeLocal`'s unrelated vocabulary — degrades to
+ * `undefined` so the picker falls back to its default/unset state instead of
+ * wedging on a dead id.
+ */
+export function resolveExplicitCatalogModel(input: {
+  sessionModel: ModelKey | undefined;
+  agentModel: ModelKey | undefined;
+  models: FlatModel[];
+}): ModelKey | undefined {
+  const candidate = input.sessionModel ?? input.agentModel;
+  if (!candidate) return undefined;
+  const valid = input.models.some(
+    (m) => m.providerID === candidate.providerID && m.modelID === candidate.modelID,
+  );
+  return valid ? candidate : undefined;
+}
+
 export function buildComposerOptions(input: {
   agent: Agent | undefined;
   lockedAgentName?: string | null;
@@ -365,16 +434,26 @@ export function ComposerChatInput({
   const capabilityModelsRaw = (capability.data?.model.presets ?? []).map((preset) =>
     presetToFlatModel(preset, { connectionKind, harnessFallback: activeHarness ?? 'runtime' }),
   );
-  const selectedCatalogModel =
-    catalogModelRequired &&
-    local.model.currentKey &&
-    capabilityModelsRaw.some(
-      (model) =>
-        model.providerID === local.model.currentKey?.providerID &&
-        model.modelID === local.model.currentKey?.modelID,
-    )
-      ? local.model.currentKey
-      : null;
+  // The catalog picker's persisted selection — see `catalogAgentModelKey`'s
+  // doc comment for why this is tracked independently of `local.model.*`
+  // (`useRuntimeLocal`'s own selection state is validated against a
+  // DIFFERENT catalog/identity vocabulary and can never round-trip a
+  // composer-capabilities pick back out).
+  const catalogAgentKey = capabilityAgentName ? catalogAgentModelKey(capabilityAgentName) : null;
+  const catalogSessionKey = sessionId ? catalogSessionModelKey(sessionId) : null;
+  const persistedCatalogAgentModel = catalogAgentKey
+    ? runtimeModelStore.getSelectedModel(catalogAgentKey)
+    : undefined;
+  const persistedCatalogSessionModel = catalogSessionKey
+    ? runtimeModelStore.getSessionModel(catalogSessionKey)
+    : undefined;
+  const selectedCatalogModel = catalogModelRequired
+    ? (resolveExplicitCatalogModel({
+        sessionModel: persistedCatalogSessionModel,
+        agentModel: persistedCatalogAgentModel,
+        models: capabilityModelsRaw,
+      }) ?? null)
+    : null;
   // The gateway's `managed_gateway` preset list is its ENTIRE routable
   // catalog (thousands of entries, unconditioned on what this project can
   // actually reach — see `gatewayModelCatalog`). Main's `ModelSelector` has
@@ -490,7 +569,18 @@ export function ComposerChatInput({
         live
           ? undefined
           : catalogModelRequired
-            ? (m) => local.model.set(m ?? undefined, { recent: true })
+            ? (m) => {
+                // Persist in the SAME identity vocabulary the catalog is
+                // rendered in — see `catalogAgentModelKey`'s doc comment.
+                // `m` can be `null` (ModelSelector's onSelect signature
+                // allows clearing); either way both slots are written so
+                // per-session takes priority over per-agent on next read.
+                if (catalogAgentKey)
+                  runtimeModelStore.setSelectedModel(catalogAgentKey, m ?? undefined);
+                if (catalogSessionKey)
+                  runtimeModelStore.setSessionModel(catalogSessionKey, m ?? undefined);
+                if (m) runtimeModelStore.pushRecent(m);
+              }
             : undefined
       }
       harnessManagedModel={harnessManagedModel}
