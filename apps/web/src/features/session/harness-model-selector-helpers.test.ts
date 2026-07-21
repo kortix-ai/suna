@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  connectionContextLine,
-  connectionGroupLabel,
   defaultOptionCopy,
+  filterHarnessPresets,
   harnessSubscriptionCopy,
   isSubscriptionConnection,
+  presetProviderTag,
   shouldShowModelSearch,
 } from './harness-model-selector-helpers';
 
@@ -73,53 +73,68 @@ describe('harnessSubscriptionCopy', () => {
   });
 });
 
-describe('connectionContextLine', () => {
-  test('renders plain-words connection context per kind', () => {
-    expect(connectionContextLine({ connectionKind: 'managed_gateway' })).toBe('via Kortix (included)');
-    expect(connectionContextLine({ connectionKind: 'anthropic_api_key' })).toBe('via your Anthropic key');
-    expect(connectionContextLine({ connectionKind: 'openai_api_key' })).toBe('via your OpenAI key');
-    expect(
-      connectionContextLine({ connectionKind: 'openai_compatible', connectionLabel: 'Local vLLM' }),
-    ).toBe('via Local vLLM');
-    expect(connectionContextLine({ connectionKind: 'openai_compatible' })).toBe('via your custom endpoint');
+describe('presetProviderTag', () => {
+  test('gateway-style ids surface their provider prefix', () => {
+    expect(presetProviderTag({ id: 'anthropic/claude-sonnet-5' })).toBe('anthropic');
+    expect(presetProviderTag({ id: 'deepinfra/llama-3.1-70b' })).toBe('deepinfra');
   });
 
-  test('omits the header for subscriptions (the note already says "via …") and unresolved connections', () => {
-    expect(connectionContextLine({ connectionKind: 'claude_subscription' })).toBeNull();
-    expect(connectionContextLine({ connectionKind: 'codex_subscription' })).toBeNull();
-    expect(connectionContextLine({ connectionKind: null })).toBeNull();
-    expect(connectionContextLine({ connectionKind: 'native_config' })).toBeNull();
+  test('the synthetic kortix/ namespace never tags as "kortix" — the REAL provider shows instead', () => {
+    // Managed-gateway preset ids are `kortix/<real-provider>/<model>` — a
+    // "kortix" tag on every row is exactly the label noise being removed.
+    expect(presetProviderTag({ id: 'kortix/anthropic/claude-sonnet-5' })).toBe('anthropic');
+    expect(presetProviderTag({ id: 'kortix/openai/gpt-5.4' })).toBe('openai');
+    // Managed-lineup models have no real sub-provider — no tag at all.
+    expect(presetProviderTag({ id: 'kortix/managed-model' })).toBeNull();
+  });
+
+  test('bare harness-native ids get no tag', () => {
+    expect(presetProviderTag({ id: 'claude-sonnet-4-6' })).toBeNull();
+    expect(presetProviderTag({ id: '/leading-slash' })).toBeNull();
   });
 });
 
-describe('connectionGroupLabel', () => {
-  test('groups models under human connection labels, never raw ids', () => {
-    expect(connectionGroupLabel({ connectionKind: 'managed_gateway' })).toBe('Kortix — included');
-    expect(connectionGroupLabel({ connectionKind: 'anthropic_api_key' })).toBe('Your Anthropic key');
-    expect(connectionGroupLabel({ connectionKind: 'openai_api_key' })).toBe('Your OpenAI key');
-    expect(
-      connectionGroupLabel({ connectionKind: 'anthropic_compatible', connectionLabel: 'Local proxy' }),
-    ).toBe('Local proxy');
-    expect(connectionGroupLabel({ connectionKind: 'anthropic_compatible' })).toBe('Custom endpoint');
+describe('filterHarnessPresets — synthetic Auto exclusion', () => {
+  test("the gateway catalog's synthetic Auto entries never render — the pinned Auto row already IS that option", () => {
+    const result = filterHarnessPresets({
+      presets: [
+        { id: 'kortix/auto', name: 'Auto', source: 'kortix-gateway' },
+        { id: 'auto', name: 'Auto', source: 'kortix-gateway' },
+        {
+          id: 'kortix/anthropic/claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          source: 'kortix-gateway',
+        },
+      ],
+      query: '',
+      selectedModel: null,
+      cap: 50,
+    });
+    expect(result.visible.map((p) => p.id)).toEqual(['kortix/anthropic/claude-sonnet-5']);
+    expect(result.hiddenCount).toBe(0);
   });
 });
 
 describe('defaultOptionCopy', () => {
-  test('managed gateway pins "Automatic — Kortix picks the best model"', () => {
-    expect(defaultOptionCopy({ connectionKind: 'managed_gateway', harnessLabel: 'OpenCode' })).toEqual({
-      label: 'Automatic',
-      subtitle: 'Kortix picks the best model',
+  test('the default row always reads "Auto"; the gateway explanation credits Kortix', () => {
+    expect(
+      defaultOptionCopy({ connectionKind: 'managed_gateway', harnessLabel: 'OpenCode' }),
+    ).toEqual({
+      label: 'Auto',
+      subtitle: 'Kortix picks the best model for you.',
     });
   });
 
-  test('every other connection pins "Harness default — <Harness> decides"', () => {
-    expect(defaultOptionCopy({ connectionKind: 'claude_subscription', harnessLabel: 'Claude Code' })).toEqual({
-      label: 'Harness default',
-      subtitle: 'Claude Code decides',
+  test('every other connection explains that the harness decides', () => {
+    expect(
+      defaultOptionCopy({ connectionKind: 'claude_subscription', harnessLabel: 'Claude Code' }),
+    ).toEqual({
+      label: 'Auto',
+      subtitle: 'Claude Code decides which model to run.',
     });
     expect(defaultOptionCopy({ connectionKind: null, harnessLabel: 'Pi' })).toEqual({
-      label: 'Harness default',
-      subtitle: 'Pi decides',
+      label: 'Auto',
+      subtitle: 'Pi decides which model to run.',
     });
   });
 });
@@ -129,5 +144,60 @@ describe('shouldShowModelSearch', () => {
     expect(shouldShowModelSearch(0)).toBe(false);
     expect(shouldShowModelSearch(8)).toBe(false);
     expect(shouldShowModelSearch(9)).toBe(true);
+  });
+});
+
+describe('filterHarnessPresets', () => {
+  const preset = (id: string, name = id) => ({ id, name, source: 'models.dev' });
+  const many = Array.from({ length: 200 }, (_, i) => preset(`prov/model-${i}`, `Model ${i}`));
+
+  test('renders the whole list when it fits under the cap', () => {
+    const result = filterHarnessPresets({
+      presets: many.slice(0, 10),
+      query: '',
+      selectedModel: null,
+      cap: 50,
+    });
+    expect(result.visible).toHaveLength(10);
+    expect(result.hiddenCount).toBe(0);
+  });
+
+  test('caps a huge list and reports how many rows stayed hidden', () => {
+    const result = filterHarnessPresets({ presets: many, query: '', selectedModel: null, cap: 50 });
+    expect(result.visible).toHaveLength(50);
+    expect(result.hiddenCount).toBe(150);
+  });
+
+  test('search filters the FULL list, not just the visible slice', () => {
+    const result = filterHarnessPresets({
+      presets: many,
+      query: 'model 199',
+      selectedModel: null,
+      cap: 50,
+    });
+    expect(result.visible.map((p) => p.id)).toEqual(['prov/model-199']);
+    expect(result.hiddenCount).toBe(0);
+  });
+
+  test('matches on id as well as name, case-insensitive', () => {
+    const result = filterHarnessPresets({
+      presets: many,
+      query: 'PROV/MODEL-42',
+      selectedModel: null,
+      cap: 50,
+    });
+    expect(result.visible.map((p) => p.id)).toEqual(['prov/model-42']);
+  });
+
+  test('the selected model is always visible, even when the cap would hide it', () => {
+    const result = filterHarnessPresets({
+      presets: many,
+      query: '',
+      selectedModel: 'prov/model-199',
+      cap: 50,
+    });
+    expect(result.visible).toHaveLength(51);
+    expect(result.visible.some((p) => p.id === 'prov/model-199')).toBe(true);
+    expect(result.hiddenCount).toBe(149);
   });
 });

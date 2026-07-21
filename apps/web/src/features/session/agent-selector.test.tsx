@@ -86,6 +86,14 @@ async function flush() {
   });
 }
 
+// Radix `HoverCard` runs even focus-triggered opens through its `openDelay`
+// timer (250ms in `CommandItemHoverCard`) — wait it out in real time.
+async function flushHoverOpen() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+}
+
 const AGENTS: Agent[] = [
   { name: 'claude', harness: 'claude', description: 'Anthropic coding agent' },
   { name: 'kortix', harness: 'opencode', description: 'Model-agnostic OpenCode agent' },
@@ -104,12 +112,14 @@ function renderSelector(over: Partial<Parameters<typeof AgentSelector>[0]> = {})
 }
 
 describe('AgentSelector', () => {
-  it('renders the trigger with the selected agent name and harness', () => {
+  it('renders the trigger with the selected agent shown as its brand name', () => {
     renderSelector();
     const trigger = screen.getByTestId('agent-selector');
     expect(trigger).toBeTruthy();
     expect(trigger.getAttribute('data-harness')).toBe('claude');
-    expect(within(trigger).getByText('claude')).toBeTruthy();
+    // Single-agent harnesses (Claude Code, Codex, Pi) read as the brand,
+    // never as the raw agent name ("claude").
+    expect(within(trigger).getByText('Claude Code')).toBeTruthy();
   });
 
   it('lists only primary agents (hidden and subagent entries excluded) as agent-option rows', async () => {
@@ -150,38 +160,89 @@ describe('AgentSelector', () => {
   });
 });
 
-// Every agent here is `opencode` — the single-harness case the brief pins as
-// unchanged (existing behavior: a flat list, no group headers).
-const SINGLE_HARNESS_AGENTS: Agent[] = [
-  { name: 'kortix', harness: 'opencode', description: 'Model-agnostic OpenCode agent' },
-  { name: 'reviewer', harness: 'opencode', description: 'Review-focused OpenCode agent' },
-];
-
-describe('AgentSelector — harness grouping', () => {
-  it('single-harness project renders a flat list with no group headers', async () => {
-    renderSelector({ agents: SINGLE_HARNESS_AGENTS, selectedAgent: 'kortix' });
-    fireEvent.click(screen.getByTestId('agent-selector'));
-    await flush();
-
-    expect(screen.getAllByTestId('agent-option')).toHaveLength(2);
-    expect(screen.queryAllByTestId('agent-group-heading')).toHaveLength(0);
-  });
-
-  it('agents spanning more than one harness always render group headers with a harness icon + label', async () => {
+describe('AgentSelector — uniform flat list', () => {
+  it('never renders group headings — one flat list of logo + name rows', async () => {
     renderSelector();
     fireEvent.click(screen.getByTestId('agent-selector'));
     await flush();
 
-    const headings = screen.getAllByTestId('agent-group-heading');
-    // AGENTS spans `claude` and `opencode` — two groups.
-    expect(headings).toHaveLength(2);
-    for (const heading of headings) {
-      // `ProviderLogo`'s wrapper is `aria-hidden` (decorative brand mark),
-      // so query the DOM directly rather than through the accessibility tree.
-      expect(heading.querySelector('img')).toBeTruthy();
+    expect(screen.queryAllByTestId('agent-group-heading')).toHaveLength(0);
+
+    // Every row shares the same anatomy: a harness logo and a name.
+    // `ProviderLogo`'s wrapper is `aria-hidden` (decorative brand mark),
+    // so query the DOM directly rather than through the accessibility tree.
+    for (const option of screen.getAllByTestId('agent-option')) {
+      expect(option.querySelector('img')).toBeTruthy();
     }
-    expect(headings.map((h) => h.textContent).join(' ')).toMatch(/claude/i);
-    expect(headings.map((h) => h.textContent).join(' ')).toMatch(/opencode/i);
+  });
+
+  it('single-agent harnesses read as the brand, with no badge or description chrome', async () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const claudeOption = screen
+      .getAllByTestId('agent-option')
+      .find((o) => o.getAttribute('data-agent') === 'claude')!;
+    expect(within(claudeOption).getByText('Claude Code')).toBeTruthy();
+    // No redundant chrome: the harness IS the agent.
+    expect(within(claudeOption).queryByText('Anthropic coding agent')).toBeNull();
+    expect(within(claudeOption).queryByText(/^Claude$/)).toBeNull();
+  });
+
+  it('OpenCode agents read as themselves, with no description chrome', async () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const kortixOption = screen
+      .getAllByTestId('agent-option')
+      .find((o) => o.getAttribute('data-agent') === 'kortix')!;
+    expect(within(kortixOption).getByText('kortix')).toBeTruthy();
+    expect(within(kortixOption).queryByText('Model-agnostic OpenCode agent')).toBeNull();
+  });
+
+  it('an OpenCode row surfaces its manifest description in a hover card', async () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const kortixOption = screen
+      .getAllByTestId('agent-option')
+      .find((o) => o.getAttribute('data-agent') === 'kortix')!;
+    // Radix HoverCard also opens on keyboard focus — the deterministic way to
+    // trigger it in tests (no simulated pointer geometry needed).
+    fireEvent.focus(kortixOption);
+    await flushHoverOpen();
+
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card.textContent).toContain('kortix');
+    expect(card.textContent).toContain('Model-agnostic OpenCode agent');
+  });
+
+  it('a brand row hover card explains the harness', async () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const claudeOption = screen
+      .getAllByTestId('agent-option')
+      .find((o) => o.getAttribute('data-agent') === 'claude')!;
+    fireEvent.focus(claudeOption);
+    await flushHoverOpen();
+
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card.textContent).toContain('Claude Code');
+    expect(card.textContent).toContain("Anthropic's coding harness");
+  });
+
+  it('brand rows come before OpenCode agents', async () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId('agent-selector'));
+    await flush();
+
+    const options = screen.getAllByTestId('agent-option');
+    expect(options.map((o) => o.getAttribute('data-agent'))).toEqual(['claude', 'kortix']);
   });
 });
 

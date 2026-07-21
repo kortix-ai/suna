@@ -5,6 +5,7 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandItemHoverCard,
   CommandList,
   CommandPopover,
   CommandPopoverContent,
@@ -13,23 +14,27 @@ import {
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { harnessPresentation, type KortixHarness } from '@kortix/sdk/react';
 import type { HarnessAuthKind } from '@kortix/sdk';
+import { harnessPresentation, type KortixHarness } from '@kortix/sdk/react';
 import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
 import {
-  connectionContextLine,
-  connectionGroupLabel,
   defaultOptionCopy,
+  filterHarnessPresets,
   harnessSubscriptionCopy,
   isSubscriptionConnection,
+  presetProviderTag,
   shouldShowModelSearch,
 } from './harness-model-selector-helpers';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 export { harnessSubscriptionCopy };
+
+/** Most rows a popover list can mount before opening/typing visibly stutters —
+ *  everything past the cap stays reachable through search. */
+const RENDERED_PRESET_CAP = 50;
 
 export interface HarnessModelSelectorProps {
   /**
@@ -61,14 +66,13 @@ export interface HarnessModelSelectorProps {
  * session launch. Keeping that distinction visible prevents a gateway model
  * from leaking across harness switches.
  *
- * Subscription-backed harnesses (Claude Code, Codex) render a deliberately
- * minimal popover — default option, "Models managed by …" note, optional
- * custom-ID input — since there is no catalog to browse. Every other
- * connection (Kortix, an API key, a custom endpoint) gets the full "what will
- * this agent run on" structure: a one-line resolved-connection header, the
- * recommended default pinned first with a check, the models actually usable
- * right now grouped under a human connection label, and a footer that opens
- * the Models page instead of bleeding the whole catalog into this picker.
+ * The popover is deliberately plain (2026-07-21 simplification pass — no
+ * connection jargon, one aligned column): search on top when the list is
+ * long, "Automatic" pinned first, one-line model rows, and a quiet footer
+ * holding the expert paths (custom model ID behind a disclosure, Manage
+ * models). Subscription-backed harnesses (Claude Code, Codex) have no catalog
+ * to browse, so they render just the default row + a "Models managed by …"
+ * note over the same footer.
  */
 export function HarnessModelSelector({
   harness,
@@ -84,32 +88,42 @@ export function HarnessModelSelector({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [customModel, setCustomModel] = useState(selectedModel ?? '');
+  const [customOpen, setCustomOpen] = useState(false);
   const { openConnectProvider, modal: connectionModal } = useModelConnectionGate();
 
   const isSubscription = isSubscriptionConnection(connectionKind);
-  const contextLine = connectionContextLine({ connectionKind, connectionLabel });
-  const defaultCopy = defaultOptionCopy({ connectionKind: connectionKind ?? null, harnessLabel: presentation.label });
+  const defaultCopy = defaultOptionCopy({
+    connectionKind: connectionKind ?? null,
+    harnessLabel: presentation.label,
+  });
   const subscriptionCopy = harnessSubscriptionCopy({
     connectionKind,
     harnessLabel: presentation.label,
     connectionLabel,
   });
-  const groupLabel = connectionGroupLabel({ connectionKind, connectionLabel });
   const showSearch = !isSubscription && shouldShowModelSearch(presets.length);
 
-  const visiblePresets = useMemo(() => {
-    if (isSubscription) return [];
-    const q = search.trim().toLowerCase();
-    if (!q) return presets;
-    return presets.filter(
-      (preset) => preset.name.toLowerCase().includes(q) || preset.id.toLowerCase().includes(q),
-    );
-  }, [presets, search, isSubscription]);
+  // A gateway-backed preset list can be the entire model catalog (thousands
+  // of entries — the Pi-on-Kortix case), so two guards keep this popover
+  // lag-free: the search value is deferred (keystrokes never block on
+  // re-filtering the full list) and the rendered rows are capped, with a
+  // count row telling the user search reaches the rest.
+  const deferredSearch = useDeferredValue(search);
+  const { visible: visiblePresets, hiddenCount } = useMemo(() => {
+    if (isSubscription) return { visible: [], hiddenCount: 0 };
+    return filterHarnessPresets({
+      presets,
+      query: deferredSearch,
+      selectedModel,
+      cap: RENDERED_PRESET_CAP,
+    });
+  }, [presets, deferredSearch, selectedModel, isSubscription]);
 
   useEffect(() => {
     if (!open) {
       setCustomModel(selectedModel ?? '');
       setSearch('');
+      setCustomOpen(false);
     }
   }, [open, selectedModel]);
 
@@ -166,48 +180,52 @@ export function HarnessModelSelector({
           sideOffset={8}
           className="bg-sidebar text-sidebar-foreground hover:text-foreground border-border w-[340px] rounded-md border shadow-xs"
         >
-          {contextLine ? (
-            <div className="text-muted-foreground border-b px-4 py-2 text-xs">{contextLine}</div>
+          {showSearch ? (
+            <CommandInput
+              compact
+              placeholder="Search models…"
+              value={search}
+              onValueChange={setSearch}
+            />
           ) : null}
 
           <CommandList className="max-h-[300px]">
             <CommandGroup forceMount>
-              <CommandItem
-                value={`${harness}-default-model`}
-                data-testid="harness-model-default"
-                className={!selectedModel ? 'bg-primary/[0.06]' : undefined}
-                onSelect={() => {
-                  onSelect(null);
-                  setOpen(false);
-                }}
-              >
-                <div className="min-w-0 flex-1 py-0.5">
-                  <p className="text-sm font-medium">{defaultCopy.label}</p>
-                  <p className="text-muted-foreground mt-1 text-xs">{defaultCopy.subtitle}</p>
-                </div>
-                {!selectedModel ? <Check className="text-foreground size-4 shrink-0" /> : null}
-              </CommandItem>
-            </CommandGroup>
+              {/* Pinned first; steps aside while the user is searching — a
+                  query means they already chose not-auto. One line like every
+                  model row; the hover card explains who picks the model. */}
+              {!search.trim() && (
+                <CommandItemHoverCard
+                  content={
+                    <div data-testid="harness-model-default-hover-card">
+                      <p className="text-sm font-medium">{defaultCopy.label}</p>
+                      <p className="text-muted-foreground mt-1 text-xs leading-snug text-pretty">
+                        {defaultCopy.subtitle}
+                      </p>
+                    </div>
+                  }
+                >
+                  <CommandItem
+                    value={`${harness}-default-model`}
+                    data-testid="harness-model-default"
+                    className={!selectedModel ? 'bg-primary/[0.06]' : undefined}
+                    onSelect={() => {
+                      onSelect(null);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {defaultCopy.label}
+                    </span>
+                    {!selectedModel ? <Check className="text-foreground size-4 shrink-0" /> : null}
+                  </CommandItem>
+                </CommandItemHoverCard>
+              )}
 
-            {isSubscription ? (
-              subscriptionCopy ? (
-                <div data-testid="harness-model-subscription-note" className="px-4 py-3">
-                  <p className="text-foreground text-sm font-medium">{subscriptionCopy.title}</p>
-                  <p className="text-muted-foreground mt-1 text-xs">{subscriptionCopy.subtitle}</p>
-                </div>
-              ) : null
-            ) : presets.length > 0 ? (
-              <>
-                {showSearch ? (
-                  <CommandInput
-                    compact
-                    placeholder="Search models…"
-                    value={search}
-                    onValueChange={setSearch}
-                  />
-                ) : null}
-                <CommandGroup heading={groupLabel} forceMount>
-                  {visiblePresets.map((preset) => (
+              {!isSubscription &&
+                visiblePresets.map((preset) => {
+                  const providerTag = presetProviderTag(preset);
+                  return (
                     <CommandItem
                       key={preset.id}
                       value={`${preset.name} ${preset.id}`}
@@ -219,31 +237,46 @@ export function HarnessModelSelector({
                         setOpen(false);
                       }}
                     >
-                      <div className="min-w-0 flex-1 py-0.5">
-                        <p className="truncate text-sm font-medium">{preset.name}</p>
-                        <p className="text-muted-foreground mt-1 truncate text-xs">{preset.id}</p>
-                      </div>
+                      <span className="min-w-0 flex-1 truncate text-sm">{preset.name}</span>
+                      {providerTag ? (
+                        <span className="text-muted-foreground/60 shrink-0 text-xs">
+                          {providerTag}
+                        </span>
+                      ) : null}
                       {selectedModel === preset.id ? (
                         <Check className="text-foreground size-4 shrink-0" />
                       ) : null}
                     </CommandItem>
-                  ))}
-                </CommandGroup>
-              </>
+                  );
+                })}
+
+              {!isSubscription && hiddenCount > 0 && (
+                <div
+                  data-testid="harness-model-hidden-count"
+                  className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs"
+                >
+                  {hiddenCount.toLocaleString()} more — search to find them
+                </div>
+              )}
+            </CommandGroup>
+
+            {isSubscription && subscriptionCopy ? (
+              <div data-testid="harness-model-subscription-note" className="px-3.5 pt-1 pb-3">
+                <p className="text-foreground text-sm font-medium">{subscriptionCopy.title}</p>
+                <p className="text-muted-foreground mt-1 text-xs">{subscriptionCopy.subtitle}</p>
+              </div>
             ) : null}
           </CommandList>
 
-          {customAllowed && (
-            <div className="border-t px-3 py-3">
-              <label className="text-xs font-medium" htmlFor={`${harness}-custom-model`}>
-                Custom model ID
-              </label>
-              <div className="mt-2 flex items-center gap-2">
+          {(customAllowed || !isSubscription) &&
+            (customOpen ? (
+              <div className="flex items-center gap-2 border-t px-3.5 py-2.5">
                 <Input
                   id={`${harness}-custom-model`}
                   data-testid="harness-model-custom-input"
                   variant="popover"
                   size="xs"
+                  autoFocus
                   value={customModel}
                   placeholder={presentation.customModelPlaceholder}
                   onChange={(event) => setCustomModel(event.target.value)}
@@ -265,19 +298,30 @@ export function HarnessModelSelector({
                   Apply
                 </Button>
               </div>
-            </div>
-          )}
-
-          {!isSubscription && (
-            <button
-              type="button"
-              onClick={handleManageModels}
-              className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 border-t px-4 py-2.5 text-xs font-medium transition-colors duration-200"
-            >
-              <SlidersHorizontal className="size-3.5 shrink-0" />
-              Manage models
-            </button>
-          )}
+            ) : (
+              <div className="text-muted-foreground flex items-center border-t text-xs font-medium">
+                {customAllowed && (
+                  <button
+                    type="button"
+                    data-testid="harness-model-custom-toggle"
+                    onClick={() => setCustomOpen(true)}
+                    className="hover:text-foreground hover:bg-foreground/[0.04] flex-1 px-3.5 py-2.5 text-left transition-colors duration-200"
+                  >
+                    Custom model ID…
+                  </button>
+                )}
+                {!isSubscription && (
+                  <button
+                    type="button"
+                    onClick={handleManageModels}
+                    className="hover:text-foreground hover:bg-foreground/[0.04] flex items-center gap-1.5 px-3.5 py-2.5 transition-colors duration-200"
+                  >
+                    <SlidersHorizontal className="size-3.5 shrink-0" />
+                    Manage
+                  </button>
+                )}
+              </div>
+            ))}
         </CommandPopoverContent>
       </CommandPopover>
     </>

@@ -2,11 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Badge } from '@/components/ui/badge';
 import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandItemHoverCard,
   CommandList,
   CommandPopover,
   CommandPopoverContent,
@@ -27,11 +27,7 @@ import {
 
 import { Check, ChevronDown, Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AGENT_GROUP_ORDER,
-  isHarnessDisconnected,
-  shouldGroupAgentsByHarness,
-} from './agent-selector-helpers';
+import { isHarnessDisconnected } from './agent-selector-helpers';
 import {
   COMPOSER_PILL_ACTIVE_CLASS,
   COMPOSER_PILL_DISABLED_CLASS,
@@ -51,14 +47,46 @@ const HARNESS_ICON_PROVIDER_ID: Record<KortixHarness, string> = {
   pi: 'pi',
 };
 
+/** Claude Code, Codex, and Pi surface exactly one agent — the harness itself —
+ *  so those rows read as the brand ("Claude Code"), while OpenCode's many
+ *  named agents read as themselves ("kortix", "build", …). */
+const BRAND_ROW_HARNESSES: ReadonlySet<KortixHarness> = new Set(['claude', 'codex', 'pi']);
+
+/** Single-agent brand harnesses first, then OpenCode's agents, then agents
+ *  with no resolvable harness. Stable within each harness. */
+const HARNESS_ROW_ORDER: ReadonlyArray<KortixHarness | 'other'> = [
+  'claude',
+  'codex',
+  'pi',
+  'opencode',
+  'other',
+];
+
 function HarnessIcon({ harness, className }: { harness: KortixHarness; className?: string }) {
   return (
     <ProviderLogo
       providerID={HARNESS_ICON_PROVIDER_ID[harness]}
-      size="small"
-      className={cn('size-3.5 rounded-none bg-transparent dark:bg-transparent', className)}
+      size="large"
+      className={cn('size-4 rounded-none bg-transparent dark:bg-transparent', className)}
     />
   );
+}
+
+function agentDisplayName(agent: Agent | undefined): string {
+  if (!agent) return 'Agent';
+  const harness = agentHarness(agent);
+  return harness && BRAND_ROW_HARNESSES.has(harness)
+    ? harnessPresentation(harness).label
+    : agent.name;
+}
+
+/** What the row's hover card explains: the harness blurb for brand rows
+ *  (Claude Code, Codex, Pi), the agent's own manifest description for
+ *  OpenCode/other agents. `null` → no card, the row renders bare. */
+function agentHoverDescription(agent: Agent): string | null {
+  const harness = agentHarness(agent);
+  if (harness && BRAND_ROW_HARNESSES.has(harness)) return harnessPresentation(harness).description;
+  return agent.description?.trim() || null;
 }
 
 export function AgentSelector({
@@ -115,42 +143,29 @@ export function AgentSelector({
     if (!open) setSearch('');
   }, [open]);
 
-  // Fuzzy filter
+  // Match what the user can actually see: the row's display name (brand label
+  // for Claude Code/Codex/Pi, agent name for OpenCode) plus the raw name.
   const filteredPrimary = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
-    return primaryAgents.filter((a) => {
-      const presentation = agentHarnessPresentation(a);
-      return (
-        a.name.toLowerCase().includes(q) ||
-        (a.description || '').toLowerCase().includes(q) ||
-        (presentation?.label || '').toLowerCase().includes(q)
-      );
-    });
+    return primaryAgents.filter(
+      (a) => a.name.toLowerCase().includes(q) || agentDisplayName(a).toLowerCase().includes(q),
+    );
   }, [primaryAgents, search]);
 
-  // Group headers only earn their place once agents actually span more than
-  // one harness — the common single-harness project gets a flat list.
-  const shouldGroup = useMemo(
-    () => shouldGroupAgentsByHarness(primaryAgents.map((a) => agentHarness(a))),
-    [primaryAgents],
-  );
-
-  const groupedAgents = useMemo(() => {
-    if (!shouldGroup) return [{ harness: 'flat' as const, agents: filteredPrimary }];
-    const groups = new Map<KortixHarness | 'other', Agent[]>();
-    for (const agent of filteredPrimary) {
-      const key = agentHarness(agent) ?? 'other';
-      groups.set(key, [...(groups.get(key) ?? []), agent]);
-    }
-    const order: ReadonlyArray<KortixHarness | 'other'> = AGENT_GROUP_ORDER;
-    return order
-      .map((harness) => ({ harness, agents: groups.get(harness) ?? [] }))
-      .filter((group) => group.agents.length > 0);
-  }, [filteredPrimary, shouldGroup]);
+  // One flat list, every row the same anatomy: logo + name. No group
+  // headings, no per-row descriptions — the logo already says which harness
+  // a row belongs to, and identical rows are the easiest thing to scan.
+  const orderedAgents = useMemo(() => {
+    const rank = new Map(HARNESS_ROW_ORDER.map((harness, index) => [harness, index]));
+    return [...filteredPrimary].sort(
+      (a, b) =>
+        (rank.get(agentHarness(a) ?? 'other') ?? HARNESS_ROW_ORDER.length) -
+        (rank.get(agentHarness(b) ?? 'other') ?? HARNESS_ROW_ORDER.length),
+    );
+  }, [filteredPrimary]);
 
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name || 'Agent';
   const currentHarness = agentHarnessPresentation(currentAgent);
 
   return (
@@ -188,8 +203,10 @@ export function AgentSelector({
               disabled && COMPOSER_PILL_DISABLED_CLASS,
             )}
           >
-            <span className="max-w-[72px] truncate capitalize sm:max-w-[100px]">{displayName}</span>
             {currentHarness ? <HarnessIcon harness={currentHarness.id} /> : null}
+            <span className="max-w-[96px] truncate capitalize sm:max-w-[130px]">
+              {agentDisplayName(currentAgent)}
+            </span>
             {disabled ? (
               <Lock className="size-3 shrink-0 opacity-60" />
             ) : (
@@ -204,7 +221,7 @@ export function AgentSelector({
         </CommandPopoverTrigger>
       </Hint>
 
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
+      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[260px]">
         <CommandInput
           compact
           placeholder={tHardcodedUi.raw(
@@ -215,95 +232,80 @@ export function AgentSelector({
         />
 
         <CommandList className="max-h-[320px]">
-          {groupedAgents.map((group) => {
-            const groupPresentation =
-              shouldGroup && group.harness !== 'other' && group.harness !== 'flat'
-                ? harnessPresentation(group.harness)
-                : null;
-            return (
-              <CommandGroup
-                key={group.harness}
-                heading={
-                  shouldGroup ? (
-                    <div
-                      data-testid="agent-group-heading"
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                        {groupPresentation ? (
-                          <HarnessIcon harness={groupPresentation.id} />
-                        ) : null}
-                        {groupPresentation?.label ?? 'Other agents'}
-                      </span>
-                      <span className="text-muted-foreground/50 text-xs tabular-nums">
-                        {group.agents.length}
-                      </span>
-                    </div>
-                  ) : undefined
-                }
-                forceMount
-              >
-                {group.agents.map((agent) => {
-                  const isSelected =
-                    selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
-                  const presentation = agentHarnessPresentation(agent);
-                  const isDisconnected = isHarnessDisconnected(
-                    presentation ? runtimeStatusByHarness.get(presentation.id) : undefined,
-                  );
-                  return (
-                    <CommandItem
-                      key={agent.name}
-                      value={`agent-${agent.name}`}
-                      data-testid="agent-option"
-                      data-agent={agent.name}
-                      data-harness={presentation?.id ?? 'unknown'}
-                      className={isSelected ? 'bg-primary/[0.06]' : undefined}
-                      onSelect={() => {
-                        if (disabled) return;
-                        onSelect(agent.name);
-                        setOpen(false);
-                      }}
-                    >
-                      <div className="min-w-0 flex-1 py-0.5">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <div
-                            className={cn(
-                              'truncate text-sm leading-tight capitalize',
-                              isSelected
-                                ? 'text-foreground font-semibold'
-                                : 'text-foreground/90 font-medium',
-                            )}
-                          >
-                            {agent.name}
-                          </div>
-                          {presentation ? (
-                            <Badge variant="outline" size="xs" className="shrink-0 gap-1 pl-1">
-                              <HarnessIcon harness={presentation.id} className="size-3" />
-                              {presentation.shortLabel}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {agent.description && (
-                          <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                            {agent.description}
-                          </p>
-                        )}
+          <CommandGroup forceMount>
+            {orderedAgents.map((agent) => {
+              const isSelected =
+                selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
+              const presentation = agentHarnessPresentation(agent);
+              const isDisconnected = isHarnessDisconnected(
+                presentation ? runtimeStatusByHarness.get(presentation.id) : undefined,
+              );
+              const description = agentHoverDescription(agent);
+              return (
+                <CommandItemHoverCard
+                  key={agent.name}
+                  content={
+                    description ? (
+                      <div data-testid="agent-hover-card">
+                        <p
+                          className={cn(
+                            'text-sm font-medium',
+                            (!presentation || !BRAND_ROW_HARNESSES.has(presentation.id)) &&
+                              'capitalize',
+                          )}
+                        >
+                          {agentDisplayName(agent)}
+                        </p>
+                        <p className="text-muted-foreground mt-1 text-xs leading-snug text-pretty">
+                          {description}
+                        </p>
                       </div>
-                      {isDisconnected && (
-                        <Hint label="No model connected" side="right" className="text-xs">
-                          <span
-                            data-testid="agent-connection-dot"
-                            className="bg-kortix-orange size-1.5 shrink-0 rounded-full"
-                          />
-                        </Hint>
+                    ) : null
+                  }
+                >
+                  <CommandItem
+                    value={`agent-${agent.name}`}
+                    data-testid="agent-option"
+                    data-agent={agent.name}
+                    data-harness={presentation?.id ?? 'unknown'}
+                    className={cn('gap-2 py-2', isSelected && 'bg-primary/[0.06]')}
+                    onSelect={() => {
+                      if (disabled) return;
+                      onSelect(agent.name);
+                      setOpen(false);
+                    }}
+                  >
+                    {presentation ? (
+                      <HarnessIcon harness={presentation.id} className="size-4 shrink-0" />
+                    ) : (
+                      <span aria-hidden className="size-4 shrink-0" />
+                    )}
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate text-sm leading-tight',
+                        (!presentation || !BRAND_ROW_HARNESSES.has(presentation.id)) &&
+                          'capitalize',
+                        isSelected
+                          ? 'text-foreground font-semibold'
+                          : 'text-foreground/90 font-medium',
                       )}
-                      {isSelected && <Check className="text-foreground shrink-0" />}
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            );
-          })}
+                    >
+                      {agentDisplayName(agent)}
+                    </span>
+                    {isDisconnected && (
+                      <Hint label="No model connected" side="right" className="text-xs">
+                        <span
+                          data-testid="agent-connection-dot"
+                          className="bg-kortix-orange size-1.5 shrink-0 rounded-full"
+                        />
+                      </Hint>
+                    )}
+                    {isSelected && <Check className="text-foreground size-4 shrink-0" />}
+                  </CommandItem>
+                </CommandItemHoverCard>
+              );
+            })}
+          </CommandGroup>
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (

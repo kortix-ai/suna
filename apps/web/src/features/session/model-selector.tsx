@@ -7,6 +7,7 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandItemHoverCard,
   CommandList,
   CommandPopover,
   CommandPopoverContent,
@@ -22,7 +23,6 @@ import {
   FolderGit2,
   KeyRound,
   SlidersHorizontal,
-  Sparkles,
   Star,
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
@@ -41,13 +41,12 @@ import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
 import { shouldShowModelSearch } from './harness-model-selector-helpers';
-import { modelSelectorContextLine, pickerGroupId } from './model-selector-helpers';
+import { pickerGroupId } from './model-selector-helpers';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
-export { Tag };
-export { pickerGroupId };
+export { pickerGroupId, Tag };
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
@@ -184,9 +183,9 @@ export function ModelSelector({
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  // Plain-words trigger label (never a raw model id) — "Automatic" wins over
+  // Plain-words trigger label (never a raw model id) — "Auto" wins over
   // whatever catalog name the synthetic auto entry happens to carry.
-  const displayName = isAutoSelected ? 'Automatic' : current?.modelName || unsetLabel;
+  const displayName = isAutoSelected ? 'Auto' : current?.modelName || unsetLabel;
 
   // Reset transient picker state when closing.
   useEffect(() => {
@@ -270,11 +269,7 @@ export function ModelSelector({
     return entries;
   }, [visibleModels, llmGatewayEnabled]);
 
-  // One-line "what will this agent run on" context header — only meaningful
-  // once the visible list resolves to a single connection/group.
-  const contextLine = useMemo(() => modelSelectorContextLine(grouped), [grouped]);
-
-  // Automatic — the recommended-default row, pinned first with a check when
+  // Auto — the recommended-default row, pinned first with a check when
   // active. A regular list item, never a switch that can read "off" while
   // still selected.
   const autoModel = useMemo(
@@ -344,14 +339,6 @@ export function ModelSelector({
         </Tooltip>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-          {/* Context header — the resolved connection in plain words. Muted,
-              not clickable; omitted once more than one group is visible. */}
-          {contextLine ? (
-            <div className="text-muted-foreground/70 border-b px-4 pt-2.5 pb-2 text-[11px] font-medium tracking-wide">
-              {contextLine}
-            </div>
-          ) : null}
-
           {showSearch ? (
             <CommandInput
               compact
@@ -364,36 +351,40 @@ export function ModelSelector({
           ) : null}
 
           <CommandList className="max-h-[380px]">
-            {/* Automatic — the recommended default, pinned first with a check
-                when active. A regular row, never a switch. */}
-            {autoModel ? (
+            {/* Auto — the recommended default, pinned first with a check when
+                active. One line like every model row; the hover card explains
+                who picks the model. Steps aside while searching. */}
+            {autoModel && !search.trim() ? (
               <CommandGroup forceMount>
-                <CommandItem
-                  value="model-automatic"
-                  data-testid="model-auto-option"
-                  className={isAutoSelected ? 'bg-foreground/[0.06]' : undefined}
-                  onSelect={() => handleSelect(autoModel)}
+                <CommandItemHoverCard
+                  content={
+                    <div data-testid="model-auto-hover-card">
+                      <p className="text-sm font-medium">Auto</p>
+                      <p className="text-muted-foreground mt-1 text-xs leading-snug text-pretty">
+                        Kortix picks the best model for you.
+                      </p>
+                    </div>
+                  }
                 >
-                  <span className="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
-                    <Sparkles className="size-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1 py-0.5">
-                    <div
+                  <CommandItem
+                    value="model-automatic"
+                    data-testid="model-auto-option"
+                    className={isAutoSelected ? 'bg-foreground/[0.06]' : undefined}
+                    onSelect={() => handleSelect(autoModel)}
+                  >
+                    <span
                       className={cn(
-                        'truncate text-sm leading-tight',
+                        'min-w-0 flex-1 truncate text-sm leading-tight',
                         isAutoSelected
                           ? 'text-foreground font-semibold'
                           : 'text-foreground/90 font-medium',
                       )}
                     >
-                      Automatic
-                    </div>
-                    <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                      Kortix picks the best model
-                    </p>
-                  </div>
-                  {isAutoSelected && <Check className="text-foreground shrink-0" />}
-                </CommandItem>
+                      Auto
+                    </span>
+                    {isAutoSelected && <Check className="text-foreground size-4 shrink-0" />}
+                  </CommandItem>
+                </CommandItemHoverCard>
               </CommandGroup>
             ) : null}
 
@@ -403,9 +394,10 @@ export function ModelSelector({
                   <CommandGroup
                     key={group.providerID}
                     heading={
-                      // The context header already names a lone connection —
-                      // repeating it as a group heading reads twice.
-                      contextLine && grouped.length === 1 ? undefined : (
+                      // A lone connection needs no heading over its own list —
+                      // that's how a "Kortix" label ends up floating over every
+                      // model for no reason.
+                      grouped.length === 1 ? undefined : (
                         <div className="flex items-center gap-2">
                           <ProviderLogo
                             providerID={group.providerID}
@@ -555,11 +547,11 @@ export function ModelSelector({
           ) : null}
 
           {/* Footer — the giant catalog/connections live on the Models page,
-              not in this picker. */}
+              not in this picker. Same quiet row as the harness picker's. */}
           <button
             type="button"
             onClick={() => handleOpenProviderModal()}
-            className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 border-t px-4 py-2.5 text-xs font-medium transition-colors duration-200"
+            className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-1.5 border-t px-3.5 py-2.5 text-xs font-medium transition-colors duration-200"
           >
             <SlidersHorizontal className="size-3.5 shrink-0" />
             Manage models

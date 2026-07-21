@@ -23,19 +23,3 @@ export function pickerGroupId(model: FlatModel): string {
   const slash = model.modelID.indexOf('/');
   return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
 }
-
-/**
- * The popover's one-line "what will this agent run on" context header — only
- * meaningful when every visible model resolves to a single connection/group.
- * Once two or more groups are visible (e.g. Kortix + a connected BYOK
- * provider) there is no one connection to name, so the header is omitted
- * rather than picking one arbitrarily.
- */
-export function modelSelectorContextLine(
-  groups: Array<{ providerID: string; providerName: string }>,
-): string | null {
-  if (groups.length !== 1) return null;
-  const only = groups[0]!;
-  if (only.providerID === 'kortix') return 'via Kortix (included)';
-  return `via ${only.providerName}`;
-}
