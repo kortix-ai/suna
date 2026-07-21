@@ -35,6 +35,7 @@ import {
   listProjectSecretsSnapshotForUser,
   listResolvedProjectSecrets,
   parseSessionSecretsAllowlist,
+  secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
@@ -587,12 +588,11 @@ export async function createProjectSession(input: {
   }
   const secretsAllowlist = parsedSecrets.value ?? null;
   if (secretsAllowlist && secretsAllowlist.length > 0) {
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
-    const known = new Set(
-      (await listResolvedProjectSecrets(projectId, userId)).map((r) => r.identifier.toUpperCase()),
-    );
+    const known = new Set(resolvedProjectSecrets.map((r) => r.identifier.toUpperCase()));
     const missing = secretsAllowlist.filter((id) => !known.has(id.toUpperCase()));
     if (missing.length > 0) {
       return {
@@ -601,6 +601,21 @@ export async function createProjectSession(input: {
           body: {
             error: `unknown secret identifier(s): ${missing.join(', ')}`,
             code: 'SECRET_IDENTIFIER_NOT_FOUND',
+          },
+        },
+      };
+    }
+    // Reject a KEY collision at create — two allowlisted identifiers resolving to
+    // one env KEY throw AmbiguousSecretGrantError at boot, and the immutable
+    // allowlist would leave the session permanently unbootable.
+    const collision = secretKeyCollisionInAllowlist(resolvedProjectSecrets, secretsAllowlist);
+    if (collision) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: `secrets allowlist names multiple identifiers for env key "${collision.key}": ${collision.identifiers.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_KEY_COLLISION',
           },
         },
       };

@@ -7,6 +7,7 @@ import {
   intersectSecretGrants,
   parseSessionSecretsAllowlist,
   resolveGrantedSecretEnv,
+  secretKeyCollisionInAllowlist,
   secretsAllowlistPayloadConflicts,
   type ResolvedProjectSecret,
 } from './secrets';
@@ -73,6 +74,25 @@ describe('secretsAllowlistPayloadConflicts', () => {
     expect(secretsAllowlistPayloadConflicts(null, [])).toBe(true);
     expect(secretsAllowlistPayloadConflicts(undefined, null)).toBe(false);
     expect(secretsAllowlistPayloadConflicts([], [])).toBe(false);
+  });
+});
+
+describe('secretKeyCollisionInAllowlist', () => {
+  const rows: ResolvedProjectSecret[] = [
+    { identifier: 'GMAPS_PRIMARY', key: 'GOOGLE_MAPS_API_KEY', value: 'a' },
+    { identifier: 'GMAPS_BACKUP', key: 'GOOGLE_MAPS_API_KEY', value: 'b' },
+    { identifier: 'STRIPE', key: 'STRIPE_KEY', value: 's' },
+  ];
+
+  test('flags two allowlisted identifiers sharing one env KEY (would brick at boot)', () => {
+    const c = secretKeyCollisionInAllowlist(rows, ['GMAPS_PRIMARY', 'GMAPS_BACKUP']);
+    expect(c).toEqual({ key: 'GOOGLE_MAPS_API_KEY', identifiers: ['GMAPS_BACKUP', 'GMAPS_PRIMARY'] });
+  });
+
+  test('no collision when only one identifier per KEY is allowlisted', () => {
+    expect(secretKeyCollisionInAllowlist(rows, ['GMAPS_PRIMARY', 'STRIPE'])).toBeNull();
+    expect(secretKeyCollisionInAllowlist(rows, ['gmaps_backup'])).toBeNull(); // case-insensitive
+    expect(secretKeyCollisionInAllowlist(rows, [])).toBeNull();
   });
 });
 

@@ -353,6 +353,36 @@ export function intersectSecretGrants(
 }
 
 /**
+ * Detect an env-KEY collision AMONG the allowlisted identifiers, using rows
+ * already resolved for the project. Two distinct identifiers naming the same
+ * env KEY (e.g. GMAPS_PRIMARY / GMAPS_BACKUP → GOOGLE_MAPS_API_KEY) are a valid
+ * project config, but naming BOTH in one session allowlist makes the boot-time
+ * resolver throw AmbiguousSecretGrantError — and because the allowlist is
+ * immutable, that permanently bricks the session. Surfacing it here lets create
+ * reject with a clean 409 the caller can fix. Conservative: ignores the agent
+ * grant (which could have dropped one), so it may reject a shade more than the
+ * boot resolver strictly would — deterministic, cheap, and fail-closed. Pure.
+ * Returns the first colliding { key, identifiers } (identifiers sorted) or null.
+ */
+export function secretKeyCollisionInAllowlist(
+  rows: ResolvedProjectSecret[],
+  allowlist: string[],
+): { key: string; identifiers: string[] } | null {
+  const allowUpper = new Set(allowlist.map((id) => id.toUpperCase()));
+  const byKey = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!allowUpper.has(row.identifier.toUpperCase())) continue;
+    const ids = byKey.get(row.key) ?? [];
+    ids.push(row.identifier);
+    byKey.set(row.key, ids);
+  }
+  for (const [key, identifiers] of byKey) {
+    if (identifiers.length > 1) return { key, identifiers: [...identifiers].sort() };
+  }
+  return null;
+}
+
+/**
  * Canonical form of a secrets allowlist for idempotency-conflict comparison:
  * upper-cased (identifier matching is case-insensitive), de-duplicated, sorted.
  * null/undefined → null (absence is distinct from an empty list).
