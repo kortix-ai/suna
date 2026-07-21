@@ -1353,25 +1353,43 @@ test('does NOT suppress a frameless empty-message event (origin unverifiable)', 
 
 // Reproduces the Paper Shaders (`@paper-design/shaders-react`) null-WebGL2-
 // context crash class — the `getSupportedExtensions` null-context path that
-// ESCAPES `<ShaderSafe>` (Better Stack pattern `34127fa4…`, call site `new b2`
-// in chunk `app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js`, prod, 2
-// occurrences, last 2026-07-12 15:23:38 UTC) plus its known sibling
-// `getAttribLocation`. Paper Shaders' shader-mount `useEffect`/rAF callback
-// calls a WebGL2 context method on a context that became `null` after a
-// context-loss / GPU-blacklist event; the throw is in an async callback so the
-// React error boundary can't catch it → global error → Sentry → Better Stack.
-// The matcher is the leak-path backstop; the `supportsWebGL2()` probe in
-// `shader-safe.tsx` is the primary guard.
+// ESCAPES `<ShaderSafe>` (Better Stack pattern `34127fa4…` + Firefox-wording
+// recurrence `dfcb336b…`, call site `new b2` in chunk
+// `app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js`, prod) plus its
+// known sibling `getAttribLocation`. Paper Shaders' shader-mount
+// `useEffect`/rAF callback calls a WebGL2 context method on a context that
+// became `null` after a context-loss / GPU-blacklist event; the throw is in an
+// async callback so the React error boundary can't catch it → global error →
+// Sentry → Better Stack. The matcher is the leak-path backstop; the
+// `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard. Covers
+// all three JS engine wordings for the same bug: V8
+// (`Cannot read properties of null (reading '<m>')`), old JSC
+// (`Cannot read property '<m>' of null`), and SpiderMonkey/Firefox
+// (`can't access property "<m>"<…>` — the recurrence that shipped through
+// PR #4544's V8/JSC-only filter).
 const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
+  // V8 (Chrome/Edge).
   "Cannot read properties of null (reading 'getSupportedExtensions')",
   "TypeError: Cannot read properties of null (reading 'getSupportedExtensions')",
   "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'getSupportedExtensions')",
   "Cannot read properties of null (reading 'getAttribLocation')",
   "TypeError: Cannot read properties of null (reading 'getAttribLocation')",
   "Unhandled promise rejection: Cannot read properties of null (reading 'getAttribLocation')",
-  // Old JSC form.
+  // Old JSC (old Safari/iOS).
   "Cannot read property 'getSupportedExtensions' of null",
   "Cannot read property 'getAttribLocation' of null",
+  // SpiderMonkey (Firefox) — the exact recurrence wording from Better Stack
+  // pattern `dfcb336b…`: `can't access property "getSupportedExtensions",
+  // this.gl is null`. The `, this.gl is null` suffix is library-specific, so
+  // the matcher anchors on the stable method-name prefix only.
+  'can\'t access property "getSupportedExtensions", this.gl is null',
+  'TypeError: can\'t access property "getSupportedExtensions", this.gl is null',
+  'Unhandled promise rejection: TypeError: can\'t access property "getSupportedExtensions", this.gl is null',
+  'can\'t access property "getAttribLocation", this.gl is null',
+  'TypeError: can\'t access property "getAttribLocation", this.gl is null',
+  // SpiderMonkey alternate phrasing seen on some Firefox versions
+  // (` of <var>. <var> is null` form) — the prefix anchor still matches.
+  'can\'t access property "getSupportedExtensions" of this.gl. this.gl is null',
 ]
 
 test('classifies every Paper Shaders null-context WebGL message as noise', () => {
@@ -1432,6 +1450,9 @@ test('does NOT suppress a real app TypeError with a different null-property name
   // `Cannot read properties of null (reading '<name>')` SHAPE but with an
   // app-property name, not a WebGL2 API method — it must keep reporting so a
   // real null-deref regression is never hidden by the Paper Shaders guard.
+  // Covers all three engine wordings (V8, old JSC, SpiderMonkey/Firefox) so
+  // the Firefox `can't access property "<m>"` pattern can't swallow a real
+  // first-party SpiderMonkey null-deref with a non-WebGL property name.
   const realAppNullDerefMessages = [
     "Cannot read properties of null (reading 'map')",
     "Cannot read properties of null (reading 'length')",
@@ -1440,6 +1461,12 @@ test('does NOT suppress a real app TypeError with a different null-property name
     // A non-null access on getSupportedExtensions (e.g. typo'd as a property
     // of a non-null object) is a different message and must keep reporting.
     "Cannot read properties of undefined (reading 'getSupportedExtensions')",
+    // Real first-party SpiderMonkey/Firefox null-deref with an app property
+    // name — same SHAPE as the Paper Shaders Firefox message but NOT a WebGL2
+    // API method, so it must keep reporting.
+    'can\'t access property "map", this.foo is null',
+    'TypeError: can\'t access property "id", this.bar is null',
+    'can\'t access property "length" of this.baz. this.baz is null',
   ]
   for (const message of realAppNullDerefMessages) {
     assert.equal(

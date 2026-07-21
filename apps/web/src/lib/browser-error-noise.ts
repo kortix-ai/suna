@@ -178,33 +178,53 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 // On GPUs/browsers without working WebGL2 (context loss, blacklisted driver,
 // stripped WebView, headless renderer), Paper Shaders' shader-mount
 // `useEffect`/rAF callback reaches a WebGL2 context that has become `null` and
-// calls a WebGL API method on it → `TypeError: Cannot read properties of null
-// (reading '<method>')`. The throw happens INSIDE an async callback, so it
-// ESCAPES the `<ShaderSafe>` React error boundary (which only catches
-// render-phase throws via `getDerivedStateFromError`) → global error → Sentry
-// → Better Stack. The two observed null-context method names are:
-//   - `getSupportedExtensions`  (Better Stack pattern `34127fa4…`, call site
-//                                `new b2` in chunk `c76173f0.…`, prod, 2 occ.)
+// calls a WebGL API method on it → `TypeError`. The throw happens INSIDE an
+// async callback, so it ESCAPES the `<ShaderSafe>` React error boundary (which
+// only catches render-phase throws via `getDerivedStateFromError`) → global
+// error → Sentry → Better Stack. The two observed null-context method names are:
+//   - `getSupportedExtensions`  (Better Stack pattern `34127fa4…` / recurrence
+//                                `dfcb336b…`, call site `new b2` in chunk
+//                                `c76173f0.…`, prod)
 //   - `getAttribLocation`       (the known sibling already documented in
 //                                `shader-safe.tsx`'s probe rationale).
 // These are WebGL2 context method names — they are NEVER called from
 // first-party app code (only from Paper Shaders' library internals), so the
 // message wording alone is specific enough to safely classify as noise without
 // a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
-// matching is exact-substring on the canonical `Cannot read properties of null
-// (reading '<method>')` (V8) and `Cannot read property '<method>' of null`
-// (old JSC) forms, with `TypeError: ` / `Error: ` /
-// `Unhandled promise rejection: ` wrappers stripped so all capture paths
-// (window.onerror, onunhandledrejection, Sentry exception) classify
-// consistently. `shouldIgnore*` here is the leak-path backstop for the throws
-// that still escape `<ShaderSafe>` after a context-loss event; the
-// `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
-// degrades to the fallback BEFORE the throw.
+// matching covers all three JS engine wordings for the same null-context bug:
+//   - V8 (Chrome/Edge):          `Cannot read properties of null (reading '<m>')`
+//   - old JSC (old Safari/iOS):  `Cannot read property '<m>' of null`
+//   - SpiderMonkey (Firefox):    `can't access property "<m>"<…>` (the variable
+//                                name after the method is library-specific, so
+//                                the pattern anchors on the stable method-name
+//                                prefix only — see the recurrence
+//                                `dfcb336b…` which shipped through PR #4544's
+//                                V8/JSC-only filter as
+//                                `can't access property "getSupportedExtensions",
+//                                this.gl is null`).
+// `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
+// stripped before matching so all capture paths (window.onerror,
+// onunhandledrejection, Sentry exception) classify consistently.
+// `shouldIgnore*` here is the leak-path backstop for the throws that still
+// escape `<ShaderSafe>` after a context-loss event; the `supportsWebGL2()`
+// probe in `shader-safe.tsx` is the primary guard that degrades to the fallback
+// BEFORE the throw. The probe is engine-agnostic (it just calls
+// `ctx.getSupportedExtensions()`, which throws or returns null on any engine),
+// so it already prevents the throw at mount for Firefox — the filter backstop
+// catches the residual async-context-loss throws that bypass the one-shot probe.
 const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
+  // V8 (Chrome/Edge).
   "Cannot read properties of null (reading 'getSupportedExtensions')",
   "Cannot read properties of null (reading 'getAttribLocation')",
+  // Old JSC (old Safari/iOS).
   "Cannot read property 'getSupportedExtensions' of null",
   "Cannot read property 'getAttribLocation' of null",
+  // SpiderMonkey (Firefox) — anchors on the stable method-name prefix; the
+  // `, this.gl is null` variable suffix is library-specific and dropped so the
+  // pattern matches regardless of which Paper Shaders internal variable holds
+  // the null context.
+  'can\'t access property "getSupportedExtensions"',
+  'can\'t access property "getAttribLocation"',
 ] as const;
 
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
@@ -843,9 +863,12 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Never page Better Stack for this class. See
- * `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and the
- * `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
+ * Matches all three JS engine wordings: V8
+ * (`Cannot read properties of null (reading '<m>')`), old JSC
+ * (`Cannot read property '<m>' of null`), and SpiderMonkey/Firefox
+ * (`can't access property "<m>"<…>`). Never page Better Stack for this class.
+ * See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and
+ * the `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
  */
 export function isPaperShaderNullContextNoise(message: unknown): boolean {
   const stripped = stripErrorWrappers(normalizeString(message));
