@@ -547,6 +547,7 @@
     "GATEWAY_PROVIDER_IDS",
     "KortixProjectProvider",
     "LAST_SEEN_EVENT",
+    "NoCompactionModelError",
     "OpenCodeEventStreamProvider",
     "POLL_CONNECTED",
     "POLL_FAILING",
