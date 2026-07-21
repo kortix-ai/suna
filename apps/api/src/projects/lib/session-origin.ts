@@ -28,22 +28,41 @@ export type SessionOverrideField =
 /**
  * Derive the session origin from the authenticated caller's token kind
  * (`authType`, set by the auth middleware: service_account | pat | apiKey |
- * supabase) and the invocation `source` (SessionInvocationSource).
+ * supabase), its `apiKeyType` (user | sandbox, only meaningful when
+ * authType==='apiKey'), whether the token is agent-scoped, and the invocation
+ * `source` (SessionInvocationSource).
  *
- * Source-based classes win first (an invocation is a schedule/trigger/system
- * regardless of which token drove it); otherwise a service-account is a
- * `backend`, and everything else is a `user`. Unknown/missing inputs default to
- * the most restrictive real-caller class, `user`.
+ * Resolution order:
+ *  1. Source-based classes win first — an invocation is a schedule/trigger/
+ *     system regardless of which token drove it.
+ *  2. An agent-scoped token acts AS an agent inside a project, never as a
+ *     customer backend, so it is always `user` — an in-session agent can't
+ *     vouch for an end-user via origin_ref.
+ *  3. The programmatic customer credentials are `backend`: a service-account
+ *     bearer (`service_account`), the personal/account API token the app
+ *     labels "API key" (`pat`), and a dedicated account API key
+ *     (`apiKey` + apiKeyType `user`). All resolve to backend so they may set
+ *     backend-only overrides (origin_ref, and later secrets).
+ *  4. Everything else — a human web/SAML session (`supabase`) and, critically,
+ *     the INTERNAL sandbox key (`apiKey` + apiKeyType `sandbox`, injected as
+ *     KORTIX_TOKEN) — is `user`. The sandbox exclusion uses the POSITIVE
+ *     apiKeyType==='user' test on purpose: a missing/unknown apiKeyType must
+ *     never be promoted to backend.
  */
 export function resolveSessionOrigin(input: {
   authType?: string | null;
+  apiKeyType?: string | null;
+  agentScoped?: boolean | null;
   source?: string | null;
 }): SessionOrigin {
   const source = input.source ?? '';
   if (source === 'trigger:cron') return 'schedule';
   if (source.startsWith('trigger:')) return 'trigger';
   if (source.startsWith('system:')) return 'system';
+  if (input.agentScoped) return 'user';
   if (input.authType === 'service_account') return 'backend';
+  if (input.authType === 'pat') return 'backend';
+  if (input.authType === 'apiKey' && input.apiKeyType === 'user') return 'backend';
   return 'user';
 }
 

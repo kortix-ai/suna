@@ -448,12 +448,16 @@ export async function createProjectSession(input: {
    */
   visibility?: 'private' | 'project' | 'restricted';
   /**
-   * Caller's token kind (auth.ts `authType`). Combined with the invocation
-   * source it derives the session ORIGIN — never trusted from the body. Only a
-   * service-account caller resolves to 'backend' and may set backend-only
-   * override fields (currently `origin_ref`). See session-origin.ts.
+   * Caller's token kind (auth.ts `authType`), its apiKeyType (user | sandbox,
+   * for authType==='apiKey'), and whether the token is agent-scoped. Combined
+   * with the invocation source these derive the session ORIGIN — never trusted
+   * from the body. A programmatic customer credential (service_account, pat, or
+   * a 'user' apiKey) that is NOT agent-scoped resolves to 'backend' and may set
+   * backend-only override fields (currently `origin_ref`). See session-origin.ts.
    */
   authType?: string | null;
+  apiKeyType?: string | null;
+  agentScoped?: boolean | null;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -495,6 +499,8 @@ export async function createProjectSession(input: {
   // rejected rather than silently attributing to a phantom identity.
   const origin = resolveSessionOrigin({
     authType: input.authType,
+    apiKeyType: input.apiKeyType,
+    agentScoped: input.agentScoped,
     source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
   });
   const requestedOriginRef = normalizeString(body.origin_ref);

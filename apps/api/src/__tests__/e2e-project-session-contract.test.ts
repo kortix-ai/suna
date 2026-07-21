@@ -22,6 +22,7 @@ const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
+const PROJECT_AGENT_PAT = 'kortix_pat_agent_session';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -168,6 +169,19 @@ mock.module('../middleware/auth', () => ({
       c.set('accountId', ACCOUNT_ID);
       c.set('tokenProjectId', PROJECT_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000902');
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_AGENT_PAT}`) {
+      // An agent-session PAT: same principal as the runtime PAT but carrying a
+      // resolved agent grant — i.e. a token acting AS an agent inside a session.
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      c.set('agentGrant', { agent: 'default', kortixCli: 'all', connectors: 'all' });
       await next();
       return;
     }
@@ -1065,6 +1079,48 @@ describe('project session API contract', () => {
     const backendBody = (await backendRes.json()) as { origin: string; origin_ref: string | null };
     expect(backendBody.origin).toBe('backend');
     expect(backendBody.origin_ref).toBe('tenant-42');
+
+    // The account API token the app ships as "API key" (a PAT) is a
+    // programmatic customer credential — it is backend too and may vouch via
+    // origin_ref.
+    const patRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-43' }),
+    });
+    expect(patRes.status).toBe(201);
+    const patBody = (await patRes.json()) as { origin: string; origin_ref: string | null };
+    expect(patBody.origin).toBe('backend');
+    expect(patBody.origin_ref).toBe('tenant-43');
+
+    // The INTERNAL sandbox key (KORTIX_TOKEN inside every sandbox) must never
+    // be backend — an in-sandbox agent can't vouch for a phantom end-user.
+    const sandboxRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(sandboxRes.status).toBe(403);
+    expect(await sandboxRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    // Same for an agent-scoped token: it acts AS an agent inside a session,
+    // never as a customer backend.
+    const agentRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_AGENT_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(agentRes.status).toBe(403);
+    expect(await agentRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {

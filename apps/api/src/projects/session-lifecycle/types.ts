@@ -57,9 +57,13 @@ export interface CreateSessionCommand {
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
   postCreate?: SessionLifecyclePostCreateAction[];
-  // Caller's token kind (auth.ts `authType`); used only to derive the session
-  // origin (service_account → backend). Never trusted from the request body.
+  // Caller's token kind (auth.ts `authType`) + apiKeyType + whether the token
+  // is agent-scoped; used only to derive the session origin (a non-agent-scoped
+  // service_account / pat / 'user' apiKey → backend). Never trusted from the
+  // request body. See session-origin.ts.
   authType?: string | null;
+  apiKeyType?: string | null;
+  agentScoped?: boolean | null;
 }
 
 export interface QueuedCreateSessionPayload {

@@ -530,6 +530,8 @@ async function executeCreateSession(
     request: command.request,
     visibility: command.visibility,
     authType: command.authType,
+    apiKeyType: command.apiKeyType,
+    agentScoped: command.agentScoped,
   });
 
   if (result.error) {

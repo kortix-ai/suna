@@ -7,7 +7,7 @@ import {
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
@@ -407,9 +407,13 @@ projectsApp.openapi(
     project: loaded.row,
     userId: loaded.userId,
     body,
-    // Origin is derived from the caller's token kind (service_account →
-    // backend), never the body — see resolveSessionOrigin.
+    // Origin is derived from the caller's token kind (service_account / pat /
+    // 'user' apiKey → backend), never the body — see resolveSessionOrigin. An
+    // agent-scoped token stays 'user' so an in-session agent can't vouch via
+    // origin_ref.
     authType: c.get('authType') as string | undefined,
+    apiKeyType: c.get('apiKeyType') as string | undefined,
+    agentScoped: getAgentGrant(c) != null,
     request: requestAuditContext(c),
     idempotencyKey: c.req.header('idempotency-key') ?? null,
   });
