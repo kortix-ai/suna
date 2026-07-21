@@ -146,6 +146,33 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
+// Expected "no compaction model configured" configuration state. The SDK's
+// `useSummarizeOpenCodeSession` mutation
+// (`packages/sdk/src/react/use-opencode-sessions/sessions.ts`) throws a
+// sentinel-marked `NoCompactionModelError`
+// (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`,
+// mirrored locally by `apps/mobile/lib/opencode/hooks/use-compact-session.ts`)
+// when every model-resolution fallback tier fails (no config default, no
+// assistant message in the thread, no connected provider/model). It is an
+// EXPECTED, user-facing configuration outcome — the host already surfaces it
+// via the `loadingToast` error toast ("No model available for compaction.
+// Please configure a model in settings.") and the global react-query mutation
+// `onError` toast — never a code defect.
+//
+// It leaks to Sentry as an unhandled promise rejection: `compact-modal.tsx`
+// fires `void loadingToast(() => summarize.mutateAsync(...))`, and
+// `loadingToast` re-throws the error after showing the toast (toast.tsx), so
+// the `void`-fired rejection is auto-captured by the Sentry SDK's
+// `onunhandledrejection` integration. Drop it here at the telemetry gate so
+// the expected config state never pages Better Stack, regardless of which
+// capture path delivered it. A longer real mutation failure (network error,
+// `summarize` 5xx, a genuine `TypeError`, …) keeps reporting — only an exact
+// match for this message (plus the explicit canonical wrappers below) is
+// suppressed.
+const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
+  'No model available for compaction. Please configure a model in settings.',
+] as const;
+
 // Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
 // cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
 // the webpack runtime chunk is served from a different deployment, so
@@ -993,6 +1020,28 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
 }
 
 /**
+ * Whether a message is the EXPECTED "no compaction model configured"
+ * configuration state thrown by the SDK's `useSummarizeOpenCodeSession`
+ * mutation (`NoCompactionModelError`) when every model-resolution fallback
+ * tier fails. The host already surfaces it via a user-facing toast; it must
+ * never page Better Stack, but the sentinel error can leak to Sentry as an
+ * unhandled promise rejection (`void loadingToast(...)` re-throws after
+ * showing the toast → `onunhandledrejection` auto-capture). Match is exact
+ * after trimming, with only the canonical browser/Sentry wrappers we
+ * explicitly support, so a longer real error that merely mentions the wording
+ * is never matched.
+ */
+export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return COMPACTION_NO_MODEL_EXPECTED_MESSAGES.some(
+    (expected) => normalized === expected
+      || normalized === `Error: ${expected}`
+      || normalized === `Unhandled promise rejection: ${expected}`
+      || normalized === `Unhandled promise rejection: Error: ${expected}`,
+  );
+}
+
+/**
  * Whether a Sentry exception is the stale-deploy webpack-runtime
  * `… (reading 'call')` TypeError. Requires BOTH the exact webpack
  * module-loader message AND the throwing frame (the last stack frame, per
@@ -1455,6 +1504,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected "no compaction model configured" configuration state — the SDK's
+  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `NoCompactionModelError` that the host already surfaces via a toast. It
+  // leaks here as an unhandled promise rejection (`void loadingToast(...)`
+  // re-throws after the toast → `onunhandledrejection`). Drop it so the
+  // expected config state never pages Better Stack. See
+  // `isExpectedCompactionNoModelMessage`.
+  if (isExpectedCompactionNoModelMessage(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
@@ -1651,6 +1711,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // pages Better Stack. Real `ApiError`s are never matched — only the exact
   // strings the billing gate emits are.
   if (isExpectedBillingGateMessage(message)) {
+    return true;
+  }
+
+  // Expected "no compaction model configured" configuration state — the SDK's
+  // `useSummarizeOpenCodeSession` mutation throws a sentinel
+  // `NoCompactionModelError` that the host already surfaces via a toast. It
+  // can leak to Sentry through capture paths that bypass the toast (the
+  // `void loadingToast(...)` re-throw → `onunhandledrejection`, plus
+  // `<ClientErrorBoundary>` / route / system-fault boundaries). Drop it here
+  // so the expected config state never pages Better Stack. See
+  // `isExpectedCompactionNoModelMessage`.
+  if (isExpectedCompactionNoModelMessage(message)) {
     return true;
   }
 

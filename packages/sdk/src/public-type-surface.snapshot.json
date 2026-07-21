@@ -2402,6 +2402,7 @@
     "Model",
     "ModelKey",
     "ModelProviderMode",
+    "NoCompactionModelError",
     "NotificationKind",
     "OpenCodeEvent",
     "OpenCodeEventStreamProvider",
