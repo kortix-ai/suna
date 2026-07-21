@@ -1,5 +1,5 @@
 import { recordSessionToolApproval } from '../../executor/db-deps';
-import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
+import { loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import {
   PROJECT_ACTIONS,
   deleteResourceGrant,
@@ -17,7 +17,7 @@ import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, resolveSessionOwnerIdentities } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
@@ -31,6 +31,7 @@ import {
 } from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -66,6 +67,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const rows = await db
     .select({
@@ -444,18 +446,21 @@ projectsApp.openapi(
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
+        query: z.object({
+          scope: z.enum(['visible', 'project']).optional(),
+        }),
       },
     responses: {
         200: json(z.array(SessionSchema), 'Sessions'),
-        ...errors(404),
+        ...errors(403, 404),
     },
   }),
   async (c) => {
   const projectId = c.req.param('projectId');
+  const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const rows = await db
     .select()
@@ -463,72 +468,75 @@ projectsApp.openapi(
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
     .orderBy(desc(projectSessions.updatedAt));
 
-  const resumableStoppedSessionIds = rows.length
-    ? new Set(
-        (
-          await db
-            .select({ sessionId: sessionSandboxes.sessionId })
-            .from(sessionSandboxes)
-            .where(
-              and(
-                eq(sessionSandboxes.projectId, projectId),
-                eq(sessionSandboxes.accountId, loaded.row.accountId),
-                eq(sessionSandboxes.status, 'stopped'),
-                inArray(sessionSandboxes.sessionId, rows.map((r) => r.sessionId)),
-              ),
-            )
+  const runtimeRows = rows.length
+    ? await db
+        .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, loaded.row.accountId),
+            inArray(sessionSandboxes.sessionId, rows.map((row) => row.sessionId)),
+          ),
         )
-          .map((r) => r.sessionId)
-          .filter((id): id is string => !!id),
-      )
-    : new Set<string>();
+    : [];
+  const runtimeStatusBySession = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
 
-  const listableRows = rows.filter((r) => {
-    const meta = (r.metadata ?? {}) as Record<string, unknown>;
-    if (typeof meta.deletedAt === 'string') return false;
-    return r.status !== 'stopped' || resumableStoppedSessionIds.has(r.sessionId);
-  });
-
-  // Filter to sessions the viewer may see: their own, project-wide, or ones
-  // shared with them (restricted + grant). Then surface owner + sharing so the
-  // list can show "shared by X".
   const subject = await resolveShareSubject(loaded.userId);
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   const grantsBySession = await loadSessionGrants(
-    listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
+    rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
   );
-  let visible = listableRows.filter((r) =>
-    isSessionVisibleTo(
-      r.visibility as 'private' | 'project' | 'restricted',
-      r.createdBy,
-      grantsBySession.get(r.sessionId) ?? [],
-      subject,
-    ),
-  );
-  visible = await syncOpenCodeTitlesForSessions({
-    rows: visible,
+  const selected = selectSessionRowsForViewer({
+    rows,
+    scope,
+    canManageProject,
+    subject,
+    grantsBySession,
+    runtimeStatusBySession,
+  });
+  if (!selected.authorized) {
+    return c.json({ error: 'Project manager access is required to list every session' }, 403);
+  }
+
+  // Inventory metadata must not become a side door into a private runtime.
+  // Only title-sync rows the viewer could already open, and never revive or
+  // inspect a soft-deleted session merely because an admin opened inventory.
+  const syncableRows = selected.items
+    .filter((item) => item.canAccess && !item.deletedAt)
+    .map((item) => item.row);
+  const syncedRows = await syncOpenCodeTitlesForSessions({
+    rows: syncableRows,
     projectId,
     accountId: loaded.row.accountId,
     userId: loaded.userId,
   });
-  // Owner emails only for sessions someone else owns (for the "shared by" label).
-  const ownerIds = [...new Set(visible.map((r) => r.createdBy).filter((id): id is string => !!id && id !== loaded.userId))];
-  const emails = await lookupEmailsByUserIds(ownerIds);
+  const syncedBySession = new Map(syncedRows.map((row) => [row.sessionId, row]));
+  const ownerIds = selected.items
+    .map((item) => item.row.createdBy)
+    .filter((ownerId): ownerId is string => Boolean(ownerId));
+  const ownerIdentities = await resolveSessionOwnerIdentities(ownerIds, loaded.row.accountId);
 
   return c.json(
-    visible.map((r) =>
-      serializeSession(r, {
-        grants: grantsBySession.get(r.sessionId) ?? [],
+    selected.items.map((item) => {
+      const row = syncedBySession.get(item.row.sessionId) ?? item.row;
+      const owner = row.createdBy ? ownerIdentities.get(row.createdBy) : null;
+      return serializeSession(row, {
+        grants: grantsBySession.get(row.sessionId) ?? [],
         viewerId: loaded.userId,
         canManageProject,
-        ownerEmail: r.createdBy ? emails.get(r.createdBy) ?? null : null,
-      }),
-    ),
+        ownerEmail: owner?.email ?? null,
+        ownerName: owner?.name ?? null,
+        ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
+        canAccess: item.canAccess,
+        runtimeStatus: item.runtimeStatus,
+        deletedAt: item.deletedAt,
+        deletedBy: item.deletedBy,
+      });
+    }),
   );
 },
 );
-
-// GET /v1/projects/:projectId/sessions/:sessionId
 
 projectsApp.openapi(
   createRoute({

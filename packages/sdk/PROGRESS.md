@@ -1102,3 +1102,32 @@ RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test, and
 packed-install smoke gates.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `project-session-inventory` (completion)
+
+Completed the additive manager-only project session inventory contract. The
+ordinary list remains unchanged; `project(id).sessions.list({ scope: 'project' })`
+now exposes every durable row with resolved human/service-account ownership,
+viewer access, runtime state, and soft-delete audit metadata. No exported name
+was removed or renamed.
+
+**TDD and live evidence:** focused API/serializer/SDK/facade/web tests passed
+**148 / 0**. API and web typechecks exited 0, focused web ESLint exited 0, the
+full web suite reported **1837 pass / 0 fail**, and the API route contract suite
+reported **59 pass / 0 fail**. A real authenticated local HTTP smoke proved the
+manager default list stayed at 2 visible rows while project inventory returned
+all 4 durable rows, including a private missing runtime, a stopped agent-owned
+runtime, and a soft-deleted row; the ordinary member received 403 for project
+inventory and a manager still received 404 when directly reading the private
+session.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** with 5071 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK and local end-to-end contract.
+Repository PR, Deploy Dev, and live-dev verification remain part of the parent
+feature lifecycle.

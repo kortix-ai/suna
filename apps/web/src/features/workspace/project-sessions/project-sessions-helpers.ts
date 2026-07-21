@@ -4,7 +4,15 @@ import { sessionSource } from '@/components/projects/session-label';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 
 export type ProjectSessionsFilter =
-  'all' | 'active' | 'completed' | 'stopped' | 'failed' | 'automated' | 'shared';
+  | 'all'
+  | 'active'
+  | 'completed'
+  | 'stopped'
+  | 'failed'
+  | 'automated'
+  | 'shared'
+  | 'deleted'
+  | 'inaccessible';
 
 export const PROJECT_SESSIONS_FILTERS: Array<{
   value: ProjectSessionsFilter;
@@ -17,6 +25,8 @@ export const PROJECT_SESSIONS_FILTERS: Array<{
   { value: 'failed', label: 'Failed' },
   { value: 'automated', label: 'Automated' },
   { value: 'shared', label: 'Shared' },
+  { value: 'deleted', label: 'Deleted' },
+  { value: 'inaccessible', label: 'Metadata only' },
 ];
 
 const ACTIVE_STATUSES = new Set<ProjectSession['status']>([
@@ -34,7 +44,31 @@ export function matchesProjectSessionsFilter(
   if (filter === 'active') return ACTIVE_STATUSES.has(session.status);
   if (filter === 'automated') return sessionSource(session).kind !== 'chat';
   if (filter === 'shared') return session.is_owner === false;
+  if (filter === 'deleted') return Boolean(session.deleted_at);
+  if (filter === 'inaccessible') return session.can_access === false;
   return session.status === filter;
+}
+
+export function sessionOwnerLabel(session: ProjectSession): string {
+  if (session.owner_name) return session.owner_name;
+  if (session.owner_email) return session.owner_email;
+  if (session.is_owner === true) return 'You';
+  return 'Unknown owner';
+}
+
+export function sessionAccessMeta(session: ProjectSession): {
+  label: 'Can open' | 'Metadata only' | 'Runtime unavailable' | 'Deleted';
+  canOpen: boolean;
+} {
+  if (session.deleted_at) return { label: 'Deleted', canOpen: false };
+  if (session.can_access === false) return { label: 'Metadata only', canOpen: false };
+  if (session.status === 'stopped' && !session.runtime_status) {
+    return { label: 'Runtime unavailable', canOpen: false };
+  }
+  if (session.runtime_status === 'archived' || session.runtime_status === 'error') {
+    return { label: 'Runtime unavailable', canOpen: false };
+  }
+  return { label: 'Can open', canOpen: true };
 }
 
 export function sessionSearchText(session: ProjectSession): string {
@@ -46,9 +80,13 @@ export function sessionSearchText(session: ProjectSession): string {
     session.base_ref,
     session.agent_name,
     session.owner_email,
+    session.owner_name,
+    session.owner_type,
     session.sandbox_provider,
     session.status,
     session.visibility,
+    session.runtime_status,
+    session.deleted_at,
     source.label,
     source.triggerSlug,
   ]

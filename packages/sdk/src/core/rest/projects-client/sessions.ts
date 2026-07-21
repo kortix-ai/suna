@@ -48,10 +48,19 @@ export interface ProjectSession {
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;
+  owner_name?: string | null;
+  owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
   can_manage_sharing?: boolean;
+  /** Whether the current viewer may open/read this session. */
+  can_access?: boolean;
+  /** Exact lifecycle state of the backing runtime resource, when present. */
+  runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
+  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,8 +102,12 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
-export async function listProjectSessions(projectId: string) {
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`));
+export async function listProjectSessions(
+  projectId: string,
+  options?: { scope?: 'visible' | 'project' },
+) {
+  const query = options?.scope && options.scope !== 'visible' ? `?scope=${options.scope}` : '';
+  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
 /**
