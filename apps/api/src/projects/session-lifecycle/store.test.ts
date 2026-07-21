@@ -19,11 +19,11 @@ describe('createSessionCommandPayload', () => {
       ...BASE,
       authType: 'pat',
       apiKeyType: 'user',
-      agentScoped: false,
+      inSession: false,
     });
     expect(payload.authType).toBe('pat');
     expect(payload.apiKeyType).toBe('user');
-    expect(payload.agentScoped).toBe(false);
+    expect(payload.inSession).toBe(false);
     // The body (incl. origin_ref) survives verbatim for the replay's gate.
     expect(payload.body).toEqual({ initial_prompt: 'hi', origin_ref: 'tenant-42' });
   });
@@ -32,6 +32,6 @@ describe('createSessionCommandPayload', () => {
     const payload = createSessionCommandPayload(BASE);
     expect(payload.authType).toBeUndefined();
     expect(payload.apiKeyType).toBeUndefined();
-    expect(payload.agentScoped).toBeUndefined();
+    expect(payload.inSession).toBeUndefined();
   });
 });

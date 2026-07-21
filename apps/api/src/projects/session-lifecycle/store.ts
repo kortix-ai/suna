@@ -20,7 +20,7 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
     postCreate: command.postCreate,
     authType: command.authType,
     apiKeyType: command.apiKeyType,
-    agentScoped: command.agentScoped,
+    inSession: command.inSession,
   };
 }
 

@@ -408,12 +408,14 @@ projectsApp.openapi(
     userId: loaded.userId,
     body,
     // Origin is derived from the caller's token kind (service_account / pat /
-    // 'user' apiKey → backend), never the body — see resolveSessionOrigin. An
-    // agent-scoped token stays 'user' so an in-session agent can't vouch via
-    // origin_ref.
+    // 'user' apiKey → backend), never the body — see resolveSessionOrigin. A
+    // token operating from INSIDE a session stays 'user' so an in-sandbox agent
+    // can't vouch via origin_ref. Keyed on session-binding (`sessionId`, set on
+    // the executor PAT injected into every sandbox) OR an agent grant — NOT the
+    // grant alone, which is null for v1/default agents and would fail open.
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
-    agentScoped: getAgentGrant(c) != null,
+    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
     idempotencyKey: c.req.header('idempotency-key') ?? null,
   });

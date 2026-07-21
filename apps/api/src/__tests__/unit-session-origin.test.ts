@@ -42,13 +42,14 @@ describe('resolveSessionOrigin', () => {
     );
   });
 
-  test('an agent-scoped token is never backend, whatever its kind', () => {
-    // A token acting AS an agent inside a session is not a customer backend.
-    expect(resolveSessionOrigin({ authType: 'pat', agentScoped: true, source: 'cli' })).toBe(
-      'user',
-    );
+  test('an in-session token is never backend, whatever its kind', () => {
+    // A token operating from inside a running session (session-bound OR
+    // agent-scoped) is not a customer backend. This is the exclusion that keeps
+    // the executor PAT injected into every sandbox from vouching via origin_ref
+    // even when its agent grant is null (v1/default agent, ungoverned project).
+    expect(resolveSessionOrigin({ authType: 'pat', inSession: true, source: 'cli' })).toBe('user');
     expect(
-      resolveSessionOrigin({ authType: 'service_account', agentScoped: true, source: 'ui' }),
+      resolveSessionOrigin({ authType: 'service_account', inSession: true, source: 'ui' }),
     ).toBe('user');
   });
 

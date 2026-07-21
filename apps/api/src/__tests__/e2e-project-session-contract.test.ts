@@ -23,6 +23,7 @@ const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
 const PROJECT_AGENT_PAT = 'kortix_pat_agent_session';
+const PROJECT_EXECUTOR_PAT = 'kortix_pat_executor_sandbox';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -182,6 +183,21 @@ mock.module('../middleware/auth', () => ({
       c.set('tokenProjectId', PROJECT_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
       c.set('agentGrant', { agent: 'default', kortixCli: 'all', connectors: 'all' });
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_EXECUTOR_PAT}`) {
+      // The REAL executor PAT injected into every sandbox (KORTIX_CLI_TOKEN):
+      // session-bound (sessionId set) but with a NULL agent grant — the common
+      // v1/default-agent case. It must still be excluded from 'backend'; keying
+      // the exclusion on the agent grant alone would fail open here.
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000904');
       await next();
       return;
     }
@@ -1121,6 +1137,21 @@ describe('project session API contract', () => {
     });
     expect(agentRes.status).toBe(403);
     expect(await agentRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    // And the REAL executor PAT (session-bound, NULL agent grant) — the common
+    // v1/default case. Excluding it proves the exclusion keys on session-binding,
+    // not on the agent grant (which would fail open here). Regression guard for
+    // the in-sandbox origin_ref forgery the null-grant path allowed.
+    const executorRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_EXECUTOR_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(executorRes.status).toBe(403);
+    expect(await executorRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {

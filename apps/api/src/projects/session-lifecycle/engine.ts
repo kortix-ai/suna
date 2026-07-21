@@ -514,7 +514,7 @@ async function executeQueuedCreate(
     // queued backend create keeps origin 'backend' (and its origin_ref).
     authType: payload.authType,
     apiKeyType: payload.apiKeyType,
-    agentScoped: payload.agentScoped,
+    inSession: payload.inSession,
   });
 }
 
@@ -536,7 +536,7 @@ async function executeCreateSession(
     visibility: command.visibility,
     authType: command.authType,
     apiKeyType: command.apiKeyType,
-    agentScoped: command.agentScoped,
+    inSession: command.inSession,
   });
 
   if (result.error) {

@@ -35,9 +35,15 @@ export type SessionOverrideField =
  * Resolution order:
  *  1. Source-based classes win first — an invocation is a schedule/trigger/
  *     system regardless of which token drove it.
- *  2. An agent-scoped token acts AS an agent inside a project, never as a
- *     customer backend, so it is always `user` — an in-session agent can't
- *     vouch for an end-user via origin_ref.
+ *  2. An IN-SESSION token — one operating from inside a running session, i.e.
+ *     bound to a session or carrying an agent grant (`inSession`) — is always
+ *     `user`. This is the SECURITY-CRITICAL exclusion: the executor PAT
+ *     injected into every sandbox (KORTIX_CLI_TOKEN, minted with
+ *     sessionId=sandboxId; its agent grant is NULL for a v1/default agent or an
+ *     ungoverned project) must never resolve `backend`, so a prompt-injectable
+ *     in-sandbox agent can't vouch for a phantom end-user via origin_ref.
+ *     Keyed on session-binding, NOT on the agent grant alone — a null grant is
+ *     the common case and would fail open.
  *  3. The programmatic customer credentials are `backend`: a service-account
  *     bearer (`service_account`), the personal/account API token the app
  *     labels "API key" (`pat`), and a dedicated account API key
@@ -52,14 +58,17 @@ export type SessionOverrideField =
 export function resolveSessionOrigin(input: {
   authType?: string | null;
   apiKeyType?: string | null;
-  agentScoped?: boolean | null;
+  /** The token operates from inside a running session (session-bound OR
+   *  agent-scoped). Such a token is never a customer backend — see the
+   *  executor-PAT exclusion above. */
+  inSession?: boolean | null;
   source?: string | null;
 }): SessionOrigin {
   const source = input.source ?? '';
   if (source === 'trigger:cron') return 'schedule';
   if (source.startsWith('trigger:')) return 'trigger';
   if (source.startsWith('system:')) return 'system';
-  if (input.agentScoped) return 'user';
+  if (input.inSession) return 'user';
   if (input.authType === 'service_account') return 'backend';
   if (input.authType === 'pat') return 'backend';
   if (input.authType === 'apiKey' && input.apiKeyType === 'user') return 'backend';

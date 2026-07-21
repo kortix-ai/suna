@@ -58,12 +58,13 @@ export interface CreateSessionCommand {
   queuePolicy?: QueuePolicy;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Caller's token kind (auth.ts `authType`) + apiKeyType + whether the token
-  // is agent-scoped; used only to derive the session origin (a non-agent-scoped
+  // operates from inside a running session (`inSession`: session-bound or
+  // agent-scoped); used only to derive the session origin (a not-in-session
   // service_account / pat / 'user' apiKey → backend). Never trusted from the
   // request body. See session-origin.ts.
   authType?: string | null;
   apiKeyType?: string | null;
-  agentScoped?: boolean | null;
+  inSession?: boolean | null;
 }
 
 export interface QueuedCreateSessionPayload {
@@ -79,7 +80,7 @@ export interface QueuedCreateSessionPayload {
   // before this field existed → 'user', matching their pre-origin behavior.
   authType?: string | null;
   apiKeyType?: string | null;
-  agentScoped?: boolean | null;
+  inSession?: boolean | null;
 }
 
 export interface ContinueSessionCommand {
