@@ -160,12 +160,15 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
       'One model-first picker for every harness in the composer, replacing the separate gateway-catalog and harness-native selectors. UI-only — no server-side capability change.',
     stability: 'beta',
     // Pure client-rendering surface — no operator service dependency to gate
-    // on. Always available; a project opts in per Settings before the
-    // composer routes claude/codex/pi AND opencode through one ModelPicker
-    // instead of the legacy ModelSelector/HarnessModelSelector fork.
+    // on. Always available.
     available: () => true,
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
+    // On by default for every project (2026-07-21 promotion, per
+    // docs/specs/2026-07-21-credential-and-model-selection-ux.md §3.2 and
+    // §6.4 item 8) — the composer routes claude/codex/pi AND opencode through
+    // one ModelPicker instead of the legacy ModelSelector/HarnessModelSelector
+    // fork. A project can still explicitly opt back out to the legacy fork
+    // per Settings while it remains available as a fallback.
+    platformDefault: () => true,
   },
 ];
 

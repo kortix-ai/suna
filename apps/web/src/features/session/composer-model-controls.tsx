@@ -24,6 +24,11 @@ export interface ComposerModelControlsProps {
     onConnect: (connectionId: HarnessAuthKind) => void;
     disabled?: boolean;
     onManageModels?: () => void;
+    /** Empty-state fallback CTA — see `ModelPickerProps.onConnectFallback`. */
+    onConnectFallback?: () => void;
+    /** Empty-state Upgrade CTA — see `ModelPickerProps.showUpgradeOption`/`onUpgrade`. */
+    showUpgradeOption?: boolean;
+    onUpgrade?: () => void;
   };
   models: FlatModel[];
   selectedModel: { providerID: string; modelID: string } | null;
@@ -77,6 +82,9 @@ export function ComposerModelControls({
           onConnect={modelPicker.onConnect}
           disabled={modelPicker.disabled}
           onManageModels={modelPicker.onManageModels}
+          onConnectFallback={modelPicker.onConnectFallback}
+          showUpgradeOption={modelPicker.showUpgradeOption}
+          onUpgrade={modelPicker.onUpgrade}
         />
       ) : (
         <>

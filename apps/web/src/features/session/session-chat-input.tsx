@@ -845,6 +845,11 @@ export interface SessionChatInputProps {
     onConnect: (connectionId: HarnessAuthKind) => void;
     disabled?: boolean;
     onManageModels?: () => void;
+    /** Empty-state fallback CTA — see `ModelPickerProps.onConnectFallback`. */
+    onConnectFallback?: () => void;
+    /** Empty-state Upgrade CTA — see `ModelPickerProps.showUpgradeOption`/`onUpgrade`. */
+    showUpgradeOption?: boolean;
+    onUpgrade?: () => void;
   };
   messages?: MessageWithParts[];
   /** Protocol-native context and token usage projected by @kortix/sdk. */

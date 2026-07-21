@@ -43,13 +43,15 @@ mock.module('@/hooks/runtime/use-runtime-sessions', () => ({
 }));
 
 const openConnectProviderMock = mock((_tab?: string, _opts?: unknown) => {});
+const openUpgradeMock = mock(() => {});
 mock.module('@/features/session/use-model-connection-gate', () => ({
   useModelConnectionGate: () => ({
     openConnectProvider: openConnectProviderMock,
-    openUpgrade: mock(() => {}),
+    openUpgrade: openUpgradeMock,
     modal: null,
     hasSelectableModels: true,
     entitlementsPending: false,
+    showUpgradeOption: true,
   }),
 }));
 
@@ -306,5 +308,33 @@ describe('ComposerChatInput — unified_model_picker flag wiring', () => {
     expect(openConnectProviderMock).toHaveBeenCalledWith(undefined, {
       connectKind: 'codex_subscription',
     });
+  });
+
+  test('flag ON — empty-state fallback CTAs (onConnectFallback/onUpgrade/showUpgradeOption) route through the same connection gate', () => {
+    flagEnabled = true;
+    currentAgent = OPENCODE_AGENT;
+    capturedSessionChatInputProps = null;
+    modelPickerVmFixture = buildModelPickerVm();
+    openConnectProviderMock.mockClear();
+    openUpgradeMock.mockClear();
+
+    renderComposer();
+    const modelPicker = capturedSessionChatInputProps!.modelPicker as {
+      onConnectFallback: () => void;
+      onUpgrade: () => void;
+      showUpgradeOption: boolean;
+    };
+
+    expect(modelPicker.showUpgradeOption).toBe(true);
+
+    act(() => {
+      modelPicker.onConnectFallback();
+    });
+    expect(openConnectProviderMock).toHaveBeenCalledWith();
+
+    act(() => {
+      modelPicker.onUpgrade();
+    });
+    expect(openUpgradeMock).toHaveBeenCalledTimes(1);
   });
 });

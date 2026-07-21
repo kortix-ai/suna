@@ -128,6 +128,22 @@ describe('ComposerModelControls', () => {
     expect(capturedReasoningEffortSelectorProps).not.toBeNull();
   });
 
+  test('modelPicker empty-state CTAs (onConnectFallback/showUpgradeOption/onUpgrade) forward verbatim to ModelPicker', () => {
+    resetCaptures();
+    const vm = { status: 'ready' } as unknown as ModelPickerViewModel;
+    const onConnect = () => {};
+    const onConnectFallback = () => {};
+    const onUpgrade = () => {};
+    renderControls({
+      modelPicker: { vm, onConnect, onConnectFallback, showUpgradeOption: true, onUpgrade },
+    });
+
+    expect(capturedModelPickerProps).not.toBeNull();
+    expect(capturedModelPickerProps!.onConnectFallback).toBe(onConnectFallback);
+    expect(capturedModelPickerProps!.showUpgradeOption).toBe(true);
+    expect(capturedModelPickerProps!.onUpgrade).toBe(onUpgrade);
+  });
+
   test('empty models + no modelRequired + no harnessModel: neither legacy selector renders, ReasoningEffortSelector still does', () => {
     resetCaptures();
     renderControls({ models: [], onModelChange: undefined });

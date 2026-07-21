@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, CreditCard, KeyRound, Search, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,21 @@ export interface ModelPickerProps {
    *  this keeps the component pure-presentational (no `useModelConnectionGate`
    *  or router import inside). */
   onManageModels?: () => void;
+  /**
+   * Empty-state fallback CTA, for when `vm.groups` has no not-connected
+   * group to key a specific `onConnect(connectionId)` off (nothing is
+   * connected/compatible at all). Opens the generic connect surface, same
+   * routing `ModelSelector`'s equivalent empty state uses
+   * (`openConnectProvider()` with no args). Omitted entirely when the host
+   * has nowhere to route this — same opt-in pattern as `onManageModels`.
+   */
+  onConnectFallback?: () => void;
+  /** Mirrors `useModelConnectionGate().showUpgradeOption` — whether an
+   *  Upgrade CTA makes sense at all (billing enabled). Only relevant
+   *  alongside `onUpgrade`. */
+  showUpgradeOption?: boolean;
+  /** Opens the account upgrade dialog. Paired with `showUpgradeOption`. */
+  onUpgrade?: () => void;
 }
 
 function matchesQuery(query: string, ...values: Array<string | null>): boolean {
@@ -64,7 +79,15 @@ function filterGroups(groups: ModelPickerGroup[], query: string): ModelPickerGro
  * group (including `not-connected`) renders through the same
  * `ModelPickerRow`; there is no separate "disconnected provider" component.
  */
-export function ModelPicker({ vm, onConnect, disabled = false, onManageModels }: ModelPickerProps) {
+export function ModelPicker({
+  vm,
+  onConnect,
+  disabled = false,
+  onManageModels,
+  onConnectFallback,
+  showUpgradeOption = false,
+  onUpgrade,
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [customValue, setCustomValue] = useState('');
@@ -104,6 +127,16 @@ export function ModelPicker({ vm, onConnect, disabled = false, onManageModels }:
     },
     [vm],
   );
+
+  const handleConnectFallback = useCallback(() => {
+    setOpen(false);
+    onConnectFallback?.();
+  }, [onConnectFallback]);
+
+  const handleUpgrade = useCallback(() => {
+    setOpen(false);
+    onUpgrade?.();
+  }, [onUpgrade]);
 
   const hintLabel = vm.trigger.interactive
     ? vm.trigger.sublabel
@@ -182,8 +215,31 @@ export function ModelPicker({ vm, onConnect, disabled = false, onManageModels }:
             <div className="px-3 py-5 text-center">
               <div className="text-foreground text-sm font-medium">No models available</div>
               <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                Try a different search, or connect a provider to see more models.
+                {showUpgradeOption
+                  ? 'Upgrade or connect your own provider to start using this session.'
+                  : 'Connect your own provider to start using this session.'}
               </p>
+              {onUpgrade || onConnectFallback ? (
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  {showUpgradeOption && onUpgrade ? (
+                    <Button type="button" size="xs" onClick={handleUpgrade}>
+                      <CreditCard className="size-3.5" />
+                      Upgrade
+                    </Button>
+                  ) : null}
+                  {onConnectFallback ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={showUpgradeOption && onUpgrade ? 'outline' : 'default'}
+                      onClick={handleConnectFallback}
+                    >
+                      <KeyRound className="size-3.5" />
+                      Connect a model service
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
         </CommandList>

@@ -72,16 +72,18 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('unified_model_picker is explicit opt-in (beta, no operator kill switch)', () => {
+  test('unified_model_picker is on by default (beta, no operator kill switch), project can still opt out', () => {
     expect(findCatalogFeature('unified_model_picker').available).toBe(true);
     expect(findCatalogFeature('unified_model_picker').stability).toBe('beta');
-    expect(resolveExperimentalFeature({}, 'unified_model_picker')).toBe(false);
+    // No explicit project choice → promoted default: on (2026-07-21).
+    expect(resolveExperimentalFeature({}, 'unified_model_picker')).toBe(true);
     expect(
       resolveExperimentalFeature(
         { experimental: { unified_model_picker: true } },
         'unified_model_picker',
       ),
     ).toBe(true);
+    // A project can still explicitly opt back out to the legacy fork.
     expect(
       resolveExperimentalFeature(
         { experimental: { unified_model_picker: false } },

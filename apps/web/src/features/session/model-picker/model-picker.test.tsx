@@ -283,3 +283,104 @@ describe('ModelPicker — within', () => {
     expect(within(notConnectedGroup).getByText('GPT-5.1')).toBeTruthy();
   });
 });
+
+// ─── Empty state: never a dead end (2026-07-21 UX spec §1.5/§6.4 item 2) ────
+// The fully-empty (`vm.groups: []`) state used to be prose-only with no
+// inline action — the only way out was the footer `onManageModels` link,
+// which the live composer never even wires up (see composer-chat-input.tsx).
+// These lock in that the empty state now always offers a concrete next step
+// whenever the host supplies one, mirroring the legacy `ModelSelector`'s
+// Upgrade / Connect a model service buttons.
+describe('ModelPicker — empty state', () => {
+  function emptyVm(): ModelPickerViewModel {
+    return {
+      status: 'ready',
+      selectedKey: null,
+      searchable: false,
+      trigger: { label: 'Select a model', sublabel: null, interactive: true },
+      customEntry: null,
+      groups: [],
+      select: mock(() => {}),
+    };
+  }
+
+  it('renders "No models available" with no buttons when the host supplies no fallback CTA at all', async () => {
+    render(
+      <TooltipProvider>
+        <ModelPicker vm={emptyVm()} onConnect={mock(() => {})} />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Select a model/i }));
+    await flush();
+
+    expect(screen.getByText('No models available')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect a model service' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upgrade' })).toBeNull();
+  });
+
+  it('renders an inline "Connect a model service" button and fires onConnectFallback, closing the popover', async () => {
+    const onConnectFallback = mock(() => {});
+    render(
+      <TooltipProvider>
+        <ModelPicker
+          vm={emptyVm()}
+          onConnect={mock(() => {})}
+          onConnectFallback={onConnectFallback}
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Select a model/i }));
+    await flush();
+
+    expect(screen.getByText('Connect your own provider to start using this session.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect a model service' }));
+    await flush();
+
+    expect(onConnectFallback).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('No models available')).toBeNull();
+  });
+
+  it('renders both Upgrade and Connect a model service when showUpgradeOption is true, each firing its own handler', async () => {
+    const onConnectFallback = mock(() => {});
+    const onUpgrade = mock(() => {});
+    render(
+      <TooltipProvider>
+        <ModelPicker
+          vm={emptyVm()}
+          onConnect={mock(() => {})}
+          onConnectFallback={onConnectFallback}
+          showUpgradeOption
+          onUpgrade={onUpgrade}
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Select a model/i }));
+    await flush();
+
+    expect(
+      screen.getByText('Upgrade or connect your own provider to start using this session.'),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upgrade' }));
+    expect(onUpgrade).toHaveBeenCalledTimes(1);
+    expect(onConnectFallback).not.toHaveBeenCalled();
+  });
+
+  it('omits the Upgrade button when showUpgradeOption is false even if onUpgrade is supplied', async () => {
+    render(
+      <TooltipProvider>
+        <ModelPicker
+          vm={emptyVm()}
+          onConnect={mock(() => {})}
+          onConnectFallback={mock(() => {})}
+          onUpgrade={mock(() => {})}
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Select a model/i }));
+    await flush();
+
+    expect(screen.queryByRole('button', { name: 'Upgrade' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Connect a model service' })).toBeTruthy();
+  });
+});

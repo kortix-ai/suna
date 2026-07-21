@@ -398,13 +398,23 @@ export function ComposerChatInput({
   // Same "where should Connect route to" gate `ModelSelector` uses — kept as
   // its own instance here (not threaded from `SessionChatInput`, which owns
   // a private one for its `composerConnectKind` banner) so `ModelPicker`'s
-  // "Not connected" group's Connect action opens the identical dialog.
-  const { openConnectProvider, modal: unifiedConnectionModal } = useModelConnectionGate();
+  // "Not connected" group's Connect action opens the identical dialog, and
+  // its fully-empty state's fallback Upgrade/Connect buttons route through
+  // the exact same dialogs the legacy `ModelSelector` empty state uses.
+  const {
+    openConnectProvider,
+    openUpgrade,
+    showUpgradeOption,
+    modal: unifiedConnectionModal,
+  } = useModelConnectionGate();
   const unifiedModelPicker = unifiedModelPickerEnabled
     ? {
         vm: { ...modelPickerVm, select: handleUnifiedModelSelect },
         onConnect: (connectionId: HarnessAuthKind) =>
           openConnectProvider(undefined, { connectKind: connectionId }),
+        onConnectFallback: () => openConnectProvider(),
+        showUpgradeOption,
+        onUpgrade: openUpgrade,
       }
     : undefined;
 

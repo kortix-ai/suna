@@ -83,8 +83,9 @@ OpenCode routes models through the Kortix gateway (gateway-prefixed model ids)
 and supports changing model mid-session. Claude Code, Codex, and Pi own their
 default model natively (bare model ids) and apply model changes at session
 launch. The session composer's model picker is harness-aware; the unified
-model-first picker ships behind the `unified_model_picker` experimental
-feature (off by default).
+model-first picker is the default composer control behind the
+`unified_model_picker` experimental feature (on by default — a project can
+opt back out to the legacy picker in Settings).
 
 <Callout type="info" title="Overriding the ACP process">
 For controlled rollouts and testing, the sandbox daemon honors
