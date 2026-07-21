@@ -77,27 +77,44 @@ export function connectedHarnessesFromModelsPage(
  * profiles on the same harness share connection state, which matches
  * reality (a harness either has a ready compatible connection or it
  * doesn't) — and is independent of whether any agent is currently routed
- * to that harness. */
+ * to that harness.
+ *
+ * `experimentalHarnessesEnabled` mirrors the project's `experimental_harnesses`
+ * flag (same source the server-side `isExperimentalHarnessGated` selection
+ * gate reads — see `apps/api/src/projects/lib/composer-capabilities.ts`).
+ * When it's off, rows for an experimental harness (`ACP_HARNESS_STABILITY[harness]
+ * === 'experimental'`) are FILTERED OUT entirely rather than shown
+ * disabled/badged: a manifest can still declare claude/codex/pi profiles
+ * (the parse/compile carve-out — see `agent-config-v2.ts`), but this view
+ * must not advertise them as a real option until the project has actually
+ * opted in. When the flag is on, every row shows including the
+ * "Experimental" badge (`row.experimental`), unchanged from before. */
 export function buildRuntimeRows(
   runtimes: Record<string, RuntimeProfile>,
   connectedHarnesses: Partial<Record<AcpHarness, ModelsPageConnection>>,
+  experimentalHarnessesEnabled: boolean,
 ): RuntimeRowViewModel[] {
-  return Object.entries(runtimes).map(([profileName, profile]) => {
-    const harness = profile.harness;
-    const presentation = harnessPresentation(harness as KortixHarness);
-    const connection = connectedHarnesses[harness];
-    const connected = Boolean(connection);
-    const connectionLabel = connection ? connectionDisplayName(connection.kind) : null;
+  return Object.entries(runtimes)
+    .filter(
+      ([, profile]) =>
+        experimentalHarnessesEnabled || ACP_HARNESS_STABILITY[profile.harness] !== 'experimental',
+    )
+    .map(([profileName, profile]) => {
+      const harness = profile.harness;
+      const presentation = harnessPresentation(harness as KortixHarness);
+      const connection = connectedHarnesses[harness];
+      const connected = Boolean(connection);
+      const connectionLabel = connection ? connectionDisplayName(connection.kind) : null;
 
-    return {
-      profileName,
-      harness,
-      label: presentation.label,
-      meta: connectionLabel
-        ? `Runs ${presentation.label} · Connected via ${connectionLabel}`
-        : `Runs ${presentation.label} · Not connected`,
-      experimental: ACP_HARNESS_STABILITY[harness] === 'experimental',
-      connected,
-    };
-  });
+      return {
+        profileName,
+        harness,
+        label: presentation.label,
+        meta: connectionLabel
+          ? `Runs ${presentation.label} · Connected via ${connectionLabel}`
+          : `Runs ${presentation.label} · Not connected`,
+        experimental: ACP_HARNESS_STABILITY[harness] === 'experimental',
+        connected,
+      };
+    });
 }

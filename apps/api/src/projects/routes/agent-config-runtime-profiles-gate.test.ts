@@ -3,10 +3,10 @@
  * (Task WS2-P1-b). Claude/Codex/Pi are selectable ONLY once a project opts
  * into `experimental_harnesses` (founder posture: OpenCode is the only
  * non-experimental harness). This gate is on SELECTION/WRITE only — an
- * already-declared v3 manifest (the shipped base template declares all four
- * runtimes) keeps reading and compiling regardless of the flag; see
- * `starter-template-fleet.test.ts` and `compile-runtime-config.test.ts`,
- * both untouched by this task.
+ * already-declared v3 manifest naming an experimental harness keeps reading
+ * and compiling regardless of the flag. The shipped base template and the
+ * v2→v3 migration default both declare `opencode` only (OpenCode-first); see
+ * `starter-template-fleet.test.ts` and `compile-runtime-config.test.ts`.
  *
  * IAM (`loadProjectForUser`/`assertProjectCapability`), the trigger-engine's
  * `loadManifestForEdit`, and the real git write path

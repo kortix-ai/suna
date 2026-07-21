@@ -82,6 +82,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   enableAcpRuntimeProfiles,
+  getProject,
   getRuntimeProfiles,
   type RuntimeProfile,
   updateRuntimeProfiles,
@@ -108,6 +109,20 @@ export function RuntimeView({ projectId }: { projectId: string }) {
     queryFn: () => getRuntimeProfiles(projectId),
     staleTime: 30_000,
   });
+  // Same `['project', projectId]` query `SettingsView` reads its
+  // `experimental_features` catalog from — reused here (not a private query)
+  // so the Runtime section's row filtering can never disagree with the
+  // Settings → Experimental toggle or the `MultiHarnessToggle` row on the
+  // connect modal, all three driven by this one project fetch.
+  const projectQuery = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => getProject(projectId),
+    staleTime: 20_000,
+  });
+  const experimentalHarnessesEnabled = Boolean(
+    projectQuery.data?.experimental_features?.find((entry) => entry.key === 'experimental_harnesses')
+      ?.enabled,
+  );
   const modelsPage = useModelsPage(projectId, canWrite);
   const connectedHarnesses = useMemo(
     () => connectedHarnessesFromModelsPage(modelsPage.connections),
@@ -116,9 +131,9 @@ export function RuntimeView({ projectId }: { projectId: string }) {
   const rows = useMemo<RuntimeRowViewModel[]>(
     () =>
       profilesQuery.data?.editable
-        ? buildRuntimeRows(profilesQuery.data.runtimes, connectedHarnesses)
+        ? buildRuntimeRows(profilesQuery.data.runtimes, connectedHarnesses, experimentalHarnessesEnabled)
         : [],
-    [profilesQuery.data, connectedHarnesses],
+    [profilesQuery.data, connectedHarnesses, experimentalHarnessesEnabled],
   );
 
   // "Choose model" closes the overlay (same action ESC/backdrop already
@@ -283,23 +298,28 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
   const enableMutation = useMutation({
     mutationFn: () => enableAcpRuntimeProfiles(projectId),
     onSuccess: async () => {
-      successToast('Claude Code, Codex, OpenCode, and Pi are ready to select');
+      // OpenCode-first: the server-side upgrade (`migrateManifestV2ToV3`)
+      // only declares the opencode runtime profile now — claude/codex/pi
+      // stay unselected until the project opts into "Experimental
+      // harnesses" (Settings → Experimental) and adds a profile for one.
+      successToast('OpenCode runtime profile is ready to select');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId) }),
         queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
         queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
       ]);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to enable harnesses'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to enable runtime profiles'),
   });
 
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium">Turn on every harness</p>
+          <p className="text-sm font-medium">Turn on runtime profiles</p>
           <p className="text-muted-foreground mt-1 text-xs text-pretty">
-            Add Claude Code, Codex, OpenCode, and Pi so your agents can run on any of them.
+            Upgrade this project to manage its OpenCode runtime here. Claude Code, Codex, and Pi
+            stay off by default — turn on Experimental harnesses in Settings to add one.
           </p>
         </div>
         <Button
@@ -310,7 +330,7 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
           onClick={() => enableMutation.mutate()}
         >
           {enableMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Enable harnesses
+          Enable runtime profiles
         </Button>
       </div>
     </div>

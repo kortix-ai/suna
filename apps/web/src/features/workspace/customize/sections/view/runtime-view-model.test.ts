@@ -70,13 +70,14 @@ describe('buildRuntimeRows', () => {
         'runtime-2': { harness: 'opencode' },
       },
       {},
+      true,
     );
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.profileName)).toEqual(['claude', 'runtime-2']);
   });
 
   test('label comes from the canonical harness descriptor, not the profile name', () => {
-    const rows = buildRuntimeRows({ 'my-custom-slug': { harness: 'claude' } }, {});
+    const rows = buildRuntimeRows({ 'my-custom-slug': { harness: 'claude' } }, {}, true);
     expect(rows[0]!.label).toBe('Claude Code');
     expect(rows[0]!.label).not.toContain('my-custom-slug');
   });
@@ -90,6 +91,7 @@ describe('buildRuntimeRows', () => {
         pi: { harness: 'pi' },
       },
       {},
+      true,
     );
     const experimentalByHarness = Object.fromEntries(rows.map((r) => [r.harness, r.experimental]));
     expect(experimentalByHarness).toEqual({
@@ -106,6 +108,7 @@ describe('buildRuntimeRows', () => {
       connectedHarnessesFromModelsPage([
         modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
       ]),
+      true,
     );
     expect(rows[0]!.connected).toBe(true);
     expect(rows[0]!.meta).toBe('Runs Claude Code · Connected via Claude subscription');
@@ -117,13 +120,14 @@ describe('buildRuntimeRows', () => {
       connectedHarnessesFromModelsPage([
         modelsPageConnection({ kind: 'claude_subscription', status: 'needs-attention' }),
       ]),
+      true,
     );
     expect(rows[0]!.connected).toBe(false);
     expect(rows[0]!.meta).toBe('Runs Claude Code · Not connected');
   });
 
   test('a harness with no entry in the connection map defaults to not connected', () => {
-    const rows = buildRuntimeRows({ pi: { harness: 'pi' } }, {});
+    const rows = buildRuntimeRows({ pi: { harness: 'pi' } }, {}, true);
     expect(rows[0]!.connected).toBe(false);
     expect(rows[0]!.meta).toBe('Runs Pi · Not connected');
   });
@@ -141,6 +145,7 @@ describe('buildRuntimeRows', () => {
           // data backs it.
           modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
         ]),
+        true,
       );
       expect(rows[0]!.connected).toBe(true);
       expect(rows[0]!.meta).toBe('Runs Claude Code · Connected via Claude subscription');
@@ -153,11 +158,50 @@ describe('buildRuntimeRows', () => {
       connectedHarnessesFromModelsPage([
         modelsPageConnection({ kind: 'claude_subscription', status: 'ready' }),
       ]),
+      true,
     );
     const serialized = JSON.stringify(rows);
     expect(serialized).not.toContain('schema_version');
     expect(serialized).not.toContain('kortix.yaml');
     expect(serialized).not.toContain('kortix.toml');
     expect(serialized).not.toContain('.claude');
+  });
+
+  // ─── OpenCode-first: filter experimental rows when the flag is off ───────
+
+  test('experimentalHarnessesEnabled=false filters out claude/codex/pi rows, keeps opencode', () => {
+    const rows = buildRuntimeRows(
+      {
+        claude: { harness: 'claude' },
+        codex: { harness: 'codex' },
+        opencode: { harness: 'opencode' },
+        pi: { harness: 'pi' },
+      },
+      {},
+      false,
+    );
+    expect(rows.map((r) => r.harness)).toEqual(['opencode']);
+  });
+
+  test('experimentalHarnessesEnabled=true keeps every row, including experimental ones', () => {
+    const rows = buildRuntimeRows(
+      {
+        claude: { harness: 'claude' },
+        opencode: { harness: 'opencode' },
+      },
+      {},
+      true,
+    );
+    expect(rows.map((r) => r.harness)).toEqual(['claude', 'opencode']);
+    expect(rows.find((r) => r.harness === 'claude')!.experimental).toBe(true);
+  });
+
+  test('a runtimes map with only experimental harnesses and the flag off yields zero rows', () => {
+    const rows = buildRuntimeRows(
+      { claude: { harness: 'claude' }, codex: { harness: 'codex' } },
+      {},
+      false,
+    );
+    expect(rows).toEqual([]);
   });
 });

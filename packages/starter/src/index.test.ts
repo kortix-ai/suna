@@ -144,6 +144,30 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
+  // OpenCode-first (founder decision): a brand-new project must not be
+  // handed all four ACP harnesses by default. Claude Code/Codex/Pi are
+  // experimental and only become selectable once a project explicitly opts
+  // into the `experimental_harnesses` flag and declares a runtime profile
+  // for one — see apps/api/src/projects/lib/composer-capabilities.ts
+  // (`isExperimentalHarnessGated`).
+  test('base kortix.yaml declares only the opencode runtime profile by default', () => {
+    const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    const manifest = byPath(files).get('kortix.yaml')!;
+    expect(manifest).toContain('opencode:');
+    expect(manifest).not.toMatch(/^\s{2}claude:/m);
+    expect(manifest).not.toMatch(/^\s{2}codex:/m);
+    expect(manifest).not.toMatch(/^\s{2}pi:/m);
+  });
+
+  test('base template does not seed native config dirs for the experimental harnesses', () => {
+    const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    for (const dir of ['.claude', '.codex', '.pi']) {
+      expect(files.some((f) => f.path === dir || f.path.startsWith(`${dir}/`))).toBe(false);
+    }
+    // OpenCode, the one stable/default harness, is still seeded.
+    expect(files.some((f) => f.path.startsWith('.opencode/'))).toBe(true);
+  });
+
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
     // The one user-facing starter (the default) carries the full skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });

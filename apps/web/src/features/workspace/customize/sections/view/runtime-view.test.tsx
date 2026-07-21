@@ -33,12 +33,38 @@ let runtimeProfiles: RuntimeProfilesResponse = {
   editable: true,
   runtimes: {},
 };
+// Drives the `['project', projectId]` fetch `RuntimeView` reads
+// `experimental_harnesses` off of (same shape `getProject` resolves —
+// `KortixProject['experimental_features']`). Defaults to enabled so every
+// pre-existing test in this file (written before the flag-gated filter
+// existed) keeps seeing experimental-harness rows unless it opts into the
+// flag-off scenario itself (see the "experimental gating" describe block).
+let experimentalHarnessesEnabled = true;
 const actualReactQuery = await import('@tanstack/react-query');
 mock.module('@tanstack/react-query', () => ({
   ...actualReactQuery,
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
     if (queryKey[0] === 'runtime-profiles') {
       return { data: runtimeProfiles, isLoading: false, isError: false };
+    }
+    if (queryKey[0] === 'project') {
+      return {
+        data: {
+          experimental_features: [
+            {
+              key: 'experimental_harnesses',
+              name: 'Experimental harnesses',
+              description: '',
+              stability: 'experimental',
+              available: true,
+              enabled: experimentalHarnessesEnabled,
+              overridden: experimentalHarnessesEnabled,
+            },
+          ],
+        },
+        isLoading: false,
+        isError: false,
+      };
     }
     return { data: undefined, isLoading: false, isError: false };
   },
@@ -106,6 +132,7 @@ afterEach(() => {
     isError: false,
   };
   canWriteMock = true;
+  experimentalHarnessesEnabled = true;
   useCustomizeStore.setState({ open: true, section: 'runtime' });
   useConnectModalStore.setState({
     isOpen: false,
@@ -266,7 +293,7 @@ describe('RuntimeView — Runtime customize section (WS5-P2-a)', () => {
     render(<RuntimeView projectId={PROJECT_ID} />);
 
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-    expect(screen.getByText('Turn on every harness')).toBeDefined();
+    expect(screen.getByText('Turn on runtime profiles')).toBeDefined();
     expect(screen.queryByText('Advanced')).toBeNull();
   });
 });
@@ -452,5 +479,47 @@ describe('RuntimeView — reduced motion (WS5-P6-a)', () => {
     ]) {
       expect(body).toMatch(new RegExp(`${prop}:\\s*(0|1);`));
     }
+  });
+});
+
+// ─── OpenCode-first: experimental-harness rows hidden until the project ────
+// opts in (`experimental_harnesses`) ─────────────────────────────────────────
+
+describe('RuntimeView — experimental harness gating', () => {
+  test('a claude row is hidden when the project has not enabled experimental_harnesses', () => {
+    experimentalHarnessesEnabled = false;
+    setRuntimes({
+      'runtime-1': { harness: 'claude' },
+      'runtime-2': { harness: 'opencode' },
+    });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    const rows = screen.getAllByRole('listitem');
+    expect(rows).toHaveLength(1);
+    expect(screen.queryByText('Claude Code')).toBeNull();
+    expect(screen.getByText('OpenCode')).toBeDefined();
+  });
+
+  test('the claude row reappears once experimental_harnesses is enabled', () => {
+    experimentalHarnessesEnabled = true;
+    setRuntimes({
+      'runtime-1': { harness: 'claude' },
+      'runtime-2': { harness: 'opencode' },
+    });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    const rows = screen.getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(screen.getByText('Claude Code')).toBeDefined();
+    expect(screen.getByText('OpenCode')).toBeDefined();
+  });
+
+  test('a project declaring ONLY experimental harnesses with the flag off shows the first-run EmptyState, not silent empty rows', () => {
+    experimentalHarnessesEnabled = false;
+    setRuntimes({ 'runtime-1': { harness: 'claude' }, 'runtime-2': { harness: 'codex' } });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.getByText('Pick a runtime, connect it, go')).toBeDefined();
   });
 });

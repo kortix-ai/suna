@@ -98,7 +98,7 @@ function v3Manifest(body = V3_MANIFEST) {
 /* ─── 1. migrateManifestV2ToV3 happy path ─────────────────────────────── */
 
 describe('migrateManifestV2ToV3 — happy path', () => {
-  test('promotes every v2 agent to routed v3, injects the four default runtime profiles, drops legacy opencode:, preserves governance/default_agent/triggers', () => {
+  test('promotes every v2 agent to routed v3, injects the opencode-only default runtime profile, drops legacy opencode:, preserves governance/default_agent/triggers', () => {
     const applied = migrateManifestV2ToV3(v2Manifest());
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
@@ -108,15 +108,18 @@ describe('migrateManifestV2ToV3 — happy path', () => {
     // Legacy top-level `opencode:` block is removed outright.
     expect(applied.raw).not.toHaveProperty('opencode');
 
-    // All four default runtime profiles are injected with the canonical
-    // harness + config_dir pairing (DEFAULT_RUNTIME_PROFILES_V3).
+    // OpenCode-first: only the opencode default runtime profile is injected
+    // (DEFAULT_RUNTIME_PROFILES_V3). Legacy v2 was opencode-only by
+    // construction (V2_RUNTIME_VALUES), so migrating it to v3 must not
+    // reintroduce the experimental harnesses (claude/codex/pi) through a
+    // door that bypasses the `experimental_harnesses` selection gate.
     expect(applied.raw.runtimes).toEqual({
       opencode: { harness: 'opencode', config_dir: '.opencode' },
-      claude: { harness: 'claude', config_dir: '.claude' },
-      codex: { harness: 'codex', config_dir: '.codex' },
-      pi: { harness: 'pi', config_dir: '.pi' },
     });
     expect(applied.raw.runtimes).toEqual(DEFAULT_RUNTIME_PROFILES_V3);
+    expect(applied.raw.runtimes).not.toHaveProperty('claude');
+    expect(applied.raw.runtimes).not.toHaveProperty('codex');
+    expect(applied.raw.runtimes).not.toHaveProperty('pi');
 
     // Every v2 agent is present, keyed by its own v2 map key, routed to
     // `runtime: opencode` / `agent: <its own key>`, with governance intact.
@@ -316,12 +319,8 @@ describe('experimentalHarnessesInRuntimeProfiles', () => {
     ).toEqual(['claude', 'codex', 'pi']);
   });
 
-  test('the shipped-template default runtime map (all four harnesses) flags exactly the three experimental ones', () => {
-    expect(experimentalHarnessesInRuntimeProfiles(DEFAULT_RUNTIME_PROFILES_V3)).toEqual([
-      'claude',
-      'codex',
-      'pi',
-    ]);
+  test('the migration/shipped-template default runtime map (opencode only) is never gated', () => {
+    expect(experimentalHarnessesInRuntimeProfiles(DEFAULT_RUNTIME_PROFILES_V3)).toEqual([]);
   });
 
   test('an empty runtimes map is never gated', () => {

@@ -19,23 +19,15 @@ env:
     - STUDIO_DOMAIN_BUDGET # max USD the studio may spend on a domain w/o asking
 
 # ─── ACP runtime profiles ────────────────────────────────────────────────
-# Same four default profiles the base starter declares (see its kortix.yaml
-# for the full explanation) — this project only actually uses `opencode`
-# today (behavior lives in .opencode/agents/studio.md), but the other
-# three stay selectable like any other v3 project.
+# Same single default profile the base starter declares (see its kortix.yaml
+# for the full explanation) — this project runs on `opencode` (behavior lives
+# in .opencode/agents/studio.md). Claude Code, Codex, and Pi are experimental
+# and stay unselected here; add a profile for one only after turning on
+# "Experimental harnesses" for this project in Settings → Experimental.
 runtimes:
   opencode:
     harness: opencode
     config_dir: .opencode
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-    config_dir: .codex
-  pi:
-    harness: pi
-    config_dir: .pi
 
 # GOVERNANCE + ROUTING ONLY (behaviour lives in .opencode/agents/studio.md).
 # The studio is granted broad access so a fresh clone works end-to-end; narrow

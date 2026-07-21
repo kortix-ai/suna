@@ -4,11 +4,14 @@
  *  1. Every shipped `kortix.yaml` in `packages/starter/templates/` (the base
  *     floor + every `marketplace-projects/*` clonable project) is
  *     `kortix_version: 3` and passes `validateManifest` with zero errors.
- *  2. The base template's seeded native config directory for each of the
- *     four ACP harnesses (`.claude`, `.codex`, `.kortix/opencode`, `.pi`)
- *     passes `validateHarnessConfig` with zero issues, and its declared
- *     `runtimes.<name>.config_dir` matches the canonical
- *     `HARNESSES[<name>].configDir`.
+ *  2. OpenCode-first (founder decision): the base template seeds a native
+ *     config dir and a `runtimes` entry for `opencode` ONLY — the one
+ *     stable, supported harness. Claude Code/Codex/Pi are experimental and
+ *     must NOT be declared by a fresh project; they only become selectable
+ *     once a project explicitly opts into `experimental_harnesses`. This
+ *     section asserts both halves of that: opencode is seeded and valid,
+ *     and the other three official harnesses are absent from the shipped
+ *     template.
  *
  * Also proves the web-studio v2→v3 migration (done by hand in the template
  * file, since the migration function only operates on a live `kortix.yaml`
@@ -77,27 +80,37 @@ describe('starter template fleet — manifest v3', () => {
 });
 
 describe('starter template fleet — seeded native config dirs (base)', () => {
-  for (const harness of HARNESS_IDS) {
-    test(`${harness}: base template's ${HARNESSES[harness].configDir} seed is non-empty and passes validateHarnessConfig with zero issues`, () => {
-      const configDir = HARNESSES[harness].configDir;
-      const files: FileTreeEntry[] = BASE_FILES.filter(
-        (f) => f.path === configDir || f.path.startsWith(`${configDir}/`),
-      ).map((f) => ({ path: f.path, content: f.content }));
+  test("opencode: base template's .opencode seed is non-empty and passes validateHarnessConfig with zero issues", () => {
+    const configDir = HARNESSES.opencode.configDir;
+    const files: FileTreeEntry[] = BASE_FILES.filter(
+      (f) => f.path === configDir || f.path.startsWith(`${configDir}/`),
+    ).map((f) => ({ path: f.path, content: f.content }));
 
-      expect(files.length).toBeGreaterThan(0);
-      expect(validateHarnessConfig(harness, configDir, files)).toEqual([]);
+    expect(files.length).toBeGreaterThan(0);
+    expect(validateHarnessConfig('opencode', configDir, files)).toEqual([]);
+  });
+
+  // OpenCode-first regression guard: the experimental harnesses (claude,
+  // codex, pi) must not ship a seeded native config dir in the base
+  // template — a fresh project only gets one after explicitly opting into
+  // `experimental_harnesses` and adding a runtime profile for one.
+  for (const harness of HARNESS_IDS.filter((id) => id !== 'opencode')) {
+    test(`${harness}: base template does NOT seed ${HARNESSES[harness].configDir} by default (experimental harness)`, () => {
+      const configDir = HARNESSES[harness].configDir;
+      const files = BASE_FILES.filter(
+        (f) => f.path === configDir || f.path.startsWith(`${configDir}/`),
+      );
+      expect(files).toEqual([]);
     });
   }
 
-  test("base kortix.yaml's runtimes.<name>.config_dir matches HARNESSES[<name>].configDir for every harness", () => {
+  test("base kortix.yaml's runtimes declares opencode only, with config_dir matching HARNESSES.opencode.configDir", () => {
     const content = fileContent(BASE_FILES, 'kortix.yaml');
     const result = validateManifest(content, 'yaml');
     const runtimes = result.parsed?.runtimes as Record<string, { harness: string; config_dir?: string }>;
 
-    for (const harness of HARNESS_IDS) {
-      expect(runtimes[harness]).toBeTruthy();
-      expect(runtimes[harness].config_dir).toBe(HARNESSES[harness].configDir);
-    }
+    expect(Object.keys(runtimes)).toEqual(['opencode']);
+    expect(runtimes.opencode.config_dir).toBe(HARNESSES.opencode.configDir);
   });
 });
 

@@ -188,7 +188,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/runtime-profiles/enable',
     tags: ['projects'],
-    summary: 'Upgrade a v2 project and enable every official ACP harness',
+    summary: 'Upgrade a v2 project to ACP-native v3 (declares the opencode runtime profile)',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'Enabled ACP runtime profiles'), ...errors(400, 403, 404) },
@@ -242,9 +242,11 @@ projectsApp.openapi(
     const parsed = RuntimeProfilesBodySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
     // Gate SELECTION/WRITE only (never parsing/compiling — an already-declared
-    // v3 manifest with all four runtimes, the shipped base template, keeps
-    // reading and compiling regardless of this flag). OpenCode is `stable`
-    // and is never in `experimentalHarnessesInRuntimeProfiles`'s result.
+    // v3 manifest that names an experimental harness keeps reading and
+    // compiling regardless of this flag). OpenCode is `stable` and is never
+    // in `experimentalHarnessesInRuntimeProfiles`'s result. The shipped base
+    // template and the v2→v3 migration default both declare `opencode` only
+    // today, so a fresh project never needs this carve-out to start.
     const gatedHarnesses = experimentalHarnessesInRuntimeProfiles(parsed.data.runtimes);
     if (gatedHarnesses.length > 0 && !resolveExperimentalFeature(loaded.row.metadata, 'experimental_harnesses')) {
       return c.json({
