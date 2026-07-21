@@ -29,6 +29,13 @@ type PendingRequest = {
   resolve(value: JsonRpcEnvelope): void
   reject(error: Error): void
   timer: ReturnType<typeof setTimeout>
+  /** The outbound method this request was for — only `session/prompt`
+   *  responses are checked for the hollow-completion pattern below. */
+  method?: string
+  /** Whether the outbound `session/prompt` actually carried non-empty
+   *  content. A prompt with nothing in it legitimately CAN end in a
+   *  zero-token turn — only a real prompt going hollow is suspicious. */
+  promptHadContent?: boolean
 }
 
 type Subscriber = {
@@ -119,6 +126,72 @@ export function parseJsonRpcEnvelope(value: unknown): JsonRpcEnvelope {
     throw new Error('JSON-RPC envelope must be a request, notification, or response')
   }
   return value as JsonRpcEnvelope
+}
+
+/** True if an outbound `session/prompt`'s `params.prompt` carries at least
+ *  one non-empty content block (text or otherwise). A prompt with nothing
+ *  in it can legitimately end a turn with zero usage — only a REAL prompt
+ *  going hollow (see `isHollowPromptCompletion`) is a harness bug. */
+function promptHasContent(envelope: JsonRpcEnvelope): boolean {
+  const params = isObject(envelope.params) ? envelope.params : {}
+  const blocks = Array.isArray(params.prompt) ? params.prompt : []
+  return blocks.some((block) => {
+    if (!isObject(block)) return false
+    if (typeof block.text === 'string') return block.text.trim().length > 0
+    // Any non-text block (image/resource/etc.) counts as real content.
+    return typeof block.type === 'string' && block.type !== 'text'
+  })
+}
+
+/**
+ * Detects a harness completing a `session/prompt` turn WITHOUT ever calling
+ * a model: `result.stopReason` reports a normal completion (`end_turn`) but
+ * `result.usage` is entirely zero. A genuine model call always consumes at
+ * least the prompt's input tokens, so all-zero usage after real content was
+ * sent means no upstream request was ever made — the harness silently
+ * no-op'd instead of surfacing whatever stopped it (e.g. OpenCode 1.17.11
+ * swallowing a 400 from Anthropic's `thinking.type=enabled` deprecation
+ * for newer Claude models — see the regression test for the full story).
+ *
+ * Deliberately narrow: only `end_turn` trips this (not `cancelled`, which
+ * legitimately reports zero usage when the user cancels before the model
+ * responds, mirroring `OutputScanTracker.noteResponse`'s same carve-out;
+ * and not `max_tokens`/`refusal`/other terminal reasons, which imply SOME
+ * upstream attempt happened). Fail-fast mandate: a hollow completion must
+ * never look like a normal, silent, empty response to the user.
+ */
+function isHollowPromptCompletion(pending: PendingRequest, envelope: JsonRpcEnvelope): boolean {
+  if (pending.method !== 'session/prompt' || !pending.promptHadContent) return false
+  if (Object.prototype.hasOwnProperty.call(envelope, 'error')) return false
+  const result = isObject(envelope.result) ? envelope.result : null
+  if (!result || result.stopReason !== 'end_turn') return false
+  const usage = isObject(result.usage) ? result.usage : null
+  if (!usage) return false
+  const inputTokens = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0
+  const outputTokens = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0
+  const totalTokens = typeof usage.totalTokens === 'number' ? usage.totalTokens : 0
+  return inputTokens === 0 && outputTokens === 0 && totalTokens === 0
+}
+
+/** Rewrites a hollow completion into a genuine JSON-RPC error. This reuses
+ *  the SDK's EXISTING error path end to end — `AcpClient.request()` already
+ *  throws `AcpRpcError` on any `envelope.error` (client.ts), and
+ *  `AcpSession.send()` already catches that and patches `snapshot.error`
+ *  (session.ts) — so no client/composer change is needed to make this
+ *  visible; it rides the same rail a real upstream rejection would. */
+function toHollowPromptError(envelope: JsonRpcEnvelope): JsonRpcEnvelope {
+  return {
+    jsonrpc: '2.0',
+    id: envelope.id,
+    error: {
+      code: -32001,
+      message:
+        'The agent ended the turn without producing a response (zero tokens used). ' +
+        'This usually means the harness could not reach the model — check the ' +
+        "session's model/provider connection and try again.",
+      data: { kortix: { reason: 'hollow_prompt_completion' } },
+    },
+  }
 }
 
 class AcpProcess {
@@ -219,12 +292,14 @@ class AcpProcess {
     const key = rpcIdKey(envelope.id)
     if (this.pending.has(key)) throw new Error(`duplicate in-flight JSON-RPC id ${key}`)
 
+    const method = typeof outbound.method === 'string' ? outbound.method : undefined
+    const promptHadContent = method === 'session/prompt' ? promptHasContent(outbound) : undefined
     const response = new Promise<JsonRpcEnvelope>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(key)
         reject(new AcpUpstreamError(`timed out waiting for ACP response to id ${key}`))
       }, DEFAULT_REQUEST_TIMEOUT_MS)
-      this.pending.set(key, { resolve, reject, timer })
+      this.pending.set(key, { resolve, reject, timer, method, promptHadContent })
     })
 
     try {
@@ -303,6 +378,14 @@ class AcpProcess {
         clearTimeout(pending.timer)
         this.pending.delete(rpcIdKey(envelope.id))
         this.outputScan.noteResponse(envelope)
+        if (isHollowPromptCompletion(pending, envelope)) {
+          logger.warn('[acp] hollow session/prompt completion — end_turn with zero usage; surfacing as an error instead of silent success', {
+            serverId: this.serverId,
+            harness: this.descriptor.id,
+          })
+          pending.resolve(toHollowPromptError(envelope))
+          return
+        }
         pending.resolve(envelope)
         return
       }
