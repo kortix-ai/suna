@@ -1131,3 +1131,20 @@ and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK and local end-to-end contract.
 Repository PR, Deploy Dev, and live-dev verification remain part of the parent
 feature lifecycle.
+
+---
+
+### 2026-07-21 — session `revert-owner-profile-bindings` (completion)
+
+Reverted the unfinished owner-scoped connector-profile session-start surface
+introduced by #5139 so `main` returns to the previously published SDK contract.
+This is an exact feature rollback rather than a new SDK behavior; the feature
+will continue in a separate draft PR before it is considered shippable.
+
+**Verification:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** with 5071 assertions; the packed-install
+smoke completed successfully; API typecheck exited 0; and the focused live-env
+API regression run reported **41 pass / 0 fail** with 83 assertions.
+
+**Shippable to production: YES** for the rollback. The owner-scoped binding
+feature itself is **NOT YET** shippable and remains open as WIP.
