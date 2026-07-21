@@ -1208,3 +1208,35 @@ RED → GREEN → REFACTOR and finish with the full SDK typecheck, test, and pac
 install smoke gates plus real HTTP/Executor proof.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `service-account-profile-hardening` (completion)
+
+Completed the security restoration in `de11be3b0` and the post-rebase WhatsApp
+principal propagation in `396a63823`. Direct service-account principals can no
+longer create, enumerate, mutate, OAuth-connect, bind, or execute `member`
+connection profiles, even when a forged row uses the service-account UUID as its
+owner. Principal type survives durable queue persistence; older queued commands
+infer it from the stored actor. Runtime resolution also rejects pre-existing
+service-account sessions bound to forged member profiles. The restored manager
+ownership and personal-session privacy checks cover every Strix thread from
+#5139 and #5143.
+
+**Focused evidence:** authenticated profile HTTP authorization reported **9 pass
+/ 0 fail**; profile binding and Executor resolution reported **18 pass / 0
+fail**; Executor gateway, sharing, public share, transcript, share endpoint,
+session sandbox, and queue payload suites reported **86 pass / 0 fail**. Email,
+Slack selection/dispatch, Teams, Telegram, trigger attribution, and WhatsApp
+reported **60 pass / 0 fail**. API typecheck exited 0 and `git diff --check` was
+clean. Multi-file Bun invocations reproduced the suite's known global mock
+contamination; every affected file passed in its own isolated process.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface and locally verified API
+hardening. Replacement PR review, Deploy Dev, deployed-SHA proof, and live-dev
+HTTP/Executor verification remain part of the repository lifecycle.
