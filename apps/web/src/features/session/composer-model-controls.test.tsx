@@ -1,16 +1,19 @@
 // Render suite for `ComposerModelControls` — the wiring/branching layer that
-// decides which of the two mutually-exclusive model controls renders: main's
-// `ModelSelector` (catalog mode, OpenCode) or the static
-// `HarnessManagedModelLabel` (Claude Code / Codex / Pi — see
-// `HarnessManagedModelState`'s doc comment). `ModelSelector` itself is
-// stubbed to a props-capturing marker (it has its own render suite via
-// `model-selector.test.ts`'s pure-function coverage and the other
-// `ModelSelector` call sites' tests) — this file only tests the branching
-// `ComposerModelControls` owns. `HarnessManagedModelLabel` renders for real
-// (it's a plain `Hint`+`span`, no query/router dependency), so this needs a
-// real DOM — same happy-dom + testing-library harness `model-selector.test.ts`
-// used before it was folded into this restore. The empty export makes this
-// file a module, so `await` is legal at the top level.
+// decides which of the THREE mutually-exclusive model controls renders:
+// main's `ModelSelector` (catalog mode, OpenCode), the interactive
+// `HarnessManagedModelSelector` (Claude Code / Codex live, with a declared
+// model config option), or the static `HarnessManagedModelLabel` (not live
+// yet, or the harness declared none — see `HarnessManagedModelState`'s doc
+// comment). `ModelSelector` itself is stubbed to a props-capturing marker (it
+// has its own render suite via `model-selector.test.ts`'s pure-function
+// coverage and the other `ModelSelector` call sites' tests) — this file only
+// tests the branching `ComposerModelControls` owns. `HarnessManagedModelLabel`
+// and `HarnessManagedModelSelector` render for real (a plain `Hint`+`span`,
+// and a real `AcpConfigOptionPill` respectively — no query/router
+// dependency), so this needs a real DOM — same happy-dom + testing-library
+// harness `model-selector.test.ts` used before it was folded into this
+// restore. The empty export makes this file a module, so `await` is legal at
+// the top level.
 export {};
 
 const { GlobalRegistrator } = await import('@happy-dom/global-registrator');
@@ -19,7 +22,7 @@ delete (globalThis as any).document;
 GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 const { TooltipProvider } = await import('@/components/ui/tooltip');
 
 let capturedModelSelectorProps: Record<string, unknown> | null = null;
@@ -147,5 +150,104 @@ describe('ComposerModelControls — harness-managed mode (Claude Code / Codex / 
     renderControls({ harnessManagedModel: { harness: 'claude' } });
 
     expect(capturedReasoningEffortSelectorProps).not.toBeNull();
+  });
+});
+
+// Radix Popper measures its own position in an effect that settles a tick
+// after a synchronous `act()` block returns — flush it after every
+// interaction that can toggle the popover, matching
+// `acp-config-option-pills.test.tsx`'s convention.
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+// Real payload shape (verified live against claude-agent-acp,
+// `kortix.acp_session_envelopes`, dev DB, 2026-07-21).
+const CLAUDE_MODEL_OPTION = {
+  id: 'model',
+  name: 'Model',
+  type: 'select' as const,
+  category: 'model',
+  currentValue: 'default',
+  options: [
+    { name: 'Default (recommended)', value: 'default' },
+    { name: 'Sonnet', value: 'sonnet' },
+    { name: 'Opus', value: 'opus' },
+    { name: 'Haiku', value: 'haiku' },
+  ],
+};
+
+describe('ComposerModelControls — harness-native live selector (Claude Code / Codex, live session)', () => {
+  test('a writable modelOption renders a REAL interactive selector, not the static label', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: CLAUDE_MODEL_OPTION,
+        onModelOptionChange: () => {},
+      },
+    });
+
+    expect(capturedModelSelectorProps).toBeNull();
+    expect(screen.queryByTestId('harness-managed-model-label')).toBeNull();
+    const selector = screen.getByTestId('harness-managed-model-selector');
+    expect(selector.getAttribute('data-harness')).toBe('claude');
+    // The underlying pill shows the option's own current value, not the
+    // static label's separately-derived `selectedModel`.
+    expect(screen.getByText('Default (recommended)')).toBeTruthy();
+  });
+
+  test('picking a choice calls onModelOptionChange with the choice value — round-trips through ACP session/set_config_option, never the gateway catalog', async () => {
+    resetCaptures();
+    const onModelOptionChange = mock((_value: unknown) => {});
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: CLAUDE_MODEL_OPTION,
+        onModelOptionChange,
+      },
+    });
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    fireEvent.click(screen.getByText('Opus'));
+    await flush();
+
+    expect(onModelOptionChange).toHaveBeenCalledWith('opus');
+    // The catalog's own onModelChange must never fire for a harness-native pick.
+    expect(capturedModelSelectorProps).toBeNull();
+  });
+
+  test('a live session whose harness declared NO model option falls back to the static label — never a selector with nothing to pick', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        selectedModel: 'claude-sonnet-5',
+        connectionLabel: 'Claude subscription',
+        disabled: true,
+        // No `modelOption` — the live session's harness advertised no
+        // writable model config option (or none has loaded yet).
+      },
+    });
+
+    expect(screen.queryByTestId('harness-managed-model-selector')).toBeNull();
+    expect(screen.getByTestId('harness-managed-model-label').textContent).toBe('claude-sonnet-5');
+  });
+
+  test('a modelOption with zero choices renders nothing from the selector wrapper (defensive — ComposerModelControls itself never passes one, per isWritableAcpModelConfigOption)', () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: { ...CLAUDE_MODEL_OPTION, options: [] },
+        onModelOptionChange: () => {},
+      },
+    });
+
+    // `AcpConfigOptionPill` itself renders null for zero choices.
+    expect(screen.queryByTestId('acp-config-option-pill')).toBeNull();
   });
 });

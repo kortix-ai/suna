@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 
-import { findAcpModelConfigOption } from '@/features/session/acp-composer-adapters';
+import { findAcpModelConfigOption, isWritableAcpModelConfigOption } from '@/features/session/acp-composer-adapters';
 import type { HarnessManagedModelState } from '@/features/session/composer-model-controls';
 import { deriveComposerBlockingAction } from '@/features/session/model-availability';
 import {
@@ -464,26 +464,73 @@ export function ComposerChatInput({
 
   // ── Live-session model pill ──────────────────────────────────────────────
   // A live session's model isn't "pick from the connected provider catalog" —
-  // it's whatever the ACP session resolved at launch. This composer doesn't
-  // wire up live mid-session model edits (Claude/Codex/Pi never support one;
-  // OpenCode's `live_change` capability, when a session actually advertises a
-  // writable option, is a follow-up — `findAcpModelConfigOption`/
-  // `acpConfigOptionPresets` in `acp-composer-adapters.ts` already carry the
-  // data for it), so every harness renders the same read-only
-  // `HarnessManagedModelState` label while live, showing the session's
-  // resolved model.
+  // it's whatever the ACP session resolved at launch, PLUS whatever the
+  // harness itself lets you change afterward over the protocol's own
+  // mechanism (`session/set_config_option`) — see `HarnessManagedModelState`'s
+  // doc comment (`composer-model-controls.tsx`) for the live evidence that
+  // claude-agent-acp/codex-acp genuinely advertise + apply this, unlike the
+  // stale assumption this comment used to carry. `isWritableAcpModelConfigOption`
+  // is what decides "real selector" vs. "static label" — the SAME predicate
+  // both branches below key off, so the composer's render mode and this
+  // derivation can never disagree.
   const liveModelOption = live ? findAcpModelConfigOption(live.configOptions) : null;
+  // Scoped to `ownsDefaultModel` harnesses (`!catalogModelRequired` — the
+  // SAME predicate `nativeHarness` above is keyed on) even though the
+  // underlying ACP mechanism is harness-neutral and a catalog-driven harness
+  // (OpenCode) can ALSO advertise a `model` configOption (verified live:
+  // captured `config_option_update` from a real OpenCode session). Fix 1's
+  // scope is Claude Code/Codex specifically, and OpenCode's live model
+  // editing is a different surface (its own catalog picker, currently
+  // unwired for live sessions) owned by a different lane — this predicate is
+  // what keeps that surface untouched here rather than silently gaining a
+  // second, ACP-native model control alongside whatever OpenCode's own path
+  // does or doesn't do.
+  const liveModelOptionWritable = !catalogModelRequired && isWritableAcpModelConfigOption(liveModelOption);
   const liveResolvedModel =
     liveModelOption?.currentValue != null ? String(liveModelOption.currentValue) : null;
+  // Same lock signals `acp-session-chat.tsx`'s `configOptionsDisabled` gates
+  // its OTHER config-option pills (mode/effort) on — no session yet handled
+  // separately below (`live` only exists once bootstrap has produced
+  // `configOptions` in the first place), a terminal error, an in-flight turn,
+  // or a pending question/approval all mean "don't let the user change the
+  // model right now" just as much as they mean "don't let them send".
+  const liveModelOptionDisabled = Boolean(disabled) || Boolean(isBusy) || Boolean(live?.lockForQuestion) || Boolean(live?.lockForApproval);
   const harnessManagedModel: HarnessManagedModelState | undefined = live
     ? activeHarness
-      ? {
-          harness: activeHarness,
-          selectedModel: liveResolvedModel,
-          connectionLabel,
-          connectionKind,
-          disabled: true,
-        }
+      ? liveModelOptionWritable && liveModelOption
+        ? {
+            harness: activeHarness,
+            selectedModel: liveResolvedModel,
+            connectionLabel,
+            connectionKind,
+            disabled: liveModelOptionDisabled,
+            modelOption: liveModelOption,
+            onModelOptionChange: (value) => {
+              live.onConfigOptionChange(liveModelOption.id, value);
+              // Seed the harness-native launch-model store (the SAME
+              // per-agent namespace the pre-session label reads via
+              // `runtimeModel` below — see `getRuntimeModel`/`setRuntimeModel`'s
+              // doc comment, packages/sdk/src/react/use-model-store.ts) so a
+              // FUTURE fresh session for this agent launches with the
+              // last-picked model instead of resetting to the harness
+              // default. Best-effort/optimistic: this is a convenience seed
+              // for the NEXT session's launch env, not the live session's own
+              // source of truth (that's always the ACP `configOptions`
+              // round-trip above) — a value that fails to apply server-side
+              // only means the seed is briefly wrong, never that this
+              // session's actual model silently changed.
+              if (typeof value === 'string' && capabilityAgentName) {
+                runtimeModelStore.setRuntimeModel(capabilityAgentName, value);
+              }
+            },
+          }
+        : {
+            harness: activeHarness,
+            selectedModel: liveResolvedModel,
+            connectionLabel,
+            connectionKind,
+            disabled: true,
+          }
       : undefined
     : nativeHarness
       ? {

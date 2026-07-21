@@ -1,6 +1,6 @@
 import { contentAttachments, contentText, textFromContent } from './content';
 import { isLiveSessionLoadReplay } from './load-replay';
-import type { AcpJsonRpcId } from './types';
+import type { AcpJsonRpcId, AcpSessionConfigOption } from './types';
 import type {
   AcpChatItem,
   AcpPendingOption,
@@ -9,6 +9,7 @@ import type {
   AcpPendingQuestion,
   AcpPendingQuestionItem,
   AcpPlan,
+  AcpSessionInfo,
   AcpStoredEnvelope,
   AcpToolCall,
   AcpTokenUsage,
@@ -150,6 +151,22 @@ export type AcpReducerState = {
    *  reconnected can never misclassify a live chunk — and same-id walks
    *  additionally require the load to POSTDATE the stream's last growth. */
   lastSessionLoadOrdinal?: number;
+  /** Folded `session_info_update` state (thread title/status) — see
+   *  `AcpSessionInfo`'s doc comment. `null` until the first such notification
+   *  arrives; fields merge across updates rather than replacing wholesale. */
+  sessionInfo: AcpSessionInfo | null;
+  /**
+   * Latest full `configOptions` array from a live `config_option_update`
+   * notification (verified real: claude-agent-acp/codex-acp emit this after
+   * an in-transcript `/model`-style slash command changes a session config
+   * option out from under the client, not only in response to
+   * `session/set_config_option`'s own RPC result). `null` until the first
+   * such notification arrives, distinct from an empty array (which means the
+   * harness reported zero config options) — `AcpSession.applyReducerState`
+   * uses the `null` state to know "no live update yet, keep whatever
+   * bootstrap/`setConfigOption` already set" instead of clobbering it.
+   */
+  liveConfigOptions: AcpSessionConfigOption[] | null;
 };
 
 export function emptyReducerState(): AcpReducerState {
@@ -174,6 +191,8 @@ export function emptyReducerState(): AcpReducerState {
     replayMessageIds: new Set(),
     replayWalks: new Map(),
     lastSessionLoadOrdinal: undefined,
+    sessionInfo: null,
+    liveConfigOptions: null,
   };
 }
 
@@ -197,9 +216,24 @@ const METHOD_KINDS: Record<string, AcpMethodKind> = {
 export const classifyAcpMethod: AcpMethodClassifier = (method) => METHOD_KINDS[method] ?? 'raw';
 
 /** `session/update` kinds that carry no visual chat item of their own —
- *  `usage_update` still feeds `projectAcpUsage` via the usage bookkeeping
- *  block below; this only excludes them from `chatItems`. */
-const NON_VISUAL_UPDATES = new Set(['usage_update', 'current_mode_update', 'available_commands_update']);
+ *  `usage_update` still feeds `projectAcpUsage`, `session_info_update` still
+ *  feeds `sessionInfo`, and `config_option_update` still feeds
+ *  `liveConfigOptions`, all via their own dedicated bookkeeping blocks below;
+ *  this only excludes them from `chatItems`. Without `session_info_update`/
+ *  `config_option_update` here, both fell through to the generic `raw` chat
+ *  item and rendered as a user-visible "Unrecognized agent event" row even
+ *  though they are legitimate, spec'd protocol notifications (verified live:
+ *  claude-agent-acp sends `session_info_update` on session rename,
+ *  codex-acp sends it for thread-status ticks; both send
+ *  `config_option_update` when a config option changes out of band, e.g. an
+ *  in-transcript `/model` slash command). */
+const NON_VISUAL_UPDATES = new Set([
+  'usage_update',
+  'current_mode_update',
+  'available_commands_update',
+  'session_info_update',
+  'config_option_update',
+]);
 
 /** A tool call that has reached one of these statuses is done; a later
  *  update (e.g. a stray/out-of-order `in_progress`) must never regress it
@@ -244,6 +278,8 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   let replayMessageIds = state.replayMessageIds ?? new Set<string>();
   let replayWalks = state.replayWalks ?? new Map<string, number>();
   let lastSessionLoadOrdinal = state.lastSessionLoadOrdinal;
+  let sessionInfo = state.sessionInfo;
+  let liveConfigOptions = state.liveConfigOptions;
 
   // ── chat items + turn-state bookkeeping: a client's `session/prompt` ──
   if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
@@ -543,6 +579,37 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         };
       }
     }
+
+    // `session_info_update`: fold whatever fields THIS update carries onto
+    // the running `sessionInfo` projection — merge, never replace wholesale.
+    // claude-agent-acp sends `{title, updatedAt}` and codex-acp sends
+    // `{_meta: {codex: {threadStatus}}}`; a session only ever sees ONE
+    // harness's shape in practice, but merging (not overwriting) keeps this
+    // correct even if a future/mixed adapter sends both across separate
+    // updates — a threadStatus tick must never blank out a title set by an
+    // earlier update, and vice versa.
+    if (update && updateKind === 'session_info_update') {
+      const extracted = extractSessionInfo(update);
+      if (extracted.title !== undefined || extracted.updatedAt !== undefined || extracted.threadStatus !== undefined) {
+        sessionInfo = {
+          title: extracted.title ?? sessionInfo?.title ?? null,
+          updatedAt: extracted.updatedAt ?? sessionInfo?.updatedAt ?? null,
+          threadStatus: extracted.threadStatus ?? sessionInfo?.threadStatus ?? null,
+        };
+      }
+    }
+
+    // `config_option_update`: the harness's own out-of-band notification that
+    // its session config options changed (e.g. an in-transcript `/model`
+    // slash command) — the full, authoritative replacement list, same shape
+    // `session/new`/`session/load`/`session/set_config_option` already
+    // return. `AcpSession.applyReducerState` (session.ts) uses this to keep
+    // `snapshot.configOptions` (and therefore the composer's model/mode
+    // pills) live-accurate even when the change didn't originate from this
+    // client's own `setConfigOption` call.
+    if (update && updateKind === 'config_option_update' && Array.isArray(update.configOptions)) {
+      liveConfigOptions = update.configOptions as AcpSessionConfigOption[];
+    }
   }
 
   // ── responses: answer permission/question requests and prompt requests ──
@@ -642,6 +709,8 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     replayMessageIds,
     replayWalks,
     lastSessionLoadOrdinal,
+    sessionInfo,
+    liveConfigOptions,
   };
 }
 
@@ -730,6 +799,36 @@ export function pendingFromState(state: AcpReducerState): AcpPendingPrompts {
 
 function nonNegativeNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** Pulls whatever `session_info_update` fields a single update carries — see
+ *  `AcpSessionInfo`'s doc comment for the two verified real shapes (claude
+ *  `{title,updatedAt}` vs. codex `{_meta:{codex:{threadStatus}}}`). A field
+ *  absent from THIS update is simply absent from the return value (not
+ *  `null`) so the caller can tell "not carried by this update" apart from
+ *  "carried and empty", and merge onto the running projection accordingly. */
+function extractSessionInfo(update: Record<string, unknown>): {
+  title?: string;
+  updatedAt?: string;
+  threadStatus?: { type: string | null; activeFlags: string[] };
+} {
+  const out: { title?: string; updatedAt?: string; threadStatus?: { type: string | null; activeFlags: string[] } } = {};
+  const title = firstString(update.title);
+  if (title !== undefined) out.title = title;
+  const updatedAt = firstString(update.updatedAt);
+  if (updatedAt !== undefined) out.updatedAt = updatedAt;
+  const meta = isRecord(update._meta) ? update._meta : null;
+  const codexMeta = meta && isRecord(meta.codex) ? meta.codex : null;
+  const threadStatus = codexMeta && isRecord(codexMeta.threadStatus) ? codexMeta.threadStatus : null;
+  if (threadStatus) {
+    out.threadStatus = {
+      type: firstString(threadStatus.type) ?? null,
+      activeFlags: Array.isArray(threadStatus.activeFlags)
+        ? threadStatus.activeFlags.filter((flag): flag is string => typeof flag === 'string')
+        : [],
+    };
+  }
+  return out;
 }
 
 function projectToolCall(id: string, update: Record<string, unknown>): AcpToolCall {

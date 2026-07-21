@@ -135,6 +135,24 @@ export type AcpTurnState = {
 };
 
 /**
+ * Folded projection of `session/update` `session_info_update` notifications
+ * — a legitimate ACP notification (not a chat item) whose shape differs per
+ * harness: claude-agent-acp sends `{title, updatedAt}` (session title
+ * renamed), codex-acp sends `{_meta: {codex: {threadStatus: {type,
+ * activeFlags}}}}` (idle/active/systemError). Verified against real
+ * persisted sessions (`kortix.acp_session_envelopes`, both shapes present,
+ * 138 occurrences across dev). Fields merge across updates (a later update
+ * only overwrites the fields it actually carries — see `reduceEnvelope`'s
+ * `session_info_update` branch), so a codex thread-status tick never wipes
+ * out a title set by an earlier update and vice versa.
+ */
+export type AcpSessionInfo = {
+  title: string | null;
+  updatedAt: string | null;
+  threadStatus: { type: string | null; activeFlags: string[] } | null;
+};
+
+/**
  * Fold-from-scratch wrapper over `reduceEnvelope` (`./reduce`) — the
  * incremental reducer `AcpSession` folds row-by-row as envelopes arrive is
  * the SAME implementation this calls here, one row at a time, starting from

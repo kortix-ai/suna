@@ -23,6 +23,24 @@ export function findAcpModelConfigOption(
   return options.find(isAcpModelConfigOption) ?? null;
 }
 
+/**
+ * Whether a model-shaped config option is actually something a user can pick
+ * from — i.e. worth mounting a real selector for, vs. falling back to the
+ * static harness-managed label. `type === 'select'` matches every real
+ * payload observed live (claude-agent-acp and codex-acp both stamp `type:
+ * 'select'` on their `model` option — verified against
+ * `kortix.acp_session_envelopes`, dev DB, 2026-07-21); a missing `type` is
+ * treated leniently as selectable too (older/other adapters may omit it),
+ * but zero `options` never is — an option with no choices has nothing to
+ * pick, so it degrades to the label exactly like "no model option at all"
+ * would (never a selector that opens onto an empty list).
+ */
+export function isWritableAcpModelConfigOption(option: AcpSessionConfigOption | null): boolean {
+  if (!option) return false;
+  if (option.type !== undefined && option.type !== 'select') return false;
+  return (option.options?.length ?? 0) > 0;
+}
+
 /** `AcpSessionConfigOption.options` (generic `{value,label,...}` records) into
  *  the `{id,name,source}` preset shape `HarnessModelSelector` expects. */
 export function acpConfigOptionPresets(

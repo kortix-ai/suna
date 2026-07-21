@@ -6,6 +6,7 @@ import {
   buildAcpQuestionContent,
   findAcpModelConfigOption,
   isAcpModelConfigOption,
+  isWritableAcpModelConfigOption,
   toQuestionRequest,
 } from './acp-composer-adapters';
 
@@ -32,6 +33,45 @@ describe('findAcpModelConfigOption', () => {
 
   test('returns null when no option matches', () => {
     expect(findAcpModelConfigOption([{ id: 'reasoning_effort' }])).toBeNull();
+  });
+});
+
+describe('isWritableAcpModelConfigOption', () => {
+  // Real payload shape (verified live against claude-agent-acp,
+  // `kortix.acp_session_envelopes`, dev DB, 2026-07-21).
+  const claudeModelOption: AcpSessionConfigOption = {
+    id: 'model',
+    name: 'Model',
+    type: 'select',
+    category: 'model',
+    currentValue: 'default',
+    options: [
+      { name: 'Default (recommended)', value: 'default' },
+      { name: 'Sonnet', value: 'sonnet' },
+      { name: 'Opus', value: 'opus' },
+      { name: 'Haiku', value: 'haiku' },
+    ],
+  };
+
+  test('a real select-typed model option with choices is writable', () => {
+    expect(isWritableAcpModelConfigOption(claudeModelOption)).toBe(true);
+  });
+
+  test('null is never writable', () => {
+    expect(isWritableAcpModelConfigOption(null)).toBe(false);
+  });
+
+  test('a select-typed option with zero choices is not writable — nothing to pick, degrades to the label', () => {
+    expect(isWritableAcpModelConfigOption({ ...claudeModelOption, options: [] })).toBe(false);
+  });
+
+  test('a non-select type (e.g. a future free-text option) is not writable', () => {
+    expect(isWritableAcpModelConfigOption({ ...claudeModelOption, type: 'text' })).toBe(false);
+  });
+
+  test('a missing type is treated leniently as writable when choices exist', () => {
+    const { type: _type, ...withoutType } = claudeModelOption;
+    expect(isWritableAcpModelConfigOption(withoutType)).toBe(true);
   });
 });
 

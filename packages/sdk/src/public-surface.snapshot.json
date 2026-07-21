@@ -570,7 +570,6 @@
     "agentHarnessPresentation",
     "agentModelPolicy",
     "agentRequiresCatalogModel",
-    "buildModelPickerViewModel",
     "changeRequestsKey",
     "classifyProbeResult",
     "classifySendError",
@@ -697,7 +696,6 @@
     "useMilestone",
     "useMilestoneEvents",
     "useMilestones",
-    "useModelPicker",
     "useModelStore",
     "useModelsPage",
     "usePatchProject",
@@ -777,6 +775,8 @@
     "runWithKortix"
   ],
   "./acp": [
+    "ACP_BOOTSTRAP_TIMEOUT_MS",
+    "AcpBootstrapTimeoutError",
     "AcpClient",
     "AcpRpcError",
     "AcpSession",

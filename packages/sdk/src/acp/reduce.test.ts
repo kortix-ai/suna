@@ -603,6 +603,120 @@ describe('reduceEnvelope', () => {
   });
 });
 
+// Fix for "unrecognized agent event" on legitimate protocol notifications —
+// both payload shapes below are captured verbatim from real persisted
+// sessions (`kortix.acp_session_envelopes`, dev DB, 2026-07-21): claude-agent-
+// acp's `session_info_update` (title/updatedAt), codex-acp's
+// `session_info_update` (`_meta.codex.threadStatus`), and both harnesses'
+// `config_option_update` (full `configOptions` replacement, e.g. after an
+// in-transcript `/model` slash command).
+describe('session_info_update / config_option_update', () => {
+  function sessionInfoUpdate(ordinal: number, update: Record<string, unknown>): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: { sessionId: 'sess-1', update: { sessionUpdate: 'session_info_update', ...update } },
+    });
+  }
+
+  function configOptionUpdate(ordinal: number, configOptions: unknown[]): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: { sessionId: 'sess-1', update: { sessionUpdate: 'config_option_update', configOptions } },
+    });
+  }
+
+  test('claude-shape session_info_update (title/updatedAt) folds into sessionInfo, no chat item', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(
+      state,
+      sessionInfoUpdate(1, { title: 'Reply with exactly: ACP_PONG', updatedAt: '2026-07-12T02:30:47.426Z' }),
+    );
+
+    expect(state.sessionInfo).toEqual({
+      title: 'Reply with exactly: ACP_PONG',
+      updatedAt: '2026-07-12T02:30:47.426Z',
+      threadStatus: null,
+    });
+    expect(state.chatItems).toEqual([]);
+    expect(state.envelopes).toHaveLength(1); // still logged, just not a chat item
+  });
+
+  test('codex-shape session_info_update (_meta.codex.threadStatus) folds into sessionInfo, no chat item', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(
+      state,
+      sessionInfoUpdate(1, { _meta: { codex: { threadStatus: { type: 'active', activeFlags: [] } } } }),
+    );
+
+    expect(state.sessionInfo).toEqual({
+      title: null,
+      updatedAt: null,
+      threadStatus: { type: 'active', activeFlags: [] },
+    });
+    expect(state.chatItems).toEqual([]);
+  });
+
+  test('a later update merges onto sessionInfo instead of replacing it wholesale', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, sessionInfoUpdate(1, { title: 'Original title' }));
+    state = reduceEnvelope(
+      state,
+      sessionInfoUpdate(2, { _meta: { codex: { threadStatus: { type: 'idle', activeFlags: [] } } } }),
+    );
+
+    // The threadStatus-only update must not blank out the title set earlier.
+    expect(state.sessionInfo).toEqual({
+      title: 'Original title',
+      updatedAt: null,
+      threadStatus: { type: 'idle', activeFlags: [] },
+    });
+  });
+
+  test('config_option_update replaces liveConfigOptions with the full list, no chat item', () => {
+    const configOptions = [
+      { id: 'mode', name: 'Mode', type: 'select', category: 'mode', currentValue: 'agent', options: [] },
+      { id: 'model', name: 'Model', type: 'select', category: 'model', currentValue: 'opus', options: [] },
+    ];
+    let state = emptyReducerState();
+    expect(state.liveConfigOptions).toBeNull();
+
+    state = reduceEnvelope(state, configOptionUpdate(1, configOptions));
+
+    expect(state.liveConfigOptions).toEqual(configOptions);
+    expect(state.chatItems).toEqual([]);
+  });
+
+  test('liveConfigOptions keeps its previous reference when no config_option_update has arrived — untouched flushes stay cheap', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, configOptionUpdate(1, [{ id: 'model', options: [] }]));
+    const afterFirstUpdate = state.liveConfigOptions;
+
+    state = reduceEnvelope(state, agentChunk(2, 'unrelated message text'));
+
+    expect(state.liveConfigOptions).toBe(afterFirstUpdate); // same reference, not a new array
+  });
+
+  test('a genuinely unknown session/update kind still falls back to a raw chat item (unchanged safety net)', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(
+      state,
+      stored(1, 'agent_to_client', {
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: { sessionId: 'sess-1', update: { sessionUpdate: 'some_future_protocol_extension', foo: 'bar' } },
+      }),
+    );
+
+    expect(state.chatItems).toEqual([
+      { kind: 'raw', method: 'some_future_protocol_extension', data: { sessionUpdate: 'some_future_protocol_extension', foo: 'bar' } },
+    ]);
+    expect(state.sessionInfo).toBeNull();
+    expect(state.liveConfigOptions).toBeNull();
+  });
+});
+
 // WS3-P2-b, part 2: bounded `dedupeKeys`.
 describe('dedupeKeys bound', () => {
   // Each row gets its own `toolCallId` (derived from `streamEventId`), so —

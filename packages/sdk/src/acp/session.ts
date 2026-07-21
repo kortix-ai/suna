@@ -4,6 +4,7 @@ import { markLiveSessionLoadReplay } from './load-replay';
 import {
   type AcpChatItem,
   type AcpPendingPrompts,
+  type AcpSessionInfo,
   type AcpStoredEnvelope,
   type AcpTurnState,
   type AcpUsageProjection,
@@ -54,6 +55,10 @@ export type AcpSessionSnapshot = {
   capabilities: Record<string, unknown>;
   agentInfo: NonNullable<AcpInitializeResult['agentInfo']> | null;
   authMethods: Array<Record<string, unknown>>;
+  /** Folded `session_info_update` state (thread title/status) — see
+   *  `AcpSessionInfo`'s doc comment. `null` until the harness sends its first
+   *  such notification for this session. */
+  sessionInfo: AcpSessionInfo | null;
 };
 
 export type AcpSessionOptions = {
@@ -92,6 +97,7 @@ const EMPTY_SNAPSHOT: AcpSessionSnapshot = {
   capabilities: {},
   agentInfo: null,
   authMethods: [],
+  sessionInfo: null,
 };
 
 /** Monotonic-enough ordinal for a live SSE event, kept out of the ordinal
@@ -991,9 +997,18 @@ export class AcpSession {
     this.applyReducerState();
   }
 
-  /** Derives `chatItems`/`pendingPrompts`/`usage`/`turnState`/`envelopes`
-   *  from `this.reducerState` and patches them onto `this.snapshot` without
-   *  emitting. */
+  /** Derives `chatItems`/`pendingPrompts`/`usage`/`turnState`/`envelopes`/
+   *  `sessionInfo` from `this.reducerState` and patches them onto
+   *  `this.snapshot` without emitting.
+   *
+   *  `configOptions` is patched here too, but ONLY from a live
+   *  `config_option_update` notification (`reducerState.liveConfigOptions`),
+   *  and only once one has actually arrived (`liveConfigOptions` starts
+   *  `null` and never reverts) — `performBootstrap`/`setConfigOption` are
+   *  what set the INITIAL value (from `session/new`/`session/load`/
+   *  `session/set_config_option`'s own RPC result), and this must never
+   *  clobber that with `null` on an unrelated flush (a plain message chunk,
+   *  say) that carries no live config update of its own. */
   private applyReducerState(): void {
     const turnState = this.reducerState.turnState;
     this.snapshot = {
@@ -1004,6 +1019,8 @@ export class AcpSession {
       usage: this.reducerState.usage,
       turnState,
       busy: this.requestBusy || turnState.busy,
+      sessionInfo: this.reducerState.sessionInfo,
+      configOptions: this.reducerState.liveConfigOptions ?? this.snapshot.configOptions,
     };
   }
 

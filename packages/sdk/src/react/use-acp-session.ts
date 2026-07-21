@@ -144,6 +144,10 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
     pendingPrompts: snapshot.pendingPrompts,
     usage: snapshot.usage,
     configOptions: snapshot.configOptions,
+    /** Folded `session_info_update` state (thread title/status) — see
+     *  `AcpSessionInfo`'s doc comment (`@kortix/sdk/acp`). `null` until the
+     *  harness sends its first such notification for this session. */
+    sessionInfo: snapshot.sessionInfo,
     capabilities: snapshot.capabilities,
     agentInfo: snapshot.agentInfo,
     authMethods: snapshot.authMethods,
