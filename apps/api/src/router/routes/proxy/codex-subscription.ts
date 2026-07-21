@@ -2,7 +2,7 @@ import { HTTPException } from 'hono/http-exception';
 import { CodexRefreshError, resolveCodexCredential } from '../../../llm-gateway/credentials/codex';
 import { codexDescriptor } from '../../../llm-gateway/resolution/descriptors';
 import { validateAccountToken } from '../../../repositories/account-tokens';
-import { buildForwardHeaders, getRequestBody } from './helpers';
+import { getRequestBody } from './helpers';
 
 // === Codex/ChatGPT SUBSCRIPTION proxy ===
 //
@@ -45,6 +45,60 @@ import { buildForwardHeaders, getRequestBody } from './helpers';
 // in any response header or body.
 
 const CODEX_RESPONSES_PATH = '/responses';
+
+// Header names from the inbound codex-acp request that are part of the
+// legitimate Codex Responses-API wire protocol (see codex-rs's
+// `build_responses_headers`/`build_session_headers` and the JS adapter's
+// `applyGatewayConfig`, which always merges in `X-Client-Feature-ID`) and are
+// therefore safe — and in some cases required — to forward verbatim to
+// chatgpt.com. Deliberately an ALLOWLIST, not a blocklist: this route's
+// caller reaches us through a Cloudflare Tunnel (trycloudflare.com), which
+// injects proxy-hop headers (`cf-connecting-ip`, `cf-ray`, `cf-ipcountry`,
+// `cf-visitor`, `cdn-loop`, `x-forwarded-for`, `x-forwarded-proto`, …) on
+// EVERY inbound request. chatgpt.com/backend-api is itself Cloudflare-fronted;
+// forwarding a client-supplied `cf-connecting-ip` (or the other cf-*/XFF
+// headers) to it is indistinguishable from IP-spoofing and its edge WAF
+// blocks the request outright with a 403 HTML challenge page — proven live
+// 2026-07-21 against the real chatgpt.com/backend-api/codex endpoint with a
+// real resolved credential: the exact header set this function now sends
+// gets a normal 400 JSON response from the model backend, while adding back
+// a single synthetic `cf-connecting-ip` header reproduces the reported 403
+// HTML block page byte-for-byte (same cf-ray-bearing Cloudflare page shape).
+// A blocklist would only ever catch cf-* headers we already know about; new
+// proxy infra in front of this route (or a future trycloudflare.com header)
+// would silently reopen the same 403. Only what Codex's own wire protocol
+// actually uses is forwarded; everything else — including any Kortix/tunnel/
+// CDN header, known or not — is dropped by construction.
+const FORWARDABLE_HEADER_NAMES = new Set([
+  'accept',
+  'accept-encoding',
+  'content-type',
+  'session-id',
+  'thread-id',
+  'x-client-request-id',
+  'x-client-feature-id',
+  'x-codex-beta-features',
+  'x-codex-turn-state',
+  'x-openai-subagent',
+]);
+
+function buildCodexUpstreamHeaders(
+  c: any,
+  descriptor: ReturnType<typeof codexDescriptor>,
+): Headers {
+  const headers = new Headers();
+  for (const [key, value] of c.req.raw.headers.entries()) {
+    if (FORWARDABLE_HEADER_NAMES.has(key.toLowerCase())) {
+      headers.set(key, value);
+    }
+  }
+  if (!headers.has('content-type')) headers.set('Content-Type', 'application/json');
+  headers.set('Authorization', `Bearer ${descriptor.apiKey}`);
+  for (const [key, value] of Object.entries(descriptor.headers ?? {})) {
+    headers.set(key, value);
+  }
+  return headers;
+}
 
 export async function handleCodexSubscriptionProxy(c: any) {
   const authHeader = c.req.header('Authorization');
@@ -100,14 +154,14 @@ export async function handleCodexSubscriptionProxy(c: any) {
   const queryString = new URL(c.req.url).search;
   const targetUrl = `${descriptor.baseUrl}${CODEX_RESPONSES_PATH}${queryString}`;
 
-  const headers = buildForwardHeaders(c);
-  headers.delete('authorization');
-  headers.delete('x-kortix-token');
-  headers.delete('x-api-key');
-  headers.set('Authorization', `Bearer ${descriptor.apiKey}`);
-  for (const [key, value] of Object.entries(descriptor.headers ?? {})) {
-    headers.set(key, value);
-  }
+  // Deliberately NOT buildForwardHeaders(c) (used elsewhere in this proxy
+  // package): that copies every inbound header through, including whatever
+  // the trycloudflare.com Cloudflare Tunnel injects on this hop
+  // (cf-connecting-ip, cf-ray, cdn-loop, x-forwarded-for, …). Forwarded to
+  // the also-Cloudflare-fronted chatgpt.com, those read as IP-spoofing and
+  // get the request 403'd by its edge WAF before it ever reaches the model
+  // backend — see buildCodexUpstreamHeaders' comment for the live repro.
+  const headers = buildCodexUpstreamHeaders(c, descriptor);
 
   const body = await getRequestBody(c, method);
 

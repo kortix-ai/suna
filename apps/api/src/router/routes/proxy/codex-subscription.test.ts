@@ -223,4 +223,89 @@ describe('POST /router/codex-subscription/responses', () => {
     // The inbound Kortix account token must never be forwarded upstream.
     expect(headers.get('Authorization')).not.toContain('kortix_pat_test');
   });
+
+  // Regression coverage for the 2026-07-21 live incident: codex-acp reaches
+  // this route through a Cloudflare Tunnel (trycloudflare.com in dev; the
+  // same shape in prod), which injects proxy-hop headers on EVERY inbound
+  // request — cf-connecting-ip, cf-ray, cf-ipcountry, cdn-loop,
+  // x-forwarded-for, x-forwarded-proto. This route used to forward the
+  // ENTIRE inbound header set (buildForwardHeaders) straight through to
+  // chatgpt.com, which is itself Cloudflare-fronted: a client-supplied
+  // cf-connecting-ip reads as IP-spoofing to its edge WAF, which 403'd the
+  // request with an HTML challenge page before it ever reached the model
+  // backend — proven live against the real endpoint with a real credential
+  // (see the fix's comment on buildCodexUpstreamHeaders). The route must
+  // forward ONLY the known Codex wire-protocol headers and drop everything
+  // else, unconditionally — this is an allowlist, not a blocklist, so it
+  // also covers CDN/proxy headers this test doesn't enumerate.
+  test('forwards known Codex protocol headers but strips proxy/CDN hop headers (cf-connecting-ip and friends) that read as IP-spoofing to a Cloudflare-fronted upstream', async () => {
+    accountTokenResult = {
+      isValid: true,
+      userId: 'user_1',
+      accountId: 'acct_1',
+      projectId: 'proj_1',
+    };
+    codexCredential = { access: 'user-own-oauth-access-token', accountId: 'chatgpt_acct_9' };
+    const app = buildApp();
+    const res = await app.request('/codex-subscription/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer kortix_pat_test',
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        // Legitimate codex-rs wire-protocol headers — must be forwarded.
+        'session-id': 'sess_abc123',
+        'thread-id': 'thread_def456',
+        'x-client-request-id': 'req_789',
+        'x-client-feature-id': 'codex',
+        'x-codex-beta-features': 'some-feature',
+        'x-codex-turn-state': 'opaque-turn-token',
+        'x-openai-subagent': 'compact',
+        // Cloudflare Tunnel / generic proxy hop headers — must be dropped.
+        'cf-connecting-ip': '203.0.113.42',
+        'cf-ray': 'deadbeefdeadbeef-AMS',
+        'cf-ipcountry': 'DE',
+        'cf-visitor': '{"scheme":"https"}',
+        'cdn-loop': 'cloudflare',
+        'x-forwarded-for': '203.0.113.42',
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'rugby-sufficient-tickets-pick.trycloudflare.com',
+        // Kortix-internal headers that must never leak upstream either.
+        'x-kortix-token': 'kortix_should_not_leak',
+      },
+      body: JSON.stringify({ model: 'gpt-5.4', input: [] }),
+    });
+    expect(res.status).toBe(200);
+    expect(fetchCalls).toHaveLength(1);
+    const call = fetchCalls.at(0);
+    if (!call) throw new Error('expected a captured fetch call');
+    const headers = new Headers(call.init.headers as HeadersInit);
+
+    // Codex wire-protocol headers: forwarded verbatim.
+    expect(headers.get('session-id')).toBe('sess_abc123');
+    expect(headers.get('thread-id')).toBe('thread_def456');
+    expect(headers.get('x-client-request-id')).toBe('req_789');
+    expect(headers.get('x-client-feature-id')).toBe('codex');
+    expect(headers.get('x-codex-beta-features')).toBe('some-feature');
+    expect(headers.get('x-codex-turn-state')).toBe('opaque-turn-token');
+    expect(headers.get('x-openai-subagent')).toBe('compact');
+    expect(headers.get('Accept')).toBe('text/event-stream');
+
+    // Proxy/CDN hop headers: dropped, unconditionally.
+    expect(headers.has('cf-connecting-ip')).toBe(false);
+    expect(headers.has('cf-ray')).toBe(false);
+    expect(headers.has('cf-ipcountry')).toBe(false);
+    expect(headers.has('cf-visitor')).toBe(false);
+    expect(headers.has('cdn-loop')).toBe(false);
+    expect(headers.has('x-forwarded-for')).toBe(false);
+    expect(headers.has('x-forwarded-proto')).toBe(false);
+    expect(headers.has('x-forwarded-host')).toBe(false);
+    expect(headers.has('x-kortix-token')).toBe(false);
+
+    // The descriptor's own headers (auth + ChatGPT-Account-ID + originator +
+    // User-Agent) still win, same as the existing forwarding test above.
+    expect(headers.get('Authorization')).toBe('Bearer user-own-oauth-access-token');
+    expect(headers.get('ChatGPT-Account-ID')).toBe('chatgpt_acct_9');
+    expect(headers.get('originator')).toBe('codex_cli_rs');
+  });
 });
