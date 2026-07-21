@@ -37,7 +37,12 @@ function useSidebarUpgrade(accountId?: string) {
   const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
   const hasActiveSubscription = !!accountState.subscription?.subscription_id;
   const isFreeOrNoPlan = tierKey === 'free' || tierKey === 'none';
-  const show = isFreeOrNoPlan && !hasActiveSubscription;
+  // A per-seat (Team) account is never "on Free" even though its legacy tier_key
+  // can still read 'free' — it gets the balance/top-up warning instead of an
+  // "Upgrade Plan" pitch. Excluding it here is what keeps a paying Team account
+  // from being mislabeled as Free in the sidebar.
+  const isPerSeat = accountState.billing_model === 'per_seat';
+  const show = isFreeOrNoPlan && !hasActiveSubscription && !isPerSeat;
 
   return { show, handleClick };
 }

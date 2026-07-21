@@ -3,35 +3,76 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
   ModalContent,
   ModalDescription,
+  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { AutoTopupCard } from '@/features/billing/auto-topup-card';
+import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
-import { useAccountState, useCreatePerSeatCheckout } from '@/hooks/billing';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { useAccountState, useCreatePerSeatCheckout, useCreatePortalSession } from '@/hooks/billing';
 import type { AccountState } from '@/lib/api/billing';
+import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { ArrowRight, UserPlus } from 'lucide-react';
+import { formatCredits } from '@kortix/shared';
+import { ArrowRight, CreditCard, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 export interface UpgradePlansModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountState?: AccountState;
+  /** From the 402: distinguishes "Team wallet drained → top up" (credit view)
+   *  from "no plan → subscribe" (plans view). Fall back to accountState. */
+  reason?: string;
+  billingModel?: string;
+  hasSubscription?: boolean;
+  balance?: number;
 }
 
-export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradePlansModalProps) {
+export function UpgradePlansModal({
+  open,
+  onOpenChange,
+  accountState,
+  reason,
+  billingModel,
+  hasSubscription,
+  balance,
+}: UpgradePlansModalProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const createPerSeat = useCreatePerSeatCheckout();
   const openDemo = useRequestDemo();
+
+  // Show the top-up view (not the Free-plan pitch) whenever we can tell the
+  // account is already a paying/Team account whose wallet ran dry. Prefer the
+  // 402 hints (billing_model / has_subscription / reason) since accountState can
+  // still be loading when the modal opens; fall back to it once available.
+  const isPerSeat = billingModel === 'per_seat' || accountState?.billing_model === 'per_seat';
+  const hasSub = hasSubscription ?? Boolean(accountState?.subscription?.subscription_id);
+  const canPurchaseCredits = accountState?.tier?.can_purchase_credits ?? isPerSeat;
+  const showTopUp =
+    (reason === 'insufficient_credits' || isPerSeat || hasSub) && canPurchaseCredits;
+
+  if (showTopUp) {
+    return (
+      <CreditTopUpModal
+        open={open}
+        onOpenChange={onOpenChange}
+        accountState={accountState}
+        balance={balance}
+      />
+    );
+  }
 
   const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
   const seatCount = Math.max(1, accountState?.member_count ?? accountState?.seats?.count ?? 1);
@@ -101,9 +142,13 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
     ),
   };
 
-  const planBadges: Partial<Record<UpgradeModalPlanId, string>> = {
-    free: 'Current plan',
-  };
+  // Badge the plan the account is ACTUALLY on, computed from account state —
+  // never hardcoded to Free (that mislabels every paying account as Free, the
+  // core bug here). The top-up view already handles per-seat/subscribed
+  // accounts, so this plans view is only reached for free/no-plan accounts.
+  const planBadges: Partial<Record<UpgradeModalPlanId, string>> = isPerSeat
+    ? { team: 'Current plan' }
+    : { free: 'Current plan' };
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -181,8 +226,96 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
   );
 }
 
+interface CreditTopUpModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  accountState?: AccountState;
+  balance?: number;
+}
+
+/**
+ * The out-of-credits view of the blocking modal: a clear "why you're blocked"
+ * header + wallet balance, one-time top-up (packages + custom amount), and
+ * auto-top-up config underneath so a drained Team account can both refill now
+ * and never hit zero again — instead of being wrongly pitched the Free plan.
+ */
+function CreditTopUpModal({ open, onOpenChange, accountState, balance }: CreditTopUpModalProps) {
+  const createPortal = useCreatePortalSession();
+  const walletUsd = balance ?? accountState?.credits?.total ?? 0;
+  const isNegative = walletUsd < 0;
+  const walletLabel = `${walletUsd < 0 ? '-' : ''}$${Math.abs(walletUsd).toFixed(2)}`;
+  const creditsLabel = formatCredits(Math.round(Math.abs(walletUsd) * 100));
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent className="gap-0 space-y-0 p-0 lg:max-w-lg">
+        <ModalHeader className="space-y-2 px-6 pt-6 pb-4">
+          <div className="flex items-center gap-2">
+            <span className="bg-kortix-orange/10 text-kortix-orange flex size-9 items-center justify-center rounded-full">
+              <CreditCard className="size-4" />
+            </span>
+            <ModalTitle className="text-xl font-medium tracking-tight">Out of credits</ModalTitle>
+          </div>
+          <ModalDescription className="text-sm">
+            Your agents are paused because the wallet is empty. Top up to keep compute and the
+            latest AI models running — your Team plan and seats are unaffected.
+          </ModalDescription>
+        </ModalHeader>
+
+        <ModalBody className="space-y-5 px-6 pb-2">
+          {/* Wallet balance — the concrete "why" behind the block. */}
+          <div className="bg-popover flex items-center justify-between rounded-md border px-4 py-3">
+            <span className="text-muted-foreground text-sm">Wallet balance</span>
+            <span
+              className={cn(
+                'text-lg font-medium tabular-nums',
+                isNegative ? 'text-kortix-red' : 'text-foreground',
+              )}
+            >
+              {walletLabel}
+              {isNegative && (
+                <span className="text-muted-foreground ml-1.5 text-xs">
+                  ({creditsLabel} credits owed)
+                </span>
+              )}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <Label>Buy credits</Label>
+            <CreditTopupSection />
+          </div>
+
+          {/* Auto top-up underneath — configure it here so it never happens again. */}
+          <div className="space-y-3">
+            <Label>Auto top-up</Label>
+            <div className="bg-popover rounded-md border px-4 py-4">
+              <AutoTopupCard fetchSettings showSaveButton />
+            </div>
+          </div>
+        </ModalBody>
+
+        <ModalFooter className="px-6 pb-6 pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground gap-1.5"
+            disabled={createPortal.isPending}
+            onClick={() => createPortal.mutate({ return_url: window.location.href })}
+          >
+            {createPortal.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            Manage billing
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
 export function GlobalUpgradeModal() {
-  const { isOpen, closeUpgradeDialog, accountId } = useUpgradeDialogStore();
+  const { isOpen, closeUpgradeDialog, accountId, reason, billingModel, hasSubscription, balance } =
+    useUpgradeDialogStore();
   const { data: accountState } = useAccountState({ accountId });
 
   return (
@@ -191,6 +324,10 @@ export function GlobalUpgradeModal() {
         open={isOpen}
         onOpenChange={(open) => !open && closeUpgradeDialog()}
         accountState={accountState}
+        reason={reason}
+        billingModel={billingModel}
+        hasSubscription={hasSubscription}
+        balance={balance}
       />
     </BillingAccountProvider>
   );
