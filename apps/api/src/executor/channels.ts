@@ -27,6 +27,7 @@ export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
 export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
 export const MEET_CHANNEL_CONNECTOR_SLUG = 'kortix_meet';
+export const WHATSAPP_CHANNEL_CONNECTOR_SLUG = 'kortix_whatsapp';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
@@ -38,6 +39,8 @@ export function channelDefaultSlug(platform: string): string {
       return EMAIL_CHANNEL_CONNECTOR_SLUG;
     case 'meet':
       return MEET_CHANNEL_CONNECTOR_SLUG;
+    case 'whatsapp':
+      return WHATSAPP_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
@@ -104,6 +107,8 @@ export function channelLabel(platform: string): string {
       return 'Email';
     case 'meet':
       return 'Google Meet';
+    case 'whatsapp':
+      return 'WhatsApp';
     default:
       return platform;
   }

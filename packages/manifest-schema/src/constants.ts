@@ -39,6 +39,7 @@ export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_teams: 'channel',
   kortix_email: 'channel',
   kortix_meet: 'channel',
+  kortix_whatsapp: 'channel',
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;

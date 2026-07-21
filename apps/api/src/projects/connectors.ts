@@ -62,10 +62,12 @@ export { RESERVED_SLUG_PROVIDERS };
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
 export const MEET_RESERVED_SLUG = 'kortix_meet';
+export const WHATSAPP_RESERVED_SLUG = 'kortix_whatsapp';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
   'meet',
+  'whatsapp',
   ...Object.keys(RESERVED_SLUG_PROVIDERS),
 ]);
 
