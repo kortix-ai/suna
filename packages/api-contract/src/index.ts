@@ -315,6 +315,10 @@ export const SessionCreateInputSchema = z
     metadata: JsonObjectSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
     connector_bindings: SessionConnectorBindingsSchema.optional(),
+    // Backend-only: the wrapper's opaque end-user handle this session acts for.
+    // Accepted solely from a service-account (backend) caller; any other origin
+    // supplying it is rejected 403 (see resolveSessionOrigin / canOverride).
+    origin_ref: z.string().min(1).max(256).optional(),
     // Deprecated camelCase compatibility accepted by the pre-contract route.
     // New SDK/API consumers use the snake_case fields above.
     baseRef: z.string().min(1).optional(),
@@ -359,6 +363,10 @@ export const ProjectSessionSchema = z.object({
   owner_name: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
   visibility: SessionVisibilitySchema,
+  /** Policy class the session was created under (derived, never client-set). */
+  origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
+  /** Backend wrapper's end-user handle; non-null only for backend sessions. */
+  origin_ref: z.string().nullable(),
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
   can_manage_sharing: z.boolean(),

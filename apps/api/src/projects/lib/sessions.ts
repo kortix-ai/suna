@@ -49,6 +49,7 @@ import {
   parseSessionConnectorBindings,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
+import { canOverride, resolveSessionOrigin } from './session-origin';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
@@ -446,6 +447,13 @@ export async function createProjectSession(input: {
    * otherwise be invisible to everyone but the account's first owner.
    */
   visibility?: 'private' | 'project' | 'restricted';
+  /**
+   * Caller's token kind (auth.ts `authType`). Combined with the invocation
+   * source it derives the session ORIGIN — never trusted from the body. Only a
+   * service-account caller resolves to 'backend' and may set backend-only
+   * override fields (currently `origin_ref`). See session-origin.ts.
+   */
+  authType?: string | null;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -479,6 +487,29 @@ export async function createProjectSession(input: {
       },
     };
   }
+
+  // Origin is a POLICY CLASS derived from the caller's token kind (authType)
+  // + invocation source (metadata.source), NEVER the body. It gates which
+  // override fields the caller may set. `origin_ref` (the wrapper end-user this
+  // session acts for) is backend-only: a non-backend caller that supplies it is
+  // rejected rather than silently attributing to a phantom identity.
+  const origin = resolveSessionOrigin({
+    authType: input.authType,
+    source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+  });
+  const requestedOriginRef = normalizeString(body.origin_ref);
+  if (requestedOriginRef && !canOverride(origin, 'origin_ref')) {
+    return {
+      error: {
+        status: 403,
+        body: {
+          error: 'origin_ref may only be set by a service-account (backend) session',
+          code: 'origin_override_forbidden',
+        },
+      },
+    };
+  }
+  const originRef = canOverride(origin, 'origin_ref') ? (requestedOriginRef ?? null) : null;
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
@@ -689,6 +720,8 @@ export async function createProjectSession(input: {
         // session-header control (visibility = project | restricted).
         createdBy: userId,
         visibility,
+        origin,
+        originRef,
         metadata,
         updatedAt: new Date(),
       })

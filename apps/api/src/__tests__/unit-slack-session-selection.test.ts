@@ -30,6 +30,8 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     error: null,
     createdBy: 'user-1',
     visibility: 'project',
+    origin: 'user',
+    originRef: null,
     metadata: {},
     createdAt: now,
     updatedAt: now,

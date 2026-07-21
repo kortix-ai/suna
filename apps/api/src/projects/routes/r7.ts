@@ -407,6 +407,9 @@ projectsApp.openapi(
     project: loaded.row,
     userId: loaded.userId,
     body,
+    // Origin is derived from the caller's token kind (service_account →
+    // backend), never the body — see resolveSessionOrigin.
+    authType: c.get('authType') as string | undefined,
     request: requestAuditContext(c),
     idempotencyKey: c.req.header('idempotency-key') ?? null,
   });

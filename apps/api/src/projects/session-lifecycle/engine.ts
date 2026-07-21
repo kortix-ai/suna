@@ -529,6 +529,7 @@ async function executeCreateSession(
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
+    authType: command.authType,
   });
 
   if (result.error) {
