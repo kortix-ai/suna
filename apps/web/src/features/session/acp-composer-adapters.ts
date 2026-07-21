@@ -250,3 +250,25 @@ export function buildAcpQuestionContent(
   });
   return content;
 }
+
+/**
+ * Whether the connected harness's negotiated `agentCapabilities`
+ * (`protocol/v1/initialization.md`, stored on `AcpSessionSnapshot.capabilities`
+ * — `session.ts:667`) advertise baseline image content support
+ * (`promptCapabilities.image`, per `protocol/v1/content.md`). Permissive by
+ * default: `true` when `capabilities` hasn't loaded yet (pre-bootstrap,
+ * `{}`) or a harness simply omits the field — only an EXPLICIT `false`
+ * blocks it. Verified real: all four currently-integrated harnesses
+ * (claude-agent-acp, codex-acp, OpenCode, pi-acp — `kortix.acp_session_envelopes`,
+ * local DB, 2026-07-22) advertise `image: true`, so this never changes
+ * today's behavior for any of them; it's a defensive gate for a future/
+ * different adapter that doesn't. `capabilities` is untyped
+ * (`Record<string, unknown>` — the SDK stores the raw negotiated object
+ * verbatim), so every layer here is read defensively.
+ */
+export function acpSupportsImagePrompt(capabilities: Record<string, unknown> | null | undefined): boolean {
+  const promptCapabilities = capabilities?.promptCapabilities;
+  if (!promptCapabilities || typeof promptCapabilities !== 'object') return true;
+  const image = (promptCapabilities as Record<string, unknown>).image;
+  return image !== false;
+}

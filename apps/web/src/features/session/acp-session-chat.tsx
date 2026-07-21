@@ -30,6 +30,7 @@ import {
 import { AcpChatItemRow } from './acp-chat-item-row';
 import { AcpConfigOptionPill, AcpConfigOptionSegment } from './acp-config-option-pills';
 import {
+  acpSupportsImagePrompt,
   acpTodosFromPlanEntries,
   buildAcpQuestionContent,
   findAcpModelConfigOption,
@@ -136,6 +137,7 @@ export function AcpSessionChat({
     retry,
     availableCommands,
     stopReason,
+    capabilities,
   } = acp;
   // Built straight from `items` (`acp.chatItems`) rather than re-deriving
   // via `projectAcpContext(envelopes)` — `chatItems` is ALREADY the exact
@@ -390,7 +392,16 @@ export function AcpSessionChat({
           continue;
         }
         const data = bytesToBase64(new Uint8Array(await file.file.arrayBuffer()));
-        if (file.isImage)
+        // `promptCapabilities.image` gate (protocol/v1/content.md): images
+        // were previously always sent as `type:'image'` with no check
+        // against what the connected harness actually advertises. Every
+        // currently-integrated harness advertises `image:true` (see
+        // `acpSupportsImagePrompt`'s doc comment), so this is a no-op change
+        // for all of them today — the fallback only engages for a future/
+        // different adapter that explicitly says `false`, and degrades to
+        // the always-supported baseline `resource` block instead of silently
+        // sending a content type the harness may reject.
+        if (file.isImage && acpSupportsImagePrompt(capabilities))
           blocks.push({
             type: 'image',
             data,
@@ -411,7 +422,7 @@ export function AcpSessionChat({
         throw new Error('The ACP prompt failed. Your draft has been restored so you can retry.');
       setReplyTo(null);
     },
-    [acpSessionId, busy, replyTo, sendPrompt],
+    [acpSessionId, busy, replyTo, sendPrompt, capabilities],
   );
 
   // ACP-native slash commands (`availableCommands`, folded from

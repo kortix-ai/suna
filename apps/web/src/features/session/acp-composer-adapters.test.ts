@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AcpAvailableCommand, AcpPendingQuestion, AcpSessionConfigOption } from '@kortix/sdk';
 import {
   acpConfigOptionPresets,
+  acpSupportsImagePrompt,
   acpTodosFromPlanEntries,
   buildAcpQuestionContent,
   findAcpModelConfigOption,
@@ -311,6 +312,37 @@ describe('toQuestionRequest / buildAcpQuestionContent', () => {
     expect(buildAcpQuestionContent(pending, [['staging', 'production']])).toEqual({
       environment: ['staging', 'production'],
     });
+  });
+});
+
+// Real `agentCapabilities.promptCapabilities` payloads captured verbatim from
+// `kortix.acp_session_envelopes` (local DB, 2026-07-22) — all four
+// integrated harnesses' actual `initialize` responses.
+describe('acpSupportsImagePrompt', () => {
+  test('claude-agent-acp / codex-acp / OpenCode shape: {image: true, embeddedContext: true} — supported', () => {
+    expect(acpSupportsImagePrompt({ promptCapabilities: { image: true, embeddedContext: true } })).toBe(true);
+  });
+
+  test('pi-acp shape: {audio: false, image: true, embeddedContext: false} — supported', () => {
+    expect(acpSupportsImagePrompt({ promptCapabilities: { audio: false, image: true, embeddedContext: false } })).toBe(true);
+  });
+
+  test('an explicit image: false is the only thing that blocks it', () => {
+    expect(acpSupportsImagePrompt({ promptCapabilities: { image: false } })).toBe(false);
+  });
+
+  test('permissive default: null/undefined capabilities (pre-bootstrap) are treated as supported', () => {
+    expect(acpSupportsImagePrompt(null)).toBe(true);
+    expect(acpSupportsImagePrompt(undefined)).toBe(true);
+    expect(acpSupportsImagePrompt({})).toBe(true);
+  });
+
+  test('permissive default: a harness that omits promptCapabilities entirely is treated as supported', () => {
+    expect(acpSupportsImagePrompt({ loadSession: true })).toBe(true);
+  });
+
+  test('permissive default: a malformed (non-object) promptCapabilities is treated as supported', () => {
+    expect(acpSupportsImagePrompt({ promptCapabilities: 'nonsense' })).toBe(true);
   });
 });
 
