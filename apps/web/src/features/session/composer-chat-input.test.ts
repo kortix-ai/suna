@@ -16,7 +16,9 @@ describe('harness-aware composer options', () => {
     expect(boundSessionAgentName(null)).toBeNull();
   });
 
-  for (const harness of ['claude', 'codex', 'pi'] as const) {
+  // Pi is gateway/catalog-driven since the 2026-07-21 refactor (0b86e10f2) —
+  // only Claude Code and Codex own their model natively.
+  for (const harness of ['claude', 'codex'] as const) {
     test(`${harness} sends the agent without a stale gateway model override`, () => {
       expect(
         buildComposerOptions({
@@ -27,7 +29,7 @@ describe('harness-aware composer options', () => {
     });
   }
 
-  for (const harness of ['claude', 'codex', 'pi'] as const) {
+  for (const harness of ['claude', 'codex'] as const) {
     test(`${harness} carries an explicit harness-native model without a gateway model key`, () => {
       expect(
         buildComposerOptions({
@@ -55,6 +57,23 @@ describe('harness-aware composer options', () => {
       }),
     ).toEqual({
       agent: 'kortix',
+      model: { providerID: 'kortix', modelID: 'openai/gpt-5.4' },
+      modelSelection: {
+        kind: 'custom',
+        modelId: 'kortix/openai/gpt-5.4',
+        connectionId: null,
+      },
+    });
+  });
+
+  test('Pi retains the selected catalog model — catalog-driven since 0b86e10f2', () => {
+    expect(
+      buildComposerOptions({
+        agent: { name: 'pi', harness: 'pi' },
+        model: { providerID: 'kortix', modelID: 'openai/gpt-5.4' },
+      }),
+    ).toEqual({
+      agent: 'pi',
       model: { providerID: 'kortix', modelID: 'openai/gpt-5.4' },
       modelSelection: {
         kind: 'custom',
