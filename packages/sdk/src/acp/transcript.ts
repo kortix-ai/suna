@@ -153,6 +153,25 @@ export type AcpSessionInfo = {
 };
 
 /**
+ * One entry from a folded `available_commands_update` (`protocol/v1/
+ * slash-commands.md`) — a harness's currently-advertised, session-scoped
+ * slash commands. Verified real and non-empty across ALL FOUR integrated
+ * harnesses (`kortix.acp_session_envelopes`, local DB, 2026-07-22):
+ * claude-agent-acp, codex-acp, OpenCode, and pi-acp each send this shape —
+ * e.g. OpenCode's `{name:"review", description:"review changes
+ * [commit|branch|pr]..."}`, pi-acp's `{name:"goal", input:{hint:"[<objective>|
+ * clear|pause|resume]"}, description:"Set, pause, resume, or clear a task
+ * goal."}`. `hint` is `null` when a command carries no `input` (or an
+ * `input: null`, which several harnesses send explicitly for a no-argument
+ * command).
+ */
+export type AcpAvailableCommand = {
+  name: string;
+  description: string | null;
+  hint: string | null;
+};
+
+/**
  * Fold-from-scratch wrapper over `reduceEnvelope` (`./reduce`) — the
  * incremental reducer `AcpSession` folds row-by-row as envelopes arrive is
  * the SAME implementation this calls here, one row at a time, starting from

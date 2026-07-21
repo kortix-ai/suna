@@ -2,6 +2,7 @@ import { createAcpClient, type AcpClient } from './client';
 import { clearOpenPrompts, emptyReducerState, pendingFromState, reduceEnvelope, type AcpReducerState } from './reduce';
 import { markLiveSessionLoadReplay } from './load-replay';
 import {
+  type AcpAvailableCommand,
   type AcpChatItem,
   type AcpPendingPrompts,
   type AcpSessionInfo,
@@ -59,6 +60,10 @@ export type AcpSessionSnapshot = {
    *  `AcpSessionInfo`'s doc comment. `null` until the harness sends its first
    *  such notification for this session. */
   sessionInfo: AcpSessionInfo | null;
+  /** Folded `available_commands_update` state — see `AcpAvailableCommand`'s
+   *  doc comment. `[]` until the harness sends its first such notification
+   *  for this session (or if it never advertises any commands). */
+  availableCommands: AcpAvailableCommand[];
 };
 
 export type AcpSessionOptions = {
@@ -98,6 +103,7 @@ const EMPTY_SNAPSHOT: AcpSessionSnapshot = {
   agentInfo: null,
   authMethods: [],
   sessionInfo: null,
+  availableCommands: [],
 };
 
 /** Monotonic-enough ordinal for a live SSE event, kept out of the ordinal
@@ -1021,6 +1027,7 @@ export class AcpSession {
       busy: this.requestBusy || turnState.busy,
       sessionInfo: this.reducerState.sessionInfo,
       configOptions: this.reducerState.liveConfigOptions ?? this.snapshot.configOptions,
+      availableCommands: this.reducerState.availableCommands,
     };
   }
 

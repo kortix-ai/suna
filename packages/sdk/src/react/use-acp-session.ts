@@ -148,6 +148,10 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
      *  `AcpSessionInfo`'s doc comment (`@kortix/sdk/acp`). `null` until the
      *  harness sends its first such notification for this session. */
     sessionInfo: snapshot.sessionInfo,
+    /** Folded `available_commands_update` state — see `AcpAvailableCommand`'s
+     *  doc comment (`@kortix/sdk/acp`). `[]` until the harness sends its
+     *  first such notification for this session. */
+    availableCommands: snapshot.availableCommands,
     capabilities: snapshot.capabilities,
     agentInfo: snapshot.agentInfo,
     authMethods: snapshot.authMethods,

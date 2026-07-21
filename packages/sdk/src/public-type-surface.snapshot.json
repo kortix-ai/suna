@@ -15,6 +15,7 @@
     "AccountState",
     "AccountStateAppAccessView",
     "AccountToken",
+    "AcpAvailableCommand",
     "AcpChatItem",
     "AcpClient",
     "AcpClientOptions",
@@ -1425,6 +1426,7 @@
   ],
   "./acp": [
     "ACP_BOOTSTRAP_TIMEOUT_MS",
+    "AcpAvailableCommand",
     "AcpBootstrapTimeoutError",
     "AcpChatItem",
     "AcpClient",
@@ -1501,6 +1503,7 @@
     "resolvePermissionActionOptions"
   ],
   "./acp/transcript": [
+    "AcpAvailableCommand",
     "AcpChatItem",
     "AcpContextMessage",
     "AcpContextProjection",

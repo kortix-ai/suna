@@ -717,6 +717,99 @@ describe('session_info_update / config_option_update', () => {
   });
 });
 
+// `available_commands_update` (protocol/v1/slash-commands.md) — real payloads
+// captured VERBATIM from `kortix.acp_session_envelopes` (local DB,
+// 2026-07-22). Confirms, against real data, that ALL FOUR integrated
+// harnesses advertise non-empty command lists (the composer's "/" palette
+// previously discarded every one of them — `useRuntimeCommands()` hardcoded
+// `commands: []`).
+describe('available_commands_update', () => {
+  function availableCommandsUpdate(ordinal: number, availableCommands: unknown[]): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', {
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: { sessionId: 'sess-1', update: { sessionUpdate: 'available_commands_update', availableCommands } },
+    });
+  }
+
+  test('OpenCode-shape payload (description only, no input) folds into availableCommands, no chat item', () => {
+    let state = emptyReducerState();
+    expect(state.availableCommands).toEqual([]);
+
+    state = reduceEnvelope(state, availableCommandsUpdate(1, [
+      {
+        name: 'customize-opencode',
+        description: "Use ONLY when the user is editing or creating opencode's own configuration",
+      },
+      { name: 'init', description: 'guided AGENTS.md setup' },
+      { name: 'review', description: 'review changes [commit|branch|pr], defaults to uncommitted' },
+    ]));
+
+    expect(state.availableCommands).toEqual([
+      { name: 'customize-opencode', description: "Use ONLY when the user is editing or creating opencode's own configuration", hint: null },
+      { name: 'init', description: 'guided AGENTS.md setup', hint: null },
+      { name: 'review', description: 'review changes [commit|branch|pr], defaults to uncommitted', hint: null },
+    ]);
+    expect(state.chatItems).toEqual([]);
+  });
+
+  test('pi-acp-shape payload (input.hint present) folds hint through, and explicit input: null becomes hint: null', () => {
+    let state = emptyReducerState();
+
+    state = reduceEnvelope(state, availableCommandsUpdate(1, [
+      { name: 'goal', input: { hint: '[<objective>|clear|pause|resume]' }, description: 'Set, pause, resume, or clear a task goal.' },
+      { name: 'schedule', input: null, description: 'Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule.' },
+    ]));
+
+    expect(state.availableCommands).toEqual([
+      { name: 'goal', description: 'Set, pause, resume, or clear a task goal.', hint: '[<objective>|clear|pause|resume]' },
+      { name: 'schedule', description: 'Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule.', hint: null },
+    ]);
+  });
+
+  test('claude-agent-acp-shape and codex-acp-shape payloads (verified live, real non-empty lists) fold cleanly', () => {
+    let state = emptyReducerState();
+
+    state = reduceEnvelope(state, availableCommandsUpdate(1, [
+      { name: 'mcp', input: null, description: 'List configured Model Context Protocol (MCP) tools.' },
+      { name: 'review', input: { hint: 'optional review instructions' }, description: 'Review uncommitted changes, or review with custom instructions.' },
+    ]));
+
+    expect(state.availableCommands).toEqual([
+      { name: 'mcp', description: 'List configured Model Context Protocol (MCP) tools.', hint: null },
+      { name: 'review', description: 'Review uncommitted changes, or review with custom instructions.', hint: 'optional review instructions' },
+    ]);
+  });
+
+  test('a later update REPLACES the list wholesale (harness always sends its full current set, never a delta)', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, availableCommandsUpdate(1, [{ name: 'init', description: null }]));
+    state = reduceEnvelope(state, availableCommandsUpdate(2, [{ name: 'review', description: null }]));
+
+    expect(state.availableCommands).toEqual([{ name: 'review', description: null, hint: null }]);
+  });
+
+  test('a command entry missing `name` is dropped instead of producing a nameless command', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, availableCommandsUpdate(1, [
+      { description: 'no name, malformed' },
+      { name: 'valid', description: 'kept' },
+    ]));
+
+    expect(state.availableCommands).toEqual([{ name: 'valid', description: 'kept', hint: null }]);
+  });
+
+  test('availableCommands keeps its previous reference when no available_commands_update has arrived — untouched flushes stay cheap', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, availableCommandsUpdate(1, [{ name: 'init', description: null }]));
+    const afterFirstUpdate = state.availableCommands;
+
+    state = reduceEnvelope(state, agentChunk(2, 'unrelated message text'));
+
+    expect(state.availableCommands).toBe(afterFirstUpdate); // same reference, not a new array
+  });
+});
+
 // Pi startup/update-notice suppression (2026-07-22 decree): the pi adapter
 // sends its own "pi vX.Y.Z" / "New version available…" banner as a genuine
 // `agent_message_chunk`, which used to render as a real chat bubble — twice

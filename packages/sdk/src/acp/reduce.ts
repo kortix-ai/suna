@@ -2,6 +2,7 @@ import { contentAttachments, contentText, textFromContent } from './content';
 import { isLiveSessionLoadReplay } from './load-replay';
 import type { AcpJsonRpcId, AcpSessionConfigOption } from './types';
 import type {
+  AcpAvailableCommand,
   AcpChatItem,
   AcpPendingOption,
   AcpPendingPermission,
@@ -202,6 +203,18 @@ export type AcpReducerState = {
    * bootstrap/`setConfigOption` already set" instead of clobbering it.
    */
   liveConfigOptions: AcpSessionConfigOption[] | null;
+  /**
+   * Latest full `availableCommands` array from a folded `available_commands_update`
+   * (`protocol/v1/slash-commands.md`) — session-scoped, per-harness slash
+   * commands. `[]` until the first such notification arrives (there is no
+   * meaningful "not yet known" vs. "harness advertises zero commands"
+   * distinction worth a separate `null` state here, unlike `liveConfigOptions`:
+   * nothing downstream needs to tell those apart — an empty command palette
+   * renders identically either way). Replaces wholesale on each update, same
+   * as `liveConfigOptions` — the harness always sends its full current list,
+   * never a delta.
+   */
+  availableCommands: AcpAvailableCommand[];
 };
 
 export function emptyReducerState(): AcpReducerState {
@@ -228,6 +241,7 @@ export function emptyReducerState(): AcpReducerState {
     lastSessionLoadOrdinal: undefined,
     sessionInfo: null,
     liveConfigOptions: null,
+    availableCommands: [],
   };
 }
 
@@ -315,6 +329,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   let lastSessionLoadOrdinal = state.lastSessionLoadOrdinal;
   let sessionInfo = state.sessionInfo;
   let liveConfigOptions = state.liveConfigOptions;
+  let availableCommands = state.availableCommands;
 
   // ── chat items + turn-state bookkeeping: a client's `session/prompt` ──
   if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
@@ -656,6 +671,30 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     if (update && updateKind === 'config_option_update' && Array.isArray(update.configOptions)) {
       liveConfigOptions = update.configOptions as AcpSessionConfigOption[];
     }
+
+    // `available_commands_update` (`protocol/v1/slash-commands.md`): the
+    // harness's own out-of-band notification of its currently-runnable slash
+    // commands — full, authoritative replacement list (never a delta), same
+    // pattern as `config_option_update` above. Verified real and non-empty
+    // across all four integrated harnesses (see `AcpAvailableCommand`'s doc
+    // comment). `AcpSession.applyReducerState` folds this onto
+    // `snapshot.availableCommands`, which the composer's "/" palette reads
+    // instead of the hardcoded `[]` `useRuntimeCommands()` used to return.
+    if (update && updateKind === 'available_commands_update' && Array.isArray(update.availableCommands)) {
+      availableCommands = update.availableCommands
+        .filter(isRecord)
+        .map((command): AcpAvailableCommand | null => {
+          const name = firstString(command.name);
+          if (!name) return null;
+          const input = isRecord(command.input) ? command.input : null;
+          return {
+            name,
+            description: firstString(command.description) ?? null,
+            hint: input ? firstString(input.hint) ?? null : null,
+          };
+        })
+        .filter((command): command is AcpAvailableCommand => command !== null);
+    }
   }
 
   // ── responses: answer permission/question requests and prompt requests ──
@@ -757,6 +796,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     lastSessionLoadOrdinal,
     sessionInfo,
     liveConfigOptions,
+    availableCommands,
   };
 }
 

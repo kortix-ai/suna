@@ -128,6 +128,7 @@ export function AcpSessionChat({
     connection,
     errorInfo,
     retry,
+    availableCommands,
   } = acp;
   // Built straight from `items` (`acp.chatItems`) rather than re-deriving
   // via `projectAcpContext(envelopes)` — `chatItems` is ALREADY the exact
@@ -399,10 +400,15 @@ export function AcpSessionChat({
     [acpSessionId, busy, replyTo, sendPrompt],
   );
 
-  // Project-configured slash commands. ACP has no client-executable template —
-  // the harness itself expands `/name args` server-side (this is exactly what
-  // the SDK's own `useExecuteRuntimeCommand` sends), so running one is just a
-  // normal prompt through the session already open here.
+  // ACP-native slash commands (`availableCommands`, folded from
+  // `available_commands_update` — see `ComposerChatInput`'s `live.availableCommands`
+  // wiring below). ACP has no client-executable template — the harness
+  // itself expands `/name args` server-side (this is exactly what the SDK's
+  // own `useExecuteRuntimeCommand` sends for the deprecated project-command
+  // path), so running one is just a normal prompt through the session
+  // already open here. This is the EXECUTION half the audit found already
+  // working; the discovery half (the composer's "/" palette) is what
+  // `live.availableCommands` fixes.
   const handleCommand = useCallback(
     (command: Command, args?: string) => {
       void send(`/${command.name}${args ? ` ${args}` : ''}`).catch((reason) =>
@@ -785,6 +791,7 @@ export function AcpSessionChat({
           live={{
             configOptions,
             onConfigOptionChange: (id, value) => void setConfigOption(id, value),
+            availableCommands,
             messages: contextMessages,
             acpUsage: usage,
             onStop: () => void cancel(),

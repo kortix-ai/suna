@@ -71,6 +71,7 @@ export {
   promptProjectAcpSession,
   resolvePermissionActionOptions,
   defaultAllowPermissionOption,
+  type AcpAvailableCommand,
   type AcpClientOptions,
   type AcpContentBlock,
   type AcpEnvelope,

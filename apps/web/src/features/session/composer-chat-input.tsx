@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useRef } from 'react';
 import {
   findAcpModelConfigOption,
   isWritableAcpModelConfigOption,
+  mapAvailableCommandsToComposerCommands,
   otherAcpConfigOptions,
   resolveDeferredModelApply,
   shouldAttemptDeferredModelApply,
@@ -29,7 +30,7 @@ import {
   useRuntimeSessions,
 } from '@/hooks/runtime/use-runtime-sessions';
 import { CATALOG } from '@kortix/llm-catalog';
-import type { AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
+import type { AcpAvailableCommand, AcpSessionConfigOption, AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
 import type { FlatModel } from '@kortix/sdk/react';
 import {
   agentHarness,
@@ -335,6 +336,12 @@ export function buildComposerOptions(input: {
 export interface LiveAcpComposer {
   configOptions: AcpSessionConfigOption[];
   onConfigOptionChange: (id: string, value: unknown) => void;
+  /** The connected harness's live, session-scoped slash commands, folded from
+   *  `available_commands_update` (`protocol/v1/slash-commands.md`) — see
+   *  `AcpAvailableCommand`'s doc comment (`@kortix/sdk`). Backs the composer's
+   *  "/" palette; `undefined`/`[]` renders no commands, matching a harness
+   *  that hasn't sent one yet (or never does). */
+  availableCommands?: AcpAvailableCommand[];
   messages?: MessageWithParts[];
   acpUsage?: AcpUsageProjection | null;
   onStop?: () => void;
@@ -428,10 +435,16 @@ export function ComposerChatInput({
   const { data: config } = useRuntimeConfig();
   const { data: mentionSessions } = useRuntimeSessions(!!live);
   const projectConfig = useProjectConfig(projectId);
-  const commands: Command[] = (projectConfig?.commands ?? []).map((command) => ({
-    ...command,
-    id: command.name,
-  }));
+  // ACP commands are session-scoped (`available_commands_update`, arriving
+  // only once a live session negotiates with its harness) — there is no
+  // harness-global command API, so a pre-session composer (`live` unset)
+  // shows none. `projectConfig.commands` — the static, repo-file-discovered
+  // list the now-deleted Commands CRUD tab used to feed (see that commit's
+  // "Native harness commands will surface via ACP in the composer
+  // separately") — is intentionally NOT read here anymore: it was a
+  // pre-ACP, non-live duplicate of exactly what this now sources live, and
+  // it has no other consumer left in the app (`commands-view.tsx` is gone).
+  const commands: Command[] = mapAvailableCommandsToComposerCommands(live?.availableCommands);
   const local = useRuntimeLocal({
     agents,
     providers,

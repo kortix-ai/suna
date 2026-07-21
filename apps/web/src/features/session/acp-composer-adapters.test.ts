@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AcpPendingQuestion, AcpSessionConfigOption } from '@kortix/sdk';
+import type { AcpAvailableCommand, AcpPendingQuestion, AcpSessionConfigOption } from '@kortix/sdk';
 import {
   acpConfigOptionPresets,
   acpTodosFromPlanEntries,
@@ -7,6 +7,7 @@ import {
   findAcpModelConfigOption,
   isAcpModelConfigOption,
   isWritableAcpModelConfigOption,
+  mapAvailableCommandsToComposerCommands,
   otherAcpConfigOptions,
   resolveDeferredModelApply,
   shouldAttemptDeferredModelApply,
@@ -310,5 +311,45 @@ describe('toQuestionRequest / buildAcpQuestionContent', () => {
     expect(buildAcpQuestionContent(pending, [['staging', 'production']])).toEqual({
       environment: ['staging', 'production'],
     });
+  });
+});
+
+// Real `available_commands_update` payloads (already folded through the SDK
+// reducer into `AcpAvailableCommand[]`) captured verbatim from
+// `kortix.acp_session_envelopes` (local DB, 2026-07-22) — one per harness.
+describe('mapAvailableCommandsToComposerCommands', () => {
+  test('OpenCode: description-only commands map with hint undefined', () => {
+    const commands: AcpAvailableCommand[] = [
+      { name: 'init', description: 'guided AGENTS.md setup', hint: null },
+      { name: 'review', description: 'review changes [commit|branch|pr], defaults to uncommitted', hint: null },
+    ];
+    expect(mapAvailableCommandsToComposerCommands(commands)).toEqual([
+      { name: 'init', id: 'init', description: 'guided AGENTS.md setup', hint: undefined },
+      { name: 'review', id: 'review', description: 'review changes [commit|branch|pr], defaults to uncommitted', hint: undefined },
+    ]);
+  });
+
+  test('pi-acp: a command with an input hint maps it through', () => {
+    const commands: AcpAvailableCommand[] = [
+      { name: 'goal', description: 'Set, pause, resume, or clear a task goal.', hint: '[<objective>|clear|pause|resume]' },
+    ];
+    expect(mapAvailableCommandsToComposerCommands(commands)).toEqual([
+      { name: 'goal', id: 'goal', description: 'Set, pause, resume, or clear a task goal.', hint: '[<objective>|clear|pause|resume]' },
+    ]);
+  });
+
+  test('codex-acp: id mirrors name (the composer keys the popover/staged-command state off id)', () => {
+    const commands: AcpAvailableCommand[] = [
+      { name: 'review-branch', description: 'Review changes relative to a base branch.', hint: null },
+    ];
+    expect(mapAvailableCommandsToComposerCommands(commands)[0]?.id).toBe('review-branch');
+  });
+
+  test('undefined (pre-session composer, no live ACP session) maps to an empty list', () => {
+    expect(mapAvailableCommandsToComposerCommands(undefined)).toEqual([]);
+  });
+
+  test('an empty availableCommands array maps to an empty list', () => {
+    expect(mapAvailableCommandsToComposerCommands([])).toEqual([]);
   });
 });

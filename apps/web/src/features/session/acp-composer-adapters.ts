@@ -7,11 +7,40 @@
 
 import type { QuestionAnswer, QuestionRequest } from '@/ui';
 import type {
+  AcpAvailableCommand,
   AcpPendingOption,
   AcpPendingQuestion,
   AcpPlan,
   AcpSessionConfigOption,
 } from '@kortix/sdk';
+
+/** The composer's generic slash-command shape (`Command`, `@/hooks/runtime/
+ *  use-runtime-sessions` — re-exported `@kortix/sdk/react` `Command`:
+ *  `{name, id?, [key: string]: any}`). Declared structurally here instead of
+ *  importing the app-facing type, so this module stays a thin,
+ *  framework-free adapter layer. */
+type ComposerCommand = { name: string; id: string; description?: string; hint?: string };
+
+/**
+ * Maps the connected harness's live, session-scoped `available_commands_update`
+ * list (`AcpAvailableCommand[]`, `@kortix/sdk`) onto the composer's generic
+ * `Command[]` shape — the "/" palette's discovery half. Execution is
+ * unrelated and already worked before this fix (`acp-session-chat.tsx`'s
+ * `handleCommand` sends `/${command.name} ${args}` as a normal prompt); this
+ * function only turns "what the harness advertises" into "what the popover
+ * can render/filter" (`name`/`description` — `session-chat-input.tsx`'s
+ * `SlashCommandPopover` filters and displays both).
+ */
+export function mapAvailableCommandsToComposerCommands(
+  commands: readonly AcpAvailableCommand[] | undefined,
+): ComposerCommand[] {
+  return (commands ?? []).map((command) => ({
+    name: command.name,
+    id: command.name,
+    description: command.description ?? undefined,
+    hint: command.hint ?? undefined,
+  }));
+}
 
 /** Heuristic: does this ACP session config option represent the model choice?
  *  There's no fixed `id`/`category` vocabulary across harness bridges yet, so

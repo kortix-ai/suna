@@ -191,6 +191,7 @@ function sessionAsHookShape(session: AcpSession): AcpProp {
     usage: snapshot.usage,
     configOptions: snapshot.configOptions,
     sessionInfo: snapshot.sessionInfo,
+    availableCommands: snapshot.availableCommands,
     capabilities: snapshot.capabilities,
     agentInfo: snapshot.agentInfo,
     authMethods: snapshot.authMethods,
