@@ -215,6 +215,20 @@ export type AcpReducerState = {
    * never a delta.
    */
   availableCommands: AcpAvailableCommand[];
+  /**
+   * `stopReason` (`protocol/v1/prompt-turn.md`) of the most recently
+   * COMPLETED `session/prompt` turn — `null` before any turn has finished, or
+   * while a new turn is in flight (reset the instant a fresh `session/prompt`
+   * request row is folded, live OR replayed, local echo OR server-authoritative
+   * — see the `session/prompt` branch below). A single "latest" scalar is
+   * sufficient (not a per-turn record): only one turn is ever in flight at a
+   * time, and `AcpSession.applyReducerState` only ever needs "the outcome of
+   * the turn that JUST ended" to drive the transcript's trailing footer.
+   * Derived here (not read directly off `AcpClient.prompt()`'s own return
+   * value) so it survives a reload — the persisted response row carries the
+   * same `result.stopReason` a live SSE/poll delivery does.
+   */
+  lastStopReason: string | null;
 };
 
 export function emptyReducerState(): AcpReducerState {
@@ -242,6 +256,7 @@ export function emptyReducerState(): AcpReducerState {
     sessionInfo: null,
     liveConfigOptions: null,
     availableCommands: [],
+    lastStopReason: null,
   };
 }
 
@@ -330,9 +345,15 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
   let sessionInfo = state.sessionInfo;
   let liveConfigOptions = state.liveConfigOptions;
   let availableCommands = state.availableCommands;
+  let lastStopReason = state.lastStopReason;
 
   // ── chat items + turn-state bookkeeping: a client's `session/prompt` ──
   if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
+    // A brand-new turn starting (live local echo OR a replayed/persisted
+    // request row — both reach here) invalidates whatever `stopReason` the
+    // PREVIOUS turn ended with; a stale "Refused"/"Truncated" footer must
+    // never linger once a new prompt is already in flight.
+    lastStopReason = null;
     const text = contentText(envelope.params?.prompt);
     const attachments = contentAttachments(envelope.params?.prompt);
     if (text || attachments.length) {
@@ -762,6 +783,18 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         openPromptOrdinals.delete(key);
         openPromptSessionIds = new Map(openPromptSessionIds);
         openPromptSessionIds.delete(key);
+        // `stopReason` (`protocol/v1/prompt-turn.md`): this response is the
+        // one that actually closes the turn's tracked `session/prompt`
+        // request, so its `result.stopReason` — when present — is the
+        // authoritative outcome of the turn that just ended. Previously
+        // fetched by `AcpSession.send()`'s direct RPC return value and
+        // immediately discarded; deriving it here instead means it survives
+        // a reload (the persisted response row carries the same field) and
+        // needs no `session.ts` plumbing beyond reading this field off the
+        // reducer state.
+        const result = isRecord(envelope.result) ? envelope.result : null;
+        const stopReason = result ? firstString(result.stopReason) : undefined;
+        if (stopReason !== undefined) lastStopReason = stopReason;
       }
     }
   }
@@ -820,6 +853,7 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
     sessionInfo,
     liveConfigOptions,
     availableCommands,
+    lastStopReason,
   };
 }
 

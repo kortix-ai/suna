@@ -7,6 +7,7 @@ import {
   acpSessionContextTokens,
   acpToolGroupKind,
   acpTurnDurationMs,
+  describeAcpStopReason,
   formatAcpContextLabel,
   formatAcpCost,
   formatAcpDuration,
@@ -315,5 +316,37 @@ describe('acpContextGroupSummary', () => {
 
   test('empty group summarizes to an empty string', () => {
     expect(acpContextGroupSummary([])).toBe('');
+  });
+});
+
+// Real captured `stopReason` values (`kortix.acp_session_envelopes`, local
+// DB, 2026-07-22): 140x `end_turn`, 1x `cancelled`. `refusal`/`max_tokens`/
+// `max_turn_requests` are spec'd (protocol/v1/prompt-turn.md) but not yet
+// observed live — covered here from the spec text.
+describe('describeAcpStopReason', () => {
+  test('refusal gets a distinct, emphasized label', () => {
+    expect(describeAcpStopReason('refusal')).toEqual({ text: 'Refused', emphasize: true });
+  });
+
+  test('max_tokens and max_turn_requests both get a "Truncated" affordance', () => {
+    expect(describeAcpStopReason('max_tokens')).toEqual({ text: 'Truncated', emphasize: true });
+    expect(describeAcpStopReason('max_turn_requests')).toEqual({ text: 'Truncated', emphasize: true });
+  });
+
+  test('end_turn (the ordinary clean finish) renders nothing', () => {
+    expect(describeAcpStopReason('end_turn')).toBeNull();
+  });
+
+  test('cancelled renders nothing — already fully communicated by the turn simply stopping', () => {
+    expect(describeAcpStopReason('cancelled')).toBeNull();
+  });
+
+  test('null/undefined (no turn has finished yet) renders nothing', () => {
+    expect(describeAcpStopReason(null)).toBeNull();
+    expect(describeAcpStopReason(undefined)).toBeNull();
+  });
+
+  test('an unrecognized future stopReason value renders nothing rather than guessing', () => {
+    expect(describeAcpStopReason('some_future_reason')).toBeNull();
   });
 });

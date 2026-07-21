@@ -260,6 +260,32 @@ export function formatAcpSessionCostLabel(cost: AcpUsageCost | null | undefined)
   return amount ? `${amount} this session` : null;
 }
 
+/**
+ * Restrained transcript affordance for a turn's `stopReason`
+ * (`protocol/v1/prompt-turn.md`) — a short label for the LAST turn's footer,
+ * next to its duration/cost/context meta. `null` for the two "nothing to
+ * say" outcomes: `end_turn` (the ordinary clean finish) and `cancelled`
+ * (already fully communicated by the turn simply stopping — the busy
+ * indicator clears, no extra copy needed). `refusal`/`max_tokens`/
+ * `max_turn_requests` get a distinguishing label — `emphasize: true` nudges
+ * it to a slightly stronger text color than the surrounding muted meta, but
+ * deliberately NOT an alarm color: a truncation or refusal is a normal
+ * protocol outcome, not an error state.
+ */
+export function describeAcpStopReason(
+  stopReason: string | null | undefined,
+): { text: string; emphasize: boolean } | null {
+  switch (stopReason) {
+    case 'refusal':
+      return { text: 'Refused', emphasize: true };
+    case 'max_tokens':
+    case 'max_turn_requests':
+      return { text: 'Truncated', emphasize: true };
+    default:
+      return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // "Gathered context" pile summary — "3 reads, 2 searches"
 // ---------------------------------------------------------------------------

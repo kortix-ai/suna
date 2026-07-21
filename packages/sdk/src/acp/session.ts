@@ -64,6 +64,11 @@ export type AcpSessionSnapshot = {
    *  doc comment. `[]` until the harness sends its first such notification
    *  for this session (or if it never advertises any commands). */
   availableCommands: AcpAvailableCommand[];
+  /** `stopReason` of the most recently COMPLETED `session/prompt` turn —
+   *  `null` before any turn has finished, or while a new one is in flight.
+   *  See `AcpReducerState.lastStopReason`'s doc comment for the full
+   *  derivation. */
+  stopReason: string | null;
 };
 
 export type AcpSessionOptions = {
@@ -104,6 +109,7 @@ const EMPTY_SNAPSHOT: AcpSessionSnapshot = {
   authMethods: [],
   sessionInfo: null,
   availableCommands: [],
+  stopReason: null,
 };
 
 /** Monotonic-enough ordinal for a live SSE event, kept out of the ordinal
@@ -1048,6 +1054,7 @@ export class AcpSession {
       sessionInfo: this.reducerState.sessionInfo,
       configOptions: this.reducerState.liveConfigOptions ?? this.snapshot.configOptions,
       availableCommands: this.reducerState.availableCommands,
+      stopReason: this.reducerState.lastStopReason,
     };
   }
 

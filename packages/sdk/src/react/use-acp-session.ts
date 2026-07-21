@@ -152,6 +152,10 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
      *  doc comment (`@kortix/sdk/acp`). `[]` until the harness sends its
      *  first such notification for this session. */
     availableCommands: snapshot.availableCommands,
+    /** `stopReason` of the most recently completed turn (`refusal`,
+     *  `max_tokens`, `max_turn_requests`, `cancelled`, `end_turn`) — `null`
+     *  before any turn has finished, or while one is in flight. */
+    stopReason: snapshot.stopReason,
     capabilities: snapshot.capabilities,
     agentInfo: snapshot.agentInfo,
     authMethods: snapshot.authMethods,

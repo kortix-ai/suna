@@ -45,6 +45,7 @@ import {
 import {
   acpOrdinalTimestamps,
   acpTurnDurationMs,
+  describeAcpStopReason,
   formatAcpContextLabel,
   formatAcpDuration,
   formatAcpSessionCostLabel,
@@ -75,6 +76,11 @@ interface AcpTurnFooter {
   costLabel: string | null;
   contextLabel: string | null;
   lastAssistantText: AcpMessageItem | null;
+  /** Restrained `stopReason` affordance (last turn only) — see
+   *  `describeAcpStopReason`'s doc comment. `null` for a clean `end_turn`/
+   *  `cancelled` finish, or any turn other than the last (the SDK only ever
+   *  tracks the MOST RECENT turn's `stopReason`). */
+  stopReasonNote: { text: string; emphasize: boolean } | null;
 }
 
 interface QueuedAcpMessage {
@@ -129,6 +135,7 @@ export function AcpSessionChat({
     errorInfo,
     retry,
     availableCommands,
+    stopReason,
   } = acp;
   // Built straight from `items` (`acp.chatItems`) rather than re-deriving
   // via `projectAcpContext(envelopes)` — `chatItems` is ALREADY the exact
@@ -214,9 +221,16 @@ export function AcpSessionChat({
           costLabel: isLastTurn && !busy ? formatAcpSessionCostLabel(usage?.cost) : null,
           contextLabel: isLastTurn && !busy ? formatAcpContextLabel(usage) : null,
           lastAssistantText,
+          // `stopReason` only ever reflects the MOST RECENT turn (see
+          // `AcpReducerState.lastStopReason`'s doc comment), so it can only
+          // ever be attributed to the last turn's footer — any other turn's
+          // outcome isn't tracked. `end_turn`/`cancelled` return `null` from
+          // `describeAcpStopReason` (nothing to say beyond the busy indicator
+          // already clearing).
+          stopReasonNote: isLastTurn && !busy ? describeAcpStopReason(stopReason) : null,
         };
       }),
-    [turns, ordinalTimestamps, usage, busy],
+    [turns, ordinalTimestamps, usage, busy, stopReason],
   );
   // Minimap turns mirror the transcript boundaries but over the resolved
   // MessageWithParts projection `ChatMinimap` (grafted from main) expects.
@@ -679,6 +693,11 @@ export function AcpSessionChat({
                               : null}
                             {footer.costLabel}
                             {footer.contextLabel}
+                            {footer.stopReasonNote ? (
+                              <span className={footer.stopReasonNote.emphasize ? 'text-foreground/80' : undefined}>
+                                {footer.stopReasonNote.text}
+                              </span>
+                            ) : null}
                           </InlineMeta>
                         </div>
                       ) : null}

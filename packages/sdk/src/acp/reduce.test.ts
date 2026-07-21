@@ -869,6 +869,57 @@ describe('$/cancel_request', () => {
   });
 });
 
+// `stopReason` (protocol/v1/prompt-turn.md) — fetched off `session/prompt`'s
+// response then discarded prior to this fix; now folded into
+// `lastStopReason` so it survives a reload (the persisted response row
+// carries the same field a live delivery does) and the transcript UI can
+// distinguish a refusal/truncation from a clean finish.
+describe('stopReason', () => {
+  function promptResponse(ordinal: number, id: string | number, stopReason: string): AcpStoredEnvelope {
+    return stored(ordinal, 'agent_to_client', { jsonrpc: '2.0', id, result: { stopReason } });
+  }
+
+  test('a completed turn folds its stopReason onto lastStopReason', () => {
+    let state = emptyReducerState();
+    expect(state.lastStopReason).toBeNull();
+
+    state = reduceEnvelope(state, userPrompt(1, 'hi', 'req-1'));
+    state = reduceEnvelope(state, promptResponse(2, 'req-1', 'refusal'));
+
+    expect(state.lastStopReason).toBe('refusal');
+  });
+
+  test('each real captured value (end_turn, cancelled) folds through verbatim', () => {
+    for (const stopReason of ['end_turn', 'cancelled', 'max_tokens', 'max_turn_requests']) {
+      let state = emptyReducerState();
+      state = reduceEnvelope(state, userPrompt(1, 'hi', 'req-1'));
+      state = reduceEnvelope(state, promptResponse(2, 'req-1', stopReason));
+      expect(state.lastStopReason).toBe(stopReason);
+    }
+  });
+
+  test('a brand-new turn starting resets lastStopReason — a stale value never leaks into the next turn', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, userPrompt(1, 'hi', 'req-1'));
+    state = reduceEnvelope(state, promptResponse(2, 'req-1', 'refusal'));
+    expect(state.lastStopReason).toBe('refusal');
+
+    // The next prompt's local optimistic echo (a `local-`-prefixed id, same
+    // shape `AcpSession.send()` enqueues) must clear it immediately, before
+    // any response arrives.
+    state = reduceEnvelope(state, userPrompt(3, 'again', 'local-123'));
+    expect(state.lastStopReason).toBeNull();
+  });
+
+  test('a response with no stopReason field leaves lastStopReason unchanged', () => {
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, userPrompt(1, 'hi', 'req-1'));
+    state = reduceEnvelope(state, stored(2, 'agent_to_client', { jsonrpc: '2.0', id: 'req-1', result: { usage: {} } }));
+
+    expect(state.lastStopReason).toBeNull();
+  });
+});
+
 // Pi startup/update-notice suppression (2026-07-22 decree): the pi adapter
 // sends its own "pi vX.Y.Z" / "New version available…" banner as a genuine
 // `agent_message_chunk`, which used to render as a real chat bubble — twice
