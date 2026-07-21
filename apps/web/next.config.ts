@@ -5,7 +5,24 @@ import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
+import './scripts/build-content-timestamps.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+
+// --- Content timestamps manifest -----------------------------------------
+// Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
+// content record so recency-aware answer-engine retrievers can prefer fresh
+// content. Blog posts and use-cases carry an explicit `date` frontmatter
+// value that public-content.ts reads directly, but docs MDX files and
+// code-rendered marketing pages do not — their lastModified was `null`,
+// deprioritizing 42% of the public index. scripts/build-content-timestamps.mjs
+// (imported above) derives a timestamp for each from the most recent git
+// commit on the source file and writes src/lib/seo/content-timestamps.json,
+// which public-content.ts reads at runtime with a graceful fallback to
+// `undefined` when absent. Runs here (belt-and-suspenders, same pattern as
+// viewer-wasm) so any path that invokes `next build`/`next dev` directly
+// regenerates the manifest. Tolerates failure: a missing git binary or .git
+// directory writes an empty manifest and the public index falls back to the
+// prior `undefined` behavior rather than crashing the build.
 
 // --- Viewer wasm asset guarantee ------------------------------------------
 // Document viewers (PDF/DOCX/XLSX) fetch their wasm engines from `public/`
