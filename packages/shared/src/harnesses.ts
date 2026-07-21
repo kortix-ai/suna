@@ -96,7 +96,13 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
     modelNamespacing: 'gateway-prefixed',
     ownsDefaultModel: false,
     liveModelChange: true,
-    authKinds: ['managed_gateway', 'anthropic_api_key', 'openai_api_key', 'openai_compatible', 'native_config'],
+    authKinds: [
+      'managed_gateway',
+      'anthropic_api_key',
+      'openai_api_key',
+      'openai_compatible',
+      'native_config',
+    ],
     subscriptionAuth: null,
   },
   pi: {
@@ -106,9 +112,30 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
     adapterPkg: 'pi-acp',
     stability: 'experimental',
     modelNamespacing: 'bare',
-    ownsDefaultModel: true,
+    // 2026-07-21 model-resolution refactor decision (docs/specs/2026-07-21-
+    // model-resolution-refactor-plan.md §6/§9): Pi is gateway/catalog-driven,
+    // NOT harness-owned. This was `true` before today, contradicting Pi's
+    // actual launch behavior (`harness-registry.ts`'s `id === 'pi'` branch
+    // builds a full gateway-catalog-shaped config, the same shape as
+    // OpenCode's — never a harness-native default the way Claude/Codex
+    // genuinely work). Flipping this one authored fact is what makes Pi
+    // resolve through the SAME credential-conditioned catalog path as
+    // OpenCode (`llm-gateway/resolution/harness-models.ts`) instead of the
+    // no-catalog `harness_default` shape. Known fallout (out of this
+    // change's lane): `apps/cli/src/commands/agents.ts`'s
+    // `ownsDefaultModelHarness` guard and its test
+    // (`apps/cli/src/__tests__/agents-model.test.ts`) still assert the old
+    // `true` value for 'pi' — that CLI copy/behavior is now stale and needs
+    // its own fast-follow, tracked separately.
+    ownsDefaultModel: false,
     liveModelChange: false,
-    authKinds: ['managed_gateway', 'anthropic_api_key', 'openai_api_key', 'openai_compatible', 'native_config'],
+    authKinds: [
+      'managed_gateway',
+      'anthropic_api_key',
+      'openai_api_key',
+      'openai_compatible',
+      'native_config',
+    ],
     subscriptionAuth: null,
   },
 };
@@ -117,3 +144,54 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
 export function harnessesByStability(stability: 'stable' | 'experimental'): HarnessId[] {
   return HARNESS_IDS.filter((id) => HARNESSES[id].stability === stability);
 }
+
+/**
+ * The inverse of `HARNESSES[*].authKinds` — which harnesses accept a given
+ * credential kind — computed once, from the one authored direction, never a
+ * second hand-maintained table. Per docs/specs/2026-07-21-model-resolution-
+ * refactor-plan.md §4.2: `composer-capabilities.ts`'s `CONNECTIONS` table
+ * used to hand-author this same fact a second time (`compatible_harnesses`
+ * per entry) — two arrays that must always agree are one authored fact
+ * wearing two costumes. This function is the single source; every consumer
+ * (the API's harness-connections listing, the resolution module, web/CLI/
+ * mobile) reads it or the API's projection of it, never a parallel table.
+ */
+export function compatibleHarnessesFor(kind: HarnessAuthKind): HarnessId[] {
+  return HARNESS_IDS.filter((id) => HARNESSES[id].authKinds.includes(kind));
+}
+
+/**
+ * Whether a credential kind's raw material may ever be handed to a process
+ * Kortix operates on the credential owner's behalf (relayed through a Kortix-
+ * run endpoint — the gateway, a `/router/*` proxy), or must only ever be
+ * given directly to the owner's own already-running harness process.
+ *
+ * Hardcoded, authored ONCE, per kind — never derived, never a per-project
+ * override. `claude_subscription` is `direct-only` because Anthropic's own
+ * written policy forbids a third party relaying a Free/Pro/Max-plan
+ * credential on the user's behalf, regardless of which downstream process
+ * ends up consuming it (docs/specs/2026-07-21-claude-subscription-parity.md
+ * §2, primary-source policy page). `native_config` is `direct-only` by
+ * definition — a committed config file, never a Kortix-held secret to relay
+ * in the first place. Every other kind is `relay-eligible` (`codex_subscription`
+ * specifically because the credential never leaves Kortix's server today by
+ * construction — `harness-registry.ts` never forwards `CODEX_AUTH_JSON` to
+ * the sandbox, verified safe by the parity doc).
+ *
+ * Enforcement lives in `llm-gateway/resolution/harness-models.ts`
+ * (`assertRelayEligible`/`upstreamKindForCredential`), the one place allowed
+ * to turn a resolved credential into an upstream shape — this table is data,
+ * not the check itself.
+ */
+export type CredentialCustody = 'direct-only' | 'relay-eligible';
+
+export const CREDENTIAL_CUSTODY: Record<HarnessAuthKind, CredentialCustody> = {
+  managed_gateway: 'relay-eligible', // it IS the relay
+  claude_subscription: 'direct-only',
+  anthropic_api_key: 'relay-eligible',
+  codex_subscription: 'relay-eligible',
+  openai_api_key: 'relay-eligible',
+  openai_compatible: 'relay-eligible',
+  anthropic_compatible: 'relay-eligible',
+  native_config: 'direct-only',
+};
