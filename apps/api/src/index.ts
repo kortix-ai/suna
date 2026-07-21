@@ -36,6 +36,7 @@ import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
 import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
@@ -876,6 +877,35 @@ app.onError((err, c) => {
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
   }
 
+  // Daytona's org-wide throttler surfaces any HTTP 429 from the Daytona API as
+  // `DaytonaRateLimitError: ThrottlerException: Too Many Requests`. That is an
+  // EXPECTED, transient provider state — every Daytona call site (preview link
+  // resolution, transcript / public-share reads, lease discover, reaper health,
+  // env-sync fan-out, snapshot reconciliation, …) must NOT page Sentry for it.
+  // Prior PRs (#3567, #4605) guarded call sites one-by-one but new paths kept
+  // reintroducing the same Better Stack fingerprint (`ec26b248…`) because a
+  // forgotten try/catch still let the 429 propagate here → captureException →
+  // Sentry. This single classifier covers EVERY remaining + future call site:
+  // it downgrades the expected Daytona 429 to a retryable 503 + Retry-After
+  // WITHOUT paging Sentry (mirroring the Platinum / git-timeout / request-
+  // deadline patterns). Other Daytona failures (404 missing box, 409 conflict,
+  // 5xx outage, timeout, disk quota) still throw a generic error and fall
+  // through to the generic capture below, so unexpected failures stay loud.
+  // See shared/daytona-rate-limit.ts.
+  if (isDaytonaRateLimitError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [DaytonaRateLimitError] ${err.message}`, {
+      method,
+      path,
+      errorType: 'DaytonaRateLimitError',
+      errorName: err.name,
+    });
+    c.header('Retry-After', '10');
+    return c.json(
+      { error: true, message: 'sandbox provider is temporarily rate-limited', status: 503 },
+      503,
+    );
+  }
+
   // A bare-clone / fetch of a project's git mirror that exceeds its timeout
   // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
   // retryable — the mirror already retries once internally before surfacing.
@@ -1009,6 +1039,14 @@ app.notFound((c) => {
 });
 
 // === Start Server ===
+
+// Pre-load the Daytona SDK's `DaytonaRateLimitError` class so the synchronous
+// `isDaytonaRateLimitError` classifier (on the global `app.onError` hot path)
+// has its strongest instanceof signal available the first time a 429 throws —
+// see shared/daytona-rate-limit.ts. Fire-and-forget: the classifier's
+// name/statusCode/message fallbacks already cover the rare race where a 429
+// throws before this resolves, so we never block startup on it.
+void primeDaytonaRateLimitClassifier();
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
