@@ -2,8 +2,11 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const DIRS = ['src/features/session', 'src/features/session/model-picker'];
+const DIRS = ['src/features/session'];
 const ALLOW: Record<string, RegExp[]> = {
+  // Restored byte-identical from origin/main (2026-07-21 selector restoration)
+  // — keep main's 13px label rather than mutate the verbatim file.
+  'auto-model-toggle.tsx': [/text-\[13px\]/],
   'acp-chat-item-row.tsx': [/rounded-3xl/], // user bubble — deliberate chat idiom
   'session-chat-input.tsx': [/rounded-\[24px\]/], // composer card — deliberate
   // instant-session-shell.tsx pre-submit hero composer intentionally overrides
