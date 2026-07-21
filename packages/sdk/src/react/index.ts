@@ -16,19 +16,6 @@ export { useAcpSession, type AcpStoredSessionEnvelope } from './use-acp-session'
 export * from './use-composer-capabilities';
 export * from './use-models-page';
 
-// The unified model-first picker view-model — folds the catalog-vs-harness
-// fork (`agentModelPolicy`) into one shape so a component never branches on
-// harness. See `use-model-picker.ts` for the full contract.
-export {
-  useModelPicker,
-  buildModelPickerViewModel,
-  type ModelPickerItem,
-  type ModelPickerGroup,
-  type ModelPickerViewModel,
-  type ModelPickerLiveSession,
-  type UseModelPickerInput,
-} from './use-model-picker';
-
 // The billing/API error classes + helpers, relocated from apps/web's
 // `lib/api/errors.ts` (byte-for-byte duplicate of `platform/api/errors.ts`) —
 // hosts import the one SDK copy instead of keeping a parallel fork in sync.

@@ -12,8 +12,8 @@ import { apiJson, apiStatus } from '../helpers/http';
 // key aren't available there). Written and statically validated only
 // (`pnpm --filter @kortix/tests exec playwright test --list -c
 // playwright.config.ts 17-runtime-flow`) — same deferred status as
-// `15-acp-permission-flow.spec.ts` / `16-model-picker.spec.ts`. First live
-// run is deferred to the phase gate.
+// `15-acp-permission-flow.spec.ts`. First live run is deferred to the phase
+// gate.
 //
 // Proves the guided runtime -> connect -> model flow WS5-P2-b wires on top
 // of the WS5-P2-a Runtime section: a fresh project deep-links straight into

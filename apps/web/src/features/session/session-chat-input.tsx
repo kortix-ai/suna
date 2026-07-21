@@ -19,9 +19,8 @@ import type {
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
-import type { AcpUsageProjection, HarnessAuthKind } from '@kortix/sdk';
+import type { AcpUsageProjection } from '@kortix/sdk';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import type { ModelPickerViewModel } from '@kortix/sdk/react';
 
 import {
   ArrowUp,
@@ -46,16 +45,15 @@ import {
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
-import { COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS } from './composer-pill';
 import { ComposerModelControls } from './composer-model-controls';
+import { COMPOSER_TOOLBAR_SCROLL_ZONE_CLASS } from './composer-pill';
 import { resolveComposerResetOnSend } from './composer-reset';
-import type { HarnessModelSelectorProps } from './harness-model-selector';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import type { ModelDefaultControls } from './model-selector';
+import type { HarnessModelSelection, ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
@@ -820,37 +818,17 @@ export interface SessionChatInputProps {
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   /** Harness-owned default/custom model selection for Claude, Codex, and Pi. */
   harnessModel?: Pick<
-    HarnessModelSelectorProps,
+    HarnessModelSelection,
     | 'harness'
     | 'selectedModel'
     | 'onSelect'
     | 'presets'
     | 'connectionLabel'
     | 'connectionKind'
-    | 'customAllowed'
     | 'disabled'
   >;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;
-  /**
-   * `unified_model_picker`-flag picker. When set, renders exactly ONE
-   * `ModelPicker` in place of `ModelSelector`/`HarnessModelSelector` for
-   * every harness — mutually exclusive with `models`/`harnessModel` (both
-   * legacy props are ignored while this is present). `undefined` (the
-   * default) leaves the legacy fork completely untouched — flag-off is a
-   * byte-identical render.
-   */
-  modelPicker?: {
-    vm: ModelPickerViewModel;
-    onConnect: (connectionId: HarnessAuthKind) => void;
-    disabled?: boolean;
-    onManageModels?: () => void;
-    /** Empty-state fallback CTA — see `ModelPickerProps.onConnectFallback`. */
-    onConnectFallback?: () => void;
-    /** Empty-state Upgrade CTA — see `ModelPickerProps.showUpgradeOption`/`onUpgrade`. */
-    showUpgradeOption?: boolean;
-    onUpgrade?: () => void;
-  };
   messages?: MessageWithParts[];
   /** Protocol-native context and token usage projected by @kortix/sdk. */
   acpUsage?: AcpUsageProjection | null;
@@ -976,7 +954,6 @@ function SessionChatInputImpl({
   onModelChange,
   harnessModel,
   modelDefaultControls,
-  modelPicker,
   messages,
   acpUsage,
   sessionId,
@@ -2109,7 +2086,6 @@ function SessionChatInputImpl({
                 />
               )}
               <ComposerModelControls
-                modelPicker={modelPicker}
                 models={models}
                 selectedModel={selectedModel}
                 onModelChange={onModelChange}

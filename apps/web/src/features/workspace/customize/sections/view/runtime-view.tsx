@@ -29,10 +29,10 @@
  * ready compatible connection, the same row's affordance flips to "Choose
  * model", which closes the Customize overlay (`useCustomizeStore.close()` —
  * the same action ESC/backdrop already use) and drops the viewer on the
- * project page behind it, where the composer's model picker (unified or
- * legacy, whichever `unified_model_picker` resolves to) is one click away.
- * Total hops from landing on this section to a picked model: Connect (open
- * modal) + Choose model (close overlay) = 2.
+ * project page behind it, where the composer's model picker (`ModelSelector`,
+ * `./model-selector.tsx`) is one click away. Total hops from landing on this
+ * section to a picked model: Connect (open modal) + Choose model (close
+ * overlay) = 2.
  */
 
 import { Badge } from '@/components/ui/badge';

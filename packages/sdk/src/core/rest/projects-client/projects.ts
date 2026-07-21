@@ -25,8 +25,7 @@ export type ExperimentalFeatureKey =
   | 'meet'
   | 'llm_gateway'
   | 'review_center'
-  | 'experimental_harnesses'
-  | 'unified_model_picker';
+  | 'experimental_harnesses';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

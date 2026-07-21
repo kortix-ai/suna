@@ -72,26 +72,6 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('unified_model_picker is on by default (beta, no operator kill switch), project can still opt out', () => {
-    expect(findCatalogFeature('unified_model_picker').available).toBe(true);
-    expect(findCatalogFeature('unified_model_picker').stability).toBe('beta');
-    // No explicit project choice → promoted default: on (2026-07-21).
-    expect(resolveExperimentalFeature({}, 'unified_model_picker')).toBe(true);
-    expect(
-      resolveExperimentalFeature(
-        { experimental: { unified_model_picker: true } },
-        'unified_model_picker',
-      ),
-    ).toBe(true);
-    // A project can still explicitly opt back out to the legacy fork.
-    expect(
-      resolveExperimentalFeature(
-        { experimental: { unified_model_picker: false } },
-        'unified_model_picker',
-      ),
-    ).toBe(false);
-  });
-
   test('connectors API Discover is explicit opt-in', () => {
     expect(resolveExperimentalFeature({}, 'connectors_api_discover')).toBe(false);
     expect(

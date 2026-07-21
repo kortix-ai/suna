@@ -51,7 +51,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       review_center: false,
       experimental_harnesses: false,
-      unified_model_picker: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -374,7 +373,6 @@ describe('envelopes', () => {
       'llm_gateway',
       'review_center',
       'experimental_harnesses',
-      'unified_model_picker',
     ]);
   });
 

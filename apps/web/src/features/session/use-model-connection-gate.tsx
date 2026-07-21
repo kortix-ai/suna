@@ -113,9 +113,9 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     openConnectProvider,
     openUpgrade,
     // Kept for source-compat with call sites still destructuring/rendering it
-    // (`model-connection-gate.tsx`, `harness-model-selector.tsx`,
-    // `model-selector.tsx`, `composer-chat-input.tsx`,
-    // `project-onboarding-wizard.tsx`) — the connect modal is root-mounted
+    // (`model-connection-gate.tsx`, `model-selector.tsx`,
+    // `composer-chat-input.tsx`, `project-onboarding-wizard.tsx`) — the
+    // connect modal is root-mounted
     // now (`ConnectModalHost`), so there is nothing left for this hook to
     // render locally. Cleaning up those now-dead render sites is left to a
     // follow-up outside this task's file scope.

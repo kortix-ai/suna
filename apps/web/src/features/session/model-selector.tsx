@@ -13,8 +13,11 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
+import type { HarnessAuthKind } from '@kortix/sdk';
+import type { KortixHarness } from '@kortix/sdk/react';
+import { harnessPresentation } from '@kortix/sdk/react';
 import {
   Bot,
   Check,
@@ -26,7 +29,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
@@ -39,9 +42,22 @@ import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions'
 import { AUTO_MODEL_ID, PROVIDER_LABELS } from '@kortix/llm-catalog';
 import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
-import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
-import { shouldShowModelSearch } from './harness-model-selector-helpers';
-import { pickerGroupId } from './model-selector-helpers';
+import {
+  COMPOSER_PILL_ACTIVE_CLASS,
+  COMPOSER_PILL_DISABLED_CLASS,
+  COMPOSER_PILL_TRIGGER_CLASS,
+} from './composer-pill';
+import {
+  RENDERED_MODEL_CAP,
+  capModelList,
+  defaultOptionCopy,
+  filterHarnessPresets,
+  harnessSubscriptionCopy,
+  isSubscriptionConnection,
+  pickerGroupId,
+  presetProviderTag,
+  shouldShowModelSearch,
+} from './model-selector-helpers';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -85,10 +101,32 @@ export interface ModelDefaultControls {
   onSetProjectDefault?: (model: ModelRef) => void;
 }
 
+/**
+ * Harness-native (Claude Code, Codex, Pi) selection — these harnesses don't
+ * consume the gateway/BYOK provider catalog; their safe common contract is
+ * "use the harness-native default, or pass one explicit model id at session
+ * launch." Passing this prop switches `ModelSelector` into that mode: a flat,
+ * capped preset list instead of the gateway catalog grouped by provider.
+ * Subscription-backed connections (Claude/Codex subscription) render a
+ * teaching note instead of a fabricated models.dev catalog. Mutually
+ * exclusive with `models`/`selectedModel`/`onSelect` below.
+ */
+export interface HarnessModelSelection {
+  harness: KortixHarness;
+  selectedModel: string | null;
+  onSelect: (model: string | null) => void;
+  presets?: Array<{ id: string; name: string; source: string }>;
+  connectionLabel?: string | null;
+  /** Resolved auth-kind for the active connection — drives the subscription
+   *  "Models managed by …" copy and the "via …" context header. */
+  connectionKind?: HarnessAuthKind | null;
+  disabled?: boolean;
+}
+
 export interface ModelSelectorProps {
-  models: FlatModel[];
-  selectedModel: { providerID: string; modelID: string } | null;
-  onSelect: (model: { providerID: string; modelID: string } | null) => void;
+  models?: FlatModel[];
+  selectedModel?: ModelRef | null;
+  onSelect?: (model: ModelRef | null) => void;
   providers?: ProviderListResponse;
   defaultControls?: ModelDefaultControls;
   /**
@@ -100,19 +138,72 @@ export interface ModelSelectorProps {
    */
   unsetLabel?: string;
   disabled?: boolean;
+  /** Switches to harness-native mode — see {@link HarnessModelSelection}. */
+  harnessModel?: HarnessModelSelection;
 }
 
+/**
+ * The ONE model picker. Two data modes, one popover shell, one file:
+ *
+ * - Catalog mode (default): `models`/`selectedModel`/`onSelect` — the
+ *   gateway/BYOK provider catalog grouped by provider, used for OpenCode.
+ * - Harness mode: `harnessModel` — Claude Code / Codex / Pi's own default +
+ *   preset list (never the gateway catalog), a flat capped list with
+ *   subscription-aware copy.
+ *
+ * Both modes share the same trigger pill, `CommandPopover` shell, pinned
+ * "Auto" row with a hover card, and "Manage models" footer — this is the
+ * single surface every harness's model pill renders through; there is no
+ * flag, no alternate component, and no free-typed "enter a model id" entry.
+ */
 export function ModelSelector({
-  models,
-  selectedModel,
+  models = [],
+  selectedModel = null,
   onSelect,
   defaultControls,
   unsetLabel = 'Default',
   disabled = false,
+  harnessModel,
 }: ModelSelectorProps) {
+  if (harnessModel) {
+    return <HarnessSelector {...harnessModel} disabled={disabled || !!harnessModel.disabled} />;
+  }
+  return (
+    <CatalogSelector
+      models={models}
+      selectedModel={selectedModel}
+      onSelect={onSelect ?? (() => {})}
+      defaultControls={defaultControls}
+      unsetLabel={unsetLabel}
+      disabled={disabled}
+    />
+  );
+}
+
+// ─── Catalog mode (gateway/BYOK provider catalog, grouped) ──────────────────
+
+function CatalogSelector({
+  models,
+  selectedModel,
+  onSelect,
+  defaultControls,
+  unsetLabel,
+  disabled,
+}: {
+  models: FlatModel[];
+  selectedModel: ModelRef | null;
+  onSelect: (model: ModelRef | null) => void;
+  defaultControls?: ModelDefaultControls;
+  unsetLabel: string;
+  disabled: boolean;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // Filtering a gateway-sized catalog (thousands of entries once a search
+  // query bypasses the default visibility gate below) on every keystroke
+  // would block typing — defer it so the input never stutters.
+  const deferredSearch = useDeferredValue(search);
   // Where Upgrade / Connect provider should route, given the current route
   // context — shared with the chat input's full-block gate and onboarding so
   // they all open the exact same dialogs.
@@ -208,7 +299,7 @@ export function ModelSelector({
   const showSearch = shouldShowModelSearch(usableModelCount);
 
   const visibleModels = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = deferredSearch.toLowerCase();
     return baseModels
       .filter((m) => {
         // AUTO is rendered as a standalone toggle above the providers — never
@@ -233,14 +324,24 @@ export function ModelSelector({
         );
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search, modelStore]);
+  }, [baseModels, deferredSearch, modelStore]);
+
+  // A search query against a gateway-sized catalog (thousands of entries,
+  // unconditioned on connected credentials — see gatewayModelCatalog's doc
+  // comment) can match hundreds of rows; the default (no-search) view is
+  // already bounded by modelStore.isVisible above. Cap what actually mounts
+  // either way, same contract as the harness list's filterHarnessPresets.
+  const { visible: cappedModels, hiddenCount } = useMemo(
+    () => capModelList(visibleModels, selectedModel, RENDERED_MODEL_CAP),
+    [visibleModels, selectedModel],
+  );
 
   const grouped = useMemo(() => {
     const groups = new Map<
       string,
       { providerName: string; providerID: string; models: FlatModel[] }
     >();
-    for (const m of visibleModels) {
+    for (const m of cappedModels) {
       const groupID = llmGatewayEnabled ? pickerGroupId(m) : m.providerID;
       const existing = groups.get(groupID);
       if (existing) {
@@ -267,7 +368,7 @@ export function ModelSelector({
       return a.providerName.localeCompare(b.providerName);
     });
     return entries;
-  }, [visibleModels, llmGatewayEnabled]);
+  }, [cappedModels, llmGatewayEnabled]);
 
   // Auto — the recommended-default row, pinned first with a check when
   // active. A regular list item, never a switch that can read "off" while
@@ -307,36 +408,35 @@ export function ModelSelector({
         open={disabled ? false : open}
         onOpenChange={(next) => !disabled && setOpen(next)}
       >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <CommandPopoverTrigger>
-              <button
-                type="button"
-                data-testid="catalog-model-selector"
-                disabled={disabled}
-                aria-label={tHardcodedUi.raw(
-                  'componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker',
-                )}
+        <Hint
+          side="top"
+          label={tHardcodedUi.raw('componentsSessionModelSelector.line218JsxTextChooseModel')}
+          className="text-xs"
+        >
+          <CommandPopoverTrigger>
+            <button
+              type="button"
+              data-testid="catalog-model-selector"
+              disabled={disabled}
+              aria-label={tHardcodedUi.raw(
+                'componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker',
+              )}
+              className={cn(
+                COMPOSER_PILL_TRIGGER_CLASS,
+                open && COMPOSER_PILL_ACTIVE_CLASS,
+                disabled && COMPOSER_PILL_DISABLED_CLASS,
+              )}
+            >
+              <span className="max-w-[92px] truncate sm:max-w-[120px]">{displayName}</span>
+              <ChevronDown
                 className={cn(
-                  COMPOSER_PILL_TRIGGER_CLASS,
-                  open && COMPOSER_PILL_ACTIVE_CLASS,
-                  disabled && 'cursor-not-allowed opacity-60',
+                  'size-3 opacity-50 transition-transform duration-200',
+                  open && 'rotate-180',
                 )}
-              >
-                <span className="max-w-[92px] truncate sm:max-w-[120px]">{displayName}</span>
-                <ChevronDown
-                  className={cn(
-                    'size-3 opacity-50 transition-transform duration-200',
-                    open && 'rotate-180',
-                  )}
-                />
-              </button>
-            </CommandPopoverTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {tHardcodedUi.raw('componentsSessionModelSelector.line218JsxTextChooseModel')}
-          </TooltipContent>
-        </Tooltip>
+              />
+            </button>
+          </CommandPopoverTrigger>
+        </Hint>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
           {showSearch ? (
@@ -475,6 +575,14 @@ export function ModelSelector({
                     })}
                   </CommandGroup>
                 ))}
+                {hiddenCount > 0 && (
+                  <div
+                    data-testid="catalog-model-hidden-count"
+                    className="text-muted-foreground/60 px-3 pt-1 pb-2 text-xs"
+                  >
+                    {hiddenCount.toLocaleString()} more — search to find them
+                  </div>
+                )}
               </>
             ) : !autoModel ? (
               <div className="px-3 py-5 text-center">
@@ -556,6 +664,210 @@ export function ModelSelector({
             <SlidersHorizontal className="size-3.5 shrink-0" />
             Manage models
           </button>
+        </CommandPopoverContent>
+      </CommandPopover>
+    </>
+  );
+}
+
+// ─── Harness mode (Claude Code / Codex / Pi native selection) ───────────────
+
+/** Most rows a popover list can mount before opening/typing visibly stutters —
+ *  everything past the cap stays reachable through search. */
+const HARNESS_RENDERED_PRESET_CAP = RENDERED_MODEL_CAP;
+
+function HarnessSelector({
+  harness,
+  selectedModel,
+  onSelect,
+  presets = [],
+  connectionLabel,
+  connectionKind,
+  disabled = false,
+}: HarnessModelSelection) {
+  const presentation = harnessPresentation(harness);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const { openConnectProvider, modal: connectionModal } = useModelConnectionGate();
+
+  const isSubscription = isSubscriptionConnection(connectionKind);
+  const defaultCopy = defaultOptionCopy({
+    connectionKind: connectionKind ?? null,
+    harnessLabel: presentation.label,
+  });
+  const subscriptionCopy = harnessSubscriptionCopy({
+    connectionKind,
+    harnessLabel: presentation.label,
+    connectionLabel,
+  });
+  const showSearch = !isSubscription && shouldShowModelSearch(presets.length);
+
+  // A gateway-backed preset list can be the entire model catalog (thousands
+  // of entries — the Pi-on-Kortix case), so two guards keep this popover
+  // lag-free: the search value is deferred (keystrokes never block on
+  // re-filtering the full list) and the rendered rows are capped, with a
+  // count row telling the user search reaches the rest.
+  const deferredSearch = useDeferredValue(search);
+  const { visible: visiblePresets, hiddenCount } = useMemo(() => {
+    if (isSubscription) return { visible: [], hiddenCount: 0 };
+    return filterHarnessPresets({
+      presets,
+      query: deferredSearch,
+      selectedModel,
+      cap: HARNESS_RENDERED_PRESET_CAP,
+    });
+  }, [presets, deferredSearch, selectedModel, isSubscription]);
+
+  useEffect(() => {
+    if (!open) {
+      setSearch('');
+    }
+  }, [open]);
+
+  const handleManageModels = () => {
+    setOpen(false);
+    openConnectProvider();
+  };
+
+  const triggerLabel = selectedModel || defaultCopy.label;
+
+  return (
+    <>
+      {connectionModal}
+      <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
+        <Hint
+          side="top"
+          label={`Choose the model ${presentation.label} launches with`}
+          className="max-w-64 text-xs"
+        >
+          <CommandPopoverTrigger>
+            <button
+              type="button"
+              aria-label={`${presentation.label} model picker`}
+              aria-disabled={disabled || undefined}
+              data-testid="harness-model-selector"
+              data-harness={harness}
+              className={cn(
+                COMPOSER_PILL_TRIGGER_CLASS,
+                open && COMPOSER_PILL_ACTIVE_CLASS,
+                disabled && COMPOSER_PILL_DISABLED_CLASS,
+              )}
+            >
+              <span className="max-w-[92px] truncate sm:max-w-[150px]">{triggerLabel}</span>
+              <ChevronDown
+                className={cn(
+                  'size-3 shrink-0 opacity-50 transition-transform duration-200',
+                  open && 'rotate-180',
+                )}
+              />
+            </button>
+          </CommandPopoverTrigger>
+        </Hint>
+
+        <CommandPopoverContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          className="bg-sidebar text-sidebar-foreground hover:text-foreground border-border w-[340px] rounded-md border shadow-xs"
+        >
+          {showSearch ? (
+            <CommandInput
+              compact
+              placeholder="Search models…"
+              value={search}
+              onValueChange={setSearch}
+            />
+          ) : null}
+
+          <CommandList className="max-h-[300px]">
+            <CommandGroup forceMount>
+              {/* Pinned first; steps aside while the user is searching — a
+                  query means they already chose not-auto. One line like every
+                  model row; the hover card explains who picks the model. */}
+              {!search.trim() && (
+                <CommandItemHoverCard
+                  content={
+                    <div data-testid="harness-model-default-hover-card">
+                      <p className="text-sm font-medium">{defaultCopy.label}</p>
+                      <p className="text-muted-foreground mt-1 text-xs leading-snug text-pretty">
+                        {defaultCopy.subtitle}
+                      </p>
+                    </div>
+                  }
+                >
+                  <CommandItem
+                    value={`${harness}-default-model`}
+                    data-testid="harness-model-default"
+                    className={!selectedModel ? 'bg-primary/[0.06]' : undefined}
+                    onSelect={() => {
+                      onSelect(null);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {defaultCopy.label}
+                    </span>
+                    {!selectedModel ? <Check className="text-foreground size-4 shrink-0" /> : null}
+                  </CommandItem>
+                </CommandItemHoverCard>
+              )}
+
+              {!isSubscription &&
+                visiblePresets.map((preset) => {
+                  const providerTag = presetProviderTag(preset);
+                  return (
+                    <CommandItem
+                      key={preset.id}
+                      value={`${preset.name} ${preset.id}`}
+                      data-testid="harness-model-preset"
+                      data-model={preset.id}
+                      className={selectedModel === preset.id ? 'bg-primary/[0.06]' : undefined}
+                      onSelect={() => {
+                        onSelect(preset.id);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm">{preset.name}</span>
+                      {providerTag ? (
+                        <span className="text-muted-foreground/60 shrink-0 text-xs">
+                          {providerTag}
+                        </span>
+                      ) : null}
+                      {selectedModel === preset.id ? (
+                        <Check className="text-foreground size-4 shrink-0" />
+                      ) : null}
+                    </CommandItem>
+                  );
+                })}
+
+              {!isSubscription && hiddenCount > 0 && (
+                <div
+                  data-testid="harness-model-hidden-count"
+                  className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs"
+                >
+                  {hiddenCount.toLocaleString()} more — search to find them
+                </div>
+              )}
+            </CommandGroup>
+
+            {isSubscription && subscriptionCopy ? (
+              <div data-testid="harness-model-subscription-note" className="px-3.5 pt-1 pb-3">
+                <p className="text-foreground text-sm font-medium">{subscriptionCopy.title}</p>
+                <p className="text-muted-foreground mt-1 text-xs">{subscriptionCopy.subtitle}</p>
+              </div>
+            ) : null}
+          </CommandList>
+
+          {!isSubscription && (
+            <button
+              type="button"
+              onClick={handleManageModels}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-1.5 border-t px-3.5 py-2.5 text-xs font-medium transition-colors duration-200"
+            >
+              <SlidersHorizontal className="size-3.5 shrink-0" />
+              Manage models
+            </button>
+          )}
         </CommandPopoverContent>
       </CommandPopover>
     </>

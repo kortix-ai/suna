@@ -93,9 +93,8 @@ test('ExperimentalFeatureKey union includes every api-contract registry key', ()
     'llm_gateway',
     'review_center',
     'experimental_harnesses',
-    'unified_model_picker',
   ];
   const harnesses: ExperimentalFeatureKey = 'experimental_harnesses';
   expect(keys).toContain(harnesses);
-  expect(keys).toHaveLength(8);
+  expect(keys).toHaveLength(7);
 });
