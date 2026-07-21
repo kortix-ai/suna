@@ -12,7 +12,7 @@ import {
   metricsEnabled,
 } from './lib/metrics';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
-import { getRequestUrl } from './lib/request-url';
+import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
 
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
@@ -1295,6 +1295,19 @@ export default {
   idleTimeout: 45,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
+    // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,
+    // `"/nice%20ports%2C/Tri%6Eity.txt%2ebak"`, …) for requests that arrive
+    // WITHOUT a `Host` header — raw HTTP/1.0 port-scanner probes and malformed
+    // clients. Every downstream `new URL(c.req.url)` / `new URL(req.url)`
+    // call site (auth middleware, OpenAPI server URL, sandbox preview /
+    // public-share proxy, git proxy, Slack/Teams webhook routers, …) assumes
+    // an absolute URL and would otherwise throw
+    // `TypeError: "…" cannot be parsed as a URL.` → app.onError → Sentry.
+    // Rebuild the Request once, here, with the absolute URL so all of those
+    // call sites are safe. No-op for normal requests (which already carry an
+    // absolute `req.url`). See lib/request-url.ts ensureAbsoluteRequestUrl.
+    // BS pattern 28e9a65c… (scanner noise, 0 users, first seen 2026-04-27).
+    req = ensureAbsoluteRequestUrl(req, config.PORT);
     const url = getRequestUrl(req, config.PORT);
     const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
 
