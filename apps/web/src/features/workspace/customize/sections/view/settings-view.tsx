@@ -368,9 +368,14 @@ function ExperimentalFeatureRow({
   canManage: boolean;
 }) {
   const queryClient = useQueryClient();
+  // Show the intended position while the request is in flight. `feature.enabled`
+  // only reflects server state, so without this the switch does not move at all
+  // until the mutation resolves and a slow request looks like a frozen toggle.
+  const [pendingValue, setPendingValue] = useState<boolean | null>(null);
 
   const mutation = useMutation({
     mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
+    onSettled: () => setPendingValue(null),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', projectId], updated);
       queryClient.setQueryData<ProjectDetail | undefined>(
@@ -397,11 +402,19 @@ function ExperimentalFeatureRow({
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
-      <Switch
-        checked={feature.enabled}
-        disabled={!canManage || mutation.isPending}
-        onCheckedChange={(v) => mutation.mutate(v)}
-      />
+      <div className="flex shrink-0 items-center gap-2">
+        {mutation.isPending ? (
+          <Loading className="text-muted-foreground size-3.5 animate-spin" />
+        ) : null}
+        <Switch
+          checked={pendingValue ?? feature.enabled}
+          disabled={!canManage || mutation.isPending}
+          onCheckedChange={(v) => {
+            setPendingValue(v);
+            mutation.mutate(v);
+          }}
+        />
+      </div>
     </div>
   );
 }
