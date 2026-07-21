@@ -267,57 +267,82 @@ describe('managedGatewayHasNothingToRouteTo', () => {
       ...overrides,
     };
   }
+  const alwaysServable = async () => true;
+  const neverServable = async () => false;
 
-  test('never fires for a non-managed-gateway route', () => {
+  test('never fires for a non-managed-gateway route', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: 'anthropic_api_key',
         harness: 'opencode',
-        managedModelCount: 0,
+        managedModels: [],
         connections: [],
+        probeServable: alwaysServable,
       }),
     ).toBe(false);
   });
 
-  test('never fires when no route is active at all', () => {
+  test('never fires when no route is active at all', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: null,
         harness: 'opencode',
-        managedModelCount: 0,
+        managedModels: [],
         connections: [],
+        probeServable: alwaysServable,
       }),
     ).toBe(false);
   });
 
-  test('never fires when this deployment has a managed-model lineup', () => {
+  test('does not fire when this deployment has a managed-model lineup AND it actually probes servable', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: 'managed_gateway',
         harness: 'opencode',
-        managedModelCount: 3,
+        managedModels: [{ id: 'claude-opus-4.8' }, { id: 'glm-5.2' }],
         connections: [],
+        probeServable: alwaysServable,
       }),
     ).toBe(false);
   });
 
-  test('fires when the gateway flag is on but there is no managed lineup and no fallback connection — the reported "no model connected" hang', () => {
+  // The bug this function exists to fix: KORTIX_MANAGED_PROVIDER_ENABLED=true
+  // with a non-empty managed-model lineup used to be trusted unconditionally
+  // (a raw `managedModelCount > 0` check) — inert on exactly the deployment
+  // that reported "No models available" yet resolved `can_start: true`. The
+  // lineup being non-empty says nothing about whether ANY of those models
+  // actually resolve for THIS account (missing transport credential,
+  // free-tier/entitlement gate, ...) — `probeServable` is what answers that.
+  test('fires when the managed lineup is non-empty but NONE of it actually probes servable, and there is no fallback', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: 'managed_gateway',
         harness: 'opencode',
-        managedModelCount: 0,
+        managedModels: [{ id: 'claude-opus-4.8' }, { id: 'glm-5.2' }],
         connections: [connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true })],
+        probeServable: neverServable,
       }),
     ).toBe(true);
   });
 
-  test('does not fire when a BYOK connection is ready as a fallback', () => {
+  test('fires when the gateway flag is on but there is no managed lineup and no fallback connection — the reported "no model connected" hang', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: 'managed_gateway',
         harness: 'opencode',
-        managedModelCount: 0,
+        managedModels: [],
+        connections: [connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true })],
+        probeServable: alwaysServable,
+      }),
+    ).toBe(true);
+  });
+
+  test('does not fire when a BYOK connection is ready as a fallback, even if every managed model probes unservable', async () => {
+    expect(
+      await managedGatewayHasNothingToRouteTo({
+        active: 'managed_gateway',
+        harness: 'opencode',
+        managedModels: [{ id: 'claude-opus-4.8' }],
         connections: [
           connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
           connection({
@@ -327,16 +352,17 @@ describe('managedGatewayHasNothingToRouteTo', () => {
             compatible_harnesses: ['claude', 'opencode', 'pi'],
           }),
         ],
+        probeServable: neverServable,
       }),
     ).toBe(false);
   });
 
-  test('ignores a ready BYOK connection that is NOT compatible with this harness', () => {
+  test('ignores a ready BYOK connection that is NOT compatible with this harness', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: 'managed_gateway',
         harness: 'pi',
-        managedModelCount: 0,
+        managedModels: [],
         connections: [
           connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
           connection({
@@ -346,16 +372,17 @@ describe('managedGatewayHasNothingToRouteTo', () => {
             compatible_harnesses: ['codex'],
           }),
         ],
+        probeServable: alwaysServable,
       }),
     ).toBe(true);
   });
 
-  test('a ready native_config does not count as a managed-gateway fallback — it is a separate routing path', () => {
+  test('a ready native_config does not count as a managed-gateway fallback — it is a separate routing path', async () => {
     expect(
-      managedGatewayHasNothingToRouteTo({
+      await managedGatewayHasNothingToRouteTo({
         active: 'managed_gateway',
         harness: 'opencode',
-        managedModelCount: 0,
+        managedModels: [],
         connections: [
           connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
           connection({
@@ -365,8 +392,25 @@ describe('managedGatewayHasNothingToRouteTo', () => {
             compatible_harnesses: [...HARNESS_IDS],
           }),
         ],
+        probeServable: alwaysServable,
       }),
     ).toBe(true);
+  });
+
+  test('probes models in order and stops at the first servable one', async () => {
+    const probed: string[] = [];
+    const result = await managedGatewayHasNothingToRouteTo({
+      active: 'managed_gateway',
+      harness: 'opencode',
+      managedModels: [{ id: 'first' }, { id: 'second' }, { id: 'third' }],
+      connections: [],
+      probeServable: async (id) => {
+        probed.push(id);
+        return id === 'second';
+      },
+    });
+    expect(result).toBe(false);
+    expect(probed).toEqual(['first', 'second']);
   });
 });
 

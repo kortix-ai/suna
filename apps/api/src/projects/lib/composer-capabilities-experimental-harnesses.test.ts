@@ -34,6 +34,19 @@ mock.module('../secrets', () => ({
     names: Object.keys(secretsEnv),
     revision: 'test-revision',
   }),
+  // Stub exports for the rest of `projects/secrets.ts`'s surface — needed
+  // because `composer-capabilities.ts` now transitively imports
+  // `llm-gateway/resolution/{default-model,resolve-candidates}.ts`, which
+  // import these named exports from the SAME module this file mocks (Bun's
+  // `mock.module` replaces the module globally for the test run, so every
+  // importer sees this replacement). Never actually invoked here: every
+  // fixture below omits `accountId`, so `managedGatewayHasNothingToRouteTo`'s
+  // `probeServable` short-circuits to "assume servable" without calling
+  // `isModelServableForAccount` (see composer-capabilities.ts's doc comment).
+  listProjectSecretsSnapshot: async () => ({ env: secretsEnv, names: Object.keys(secretsEnv), revision: 'test-revision' }),
+  getProjectSecretValue: async () => null,
+  decryptProjectSecret: (_projectId: string, value: string) => value,
+  encryptProjectSecret: (_projectId: string, value: string) => value,
 }));
 
 mock.module('../git/files', () => ({

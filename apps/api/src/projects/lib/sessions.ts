@@ -579,6 +579,7 @@ export async function createProjectSession(input: {
       project: await withProjectGitAuth(project),
       userId,
       metadata: project.metadata,
+      accountId,
     });
     composerCapability = await state.capabilities(agentName, requestedConnection ?? selectionConnection);
   } catch (error) {

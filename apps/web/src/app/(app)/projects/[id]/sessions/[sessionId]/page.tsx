@@ -17,6 +17,8 @@ import { SessionStartingLoader } from '@/features/session/session-starting-loade
 import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
+  hasSessionBootTimedOut,
+  SESSION_BOOT_TIMEOUT_MS,
   shouldMountAcpChat,
   shouldShowAcpBootstrapErrorCard,
   shouldShowSessionBootLoader,
@@ -184,6 +186,12 @@ export default function ProjectSessionPage() {
   const [shellSubmitted, setShellSubmitted] = useState(false);
   const freshRef = useRef<boolean>(false);
   const lifecycleForRef = useRef<string | null>(null);
+  // Wall-clock backstop for "Connecting" spinning forever with no terminal
+  // signal — see `hasSessionBootTimedOut`'s doc comment. Reset on every
+  // session switch (below) and on a manual retry (the terminal error card's
+  // "Try again" action, further down).
+  const bootStartedAtRef = useRef<number>(Date.now());
+  const [bootTimedOut, setBootTimedOut] = useState(false);
   if (lifecycleForRef.current !== sessionId) {
     lifecycleForRef.current = sessionId;
     if (chatReady) setChatReady(false);
@@ -201,11 +209,37 @@ export default function ProjectSessionPage() {
     freshRef.current = fresh;
     setShellSubmitted(pending);
     if (resumeAttempts !== 0) setResumeAttempts(0);
+    bootStartedAtRef.current = Date.now();
+    if (bootTimedOut) setBootTimedOut(false);
   }
   const isFresh = freshRef.current;
   useEffect(() => {
     if (chatReady) clearSessionFresh(sessionId);
   }, [chatReady, sessionId]);
+
+  // See `hasSessionBootTimedOut`'s doc comment: a session can sit pre-ready
+  // forever with NO terminal signal ever produced when the ACP handshake is
+  // never even attempted (a server-side wedge upstream of it, e.g. `/start`
+  // never resolving a usable model for the session) — `AcpSession`'s own
+  // bootstrap timeout never gets the chance to arm. This wall-clock timer is
+  // the backstop: once it trips, the terminal error card below replaces the
+  // boot chrome regardless of what, if anything, the ACP layer ever did.
+  useEffect(() => {
+    if (bootTimedOut) return;
+    const ready = session.phase === 'ready';
+    // Already resolved (ready or its own terminal error) — nothing to bound,
+    // and no timer to arm; `hasSessionBootTimedOut` would (correctly) never
+    // trip for either, so arming one here would just be a dead timer left
+    // ticking toward a `setBootTimedOut(true)` a resolved session must never see.
+    if (ready || session.isError) return;
+    const elapsedMs = Date.now() - bootStartedAtRef.current;
+    if (hasSessionBootTimedOut({ elapsedMs, ready, isError: session.isError })) {
+      setBootTimedOut(true);
+      return;
+    }
+    const timer = setTimeout(() => setBootTimedOut(true), SESSION_BOOT_TIMEOUT_MS - elapsedMs);
+    return () => clearTimeout(timer);
+  }, [session.phase, session.isError, bootTimedOut, sessionId]);
 
   // Terminal/gated states fully REPLACE the content (no chat to fade to).
   const gated = !authLoading && !!user && noPlan;
@@ -356,7 +390,14 @@ export default function ProjectSessionPage() {
     // `session.phase`'s doc comment for why this can only fire pre-readiness
     // (a mid-session failure keeps `phase: 'ready'` and is the chat
     // surface's job to show instead).
-    if (shouldShowAcpBootstrapErrorCard({ isError: session.isError, fatal })) {
+    //
+    // `bootTimedOut` is a SEPARATE, independent backstop for the case where
+    // `session.isError` never becomes true at all — a server-side wedge
+    // upstream of the ACP handshake (no ACP connect ever attempted, so
+    // `AcpSession`'s own bootstrap timeout never arms) leaves `isError`
+    // permanently false with the session permanently pre-ready. See
+    // `hasSessionBootTimedOut`'s doc comment.
+    if (shouldShowAcpBootstrapErrorCard({ isError: session.isError, fatal }) || bootTimedOut) {
       return (
         <InlineSessionError
           title="Couldn't connect to your Kortix Computer"
@@ -369,6 +410,8 @@ export default function ProjectSessionPage() {
               size="sm"
               variant="outline"
               onClick={() => {
+                bootStartedAtRef.current = Date.now();
+                setBootTimedOut(false);
                 session.retry();
                 session.acp.retry();
               }}

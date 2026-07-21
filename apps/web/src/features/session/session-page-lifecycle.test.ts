@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  hasSessionBootTimedOut,
   shouldMountAcpChat,
   shouldShowAcpBootstrapErrorCard,
   shouldShowSessionBootLoader,
@@ -86,5 +87,44 @@ describe('session boot loader / terminal-error visibility', () => {
     // with sandbox-provisioning detail and a Restart action — the two
     // terminal branches must never both try to render.
     expect(shouldShowAcpBootstrapErrorCard({ isError: true, fatal: true })).toBe(false);
+  });
+});
+
+// The "no ACP connect ever attempted" hang: a server-side wedge upstream of
+// the ACP handshake (e.g. `/start` never resolving a usable model) leaves
+// bootstrap never entered, so its own 30s timeout never arms and
+// `shouldShowAcpBootstrapErrorCard` never fires. `hasSessionBootTimedOut` is
+// the wall-clock backstop that bounds "Connecting" regardless of cause.
+describe('session boot wall-clock timeout backstop', () => {
+  test('has not timed out before the budget elapses', () => {
+    expect(
+      hasSessionBootTimedOut({ elapsedMs: 1_000, ready: false, isError: false, budgetMs: 90_000 }),
+    ).toBe(false);
+  });
+
+  test('times out once the budget elapses with no readiness or error signal', () => {
+    expect(
+      hasSessionBootTimedOut({ elapsedMs: 90_000, ready: false, isError: false, budgetMs: 90_000 }),
+    ).toBe(true);
+    expect(
+      hasSessionBootTimedOut({ elapsedMs: 120_000, ready: false, isError: false, budgetMs: 90_000 }),
+    ).toBe(true);
+  });
+
+  test('never times out once ready, no matter how much time has elapsed', () => {
+    expect(
+      hasSessionBootTimedOut({ elapsedMs: 999_999, ready: true, isError: false, budgetMs: 90_000 }),
+    ).toBe(false);
+  });
+
+  test('defers to the more specific terminal-error card once isError is true', () => {
+    expect(
+      hasSessionBootTimedOut({ elapsedMs: 999_999, ready: false, isError: true, budgetMs: 90_000 }),
+    ).toBe(false);
+  });
+
+  test('defaults to the 90s budget when none is passed', () => {
+    expect(hasSessionBootTimedOut({ elapsedMs: 89_999, ready: false, isError: false })).toBe(false);
+    expect(hasSessionBootTimedOut({ elapsedMs: 90_000, ready: false, isError: false })).toBe(true);
   });
 });

@@ -37,6 +37,7 @@ async function loadState(c: any, projectId: string) {
     project,
     userId: loaded.userId,
     metadata: loaded.row.metadata,
+    accountId: loaded.row.accountId,
   });
   return { loaded, project, state };
 }
@@ -160,6 +161,7 @@ projectsApp.openapi(
       project: loaded.project,
       userId: loaded.loaded.userId,
       metadata,
+      accountId: loaded.loaded.row.accountId,
     });
     return c.json({ connections: state.connections, providers: state.providers });
   },

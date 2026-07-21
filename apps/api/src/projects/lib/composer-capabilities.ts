@@ -1,10 +1,14 @@
 import { CATALOG, type CatalogModel } from '@kortix/llm-catalog';
 import { HARNESS_IDS, HARNESSES, harnessesByStability, type HarnessId } from '@kortix/shared/harnesses';
 
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { config } from '../../config';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { RUNTIME_MANAGED_MODELS } from '../../llm-gateway/models/managed-models';
+import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import type { GitBackedProject } from '../git/types';
 import { listRepoFiles } from '../git/files';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
@@ -334,43 +338,61 @@ export function computeDefaultAllowed(input: {
  * turn to, despite `computeDefaultAllowed` trusting it unconditionally (see
  * that function's doc comment). `managed_gateway` being "ready" only means
  * the project's gateway-routing FLAG is on (`connectionConfigured`) — it says
- * nothing about whether this deployment's managed-model lineup is non-empty
- * (`KORTIX_MANAGED_PROVIDER_ENABLED`, off by default for self-host/local-dev
- * — see `managed-models.ts`) or the project has any BYOK/codex connection to
- * fall back through. `modelPresets('managed_gateway', …)`'s length can't
- * detect this either — it lists the gateway's full theoretically-routable
- * catalog (every provider/model models.dev knows a transport for), not what
- * THIS project can actually reach, so it stays non-empty regardless of real
- * credentials.
+ * nothing about whether a turn can actually be served: `KORTIX_MANAGED_
+ * PROVIDER_ENABLED` on with a non-empty managed-model lineup is NOT the same
+ * as servable — the deployment can still be missing a transport credential
+ * (`AWS_BEDROCK_API_KEY`/`OPENROUTER_API_KEY`, see `descriptors.ts`), or the
+ * account's entitlement/tier can reject every managed model
+ * (`resolveCandidates`'s `plan_upgrade_required`/free-tier gate). An earlier
+ * version of this function only checked whether the managed-model list was
+ * non-empty — inert on any deployment with `KORTIX_MANAGED_PROVIDER_ENABLED=
+ * true` regardless of whether anything behind it actually resolves.
+ * `modelPresets('managed_gateway', …)`'s length can't stand in for this
+ * either — it lists the gateway's full theoretically-routable catalog (every
+ * provider/model models.dev knows a transport for), not what THIS project
+ * can actually reach, so it stays non-empty regardless of real credentials.
+ *
+ * `probeServable` is injected (rather than importing `resolveCandidates`/
+ * `isModelServableForAccount` directly here) so this stays unit-testable
+ * without a DB/network — the real caller wires it to
+ * `isModelServableForAccount` from `llm-gateway/resolution/default-model.ts`,
+ * the SAME function the actual request-time resolution path already trusts
+ * (`resolveEffectiveModel`, `PUT /model-defaults`), so this can never invent
+ * a second, competing notion of "servable".
  *
  * `resolveActiveHarnessConnection` prefers a "ready" `managed_gateway` over
  * every other connection, so a project in exactly this state (gateway flag
- * on, nothing behind it) resolves `active: 'managed_gateway'` with no other
- * candidate ever considered — leaving `can_start` true with no usable model.
- * That is precisely how a session provisions, boots its harness, and then
- * hangs on "Connecting" forever with nothing to generate with (see
- * `AcpSession.runBootstrap`'s bootstrap timeout in `@kortix/sdk/acp` — the
- * backstop for every OTHER way that hang can happen; this is the one root
- * cause worth failing on up front instead).
- *
- * Pure (aside from its inputs) so it's unit-testable without a compiled
- * runtime config or a DB.
+ * on, nothing actually reachable behind it) resolves `active: 'managed_
+ * gateway'` with no other candidate ever considered — leaving `can_start`
+ * true with no usable model. That is precisely how a session provisions,
+ * boots its harness, and then hangs on "Connecting" forever with nothing to
+ * generate with.
  */
-export function managedGatewayHasNothingToRouteTo(input: {
+export async function managedGatewayHasNothingToRouteTo(input: {
   active: HarnessAuthKind | null;
   harness: HarnessId;
-  managedModelCount: number;
+  managedModels: readonly { id: string }[];
   connections: HarnessConnection[];
-}): boolean {
+  probeServable: (modelId: string) => Promise<boolean>;
+}): Promise<boolean> {
   if (input.active !== 'managed_gateway') return false;
-  if (input.managedModelCount > 0) return false;
-  return !input.connections.some(
+  const hasFallbackConnection = input.connections.some(
     (connection) =>
       connection.ready &&
       connection.id !== 'managed_gateway' &&
       connection.id !== 'native_config' &&
       connection.compatible_harnesses.includes(input.harness),
   );
+  for (const model of input.managedModels) {
+    // Short-circuit on the first real candidate — the free-tier/entitlement
+    // gate in `resolveCandidates` applies uniformly across every managed
+    // model, so one servable hit is enough to know the route isn't dead; a
+    // missing transport credential only affects the models routed through
+    // that specific transport, so a genuine "nothing works" answer still
+    // requires checking all of them.
+    if (await input.probeServable(model.id)) return false;
+  }
+  return !hasFallbackConnection;
 }
 
 // Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
@@ -408,6 +430,19 @@ export async function resolveProjectComposerState(input: {
   project: GitBackedProject;
   userId: string | null;
   metadata?: unknown;
+  /**
+   * The project's owning account — lets `capabilities()` probe REAL
+   * managed-gateway servability (`managedGatewayHasNothingToRouteTo`) via
+   * the same `isModelServableForAccount` request-time resolution every other
+   * caller trusts, instead of only counting the deployment's managed-model
+   * lineup. Optional for backward compatibility with callers/tests that
+   * don't have an account context yet — without it, the probe degrades to
+   * "assume servable whenever the deployment has a managed lineup at all"
+   * (the prior behavior), since there's no account to evaluate entitlement/
+   * credentials against. Every real HTTP call site has this on hand
+   * (`project.accountId`) and should pass it.
+   */
+  accountId?: string;
 }): Promise<{
   agents: ComposerCapabilities['agent'][];
   connections: HarnessConnection[];
@@ -481,11 +516,32 @@ export async function resolveProjectComposerState(input: {
           ? 'harness-catalog'
           : 'launch-override';
       const defaultAllowed = computeDefaultAllowed({ active, harness: agent.harness, presetsLength: presets.length });
-      const noManagedRoute = managedGatewayHasNothingToRouteTo({
+      // Real per-account servability probe (see `managedGatewayHasNothingToRouteTo`'s
+      // doc comment) — reuses the SAME `isModelServableForAccount` the request-time
+      // resolution path already trusts (`resolveEffectiveModel`, `PUT /model-defaults`),
+      // so this can never disagree with what a real generation request would do.
+      // Degrades to "assume servable" (the historical behavior) when this caller
+      // didn't supply an account context to probe against.
+      const accountId = input.accountId;
+      const freeModelsOnly =
+        accountId && config.KORTIX_BILLING_INTERNAL_ENABLED
+          ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
+          : false;
+      const noManagedRoute = await managedGatewayHasNothingToRouteTo({
         active,
         harness: agent.harness,
-        managedModelCount: RUNTIME_MANAGED_MODELS.length,
+        managedModels: RUNTIME_MANAGED_MODELS,
         connections: agentConnections,
+        probeServable: async (modelId) => {
+          if (!accountId || !input.userId) return true;
+          return isModelServableForAccount({
+            userId: input.userId,
+            accountId,
+            projectId: input.project.projectId,
+            freeModelsOnly,
+            model: modelId,
+          });
+        },
       });
       const usableDefault = defaultAllowed && !noManagedRoute;
       const harnessGated = isExperimentalHarnessGated(agent.harness, input.metadata);

@@ -62,3 +62,40 @@ export function shouldShowAcpBootstrapErrorCard(input: {
 }): boolean {
   return input.isError && !input.fatal;
 }
+
+/**
+ * Wall-clock budget for the pre-ready boot chrome (whichever surface is
+ * showing it right now — the instant shell's inline checklist, the
+ * side-panel loader, or anything else keyed off `phase !== 'ready'`) before
+ * the session is treated as having failed to connect, REGARDLESS of cause.
+ *
+ * This exists because `shouldShowAcpBootstrapErrorCard` above only fires
+ * once `AcpSession.runBootstrap` reaches a terminal error — but that
+ * requires the ACP handshake to have been ATTEMPTED at all. A server-side
+ * wedge upstream of the handshake (e.g. `/start`'s orchestration never
+ * resolving a usable model/provider for the session) can leave a session
+ * with no ACP connect ever initiated, no bootstrap timeout ever armed, and
+ * therefore no terminal signal ever produced — the exact "Connecting spins
+ * forever, zero ACP traffic in the logs" failure mode. `AcpSession`'s own
+ * 30s bootstrap timeout cannot help here; it never gets the chance to run.
+ * This is a backstop of last resort, independent of the specific cause.
+ */
+export const SESSION_BOOT_TIMEOUT_MS = 90_000;
+
+/**
+ * Pure: has the pre-ready boot window been open longer than the budget, with
+ * the session still neither ready nor already reporting its own terminal
+ * error (which already has a more specific message via
+ * `shouldShowAcpBootstrapErrorCard`)? `elapsedMs` is wall-clock time since
+ * this session started booting — the caller resets its clock on every
+ * session switch/retry.
+ */
+export function hasSessionBootTimedOut(input: {
+  elapsedMs: number;
+  ready: boolean;
+  isError: boolean;
+  budgetMs?: number;
+}): boolean {
+  if (input.ready || input.isError) return false;
+  return input.elapsedMs >= (input.budgetMs ?? SESSION_BOOT_TIMEOUT_MS);
+}
