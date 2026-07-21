@@ -328,10 +328,16 @@ export async function drainSessionLifecycleQueue(
   input: {
   workerId?: string;
   limit?: number;
+  /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
+  availableBefore?: Date;
   } = {},
 ): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
-  const rows = await claimDueLifecycleCommands({ workerId, limit: input.limit ?? 10 });
+  const rows = await claimDueLifecycleCommands({
+    workerId,
+    limit: input.limit ?? 10,
+    availableBefore: input.availableBefore,
+  });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
   for (const row of rows) {
     if (row.commandType === 'continue_session') {
