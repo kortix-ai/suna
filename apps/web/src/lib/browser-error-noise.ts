@@ -309,6 +309,52 @@ function isAndroidNavPerfLoggerFrame(filename: unknown): boolean {
   return normalizeString(filename) === ANDROID_NAV_PERF_LOGGER_FRAME_SOURCE;
 }
 
+// Android System WebView native-bridge instrumentation noise — the `postEvent`
+// sibling of the `postMessage` class above. Android's Chromium WebView ships a
+// `JavaBridge` (the V8↔Java bridge injected into every page) whose
+// `postEvent`/`postMessage` thread-hop hands a serialized event to the Java
+// side via a WEAK reference to the backing `JavaObject`. When that object is
+// garbage-collected — page navigation, WebView teardown, or the host in-app
+// browser (Threads/Barcelona, Facebook, Instagram, …) dismissing the tab — the
+// next `postEvent` throws `Error invoking postEvent: Java object is gone`.
+// This is the WebView's OWN bridge plumbing, never first-party code: there is
+// no app chunk frame, no de-minified `apps/web/src/…` frame, and (unlike the
+// `postMessage` sibling) frequently NO resolvable frame at all — the throw
+// escapes from the GC'd bridge hop with a frameless `<anonymous>` / `?`
+// call site (Sentry mechanism
+// `auto.browser.global_handlers.onerror`/`onunhandledrejection`).
+//
+// Better Stack pattern
+// a6795db236a92a4f9738698e93a8d7ae4e60dae607cacedccb7ed8bbd225b2d4
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+// users, last_seen 2026-07-20 19:05:34 UTC, call_site_file `<anonymous>`,
+// call_site_function `?` — the frameless capture shape. The `postMessage`
+// sibling `e6a45fe4…` (PR #4610) carried the synthetic
+// `app://navigation_performance_logger_android` frame; this `postEvent` variant
+// surfaced frameless, so the bridge-frame-only anchor from #4610 does not
+// match it. `Java object is gone` is the canonical Android System WebView
+// Java-bridge-GC'd message; it is not raised by app code or by desktop
+// Chrome.
+//
+// The message wording (`Error invoking <method>: Java object is gone`) is
+// shared with the `postMessage` sibling and could conceivably be reused by a
+// hostile/injected script, so this matcher — like the iOS-WebKit
+// stack-overflow frameless-capture class — is anchored on BOTH the exact
+// `postEvent` message AND a frameless/injected-WebView origin: it suppresses
+// only when there is NO resolvable source location (no app chunk, no URL, no
+// de-minified `apps/web/src/…` frame) OR the frame is the synthetic Android
+// nav-performance-logger bridge source. A genuine first-party `postEvent` /
+// `dispatchEvent` failure throws from an `app:///_next/…` chunk or a
+// de-minified `apps/web/src/…` frame and is preserved by the negative guard.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list
+// — that gate has no frame context, so a bare-string match there could
+// swallow a real first-party event-dispatch failure; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate.
+const ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES = [
+  'Error invoking postEvent: Java object is gone',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -1034,6 +1080,64 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
   return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
 }
 
+/**
+ * Whether an event is the Android System WebView native-bridge
+ * `Error invoking postEvent: Java object is gone` noise class: the WebView's
+ * injected `JavaBridge` calls `postEvent` on a native Java bridge whose
+ * backing `JavaObject` has been garbage-collected (page navigation / WebView
+ * teardown / in-app browser dismiss). This is the WebView's OWN bridge
+ * plumbing, not first-party code. Unlike the `postMessage` sibling (PR #4610),
+ * the `postEvent` variant is observed as a FRAMELESS capture
+ * (`<anonymous>` / `?` call site, no resolvable stack), so it cannot be
+ * anchored on the synthetic `app://navigation_performance_logger_android`
+ * frame. Instead — like the iOS-WebKit stack-overflow frameless class — it
+ * requires BOTH the exact message AND a frameless/injected-WebView origin:
+ * suppress only when there is NO resolvable source location OR the frame is
+ * the Android nav-performance-logger bridge source. A genuine first-party
+ * `postEvent` / `dispatchEvent` failure throws from an app chunk or a
+ * de-minified `apps/web/src/…` frame and is preserved by the negative guard.
+ * Never page Better Stack for this class. See
+ * `ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES` for the full
+ * rationale.
+ */
+export function isAndroidWebViewNativeBridgePostEventNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (
+    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTEVENT_NOISE_MESSAGES.some(
+      (noise) => message === noise,
+    )
+  ) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Positive anchor: the synthetic Android nav-performance-logger bridge
+  // source (the framed sibling shape, forward-compat with #4610's evidence).
+  if (sources.some((filename) => isAndroidNavPerfLoggerFrame(filename))) {
+    return true;
+  }
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame → our
+  // own event-dispatch code is failing; keep reporting so the call site can
+  // be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real app chunk, URL,
+  // or named file) → an actionable event-dispatch error with a real stack;
+  // keep reporting. Only the frameless synthetic-`undefined`/`<anonymous>`
+  // global-onerror/onunhandledrejection capture remains → Android WebView
+  // native-bridge GC noise.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
 // iOS WebKit (Safari, Chrome-on-iOS, Google Search App — all WKWebView/JSC)
 // stack-overflow noise. When iOS WebKit exhausts its (lower-than-desktop) call
 // stack, it surfaces `RangeError: Maximum call stack size exceeded.` through
@@ -1313,6 +1417,22 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Android System WebView native-bridge instrumentation noise — the
+  // `postEvent` sibling of the `postMessage` class above. The WebView's
+  // `JavaBridge` calls `postEvent` on a GC'd Java bridge object; the throw
+  // escapes framelessly (`<anonymous>` / `?`). Requires the exact message AND
+  // a frameless/injected-WebView origin so a real first-party
+  // `postEvent`/`dispatchEvent` failure keeps reporting. See
+  // `isAndroidWebViewNativeBridgePostEventNoise`.
+  if (
+    isAndroidWebViewNativeBridgePostEventNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
+    return true;
+  }
+
   if (isInjectedAppSource(input.filename)) {
     return true;
   }
@@ -1486,6 +1606,19 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // so a genuine first-party `window.postMessage` failure keeps reporting. Not
   // in `ignoreErrors` (no frame context there).
   if (isAndroidWebViewNativeBridgePostMessageNoise({ message, frames })) {
+    return true;
+  }
+
+  // Android System WebView native-bridge instrumentation noise — the
+  // `postEvent` sibling of the `postMessage` class above, captured by Sentry's
+  // global onerror/onunhandledrejection handlers. Unlike the `postMessage`
+  // sibling, the `postEvent` variant is observed as a FRAMELESS capture
+  // (`<anonymous>` / `?`), so it is anchored on the exact message AND a
+  // frameless/injected-WebView origin (no resolvable source location, OR the
+  // Android nav-performance-logger bridge frame). A genuine first-party
+  // `postEvent`/`dispatchEvent` failure keeps reporting. Not in `ignoreErrors`
+  // (no frame context there).
+  if (isAndroidWebViewNativeBridgePostEventNoise({ message, frames })) {
     return true;
   }
 
