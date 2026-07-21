@@ -740,7 +740,16 @@ export const PROVIDER_LABELS: Record<string, string> = {
   opencode: 'OpenCode Zen',
   kortix: 'Kortix',
   firmware: 'Firmware',
-  bedrock: 'AWS Bedrock',
+  // models.dev's canonical provider id is `amazon-bedrock` (see
+  // `PROVIDER_AUTH_REQUIREMENT_OVERRIDES` above and `catalog.generated.json`),
+  // and that is the id the gateway stamps onto `GatewayModel.provider`. The
+  // short `bedrock` alias is kept for legacy call sites, mirroring the icon
+  // map in apps/web's provider-branding. Missing the canonical key here is
+  // what made the picker label the whole Bedrock group "Kortix": the label
+  // lookup fell through to `FlatModel.providerName`, which is always "Kortix"
+  // under the gateway.
+  'amazon-bedrock': 'Amazon Bedrock',
+  bedrock: 'Amazon Bedrock',
   openrouter: 'OpenRouter',
   'github-copilot': 'GitHub Copilot',
   vercel: 'Vercel',

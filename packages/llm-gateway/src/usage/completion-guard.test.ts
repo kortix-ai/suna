@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { jsonHasContent, sseErrorFrame, sseHasContent } from './completion-guard';
+import { IncrementalSseScanner } from './sse-scanner';
 
 describe('jsonHasContent', () => {
   test('true for a normal message completion', () => {
@@ -93,5 +94,70 @@ describe('sseErrorFrame', () => {
 
   test('ignores a non-object error field', () => {
     expect(sseErrorFrame('data: {"error":"nope"}\n\n')).toBeNull();
+  });
+
+  // The Codex 400 path: the ai-sdk transport (sse.ts) threads the APICallError's
+  // responseBody/data/url into the frame's error object; sseErrorFrame must keep
+  // them as `detail` so handler.ts can log WHICH field the upstream rejected,
+  // instead of the opaque "Bad Request" that cost a full root-cause session.
+  test('retains responseBody/data/url as detail (Codex diagnosability path)', () => {
+    const frame = sseErrorFrame(
+      'data: {"error":{"message":"Bad Request","code":400,"responseBody":"{\\"error\\":{\\"param\\":\\"reasoning.summary\\"}}","url":"https://chatgpt.com/backend-api/codex/responses"}}\n\n',
+    );
+    expect(frame?.message).toBe('Bad Request');
+    expect(frame?.code).toBe(400);
+    expect(frame?.detail).toEqual({
+      responseBody: '{"error":{"param":"reasoning.summary"}}',
+      url: 'https://chatgpt.com/backend-api/codex/responses',
+    });
+  });
+
+  test('keeps type/param as detail while type still backfills a missing code', () => {
+    const frame = sseErrorFrame(
+      'data: {"error":{"message":"boom","type":"invalid_request_error","param":"store"}}\n\n',
+    );
+    expect(frame?.code).toBe('invalid_request_error'); // type backfills absent code
+    expect(frame?.detail).toEqual({ type: 'invalid_request_error', param: 'store' });
+  });
+
+  test('a plain message/code frame still produces no detail (unchanged shape)', () => {
+    expect(sseErrorFrame('data: {"error":{"message":"nope","code":429}}\n\n')).toEqual({
+      message: 'nope',
+      code: 429,
+    });
+  });
+});
+
+// REGRESSION (prod, 2026-07-20): every Codex request 400'd and the only thing
+// reaching the logs was `"Bad Request"` — the scanner kept `message`/`code` and
+// threw away every other field of the upstream `error` object, so nothing named
+// the offending part of the request. Finding the true cause needed git
+// archaeology against a deleted transport. `detail` keeps the rest verbatim.
+describe('IncrementalSseScanner — error frames retain upstream detail', () => {
+  test('keeps type/param alongside message and code', () => {
+    const scanner = new IncrementalSseScanner();
+    scanner.push(
+      'data: {"error":{"message":"Bad Request","code":400,"type":"invalid_request_error","param":"store"}}\n\n',
+    );
+    scanner.finish();
+    expect(scanner.error).toEqual({
+      message: 'Bad Request',
+      code: 400,
+      detail: { type: 'invalid_request_error', param: 'store' },
+    });
+  });
+
+  test('omits detail entirely for a plain message/code frame (unchanged shape)', () => {
+    const scanner = new IncrementalSseScanner();
+    scanner.push('data: {"error":{"message":"Upstream idle timeout exceeded","code":"timeout"}}\n\n');
+    scanner.finish();
+    expect(scanner.error).toEqual({ message: 'Upstream idle timeout exceeded', code: 'timeout' });
+  });
+
+  test('retains nested detail objects verbatim', () => {
+    const scanner = new IncrementalSseScanner();
+    scanner.push('data: {"error":{"message":"boom","metadata":{"provider":"codex","retry":false}}}\n\n');
+    scanner.finish();
+    expect(scanner.error?.detail).toEqual({ metadata: { provider: 'codex', retry: false } });
   });
 });

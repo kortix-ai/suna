@@ -62,6 +62,17 @@ export function serializeSession(
     canManageProject?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
+    /** Resolved human or service-account display name. */
+    ownerName?: string | null;
+    /** Whether created_by identifies a human, service account, or stale principal. */
+    ownerType?: 'user' | 'service_account' | 'unknown' | null;
+    /** Whether the viewer may read/open the session, independent of inventory visibility. */
+    canAccess?: boolean;
+    /** Exact state of the backing runtime resource, if one still exists. */
+    runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
+    /** Server-managed soft-deletion audit fields. */
+    deletedAt?: string | null;
+    deletedBy?: string | null;
   },
 ): ProjectSession {
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
@@ -101,10 +112,16 @@ export function serializeSession(
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
+    owner_name: ctx?.ownerName ?? null,
+    owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
     is_owner: isOwner,
     can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
+    can_access: ctx?.canAccess ?? true,
+    runtime_status: ctx?.runtimeStatus ?? null,
+    deleted_at: ctx?.deletedAt ?? null,
+    deleted_by: ctx?.deletedBy ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

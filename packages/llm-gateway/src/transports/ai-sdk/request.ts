@@ -797,7 +797,7 @@ interface ProviderAdapter {
 
 const openAiAdapter: ProviderAdapter = {
   optionsKey: () => 'openai',
-  buildProviderOptions(req) {
+  buildProviderOptions(req, providerName) {
     const options: OpenAIChatLanguageModelOptions = {};
     // The AI SDK's OpenAI provider strips temperature and other unsupported
     // params for reasoning models on its own — we only forward the effort.
@@ -805,6 +805,18 @@ const openAiAdapter: ProviderAdapter = {
       options.reasoningEffort =
         req.reasoningEffort as OpenAIChatLanguageModelOptions['reasoningEffort'];
     }
+    // Codex (ChatGPT subscription) upstream — `https://chatgpt.com/backend-api/codex`
+    // — is NOT the public OpenAI platform API. It is stricter, and it rejects a
+    // Responses body that omits `store` with a bare `{"error":{"message":"Bad
+    // Request","code":400}}` SSE frame naming no field. The deleted native
+    // transport set `store: false` UNCONDITIONALLY on every Codex request
+    // (transports/openai-responses/request.ts:156, removed in #4943 when the
+    // ai-sdk engine became the sole transport); that line was never ported, so
+    // the SDK left `store` undefined → dropped from the JSON → every codex/*
+    // model 400'd. Restoring exact parity with the transport that worked.
+    // Do NOT "clean this up" as redundant: omitted and `false` are different
+    // requests to this backend.
+    if (providerName === 'openai-codex') options.store = false;
     Object.assign(options, extraOpenAiFields(req.raw, 'openai'));
     const strict = strictJsonSchemaField(req.raw);
     if (strict !== undefined) options.strictJsonSchema = strict;
@@ -919,7 +931,21 @@ export function buildAiSdkArgs(
     providerOptions[adapter.optionsKey(opts.providerName)] = Object.fromEntries(definedFields);
   }
 
-  const maxTokens = req.explicitMaxTokens ?? adapter.defaultMaxTokens(req);
+  // Codex's ChatGPT backend (`https://chatgpt.com/backend-api/codex/responses`)
+  // REJECTS `max_output_tokens` outright — it 400s the whole request with
+  // `{"detail":"Unsupported parameter: max_output_tokens"}` (captured live via
+  // the error-detail path). @ai-sdk/openai's `.responses()` serializes
+  // `maxOutputTokens` → wire `max_output_tokens`, so any turn that carries a
+  // token cap dies. Requests with NO cap (a bare "hi") slip through, which is
+  // why simple probes passed while every real opencode turn — which always
+  // sends one — 400'd. The backend manages its own output budget, so dropping
+  // the cap for Codex is the correct behaviour, not a workaround. Codex-only:
+  // the real OpenAI platform API DOES accept max_output_tokens, so plain
+  // `openai` must keep sending it.
+  const maxTokens =
+    opts.providerName === 'openai-codex'
+      ? undefined
+      : (req.explicitMaxTokens ?? adapter.defaultMaxTokens(req));
 
   const stop = body.stop;
   const stopSequences =

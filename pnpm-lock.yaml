@@ -1472,12 +1472,18 @@ importers:
       '@types/react':
         specifier: ^19.1.17
         version: 19.1.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.1.17)
       '@types/react-test-renderer':
         specifier: ^19.1.0
         version: 19.1.0
       react:
         specifier: ^19.1.0
         version: 19.1.0
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.1.0(react@19.1.0)
       react-test-renderer:
         specifier: ^19.2.7
         version: 19.2.7(react@19.1.0)

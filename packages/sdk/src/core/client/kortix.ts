@@ -498,7 +498,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       sessions: {
-        list: () => P.listProjectSessions(projectId),
+        list: (options?: Parameters<typeof P.listProjectSessions>[1]) =>
+          P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
       },

@@ -703,6 +703,11 @@ export async function createProjectSession(input: {
           message: billingCheck.message,
           code: billingCheck.reason,
           balance: billingCheck.balance,
+          // Lets the client tell a genuinely-free/no-plan account ("subscribe")
+          // from a paying Team account whose wallet ran dry ("top up") instead
+          // of pitching the Free plan to a Team account. See web error-handler.
+          billing_model: billingCheck.billingModel,
+          has_subscription: billingCheck.hasSubscription,
           // The account that actually needs the upgrade — the project's owning
           // (team) account, NOT the caller's primary account. The upgrade dialog
           // scopes itself to this so a non-billing member sees the *team's*

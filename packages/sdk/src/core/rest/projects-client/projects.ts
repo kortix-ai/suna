@@ -122,19 +122,45 @@ export interface ProjectDetail {
   files: ProjectFileEntry[];
 }
 
+/**
+ * A single model as served by the project LLM catalog endpoint. Mirrors the
+ * API's `GatewayModel` (apps/api/src/llm-gateway/models/catalog-models.ts) —
+ * keep the two in sync. Declaring the full shape here is what lets the web's
+ * `flattenModels` read `provider` (and the models.dev passthrough fields)
+ * without an `as any` cast: this interface is the only place between the API
+ * and the picker where the field could go undeclared.
+ */
+export interface GatewayCatalogModel {
+  name: string;
+  free?: boolean;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  attachment?: boolean;
+  temperature?: boolean;
+  limit?: { context?: number; output?: number };
+  variants?: Record<string, Record<string, unknown>>;
+  /**
+   * The REAL upstream provider serving this model ('anthropic', 'openai',
+   * 'amazon-bedrock', ...). Every gateway model is registered under the one
+   * synthetic `kortix` opencode provider, so this is the ONLY reliable way to
+   * group/label a model by who actually serves it — Bedrock ids are
+   * dot-namespaced (`us.anthropic.claude-opus-4-8`), so the legacy
+   * split-on-slash heuristic cannot recover it.
+   */
+  provider?: string;
+  release_date?: string;
+  released?: string;
+  family?: string;
+  cost?: { input?: number; output?: number };
+  modalities?: { input?: string[]; output?: string[] };
+  reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  description?: string;
+  open_weights?: boolean;
+  last_updated?: string;
+}
+
 export interface ProjectLlmCatalogResponse {
-  models: Record<
-    string,
-    {
-      name: string;
-      free?: boolean;
-      reasoning?: boolean;
-      tool_call?: boolean;
-      attachment?: boolean;
-      temperature?: boolean;
-      limit?: { context?: number; output?: number };
-    }
-  >;
+  models: Record<string, GatewayCatalogModel>;
 }
 
 export interface ProjectInput {

@@ -16,6 +16,33 @@ const s = kortix.session(projectId, sessionId);
   and previews — never a global "sandbox." The sandbox is plumbing the SDK resolves for you.
 </Callout>
 
+## Listing sessions
+
+The default list returns only sessions the current principal owns or can access.
+Project managers (including account owners and admins) can opt into the complete
+durable inventory for support and debugging:
+
+```ts
+const visible = await kortix.project(projectId).sessions.list();
+const inventory = await kortix.project(projectId).sessions.list({ scope: 'project' });
+```
+
+`scope: 'project'` is rejected for non-managers. It includes private sessions,
+stopped sessions whose runtime is missing, and soft-deleted records. Inventory
+items expose additive ownership and investigation fields:
+
+- `owner_type`, `owner_name`, `owner_email`, and `created_by` identify the
+  attributed human or agent/service-account owner;
+- `can_access` says whether the current viewer may read/open the session, which
+  is separate from permission to see its inventory metadata;
+- `runtime_status` reports the exact backing runtime state when the resource
+  still exists;
+- `deleted_at` and `deleted_by` retain the soft-delete audit trail.
+
+Use the default list for ordinary session pickers. Use project inventory only on
+privileged administrative surfaces; listing a private record does not grant
+access to its runtime or transcript.
+
 ## Lifecycle
 
 ```ts

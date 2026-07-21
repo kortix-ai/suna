@@ -93,3 +93,43 @@ describe('pickerGroupLabel — THE actual display-name bug fix', () => {
     expect(pickerGroupLabel(pickerGroupId(m), m)).toBe('Kortix');
   });
 });
+
+// Bedrock regression: models.dev's canonical provider id is `amazon-bedrock`
+// and Bedrock wire ids are DOT-namespaced (`us.anthropic.claude-opus-4-8`),
+// so there is no "/" to split on — the explicit `provider` field is the ONLY
+// way to group them. PROVIDER_LABELS was missing the `amazon-bedrock` key, so
+// the label lookup fell through to `providerName` ("Kortix") and the whole
+// BYOK Bedrock group rendered as "Kortix" while showing the Bedrock icon.
+describe('BYOK Bedrock grouping (dot-namespaced ids)', () => {
+  const bedrockModelIDs = [
+    'us.anthropic.claude-opus-4-8',
+    'global.anthropic.claude-sonnet-5',
+    'anthropic.claude-fable-5',
+    'deepseek.v3.2',
+  ];
+
+  for (const modelID of bedrockModelIDs) {
+    test(`groups ${modelID} under amazon-bedrock, labelled "Amazon Bedrock"`, () => {
+      const m = model({ providerID: 'kortix', modelID, provider: 'amazon-bedrock' });
+      const groupID = pickerGroupId(m);
+      expect(groupID).toBe('amazon-bedrock');
+      expect(pickerGroupLabel(groupID, m)).toBe('Amazon Bedrock');
+    });
+  }
+
+  test('the short `bedrock` alias resolves to the same label', () => {
+    const m = model({
+      providerID: 'kortix',
+      modelID: 'us.anthropic.claude-opus-4-8',
+      provider: 'bedrock',
+    });
+    expect(pickerGroupLabel(pickerGroupId(m), m)).toBe('Amazon Bedrock');
+  });
+
+  test('WITHOUT the explicit provider field a dot-namespaced id degrades to kortix', () => {
+    // Documents exactly why `provider` must survive the wire: there is no "/"
+    // to recover the real provider from, so the label would read "Kortix".
+    const m = model({ providerID: 'kortix', modelID: 'us.anthropic.claude-opus-4-8' });
+    expect(pickerGroupId(m)).toBe('kortix');
+  });
+});

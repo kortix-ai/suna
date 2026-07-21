@@ -1566,3 +1566,64 @@ Gates: typecheck clean, SDK **1270 pass / 0 fail (97 files)**, smoke:install
 green, apps/web **2182 pass / 0 fail**. Real codex session projection:
 62 → 27 assistant/thought messages, 0 duplicated texts, every removed item id
 verified inside a replay-leak ordinal region, live items untouched.
+
+---
+
+### 2026-07-21 — session `project-session-inventory` (claim)
+
+Claimed the user-directed privileged project session inventory contract. The
+existing visible-session list remains backward compatible; an additive manager-
+only inventory mode will expose every durable project session, resolved human or
+agent ownership, and explicit viewer access/runtime availability so owners and
+admins can investigate private, stopped, unavailable, and soft-deleted sessions
+without granting ordinary members broader visibility. Implementation will follow
+RED -> GREEN -> REFACTOR and finish with the full SDK typecheck, test, and
+packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `project-session-inventory` (completion)
+
+Completed the additive manager-only project session inventory contract. The
+ordinary list remains unchanged; `project(id).sessions.list({ scope: 'project' })`
+now exposes every durable row with resolved human/service-account ownership,
+viewer access, runtime state, and soft-delete audit metadata. No exported name
+was removed or renamed.
+
+**TDD and live evidence:** focused API/serializer/SDK/facade/web tests passed
+**148 / 0**. API and web typechecks exited 0, focused web ESLint exited 0, the
+full web suite reported **1837 pass / 0 fail**, and the API route contract suite
+reported **59 pass / 0 fail**. A real authenticated local HTTP smoke proved the
+manager default list stayed at 2 visible rows while project inventory returned
+all 4 durable rows, including a private missing runtime, a stopped agent-owned
+runtime, and a soft-deleted row; the ordinary member received 403 for project
+inventory and a manager still received 404 when directly reading the private
+session.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** with 5071 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK and local end-to-end contract.
+Repository PR, Deploy Dev, and live-dev verification remain part of the parent
+feature lifecycle.
+
+---
+
+### 2026-07-21 — session `revert-owner-profile-bindings` (completion)
+
+Reverted the unfinished owner-scoped connector-profile session-start surface
+introduced by #5139 so `main` returns to the previously published SDK contract.
+This is an exact feature rollback rather than a new SDK behavior; the feature
+will continue in a separate draft PR before it is considered shippable.
+
+**Verification:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** with 5071 assertions; the packed-install
+smoke completed successfully; API typecheck exited 0; and the focused live-env
+API regression run reported **41 pass / 0 fail** with 83 assertions.
+
+**Shippable to production: YES** for the rollback. The owner-scoped binding
+feature itself is **NOT YET** shippable and remains open as WIP.

@@ -786,14 +786,20 @@ export async function handleChatCompletions(
     // if nothing usable ever arrives. Other candidates, if any, still get a turn.
     if (probe.errorFrame) {
       lastErrorFrame = probe.errorFrame;
+      // `detail` carries the fields that actually identify WHICH part of the
+      // request the upstream rejected (OpenAI-shaped backends: `type`/`param`).
+      // Without it a body-level rejection logs as a bare "Bad Request" and is
+      // undiagnosable from logs alone — see SseErrorFrame.detail.
+      const errorDetail = probe.errorFrame.detail;
       logger.warn(
-        `[llm-gateway] upstream error frame from ${chosenDescriptor.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}`,
+        `[llm-gateway] upstream error frame from ${chosenDescriptor.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}${errorDetail ? ` detail=${JSON.stringify(errorDetail)}` : ''}`,
       );
       step('upstream_error_frame', {
         provider: chosenDescriptor.provider,
         routeModel: chosenRouteModel,
         message: probe.errorFrame.message,
         code: probe.errorFrame.code,
+        ...(errorDetail ? { detail: errorDetail } : {}),
       });
       exhaustedCandidates.add(candidateKey(chosen));
       continue;

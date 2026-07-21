@@ -51,6 +51,11 @@ test('project(id).session(sid) is the same session handle', async () => {
   expect(last().url).toContain('/projects/PA/sessions/SB');
 });
 
+test('project(id).sessions.list forwards manager inventory scope', async () => {
+  await kortix.project('PID123').sessions.list({ scope: 'project' });
+  expect(last().url).toContain('/projects/PID123/sessions?scope=project');
+});
+
 test('top-level projects.list hits /projects', async () => {
   await kortix.projects.list();
   expect(last().url).toContain('/projects');

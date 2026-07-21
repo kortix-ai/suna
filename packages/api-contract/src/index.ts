@@ -463,10 +463,19 @@ export const ProjectSessionSchema = z.object({
   runtime_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
+  owner_name: z.string().nullable().optional(),
+  owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
   visibility: SessionVisibilitySchema,
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
   can_manage_sharing: z.boolean(),
+  can_access: z.boolean().optional(),
+  runtime_status: z
+    .enum(['provisioning', 'active', 'stopped', 'error', 'archived'])
+    .nullable()
+    .optional(),
+  deleted_at: z.string().nullable().optional(),
+  deleted_by: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
