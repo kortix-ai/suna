@@ -29,6 +29,8 @@ setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 // `config` module (transitively pulled in by platinum.ts) sees the test values.
 let isDaytonaTransientProviderError: (err: unknown) => boolean;
 let primeDaytonaTransientClassifier: () => Promise<void>;
+let isDaytonaRateLimitError: (err: unknown) => boolean;
+let primeDaytonaRateLimitClassifier: () => Promise<void>;
 let isPlatinumSandboxNotRunningError: (err: unknown) => boolean;
 // Keep the type-guard return type so `err.kind` narrows correctly below.
 let isGitOperationError: (err: unknown) => err is { kind: string };
@@ -37,9 +39,13 @@ beforeAll(async () => {
   ({ isDaytonaTransientProviderError, primeDaytonaTransientClassifier } = await import(
     '../shared/daytona-transient'
   ));
+  ({ isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } = await import(
+    '../shared/daytona-rate-limit'
+  ));
   ({ isPlatinumSandboxNotRunningError } = await import('../shared/platinum'));
   ({ isGitOperationError } = await import('../projects/git/mirror'));
   await primeDaytonaTransientClassifier();
+  await primeDaytonaRateLimitClassifier();
 });
 
 // Regression for Better Stack pattern `e98d61f1…`
@@ -242,5 +248,199 @@ describe('app.onError Daytona transient-gateway classification', () => {
     const body = (await res.json()) as { message: string };
     expect(body.message).toBe('sandbox is not running');
     expect(captured()).toHaveLength(0);
+  });
+});
+
+// Combined-order regression: proves the two Daytona classifiers
+// (`isDaytonaRateLimitError` from PR #5167 + `isDaytonaTransientProviderError`
+// from PR #5175) coexist in the production `app.onError` ordering WITHOUT
+// shadowing each other. Added during the rebase of #5175 onto the merged
+// #5167 (`1379e49`) — the two PRs landed as siblings and this guards the
+// ordering against any future re-ordering regression. The production order is:
+//   Platinum → DaytonaRateLimit(429) → GitTimeout → DaytonaTransient(502/503/504/conn/timeout)
+// A 429 must be caught by `isDaytonaRateLimitError` (rate-limited message),
+// a 502 must be caught by `isDaytonaTransientProviderError` (temporarily
+// unavailable message) — neither may swallow the other's class.
+describe('app.onError combined Daytona rate-limit + transient ordering', () => {
+  /**
+   * Reproduces the production `app.onError` chain with BOTH Daytona
+   * classifiers in their shipped order (rate-limit BEFORE transient), so the
+   * two classifiers are exercised against each other exactly as they run in
+   * prod. Captures whether `captureException` (Sentry/Better Stack paging)
+   * would have fired and what status/headers/message the client gets.
+   */
+  function makeCombinedClassifyingOnError() {
+    const captured: unknown[] = [];
+    const captureException = (err: unknown) => {
+      captured.push(err);
+    };
+    const app = new Hono();
+    app.onError((err, c) => {
+      // (abort / sandbox-proxy branch omitted — not exercised here. The
+      // production `app.onError` also derives `method`/`path`/`errName` for
+      // structured logging, but this reproduction only exercises the
+      // classification branches, so they're intentionally not declared here.)
+
+      if (isPlatinumSandboxNotRunningError(err)) {
+        c.header('Retry-After', '10');
+        return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
+      }
+
+      // #5167's branch — fires BEFORE the transient classifier in prod.
+      if (isDaytonaRateLimitError(err)) {
+        c.header('Retry-After', '10');
+        return c.json(
+          {
+            error: true,
+            message: 'sandbox provider is temporarily rate-limited',
+            status: 503,
+          },
+          503,
+        );
+      }
+
+      if (isGitOperationError(err) && err.kind === 'timeout') {
+        c.header('Retry-After', '10');
+        return c.json(
+          { error: true, message: 'git mirror is temporarily unavailable', status: 503 },
+          503,
+        );
+      }
+
+      // #5175's branch — fires AFTER the rate-limit classifier in prod.
+      if (isDaytonaTransientProviderError(err)) {
+        c.header('Retry-After', '10');
+        return c.json(
+          {
+            error: true,
+            message: 'sandbox provider is temporarily unavailable',
+            status: 503,
+          },
+          503,
+        );
+      }
+
+      if (err instanceof HTTPException) {
+        if (err.status >= 500) captureException(err);
+        if (err.status === 503) c.header('Retry-After', '10');
+        return c.json({ error: true, message: err.message, status: err.status }, err.status);
+      }
+
+      captureException(err);
+      return c.json({ error: true, message: 'Internal server error', status: 500 }, 500);
+    });
+    return { app, captured: () => captured };
+  }
+
+  it('a DaytonaRateLimitError (429) gets the RATE-LIMIT message, NOT the transient message', async () => {
+    // A 429 ThrottlerException must be caught by `isDaytonaRateLimitError`
+    // (which fires first in prod) and surface the rate-limited message — it
+    // must NOT be swallowed by `isDaytonaTransientProviderError` (which would
+    // surface "temporarily unavailable" and lose the throttler semantics).
+    const { app, captured } = makeCombinedClassifyingOnError();
+    app.get('/v1/probe', () => {
+      throw new DaytonaRateLimitError(
+        'ThrottlerException: Too Many Requests',
+        429,
+        undefined,
+        'ThrottlerException',
+      );
+    });
+    const res = await app.request('/v1/probe');
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('10');
+    const body = (await res.json()) as { message: string; status: number };
+    expect(body.status).toBe(503);
+    expect(body.message).toBe('sandbox provider is temporarily rate-limited');
+    // Not paged to Sentry.
+    expect(captured()).toHaveLength(0);
+  });
+
+  it('a generic DaytonaError with the prod 502-HTML-body fingerprint gets the TRANSIENT message, NOT the rate-limit message', async () => {
+    // The exact shape Better Stack records for `e98d61f1…`. A 502 HTML body
+    // must be caught by `isDaytonaTransientProviderError` (the transient
+    // gateway classifier) and surface the temporarily-unavailable message —
+    // it must NOT be swallowed by `isDaytonaRateLimitError` (which only
+    // matches the 429 ThrottlerException shape, asserted in #5167's own
+    // `unit-daytona-rate-limit.test.ts`).
+    const { app, captured } = makeCombinedClassifyingOnError();
+    app.get('/v1/probe', () => {
+      throw new DaytonaError(
+        '<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n</body>\r\n</html>\r\n',
+        502,
+      );
+    });
+    const res = await app.request('/v1/probe');
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('10');
+    const body = (await res.json()) as { message: string; status: number };
+    expect(body.status).toBe(503);
+    expect(body.message).toBe('sandbox provider is temporarily unavailable');
+    expect(captured()).toHaveLength(0);
+  });
+
+  it('a DaytonaError with statusCode 503 gets the TRANSIENT message (not rate-limit)', async () => {
+    const { app, captured } = makeCombinedClassifyingOnError();
+    app.get('/v1/probe', () => {
+      throw new DaytonaError('Service Unavailable', 503);
+    });
+    const res = await app.request('/v1/probe');
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { message: string };
+    expect(body.message).toBe('sandbox provider is temporarily unavailable');
+    expect(captured()).toHaveLength(0);
+  });
+
+  it('a DaytonaNotFoundError (404) still falls through BOTH classifiers to Sentry (neither swallows it)', async () => {
+    // A 404 missing-box is an unexpected failure for a live call site and must
+    // NOT be classified by either Daytona classifier — it must fall through to
+    // the generic capture so it stays loud. Guards against either classifier
+    // accidentally widening to "any DaytonaError".
+    const { app, captured } = makeCombinedClassifyingOnError();
+    app.get('/v1/probe', () => {
+      throw new DaytonaNotFoundError('Sandbox not found', 404);
+    });
+    const res = await app.request('/v1/probe');
+    expect(res.status).toBe(500);
+    expect(captured()).toHaveLength(1);
+  });
+
+  it('a DaytonaError with statusCode 500 (unexpected 5xx) falls through BOTH classifiers to Sentry', async () => {
+    // 500 is NOT a transient gateway status (only 502/503/504 are) and NOT a
+    // 429 — so it must fall through both Daytona classifiers and page Sentry.
+    const { app, captured } = makeCombinedClassifyingOnError();
+    app.get('/v1/probe', () => {
+      throw new DaytonaError('internal server error', 500);
+    });
+    const res = await app.request('/v1/probe');
+    expect(res.status).toBe(500);
+    expect(captured()).toHaveLength(1);
+  });
+
+  it('a DaytonaRateLimitError is NOT matched by isDaytonaTransientProviderError (classifier isolation)', () => {
+    // Direct classifier-level assertion (no app.onError involved): the 429
+    // throttler class is NOT matched by the transient classifier, so even if
+    // the branches were ever re-ordered, the 429 wouldn't be silently
+    // swallowed with the wrong message by the transient branch.
+    const err = new DaytonaRateLimitError(
+      'ThrottlerException: Too Many Requests',
+      429,
+      undefined,
+      'ThrottlerException',
+    );
+    expect(isDaytonaRateLimitError(err)).toBe(true);
+    expect(isDaytonaTransientProviderError(err)).toBe(false);
+  });
+
+  it('a generic DaytonaError with 502 is NOT matched by isDaytonaRateLimitError (classifier isolation)', () => {
+    // Symmetric isolation assertion: a transient 502 is NOT matched by the
+    // rate-limit classifier, so it can't be swallowed with the wrong message
+    // by the rate-limit branch.
+    const err = new DaytonaError(
+      '<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n</body>\r\n</html>\r\n',
+      502,
+    );
+    expect(isDaytonaTransientProviderError(err)).toBe(true);
+    expect(isDaytonaRateLimitError(err)).toBe(false);
   });
 });
