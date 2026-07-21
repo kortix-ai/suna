@@ -15,8 +15,6 @@ export interface ValidatedSessionConnectorBinding {
   alias: string;
   profileId: string;
   connectorId: string;
-  ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
-  ownerId: string | null;
 }
 
 export interface ResolvedSessionConnectorProfile {
@@ -149,8 +147,6 @@ export function parseSessionConnectorBindings(
 export async function validateSessionConnectorBindings(input: {
   accountId: string;
   projectId: string;
-  actingUserId: string;
-  mayManageSystemProfiles: boolean;
   bindings: SessionConnectorBindings | undefined;
 }): Promise<
   | { ok: true; bindings: ValidatedSessionConnectorBinding[] }
@@ -165,9 +161,6 @@ export async function validateSessionConnectorBindings(input: {
       .select({
         profileId: executorConnectionProfiles.profileId,
         connectorId: executorConnectionProfiles.connectorId,
-        ownerType: executorConnectionProfiles.ownerType,
-        ownerId: executorConnectionProfiles.ownerId,
-        isDefault: executorConnectionProfiles.isDefault,
         status: executorConnectionProfiles.status,
         connectorEnabled: executorConnectors.enabled,
       })
@@ -197,20 +190,6 @@ export async function validateSessionConnectorBindings(input: {
         code: 'CONNECTOR_PROFILE_NOT_FOUND',
       };
     }
-    const mayUseProfile =
-      (row.ownerType === 'member' && row.ownerId === input.actingUserId) ||
-      (row.ownerType === 'project' && row.isDefault) ||
-      (row.ownerType !== 'member' && row.ownerType !== 'project' && input.mayManageSystemProfiles);
-    if (!mayUseProfile) {
-      // Deliberately match the cross-project response. A profile id is not an
-      // authority, and callers must not be able to probe another member's
-      // connected identities (including when the caller is a project manager).
-      return {
-        ok: false,
-        error: `Connector profile is not available for alias "${alias}" in this project`,
-        code: 'CONNECTOR_PROFILE_NOT_FOUND',
-      };
-    }
     if (row.status !== 'active') {
       return {
         ok: false,
@@ -225,13 +204,7 @@ export async function validateSessionConnectorBindings(input: {
         code: 'CONNECTOR_PROFILE_INACTIVE',
       };
     }
-    validated.push({
-      alias,
-      profileId: row.profileId,
-      connectorId: row.connectorId,
-      ownerType: row.ownerType,
-      ownerId: row.ownerId,
-    });
+    validated.push({ alias, profileId: row.profileId, connectorId: row.connectorId });
   }
   return { ok: true, bindings: validated };
 }
@@ -258,36 +231,6 @@ export async function persistSessionConnectorBindings(input: {
   );
 }
 
-export function sessionConnectorBindingsRequirePrivateVisibility(
-  bindings: readonly ValidatedSessionConnectorBinding[],
-): boolean {
-  return bindings.some((binding) => binding.ownerType === 'member');
-}
-
-export async function sessionHasMemberConnectorBinding(input: {
-  accountId: string;
-  projectId: string;
-  sessionId: string;
-}): Promise<boolean> {
-  const [row] = await db
-    .select({ profileId: projectSessionConnectorBindings.profileId })
-    .from(projectSessionConnectorBindings)
-    .innerJoin(
-      executorConnectionProfiles,
-      eq(executorConnectionProfiles.profileId, projectSessionConnectorBindings.profileId),
-    )
-    .where(
-      and(
-        eq(projectSessionConnectorBindings.sessionId, input.sessionId),
-        eq(projectSessionConnectorBindings.accountId, input.accountId),
-        eq(projectSessionConnectorBindings.projectId, input.projectId),
-        eq(executorConnectionProfiles.ownerType, 'member'),
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
-}
-
 /**
  * Resolve the effective profile on every Executor request. A present but
  * revoked/error binding never falls through to a project default.
@@ -300,11 +243,7 @@ export async function resolveSessionConnectorProfile(input: {
 }): Promise<ResolvedSessionConnectorProfile | null> {
   if (input.sessionId) {
     const [session] = await db
-      .select({
-        sessionId: projectSessions.sessionId,
-        createdBy: projectSessions.createdBy,
-        visibility: projectSessions.visibility,
-      })
+      .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
         and(
@@ -323,8 +262,6 @@ export async function resolveSessionConnectorProfile(input: {
         status: executorConnectionProfiles.status,
         isDefault: executorConnectionProfiles.isDefault,
         metadata: executorConnectionProfiles.metadata,
-        ownerType: executorConnectionProfiles.ownerType,
-        ownerId: executorConnectionProfiles.ownerId,
         source: projectSessionConnectorBindings.source,
       })
       .from(projectSessionConnectorBindings)
@@ -342,18 +279,8 @@ export async function resolveSessionConnectorProfile(input: {
       )
       .limit(1);
     if (bound) {
-      if (
-        bound.ownerType === 'member' &&
-        (bound.ownerId !== session.createdBy || session.visibility !== 'private')
-      ) {
-        return null;
-      }
       return {
-        profileId: bound.profileId,
-        connectorId: bound.connectorId,
-        status: bound.status,
-        isDefault: bound.isDefault,
-        source: bound.source,
+        ...bound,
         alias: input.alias,
         metadata: bound.metadata ?? {},
       };

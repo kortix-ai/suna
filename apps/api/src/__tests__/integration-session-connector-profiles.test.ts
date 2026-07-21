@@ -19,14 +19,11 @@ import {
   resolveCredentialValue,
   resolveProfileCredentialValue,
   upsertCredential,
-  upsertProfileCredential,
 } from '../executor/credentials';
 import { makeDbGatewayDeps } from '../executor/db-deps';
-import { finalizePipedreamProfileConnection } from '../executor/pipedream';
 import { reconcileEmailConnectionProfiles } from '../executor/sync';
 import {
   resolveSessionConnectorProfile,
-  sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from '../projects/lib/session-connector-bindings';
 import { encryptProjectSecret } from '../projects/secrets';
@@ -42,14 +39,12 @@ const EMAIL_CONNECTOR = crypto.randomUUID();
 const PROFILE_DEFAULT = crypto.randomUUID();
 const PROFILE_A = crypto.randomUUID();
 const PROFILE_B = crypto.randomUUID();
-const PROFILE_EXTERNAL = crypto.randomUUID();
 const EMAIL_PROFILE_DEFAULT = crypto.randomUUID();
 const FOREIGN_PROFILE = crypto.randomUUID();
 const SESSION_A = crypto.randomUUID();
 const SESSION_B = crypto.randomUUID();
 const SESSION_DEFAULT = crypto.randomUUID();
 const USER = crypto.randomUUID();
-const OTHER_USER = crypto.randomUUID();
 
 beforeAll(async () => {
   await db.insert(accounts).values([
@@ -113,27 +108,18 @@ beforeAll(async () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       connectorId: CONNECTOR_A,
-      ownerType: 'member',
-      ownerId: USER,
-      label: 'My workspace',
+      ownerType: 'external',
+      ownerId: 'workspace-a',
+      label: 'Workspace A',
     },
     {
       profileId: PROFILE_B,
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       connectorId: CONNECTOR_A,
-      ownerType: 'member',
-      ownerId: OTHER_USER,
-      label: 'Another member workspace',
-    },
-    {
-      profileId: PROFILE_EXTERNAL,
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      connectorId: CONNECTOR_A,
       ownerType: 'external',
-      ownerId: 'managed-workspace',
-      label: 'Managed workspace',
+      ownerId: 'workspace-b',
+      label: 'Workspace B',
     },
     {
       profileId: EMAIL_PROFILE_DEFAULT,
@@ -165,7 +151,7 @@ beforeAll(async () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       branchName: SESSION_B,
-      createdBy: OTHER_USER,
+      createdBy: USER,
     },
     {
       sessionId: SESSION_DEFAULT,
@@ -229,7 +215,7 @@ afterAll(async () => {
 });
 
 describe('session connector profile isolation', () => {
-  test('two users sessions resolve only their distinct profiles and credentials', async () => {
+  test('two sessions resolve distinct profiles and credentials', async () => {
     const a = await resolveSessionConnectorProfile({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
@@ -254,16 +240,16 @@ describe('session connector profile isolation', () => {
   });
 
   test('real Executor deps resolve only the authenticated session profile', async () => {
-    const principal = (sessionId: string, userId: string) => ({
-      userId,
+    const principal = (sessionId: string) => ({
+      userId: USER,
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       sessionId,
-      subject: { userId, groupIds: [] },
+      subject: { userId: USER, groupIds: [] },
       agentGrant: { agent: 'veyris', connectors: ['veyris'] as string[], kortixCli: [] },
     });
-    const depsA = makeDbGatewayDeps(principal(SESSION_A, USER));
-    const depsB = makeDbGatewayDeps(principal(SESSION_B, OTHER_USER));
+    const depsA = makeDbGatewayDeps(principal(SESSION_A));
+    const depsB = makeDbGatewayDeps(principal(SESSION_B));
     const connectorA = await depsA.loadConnectorBySlug(PROJECT_A, 'veyris');
     const connectorB = await depsB.loadConnectorBySlug(PROJECT_A, 'veyris');
     expect(connectorA?.profileId).toBe(PROFILE_A);
@@ -338,86 +324,9 @@ describe('session connector profile isolation', () => {
     const result = await validateSessionConnectorBindings({
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
-      actingUserId: USER,
-      mayManageSystemProfiles: true,
       bindings: { veyris: { profile_id: FOREIGN_PROFILE } },
     });
     expect(result).toMatchObject({ ok: false, code: 'CONNECTOR_PROFILE_NOT_FOUND' });
-  });
-
-  test('a member may bind their own personal profile', async () => {
-    const result = await validateSessionConnectorBindings({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: USER,
-      mayManageSystemProfiles: false,
-      bindings: { veyris: { profile_id: PROFILE_A } },
-    });
-    expect(result).toMatchObject({
-      ok: true,
-      bindings: [{ alias: 'veyris', profileId: PROFILE_A, ownerType: 'member' }],
-    });
-    if (!result.ok) throw new Error('Expected owner binding to validate');
-    expect(sessionConnectorBindingsRequirePrivateVisibility(result.bindings)).toBe(true);
-  });
-
-  test('manager privileges never allow binding another member personal profile', async () => {
-    const result = await validateSessionConnectorBindings({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: USER,
-      mayManageSystemProfiles: true,
-      bindings: { veyris: { profile_id: PROFILE_B } },
-    });
-    expect(result).toMatchObject({ ok: false, code: 'CONNECTOR_PROFILE_NOT_FOUND' });
-  });
-
-  test('system profiles retain the explicit management capability path', async () => {
-    const denied = await validateSessionConnectorBindings({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: USER,
-      mayManageSystemProfiles: false,
-      bindings: { veyris: { profile_id: PROFILE_DEFAULT } },
-    });
-    expect(denied).toMatchObject({ ok: true });
-
-    const unprivileged = await validateSessionConnectorBindings({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: USER,
-      mayManageSystemProfiles: false,
-      bindings: { veyris: { profile_id: PROFILE_EXTERNAL } },
-    });
-    const privileged = await validateSessionConnectorBindings({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      actingUserId: USER,
-      mayManageSystemProfiles: true,
-      bindings: { veyris: { profile_id: PROFILE_EXTERNAL } },
-    });
-    expect(unprivileged).toMatchObject({ ok: false, code: 'CONNECTOR_PROFILE_NOT_FOUND' });
-    expect(privileged).toMatchObject({ ok: true });
-    if (!privileged.ok) throw new Error('Expected managed profile to validate');
-    expect(sessionConnectorBindingsRequirePrivateVisibility(privileged.bindings)).toBe(false);
-  });
-
-  test('a personal-profile binding fails closed if the session becomes shared', async () => {
-    await db
-      .update(projectSessions)
-      .set({ visibility: 'project' })
-      .where(eq(projectSessions.sessionId, SESSION_A));
-    const resolved = await resolveSessionConnectorProfile({
-      accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
-      sessionId: SESSION_A,
-      alias: 'veyris',
-    });
-    expect(resolved).toBeNull();
-    await db
-      .update(projectSessions)
-      .set({ visibility: 'private' })
-      .where(eq(projectSessions.sessionId, SESSION_A));
   });
 
   test('database rejects alias/profile tenant mismatch', async () => {
@@ -454,55 +363,6 @@ describe('session connector profile isolation', () => {
       .update(executorConnectionProfiles)
       .set({ status: 'active', updatedAt: new Date() })
       .where(eq(executorConnectionProfiles.profileId, PROFILE_A));
-  });
-
-  test('Pipedream finalize reads and stores the account under the profile-specific identity', async () => {
-    const realFetch = globalThis.fetch;
-    let accountsUrl = '';
-    globalThis.fetch = (async (url: string) => {
-      const value = String(url);
-      if (value.includes('/v1/oauth/token')) {
-        return new Response(JSON.stringify({ access_token: 'pd-profile-test', expires_in: 3600 }), {
-          status: 200,
-        });
-      }
-      if (value.includes('/accounts?')) {
-        accountsUrl = value;
-        return new Response(
-          JSON.stringify({
-            data: [{ id: 'apn_profile_a', app: { name_slug: 'veyris', name: 'VEYRIS' } }],
-          }),
-          { status: 200 },
-        );
-      }
-      throw new Error(`Unexpected Pipedream request: ${value}`);
-    }) as typeof fetch;
-    try {
-      const result = await finalizePipedreamProfileConnection({
-        projectId: PROJECT_A,
-        slug: 'veyris',
-        app: 'veyris',
-        connectorId: CONNECTOR_A,
-        profileId: PROFILE_A,
-        createdBy: USER,
-      });
-      expect(result).toEqual({ connected: true, accountId: 'apn_profile_a' });
-      expect(new URL(accountsUrl).searchParams.get('external_user_id')).toBe(
-        `${PROJECT_A}:veyris:${PROFILE_A}`,
-      );
-      expect(
-        await resolveProfileCredentialValue({ connectorId: CONNECTOR_A, profileId: PROFILE_A }),
-      ).toBe('apn_profile_a');
-    } finally {
-      globalThis.fetch = realFetch;
-      await upsertProfileCredential({
-        projectId: PROJECT_A,
-        connectorId: CONNECTOR_A,
-        profileId: PROFILE_A,
-        value: 'workspace-a-capability',
-        createdBy: USER,
-      });
-    }
   });
 
   test('legacy/default credential helpers never read, overwrite or delete custom profiles', async () => {

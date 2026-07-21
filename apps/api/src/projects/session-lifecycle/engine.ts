@@ -507,7 +507,6 @@ async function executeQueuedCreate(
     metadata: payload.metadata,
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
-    mayManageSystemConnectorProfiles: payload.mayManageSystemConnectorProfiles,
     enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
@@ -530,7 +529,6 @@ async function executeCreateSession(
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
-    mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
   });
 
   if (result.error) {

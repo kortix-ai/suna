@@ -47,7 +47,6 @@ import {
 } from './serializers';
 import {
   parseSessionConnectorBindings,
-  sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
 import {
@@ -447,9 +446,6 @@ export async function createProjectSession(input: {
    * otherwise be invisible to everyone but the account's first owner.
    */
   visibility?: 'private' | 'project' | 'restricted';
-  /** The request-time capability verdict for operator-managed (non-member)
-   * connection profiles. Personal profiles ignore this and remain owner-only. */
-  mayManageSystemConnectorProfiles?: boolean;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -515,8 +511,6 @@ export async function createProjectSession(input: {
   const validatedConnectorBindings = await validateSessionConnectorBindings({
     accountId,
     projectId,
-    actingUserId: userId,
-    mayManageSystemProfiles: input.mayManageSystemConnectorProfiles ?? false,
     bindings: parsedConnectorBindings.bindings,
   });
   if (!validatedConnectorBindings.ok) {
@@ -526,20 +520,6 @@ export async function createProjectSession(input: {
         body: {
           error: validatedConnectorBindings.error,
           code: validatedConnectorBindings.code,
-        },
-      },
-    };
-  }
-  if (
-    visibility !== 'private' &&
-    sessionConnectorBindingsRequirePrivateVisibility(validatedConnectorBindings.bindings)
-  ) {
-    return {
-      error: {
-        status: 409,
-        body: {
-          error: 'Sessions using a personal connector profile must remain private',
-          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
         },
       },
     };

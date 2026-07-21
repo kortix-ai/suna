@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 498,
+  "count": 495,
   "routes": [
     {
       "method": "GET",
@@ -1267,24 +1267,12 @@
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/activate"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connector-profiles/:profileId/connect"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connector-profiles/:profileId/connect/finalize"
-    },
-    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
     },
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connector-profiles/me"
     },
     {
       "method": "PUT",

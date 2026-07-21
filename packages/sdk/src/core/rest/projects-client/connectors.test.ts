@@ -14,11 +14,8 @@ import {
   listDiscoverIntegrations,
   listPipedreamApps,
   pipedreamConnect,
-  pipedreamConnectConnectionProfile,
   pipedreamFinalize,
-  pipedreamFinalizeConnectionProfile,
   reconcileConnectionProfile,
-  reconcileMemberConnectionProfile,
   revokeConnectionProfile,
   setConnectorCredential,
   setConnectorCredentialMode,
@@ -304,43 +301,4 @@ test('connection profile lifecycle uses the typed project profile routes', async
   expect(last().url).toContain('/connector-profiles/profile-1/revoke');
   await activateConnectionProfile('P1', 'profile-1');
   expect(last().url).toContain('/connector-profiles/profile-1/activate');
-});
-
-test('member profile creation is owner-scoped by the API and never accepts an owner id', async () => {
-  nextResponse = {
-    status: 201,
-    body: {
-      profile_id: 'profile-member',
-      connector_alias: 'gmail',
-      owner_type: 'member',
-      owner_id: 'user-from-token',
-      label: 'My Gmail',
-      status: 'active',
-      is_default: false,
-      metadata: {},
-    },
-  };
-  await reconcileMemberConnectionProfile('P1', {
-    connector_alias: 'gmail',
-    label: 'My Gmail',
-  });
-  expect(last().url).toContain('/projects/P1/connector-profiles/me');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ connector_alias: 'gmail', label: 'My Gmail' });
-});
-
-test('profile-specific Pipedream connect and finalize bind the OAuth identity to the profile', async () => {
-  nextResponse = { status: 200, body: { connectUrl: 'https://pipedream.test/connect' } };
-  await pipedreamConnectConnectionProfile('P1', 'profile-member', {
-    success_redirect_uri: 'kortix://connected',
-  });
-  expect(last().url).toContain('/projects/P1/connector-profiles/profile-member/connect');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ success_redirect_uri: 'kortix://connected' });
-
-  nextResponse = { status: 200, body: { connected: true, accountId: 'acc-member' } };
-  await pipedreamFinalizeConnectionProfile('P1', 'profile-member');
-  expect(last().url).toContain('/projects/P1/connector-profiles/profile-member/connect/finalize');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({});
 });

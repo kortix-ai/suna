@@ -87,19 +87,6 @@ export interface ReconcileConnectionProfileInput {
   metadata?: Record<string, unknown>;
 }
 
-/** Create or update the calling user's member-owned profile. Ownership is
- * derived exclusively from the bearer token; callers cannot supply an owner. */
-export interface ReconcileMemberConnectionProfileInput {
-  connector_alias: string;
-  label: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface ConnectionProfileConnectInput {
-  success_redirect_uri?: string;
-  error_redirect_uri?: string;
-}
-
 export async function listConnectionProfiles(projectId: string) {
   return unwrap(
     await backendApi.get<{ profiles: ConnectionProfile[] }>(
@@ -114,15 +101,6 @@ export async function reconcileConnectionProfile(
 ) {
   return unwrap(
     await backendApi.post<ConnectionProfile>(`/projects/${projectId}/connector-profiles`, input),
-  );
-}
-
-export async function reconcileMemberConnectionProfile(
-  projectId: string,
-  input: ReconcileMemberConnectionProfileInput,
-) {
-  return unwrap(
-    await backendApi.post<ConnectionProfile>(`/projects/${projectId}/connector-profiles/me`, input),
   );
 }
 
@@ -152,28 +130,6 @@ export async function activateConnectionProfile(projectId: string, profileId: st
   return unwrap(
     await backendApi.put<{ ok: true }>(
       `/projects/${projectId}/connector-profiles/${profileId}/activate`,
-      {},
-    ),
-  );
-}
-
-export async function pipedreamConnectConnectionProfile(
-  projectId: string,
-  profileId: string,
-  input: ConnectionProfileConnectInput = {},
-) {
-  return unwrap(
-    await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
-      `/projects/${projectId}/connector-profiles/${profileId}/connect`,
-      input,
-    ),
-  );
-}
-
-export async function pipedreamFinalizeConnectionProfile(projectId: string, profileId: string) {
-  return unwrap(
-    await backendApi.post<{ connected: boolean; accountId?: string }>(
-      `/projects/${projectId}/connector-profiles/${profileId}/connect/finalize`,
       {},
     ),
   );

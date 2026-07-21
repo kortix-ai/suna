@@ -50,7 +50,6 @@ export interface CreateSessionCommand {
   userId: string;
   body: Record<string, unknown>;
   visibility?: 'private' | 'project' | 'restricted';
-  mayManageSystemConnectorProfiles?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -65,7 +64,6 @@ export interface QueuedCreateSessionPayload {
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
-  mayManageSystemConnectorProfiles?: boolean;
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
 }
