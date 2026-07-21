@@ -27,6 +27,152 @@ export const AGENTMAIL_WEBHOOK_ID = 'AGENTMAIL_WEBHOOK_ID';
 export const AGENTMAIL_WEBHOOK_SECRET = 'AGENTMAIL_WEBHOOK_SECRET';
 export const AGENTMAIL_SENDER_POLICY = 'AGENTMAIL_SENDER_POLICY';
 
+export const WHATSAPP_GATEWAY_URL = 'WHATSAPP_GATEWAY_URL';
+export const WHATSAPP_GATEWAY_API_KEY = 'WHATSAPP_GATEWAY_API_KEY';
+export const WHATSAPP_ACCOUNT_ID = 'WHATSAPP_ACCOUNT_ID';
+export const WHATSAPP_ACCOUNT_PHONE = 'WHATSAPP_ACCOUNT_PHONE';
+export const WHATSAPP_ACCOUNT_NAME = 'WHATSAPP_ACCOUNT_NAME';
+export const WHATSAPP_WEBHOOK_SECRET = 'WHATSAPP_WEBHOOK_SECRET';
+export const WHATSAPP_WEBHOOK_ENDPOINT_ID = 'WHATSAPP_WEBHOOK_ENDPOINT_ID';
+
+export interface WhatsAppInstallInput {
+  projectId: string;
+  gatewayUrl: string;
+  apiKey: string;
+  accountId: string;
+  phoneNumber?: string | null;
+  displayName?: string | null;
+  webhookSecret?: string | null;
+  webhookEndpointId?: string | null;
+}
+
+export interface WhatsAppInstallSummary {
+  gatewayUrl: string;
+  accountId: string;
+  phoneNumber: string | null;
+  displayName: string | null;
+  webhookEndpointId: string | null;
+  installedAt: string;
+}
+
+/**
+ * One WhatsApp gateway connection per project. The gateway account id is the
+ * workspace identity, mirroring how an AgentMail inbox id identifies an email
+ * install.
+ */
+export async function saveWhatsAppInstall(
+  input: WhatsAppInstallInput,
+): Promise<WhatsAppInstallSummary> {
+  const { projectId } = input;
+  const previous = await loadWhatsAppInstall(projectId);
+
+  await upsertSecret(projectId, WHATSAPP_GATEWAY_URL, input.gatewayUrl.replace(/\/$/, ''));
+  if (input.apiKey) await upsertSecret(projectId, WHATSAPP_GATEWAY_API_KEY, input.apiKey);
+  await upsertSecret(projectId, WHATSAPP_ACCOUNT_ID, input.accountId);
+  await upsertSecret(projectId, WHATSAPP_ACCOUNT_PHONE, input.phoneNumber ?? '');
+  await upsertSecret(projectId, WHATSAPP_ACCOUNT_NAME, input.displayName ?? '');
+  if (input.webhookSecret) {
+    await upsertSecret(projectId, WHATSAPP_WEBHOOK_SECRET, input.webhookSecret);
+  }
+  await upsertSecret(projectId, WHATSAPP_WEBHOOK_ENDPOINT_ID, input.webhookEndpointId ?? '');
+
+  if (previous?.accountId && previous.accountId !== input.accountId) {
+    await db
+      .delete(chatInstalls)
+      .where(
+        and(
+          eq(chatInstalls.platform, 'whatsapp'),
+          eq(chatInstalls.projectId, projectId),
+          eq(chatInstalls.workspaceId, previous.accountId),
+        ),
+      );
+  }
+  // A gateway connection may only drive one project at a time.
+  await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'whatsapp'), eq(chatInstalls.workspaceId, input.accountId)));
+  await db
+    .insert(chatInstalls)
+    .values({ platform: 'whatsapp', workspaceId: input.accountId, projectId })
+    .onConflictDoNothing({
+      target: [chatInstalls.platform, chatInstalls.workspaceId, chatInstalls.projectId],
+    });
+
+  return {
+    gatewayUrl: input.gatewayUrl,
+    accountId: input.accountId,
+    phoneNumber: input.phoneNumber ?? null,
+    displayName: input.displayName ?? null,
+    webhookEndpointId: input.webhookEndpointId ?? null,
+    installedAt: new Date().toISOString(),
+  };
+}
+
+export async function loadWhatsAppInstall(
+  projectId: string,
+): Promise<WhatsAppInstallSummary | null> {
+  const accountId = await readSecret(projectId, WHATSAPP_ACCOUNT_ID);
+  if (!accountId) return null;
+  return {
+    gatewayUrl: (await readSecret(projectId, WHATSAPP_GATEWAY_URL)) ?? '',
+    accountId,
+    phoneNumber: (await readSecret(projectId, WHATSAPP_ACCOUNT_PHONE)) || null,
+    displayName: (await readSecret(projectId, WHATSAPP_ACCOUNT_NAME)) || null,
+    webhookEndpointId: (await readSecret(projectId, WHATSAPP_WEBHOOK_ENDPOINT_ID)) || null,
+    installedAt: new Date().toISOString(),
+  };
+}
+
+/** Gateway base URL + API key for server-side Executor calls. */
+export async function loadWhatsAppCredentials(
+  projectId: string,
+): Promise<{ gatewayUrl: string; apiKey: string; accountId: string } | null> {
+  const [gatewayUrl, apiKey, accountId] = await Promise.all([
+    readSecret(projectId, WHATSAPP_GATEWAY_URL),
+    readSecret(projectId, WHATSAPP_GATEWAY_API_KEY),
+    readSecret(projectId, WHATSAPP_ACCOUNT_ID),
+  ]);
+  if (!gatewayUrl || !apiKey || !accountId) return null;
+  return { gatewayUrl, apiKey, accountId };
+}
+
+export async function loadWhatsAppWebhookSecretForAccount(
+  projectId: string,
+  accountId: string,
+): Promise<string | null> {
+  const installed = await readSecret(projectId, WHATSAPP_ACCOUNT_ID);
+  if (!installed || installed !== accountId) return null;
+  return readSecret(projectId, WHATSAPP_WEBHOOK_SECRET);
+}
+
+export async function deleteWhatsAppInstall(projectId: string): Promise<void> {
+  const install = await loadWhatsAppInstall(projectId);
+  for (const name of [
+    WHATSAPP_GATEWAY_URL,
+    WHATSAPP_GATEWAY_API_KEY,
+    WHATSAPP_ACCOUNT_ID,
+    WHATSAPP_ACCOUNT_PHONE,
+    WHATSAPP_ACCOUNT_NAME,
+    WHATSAPP_WEBHOOK_SECRET,
+    WHATSAPP_WEBHOOK_ENDPOINT_ID,
+  ]) {
+    await db
+      .delete(projectSecrets)
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+  }
+  if (install?.accountId) {
+    await db
+      .delete(chatInstalls)
+      .where(
+        and(
+          eq(chatInstalls.platform, 'whatsapp'),
+          eq(chatInstalls.projectId, projectId),
+          eq(chatInstalls.workspaceId, install.accountId),
+        ),
+      );
+  }
+}
+
 export const RECALL_API_KEY = 'RECALL_API_KEY';
 
 export interface MeetInstallSummary {

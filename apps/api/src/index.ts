@@ -773,6 +773,7 @@ const {
   slackOauthApp,
   slackIdentityApp,
   emailWebhookApp,
+  whatsappWebhookApp,
   meetWebhookApp,
 } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
@@ -783,6 +784,7 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/whatsapp', whatsappWebhookApp); // /v1/webhooks/whatsapp/gateway — Kortix WhatsApp Gateway events (HMAC-signed)
 app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');

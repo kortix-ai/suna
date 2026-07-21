@@ -100,6 +100,16 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => false,
   },
   {
+    key: 'whatsapp',
+    name: 'WhatsApp',
+    description:
+      'Connect a Kortix WhatsApp Gateway number so inbound WhatsApp chats start and continue Kortix sessions, and the agent can reply. Still experimental.',
+    stability: 'experimental',
+    // Explicit opt-in: hidden unless a project enables it in Settings.
+    available: () => true,
+    platformDefault: () => false,
+  },
+  {
     key: 'meet',
     name: 'Meetings',
     description:
