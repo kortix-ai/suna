@@ -6,18 +6,26 @@ import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { upsertProjectSecret, type HarnessAuthKind, type HarnessId } from '@kortix/sdk/projects-client';
+import {
+  upsertProjectSecret,
+  type HarnessAuthKind,
+  type HarnessId,
+} from '@kortix/sdk/projects-client';
 import {
   invalidateComposerCapabilityQueries,
   refreshProjectProviderState,
   type ModelsPageRuntime,
 } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, ExternalLink } from 'lucide-react';
-import { type FormEvent, useMemo, useState } from 'react';
+import { AlertCircle, ExternalLink } from 'lucide-react';
+import { useMemo, useState, type FormEvent } from 'react';
 
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from '../utils';
-import { applyUseWithSelections, defaultUseWithHarnesses, UseWithRuntimes } from './use-with-runtimes';
+import {
+  applyUseWithSelections,
+  defaultUseWithHarnesses,
+  UseWithRuntimes,
+} from './use-with-runtimes';
 
 export function ApiKeyForm({
   projectId,
@@ -25,7 +33,6 @@ export function ApiKeyForm({
   connectionKind,
   compatibleHarnesses = [],
   runtimes,
-  onBack,
   onConnected,
 }: {
   projectId: string;
@@ -35,7 +42,6 @@ export function ApiKeyForm({
   connectionKind?: HarnessAuthKind;
   compatibleHarnesses?: HarnessId[];
   runtimes: ModelsPageRuntime[];
-  onBack: () => void;
   onConnected: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -82,17 +88,6 @@ export function ApiKeyForm({
 
   return (
     <div className="space-y-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
-        onClick={onBack}
-      >
-        <ChevronLeft className="size-3.5 shrink-0" />
-        Back
-      </Button>
-
       <form onSubmit={handleSubmit} className="bg-popover space-y-3 rounded-md border px-4 py-4">
         <div className="flex items-center gap-3">
           <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
@@ -169,7 +164,9 @@ export function ApiKeyForm({
         </Button>
       </form>
 
-      <p className="text-muted-foreground px-1 text-xs">Values are encrypted at rest (AES-256-GCM).</p>
+      <p className="text-muted-foreground px-1 text-xs">
+        Values are encrypted at rest (AES-256-GCM).
+      </p>
     </div>
   );
 }

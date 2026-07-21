@@ -4,18 +4,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
-import { deleteProjectSecret, upsertProjectSecret, type HarnessId } from '@kortix/sdk/projects-client';
+import {
+  deleteProjectSecret,
+  upsertProjectSecret,
+  type HarnessId,
+} from '@kortix/sdk/projects-client';
 import {
   invalidateComposerCapabilityQueries,
   refreshProjectProviderState,
   type ModelsPageRuntime,
 } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft } from 'lucide-react';
-import { type FormEvent, useMemo, useState } from 'react';
+import { AlertCircle } from 'lucide-react';
+import { useMemo, useState, type FormEvent } from 'react';
 
 import type { CustomFormState } from '../types';
-import { applyUseWithSelections, defaultUseWithHarnesses, UseWithRuntimes } from './use-with-runtimes';
+import {
+  applyUseWithSelections,
+  defaultUseWithHarnesses,
+  UseWithRuntimes,
+} from './use-with-runtimes';
 
 const CUSTOM_PROVIDER_SECRET_NAMES = {
   protocol: 'CUSTOM_LLM_PROTOCOL',
@@ -40,13 +48,11 @@ export function CustomEndpointForm({
   projectId,
   runtimes,
   initialProtocol = 'openai',
-  onBack,
   onDone,
 }: {
   projectId: string;
   runtimes: ModelsPageRuntime[];
   initialProtocol?: CustomFormState['protocol'];
-  onBack: () => void;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -59,7 +65,9 @@ export function CustomEndpointForm({
   });
   const [error, setError] = useState<string | null>(null);
   const compatibleHarnesses = COMPATIBLE_HARNESSES[form.protocol];
-  const [useWith, setUseWith] = useState(() => defaultUseWithHarnesses(compatibleHarnesses, runtimes));
+  const [useWith, setUseWith] = useState(() =>
+    defaultUseWithHarnesses(compatibleHarnesses, runtimes),
+  );
 
   const save = useMutation({
     mutationFn: async () => {
@@ -141,17 +149,6 @@ export function CustomEndpointForm({
 
   return (
     <div className="space-y-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
-        onClick={onBack}
-      >
-        <ChevronLeft className="size-3.5 shrink-0" />
-        Back
-      </Button>
-
       <div className="bg-popover rounded-md border px-4 py-3">
         <div className="text-foreground text-sm font-medium">Custom endpoint</div>
         <p className="text-muted-foreground mt-0.5 text-xs">
@@ -165,7 +162,11 @@ export function CustomEndpointForm({
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
             API compatibility
           </label>
-          <div className={availableProtocols.length > 1 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
+          <div
+            className={
+              availableProtocols.length > 1 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'
+            }
+          >
             {availableProtocols.map((protocol) => (
               <Button
                 key={protocol}

@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
@@ -8,13 +9,21 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { HarnessAuthKind, HarnessId } from '@kortix/sdk/projects-client';
 import type { ModelsPageConnection, ModelsPageRuntime } from '@kortix/sdk/react';
-import { Plus, Search } from 'lucide-react';
+import { ChevronLeft, Plus, Search } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { ApiKeyForm } from './forms/api-key-form';
@@ -33,11 +42,12 @@ type ConnectMethod =
   | { kind: 'anthropic_compatible' };
 
 const ROW =
-  'group bg-popover hover:bg-muted/40 flex min-h-10 w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-[color,background-color,transform] active:scale-[0.96]';
+  'group bg-popover hover:bg-secondary flex min-h-10 w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-[color,background-color,transform] active:scale-[0.96]';
 
 const OTHER_PROVIDER_IDS = new Set(
   LLM_PROVIDERS.filter(
-    (provider) => !['claude-subscription', 'codex', 'anthropic', 'openai', 'kortix'].includes(provider.id),
+    (provider) =>
+      !['claude-subscription', 'codex', 'anthropic', 'openai', 'kortix'].includes(provider.id),
   ).map((provider) => provider.id),
 );
 const OTHER_PROVIDERS = LLM_PROVIDERS.filter((provider) => OTHER_PROVIDER_IDS.has(provider.id));
@@ -126,7 +136,8 @@ export function ConnectModelModal({
       query
         ? OTHER_PROVIDERS.filter(
             (provider) =>
-              provider.label.toLowerCase().includes(query) || provider.id.toLowerCase().includes(query),
+              provider.label.toLowerCase().includes(query) ||
+              provider.id.toLowerCase().includes(query),
           )
         : OTHER_PROVIDERS,
     [query],
@@ -138,10 +149,12 @@ export function ConnectModelModal({
     tabAllowsSubscriptions &&
     (compatibleWithFilter('claude_subscription', harnessFilter) ||
       compatibleWithFilter('codex_subscription', harnessFilter));
-  const showAnthropicKey = tabAllowsApiKeys && compatibleWithFilter('anthropic_api_key', harnessFilter);
+  const showAnthropicKey =
+    tabAllowsApiKeys && compatibleWithFilter('anthropic_api_key', harnessFilter);
   const showOpenaiKey = tabAllowsApiKeys && compatibleWithFilter('openai_api_key', harnessFilter);
   const showOtherProviders = tabAllowsApiKeys && !harnessFilter;
-  const showOpenaiCompatible = tabAllowsApiKeys && compatibleWithFilter('openai_compatible', harnessFilter);
+  const showOpenaiCompatible =
+    tabAllowsApiKeys && compatibleWithFilter('openai_compatible', harnessFilter);
   // Anthropic-compatible custom endpoints are parked (2026-07-15): no harness
   // is compatible with this kind, so it is never offered in the method list —
   // see METHOD_COMPATIBLE_HARNESSES.anthropic_compatible in ./harness-method-compat.
@@ -160,7 +173,9 @@ export function ConnectModelModal({
                     providerID="anthropic"
                     label="Claude Code"
                     hint="Claude Pro, Max, Team, or Enterprise"
-                    connected={connectionFor(connections, 'claude_subscription')?.status === 'ready'}
+                    connected={
+                      connectionFor(connections, 'claude_subscription')?.status === 'ready'
+                    }
                     onClick={() => setMethod({ kind: 'claude_subscription' })}
                   />
                 </li>
@@ -231,17 +246,20 @@ export function ConnectModelModal({
                     />
                   </li>
                 ))}
-              {showOpenaiCompatible && matchesSearch('custom openai-compatible endpoint local vllm ollama') && (
-                <li>
-                  <MethodRow
-                    providerID="custom"
-                    label="OpenAI-compatible endpoint"
-                    hint="Custom base URL — OpenCode and Pi"
-                    connected={connectionFor(connections, 'openai_compatible')?.status === 'ready'}
-                    onClick={() => setMethod({ kind: 'openai_compatible' })}
-                  />
-                </li>
-              )}
+              {showOpenaiCompatible &&
+                matchesSearch('custom openai-compatible endpoint local vllm ollama') && (
+                  <li>
+                    <MethodRow
+                      providerID="custom"
+                      label="OpenAI-compatible endpoint"
+                      hint="Custom base URL — OpenCode and Pi"
+                      connected={
+                        connectionFor(connections, 'openai_compatible')?.status === 'ready'
+                      }
+                      onClick={() => setMethod({ kind: 'openai_compatible' })}
+                    />
+                  </li>
+                )}
               {query &&
                 filteredOtherProviders.length === 0 &&
                 !matchesSearch('anthropic claude api key') &&
@@ -265,7 +283,6 @@ export function ConnectModelModal({
       <ClaudeSubscriptionForm
         projectId={projectId}
         runtimes={runtimes}
-        onBack={() => setMethod(null)}
         onConnected={handleConnected}
       />
     );
@@ -274,7 +291,6 @@ export function ConnectModelModal({
       <ChatGptSubscriptionForm
         projectId={projectId}
         runtimes={runtimes}
-        onBack={() => setMethod(null)}
         onConnected={handleConnected}
       />
     );
@@ -286,7 +302,6 @@ export function ConnectModelModal({
         connectionKind="anthropic_api_key"
         compatibleHarnesses={METHOD_COMPATIBLE_HARNESSES.anthropic_api_key}
         runtimes={runtimes}
-        onBack={() => setMethod(null)}
         onConnected={handleConnected}
       />
     );
@@ -298,7 +313,6 @@ export function ConnectModelModal({
         connectionKind="openai_api_key"
         compatibleHarnesses={METHOD_COMPATIBLE_HARNESSES.openai_api_key}
         runtimes={runtimes}
-        onBack={() => setMethod(null)}
         onConnected={handleConnected}
       />
     );
@@ -309,7 +323,6 @@ export function ConnectModelModal({
         projectId={projectId}
         provider={provider}
         runtimes={runtimes}
-        onBack={() => setMethod(null)}
         onConnected={handleConnected}
       />
     ) : null;
@@ -319,20 +332,30 @@ export function ConnectModelModal({
         projectId={projectId}
         runtimes={runtimes}
         initialProtocol={method.kind === 'openai_compatible' ? 'openai' : 'anthropic'}
-        onBack={() => setMethod(null)}
         onDone={handleConnected}
       />
     );
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent  className="flex max-h-[85vh] flex-col gap-0 overflow-hidden lg:max-w-xl">
+    <Modal open={open} onOpenChange={onOpenChange} depth={2}>
+      <ModalContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden lg:max-w-2xl">
         <ModalHeader>
           <ModalTitle>Connect a model service</ModalTitle>
           <ModalDescription>Use a subscription, API key, or compatible endpoint.</ModalDescription>
         </ModalHeader>
-        <ModalBody className="overflow-y-auto">{body}</ModalBody>
+        <ModalBody className="overflow-y-auto pb-0">
+          {body}
+
+          {method && (
+            <ModalFooter className="shrink-0 p-0 sm:justify-start md:p-0">
+              <Button variant="secondary" className="gap-1" onClick={() => setMethod(null)}>
+                <ChevronLeft className="size-4 shrink-0" />
+                Back
+              </Button>
+            </ModalFooter>
+          )}
+        </ModalBody>
       </ModalContent>
     </Modal>
   );
@@ -353,7 +376,7 @@ function MethodRow({
 }) {
   return (
     <button type="button" className={ROW} onClick={onClick}>
-      <ProviderLogo providerID={providerID} name={label} size="default" />
+      <ProviderLogo providerID={providerID} name={label} size="large" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">{label}</span>

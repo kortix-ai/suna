@@ -76,7 +76,6 @@ function renderForm(onConnected: () => void = () => {}) {
       ReactModule.createElement(ClaudeSubscriptionForm, {
         projectId: 'proj_1',
         runtimes: RUNTIMES,
-        onBack: () => {},
         onConnected,
       }),
     ),

@@ -123,6 +123,17 @@ describe('ConnectModalHost — the one root-mounted connect surface', () => {
     expect(screen.getByText('Connect a model service')).toBeDefined();
   });
 
+  test('renders above the root-level customize modal', () => {
+    useConnectModalStore.setState({ isOpen: true });
+    render(ReactModule.createElement(ConnectModalHost));
+
+    const dialog = screen.getByRole('dialog');
+    const overlay = dialog.previousElementSibling as HTMLElement | null;
+
+    expect(dialog.style.zIndex).toBe('10019');
+    expect(overlay?.style.zIndex).toBe('10018');
+  });
+
   test('a connectKind opens straight into that method\'s form, skipping the method list', () => {
     useConnectModalStore.setState({ isOpen: true, connectKind: 'anthropic_api_key' });
     render(ReactModule.createElement(ConnectModalHost));
@@ -131,6 +142,22 @@ describe('ConnectModalHost — the one root-mounted connect surface', () => {
     // The method list itself never rendered — jumped straight to the
     // Anthropic API-key form.
     expect(screen.queryByText('Claude via your own API key')).toBeNull();
+  });
+
+  test('the footer Back button returns from a form to the method list', () => {
+    useConnectModalStore.setState({ isOpen: true, connectKind: 'anthropic_api_key' });
+    render(ReactModule.createElement(ConnectModalHost));
+
+    // On a form: no method list, but the footer Back button is there.
+    expect(screen.queryByText('Claude via your own API key')).toBeNull();
+
+    act(() => {
+      screen.getByText('Back').click();
+    });
+
+    // Back on the method list — and the footer Back button is gone with it.
+    expect(screen.getByText('Claude via your own API key')).toBeDefined();
+    expect(screen.queryByText('Back')).toBeNull();
   });
 
   test('renders nothing outside a project route — every migrated call site is project-scoped', () => {
