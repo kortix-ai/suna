@@ -354,16 +354,63 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
         ? { model: model || fallback }
         : {}),
     })
-    // Direct API keys are consumed natively by codex-acp. Subscription auth is
-    // intentionally different: CODEX_AUTH_JSON stays server-side where the
-    // Kortix gateway can refresh it, and the adapter authenticates to that
-    // gateway with the sandbox token below.
+    // Direct API keys are consumed natively by codex-acp. Subscription auth
+    // (below) is intentionally different: CODEX_AUTH_JSON stays server-side
+    // where the Kortix gateway can refresh it, and the adapter authenticates
+    // to a dedicated relay with the per-session executor token instead.
     if (authKind === 'native_config') {
       const direct = {
         ...native,
         ...(Object.keys(profileConfig).length ? { CODEX_CONFIG: JSON.stringify(profileConfig) } : {}),
       }
       return Object.keys(direct).length ? direct : undefined
+    }
+    if (authKind === 'codex_subscription') {
+      // CODEX_AUTH_JSON is NEVER read here, and must not be: the user's OAuth
+      // blob is resolved + refreshed entirely server-side (resolveCodexCredential,
+      // apps/api/src/llm-gateway/credentials/codex.ts) and the access token
+      // never leaves the API process. The adapter is pointed at a dedicated
+      // Kortix-hosted relay — /router/codex-subscription — NOT the generic
+      // Kortix-managed-key `/router/openai` proxy used by the default branch
+      // below: that path injects KORTIX'S OWN OPENAI_API_KEY/OPENROUTER_API_KEY
+      // and bills Kortix credits at 1.2x, completely bypassing a connected
+      // subscription (see docs/specs/2026-07-21-codex-billing-leak-verification.md).
+      // /router/codex-subscription instead resolves the CALLER's own Codex
+      // credential and bills nothing.
+      //
+      // Authenticates with the per-session EXECUTOR token (kortix_pat_…,
+      // carries the launching user's project/user id — see session-sandbox.ts's
+      // KORTIX_CLI_TOKEN/KORTIX_EXECUTOR_TOKEN), never the bare sandbox token
+      // (KORTIX_TOKEN, kortix_sb_…): the router route only accepts an account
+      // token that resolves to a projectId/userId, and a sandbox token cannot
+      // — see codex-subscription.ts's validateAccountToken check.
+      const executorToken = (env.KORTIX_EXECUTOR_TOKEN || env.KORTIX_CLI_TOKEN)?.trim()
+      if (!apiUrl || !executorToken) {
+        // Fail loudly instead of silently falling through to the generic
+        // Kortix-managed-gateway default below — that silent fallback IS the
+        // billing leak this branch exists to close, so it must never happen
+        // for a subscription-authenticated session, missing credential or not.
+        throw new Error(
+          'Codex subscription auth requires KORTIX_API_URL and a session executor token ' +
+            '(KORTIX_EXECUTOR_TOKEN/KORTIX_CLI_TOKEN); refusing to fall back to the ' +
+            'Kortix-managed gateway key for a subscription-authenticated Codex session.',
+        )
+      }
+      return {
+        ...native,
+        NO_BROWSER: '1',
+        CODEX_CONFIG: JSON.stringify(withModel(runtimeModel, 'openai/gpt-5.4')),
+        DEFAULT_AUTH_REQUEST: JSON.stringify({
+          methodId: 'gateway',
+          _meta: {
+            gateway: {
+              baseUrl: `${apiUrl}/router/codex-subscription`,
+              providerName: 'Kortix Codex Subscription',
+              headers: { Authorization: `Bearer ${executorToken}` },
+            },
+          },
+        }),
+      }
     }
     if (env.CODEX_API_KEY || env.OPENAI_API_KEY) {
       const direct = {

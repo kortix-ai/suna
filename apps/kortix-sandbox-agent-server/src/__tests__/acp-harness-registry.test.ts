@@ -202,16 +202,43 @@ describe('ACP harness registry', () => {
     ).toBeUndefined();
   });
 
-  test('routes Codex subscription auth through the refresh-capable Kortix gateway', () => {
+  test('routes Codex subscription auth through the dedicated subscription relay, using the executor token — never the sandbox token or the generic Kortix-managed gateway', () => {
+    // Regression test for the billing leak fixed in
+    // docs/specs/2026-07-21-codex-billing-leak-verification.md: a
+    // codex_subscription session used to fall through to the generic
+    // `/router/openai` Kortix-managed-key path (bearer = the sandbox token),
+    // which injects KORTIX'S OWN key and bills Kortix credits, bypassing the
+    // user's subscription entirely. It must now hit `/router/codex-subscription`
+    // authenticated with the per-session EXECUTOR token instead.
     const registry = createAcpHarnessRegistry({
+      KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
       CODEX_AUTH_JSON: '{"openai":{"type":"oauth"}}',
       KORTIX_API_URL: 'https://api.example.test/v1',
       KORTIX_TOKEN: 'sandbox-token',
+      KORTIX_EXECUTOR_TOKEN: 'kortix_pat_executor-token',
     });
-    expect(registry.get('codex')?.launch.env).toMatchObject({
-      NO_BROWSER: '1',
-      DEFAULT_AUTH_REQUEST: expect.stringContaining('Kortix Gateway'),
-    });
+    const env = registry.get('codex')?.launch.env;
+    expect(env).toMatchObject({ NO_BROWSER: '1' });
+    expect(env?.DEFAULT_AUTH_REQUEST).toContain('/router/codex-subscription');
+    expect(env?.DEFAULT_AUTH_REQUEST).toContain('kortix_pat_executor-token');
+    expect(env?.DEFAULT_AUTH_REQUEST).not.toContain('/router/openai');
+    expect(env?.DEFAULT_AUTH_REQUEST).not.toContain('sandbox-token');
+    expect(env?.DEFAULT_AUTH_REQUEST).not.toContain('Kortix Gateway');
+    // The raw subscription blob must never be embedded in the outbound auth
+    // config — it stays server-side, resolved via resolveCodexCredential.
+    expect(env?.DEFAULT_AUTH_REQUEST).not.toContain('oauth');
+  });
+
+  test('a codex_subscription session with no executor token fails loudly instead of silently falling back to the Kortix-managed gateway key', () => {
+    expect(() =>
+      resolveAcpHarnessLaunchEnv('codex', {
+        KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
+        CODEX_AUTH_JSON: '{"openai":{"type":"oauth"}}',
+        KORTIX_API_URL: 'https://api.example.test/v1',
+        KORTIX_TOKEN: 'sandbox-token',
+        // No KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN.
+      }),
+    ).toThrow(/executor token/);
   });
 
   test('routes Codex through the scoped Kortix Responses gateway by default', () => {

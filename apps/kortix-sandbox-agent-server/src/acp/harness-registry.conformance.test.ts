@@ -143,26 +143,58 @@ describe('env-based auth: descriptor authKinds reach the right env names (WS2-P4
     expect(merged.DEFAULT_AUTH_REQUEST).toBeUndefined()
   })
 
-  it('codex + codex_subscription: CODEX_AUTH_JSON does NOT reach the adapter directly — it routes through the Kortix gateway (server-side refresh) instead', () => {
+  it('codex + codex_subscription: CODEX_AUTH_JSON does NOT reach the adapter directly — it routes through the dedicated subscription relay (server-side refresh), authenticated with the executor token, NEVER the sandbox token or the generic Kortix-managed gateway', () => {
     // Pin what IS, not the symmetric-with-claude behavior one might expect:
     // the code comment at harness-registry.ts's codex branch is explicit that
     // subscription auth is "intentionally different" — CODEX_AUTH_JSON stays
-    // server-side (the adapter authenticates to the Kortix gateway with the
-    // sandbox token instead of ever seeing the subscription blob).
+    // server-side (the adapter authenticates to /router/codex-subscription,
+    // which resolves the user's OWN Codex credential server-side, instead of
+    // ever seeing the subscription blob itself).
+    //
+    // This also regression-tests the billing leak fixed in
+    // docs/specs/2026-07-21-codex-billing-leak-verification.md: earlier this
+    // branch fell through to the generic `/router/openai` Kortix-managed-key
+    // path authenticated with the bare SANDBOX token — which injects Kortix's
+    // own OPENAI_API_KEY/OPENROUTER_API_KEY and bills Kortix credits,
+    // bypassing the connected subscription entirely. The dedicated relay only
+    // accepts a project-scoped EXECUTOR token (kortix_pat_…), never the
+    // sandbox token, so that managed-key path is unreachable from here.
     expect(HARNESSES.codex.authKinds).toContain('codex_subscription')
     const { isolated, launchEnvOverride, merged } = mergedLaunchEnv('codex', {
       KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
       CODEX_AUTH_JSON: 'super-secret-subscription-blob',
       KORTIX_API_URL: 'https://api.example.com',
       KORTIX_TOKEN: 'sandbox-token',
+      KORTIX_EXECUTOR_TOKEN: 'kortix_pat_executor-token',
     })
     // isolateHarnessAuthEnv keeps it (it's the selected kind's own cred)...
     expect(isolated.CODEX_AUTH_JSON).toBe('super-secret-subscription-blob')
-    // ...but resolveAcpHarnessLaunchEnv routes through the gateway instead of
-    // forwarding it, and the gateway request never embeds the raw blob.
-    expect(launchEnvOverride?.DEFAULT_AUTH_REQUEST).toContain('Kortix Gateway')
+    // ...but resolveAcpHarnessLaunchEnv routes through the dedicated
+    // subscription relay instead of forwarding it, and that gateway request
+    // never embeds the raw blob.
+    expect(launchEnvOverride?.DEFAULT_AUTH_REQUEST).toContain('/router/codex-subscription')
     expect(launchEnvOverride?.DEFAULT_AUTH_REQUEST).not.toContain('super-secret-subscription-blob')
-    expect(merged.DEFAULT_AUTH_REQUEST).toContain('sandbox-token')
+    // Authenticated with the executor (account) token, never the bare
+    // sandbox token — the generic Kortix-managed `/router/openai` proxy
+    // (Mode 1, billed at KORTIX_MARKUP) is never reached for this kind.
+    expect(merged.DEFAULT_AUTH_REQUEST).toContain('kortix_pat_executor-token')
+    expect(merged.DEFAULT_AUTH_REQUEST).not.toContain('"Authorization":"Bearer sandbox-token"')
+    expect(merged.DEFAULT_AUTH_REQUEST).not.toContain('/router/openai')
+    expect(merged.DEFAULT_AUTH_REQUEST).not.toContain('Kortix Gateway')
+  })
+
+  it('codex + codex_subscription with no executor token: fails loudly instead of silently falling back to the Kortix-managed gateway key', () => {
+    expect(() =>
+      resolveAcpHarnessLaunchEnv('codex', isolateHarnessAuthEnv({
+        KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
+        CODEX_AUTH_JSON: 'super-secret-subscription-blob',
+        KORTIX_API_URL: 'https://api.example.com',
+        KORTIX_TOKEN: 'sandbox-token',
+        // No KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN — the executor-token
+        // mint is best-effort (session-sandbox.ts), so this is a real
+        // reachable state, not a contrived one.
+      })),
+    ).toThrow(/executor token/)
   })
 
   it('claude + native_config: only the native config dir env is injected, no provider credential', () => {
