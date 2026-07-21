@@ -28,8 +28,79 @@ function choiceValue(choice: Record<string, unknown>, index: number): string {
   return String(choice.value ?? choice.id ?? index);
 }
 
+/** `choiceLabel`'s raw-fallback tiers (`value`/`id`, when neither `name` nor
+ *  `label` is present) can be a bare protocol token — e.g. a bare `gpt-5.4-mini`
+ *  or `dontAsk`. Real captured payloads (`kortix.acp_session_envelopes`)
+ *  always carry a proper `name`, so this rarely fires — it's a defensive
+ *  floor, never applied to `name`/`label` themselves (those are the
+ *  adapter's OWN authored display text and must render verbatim, never
+ *  reformatted — inventing/adjusting a name the harness chose would be
+ *  exactly the kind of untruthful enrichment this file must avoid). */
+function humanizeRawToken(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 function choiceLabel(choice: Record<string, unknown>): string {
-  return String(choice.name ?? choice.label ?? choice.value ?? choice.id ?? '');
+  const named = choice.name ?? choice.label;
+  if (named != null) return String(named);
+  const raw = choice.value ?? choice.id;
+  return raw != null ? humanizeRawToken(String(raw)) : '';
+}
+
+/** Secondary detail line for a choice, when the adapter sends one — e.g.
+ *  claude-agent-acp's real `model` choices ("Sonnet 5 · Efficient for
+ *  routine tasks · $3/$15 per Mtok") and `mode` choices ("Standard behavior,
+ *  prompts for dangerous operations"), verified live
+ *  (`kortix.acp_session_envelopes`, local DB, 2026-07-22). Previously
+ *  fetched over the wire and silently dropped — `choiceLabel` only ever read
+ *  `name`. `null` when the choice carries none (e.g. claude's `effort`
+ *  choices), so the popover row falls back to its single-line layout. */
+function choiceDescription(choice: Record<string, unknown>): string | null {
+  const description = choice.description;
+  return typeof description === 'string' && description.length > 0 ? description : null;
+}
+
+/**
+ * De-duplicates a choice list by its EFFECTIVE selectable value
+ * (`value ?? id`), first occurrence wins — a choice with neither is never
+ * deduped against another (nothing meaningful to compare; each renders under
+ * its own positional key instead, same as `choiceValue`'s own index
+ * fallback).
+ *
+ * *** BUG THIS FIXES *** (real captured payload, `kortix.acp_session_envelopes`,
+ * local DB, 2026-07-22, session `feb77a68-3f5a-4fef-b727-876aec4a1457`):
+ * claude-agent-acp's real `model` config option sometimes advertises a 5th
+ * choice — `{name: "default", value: "default", description: "Custom
+ * model"}` — that collides with the FIRST choice's `value: "default"`
+ * ("Default (recommended)"). This is the adapter's own payload, not a bug in
+ * how this app merges/caches it (there is no cache-vs-fallback merge in this
+ * path at all — `resolveHarnessModelOption` returns EITHER the cache OR the
+ * fallback, never both). React key-clashed on the shared `key={value}`
+ * (`Encountered two children with the same key, "default"`), and the raw
+ * lowercase "default" second entry read as a stray, unlabeled duplicate.
+ * Dropping the SECOND occurrence loses nothing functionally: two choices
+ * sharing one `value` are indistinguishable once selected — `onChange(value)`
+ * sends the identical `configId`/`value` pair to the harness either way, so
+ * there was never a way to tell which one the user meant.
+ */
+export function dedupeConfigChoices<T extends Record<string, unknown>>(choices: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const choice of choices) {
+    const key = choice.value != null ? String(choice.value) : choice.id != null ? String(choice.id) : null;
+    if (key !== null) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(choice);
+  }
+  return out;
 }
 
 /** A single non-model, `select`-typed ACP session config option, rendered in
@@ -47,7 +118,11 @@ export function AcpConfigOptionPill({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const choices = option.options ?? [];
+  // See `dedupeConfigChoices`'s doc comment — the harness's own advertised
+  // list can contain a genuine value collision (verified live); the popover
+  // (`choices.map` below, keyed by `value`) must never render two entries
+  // under the same React key.
+  const choices = dedupeConfigChoices(option.options ?? []);
   if (choices.length === 0) return null;
   const currentRaw = option.currentValue;
   const currentChoice = choices.find(
@@ -109,6 +184,7 @@ export function AcpConfigOptionPill({
             {choices.map((choice, index) => {
               const value = choiceValue(choice, index);
               const label = choiceLabel(choice);
+              const description = choiceDescription(choice);
               const selected = value === String(currentRaw ?? '');
               return (
                 <CommandItem
@@ -120,7 +196,16 @@ export function AcpConfigOptionPill({
                     setOpen(false);
                   }}
                 >
-                  <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+                  {description ? (
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <div className="truncate text-sm leading-tight">{label}</div>
+                      <p className="text-muted-foreground/70 mt-0.5 truncate text-xs leading-snug">
+                        {description}
+                      </p>
+                    </div>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+                  )}
                   {selected ? <Check className="text-foreground size-4 shrink-0" /> : null}
                 </CommandItem>
               );
@@ -167,7 +252,10 @@ export function AcpConfigOptionSegment({
   onChange: (value: unknown) => Promise<unknown> | unknown;
   disabled?: boolean;
 }) {
-  const choices = option.options ?? [];
+  // See `dedupeConfigChoices`'s doc comment on the pill above — same
+  // duplicate-value hazard applies here (`choices.map` below is also keyed
+  // by `value`).
+  const choices = dedupeConfigChoices(option.options ?? []);
   const currentValue = String(option.currentValue ?? '');
   const [optimisticValue, setOptimisticValue] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);

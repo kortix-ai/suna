@@ -18,7 +18,7 @@ delete (globalThis as any).document;
 GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
-const { act, cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, screen, within } = await import('@testing-library/react');
 const { TooltipProvider } = await import('@/components/ui/tooltip');
 
 let toastCalls: unknown[][] = [];
@@ -29,7 +29,7 @@ mock.module('@/components/ui/toast', () => ({
   successToast: () => {},
 }));
 
-const { AcpConfigOptionPill, AcpConfigOptionSegment } = await import('./acp-config-option-pills');
+const { AcpConfigOptionPill, AcpConfigOptionSegment, dedupeConfigChoices } = await import('./acp-config-option-pills');
 const { COMPOSER_PILL_TRIGGER_CLASS } = await import('./composer-pill');
 
 afterEach(() => {
@@ -151,6 +151,154 @@ describe('AcpConfigOptionPill — select-typed option', () => {
     );
 
     expect(screen.getByText('Default (recommended)')).toBeTruthy();
+  });
+
+  // Regression (owner-reported live React error, 2026-07-22): "Encountered
+  // two children with the same key, 'default'" — traced to a REAL captured
+  // claude-agent-acp payload (`kortix.acp_session_envelopes`, local DB,
+  // session `feb77a68-3f5a-4fef-b727-876aec4a1457`) whose `model` option
+  // advertises a 5th choice, `{name: "default", value: "default",
+  // description: "Custom model"}`, colliding with the FIRST choice's
+  // `value: "default"` ("Default (recommended)"). NOT a cache/fallback merge
+  // bug — this is the adapter's own single advertised list; see
+  // `dedupeConfigChoices`'s doc comment.
+  test('a real duplicate-value payload (claude "Custom model" collision) renders exactly one entry per value, no duplicate keys', async () => {
+    const consoleErrorCalls: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = ((...args: unknown[]) => {
+      consoleErrorCalls.push(args);
+    }) as typeof console.error;
+    try {
+      renderWithTooltip(
+        <AcpConfigOptionPill
+          option={{
+            id: 'model',
+            name: 'Model',
+            type: 'select',
+            category: 'model',
+            currentValue: 'sonnet',
+            options: [
+              { name: 'Default (recommended)', value: 'default', description: 'Sonnet 5 · Efficient for routine tasks' },
+              { name: 'Sonnet', value: 'sonnet', description: 'Sonnet 5 · Efficient for routine tasks' },
+              { name: 'Opus', value: 'opus', description: 'Opus 4.8 · Best for everyday, complex tasks' },
+              { name: 'Haiku', value: 'haiku', description: 'Haiku 4.5 · Fastest for quick answers' },
+              { name: 'default', value: 'default', description: 'Custom model' },
+            ],
+          }}
+          onChange={() => {}}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+      await flush();
+
+      // Exactly one "Default (recommended)" — the FIRST occurrence of
+      // value:"default" — and the malformed second "default" entry is gone.
+      expect(screen.getAllByText('Default (recommended)')).toHaveLength(1);
+      expect(screen.queryByText('default')).toBeNull();
+      // 4 real choices, not 5.
+      expect(screen.getAllByRole('option')).toHaveLength(4);
+
+      const duplicateKeyWarning = consoleErrorCalls.some((call) =>
+        call.some((arg) => typeof arg === 'string' && arg.includes('same key')),
+      );
+      expect(duplicateKeyWarning).toBe(false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test('a choice with a description renders it as a secondary line under the label', async () => {
+    renderWithTooltip(
+      <AcpConfigOptionPill
+        option={{
+          id: 'model',
+          name: 'Model',
+          type: 'select',
+          currentValue: 'opus',
+          options: [
+            { name: 'Opus', value: 'opus', description: 'Opus 4.8 · Best for everyday, complex tasks · $5/$25 per Mtok' },
+          ],
+        }}
+        onChange={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+
+    // Scoped to the popover listbox — the trigger ALSO shows "Opus" as its
+    // current-value label, so an unscoped query would match both.
+    const listbox = within(screen.getByRole('listbox'));
+    expect(listbox.getByText('Opus')).toBeTruthy();
+    expect(listbox.getByText('Opus 4.8 · Best for everyday, complex tasks · $5/$25 per Mtok')).toBeTruthy();
+  });
+
+  test('a choice with no description keeps the single-line layout (e.g. claude effort choices)', async () => {
+    renderWithTooltip(
+      <AcpConfigOptionPill
+        option={{ id: 'effort', name: 'Effort', type: 'select', currentValue: 'low', options: [{ name: 'Low', value: 'low' }] }}
+        onChange={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+
+    expect(within(screen.getByRole('listbox')).getByText('Low')).toBeTruthy();
+  });
+
+  // Defensive floor (real captured payloads always carry a `name`, so this
+  // rarely fires) — a choice missing BOTH `name` and `label` must never
+  // render its raw `value`/`id` token verbatim (e.g. a bare "dont-ask" or
+  // "fast_mode"); it gets title-cased/word-split instead. `name`/`label`
+  // themselves are NEVER reformatted — only this raw fallback tier.
+  test('a choice with no name/label humanizes its raw value instead of rendering it verbatim', async () => {
+    renderWithTooltip(
+      <AcpConfigOptionPill
+        option={{ id: 'mode', name: 'Mode', type: 'select', currentValue: 'dont_ask', options: [{ value: 'dont_ask' }] }}
+        onChange={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+
+    expect(within(screen.getByRole('listbox')).getByText('Dont Ask')).toBeTruthy();
+    expect(within(screen.getByRole('listbox')).queryByText('dont_ask')).toBeNull();
+  });
+});
+
+describe('dedupeConfigChoices', () => {
+  test('first occurrence wins on a value collision', () => {
+    const choices = [
+      { name: 'Default (recommended)', value: 'default' },
+      { name: 'Sonnet', value: 'sonnet' },
+      { name: 'default', value: 'default', description: 'Custom model' },
+    ];
+    expect(dedupeConfigChoices(choices)).toEqual([
+      { name: 'Default (recommended)', value: 'default' },
+      { name: 'Sonnet', value: 'sonnet' },
+    ]);
+  });
+
+  test('falls back to id when value is absent', () => {
+    const choices = [{ id: 'fast', label: 'Fast' }, { id: 'fast', label: 'duplicate id' }];
+    expect(dedupeConfigChoices(choices)).toEqual([{ id: 'fast', label: 'Fast' }]);
+  });
+
+  test('choices with neither value nor id are never deduped against each other', () => {
+    const choices = [{ label: 'A' }, { label: 'B' }];
+    expect(dedupeConfigChoices(choices)).toEqual(choices);
+  });
+
+  test('no collision: every choice passes through unchanged, same order', () => {
+    const choices = [{ value: 'a' }, { value: 'b' }, { value: 'c' }];
+    expect(dedupeConfigChoices(choices)).toEqual(choices);
+  });
+
+  test('empty input returns empty output', () => {
+    expect(dedupeConfigChoices([])).toEqual([]);
   });
 });
 
