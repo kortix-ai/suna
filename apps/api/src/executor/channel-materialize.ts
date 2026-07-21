@@ -30,6 +30,7 @@ function channelSpec(
   platform: ChannelPlatform,
   slug: string,
   name = channelLabel(platform),
+  baseUrl: string | null = null,
 ): ConnectorSpec {
   return {
     slug,
@@ -47,7 +48,7 @@ function channelSpec(
     url: null,
     transport: null,
     endpoint: null,
-    baseUrl: null,
+    baseUrl,
     platform,
     spec: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
@@ -120,7 +121,11 @@ export async function synthesizeChannelConnectors(
     const whatsappSlug = channelDefaultSlug('whatsapp');
     if (!channelAlreadyDeclared(declared, 'whatsapp', whatsappSlug)) {
       const install = await loadWhatsAppInstall(projectId).catch(() => null);
-      if (install) specs.push(channelSpec('whatsapp', whatsappSlug));
+      if (install) {
+        specs.push(
+          channelSpec('whatsapp', whatsappSlug, channelLabel('whatsapp'), install.gatewayUrl),
+        );
+      }
     }
   }
 
