@@ -22,6 +22,7 @@ import {
   isStorageSecurityErrorNoise,
   isTronLinkProxyNoise,
   isUnresolvableStackOverflowNoise,
+  isUserscriptManagerNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -1970,6 +1971,187 @@ test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT pr
       `expected non-TronLink Proxy message "${value}" to keep reporting`,
     )
   }
+})
+
+// Reproduces Better Stack error
+// 2249441898cd4d7bb679841d57b829b8863c9a4dc1675a88075d794cfd3cd600
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-21 05:08 UTC. A Tampermonkey/Violentmonkey userscript
+// (`YoutubeDL.user.js`) `@match`ing `*://*/*` ran on the marketing homepage
+// (`https://kortix.com/`, Chrome 150 / Windows 10). The user script's own
+// logic called `JSON.parse()` on an `undefined` value, throwing
+// `SyntaxError: "undefined" is not valid JSON` as an unhandled promise
+// rejection, captured by Sentry's `GlobalHandlers` `onunhandledrejection`.
+// The throw's frame is the userscript-manager's synthetic
+// `app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-…` wrapper page
+// (fn `?`, line 1614) plus a `<anonymous>` `JSON.parse` frame — never
+// first-party app code. The `app:///userscript.html` prefix is specific to
+// userscript-manager wrappers and never appears on a first-party
+// `app:///_next/…` bundle frame or a de-minified `apps/web/src/…` source
+// path, so anchoring on it is conservative: a real first-party
+// `JSON.parse(undefined)` regression throws inside an app chunk (or a
+// de-minified `apps/web/src/…` frame) and is never matched.
+const USERSCRIPT_MANAGER_FRAME =
+  'app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-e3a7-42b9-bdd1-9c21ea14f6b4'
+
+const USERSCRIPT_MANAGER_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: USERSCRIPT_MANAGER_FRAME, function: '?' },
+  { filename: '<anonymous>', function: 'JSON.parse' },
+]
+
+test('classifies the userscript-manager JSON.parse SyntaxError as noise', () => {
+  assert.equal(
+    isUserscriptManagerNoise({
+      message: '"undefined" is not valid JSON',
+      frames: USERSCRIPT_MANAGER_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('classifies a userscript-manager event from the filename alone (window.onerror)', () => {
+  assert.equal(
+    isUserscriptManagerNoise({
+      message: '"undefined" is not valid JSON',
+      filename: USERSCRIPT_MANAGER_FRAME,
+    }),
+    true,
+  )
+})
+
+test('classifies userscript-manager frames with different script names/ids as noise', () => {
+  // The `app:///userscript.html` prefix is the stable anchor; the script name
+  // and id vary per installed user script, so a different script must still
+  // classify.
+  for (const filename of [
+    'app:///userscript.html?name=AdBlockerPro.user.js&id=abc123',
+    'app:///userscript.html?name=dark-mode.user.js&id=00000000-0000-0000-0000-000000000000',
+    'app:///userscript.html',
+  ]) {
+    assert.equal(
+      isUserscriptManagerNoise({ message: 'anything', filename }),
+      true,
+      `expected ${filename} to be userscript-manager noise`,
+    )
+  }
+})
+
+test('suppresses the userscript-manager JSON.parse Sentry event', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            type: 'SyntaxError',
+            value: '"undefined" is not valid JSON',
+            stacktrace: { frames: USERSCRIPT_MANAGER_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the userscript-manager JSON.parse unhandled rejection from the browser (window.onerror)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Unhandled promise rejection: "undefined" is not valid JSON',
+      filename: USERSCRIPT_MANAGER_FRAME,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real first-party JSON.parse SyntaxError from app code', () => {
+  // A genuine first-party `JSON.parse(undefined)` regression throws the SAME
+  // `SyntaxError: "undefined" is not valid JSON` wording but inside an
+  // `app:///_next/…` chunk or a de-minified `apps/web/src/…` frame — never from
+  // the userscript-manager wrapper. It must keep reporting so the call site can
+  // be found + fixed.
+  const realAppFrames: Array<{ filename: unknown; function: unknown }> = [
+    { filename: 'app:///_next/static/chunks/parse-helpers.js', function: 'parseBody' },
+    { filename: 'app:///apps/web/src/lib/api-client.ts', function: 'safeParse' },
+    { filename: 'https://app.kortix.com/_next/static/chunks/json.js', function: 'revive' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'apps/web/src/lib/store.ts' }]]) {
+    assert.equal(
+      isUserscriptManagerNoise({
+        message: '"undefined" is not valid JSON',
+        frames,
+      }),
+      false,
+      `expected JSON.parse SyntaxError from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects' },
+        exception: {
+          values: [
+            {
+              type: 'SyntaxError',
+              value: '"undefined" is not valid JSON',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting JSON.parse SyntaxError from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party/chunk filename keeps reporting too.
+  for (const filename of [
+    'app:///_next/static/chunks/json.js',
+    'app:///apps/web/src/lib/api-client.ts',
+    'https://app.kortix.com/_next/static/chunks/json.js',
+  ]) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message: '"undefined" is not valid JSON',
+        filename,
+      }),
+      false,
+      `expected runtime gate to keep reporting JSON.parse SyntaxError from ${filename}`,
+    )
+  }
+})
+
+test('does NOT suppress a userscript-shaped event that is NOT from a userscript-manager frame', () => {
+  // No userscript-manager frame anchor → can't confirm the throw originated in
+  // a user script; keep reporting rather than swallow a possible app bug.
+  assert.equal(
+    isUserscriptManagerNoise({ message: '"undefined" is not valid JSON' }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: '"undefined" is not valid JSON' }],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT match the userscript-manager prefix against a first-party _next bundle frame', () => {
+  // `app:///_next/static/…` has a single slash after `app:`; the userscript
+  // wrapper is `app:///userscript.html` (empty host). They must never collide.
+  assert.equal(
+    isUserscriptManagerNoise({
+      message: 'x',
+      filename: 'app:///_next/static/chunks/userscript.html.js',
+    }),
+    false,
+  )
+  assert.equal(
+    isUserscriptManagerNoise({
+      message: 'x',
+      frames: [{ filename: 'app:///_next/static/chunks/userscript-helper.js' }],
+    }),
+    false,
+  )
 })
 
 // Reproduces Better Stack error e6a45fe4999b5a60f5cd64fd4153b18c2beebfc4409a3d54da456a4bbc24e5d2

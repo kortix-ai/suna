@@ -400,6 +400,52 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/embed\/embed\.js$/,
 ] as const;
 
+// Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
+// FireMonkey) injected-script noise. A userscript-manager extension wraps each
+// injected user script in a synthetic `app:///userscript.html?name=<Script>.user.js&id=<uuid>`
+// page so it can run in an isolated sandbox with privileged APIs
+// (`GM_*` / `GM_` / `unsafeWindow`). The user script executes on every page
+// whose URL matches its `@match` / `@include` rules (a `YoutubeDL.user.js`
+// download-helper script `@match`s `*://*/*` and runs on `https://kortix.com/`).
+// When the script's own logic is buggy — e.g. it calls `JSON.parse()` on a
+// value that resolved to `undefined` (an attribute / text node it expected to
+// find was absent on our page) — it throws `SyntaxError: "undefined" is not
+// valid JSON` as an UNHANDLED promise rejection inside the userscript wrapper.
+// Sentry's `GlobalHandlers` `onunhandledrejection` integration captures it,
+// and because the throw's frame is the synthetic `app:///userscript.html?…`
+// source (NOT an `app:///_next/…` bundle frame and NOT a de-minified
+// `apps/web/src/…` frame), it leaks to Better Stack. Better Stack pattern
+// 2249441898cd4d7bb679841d57b829b8863c9a4dc1675a88075d794cfd3cd600
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-21 05:08 UTC, `SyntaxError: "undefined" is not valid JSON`,
+// call site `JSON.parse` at `<anonymous>`, frames
+// `app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-…` (fn `?`, line 1614)
+// + `<anonymous>` (`JSON.parse`), mechanism `auto.browser.global_handlers.
+// onunhandledrejection`, request URL `https://kortix.com/`, Chrome 150 / Win 10.
+// The throw is in the THIRD-PARTY user script's own logic, never in first-party
+// app code: `app:///userscript.html` is the userscript-manager's synthetic
+// wrapper page (it has the same `app:///` empty-host origin shape as the other
+// injected/extension sources above), and `JSON.parse` is a built-in. Our app
+// never runs from a `userscript.html` frame.
+//
+// The `app:///userscript.html` prefix is specific to userscript-manager
+// wrappers and never appears on a first-party `app:///_next/…` bundle frame or
+// a de-minified `apps/web/src/…` source path (those carry `_next/static/` or
+// the `apps/web/src/` path), so anchoring on it is conservative. A real
+// first-party `JSON.parse(undefined)` regression throws inside an
+// `app:///_next/…` chunk (or a de-minified `apps/web/src/…` frame) and is never
+// matched. This mirrors `isInjectedAppSource` / `isExtensionSource`: a
+// definitive third-party-injected-source anchor that drops the event.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there would swallow a
+// real first-party `JSON.parse` SyntaxError; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const USERSCRIPT_MANAGER_FRAME_PATTERN = /^app:\/\/\/userscript\.html\b/;
+
+function isUserscriptManagerInjectedSource(filename: unknown): boolean {
+  return USERSCRIPT_MANAGER_FRAME_PATTERN.test(normalizeString(filename));
+}
+
 // TronLink (Tron blockchain wallet) browser-extension injected-script noise.
 // The TronLink extension injects a content script
 // (`app:///injected/injected.js`, function `BI`) that wraps a page object
@@ -804,6 +850,37 @@ export function isExtensionSource(filename: unknown): boolean {
 export function isInjectedAppSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return INJECTED_APP_SOURCE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Whether a Sentry / window.onerror event originates from a browser
+ * userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey / FireMonkey)
+ * injected user script — a frame whose filename is the userscript-manager's
+ * synthetic `app:///userscript.html?name=<Script>.user.js&id=<uuid>` wrapper
+ * page. The user script runs on every `@match`ed page (e.g. a download-helper
+ * script `@match`ing a wildcard `https-or-http any-host any-path` rule and
+ * running on `https://kortix.com/`); its OWN
+ * logic bugs (e.g. `JSON.parse(undefined)` → `SyntaxError: "undefined" is not
+ * valid JSON`) surface as unhandled rejections captured by Sentry and leak to
+ * Better Stack because the frame is the synthetic wrapper, never first-party
+ * code. The `app:///userscript.html` prefix is specific to userscript-manager
+ * wrappers and never appears on a first-party `app:///_next/…` bundle frame or
+ * a de-minified `apps/web/src/…` source path, so anchoring on it is
+ * conservative: a real first-party `JSON.parse` SyntaxError throws inside an
+ * app chunk (or a de-minified `apps/web/src/…` frame) and is never matched.
+ * See `USERSCRIPT_MANAGER_FRAME_PATTERN` for the full rationale and the
+ * production pattern `2249441898…`.
+ */
+export function isUserscriptManagerNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some(isUserscriptManagerInjectedSource);
 }
 
 /**
@@ -1437,6 +1514,16 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
+  // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
+  // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
+  // thrown from the synthetic `app:///userscript.html?…` wrapper page and
+  // captured as an unhandled rejection. Third-party user-script defect, never
+  // first-party app code; drop it. See `isUserscriptManagerNoise`.
+  if (isUserscriptManagerNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // TronLink browser-extension injected-Proxy `set`-trap noise — the
   // extension's `injected.js` wraps a page object in a Proxy and a `set` on
   // `tronlinkParams` is declined. Requires BOTH the TronLink property name AND
@@ -1649,6 +1736,20 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (frames.some((frame) => isInjectedAppSource(frame.filename))) {
+    return true;
+  }
+
+  // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
+  // FireMonkey) injected user-script noise — the script's own logic bug (e.g.
+  // `JSON.parse(undefined)` → `SyntaxError: "undefined" is not valid JSON`)
+  // thrown from the synthetic `app:///userscript.html?…` wrapper page and
+  // captured as an unhandled rejection. Third-party user-script defect, never
+  // first-party app code; drop it so a buggy user script someone installed on
+  // their browser never pages Better Stack. A real first-party `JSON.parse`
+  // SyntaxError throws inside an `app:///_next/…` chunk (or a de-minified
+  // `apps/web/src/…` frame) and is never matched. See
+  // `isUserscriptManagerNoise` and the production pattern `2249441898…`.
+  if (isUserscriptManagerNoise({ message, frames })) {
     return true;
   }
 
