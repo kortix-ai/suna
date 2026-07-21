@@ -14,11 +14,11 @@ import {
 import { forwardRef, type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
@@ -69,35 +69,35 @@ const LogRow = forwardRef<
       onMouseMove={onHover}
       aria-current={focused ? 'true' : undefined}
       className={cn(
-        'group grid w-full scroll-mt-2 grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-3 border-b border-border/40 px-4 py-2.5 text-left transition-colors duration-150',
+        'group border-border/40 grid w-full scroll-mt-2 grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-3 border-b px-4 py-2.5 text-left transition-colors duration-150',
         focused ? 'bg-primary/[0.06]' : 'hover:bg-muted/50',
       )}
     >
       <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-foreground">
+        <div className="text-foreground truncate text-sm font-medium">
           {displayModel(row.requested_model || row.resolved_model)}
         </div>
-        <div className="truncate text-xs text-muted-foreground">
+        <div className="text-muted-foreground truncate text-xs">
           {row.provider} · {fmtTime(row.created_at)}
           {!row.ok && row.error_code ? ` · ${row.error_code}` : ''}
         </div>
       </div>
-      <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
+      <span className="text-muted-foreground hidden text-xs tabular-nums sm:block">
         {row.latency_ms}ms
       </span>
-      <span className="hidden w-20 text-right text-xs tabular-nums text-muted-foreground md:block">
+      <span className="text-muted-foreground hidden w-20 text-right text-xs tabular-nums md:block">
         {(row.input_tokens + row.output_tokens).toLocaleString()} tok
       </span>
       <StatusBadge ok={row.ok} status={row.status} />
       <span className="flex items-center gap-1">
-        <span className="w-16 text-right text-xs tabular-nums text-foreground">
+        <span className="text-foreground w-16 text-right text-xs tabular-nums">
           ${row.final_cost.toFixed(4)}
         </span>
         <ChevronRight
           className={cn(
-            'size-4 text-muted-foreground/40 transition-transform duration-150',
-            focused ? 'translate-x-0.5 text-muted-foreground' : 'group-hover:translate-x-0.5',
+            'text-muted-foreground/40 size-4 transition-transform duration-150',
+            focused ? 'text-muted-foreground translate-x-0.5' : 'group-hover:translate-x-0.5',
           )}
         />
       </span>
@@ -117,12 +117,12 @@ function StatTile({
   accent?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-3">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="border-border/60 bg-card rounded-xl border p-3">
+      <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <Icon className="size-3.5" style={accent ? { color: accent } : undefined} />
         {label}
       </div>
-      <div className="mt-1 text-base font-semibold tabular-nums text-foreground">{value}</div>
+      <div className="text-foreground mt-1 text-base font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -130,8 +130,8 @@ function StatTile({
 function DetailField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="truncate text-right text-sm text-foreground">{value}</span>
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="text-foreground truncate text-right text-sm">{value}</span>
     </div>
   );
 }
@@ -140,15 +140,15 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   if (value == null) return null;
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return (
-    <details className="group overflow-hidden rounded-2xl border border-border/60 bg-card">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/40">
+    <details className="group border-border/60 bg-card overflow-hidden rounded-2xl border">
+      <summary className="text-foreground hover:bg-muted/40 flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium transition-colors">
         <span className="flex items-center gap-2">
-          <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 group-open:rotate-90" />
+          <ChevronRight className="text-muted-foreground size-4 transition-transform duration-150 group-open:rotate-90" />
           {title}
         </span>
         <CopyButton text={text} />
       </summary>
-      <pre className="max-h-80 overflow-auto border-t border-border/50 bg-muted/20 p-4 font-mono text-xs leading-relaxed text-foreground">
+      <pre className="border-border/50 bg-muted/20 text-foreground max-h-80 overflow-auto border-t p-4 font-mono text-xs leading-relaxed">
         {text}
       </pre>
     </details>
@@ -173,7 +173,7 @@ function NavButton({
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+        className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-30"
       >
         <Icon className="size-4" />
       </button>
@@ -202,16 +202,16 @@ function GatewayLogDetail({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border/50 bg-background/95 px-4 py-2.5 backdrop-blur">
+      <div className="border-border/50 bg-background/95 sticky top-0 z-10 flex items-center justify-between gap-2 border-b px-4 py-2.5 backdrop-blur">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors"
         >
           <ArrowLeft className="size-4" /> Logs
         </button>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs tabular-nums text-muted-foreground/70">
+          <span className="text-muted-foreground/70 text-xs tabular-nums">
             {index + 1} / {total}
           </span>
           <NavButton icon={ChevronUp} label="Previous (↑)" disabled={index <= 0} onClick={onPrev} />
@@ -229,7 +229,7 @@ function GatewayLogDetail({
           <Skeleton className="h-40 rounded-md" />
         </div>
       ) : (
-        <div className="flex w-full animate-in fade-in-0 flex-col gap-4 p-5">
+        <div className="animate-in fade-in-0 flex w-full flex-col gap-4 p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <span
@@ -237,10 +237,10 @@ function GatewayLogDetail({
                 style={{ backgroundColor: modelAccent(data.requested_model) }}
               />
               <div className="min-w-0">
-                <div className="truncate text-base font-semibold text-foreground">
+                <div className="text-foreground truncate text-base font-semibold">
                   {displayModel(data.requested_model || data.resolved_model)}
                 </div>
-                <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                <div className="text-muted-foreground flex items-center gap-1.5 font-mono text-xs">
                   {data.request_id}
                   <CopyButton text={data.request_id} className="size-5" />
                 </div>
@@ -269,7 +269,7 @@ function GatewayLogDetail({
             />
           </div>
 
-          <div className="rounded-2xl border border-border/60 bg-card px-4 py-1">
+          <div className="border-border/60 bg-card rounded-2xl border px-4 py-1">
             <DetailField
               label="Requested model"
               value={<span className="font-mono text-xs">{data.requested_model}</span>}
@@ -289,11 +289,11 @@ function GatewayLogDetail({
           </div>
 
           {data.error_message && (
-            <div className="rounded-2xl border border-destructive/25 bg-card p-4">
-              <div className="mb-1 text-xs font-medium text-muted-foreground">
+            <div className="border-destructive/25 bg-card rounded-2xl border p-4">
+              <div className="text-muted-foreground mb-1 text-xs font-medium">
                 {data.error_code ?? 'Error'}
               </div>
-              <div className="whitespace-pre-wrap break-words text-sm text-foreground">
+              <div className="text-foreground text-sm break-words whitespace-pre-wrap">
                 {data.error_message}
               </div>
             </div>
@@ -402,27 +402,30 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/50 px-4 py-2.5">
-        <FilterBar>
-          {FILTERS.map((f) => (
-            <FilterBarItem
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              data-state={filter === f.key ? 'active' : 'inactive'}
-            >
-              {f.label}
-            </FilterBarItem>
-          ))}
-        </FilterBar>
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="size-1.5 animate-pulse rounded-full bg-kortix-green" />
+      <div className="border-border/50 flex shrink-0 items-center justify-between border-b px-4 py-2.5">
+        <Tabs defaultValue="all">
+          <TabsList>
+            {FILTERS.map((f) => (
+              <TabsTrigger
+                key={f.key}
+                value={f.key}
+                onClick={() => setFilter(f.key)}
+                data-state={filter === f.key ? 'active' : 'inactive'}
+              >
+                {f.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <span className="bg-kortix-green size-1.5 animate-pulse rounded-full" />
           Live · {logs.length}
         </span>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {isLoading && logs.length === 0 ? (
-          <div className="divide-y divide-border/40">
+          <div className="divide-border/40 divide-y">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-3">
                 <Skeleton className="size-2 shrink-0 rounded-full" />
@@ -466,10 +469,16 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
       </div>
 
       {logs.length > 0 && (
-        <div className="flex shrink-0 items-center gap-3 border-t border-border/50 px-4 py-1.5 text-xs text-muted-foreground/60">
-          <span><kbd className="font-sans">↑↓</kbd> navigate</span>
-          <span><kbd className="font-sans">↵</kbd> open</span>
-          <span><kbd className="font-sans">esc</kbd> back</span>
+        <div className="border-border/50 text-muted-foreground/60 flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs">
+          <span>
+            <kbd className="font-sans">↑↓</kbd> navigate
+          </span>
+          <span>
+            <kbd className="font-sans">↵</kbd> open
+          </span>
+          <span>
+            <kbd className="font-sans">esc</kbd> back
+          </span>
         </div>
       )}
     </div>

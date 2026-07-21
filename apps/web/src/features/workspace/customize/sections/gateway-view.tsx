@@ -25,14 +25,7 @@
 import { useIsMutating } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsListCompact,
-  TabsTrigger,
-  TabsTriggerCompact,
-} from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ModelsView } from '@/features/workspace/customize/sections/llm-provider/models-view';
 import { GatewayApiAccess } from '@/features/workspace/customize/sections/view/gateway/gateway-api-access';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
@@ -117,10 +110,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // manage-keys permission, and a read-only member should still see the
   // reference (with the prod-default base URL fallback) rather than eating a
   // 403 on tab open.
-  const gatewayKeysQuery = useGatewayKeys(
-    projectId,
-    tab === 'developer' && developerTab === 'api',
-  );
+  const gatewayKeysQuery = useGatewayKeys(projectId, tab === 'developer' && developerTab === 'api');
   const gatewayUrl = gatewayKeysQuery.data?.gateway_url ?? null;
   // A role with the LLM section's READ leaf (project.read) but not project.write
   // sees the gateway read-only: logs/overview/spend stay visible, and the
@@ -173,14 +163,14 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           onValueChange={(v) => setUsageTab(v as UsageSubTab)}
           className="flex h-full min-h-0 flex-col gap-0"
         >
-          <div className="border-border shrink-0 border-b px-5 py-2.5">
-            <TabsListCompact type="secondary">
+          <div className="border-border shrink-0 border-b px-4 py-2">
+            <TabsList type="secondary">
               {USAGE_SUB_TABS.map((t) => (
-                <TabsTriggerCompact key={t.id} value={t.id}>
+                <TabsTrigger key={t.id} value={t.id}>
                   {t.label}
-                </TabsTriggerCompact>
+                </TabsTrigger>
               ))}
-            </TabsListCompact>
+            </TabsList>
           </div>
           <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto">
             <GatewayOverview projectId={projectId} />
@@ -200,14 +190,14 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           onValueChange={(v) => setDeveloperTab(v as DeveloperSubTab)}
           className="flex h-full min-h-0 flex-col gap-0"
         >
-          <div className="border-border shrink-0 border-b px-5 py-2.5">
-            <TabsListCompact type="secondary">
+          <div className="border-border shrink-0 border-b px-4 py-2">
+            <TabsList type="secondary">
               {DEVELOPER_SUB_TABS.map((t) => (
-                <TabsTriggerCompact key={t.id} value={t.id}>
+                <TabsTrigger key={t.id} value={t.id}>
                   {t.label}
-                </TabsTriggerCompact>
+                </TabsTrigger>
               ))}
-            </TabsListCompact>
+            </TabsList>
           </div>
           <TabsContent value="routing" className="min-h-0 flex-1 overflow-y-auto">
             <GatewayRouting

@@ -31,6 +31,7 @@ import { ChatGptSubscriptionForm } from './forms/chatgpt-subscription-form';
 import { ClaudeSubscriptionForm } from './forms/claude-subscription-form';
 import { CustomEndpointForm } from './forms/custom-endpoint-form';
 import { METHOD_COMPATIBLE_HARNESSES } from './harness-method-compat';
+import { MultiHarnessToggle } from './multi-harness-toggle';
 
 type ConnectMethod =
   | { kind: 'claude_subscription' }
@@ -159,13 +160,22 @@ export function ConnectModelModal({
   // is compatible with this kind, so it is never offered in the method list —
   // see METHOD_COMPATIBLE_HARNESSES.anthropic_compatible in ./harness-method-compat.
 
+  // The experiment gating whether Claude Code / Codex / Pi are selectable at
+  // all — surfaced beside the methods it unlocks. Lives in the Subscriptions
+  // section normally; when a gated-harness filter hides that section (the Pi
+  // case), it renders standalone at the top instead.
+  const multiHarnessToggle = <MultiHarnessToggle projectId={projectId} />;
+  const gatedHarnessFilter = harnessFilter !== null && harnessFilter !== 'opencode';
+
   let body: ReactNode;
   if (!method) {
     body = (
       <div className="space-y-6">
+        {!showSubscriptions && gatedHarnessFilter ? multiHarnessToggle : null}
         {showSubscriptions && (
           <section className="space-y-2">
             <Label>Subscriptions</Label>
+            {multiHarnessToggle}
             <ul className="space-y-2">
               {compatibleWithFilter('claude_subscription', harnessFilter) && (
                 <li>

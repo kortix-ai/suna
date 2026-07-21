@@ -3,8 +3,6 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import { Badge } from '@/components/ui/badge';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -21,6 +19,7 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -171,11 +170,7 @@ export function SessionSiteHeader({
                 </Link>
               </Button>
             )}
-            {agentName ? (
-              <Badge variant="outline" size="sm" className="shrink-0">
-                {agentName}
-              </Badge>
-            ) : null}
+
             {leadingAction}
           </div>
 
@@ -256,12 +251,14 @@ export function SessionSiteHeader({
                   )}
                 </DropdownMenuItem>
 
-                {supportsCompact ? <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
-                  <Layers />
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
-                  )}
-                </DropdownMenuItem> : null}
+                {supportsCompact ? (
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
+                    <Layers />
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
+                    )}
+                  </DropdownMenuItem>
+                ) : null}
 
                 {isProjectSession && (
                   <DropdownMenuItem
@@ -275,7 +272,6 @@ export function SessionSiteHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-
 
             <SessionChangesIndicator sessionId={sessionId} />
 
@@ -365,7 +361,9 @@ export function SessionSiteHeader({
         open={exportOpen}
         onOpenChange={setExportOpen}
       />
-      {supportsCompact ? <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} /> : null}
+      {supportsCompact ? (
+        <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
+      ) : null}
 
       {isProjectSession && (
         <>
