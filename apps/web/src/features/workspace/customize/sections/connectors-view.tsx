@@ -109,6 +109,8 @@ import {
   getProject,
   listConnectors,
   listPipedreamApps,
+  disconnectWhatsApp,
+  getWhatsAppInstallation,
   listWhatsAppConnections,
   pipedreamConnect,
   pipedreamFinalize,
@@ -1075,13 +1077,22 @@ function ConnectorDetail({
 
 // ─── Channel connection profile (Email / Slack install state) ───────────────
 
-type ChannelPlatform = 'slack' | 'email';
+type ChannelPlatform = 'slack' | 'email' | 'whatsapp';
 
 function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
-  if (connector.platform === 'slack' || connector.platform === 'email') return connector.platform;
+  if (
+    connector.platform === 'slack' ||
+    connector.platform === 'email' ||
+    connector.platform === 'whatsapp'
+  ) {
+    return connector.platform;
+  }
   if (connector.slug === 'kortix_slack') return 'slack';
   if (connector.slug === 'kortix_email') return 'email';
   if (connector.slug.startsWith('email_')) return 'email';
+  if (connector.slug === 'kortix_whatsapp' || connector.slug.startsWith('whatsapp_')) {
+    return 'whatsapp';
+  }
   return null;
 }
 
@@ -1105,6 +1116,16 @@ function ChannelConnectionSection({
         projectId={projectId}
         connector={connector}
         onChanged={onChanged}
+        onRemoved={onRemoved}
+        canWrite={canWrite}
+      />
+    );
+  }
+  if (platform === 'whatsapp') {
+    return (
+      <WhatsAppChannelProfile
+        projectId={projectId}
+        connector={connector}
         onRemoved={onRemoved}
         canWrite={canWrite}
       />
@@ -1661,6 +1682,103 @@ export function EmailConnectForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+function WhatsAppChannelProfile({
+  projectId,
+  connector,
+  onRemoved,
+  canWrite = false,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  onRemoved: () => void;
+  canWrite?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const install = useQuery({
+    queryKey: ['whatsapp-installation', projectId],
+    queryFn: () => getWhatsAppInstallation(projectId),
+  });
+
+  const disconnect = useMutation({
+    mutationFn: async () => {
+      await disconnectWhatsApp(projectId);
+      await deleteConnector(projectId, connector.slug);
+    },
+    onSuccess: () => {
+      successToast('WhatsApp disconnected');
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-installation', projectId] });
+      onRemoved();
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect WhatsApp'),
+  });
+
+  return (
+    <section className="space-y-4">
+      <Label>WhatsApp connection</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">
+        The gateway number routed into this project.
+      </p>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        {install.isLoading ? (
+          <Skeleton className="h-20 w-full rounded-2xl" />
+        ) : install.data ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <EntityAvatar icon={Icon.WhatsApp} size="sm" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {install.data.displayName || 'WhatsApp'}
+                  {install.data.phoneNumber ? ` — +${install.data.phoneNumber}` : ''}
+                </div>
+                <div className="text-muted-foreground truncate text-xs">
+                  {install.data.gatewayUrl}
+                </div>
+              </div>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Events arrive at <code className="text-[11px]">{install.data.webhookUrl}</code>. Each
+              chat on this number maps to its own Kortix session.
+            </p>
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => disconnect.mutate()}
+                disabled={disconnect.isPending}
+                className="gap-1.5"
+              >
+                {disconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                Disconnect
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <InfoBanner tone="warning">
+              This profile is not connected to a gateway number yet.
+            </InfoBanner>
+            <p className="text-muted-foreground text-xs">
+              Connect it from Add a connector → Channels → WhatsApp, or remove this profile.
+            </p>
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => disconnect.mutate()}
+                disabled={disconnect.isPending}
+                className="gap-1.5"
+              >
+                {disconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                Remove profile
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
