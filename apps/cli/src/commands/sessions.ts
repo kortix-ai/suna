@@ -5,6 +5,7 @@ import {
   locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
+  surfaceSessionCreateError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
@@ -245,7 +246,7 @@ async function sessionsNew(
       body,
     );
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceSessionCreateError(err);
   }
 
   // --wait: drive the same canonical /start lifecycle endpoint the dashboard

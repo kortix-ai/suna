@@ -24,8 +24,8 @@ const HELP = help`Usage: kortix providers <subcommand> [options]
 Configure LLM providers for the linked Kortix project. Two paths:
 
   • OAuth (zero config) — uses the upstream provider's device-code flow
-    (ChatGPT Pro/Plus, GitHub Copilot). Tokens land encrypted on the
-    project, get refreshed on each sandbox boot.
+    (ChatGPT Pro/Plus). Tokens land encrypted on the project, get
+    refreshed on each sandbox boot.
 
   • API key — stored as an encrypted project secret. Injected into
     sessions at boot, picked up by opencode's provider lookup.
@@ -35,7 +35,7 @@ Subcommands:
                                     API-key secrets that map to known
                                     providers).
   login <provider>                  Run the OAuth device-code flow.
-                                    Providers: openai, github-copilot.
+                                    Providers: openai.
   set <provider> [<key>]            Save an API key as a project secret.
                                     Provider → env-var mapping below.
                                     With no <key>, reads from stdin.
@@ -58,7 +58,6 @@ Global options:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
-  --enterprise <url> (login github-copilot) Enterprise GHE URL.
   -h, --help         Show this help.
 `;
 
@@ -102,8 +101,13 @@ export function isProviderConnected(envVars: string[], secretNames: Set<string>)
   );
 }
 
-// Providers that support the OAuth device-code flow.
-const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot']);
+// Providers that support the OAuth device-code flow. `github-copilot` used
+// to be accepted here too, but the server has never implemented it
+// (`apps/api/src/projects/routes/r3.ts` 400s it) — it was dead CLI surface
+// that accepted the option and only failed after a round-trip. Removed
+// client-side rather than left to 400 (docs/specs/2026-07-21-cli-credential-
+// model-ux.md §1.1.2). Do not re-add without a matching server-side flow.
+const OAUTH_PROVIDERS = new Set(['openai']);
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -117,13 +121,11 @@ export async function runProviders(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
-  let enterpriseFlag: string | undefined;
   let regionFlag: string | undefined;
   let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
-    enterpriseFlag = takeFlagValue(rest, ['--enterprise']);
     regionFlag = takeFlagValue(rest, ['--region']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
@@ -138,7 +140,7 @@ export async function runProviders(argv: string[]): Promise<number> {
       return providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
-      return providersLogin(rest[0], enterpriseFlag, ctxOpts);
+      return providersLogin(rest[0], ctxOpts);
     case 'set':
       return providersSet(rest[0], rest[1], regionFlag, ctxOpts);
     case 'rm':
@@ -217,22 +219,24 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
-async function providersLogin(
-  provider: string | undefined,
-  enterpriseUrl: string | undefined,
-  opts: CtxOpts,
-): Promise<number> {
+async function providersLogin(provider: string | undefined, opts: CtxOpts): Promise<number> {
   if (!provider) {
-    process.stderr.write(
-      `${status.err('Pass a provider: kortix providers login <openai|github-copilot>')}\n`,
-    );
+    process.stderr.write(`${status.err('Pass a provider: kortix providers login <openai>')}\n`);
     return 2;
   }
   if (!OAUTH_PROVIDERS.has(provider)) {
-    process.stderr.write(
-      `${status.err(`OAuth not supported for "${provider}".`)}\n` +
-        `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`,
-    );
+    if (PROVIDER_ENV_VARS[provider]?.length) {
+      process.stderr.write(
+        `${status.err(`OAuth not supported for "${provider}".`)}\n` +
+          `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`,
+      );
+    } else {
+      process.stderr.write(
+        `${status.err(`"${provider}" isn't a provider Kortix's OAuth flow supports.`)}\n` +
+          `  ${C.dim}Known OAuth provider: openai.${C.reset}\n` +
+          `  ${C.dim}Known API-key providers: ${Object.keys(PROVIDER_ENV_VARS).join(', ')}${C.reset}\n`,
+      );
+    }
     return 2;
   }
   const ctx = await resolveProjectContext(opts);
@@ -243,7 +247,7 @@ async function providersLogin(
   try {
     flow = await ctx.client.post<OauthFlowStartResponse>(
       `/projects/${ctx.projectId}/oauth/${provider}/start`,
-      enterpriseUrl ? { enterprise_url: enterpriseUrl } : {},
+      {},
     );
   } catch (err) {
     return surfaceApiError(err);

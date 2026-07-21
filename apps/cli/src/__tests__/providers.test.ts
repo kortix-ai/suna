@@ -93,3 +93,45 @@ describe('runProviders set — validation before any network call', () => {
     expect(chunks.join('')).toContain('--region');
   });
 });
+
+describe('runProviders login — github-copilot is removed dead CLI surface', () => {
+  // The server has never implemented OAuth for github-copilot (it 400s the
+  // request) — `login github-copilot` used to reach the network and print a
+  // raw HTTP 400. It must now fail client-side, with no network call, before
+  // ever resolving a project/auth context (docs/specs/2026-07-21-cli-
+  // credential-model-ux.md §1.1.2).
+  test('errors with exit 2 and does not require login/project context', async () => {
+    const chunks: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    (process.stderr.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    let code: number;
+    try {
+      code = await runProviders(['login', 'github-copilot']);
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(code).toBe(2);
+    const out = chunks.join('');
+    expect(out).toContain('github-copilot');
+    expect(out).not.toContain('HTTP 400');
+  });
+
+  test('openai remains the only OAuth login provider in --help output', async () => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    (process.stdout.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    try {
+      await runProviders(['--help']);
+    } finally {
+      process.stdout.write = orig;
+    }
+    const out = chunks.join('');
+    expect(out).not.toContain('github-copilot');
+  });
+});

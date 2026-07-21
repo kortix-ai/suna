@@ -5,7 +5,19 @@ export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'cursor';
 
 export const SUPPORTED_AGENTS: readonly CodingAgent[] = ['opencode', 'claude', 'codex', 'cursor'] as const;
 
-export const DEFAULT_PRIMARY: CodingAgent = 'codex';
+// Was 'codex' pre-`876742672`, when a fresh project's kortix.yaml declared
+// all four runtimes and any local default was non-contradictory. Since
+// `876742672` (OpenCode-first by default; Claude/Codex/Pi gated behind the
+// project's `experimental_harnesses` flag), a headless/`-y` `kortix init`
+// with `codex` here wired local editor compatibility for a coding agent the
+// project's own cloud runtime doesn't even declare by default — a
+// discoverable-only-after-the-fact mismatch with no CLI output calling it
+// out (docs/specs/2026-07-21-cli-credential-model-ux.md §1.7/§G5). Changed
+// to match the cloud default rather than layer on a disclosure message: the
+// two are conceptually allowed to diverge, but nothing here previously
+// argued for `codex` specifically over any other agent, so removing the
+// contradiction outright is preferable to explaining it every run.
+export const DEFAULT_PRIMARY: CodingAgent = 'opencode';
 
 /** Path of the canonical Kortix skill, relative to repo root. */
 export const CANONICAL_SKILL = '.opencode/skills/kortix-system/SKILL.md';

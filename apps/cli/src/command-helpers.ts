@@ -375,6 +375,76 @@ export function surfaceApiError(err: unknown): number {
   return 1;
 }
 
+// ── Session-create 409 (COMPOSER_CAPABILITY_BLOCKED) ────────────────────────
+//
+// `POST /projects/:id/sessions` 409s with this shape when the resolved
+// agent's harness can't start (apps/api/src/projects/lib/sessions.ts, the
+// `!composerCapability.can_start` branch): a structured `capabilities` object
+// rides alongside the human `error` string, not just a rendered message —
+// verified by reading the route directly (2026-07-21 CLI audit's open
+// question 4, docs/specs/2026-07-21-cli-credential-model-ux.md §Part 4 item
+// 2 and Open Questions §4). Every field read below is one the route actually
+// sends (composer-capabilities.ts's `ComposerCapabilities` type) — nothing
+// here is invented.
+interface ComposerCapabilitiesBody {
+  agent?: { name?: string; harness?: string };
+  auth?: { compatible?: string[]; active?: string | null; reason?: string | null };
+  can_start?: boolean;
+  blocking_reason?: string | null;
+}
+interface ComposerCapabilityBlockedBody {
+  error?: string;
+  code?: string;
+  capabilities?: ComposerCapabilitiesBody;
+}
+
+function isComposerCapabilityBlocked(
+  err: unknown,
+): err is ApiError & { body: ComposerCapabilityBlockedBody } {
+  return (
+    err instanceof ApiError &&
+    err.status === 409 &&
+    typeof err.body === 'object' &&
+    err.body !== null &&
+    (err.body as ComposerCapabilityBlockedBody).code === 'COMPOSER_CAPABILITY_BLOCKED'
+  );
+}
+
+/**
+ * Session-creation error printer: special-cases the `COMPOSER_CAPABILITY_
+ * BLOCKED` 409 with an actionable message built from the response's
+ * structured `capabilities` object (harness id, why it's blocked, which
+ * connection kinds would unlock it), falling through to `surfaceApiError`'s
+ * generic `HTTP 409: <message>` for anything else. Always returns 1.
+ */
+export function surfaceSessionCreateError(err: unknown): number {
+  if (!isComposerCapabilityBlocked(err)) return surfaceApiError(err);
+
+  const caps = err.body.capabilities;
+  const agentName = caps?.agent?.name;
+  const harness = caps?.agent?.harness;
+  const reason = caps?.blocking_reason ?? caps?.auth?.reason ?? err.message;
+  const compatible = caps?.auth?.compatible ?? [];
+
+  const who = agentName
+    ? harness && harness !== agentName
+      ? `"${agentName}" (harness: ${harness})`
+      : `"${agentName}"`
+    : 'This session';
+
+  process.stderr.write(`${status.err(`Can't start: ${who} isn't ready.`)}\n`);
+  if (reason) process.stderr.write(`  ${C.dim}${reason}${C.reset}\n`);
+  if (compatible.length > 0) {
+    process.stderr.write(
+      `  ${C.dim}Needs one of these connections: ${compatible.join(', ')}${C.reset}\n`,
+    );
+  }
+  process.stderr.write(
+    `  ${C.dim}See what's connected: ${C.reset}${C.cyan}kortix providers ls${C.reset}\n`,
+  );
+  return 1;
+}
+
 /** Find and pull out a flag value from argv (`--project foo` or
  *  `--project=foo`). Mutates the array — caller passes a sliced copy. */
 export function takeFlagValue(argv: string[], names: string[]): string | undefined {
