@@ -5,7 +5,9 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
+import { extractFallbackTitleFromPrompt, extractHarnessSessionTitle, isAcpPromptEnvelope } from '../lib/acp-envelope';
 import { persistAcpSessionIdentity } from '../lib/acp-session-identity';
+import { persistFallbackSessionTitle, persistHarnessSessionTitle } from '../lib/acp-session-title';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
@@ -632,6 +634,24 @@ async function postAcpPrompt(input: {
   };
   const postEnvelope = async (request: Record<string, unknown>) => {
     await persist('client_to_agent', request);
+    // Fallback title sync (best-effort, never blocks prompt delivery): the
+    // headless-ingest counterpart of routes/acp.ts's POST /acp fallback
+    // sync — same envelope shape (`session/prompt`), same idempotent
+    // persistFallbackSessionTitle no-op once the row already has a title.
+    if (isAcpPromptEnvelope(request)) {
+      try {
+        const fallbackTitle = extractFallbackTitleFromPrompt(request);
+        if (fallbackTitle) {
+          await persistFallbackSessionTitle({ db }, {
+            projectSessionId: input.sessionId,
+            projectId: input.projectId,
+            title: fallbackTitle,
+          });
+        }
+      } catch (error) {
+        console.warn(`[session-lifecycle] failed to persist fallback title for ${input.sessionId}:`, error);
+      }
+    }
     const body = new TextEncoder().encode(JSON.stringify(request));
     const response = await forwardToSandbox(
       input.externalId,
@@ -699,6 +719,24 @@ async function postAcpPrompt(input: {
     const streamAbort = new AbortController();
     const streamTask = consumeHeadlessAcpSse(stream.body, async (eventId, envelope) => {
       await persist('agent_to_client', envelope, eventId);
+      // Best-effort harness title sync: the headless-ingest counterpart of
+      // routes/acp.ts's persistSseBlock. A harness-emitted `session_info_
+      // update` notification (claude-agent-acp only — see
+      // extractHarnessSessionTitle's doc comment) has no `id`, so this must
+      // run before the request/notification-id guard below.
+      try {
+        const titleUpdate = extractHarnessSessionTitle(envelope);
+        if (titleUpdate) {
+          await persistHarnessSessionTitle({ db }, {
+            projectSessionId: input.sessionId,
+            projectId: input.projectId,
+            title: titleUpdate.title,
+            updatedAt: titleUpdate.updatedAt,
+          });
+        }
+      } catch (error) {
+        console.warn(`[session-lifecycle] failed to persist harness title for ${input.sessionId}:`, error);
+      }
       if (!Object.prototype.hasOwnProperty.call(envelope, 'id') || typeof envelope.method !== 'string') return;
       if (envelope.method === 'session/request_permission') {
         const optionId = selectHeadlessPermissionOption(envelope.params);

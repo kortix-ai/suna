@@ -177,11 +177,13 @@ describe('WS3-P1-a headless session-identity write site: postAcpPrompt first-min
     const lifecycleMethods = postedRequests.map((r) => r.method).filter(Boolean);
     expect(lifecycleMethods).toEqual(['initialize', 'session/new', 'session/prompt']);
 
-    // Exactly one metadata write, and it happened (index-wise) after
-    // session/new's response landed and before session/prompt was issued —
-    // captured here by the update firing exactly once and the lifecycle
-    // order above already proving session/new preceded session/prompt.
-    expect(updateCalls).toHaveLength(1);
+    // Two metadata writes: the identity write (after session/new's response
+    // lands, before session/prompt is issued) and, since this row starts
+    // with no title at all, the fallback title write engine.ts's
+    // `postEnvelope` fires on the `session/prompt` request itself (see
+    // `engine.title-sync.test.ts` for the dedicated title-sync wiring
+    // coverage — this test only needs to not regress on the identity shape).
+    expect(updateCalls).toHaveLength(2);
     const { metadata, updatedAt } = updateCalls[0]!.set as {
       metadata: Record<string, unknown>;
       updatedAt: Date;
@@ -193,5 +195,13 @@ describe('WS3-P1-a headless session-identity write site: postAcpPrompt first-min
       acp_session_id: 'harness-minted-session-xyz',
     });
     expect(updatedAt).toBeInstanceOf(Date);
+
+    const { metadata: titleMetadata } = updateCalls[1]!.set as { metadata: Record<string, unknown> };
+    expect(titleMetadata).toEqual({
+      unrelated_key: 'preserved',
+      runtime_protocol: 'stale', // read from the pre-write sessionRow snapshot — the identity write above never lands in this fake db's select() result
+      name: 'run the nightly check',
+      title_source: 'fallback',
+    });
   });
 });
