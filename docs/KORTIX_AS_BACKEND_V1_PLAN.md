@@ -27,17 +27,17 @@ Connectors are already **user-owned profiles decoupled from the agent** (`execut
 
 **Kortix authenticates the wrapper; the wrapper vouches for its end-user.** (Stripe-Connect / Twilio-subaccount model.)
 
-- **Caller = a Service Account token (`kortix_sa_`)** — a *machine* identity, held server-side, never exposed. IAM-scoped (deny-by-default governance) to exactly `session.start` + connector-profile management. Survives offboarding; auditable; independently revocable. **Not** a user PAT (ties to a person, over-privileged, and end-users aren't members) and **not** a raw API key (coarse, no policy). Service accounts already ship.
+- **Caller = any programmatic customer credential** *(REV 3 — shipped in PR #5147; supersedes the SA-only stance below)*: the **account API key / PAT** (`kortix_pat_` — the credential the Tokens UI mints as "Create API key"), a **Service Account** (`kortix_sa_`), or a dedicated account API key (`kortix_`, `apiKeyType='user'`, dormant until issuance ships). All resolve `origin: backend`. **Why the reversal from SA-only:** a fresh service account has *no* IAM policy binding — `createServiceAccount` attaches none, the engine skips membership for SAs, and granting `project.session.start` requires a custom role + per-project token-principal policy, both behind the enterprise-only `rbac` entitlement. SA-only would be dark for every non-enterprise account. The PAT inherits its creator's project membership → works on every tier with zero IAM setup. SA remains the *recommended* credential for enterprise/CI (deny-by-default governance, survives offboarding, independently revocable). Hard exclusions, enforced with regression tests: the **internal sandbox key** (`kortix_sb_`, the `KORTIX_TOKEN` inside every sandbox) and **any agent-scoped token** are never backend — an in-session agent cannot vouch for a phantom end-user.
 - **End-user identity = a parameter, not an auth principal** — the wrapper passes `origin_ref` (its own user id) + that user's `profile_id`s. Kortix records `origin: backend`, resolves *that user's* profiles, attributes usage to `origin_ref`. **End-users never authenticate to Kortix.** Scales to 100k with no per-user login and no subject-identity system.
 
-**Developer UX (the whole integration):**
+**Developer UX (the whole integration — zero-setup path, any tier):**
 ```
-1. Tokens → New service account → paste kortix_sa_… into backend env        (once)
-2. Attach policy: session.start + connector-profiles                        (least privilege)
-3. Per end-user: store their credential once → get profile_id               (server-to-server)
-4. POST /sessions  (Bearer kortix_sa_…)
+1. Settings → Tokens → Create API key → paste kortix_pat_… into backend env  (once)
+2. Per end-user: store their credential once → get profile_id                (server-to-server)
+3. POST /sessions  (Bearer kortix_pat_…)
    { agent_name, origin_ref:"user-123", connector_bindings:{ gmail:{profile_id} } }
 ```
+**Enterprise/CI path (least privilege):** New service account → attach policy (`session.start` + connector-profiles) → same call with `Bearer kortix_sa_…`.
 Base case (shared agent, no per-user connectors) = steps 1–2 only.
 
 **Direct streaming (optional):** to let an end-user's browser stream a session directly, the backend mints a **short-lived, session-scoped token** for that one session and hands *that* to the browser — never the `kortix_sa_` key. Governed by the existing PAT max-lifetime / idle-revoke policy.
@@ -62,7 +62,7 @@ Base case (shared agent, no per-user connectors) = steps 1–2 only.
 
 **4.5 Profile revoked mid-session.** End-user disconnects their Gmail while a session is live. *Handling:* the broker fails **closed** — a bound-but-revoked profile returns null, never falls back to the shared default (verified). The wrapper must surface "reconnect".
 
-**4.6 Origin spoofing.** A user PAT must not be able to claim `origin: backend` or pass connector overrides. *Handling:* origin is **derived from the caller's token kind**, not accepted from the body; `canOverride` rejects out-of-envelope fields. `origin_ref` is trusted only from a service-account caller.
+**4.6 Origin spoofing.** *(updated for REV 3)* No caller may claim `origin: backend` via the body — origin is **derived from the caller's token kind** (`authType` + `apiKeyType` + agent-scope), never accepted from the request. The spoofing surface that matters: the **in-sandbox `KORTIX_TOKEN`** (`apiKey`+`sandbox`) and **agent-scoped tokens** must never resolve backend — enforced with a *positive* `apiKeyType==='user'` check (a missing/unknown type can never be promoted) and an explicit agent-scope exclusion, both regression-tested. `origin_ref` is trusted only from a backend-origin caller; anyone else supplying it gets `403 origin_override_forbidden`. The queued-create path replays the same derivation signals captured at enqueue time, so backpressure can't degrade or upgrade an origin.
 
 **4.7 Model not servable / wrong form.** *Handling:* normalize via `toOpencodeModelRef` and **fail-fast** at create with `isModelServableForAccount` (reuses the request-time resolver) — never silently fall to default.
 
@@ -76,10 +76,10 @@ Base case (shared agent, no per-user connectors) = steps 1–2 only.
 
 ## 5. Build order
 
-1. `origin` field + resolver + `canOverride` policy gate — the spine.
+1. ✅ **SHIPPED (PR #5147)** — `origin` field + resolver + `canOverride` policy gate, incl. REV 3 backend credentials (PAT/SA/user-apiKey), sandbox+agent-scope exclusions, queued-create signal carry, and the Tokens-UI "Using the API" story.
 2. Document + expose the shipping path (connectors/model/agent/context) as the "backend" contract, with §4 gotchas. **This alone makes base-agent wrapping real today.**
 3. Server-to-server connector-profile mint + all-or-nothing softening (4.1).
-4. Secret-bundle by reference — hot-push merge + scope split (4.2).
+4. Secret-bundle by reference — hot-push merge + scope split (4.2). *(in design — per-session allowlist by identifier, pure narrowing, enforced at boot + hot-push)*
 5. Skills subset (v2, optional).
 
 Each new contract field needs a schema add + a ke2e route-coverage test (the `.strict()` contract + coverage gate); transport is free (body flows verbatim to the core).
