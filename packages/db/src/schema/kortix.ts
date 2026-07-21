@@ -545,6 +545,12 @@ export const projectSessions = kortixSchema.table(
     // everything else.
     origin: projectSessionOriginEnum('origin').default('user').notNull(),
     originRef: text('origin_ref'),
+    // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
+    // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
+    // at create; immutable afterward. Semantics are pure NARROWING — the injected
+    // env is (today's agent-grant set) ∩ (this allowlist), enforced at BOTH boot
+    // and hot-push. null = no restriction (byte-identical to pre-KaaB behavior).
+    secretsAllowlist: jsonb('secrets_allowlist').$type<string[]>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
