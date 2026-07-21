@@ -1,18 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { HARNESS_IDS, HARNESSES } from '@kortix/shared/harnesses';
+import { HARNESSES, HARNESS_IDS } from '@kortix/shared/harnesses';
 
 import {
+  type HarnessAuthKind,
   buildHarnessConnections,
-  computeDefaultAllowed,
   isExperimentalHarnessGated,
-  managedGatewayHasNothingToRouteTo,
   modelPresets,
   newestCatalogModels,
   readHarnessAuthRoutes,
   resolveActiveHarnessConnection,
   writeHarnessAuthRoute,
-  type HarnessAuthKind,
-  type HarnessConnection,
 } from './composer-capabilities';
 
 describe('composer capability auth resolution', () => {
@@ -43,13 +40,19 @@ describe('composer capability auth resolution', () => {
       env: { ANTHROPIC_API_KEY: 'api-key' },
       gatewayEnabled: true,
     });
-    expect(resolveActiveHarnessConnection({ harness: 'opencode', connections }).active?.id).toBe('managed_gateway');
-    expect(resolveActiveHarnessConnection({ harness: 'pi', connections }).active?.id).toBe('managed_gateway');
-    expect(resolveActiveHarnessConnection({
-      harness: 'opencode',
-      connections,
-      explicit: 'anthropic_api_key',
-    }).active?.id).toBe('anthropic_api_key');
+    expect(resolveActiveHarnessConnection({ harness: 'opencode', connections }).active?.id).toBe(
+      'managed_gateway',
+    );
+    expect(resolveActiveHarnessConnection({ harness: 'pi', connections }).active?.id).toBe(
+      'managed_gateway',
+    );
+    expect(
+      resolveActiveHarnessConnection({
+        harness: 'opencode',
+        connections,
+        explicit: 'anthropic_api_key',
+      }).active?.id,
+    ).toBe('anthropic_api_key');
   });
 
   test('2026-07-15 simplification: claude and codex are harness-only, never the managed gateway or a custom endpoint', () => {
@@ -59,18 +62,26 @@ describe('composer capability auth resolution', () => {
     });
     // Even with the gateway enabled, claude/codex resolve to their own
     // subscription — the gateway is not in their compatible set at all.
-    expect(resolveActiveHarnessConnection({ harness: 'claude', connections }).active?.id).toBe('claude_subscription');
-    expect(resolveActiveHarnessConnection({ harness: 'codex', connections }).active?.id).toBe('codex_subscription');
-    expect(resolveActiveHarnessConnection({
-      harness: 'claude',
-      connections,
-      explicit: 'managed_gateway',
-    }).active).toBeNull();
-    expect(resolveActiveHarnessConnection({
-      harness: 'codex',
-      connections,
-      explicit: 'openai_compatible',
-    }).active).toBeNull();
+    expect(resolveActiveHarnessConnection({ harness: 'claude', connections }).active?.id).toBe(
+      'claude_subscription',
+    );
+    expect(resolveActiveHarnessConnection({ harness: 'codex', connections }).active?.id).toBe(
+      'codex_subscription',
+    );
+    expect(
+      resolveActiveHarnessConnection({
+        harness: 'claude',
+        connections,
+        explicit: 'managed_gateway',
+      }).active,
+    ).toBeNull();
+    expect(
+      resolveActiveHarnessConnection({
+        harness: 'codex',
+        connections,
+        explicit: 'openai_compatible',
+      }).active,
+    ).toBeNull();
   });
 
   test('per-harness compatible connection kinds match the 2026-07-15 simplification matrix', () => {
@@ -81,7 +92,11 @@ describe('composer capability auth resolution', () => {
         .map((connection) => connection.id)
         .sort();
 
-    expect(kindsFor('claude')).toEqual(['anthropic_api_key', 'claude_subscription', 'native_config']);
+    expect(kindsFor('claude')).toEqual([
+      'anthropic_api_key',
+      'claude_subscription',
+      'native_config',
+    ]);
     expect(kindsFor('codex')).toEqual(['codex_subscription', 'native_config', 'openai_api_key']);
     expect(kindsFor('opencode')).toEqual([
       'anthropic_api_key',
@@ -97,9 +112,10 @@ describe('composer capability auth resolution', () => {
       'openai_api_key',
       'openai_compatible',
     ]);
-    expect(connections.find((connection) => connection.id === 'anthropic_compatible')?.compatible_harnesses).toEqual(
-      [],
-    );
+    expect(
+      connections.find((connection) => connection.id === 'anthropic_compatible')
+        ?.compatible_harnesses,
+    ).toEqual([]);
   });
 
   test('two native credentials require an explicit choice when the gateway is disabled', () => {
@@ -152,7 +168,11 @@ describe('composer capability auth resolution', () => {
 describe('founder decision 2026-07-15 pins (WS2-P4-a): claude/codex harness-only, opencode/pi keep the gateway, anthropic_compatible parked', () => {
   test('founder decision 2026-07-15: claude/codex are harness-access only — NO managed_gateway, NO openai_compatible, NO anthropic_compatible in their compatible kinds', () => {
     const connections = buildHarnessConnections({ env: {}, gatewayEnabled: false });
-    const forbidden: HarnessAuthKind[] = ['managed_gateway', 'openai_compatible', 'anthropic_compatible'];
+    const forbidden: HarnessAuthKind[] = [
+      'managed_gateway',
+      'openai_compatible',
+      'anthropic_compatible',
+    ];
     for (const harness of ['claude', 'codex'] as const) {
       const compatibleKinds = connections
         .filter((connection) => connection.compatible_harnesses.includes(harness))
@@ -165,7 +185,9 @@ describe('founder decision 2026-07-15 pins (WS2-P4-a): claude/codex harness-only
 
   test('founder decision 2026-07-15: anthropic_compatible is parked — compatible_harnesses is EMPTY, but the kind still exists (not deleted from the connections table or the type union)', () => {
     const connections = buildHarnessConnections({ env: {}, gatewayEnabled: false });
-    const anthropicCompatible = connections.find((connection) => connection.id === 'anthropic_compatible');
+    const anthropicCompatible = connections.find(
+      (connection) => connection.id === 'anthropic_compatible',
+    );
     expect(anthropicCompatible).toBeDefined();
     expect(anthropicCompatible?.compatible_harnesses).toEqual([]);
     // Type-level pin: this assignment only compiles while 'anthropic_compatible'
@@ -193,224 +215,52 @@ describe('founder decision 2026-07-15 pins (WS2-P4-a): claude/codex harness-only
 describe('isExperimentalHarnessGated (WS2-P1-b: experimental_harnesses selection gate)', () => {
   test('opencode (the only stable harness) is NEVER gated, flag off or on', () => {
     expect(isExperimentalHarnessGated('opencode', {})).toBe(false);
-    expect(isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: true } })).toBe(false);
-    expect(isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: false } })).toBe(false);
+    expect(
+      isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: true } }),
+    ).toBe(false);
+    expect(
+      isExperimentalHarnessGated('opencode', { experimental: { experimental_harnesses: false } }),
+    ).toBe(false);
   });
 
   test('every non-stable harness (claude/codex/pi today) is gated when the flag is off', () => {
     for (const id of HARNESS_IDS) {
       if (HARNESSES[id].stability === 'stable') continue;
       expect(isExperimentalHarnessGated(id, {})).toBe(true);
-      expect(isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: false } })).toBe(true);
+      expect(
+        isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: false } }),
+      ).toBe(true);
     }
   });
 
   test('every non-stable harness is un-gated once the project opts in', () => {
     for (const id of HARNESS_IDS) {
       if (HARNESSES[id].stability === 'stable') continue;
-      expect(isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: true } })).toBe(false);
-    }
-  });
-});
-
-describe('computeDefaultAllowed', () => {
-  test('no active connection never has a usable default', () => {
-    expect(computeDefaultAllowed({ active: null, harness: 'opencode', presetsLength: 0 })).toBe(false);
-    expect(computeDefaultAllowed({ active: null, harness: 'claude', presetsLength: 0 })).toBe(false);
-  });
-
-  test('Claude/Codex/Pi always own their default natively, regardless of presets', () => {
-    for (const harness of ['claude', 'codex', 'pi'] as const) {
       expect(
-        computeDefaultAllowed({ active: 'claude_subscription', harness, presetsLength: 0 }),
-      ).toBe(true);
+        isExperimentalHarnessGated(id, { experimental: { experimental_harnesses: true } }),
+      ).toBe(false);
     }
-  });
-
-  test('OpenCode with a non-empty preset catalog has a usable default', () => {
-    expect(
-      computeDefaultAllowed({ active: 'anthropic_api_key', harness: 'opencode', presetsLength: 3 }),
-    ).toBe(true);
-  });
-
-  test('OpenCode on a ready native config has a usable default even with an empty catalog', () => {
-    expect(
-      computeDefaultAllowed({ active: 'native_config', harness: 'opencode', presetsLength: 0 }),
-    ).toBe(true);
-  });
-
-  test('OpenCode on a ready managed gateway has a usable default (managed-auto) even with an empty catalog', () => {
-    expect(
-      computeDefaultAllowed({ active: 'managed_gateway', harness: 'opencode', presetsLength: 0 }),
-    ).toBe(true);
-  });
-
-  test('OpenCode on a non-managed, non-native connection with no presets requires an explicit model', () => {
-    expect(
-      computeDefaultAllowed({ active: 'openai_compatible', harness: 'opencode', presetsLength: 0 }),
-    ).toBe(false);
   });
 });
 
-describe('managedGatewayHasNothingToRouteTo', () => {
-  function connection(overrides: Partial<HarnessConnection>): HarnessConnection {
-    return {
-      id: 'managed_gateway',
-      kind: 'managed_gateway',
-      label: 'Kortix managed gateway',
-      compatible_harnesses: ['opencode', 'pi'],
-      configured: true,
-      ready: true,
-      active_for: [],
-      reason: null,
-      source: 'kortix',
-      ...overrides,
-    };
-  }
-  const alwaysServable = async () => true;
-  const neverServable = async () => false;
-
-  test('never fires for a non-managed-gateway route', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'anthropic_api_key',
-        harness: 'opencode',
-        managedModels: [],
-        connections: [],
-        probeServable: alwaysServable,
-      }),
-    ).toBe(false);
-  });
-
-  test('never fires when no route is active at all', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: null,
-        harness: 'opencode',
-        managedModels: [],
-        connections: [],
-        probeServable: alwaysServable,
-      }),
-    ).toBe(false);
-  });
-
-  test('does not fire when this deployment has a managed-model lineup AND it actually probes servable', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'managed_gateway',
-        harness: 'opencode',
-        managedModels: [{ id: 'claude-opus-4.8' }, { id: 'glm-5.2' }],
-        connections: [],
-        probeServable: alwaysServable,
-      }),
-    ).toBe(false);
-  });
-
-  // The bug this function exists to fix: KORTIX_MANAGED_PROVIDER_ENABLED=true
-  // with a non-empty managed-model lineup used to be trusted unconditionally
-  // (a raw `managedModelCount > 0` check) — inert on exactly the deployment
-  // that reported "No models available" yet resolved `can_start: true`. The
-  // lineup being non-empty says nothing about whether ANY of those models
-  // actually resolve for THIS account (missing transport credential,
-  // free-tier/entitlement gate, ...) — `probeServable` is what answers that.
-  test('fires when the managed lineup is non-empty but NONE of it actually probes servable, and there is no fallback', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'managed_gateway',
-        harness: 'opencode',
-        managedModels: [{ id: 'claude-opus-4.8' }, { id: 'glm-5.2' }],
-        connections: [connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true })],
-        probeServable: neverServable,
-      }),
-    ).toBe(true);
-  });
-
-  test('fires when the gateway flag is on but there is no managed lineup and no fallback connection — the reported "no model connected" hang', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'managed_gateway',
-        harness: 'opencode',
-        managedModels: [],
-        connections: [connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true })],
-        probeServable: alwaysServable,
-      }),
-    ).toBe(true);
-  });
-
-  test('does not fire when a BYOK connection is ready as a fallback, even if every managed model probes unservable', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'managed_gateway',
-        harness: 'opencode',
-        managedModels: [{ id: 'claude-opus-4.8' }],
-        connections: [
-          connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
-          connection({
-            id: 'anthropic_api_key',
-            kind: 'anthropic_api_key',
-            ready: true,
-            compatible_harnesses: ['claude', 'opencode', 'pi'],
-          }),
-        ],
-        probeServable: neverServable,
-      }),
-    ).toBe(false);
-  });
-
-  test('ignores a ready BYOK connection that is NOT compatible with this harness', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'managed_gateway',
-        harness: 'pi',
-        managedModels: [],
-        connections: [
-          connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
-          connection({
-            id: 'codex_subscription',
-            kind: 'codex_subscription',
-            ready: true,
-            compatible_harnesses: ['codex'],
-          }),
-        ],
-        probeServable: alwaysServable,
-      }),
-    ).toBe(true);
-  });
-
-  test('a ready native_config does not count as a managed-gateway fallback — it is a separate routing path', async () => {
-    expect(
-      await managedGatewayHasNothingToRouteTo({
-        active: 'managed_gateway',
-        harness: 'opencode',
-        managedModels: [],
-        connections: [
-          connection({ id: 'managed_gateway', kind: 'managed_gateway', ready: true }),
-          connection({
-            id: 'native_config',
-            kind: 'native_config',
-            ready: true,
-            compatible_harnesses: [...HARNESS_IDS],
-          }),
-        ],
-        probeServable: alwaysServable,
-      }),
-    ).toBe(true);
-  });
-
-  test('probes models in order and stops at the first servable one', async () => {
-    const probed: string[] = [];
-    const result = await managedGatewayHasNothingToRouteTo({
-      active: 'managed_gateway',
-      harness: 'opencode',
-      managedModels: [{ id: 'first' }, { id: 'second' }, { id: 'third' }],
-      connections: [],
-      probeServable: async (id) => {
-        probed.push(id);
-        return id === 'second';
-      },
-    });
-    expect(result).toBe(false);
-    expect(probed).toEqual(['first', 'second']);
+// 2026-07-21 model-resolution refactor (phase 1, docs/specs/2026-07-21-
+// model-resolution-refactor-plan.md): `computeDefaultAllowed` and
+// `managedGatewayHasNothingToRouteTo` — and their test suites that used to
+// live here — are DELETED, not just moved. The closed `state` union they
+// approximated with two independent booleans (`default_allowed`/
+// `noManagedRoute`, reconciled with `&&`) is now computed in exactly one
+// place: `resolveHarnessModels` (`llm-gateway/resolution/harness-models.ts`),
+// whose own suite (`harness-models.test.ts`) covers every state × harness-
+// kind × credential-health combination those two functions used to split
+// across two files. Nothing in `composer-capabilities.ts` recomputes any
+// part of that answer anymore — verified below by import-shape assertions
+// (a `tsc --noEmit` failure, not just a runtime one, is the real guard: see
+// `composer-capabilities.ts`'s import list).
+describe('kill list (phase 1): computeDefaultAllowed / managedGatewayHasNothingToRouteTo no longer exist here', () => {
+  test('composer-capabilities.ts does not export either killed function', async () => {
+    const mod = await import('./composer-capabilities');
+    expect((mod as Record<string, unknown>).computeDefaultAllowed).toBeUndefined();
+    expect((mod as Record<string, unknown>).managedGatewayHasNothingToRouteTo).toBeUndefined();
   });
 });
 

@@ -1,20 +1,25 @@
 import { CATALOG, type CatalogModel } from '@kortix/llm-catalog';
-import { HARNESS_IDS, HARNESSES, harnessesByStability, type HarnessId } from '@kortix/shared/harnesses';
+import {
+  HARNESSES,
+  HARNESS_IDS,
+  type HarnessId,
+  compatibleHarnessesFor,
+  harnessesByStability,
+} from '@kortix/shared/harnesses';
 
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
-import { config } from '../../config';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { RUNTIME_MANAGED_MODELS } from '../../llm-gateway/models/managed-models';
-import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
-import type { GitBackedProject } from '../git/types';
+import {
+  type HarnessModelResolutionState,
+  isCredentialConfigured,
+  resolveHarnessModels,
+} from '../../llm-gateway/resolution/harness-models';
 import { listRepoFiles } from '../git/files';
+import type { GitBackedProject } from '../git/types';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import {
-  resolveCompiledRuntimeConfigForSession,
   type LogicalAgentLaunchPlan,
+  resolveCompiledRuntimeConfigForSession,
 } from './compile-runtime-config';
 
 export type { HarnessId };
@@ -44,6 +49,13 @@ export type ComposerModelPreset = {
   id: string;
   name: string;
   source: string;
+  // Additive (phase 1 of the model-resolution refactor, docs/specs/2026-07-
+  // 21-model-resolution-refactor-plan.md): the REAL upstream provider id for
+  // this model (e.g. 'anthropic', 'kortix', 'codex', 'custom') — sourced
+  // directly from `resolveHarnessModels`'s provider-tagged `ResolvedModel`
+  // for every catalog-driven harness, so no client ever needs to guess a
+  // model's provider by parsing the wire id.
+  provider: string;
 };
 
 export type ComposerCapabilities = {
@@ -66,6 +78,13 @@ export type ComposerCapabilities = {
     custom_allowed: boolean;
     live_change: boolean;
     presets: ComposerModelPreset[];
+    // Additive: the closed resolution state this capability payload was
+    // computed from (`llm-gateway/resolution/harness-models.ts`'s
+    // `HarnessModelResolutionState`). `default_allowed`/`can_start` are both
+    // renderings of `state === 'ready'` — this field is the authoritative
+    // one a client should switch on for the five UI renderings the refactor
+    // plan's §3.1 describes; the booleans stay for back-compat.
+    state: HarnessModelResolutionState;
   };
   can_start: boolean;
   blocking_reason: string | null;
@@ -80,61 +99,43 @@ export type ConfiguredModelProvider = {
 // harness-only — their subscription, their own provider API key, or the
 // repo's committed native config. They NEVER ride the Kortix managed gateway
 // and NEVER take a custom endpoint. OpenCode and Pi keep the full gateway
-// story (managed gateway, BYOK, custom endpoints, native config). This table
-// is the single source of truth for that matrix — every other place that
-// needs to know what's compatible with what (web connect modal, SDK
-// projection, route validation) reads it from here, directly or via the
-// `/harness-connections` response's `compatible_harnesses`.
-const CONNECTIONS: Record<
-  HarnessAuthKind,
-  Pick<HarnessConnection, 'label' | 'compatible_harnesses' | 'source'>
-> = {
-  managed_gateway: {
-    label: 'Kortix managed gateway',
-    compatible_harnesses: ['opencode', 'pi'],
-    source: 'kortix',
-  },
-  claude_subscription: {
-    label: 'Claude subscription',
-    compatible_harnesses: ['claude'],
-    source: 'project_secret',
-  },
-  anthropic_api_key: {
-    label: 'Anthropic API key',
-    compatible_harnesses: ['claude', 'opencode', 'pi'],
-    source: 'project_secret',
-  },
-  codex_subscription: {
-    label: 'ChatGPT/Codex subscription',
-    compatible_harnesses: ['codex'],
-    source: 'project_secret',
-  },
-  openai_api_key: {
-    label: 'OpenAI API key',
-    compatible_harnesses: ['codex', 'opencode', 'pi'],
-    source: 'project_secret',
-  },
-  openai_compatible: {
-    label: 'OpenAI-compatible REST',
-    compatible_harnesses: ['opencode', 'pi'],
-    source: 'project_secret',
-  },
+// story (managed gateway, BYOK, custom endpoints, native config).
+//
+// `compatible_harnesses` is NOT authored here (2026-07-21 model-resolution
+// refactor, docs/specs/2026-07-21-model-resolution-refactor-plan.md §4.2):
+// it used to be a hand-maintained array that had to be kept in exact sync
+// with `packages/shared/src/harnesses.ts`'s `authKinds` — two arrays that
+// must always agree are one authored fact wearing two costumes. It is now a
+// pure derivation (`compatibleHarnessesFor`) over that ONE authored table,
+// computed per entry below — `label`/`source` are the only real per-kind
+// data this table still carries.
+const CONNECTION_LABELS: Record<HarnessAuthKind, Pick<HarnessConnection, 'label' | 'source'>> = {
+  managed_gateway: { label: 'Kortix managed gateway', source: 'kortix' },
+  claude_subscription: { label: 'Claude subscription', source: 'project_secret' },
+  anthropic_api_key: { label: 'Anthropic API key', source: 'project_secret' },
+  codex_subscription: { label: 'ChatGPT/Codex subscription', source: 'project_secret' },
+  openai_api_key: { label: 'OpenAI API key', source: 'project_secret' },
+  openai_compatible: { label: 'OpenAI-compatible REST', source: 'project_secret' },
   // Deliberate capability decision (2026-07-15): a custom Anthropic-protocol
   // endpoint had exactly one consumer — Claude Code custom routing — and that
   // routing is cut by the harness-only simplification above. No harness is
-  // compatible with this kind for now; the form/route plumbing stays intact
-  // (cheap to bring back) but it is unreachable from any UI surface.
-  anthropic_compatible: {
-    label: 'Anthropic-compatible REST',
-    compatible_harnesses: [],
-    source: 'project_secret',
-  },
-  native_config: {
-    label: 'Harness-native config',
-    compatible_harnesses: [...HARNESS_IDS],
-    source: 'native_config',
-  },
+  // compatible with this kind (compatibleHarnessesFor('anthropic_compatible')
+  // is empty because no harness's authKinds lists it) — the form/route
+  // plumbing stays intact (cheap to bring back) but it is unreachable from
+  // any UI surface.
+  anthropic_compatible: { label: 'Anthropic-compatible REST', source: 'project_secret' },
+  native_config: { label: 'Harness-native config', source: 'native_config' },
 };
+
+const CONNECTIONS: Record<
+  HarnessAuthKind,
+  Pick<HarnessConnection, 'label' | 'compatible_harnesses' | 'source'>
+> = Object.fromEntries(
+  (Object.keys(CONNECTION_LABELS) as HarnessAuthKind[]).map((kind) => [
+    kind,
+    { ...CONNECTION_LABELS[kind], compatible_harnesses: compatibleHarnessesFor(kind) },
+  ]),
+) as Record<HarnessAuthKind, Pick<HarnessConnection, 'label' | 'compatible_harnesses' | 'source'>>;
 
 const ACTIVE_ROUTES_METADATA_KEY = 'harness_auth_routes';
 
@@ -142,7 +143,9 @@ function isHarnessAuthKind(value: unknown): value is HarnessAuthKind {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(CONNECTIONS, value);
 }
 
-export function readHarnessAuthRoutes(metadata: unknown): Partial<Record<HarnessId, HarnessAuthKind>> {
+export function readHarnessAuthRoutes(
+  metadata: unknown,
+): Partial<Record<HarnessId, HarnessAuthKind>> {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
   const raw = (metadata as Record<string, unknown>)[ACTIVE_ROUTES_METADATA_KEY];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -159,38 +162,25 @@ export function writeHarnessAuthRoute(
   harness: HarnessId,
   connectionId: HarnessAuthKind | null,
 ): Record<string, unknown> {
-  const current = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
-    ? { ...(metadata as Record<string, unknown>) }
-    : {};
+  const current =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? { ...(metadata as Record<string, unknown>) }
+      : {};
   const routes = { ...readHarnessAuthRoutes(current) };
   if (connectionId) routes[harness] = connectionId;
   else delete routes[harness];
   return { ...current, [ACTIVE_ROUTES_METADATA_KEY]: routes };
 }
 
-function connectionConfigured(
-  kind: HarnessAuthKind,
-  env: Record<string, string>,
-  gateway: boolean,
-  nativeConfigReady: boolean,
-): boolean {
-  switch (kind) {
-    case 'managed_gateway': return gateway;
-    case 'claude_subscription': return Boolean(env.CLAUDE_CODE_OAUTH_TOKEN?.trim());
-    case 'anthropic_api_key': return Boolean(env.ANTHROPIC_API_KEY?.trim() || env.ANTHROPIC_AUTH_TOKEN?.trim());
-    case 'codex_subscription': return Boolean(env.CODEX_AUTH_JSON?.trim() || env.OPENCODE_AUTH_JSON?.trim());
-    case 'openai_api_key': return Boolean(env.OPENAI_API_KEY?.trim() || env.CODEX_API_KEY?.trim());
-    case 'openai_compatible':
-      return env.CUSTOM_LLM_PROTOCOL?.trim().toLowerCase() === 'openai' && Boolean(env.CUSTOM_LLM_BASE_URL?.trim());
-    case 'anthropic_compatible':
-      return env.CUSTOM_LLM_PROTOCOL?.trim().toLowerCase() === 'anthropic' && Boolean(env.CUSTOM_LLM_BASE_URL?.trim());
-    // A profile's conventional/default directory is not itself configuration.
-    // Only expose this route when that selected runtime profile actually owns
-    // at least one file in its config subtree at the project's launch ref.
-    case 'native_config': return nativeConfigReady;
-  }
-}
-
+// `buildHarnessConnections` backs the `/harness-connections` LISTING route
+// (and the PUT active-route selector's own configured/ready check) — a
+// connections-catalog UI concern, distinct from session-start authority.
+// Credential PRESENCE (`isCredentialConfigured`) is concept 1.1, gateway-
+// owned (docs/specs/2026-07-21-model-resolution-refactor-plan.md §2) —
+// imported, not re-derived here. The AUTHORITATIVE "can a session actually
+// start" answer comes exclusively from `resolveHarnessModels`
+// (`capabilities()` below); this listing's `ready` field stays a
+// presence/flag signal for the connections UI, same as before.
 export function buildHarnessConnections(input: {
   env: Record<string, string>;
   gatewayEnabled: boolean;
@@ -200,13 +190,15 @@ export function buildHarnessConnections(input: {
   const explicit = input.activeRoutes ?? {};
   return (Object.keys(CONNECTIONS) as HarnessAuthKind[]).map((kind) => {
     const definition = CONNECTIONS[kind];
-    const configured = connectionConfigured(
+    const configured = isCredentialConfigured(
       kind,
       input.env,
       input.gatewayEnabled,
       input.nativeConfigReady === true,
     );
-    const activeFor = definition.compatible_harnesses.filter((harness) => explicit[harness] === kind);
+    const activeFor = definition.compatible_harnesses.filter(
+      (harness) => explicit[harness] === kind,
+    );
     return {
       id: kind,
       kind,
@@ -234,10 +226,12 @@ export function resolveActiveHarnessConnection(input: {
   explicit?: HarnessAuthKind | null;
 }): { active: HarnessConnection | null; reason: string | null } {
   const compatible = input.connections.filter((connection) =>
-    connection.compatible_harnesses.includes(input.harness));
+    connection.compatible_harnesses.includes(input.harness),
+  );
   if (input.explicit) {
     const selected = compatible.find((connection) => connection.id === input.explicit) ?? null;
-    if (!selected) return { active: null, reason: `${input.explicit} is not compatible with ${input.harness}.` };
+    if (!selected)
+      return { active: null, reason: `${input.explicit} is not compatible with ${input.harness}.` };
     if (!selected.ready) return { active: null, reason: selected.reason };
     return { active: selected, reason: null };
   }
@@ -245,14 +239,23 @@ export function resolveActiveHarnessConnection(input: {
   // Deterministic compatibility path: a configured managed route is the
   // platform default. With no managed route, exactly one configured native/BYOK
   // route may be adopted; two or more require an explicit choice.
-  const managed = compatible.find((connection) => connection.id === 'managed_gateway' && connection.ready);
+  const managed = compatible.find(
+    (connection) => connection.id === 'managed_gateway' && connection.ready,
+  );
   if (managed) return { active: managed, reason: null };
-  const ready = compatible.filter((connection) => connection.ready && connection.id !== 'native_config');
+  const ready = compatible.filter(
+    (connection) => connection.ready && connection.id !== 'native_config',
+  );
   if (ready.length === 1) return { active: ready[0]!, reason: null };
   if (ready.length > 1) {
-    return { active: null, reason: `Choose which ${input.harness} authentication connection to use.` };
+    return {
+      active: null,
+      reason: `Choose which ${input.harness} authentication connection to use.`,
+    };
   }
-  const native = compatible.find((connection) => connection.id === 'native_config' && connection.ready);
+  const native = compatible.find(
+    (connection) => connection.id === 'native_config' && connection.ready,
+  );
   if (native) return { active: native, reason: null };
   return { active: null, reason: `Connect a compatible ${input.harness} authentication route.` };
 }
@@ -270,29 +273,49 @@ const NATIVE_MODEL_PRESET_LIMIT = 6;
 export function newestCatalogModels(models: CatalogModel[], limit: number): CatalogModel[] {
   return [...models]
     .sort((a, b) => {
-      const released = (Date.parse(b.released ?? '') || -Infinity) - (Date.parse(a.released ?? '') || -Infinity);
+      const released =
+        (Date.parse(b.released ?? '') || Number.NEGATIVE_INFINITY) -
+        (Date.parse(a.released ?? '') || Number.NEGATIVE_INFINITY);
       return released !== 0 ? released : a.id.localeCompare(b.id);
     })
     .slice(0, limit);
 }
 
-export function modelPresets(kind: HarnessAuthKind, env: Record<string, string>, projectId: string): ComposerModelPreset[] {
-  if (kind === 'managed_gateway') {
-    return Object.entries(gatewayModelCatalog(projectId)).map(([id, model]) => ({
-      id: `kortix/${id}`,
-      name: model.name || id,
-      source: 'kortix-gateway',
-    }));
-  }
-  const providerId = kind === 'anthropic_api_key' ? 'anthropic' : kind === 'openai_api_key' ? 'openai' : null;
+/**
+ * The small, curated preset list for a harness-native connection kind —
+ * NEVER the unconditioned gateway catalog dump. `managed_gateway`'s branch
+ * (2026-07-21 refactor's kill target — it used to call `gatewayModelCatalog`
+ * directly, gated only by `Boolean(projectId)`, the entire root cause of
+ * "Pi/OpenCode show 4,941 models") is gone: for every catalog-driven harness
+ * (`ownsDefaultModel: false` — OpenCode, and per the same refactor's Pi
+ * decision, Pi), `resolveHarnessModels`'s credential-conditioned, provider-
+ * tagged `models` IS the presets source now — see `capabilities()` below.
+ * This function only remains for the genuinely separate, already-narrow
+ * cases: a harness-native curated preset list (top-N Anthropic/OpenAI models
+ * for Claude/Codex when authenticated via a bare API key, not their
+ * subscription) and a project's own custom-endpoint/native-config
+ * declarations, neither of which the gateway's runtime catalog knows about.
+ */
+export function modelPresets(
+  kind: HarnessAuthKind,
+  env: Record<string, string>,
+  _projectId: string,
+): ComposerModelPreset[] {
+  const providerId =
+    kind === 'anthropic_api_key' ? 'anthropic' : kind === 'openai_api_key' ? 'openai' : null;
   if (providerId) {
     const provider = CATALOG.providers.find((entry) => entry.id === providerId);
     const models = newestCatalogModels(provider?.models ?? [], NATIVE_MODEL_PRESET_LIMIT);
-    return models.map((model) => ({ id: model.id, name: model.name || model.id, source: 'models.dev' }));
+    return models.map((model) => ({
+      id: model.id,
+      name: model.name || model.id,
+      source: 'models.dev',
+      provider: providerId,
+    }));
   }
   if (kind === 'openai_compatible' || kind === 'anthropic_compatible') {
     const id = env.CUSTOM_LLM_MODEL_ID?.trim();
-    return id ? [{ id, name: id, source: 'project' }] : [];
+    return id ? [{ id, name: id, source: 'project', provider: 'custom' }] : [];
   }
   if (kind === 'native_config') {
     return CATALOG.providers.flatMap((provider) => {
@@ -302,97 +325,13 @@ export function modelPresets(kind: HarnessAuthKind, env: Record<string, string>,
         id: `${provider.id}/${model.id}`,
         name: model.name || model.id,
         source: 'models.dev',
+        provider: provider.id,
       }));
     });
   }
   // Subscription access is owned by the authenticated harness. Never fabricate
   // its model list from models.dev.
   return [];
-}
-
-/**
- * Whether a resolved connection has a usable default model with no explicit
- * choice needed (§9 "A valid harness default does not require the user to
- * select a model", docs/specs/2026-07-14-provider-auth-model-management.md).
- * A harness with `HARNESSES[id].ownsDefaultModel === true` (Claude/Codex/Pi)
- * always owns its default natively. A harness with `ownsDefaultModel ===
- * false` (OpenCode is the only one today) consumes an explicit launch model —
- * but a preset catalog OR a ready managed-gateway route (managed-auto) is
- * itself a usable default; only a genuinely empty, non-managed catalog (e.g.
- * a custom endpoint with no configured default model) requires the user to
- * pick one. Exported (and kept pure) so this rule is unit-testable without a
- * compiled runtime config.
- */
-export function computeDefaultAllowed(input: {
-  active: HarnessAuthKind | null;
-  harness: HarnessId;
-  presetsLength: number;
-}): boolean {
-  if (!input.active) return false;
-  if (HARNESSES[input.harness].ownsDefaultModel) return true;
-  return input.presetsLength > 0 || input.active === 'native_config' || input.active === 'managed_gateway';
-}
-
-/**
- * Whether a resolved `managed_gateway` route has genuinely NOTHING to route a
- * turn to, despite `computeDefaultAllowed` trusting it unconditionally (see
- * that function's doc comment). `managed_gateway` being "ready" only means
- * the project's gateway-routing FLAG is on (`connectionConfigured`) — it says
- * nothing about whether a turn can actually be served: `KORTIX_MANAGED_
- * PROVIDER_ENABLED` on with a non-empty managed-model lineup is NOT the same
- * as servable — the deployment can still be missing a transport credential
- * (`AWS_BEDROCK_API_KEY`/`OPENROUTER_API_KEY`, see `descriptors.ts`), or the
- * account's entitlement/tier can reject every managed model
- * (`resolveCandidates`'s `plan_upgrade_required`/free-tier gate). An earlier
- * version of this function only checked whether the managed-model list was
- * non-empty — inert on any deployment with `KORTIX_MANAGED_PROVIDER_ENABLED=
- * true` regardless of whether anything behind it actually resolves.
- * `modelPresets('managed_gateway', …)`'s length can't stand in for this
- * either — it lists the gateway's full theoretically-routable catalog (every
- * provider/model models.dev knows a transport for), not what THIS project
- * can actually reach, so it stays non-empty regardless of real credentials.
- *
- * `probeServable` is injected (rather than importing `resolveCandidates`/
- * `isModelServableForAccount` directly here) so this stays unit-testable
- * without a DB/network — the real caller wires it to
- * `isModelServableForAccount` from `llm-gateway/resolution/default-model.ts`,
- * the SAME function the actual request-time resolution path already trusts
- * (`resolveEffectiveModel`, `PUT /model-defaults`), so this can never invent
- * a second, competing notion of "servable".
- *
- * `resolveActiveHarnessConnection` prefers a "ready" `managed_gateway` over
- * every other connection, so a project in exactly this state (gateway flag
- * on, nothing actually reachable behind it) resolves `active: 'managed_
- * gateway'` with no other candidate ever considered — leaving `can_start`
- * true with no usable model. That is precisely how a session provisions,
- * boots its harness, and then hangs on "Connecting" forever with nothing to
- * generate with.
- */
-export async function managedGatewayHasNothingToRouteTo(input: {
-  active: HarnessAuthKind | null;
-  harness: HarnessId;
-  managedModels: readonly { id: string }[];
-  connections: HarnessConnection[];
-  probeServable: (modelId: string) => Promise<boolean>;
-}): Promise<boolean> {
-  if (input.active !== 'managed_gateway') return false;
-  const hasFallbackConnection = input.connections.some(
-    (connection) =>
-      connection.ready &&
-      connection.id !== 'managed_gateway' &&
-      connection.id !== 'native_config' &&
-      connection.compatible_harnesses.includes(input.harness),
-  );
-  for (const model of input.managedModels) {
-    // Short-circuit on the first real candidate — the free-tier/entitlement
-    // gate in `resolveCandidates` applies uniformly across every managed
-    // model, so one servable hit is enough to know the route isn't dead; a
-    // missing transport credential only affects the models routed through
-    // that specific transport, so a genuine "nothing works" answer still
-    // requires checking all of them.
-    if (await input.probeServable(model.id)) return false;
-  }
-  return !hasFallbackConnection;
 }
 
 // Founder posture (WS2-P1-b): OpenCode is the only non-experimental harness —
@@ -431,23 +370,24 @@ export async function resolveProjectComposerState(input: {
   userId: string | null;
   metadata?: unknown;
   /**
-   * The project's owning account — lets `capabilities()` probe REAL
-   * managed-gateway servability (`managedGatewayHasNothingToRouteTo`) via
-   * the same `isModelServableForAccount` request-time resolution every other
-   * caller trusts, instead of only counting the deployment's managed-model
-   * lineup. Optional for backward compatibility with callers/tests that
-   * don't have an account context yet — without it, the probe degrades to
-   * "assume servable whenever the deployment has a managed lineup at all"
-   * (the prior behavior), since there's no account to evaluate entitlement/
-   * credentials against. Every real HTTP call site has this on hand
-   * (`project.accountId`) and should pass it.
+   * The project's owning account — passed straight through to
+   * `resolveHarnessModels` (`llm-gateway/resolution/harness-models.ts`) for
+   * its real per-account managed-route servability probe and free-tier gate.
+   * Optional for backward compatibility with callers/tests that don't have
+   * an account context yet — without it, the probe degrades to "assume
+   * servable" (the historical behavior), since there's no account to
+   * evaluate entitlement/credentials against. Every real HTTP call site has
+   * this on hand (`project.accountId`) and should pass it.
    */
   accountId?: string;
 }): Promise<{
   agents: ComposerCapabilities['agent'][];
   connections: HarnessConnection[];
   providers: ConfiguredModelProvider[];
-  capabilities(agentName: string, connectionId?: HarnessAuthKind | null): Promise<ComposerCapabilities>;
+  capabilities(
+    agentName: string,
+    connectionId?: HarnessAuthKind | null,
+  ): Promise<ComposerCapabilities>;
 }> {
   const [compiled, secrets, repoFiles] = await Promise.all([
     resolveCompiledRuntimeConfigForSession(input.project),
@@ -458,7 +398,10 @@ export async function resolveProjectComposerState(input: {
   ]);
   const hasNativeConfig = (configDir: string): boolean => {
     const prefix = configDir.replace(/^\.\//, '').replace(/\/+$/, '');
-    return Boolean(prefix) && repoFiles.some((file) => file.path === prefix || file.path.startsWith(`${prefix}/`));
+    return (
+      Boolean(prefix) &&
+      repoFiles.some((file) => file.path === prefix || file.path.startsWith(`${prefix}/`))
+    );
   };
   const anyNativeConfig = compiled
     ? Object.values(compiled.runtimes).some((runtime) => hasNativeConfig(runtime.configDir))
@@ -497,78 +440,71 @@ export async function resolveProjectComposerState(input: {
         launch.secrets === 'none' ? [] : launch.secrets,
       );
       const runtime = compiled?.runtimes[launch.runtime];
-      const agentConnections = buildHarnessConnections({
+      const explicit = connectionId ?? routes[agent.harness] ?? null;
+
+      // THE resolution call — everything below is rendering, not computation
+      // (docs/specs/2026-07-21-model-resolution-refactor-plan.md §1.4/§2).
+      // Nothing in this closure re-derives credential health, catalog
+      // reachability, or a usable-default boolean; `resolution.state` is the
+      // one fact `can_start`/`auth.ready`/`model.default_allowed` all render.
+      const resolution = await resolveHarnessModels({
+        harness: agent.harness,
+        projectId: input.project.projectId,
+        accountId: input.accountId,
+        userId: input.userId,
         env: agentSecrets.env,
         gatewayEnabled: projectLlmGatewayEnabled(input.metadata),
         nativeConfigReady: Boolean(runtime && hasNativeConfig(runtime.configDir)),
-        activeRoutes: routes,
+        explicit,
       });
-      const explicit = connectionId ?? routes[agent.harness] ?? null;
-      const resolved = resolveActiveHarnessConnection({ harness: agent.harness, connections: agentConnections, explicit });
-      const compatible = agentConnections
-        .filter((connection) => connection.compatible_harnesses.includes(agent.harness))
-        .map((connection) => connection.kind);
-      const active = resolved.active?.kind ?? null;
-      const presets = active ? modelPresets(active, agentSecrets.env, input.project.projectId) : [];
-      const policy = active === 'managed_gateway'
-        ? 'gateway-catalog'
-        : active === 'native_config' || active === 'claude_subscription' || active === 'codex_subscription'
-          ? 'harness-catalog'
-          : 'launch-override';
-      const defaultAllowed = computeDefaultAllowed({ active, harness: agent.harness, presetsLength: presets.length });
-      // Real per-account servability probe (see `managedGatewayHasNothingToRouteTo`'s
-      // doc comment) — reuses the SAME `isModelServableForAccount` the request-time
-      // resolution path already trusts (`resolveEffectiveModel`, `PUT /model-defaults`),
-      // so this can never disagree with what a real generation request would do.
-      // Degrades to "assume servable" (the historical behavior) when this caller
-      // didn't supply an account context to probe against.
-      const accountId = input.accountId;
-      const freeModelsOnly =
-        accountId && config.KORTIX_BILLING_INTERNAL_ENABLED
-          ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
-          : false;
-      const noManagedRoute = await managedGatewayHasNothingToRouteTo({
-        active,
-        harness: agent.harness,
-        managedModels: RUNTIME_MANAGED_MODELS,
-        connections: agentConnections,
-        probeServable: async (modelId) => {
-          if (!accountId || !input.userId) return true;
-          return isModelServableForAccount({
-            userId: input.userId,
-            accountId,
-            projectId: input.project.projectId,
-            freeModelsOnly,
-            model: modelId,
-          });
-        },
-      });
-      const usableDefault = defaultAllowed && !noManagedRoute;
+
+      const active = resolution.credentialRef?.kind ?? null;
+      // The narrowed, provider-tagged catalog IS the presets for a catalog-
+      // driven harness (OpenCode, and per the 2026-07-21 Pi decision, Pi) —
+      // `modelPresets` is never called for them anymore. `ownsDefaultModel`
+      // harnesses (Claude, Codex) keep their existing small curated-preset
+      // feature (an override suggestion list, genuinely separate from — and
+      // never the unconditioned dump behind — the resolution module's own
+      // no-catalog `ready` shape for them).
+      const presets: ComposerModelPreset[] = resolution.ownsDefaultModel
+        ? active
+          ? modelPresets(active, agentSecrets.env, input.project.projectId)
+          : []
+        : resolution.models.map((model) => ({
+            id: model.id,
+            name: model.name,
+            source: resolution.upstreamKind === 'gateway' ? 'kortix-gateway' : 'project',
+            provider: model.provider,
+          }));
+      const policy =
+        active === 'managed_gateway'
+          ? 'gateway-catalog'
+          : active === 'native_config' ||
+              active === 'claude_subscription' ||
+              active === 'codex_subscription'
+            ? 'harness-catalog'
+            : 'launch-override';
       const harnessGated = isExperimentalHarnessGated(agent.harness, input.metadata);
       const blockingReason = harnessGated
         ? `${HARNESSES[agent.harness].label} is an experimental harness — enable "Experimental harnesses" for this project in Settings → Experimental before selecting it.`
-        : (resolved.reason ??
-            (noManagedRoute
-              ? 'No model is connected for this project — connect a model provider to start a session.'
-              : !usableDefault
-                ? `No usable model is available for ${agent.harness}.`
-                : null));
+        : resolution.reason;
       return {
         agent,
         auth: {
-          compatible,
+          compatible: HARNESSES[agent.harness].authKinds,
           active,
-          ready: Boolean(resolved.active) && !noManagedRoute,
-          reason: noManagedRoute ? blockingReason : resolved.reason,
+          ready: resolution.state === 'ready',
+          reason: resolution.reason,
         },
         model: {
           policy,
-          default_allowed: usableDefault,
+          default_allowed: resolution.state === 'ready',
           custom_allowed: true,
           live_change: HARNESSES[agent.harness].liveModelChange,
           presets,
+          state: resolution.state,
         },
-        can_start: !harnessGated && Boolean(resolved.active) && usableDefault,
+        can_start: !harnessGated && resolution.state === 'ready',
         blocking_reason: blockingReason,
       };
     },
