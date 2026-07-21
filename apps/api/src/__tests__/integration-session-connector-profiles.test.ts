@@ -11,6 +11,7 @@ import {
   projectSessionConnectorBindings,
   projectSessions,
   projects,
+  serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { deleteAgentMailInstall, saveAgentMailInstall } from '../channels/install-store';
@@ -43,13 +44,17 @@ const PROFILE_DEFAULT = crypto.randomUUID();
 const PROFILE_A = crypto.randomUUID();
 const PROFILE_B = crypto.randomUUID();
 const PROFILE_EXTERNAL = crypto.randomUUID();
+const PROFILE_SERVICE_ACCOUNT = crypto.randomUUID();
 const EMAIL_PROFILE_DEFAULT = crypto.randomUUID();
 const FOREIGN_PROFILE = crypto.randomUUID();
 const SESSION_A = crypto.randomUUID();
 const SESSION_B = crypto.randomUUID();
 const SESSION_DEFAULT = crypto.randomUUID();
+const SESSION_IMPERSONATION = crypto.randomUUID();
+const SESSION_SERVICE_ACCOUNT = crypto.randomUUID();
 const USER = crypto.randomUUID();
 const OTHER_USER = crypto.randomUUID();
+const SERVICE_ACCOUNT = crypto.randomUUID();
 
 beforeAll(async () => {
   await db.insert(accounts).values([
@@ -70,6 +75,14 @@ beforeAll(async () => {
       repoUrl: 'https://example.test/profile-b.git',
     },
   ]);
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: SERVICE_ACCOUNT,
+    accountId: ACCOUNT_A,
+    name: `profile-test-service-account-${SERVICE_ACCOUNT}`,
+    secretHash: `profile-test-${SERVICE_ACCOUNT}`,
+    publicPrefix: 'kortix_sa_profile_test',
+    createdBy: USER,
+  });
   await db.insert(executorConnectors).values([
     {
       connectorId: CONNECTOR_A,
@@ -136,6 +149,15 @@ beforeAll(async () => {
       label: 'Managed workspace',
     },
     {
+      profileId: PROFILE_SERVICE_ACCOUNT,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorId: CONNECTOR_A,
+      ownerType: 'member',
+      ownerId: SERVICE_ACCOUNT,
+      label: 'Forged service-account workspace',
+    },
+    {
       profileId: EMAIL_PROFILE_DEFAULT,
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
@@ -174,6 +196,22 @@ beforeAll(async () => {
       branchName: SESSION_DEFAULT,
       createdBy: USER,
     },
+    {
+      sessionId: SESSION_IMPERSONATION,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      branchName: SESSION_IMPERSONATION,
+      createdBy: USER,
+      visibility: 'private',
+    },
+    {
+      sessionId: SESSION_SERVICE_ACCOUNT,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      branchName: SESSION_SERVICE_ACCOUNT,
+      createdBy: SERVICE_ACCOUNT,
+      visibility: 'private',
+    },
   ]);
   await db.insert(projectSessionConnectorBindings).values([
     {
@@ -195,6 +233,26 @@ beforeAll(async () => {
       profileId: PROFILE_B,
       source: 'request',
       createdBy: USER,
+    },
+    {
+      sessionId: SESSION_IMPERSONATION,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorAlias: 'veyris',
+      connectorId: CONNECTOR_A,
+      profileId: PROFILE_B,
+      source: 'request',
+      createdBy: USER,
+    },
+    {
+      sessionId: SESSION_SERVICE_ACCOUNT,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorAlias: 'veyris',
+      connectorId: CONNECTOR_A,
+      profileId: PROFILE_SERVICE_ACCOUNT,
+      source: 'request',
+      createdBy: SERVICE_ACCOUNT,
     },
   ]);
   await db.insert(executorCredentials).values([
@@ -339,6 +397,7 @@ describe('session connector profile isolation', () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
       mayManageSystemProfiles: true,
       bindings: { veyris: { profile_id: FOREIGN_PROFILE } },
     });
@@ -350,6 +409,7 @@ describe('session connector profile isolation', () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
       mayManageSystemProfiles: false,
       bindings: { veyris: { profile_id: PROFILE_A } },
     });
@@ -366,10 +426,43 @@ describe('session connector profile isolation', () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
       mayManageSystemProfiles: true,
       bindings: { veyris: { profile_id: PROFILE_B } },
     });
     expect(result).toMatchObject({ ok: false, code: 'CONNECTOR_PROFILE_NOT_FOUND' });
+  });
+
+  test('a service account cannot bind a member profile even when the owner id matches', async () => {
+    const result = await validateSessionConnectorBindings({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      actingUserId: SERVICE_ACCOUNT,
+      actingPrincipalIsServiceAccount: true,
+      mayManageSystemProfiles: true,
+      bindings: { veyris: { profile_id: PROFILE_SERVICE_ACCOUNT } },
+    });
+    expect(result).toMatchObject({ ok: false, code: 'CONNECTOR_PROFILE_NOT_FOUND' });
+  });
+
+  test('Executor rejects a pre-existing session bound to another member profile', async () => {
+    const resolved = await resolveSessionConnectorProfile({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_IMPERSONATION,
+      alias: 'veyris',
+    });
+    expect(resolved).toBeNull();
+  });
+
+  test('Executor rejects a pre-existing service-account session bound to a member profile', async () => {
+    const resolved = await resolveSessionConnectorProfile({
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_SERVICE_ACCOUNT,
+      alias: 'veyris',
+    });
+    expect(resolved).toBeNull();
   });
 
   test('system profiles retain the explicit management capability path', async () => {
@@ -377,6 +470,7 @@ describe('session connector profile isolation', () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
       mayManageSystemProfiles: false,
       bindings: { veyris: { profile_id: PROFILE_DEFAULT } },
     });
@@ -386,6 +480,7 @@ describe('session connector profile isolation', () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
       mayManageSystemProfiles: false,
       bindings: { veyris: { profile_id: PROFILE_EXTERNAL } },
     });
@@ -393,6 +488,7 @@ describe('session connector profile isolation', () => {
       accountId: ACCOUNT_A,
       projectId: PROJECT_A,
       actingUserId: USER,
+      actingPrincipalIsServiceAccount: false,
       mayManageSystemProfiles: true,
       bindings: { veyris: { profile_id: PROFILE_EXTERNAL } },
     });

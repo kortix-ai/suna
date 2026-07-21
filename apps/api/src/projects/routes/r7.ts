@@ -406,6 +406,8 @@ projectsApp.openapi(
     source: 'ui',
     project: loaded.row,
     userId: loaded.userId,
+    requestingPrincipalType:
+      c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body,
     request: requestAuditContext(c),
     idempotencyKey: c.req.header('idempotency-key') ?? null,

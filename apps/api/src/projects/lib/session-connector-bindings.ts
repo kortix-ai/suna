@@ -7,6 +7,7 @@ import {
   executorConnectors,
   projectSessionConnectorBindings,
   projectSessions,
+  serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -150,6 +151,7 @@ export async function validateSessionConnectorBindings(input: {
   accountId: string;
   projectId: string;
   actingUserId: string;
+  actingPrincipalIsServiceAccount: boolean;
   mayManageSystemProfiles: boolean;
   bindings: SessionConnectorBindings | undefined;
 }): Promise<
@@ -198,7 +200,9 @@ export async function validateSessionConnectorBindings(input: {
       };
     }
     const mayUseProfile =
-      (row.ownerType === 'member' && row.ownerId === input.actingUserId) ||
+      (row.ownerType === 'member' &&
+        row.ownerId === input.actingUserId &&
+        !input.actingPrincipalIsServiceAccount) ||
       (row.ownerType === 'project' && row.isDefault) ||
       (row.ownerType !== 'member' && row.ownerType !== 'project' && input.mayManageSystemProfiles);
     if (!mayUseProfile) {
@@ -304,8 +308,16 @@ export async function resolveSessionConnectorProfile(input: {
         sessionId: projectSessions.sessionId,
         createdBy: projectSessions.createdBy,
         visibility: projectSessions.visibility,
+        createdByServiceAccountId: serviceAccounts.serviceAccountId,
       })
       .from(projectSessions)
+      .leftJoin(
+        serviceAccounts,
+        and(
+          eq(serviceAccounts.serviceAccountId, projectSessions.createdBy),
+          eq(serviceAccounts.accountId, projectSessions.accountId),
+        ),
+      )
       .where(
         and(
           eq(projectSessions.sessionId, input.sessionId),
@@ -344,7 +356,9 @@ export async function resolveSessionConnectorProfile(input: {
     if (bound) {
       if (
         bound.ownerType === 'member' &&
-        (bound.ownerId !== session.createdBy || session.visibility !== 'private')
+        (session.createdByServiceAccountId !== null ||
+          bound.ownerId !== session.createdBy ||
+          session.visibility !== 'private')
       ) {
         return null;
       }

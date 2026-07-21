@@ -13,6 +13,7 @@ export type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferS
 export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
+    requestingPrincipalType: command.requestingPrincipalType,
     metadata: command.metadata,
     extraEnvVars: command.extraEnvVars,
     visibility: command.visibility,

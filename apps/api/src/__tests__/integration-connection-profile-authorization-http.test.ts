@@ -9,6 +9,9 @@ import {
   accounts,
   executorConnectionProfiles,
   executorConnectors,
+  iamPolicies,
+  iamRoleActions,
+  iamRoles,
   projectMembers,
   projectSessionConnectorBindings,
   projectSessionPublicShares,
@@ -16,8 +19,10 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import { PROJECT_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import {
   publicShareToken,
@@ -31,14 +36,19 @@ const MANAGER = crypto.randomUUID();
 const ALICE = crypto.randomUUID();
 const BOB = crypto.randomUUID();
 const CONNECTOR = crypto.randomUUID();
+const PIPEDREAM_CONNECTOR = crypto.randomUUID();
 const DEFAULT_PROFILE = crypto.randomUUID();
 const EXTERNAL_PROFILE = crypto.randomUUID();
 const ALICE_PROFILE = crypto.randomUUID();
 const BOB_PROFILE = crypto.randomUUID();
+const SERVICE_ACCOUNT_PROFILE = crypto.randomUUID();
+const SERVICE_ACCOUNT_PIPEDREAM_PROFILE = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
 const PREEXISTING_SHARE = crypto.randomUUID();
 const PREEXISTING_SHARE_TOKEN = publicShareToken(PREEXISTING_SHARE);
 const minted: string[] = [];
+let serviceAccountId = '';
+let serviceAccountToken = '';
 
 beforeAll(async () => {
   await db.execute(
@@ -65,15 +75,57 @@ beforeAll(async () => {
     { accountId: ACCOUNT, projectId: PROJECT, userId: ALICE, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: BOB, projectRole: 'member' },
   ]);
-  await db.insert(executorConnectors).values({
-    connectorId: CONNECTOR,
+  const serviceAccount = await createServiceAccount({
     accountId: ACCOUNT,
-    projectId: PROJECT,
-    slug: 'customer_data',
-    name: 'Customer data',
-    providerType: 'http',
-    config: { baseUrl: 'https://example.test', auth: { type: 'bearer' } },
+    name: `profile-owner-http-${crypto.randomUUID()}`,
+    createdBy: MANAGER,
   });
+  serviceAccountId = serviceAccount.serviceAccountId;
+  serviceAccountToken = serviceAccount.secret;
+  const serviceAccountRoleId = crypto.randomUUID();
+  await db.insert(iamRoles).values({
+    roleId: serviceAccountRoleId,
+    accountId: ACCOUNT,
+    key: `profile-owner-${crypto.randomUUID()}`,
+    name: 'Profile owner HTTP test',
+    scopeType: 'project',
+  });
+  await db.insert(iamRoleActions).values(
+    [
+      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+      PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    ].map((action) => ({ roleId: serviceAccountRoleId, action })),
+  );
+  await db.insert(iamPolicies).values({
+    accountId: ACCOUNT,
+    principalType: 'token',
+    principalId: serviceAccountId,
+    roleId: serviceAccountRoleId,
+    scopeType: 'project',
+    scopeId: PROJECT,
+  });
+  await db.insert(executorConnectors).values([
+    {
+      connectorId: CONNECTOR,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      slug: 'customer_data',
+      name: 'Customer data',
+      providerType: 'http',
+      config: { baseUrl: 'https://example.test', auth: { type: 'bearer' } },
+    },
+    {
+      connectorId: PIPEDREAM_CONNECTOR,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      slug: 'google_sheets',
+      name: 'Google Sheets',
+      providerType: 'pipedream',
+      config: { app: 'google_sheets' },
+    },
+  ]);
   await db.insert(executorConnectionProfiles).values([
     {
       profileId: DEFAULT_PROFILE,
@@ -109,6 +161,24 @@ beforeAll(async () => {
       ownerType: 'member',
       ownerId: BOB,
       label: 'Bob data',
+    },
+    {
+      profileId: SERVICE_ACCOUNT_PROFILE,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      connectorId: CONNECTOR,
+      ownerType: 'member',
+      ownerId: serviceAccountId,
+      label: 'Forged service-account member data',
+    },
+    {
+      profileId: SERVICE_ACCOUNT_PIPEDREAM_PROFILE,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      connectorId: PIPEDREAM_CONNECTOR,
+      ownerType: 'member',
+      ownerId: serviceAccountId,
+      label: 'Forged service-account OAuth profile',
     },
   ]);
   await db.insert(projectSessions).values({
@@ -216,6 +286,125 @@ describe('connection profile owner authorization over HTTP', () => {
       owner_id: ALICE,
       label: 'Alice renamed',
     });
+  });
+
+  test('generic manager reconciliation rewrites a submitted member owner to the bearer', async () => {
+    const response = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles`,
+      await mint(MANAGER),
+      {
+        connector_alias: 'customer_data',
+        owner_type: 'member',
+        owner_id: BOB,
+        label: 'Manager personal profile',
+      },
+    );
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      owner_type: 'member',
+      owner_id: MANAGER,
+      label: 'Manager personal profile',
+    });
+  });
+
+  test('service accounts cannot mint member profiles through either reconciliation route', async () => {
+    const self = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles/me`,
+      serviceAccountToken,
+      { connector_alias: 'customer_data', label: 'Service account personal profile' },
+    );
+    expect(self.status).toBe(403);
+
+    const generic = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connector-profiles`,
+      serviceAccountToken,
+      {
+        connector_alias: 'customer_data',
+        owner_type: 'member',
+        owner_id: ALICE,
+        label: 'Service account generic personal profile',
+      },
+    );
+    expect(generic.status).toBe(403);
+  });
+
+  test('service accounts cannot list or mutate pre-existing service-account-owned member rows', async () => {
+    const listed = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connector-profiles`,
+      serviceAccountToken,
+    );
+    expect(listed.status).toBe(200);
+    const ids = (
+      (await listed.json()) as { profiles: Array<{ profile_id: string }> }
+    ).profiles.map((profile) => profile.profile_id);
+    expect(new Set(ids)).toEqual(new Set([DEFAULT_PROFILE, EXTERNAL_PROFILE]));
+
+    for (const [operation, body] of [
+      ['credential', { value: 'service-account-capability' }],
+      ['revoke', {}],
+      ['activate', {}],
+    ] as const) {
+      const response = await request(
+        'PUT',
+        `/v1/projects/${PROJECT}/connector-profiles/${SERVICE_ACCOUNT_PROFILE}/${operation}`,
+        serviceAccountToken,
+        body,
+      );
+      expect(response.status).toBe(404);
+    }
+  });
+
+  test('service accounts cannot start or finalize OAuth for forged member rows', async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+      const value = String(args[0]);
+      if (value.includes('/v1/oauth/token')) {
+        return new Response(JSON.stringify({ access_token: 'pd-sa-test', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      if (value.includes('/tokens')) {
+        return new Response(
+          JSON.stringify({
+            token: 'connect-sa-test',
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+            connect_link_url: 'https://pipedream.example.test/connect',
+          }),
+          { status: 200 },
+        );
+      }
+      if (value.includes('/accounts?')) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'apn_sa_test',
+                app: { name_slug: 'google_sheets', name: 'Google Sheets' },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return realFetch(...args);
+    }) as typeof fetch;
+    try {
+      for (const operation of ['connect', 'connect/finalize'] as const) {
+        const response = await request(
+          'POST',
+          `/v1/projects/${PROJECT}/connector-profiles/${SERVICE_ACCOUNT_PIPEDREAM_PROFILE}/${operation}`,
+          serviceAccountToken,
+          {},
+        );
+        expect(response.status).toBe(404);
+      }
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   test('members rotate their own credential; managers cannot rotate another member credential', async () => {

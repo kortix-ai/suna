@@ -49,6 +49,7 @@ export interface CreateSessionCommand {
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnectorProfiles?: boolean;
@@ -63,6 +64,8 @@ export interface CreateSessionCommand {
 
 export interface QueuedCreateSessionPayload {
   body: Record<string, unknown>;
+  /** Absent on commands persisted before principal type was added. */
+  requestingPrincipalType?: 'human' | 'service_account';
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';

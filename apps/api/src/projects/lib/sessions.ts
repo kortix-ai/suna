@@ -435,6 +435,7 @@ export function sandboxCallbackUnreachableReason(providerName: SandboxProviderNa
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
@@ -516,6 +517,7 @@ export async function createProjectSession(input: {
     accountId,
     projectId,
     actingUserId: userId,
+    actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
     mayManageSystemProfiles: input.mayManageSystemConnectorProfiles ?? false,
     bindings: parsedConnectorBindings.bindings,
   });

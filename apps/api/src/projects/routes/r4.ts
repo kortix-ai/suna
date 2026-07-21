@@ -186,9 +186,12 @@ function serializeConnectionProfile(row: {
 function mayReadConnectionProfile(
   profile: { ownerType: string; ownerId: string | null; isDefault: boolean },
   userId: string,
+  actingPrincipalIsServiceAccount: boolean,
   mayManageSystemProfiles: boolean,
 ): boolean {
-  if (profile.ownerType === 'member') return profile.ownerId === userId;
+  if (profile.ownerType === 'member') {
+    return !actingPrincipalIsServiceAccount && profile.ownerId === userId;
+  }
   if (profile.ownerType === 'project' && profile.isDefault) return true;
   return mayManageSystemProfiles;
 }
@@ -196,9 +199,12 @@ function mayReadConnectionProfile(
 function mayMutateConnectionProfile(
   profile: { ownerType: string; ownerId: string | null },
   userId: string,
+  actingPrincipalIsServiceAccount: boolean,
   mayManageSystemProfiles: boolean,
 ): boolean {
-  if (profile.ownerType === 'member') return profile.ownerId === userId;
+  if (profile.ownerType === 'member') {
+    return !actingPrincipalIsServiceAccount && profile.ownerId === userId;
+  }
   return mayManageSystemProfiles;
 }
 
@@ -262,6 +268,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
     const mayManageSystemProfiles = await projectCapabilityAllowed(
       c,
       loaded.userId,
@@ -289,7 +296,12 @@ projectsApp.openapi(
     return c.json({
       profiles: rows
         .filter((profile) =>
-          mayReadConnectionProfile(profile, loaded.userId, mayManageSystemProfiles),
+          mayReadConnectionProfile(
+            profile,
+            loaded.userId,
+            actingPrincipalIsServiceAccount,
+            mayManageSystemProfiles,
+          ),
         )
         .map(serializeConnectionProfile),
     });
@@ -329,6 +341,12 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (c.get('authType') === 'service_account') {
+      return c.json(
+        { error: 'Only human members can reconcile personal connector profiles' },
+        403,
+      );
+    }
     const body = await readBody(c);
     const connectorAlias = canonicalConnectorAlias(
       typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '',
@@ -412,6 +430,12 @@ projectsApp.openapi(
       typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '';
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
+    if (ownerType === 'member' && c.get('authType') === 'service_account') {
+      return c.json(
+        { error: 'Only human members can reconcile personal connector profiles' },
+        403,
+      );
+    }
     // Backwards-compatible manager path: a submitted member owner is always
     // rewritten to the caller. Managers may create their own member profile,
     // but never mint one on behalf of (or later impersonate) another member.
@@ -498,6 +522,7 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
       const profileId = c.req.param('profileId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
       const mayManageSystemProfiles = await projectCapabilityAllowed(
         c,
         loaded.userId,
@@ -521,7 +546,14 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
         )
         .limit(1);
       if (!profile) return c.json({ error: 'Not found' }, 404);
-      if (!mayMutateConnectionProfile(profile, loaded.userId, mayManageSystemProfiles)) {
+      if (
+        !mayMutateConnectionProfile(
+          profile,
+          loaded.userId,
+          actingPrincipalIsServiceAccount,
+          mayManageSystemProfiles,
+        )
+      ) {
         return c.json({ error: 'Not found' }, 404);
       }
       if (operation === 'credential') {
@@ -587,6 +619,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       const profileId = c.req.param('profileId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
       const mayManageSystemProfiles = await projectCapabilityAllowed(
         c,
         loaded.userId,
@@ -623,7 +656,12 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
         .limit(1);
       if (
         !profile ||
-        !mayMutateConnectionProfile(profile, loaded.userId, mayManageSystemProfiles)
+        !mayMutateConnectionProfile(
+          profile,
+          loaded.userId,
+          actingPrincipalIsServiceAccount,
+          mayManageSystemProfiles,
+        )
       ) {
         return c.json({ error: 'Not found' }, 404);
       }
