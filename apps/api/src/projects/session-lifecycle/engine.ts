@@ -1,5 +1,5 @@
-import { executorExecutions, projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { executorExecutions, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
@@ -499,14 +499,32 @@ async function executeQueuedCreate(
       error: { status: 409, body: { error: 'No account owner available to own the session' } },
     };
   }
+  let requestingPrincipalType = payload.requestingPrincipalType;
+  if (requestingPrincipalType !== 'human' && requestingPrincipalType !== 'service_account') {
+    const [serviceAccount] = row.actorUserId
+      ? await db
+          .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+          .from(serviceAccounts)
+          .where(
+            and(
+              eq(serviceAccounts.serviceAccountId, row.actorUserId),
+              eq(serviceAccounts.accountId, project.accountId),
+            ),
+          )
+          .limit(1)
+      : [];
+    requestingPrincipalType = serviceAccount ? 'service_account' : 'human';
+  }
   return executeCreateSession({
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
+    requestingPrincipalType,
     body: payload.body ?? {},
     metadata: payload.metadata,
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
+    mayManageSystemConnectorProfiles: payload.mayManageSystemConnectorProfiles,
     enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
@@ -523,12 +541,14 @@ async function executeCreateSession(
   const result = await createProjectSession({
     project: command.project,
     userId: command.userId,
+    requestingPrincipalType: command.requestingPrincipalType,
     body: command.body,
     enforceAccountCap: command.enforceAccountCap,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
+    mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
   });
 
   if (result.error) {

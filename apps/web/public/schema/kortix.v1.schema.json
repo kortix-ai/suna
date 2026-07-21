@@ -388,7 +388,8 @@
               "slack",
               "teams",
               "email",
-              "meet"
+              "meet",
+              "whatsapp"
             ]
           },
           "credential": {},

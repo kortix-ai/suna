@@ -341,8 +341,11 @@ flow(
       "GET /v1/projects/:projectId/connector-profiles",
       "POST /v1/projects/:projectId/connector-profiles",
       "PUT /v1/projects/:projectId/connector-profiles/:profileId/activate",
+      "POST /v1/projects/:projectId/connector-profiles/:profileId/connect",
+      "POST /v1/projects/:projectId/connector-profiles/:profileId/connect/finalize",
       "PUT /v1/projects/:projectId/connector-profiles/:profileId/credential",
       "PUT /v1/projects/:projectId/connector-profiles/:profileId/revoke",
+      "POST /v1/projects/:projectId/connector-profiles/me",
     ],
   },
   async (ctx) => {
@@ -407,6 +410,45 @@ flow(
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/connector-profiles", { connector_alias: slug }, { params: { projectId: p.id } });
       r.status(400);
+    });
+
+    let memberProfileId = "";
+    await ctx.step("reconcile the caller-owned member profile → 201", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/connector-profiles/me",
+          { connector_alias: slug, label: "KE2E member connection" },
+          { params: { projectId: p.id } },
+        );
+      r.status(201)
+        .body()
+        .has("$.connector_alias", slug)
+        .has("$.owner_type", "member")
+        .has("$.is_default", false)
+        .exists("$.owner_id")
+        .exists("$.profile_id");
+      memberProfileId = r.json<any>().profile_id;
+    });
+
+    await ctx.step("profile OAuth routes reject a non-Pipedream connector → 404/501", async () => {
+      const connect = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/connector-profiles/:profileId/connect",
+          {},
+          { params: { projectId: p.id, profileId: memberProfileId } },
+        );
+      connect.status([404, 501]);
+
+      const finalize = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/connector-profiles/:profileId/connect/finalize",
+          {},
+          { params: { projectId: p.id, profileId: memberProfileId } },
+        );
+      finalize.status([404, 501]);
     });
 
     await ctx.step("activate the profile → 200 ok", async () => {
