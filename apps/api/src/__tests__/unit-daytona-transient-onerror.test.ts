@@ -69,11 +69,10 @@ function makeClassifyingOnError() {
   };
   const app = new Hono();
   app.onError((err, c) => {
-    const method = c.req.method;
-    const path = c.req.path;
-    const errName = err.constructor?.name || 'Error';
-
-    // (abort / sandbox-proxy branch omitted — not exercised here)
+    // (abort / sandbox-proxy branch omitted — not exercised here. The
+    // production `app.onError` also derives `method`/`path`/`errName` for
+    // structured logging, but this reproduction only exercises the
+    // classification branches, so they're intentionally not declared here.)
 
     if (isPlatinumSandboxNotRunningError(err)) {
       c.header('Retry-After', '10');
