@@ -26,5 +26,7 @@ CREATE TYPE "kortix"."project_session_origin" AS ENUM (
 );
 
 ALTER TABLE "kortix"."project_sessions"
-  ADD COLUMN "origin" "kortix"."project_session_origin" NOT NULL DEFAULT 'user',
+  ADD COLUMN "origin" "kortix"."project_session_origin" DEFAULT 'user' NOT NULL;
+
+ALTER TABLE "kortix"."project_sessions"
   ADD COLUMN "origin_ref" text;

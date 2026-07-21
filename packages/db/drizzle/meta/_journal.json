@@ -36,6 +36,13 @@
       "when": 1784393153201,
       "tag": "20260718164553_add_project_model_generation_config",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784642564770,
+      "tag": "20260721140244_add_session_origin",
+      "breakpoints": true
     }
   ]
 }
