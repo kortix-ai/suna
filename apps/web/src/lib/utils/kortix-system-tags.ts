@@ -111,11 +111,6 @@ function describeSystemMessage(type: string, source: string, body: string): { la
 		return { label: "Goal", detail: "continuing" }
 	}
 
-	// Passive continuation
-	if (type === "passive-continuation") {
-		return { label: "Continue" }
-	}
-
 	// Task-related
 	if (type === "tasks") {
 		return { label: "Tasks", detail: "sync" }
