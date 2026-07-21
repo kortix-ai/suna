@@ -68,16 +68,17 @@ export function agentHarnessPresentation(
   return harness ? harnessPresentation(harness) : null;
 }
 
-/** Legacy/unknown agents retain the existing catalog requirement. Claude,
- * Codex, and Pi own their default model natively; sending a gateway model
- * override to those adapters is both unnecessary and frequently invalid. */
+/** Legacy/unknown agents retain the existing catalog requirement. Claude and
+ * Codex own their default model natively (the subscription decides); sending a
+ * gateway model override to those adapters is both unnecessary and frequently
+ * invalid. Pi is gateway/catalog-driven — 2026-07-21 model-resolution refactor
+ * decision, mirroring `HARNESSES.pi.ownsDefaultModel: false` in
+ * `@kortix/shared/harnesses`. */
 export function agentModelPolicy(
   agent: Agent | null | undefined,
 ): AgentModelPolicy {
   const harness = agentHarness(agent);
-  return harness === "claude" || harness === "codex" || harness === "pi"
-    ? "harness"
-    : "catalog";
+  return harness === "claude" || harness === "codex" ? "harness" : "catalog";
 }
 
 export function agentRequiresCatalogModel(

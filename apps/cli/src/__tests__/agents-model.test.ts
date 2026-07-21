@@ -5,21 +5,22 @@ import { ownsDefaultModelHarness, runAgents } from '../commands/agents.ts';
 // `kortix agents model <agent> <model>` writes account_model_preferences —
 // consulted only when the target harness does NOT own its default model
 // (HARNESSES[id].ownsDefaultModel, packages/shared/src/harnesses.ts). Claude
-// Code, Codex, and Pi all own theirs, so pinning a model for an agent named
-// after one of them writes a row that's provably never read. This used to
-// print success anyway (the CLI's own help example demonstrated the bug:
-// `kortix agents model claude anthropic/claude-opus-4-8`). See
+// Code and Codex own theirs (the subscription decides), so pinning a model for
+// an agent named after one of them writes a row that's provably never read.
+// This used to print success anyway (the CLI's own help example demonstrated
+// the bug: `kortix agents model claude anthropic/claude-opus-4-8`). Pi is
+// gateway/catalog-driven since the 2026-07-21 model-resolution refactor. See
 // docs/specs/2026-07-21-cli-credential-model-ux.md §1.4.
 
 describe('ownsDefaultModelHarness', () => {
-  test('flags claude, codex, and pi — all own their default model', () => {
+  test('flags claude and codex — both own their default model', () => {
     expect(ownsDefaultModelHarness('claude')).toBe('claude');
     expect(ownsDefaultModelHarness('codex')).toBe('codex');
-    expect(ownsDefaultModelHarness('pi')).toBe('pi');
   });
 
-  test('does not flag opencode — it does not own its default model', () => {
+  test('does not flag opencode or pi — both are gateway/catalog-driven', () => {
     expect(ownsDefaultModelHarness('opencode')).toBeNull();
+    expect(ownsDefaultModelHarness('pi')).toBeNull();
   });
 
   test('does not flag a custom agent name or undefined', () => {
@@ -48,8 +49,8 @@ describe('runAgents model — refuses ownsDefaultModel harnesses before any netw
     expect(out).not.toContain('HTTP');
   });
 
-  test('rejects "codex" and "pi" the same way', async () => {
-    for (const agent of ['codex', 'pi']) {
+  test('rejects "codex" the same way', async () => {
+    for (const agent of ['codex']) {
       const chunks: string[] = [];
       const orig = process.stderr.write.bind(process.stderr);
       (process.stderr.write as unknown) = (s: string) => {

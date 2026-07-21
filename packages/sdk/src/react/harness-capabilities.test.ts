@@ -14,7 +14,7 @@ const agent = (harness?: string): Agent => ({
 });
 
 describe("ACP harness capabilities", () => {
-  test.each(["claude", "codex", "pi"])(
+  test.each(["claude", "codex"])(
     "%s uses its harness-native default model",
     (harness) => {
       expect(agentModelPolicy(agent(harness))).toBe("harness");
@@ -22,8 +22,11 @@ describe("ACP harness capabilities", () => {
     },
   );
 
-  test("OpenCode and legacy agents retain catalog model gating", () => {
+  test("OpenCode, Pi, and legacy agents retain catalog model gating", () => {
+    // Pi is gateway/catalog-driven — 2026-07-21 model-resolution refactor,
+    // mirroring HARNESSES.pi.ownsDefaultModel: false in @kortix/shared.
     expect(agentRequiresCatalogModel(agent("opencode"))).toBe(true);
+    expect(agentRequiresCatalogModel(agent("pi"))).toBe(true);
     expect(agentRequiresCatalogModel(agent())).toBe(true);
   });
 

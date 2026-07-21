@@ -69,7 +69,8 @@ export async function runAgents(argv: string[]): Promise<number> {
   // Refuse before touching the network: `account_model_preferences` (this
   // command's backing table) is only consulted when the harness itself
   // doesn't own its default model (`HARNESSES[id].ownsDefaultModel`). Claude
-  // Code, Codex, and Pi all own theirs — pinning a model for an agent named
+  // Code and Codex own theirs (Pi is gateway/catalog-driven since the
+  // 2026-07-21 refactor) — pinning a model for an agent named
   // after one of them here would write a row that's provably never read,
   // and printing success for that is a silent-failure bug in its own right.
   // Detection is name-based: an agent whose name matches a harness id that
