@@ -411,7 +411,8 @@
                     "slack",
                     "teams",
                     "email",
-                    "meet"
+                    "meet",
+                    "whatsapp"
                   ]
                 },
                 "credential": {},
@@ -1364,7 +1365,8 @@
                     "slack",
                     "teams",
                     "email",
-                    "meet"
+                    "meet",
+                    "whatsapp"
                   ]
                 },
                 "credential": {
