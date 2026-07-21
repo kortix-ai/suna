@@ -551,8 +551,20 @@ test('does NOT suppress a real null-access error on a non-storage method', () =>
 // Better Stack. Browser-environment noise, not an app defect. The matcher
 // drops it UNLESS the stack carries a resolved first-party `apps/web/src/…`
 // frame (our own code is the direct-access culprit → actionable to fix).
+//
+// POST-#4674 RECURRENCE (this PR): the host name in the browser's throw is the
+// `Window` global interface, which different browsers capitalize differently.
+// PR #4674 matched only the lowercase `from 'window'` wording (Chrome), so the
+// capitalized `from 'Window'` form (Firefox/WebKit) kept slipping through and
+// re-fired in prod as patterns `89b0a8e8…` / `b6927c9d…` (last 2026-07-21) plus
+// older `e8eadc82…` / `d010de8a…` (last 2026-07-19), all from the webpack runtime
+// chunk `app:///_next/static/chunks/webpack-d1f7215451c1ce17.js` function `c`
+// (= `__webpack_require__`) in a storage-blocked context. The `Window` variants
+// below reproduce those exact messages; the matcher now classifies both
+// casings (host token is matched case-insensitively). See the new
+// `classifies the capitalized 'Window' storage SecurityError variants …` test.
 const STORAGE_SECURITY_ERROR_EVENTS = [
-  // The exact raw production message (localStorage).
+  // The exact raw production message (localStorage, Chrome `from 'window'`).
   "SecurityError: Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
   // Bare message (no `SecurityError:` prefix).
   "Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
@@ -562,12 +574,28 @@ const STORAGE_SECURITY_ERROR_EVENTS = [
   "SecurityError: Failed to read the 'sessionStorage' property from 'window': Access is denied for this document.",
   "Failed to read the 'sessionStorage' property from 'window': Access is denied for this document.",
   "Unhandled promise rejection: Failed to read the 'sessionStorage' property from 'window': Access is denied for this document.",
+  // Firefox/WebKit capitalize the host interface name: `from 'Window'`. These
+  // are the exact post-#4674 recurrence messages (patterns `89b0a8e8…` /
+  // `b6927c9d…` / `e8eadc82…` / `d010de8a…`).
+  "SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+  "Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+  "Unhandled promise rejection: SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+  "SecurityError: Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.",
+  "Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.",
+  "Unhandled promise rejection: Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.",
 ]
 
 // A raw minified chunk frame (no resolved `apps/web/src/…` source) — the
 // browser-environment noise shape: storage blocked, no traceable first-party
 // call site. Should be suppressed.
 const CHUNK_FRAME_STORAGE = 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js'
+
+// The exact webpack runtime chunk frame from the post-#4674 recurrence
+// (patterns `89b0a8e8…` / `b6927c9d…` …), function `c` = `__webpack_require__`,
+// with the Vercel `?dpl=` deployment id. No resolved first-party source, so the
+// negative guard does NOT preserve it — it must be dropped.
+const WEBPACK_RUNTIME_FRAME_STORAGE =
+  'app:///_next/static/chunks/webpack-d1f7215451c1ce17.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno'
 
 test('classifies every storage-blocked SecurityError variant as noise (no first-party frame)', () => {
   for (const message of STORAGE_SECURITY_ERROR_EVENTS) {
@@ -585,6 +613,62 @@ test('classifies every storage-blocked SecurityError variant as noise (no first-
       isStorageSecurityErrorNoise({ message, filename: CHUNK_FRAME_STORAGE }),
       true,
       `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+// Regression for the post-#4674 recurrence: PR #4674's matcher anchored on the
+// lowercase `from 'window'` wording only, so the capitalized `from 'Window'`
+// form (Firefox/WebKit) re-fired in prod from the webpack runtime chunk. This
+// pins the EXACT prod call site (webpack-<hash>.js function `c`, with the
+// Vercel `?dpl=` deployment id) + the exact capitalized message, so a future
+// regression of either the casing or the chunk-frame handling is caught.
+test('suppresses the post-#4674 capitalized Window recurrence (webpack runtime chunk, no first-party frame)', () => {
+  const messages = [
+    "SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+    "Failed to read the 'localStorage' property from 'Window': Access is denied for this document.",
+    "SecurityError: Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.",
+  ]
+  for (const message of messages) {
+    // Matcher-level: capitalized host, no first-party frame → noise.
+    assert.equal(
+      isStorageSecurityErrorNoise({ message }),
+      true,
+      `expected capitalized "${message}" to be noise`,
+    )
+    // Matcher-level: the exact webpack runtime chunk frame (no resolved
+    // first-party source) → noise.
+    assert.equal(
+      isStorageSecurityErrorNoise({ message, frames: [{ filename: WEBPACK_RUNTIME_FRAME_STORAGE }] }),
+      true,
+      `expected capitalized "${message}" from the webpack runtime chunk to be noise`,
+    )
+    assert.equal(
+      isStorageSecurityErrorNoise({ message, filename: WEBPACK_RUNTIME_FRAME_STORAGE }),
+      true,
+      `expected capitalized "${message}" from the webpack runtime filename to be noise`,
+    )
+    // Sentry beforeSend gate: the exact prod Sentry event shape.
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: [{ filename: WEBPACK_RUNTIME_FRAME_STORAGE }] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for capitalized "${message}" from the webpack runtime chunk to be suppressed`,
+    )
+    // Runtime (window.onerror / onunhandledrejection) gate.
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: WEBPACK_RUNTIME_FRAME_STORAGE }),
+      true,
+      `expected runtime gate to suppress capitalized "${message}" from the webpack runtime chunk`,
     )
   }
 })

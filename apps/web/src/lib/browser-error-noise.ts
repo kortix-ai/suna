@@ -61,9 +61,23 @@ const STORAGE_NULL_ACCESS_NOISE_PATTERNS = [
 // actionable first-party case the negative guard exists to preserve. The
 // frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
 // is the only safe gate.
+// The host name in the browser's throw is the Web Storage global interface
+// (`Window`), which different browsers capitalize differently: Chrome emits
+// `from 'window'`, Firefox/WebKit emit `from 'Window'`. PR #4674's original
+// matcher anchored on the lowercase form only, so the capitalized variants
+// recurred in prod (patterns `89b0a8e8…` / `b6927c9d…` / `e8eadc82…` /
+// `d010de8a…`, last 2026-07-21, call site `webpack-<hash>.js` function `c` =
+// `__webpack_require__` in a storage-blocked context — no resolved first-party
+// frame → exactly the shape the negative guard is meant to drop). The `i` flag
+// makes the host casing match either browser wording WITHOUT widening the match:
+// the storage property name (`'localStorage'` / `'sessionStorage'`) stays
+// case-sensitive in the regex and never appears on a non-storage throw, and the
+// `Failed to read the '…' property from '…'` frame is the browser's own
+// access-control wording (never an app-logic error), so case-folding the host
+// token cannot swallow a real first-party error the negative guard preserves.
 const STORAGE_SECURITY_ERROR_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
-  /^Failed to read the 'localStorage' property from 'window'/,
-  /^Failed to read the 'sessionStorage' property from 'window'/,
+  /^Failed to read the 'localStorage' property from 'window'/i,
+  /^Failed to read the 'sessionStorage' property from 'window'/i,
 ];
 
 // A de-minified first-party source frame: Sentry's sourcemap resolution
@@ -591,9 +605,11 @@ export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean 
  * itself in a storage-blocked context (Safari private mode, sandboxed/
  * cross-origin iframe, partitioned storage, some in-app WebViews). Distinct
  * from #4529's null-access `TypeError` class. Requires the canonical
- * `Failed to read the '<storage>' property from 'window'` message prefix, AND
- * a NEGATIVE guard: if any frame (or the window.onerror filename) resolves to
- * a de-minified first-party `apps/web/src/…` source, the event keeps reporting
+ * `Failed to read the '<storage>' property from 'window'` message prefix (the
+ * host name is matched case-insensitively so Chrome's `from 'window'` AND
+ * Firefox/WebKit's `from 'Window'` wording both classify), AND a NEGATIVE
+ * guard: if any frame (or the window.onerror filename) resolves to a
+ * de-minified first-party `apps/web/src/…` source, the event keeps reporting
  * — that means our own code is reading `window.localStorage` directly
  * (bypassing managed-storage) and is actionable to fix. Only events with NO
  * resolved first-party frame are dropped. See
