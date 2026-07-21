@@ -1211,6 +1211,113 @@ export function isEmbedPdfTilingReactUpdateDepthNoise(input: {
   return frames.some(frameMatchesEmbedPdfTilingCallback);
 }
 
+// React #327 = `Should not already be working.` — the React production
+// reconciler's re-entrancy guard. It throws from
+// `packages/react-reconciler/src/ReactFiberWorkLoop.js`'s `performSyncWorkOnRoot`
+// (and the `flushSyncUpdateQueue` path at the end of `flushPendingEffects`):
+//
+//   function performSyncWorkOnRoot(root, lanes) {
+//     if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+//       throw new Error('Should not already be working.');   // ← #327
+//     }
+//     …
+//   }
+//
+// i.e. React's scheduler entered `performSyncWorkOnRoot` while it was ALREADY
+// rendering or committing. The documented Firefox-specific trigger is React
+// Router's `unstable_usePrompt` calling `setTimeout(blocker.proceed, 0)` after
+// `window.confirm()` (react-router#10314 — the React team itself called this a
+// "browser-specific issue, possibly related to policy things built-in to
+// Firefox"). The same #327 has been reported across the React ecosystem from
+// Firefox's MessageChannel-based scheduler re-entering during the commit phase
+// (react#17355, react#29908, react-router#10314, react-router#10547) — it does
+// NOT reproduce on Chromium/WebKit, only on Firefox.
+//
+// Better Stack pattern
+// 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence ever (90-day
+// window), 0 identified users (anonymous), single release
+// `22e12080d2b37642aa92a839da6b37f30fc21b9d`, 2026-07-20 11:53:33 UTC, route
+// `/projects/:id/sessions/:sessionId` (co-worker session page actively polling
+// `prompt_async` + UI clicks to remove queued messages — a state-heavy surface
+// that maximises scheduler churn), Firefox 152.0 on Generic Linux, mechanism
+// `auto.browser.global_handlers.onerror` (UNCAUGHT global error — never reached
+// a React error boundary). Stack: 2 frames, BOTH raw React-internal minified
+// production chunks:
+//   - chunk 66499-30a0e6805d268c02.js  function `x`   (scheduler continuation)
+//   - chunk 5ccd075d-fe5b6a678bf52bfe.js function `iX` (React DOM reconciler
+//     `ensureRootIsScheduled`/`performConcurrentWorkOnRoot` continuation →
+//     `iu` (`performSyncWorkOnRoot`) which throws `Error(i(327))` when
+//     `executionContext & 6` is set)
+// NO first-party `apps/web/src/…` source frame — the throw is inside React's
+// own production reconciler, never in our code. There is exactly ONE `flushSync`
+// call site in the entire frontend (`pdf-viewer.tsx:2101`) and it is on a
+// different route, so a first-party sync-render regression is ruled out.
+//
+// The `Minified React error #327;` message is React's canonical production
+// wording for the re-entrancy guard — a real first-party `throw new Error(
+// 'Should not already be working.')` in app code would surface as that exact
+// string, so the matcher anchors on React's minified-error format (`#327;`)
+// rather than the bare message text, AND a NEGATIVE guard: if any frame
+// resolves to a de-minified first-party `apps/web/src/…` source path, the event
+// keeps reporting (our own code IS the re-entrant culprit → actionable). A
+// real first-party #327 surfaces with a resolved `apps/web/src/…` frame and is
+// preserved; only React-internal minified-chunk captures with no first-party
+// frame are dropped. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare `#327` match there would swallow a real first-party
+// re-entrancy regression; the frame-aware `beforeSend` hook (which calls this
+// helper) is the only safe gate.
+const REACT_SCHEDULER_REENTRY_NOISE_PATTERN = /^Minified React error #327;/;
+
+/**
+ * Whether a Sentry / window.onerror event is the Firefox-specific React
+ * scheduler re-entrancy noise class: a `Minified React error #327;` (the
+ * canonical React production wording for `Should not already be working.`)
+ * thrown from React's own production reconciler chunk (function `iX` in the
+ * React DOM bundle's `ensureRootIsScheduled`/`performConcurrentWorkOnRoot`
+ * continuation → `iu` (`performSyncWorkOnRoot`), which throws when
+ * `executionContext & (RenderContext | CommitContext)` is set). The throw is
+ * inside React's own minified production chunk, never first-party; it is a
+ * well-known Firefox-specific scheduler quirk that does not reproduce on
+ * Chromium/WebKit (see `REACT_SCHEDULER_REENTRY_NOISE_PATTERN` for refs).
+ * Requires the `#327;` message AND a NEGATIVE guard: if any frame resolves to
+ * a de-minified first-party `apps/web/src/…` source, the event keeps reporting
+ * (our own code is the re-entrant culprit → actionable). Returns false when
+ * there are no frames (can't confirm the throw is React-internal — keep
+ * reporting rather than swallow a possible app re-entrancy regression). See
+ * `REACT_SCHEDULER_REENTRY_NOISE_PATTERN` for the full rationale.
+ */
+export function isFirefoxReactSchedulerReentryNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!REACT_SCHEDULER_REENTRY_NOISE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // No frames at all → can't confirm the throw is React-internal; keep
+  // reporting rather than blanket-dropping frameless events of unknown origin.
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
+  // code is the re-entrant culprit (e.g. a real `flushSync` inside a render
+  // phase, or a sync `setState` during commit) → actionable; keep reporting so
+  // the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Anchor: the throw must be inside React's own minified production bundle
+  // (`_next/static/chunks/…`). A real first-party `throw new Error('Should not
+  // already be working.')` de-minifies to `apps/web/src/…` and is preserved by
+  // the negative guard above; a #327 from a non-React third-party lib (which
+  // would surface with a different chunk frame) is preserved too. Only the
+  // React-internal #327 with no first-party frame is dropped.
+  return frames.some((frame) => isBrowserBundleSource(frame?.filename));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -1573,6 +1680,21 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // real first-party setState loop keeps reporting. See
   // `isEmbedPdfTilingReactUpdateDepthNoise`.
   if (isEmbedPdfTilingReactUpdateDepthNoise({ message, frames })) {
+    return true;
+  }
+
+  // Firefox-specific React scheduler re-entrancy noise — `Minified React error
+  // #327;` (`Should not already be working.`), thrown from React's own
+  // production reconciler chunk when the scheduler re-enters during the commit
+  // phase. A well-known Firefox-specific quirk (react-router#10314 / react#17355
+  // / react#29908) that does NOT reproduce on Chromium/WebKit. Requires the
+  // canonical `#327;` message AND a NEGATIVE guard: a resolved first-party
+  // `apps/web/src/…` frame means our own code is the re-entrant culprit (a real
+  // `flushSync` inside render or sync `setState` during commit) → actionable, so
+  // the event keeps reporting. Only React-internal minified-chunk captures with
+  // no first-party frame are dropped. See
+  // `isFirefoxReactSchedulerReentryNoise`.
+  if (isFirefoxReactSchedulerReentryNoise({ message, frames })) {
     return true;
   }
 

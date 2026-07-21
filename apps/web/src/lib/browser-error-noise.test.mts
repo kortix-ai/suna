@@ -9,6 +9,7 @@ import {
   isExpectedBillingGateMessage,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
+  isFirefoxReactSchedulerReentryNoise,
   isInjectedAppSource,
   isInpageWalletStreamNoise,
   isKnownBrowserNoiseMessage,
@@ -2707,6 +2708,208 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
       `expected "${message}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// Firefox-specific React scheduler re-entrancy noise (React #327
+// "Should not already be working.", Better Stack pattern
+// 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7,
+// Kortix Frontend prod, application_id 2346967). The React production
+// reconciler's `performSyncWorkOnRoot` throws `Error(i(327))` when
+// `executionContext & (RenderContext | CommitContext)` is set — i.e. the
+// scheduler re-entered while React was already rendering/committing. A
+// well-known Firefox-specific scheduler quirk (react-router#10314 / react#17355
+// / react#29908) that does NOT reproduce on Chromium/WebKit. 1 occurrence ever
+// (90-day window), 0 identified users (anonymous), single release
+// `22e12080d2b37642aa92a839da6b37f30fc21b9d`, 2026-07-20 11:53:33 UTC, route
+// `/projects/:id/sessions/:sessionId`, Firefox 152.0 on Generic Linux, mechanism
+// `auto.browser.global_handlers.onerror` (UNCAUGHT global error). Stack: 2
+// frames, BOTH raw React-internal minified production chunks (the React DOM
+// reconciler chunk `5ccd075d-…` function `iX` plus the scheduler chunk `66499-…`
+// function `x`) — NO first-party `apps/web/src/…` source frame. React #327 is
+// ALSO the exact message a real first-party `flushSync`-inside-render or
+// sync-setState-during-commit regression would produce, so the matcher requires
+// BOTH the canonical `#327;` message AND a NEGATIVE guard: any resolved
+// first-party `apps/web/src/…` frame means our own code is the re-entrant
+// culprit → keep reporting so the call site can be found + fixed.
+// ---------------------------------------------------------------------------
+
+// The exact React #327 message from the production event.
+const REACT_327 =
+  'Minified React error #327; visit https://react.dev/errors/327 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.'
+
+// The exact 2-frame production stack (oldest-first → throwing frame last): the
+// scheduler continuation `x` in chunk 66499 + the React DOM reconciler `iX`
+// (the `ensureRootIsScheduled`/`performConcurrentWorkOnRoot` continuation →
+// `iu`/`performSyncWorkOnRoot` which throws `Error(i(327))`). Both frames are
+// raw `_next/static/chunks/…` bundles — none resolve to first-party source.
+const FIREFOX_REACT_327_FRAMES = [
+  { filename: 'app:///_next/static/chunks/66499-30a0e6805d268c02.js?dpl=dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2', function: 'x', in_app: true, lineno: 3, colno: 29932 },
+  { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js?dpl=dpl_BEo2Xvs3YxqRXbFpXiss8RKeu4b2', function: 'iX', in_app: true, lineno: 1, colno: 132934 },
+]
+
+test('classifies the Firefox React scheduler re-entrancy (#327) noise', () => {
+  assert.equal(
+    isFirefoxReactSchedulerReentryNoise({
+      message: REACT_327,
+      frames: FIREFOX_REACT_327_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned Firefox React #327 Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: mechanism
+  // `auto.browser.global_handlers.onerror` (uncaught global error), 2 React-
+  // internal minified-chunk frames, NO first-party source frame, route
+  // `/projects/:id/sessions/:sessionId`.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/3cdc1df5-01e6-492d-b2ab-d81bb8c42fa2/sessions/c102f5de-1b6b-4baf-8cd6-cdd11855330f',
+      },
+      exception: {
+        values: [
+          {
+            value: REACT_327,
+            stacktrace: { frames: FIREFOX_REACT_327_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Firefox React #327 event even with only the React reconciler chunk frame', () => {
+  // A minimal capture carrying just the React DOM reconciler `iX` frame (the
+  // throwing frame Better Stack surfaces as the call site) still qualifies —
+  // it is the React-internal minified-chunk anchor that matters.
+  assert.equal(
+    isFirefoxReactSchedulerReentryNoise({
+      message: REACT_327,
+      frames: [FIREFOX_REACT_327_FRAMES[1]],
+    }),
+    true,
+  )
+})
+
+test('suppresses the Firefox React #327 event with a chunk filename that has no dpl query', () => {
+  // Different Vercel deployment / cached chunk: the frame is still a React
+  // minified production chunk (`_next/static/chunks/…`) with no first-party
+  // source path, so it still classifies. The `dpl=dpl_…` query is not load-
+  // bearing for the matcher — `isBrowserBundleSource` matches the path prefix.
+  assert.equal(
+    isFirefoxReactSchedulerReentryNoise({
+      message: REACT_327,
+      frames: [
+        { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js', function: 'iX' },
+      ],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Firefox React #327 when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code IS the re-entrant
+  // culprit (e.g. a real `flushSync` inside a render phase, or a sync
+  // `setState` during commit) → actionable; the negative guard MUST preserve
+  // it so the call site can be found + fixed. This is the whole reason the
+  // matcher is frame-aware (React #327 is also a real first-party re-entrancy
+  // message — see `pdf-viewer.tsx:2101` for the only first-party `flushSync`
+  // call site, which would surface this way if it ever regresses).
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx', function: 'rotatePage' }],
+    [
+      { filename: 'app:///_next/static/chunks/5ccd075d-fe5b6a678bf52bfe.js', function: 'iX' },
+      { filename: 'app:///apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' },
+    ],
+  ]) {
+    assert.equal(
+      isFirefoxReactSchedulerReentryNoise({ message: REACT_327, frames }),
+      false,
+      `expected first-party React #327 from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: REACT_327, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party React #327 from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a React #327 with NO browser-bundle frame (a real app or different-third-party throw)', () => {
+  // A real first-party `throw new Error('Should not already be working.')` in
+  // app code (NOT via React's minified-error-#327 path) — or a #327 from a
+  // third-party lib whose frames don't resolve to our bundle — carries NO
+  // React-internal chunk frame, so the React-internal anchor is missing. Keep
+  // reporting rather than blanket-dropping events of unknown origin.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/co-worker/foo.tsx', function: 'bar' }],
+    [{ filename: 'https://cdn.example.com/some-lib.js', function: 'f' }],
+    [],
+  ]) {
+    assert.equal(
+      isFirefoxReactSchedulerReentryNoise({ message: REACT_327, frames }),
+      false,
+      `expected React #327 from ${JSON.stringify(frames)} (no React-internal chunk frame) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a different React error (#185) even with the same React chunk frames', () => {
+  // The matcher anchors on the EXACT #327 (re-entrancy guard) code; a
+  // different React minified error from the same React chunk is a different,
+  // actionable class and must keep reporting. (The sibling @embedpdf #185
+  // classifier handles its own #185 noise class.)
+  assert.equal(
+    isFirefoxReactSchedulerReentryNoise({
+      message:
+        'Minified React error #185; visit https://react.dev/errors/185 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.',
+      frames: FIREFOX_REACT_327_FRAMES,
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-React message that happens to mention #327', () => {
+  // The matcher anchors on `Minified React error #327;` — a different message
+  // wording must not be matched.
+  for (const message of [
+    'Should not already be working.',
+    'Error #327 in custom handler',
+    'react.dev/errors/327',
+    'Unhandled promise rejection: Should not already be working.',
+  ]) {
+    assert.equal(
+      isFirefoxReactSchedulerReentryNoise({
+        message,
+        frames: FIREFOX_REACT_327_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a bare `Should not already be working.` thrown from first-party app code', () => {
+  // A real first-party `throw new Error('Should not already be working.')` is
+  // NOT a React-minified-error-#327 capture (no `Minified React error #327;`
+  // prefix), so it never matches the React-internal noise class and keeps
+  // reporting — even if its frame happens to be a chunk frame. The matcher is
+  // anchored on React's canonical minified-error wording, not the bare
+  // message text, so app-code throws of the same string never get swallowed.
+  assert.equal(
+    isFirefoxReactSchedulerReentryNoise({
+      message: 'Should not already be working.',
+      frames: FIREFOX_REACT_327_FRAMES,
+    }),
+    false,
+  )
 })
 
 // ---------------------------------------------------------------------------
