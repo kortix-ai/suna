@@ -116,6 +116,7 @@ import {
   setConnectorSensitive,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
+import { Icon } from '@/features/icon/icon';
 import { DiscoverCatalogue } from './discover-catalogue';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -252,6 +253,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
+  const whatsappChannelEnabled = projectQuery.data?.experimental?.whatsapp === true;
   const discoverEnabled = projectQuery.data?.experimental?.connectors_api_discover === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
@@ -352,6 +354,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           <AddAppPanel
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
+            whatsappChannelEnabled={whatsappChannelEnabled}
             discoverEnabled={discoverEnabled}
             canWrite={canWrite}
             onAdded={(slug) => {
@@ -2767,12 +2770,14 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
 function AddAppPanel({
   projectId,
   emailChannelEnabled,
+  whatsappChannelEnabled,
   discoverEnabled,
   onAdded,
   canWrite = false,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
+  whatsappChannelEnabled: boolean;
   discoverEnabled: boolean;
   onAdded: (slug?: string) => void;
   canWrite?: boolean;
@@ -2842,6 +2847,7 @@ function AddAppPanel({
           <ChannelCatalogue
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
+            whatsappChannelEnabled={whatsappChannelEnabled}
             onAdded={onAdded}
           />
         </TabsContent>
@@ -2860,17 +2866,112 @@ function AddAppPanel({
 function ChannelCatalogue({
   projectId,
   emailChannelEnabled,
+  whatsappChannelEnabled,
   onAdded,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
+  whatsappChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}
+      {whatsappChannelEnabled && <AddWhatsAppProfileCard projectId={projectId} onAdded={onAdded} />}
       <AddSlackProfileCard projectId={projectId} onAdded={onAdded} />
     </div>
+  );
+}
+
+function AddWhatsAppProfileCard({
+  projectId,
+  onAdded,
+}: {
+  projectId: string;
+  onAdded: (slug?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('WhatsApp number');
+  const [label, setLabel] = useState('');
+  const add = useMutation({
+    mutationFn: () => {
+      const base = slugifyConnector(label || name);
+      const slug = `whatsapp_${base}_${Date.now().toString(36).slice(-4)}`;
+      return createConnector(projectId, {
+        slug,
+        name: name.trim() || 'WhatsApp number',
+        provider: 'channel',
+        platform: 'whatsapp',
+        credential: 'shared',
+      }).then(() => slug);
+    },
+    onSuccess: (slug) => {
+      successToast('Added WhatsApp number');
+      setOpen(false);
+      onAdded(slug);
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to add WhatsApp number'),
+  });
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
+        <div className="flex items-center gap-3">
+          <EntityAvatar icon={Icon.WhatsApp} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-medium">WhatsApp number</div>
+            <div className="text-muted-foreground truncate text-xs">Channel profile</div>
+          </div>
+        </div>
+        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
+          Route a WhatsApp number connected through the Kortix WhatsApp Gateway into agent sessions.
+        </p>
+      </button>
+      <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
+        <ModalContent className="lg:max-w-md">
+          <ModalHeader>
+            <ModalTitle>Add WhatsApp number</ModalTitle>
+            <ModalDescription>
+              Create the connector profile. You pick the gateway connection when connecting it.
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+            <Field>
+              <Input
+                id="whatsapp-profile-name"
+                name="whatsapp-profile-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Support line"
+              />
+            </Field>
+            <Field>
+              <Input
+                id="whatsapp-profile-label"
+                name="whatsapp-profile-label"
+                value={label}
+                onChange={(e) => setLabel(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
+                placeholder="support"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-muted-foreground text-xs">
+                Names the connector profile, for example whatsapp_support.
+              </p>
+            </Field>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
+            <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
+              {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              Add number
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }
 

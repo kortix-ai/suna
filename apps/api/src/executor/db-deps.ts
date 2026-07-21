@@ -89,7 +89,8 @@ import type {
   ExecutorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { syncProjectConnectors } from './sync';
+import { getIntegrationCatalogDetail, listIntegrationCatalog } from './integration-catalog';
+import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -1044,6 +1045,9 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
     : undefined,
+  discoverConnectorAuth: discoverDraftConnectorAuth,
+  listDiscoverIntegrations: (input) => listIntegrationCatalog(input),
+  getDiscoverIntegration: (id) => getIntegrationCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

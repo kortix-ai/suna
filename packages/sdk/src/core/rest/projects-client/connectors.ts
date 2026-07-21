@@ -19,7 +19,7 @@ export interface AdminConnector {
   slug: string;
   name: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
-  platform?: 'slack' | 'email' | null;
+  platform?: 'slack' | 'email' | 'whatsapp' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model. Always `shared` — `per_user` (each member's
    *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
@@ -251,7 +251,7 @@ export async function setConnectorPolicies(
 export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
-  platform: 'slack' | 'email' | null;
+  platform: 'slack' | 'email' | 'whatsapp' | null;
   credentialMode: 'shared';
   app: string | null;
   account: string | null;
@@ -298,7 +298,7 @@ export interface ConnectorDraftInput {
   slug: string;
   name?: string;
   provider: AdminConnector['provider'];
-  platform?: 'slack' | 'email';
+  platform?: 'slack' | 'email' | 'whatsapp';
   app?: string;
   account?: string;
   url?: string;

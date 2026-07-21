@@ -1198,7 +1198,12 @@ export default {
   // stuck request surfaces as the middleware's clean 503 (with Retry-After)
   // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
   // server.timeout(req, 0) below.
-  idleTimeout: 30,
+  // Must stay comfortably ABOVE the 25s request deadline. When this equalled
+  // the client's own 30s timeout, whichever fired first was a coin flip, and
+  // the socket-kill path returns an empty reply that the load balancer turns
+  // into a 502 with no CORS headers — surfacing in browsers as a bogus CORS
+  // error rather than a timeout.
+  idleTimeout: 45,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     const url = getRequestUrl(req, config.PORT);
