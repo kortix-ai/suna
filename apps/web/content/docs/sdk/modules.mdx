@@ -174,10 +174,9 @@ await createProjectSession(projectId, {
 ```
 
 Credentials and dynamic MCP configuration are intentionally not accepted here.
-Session-specific identities use server-side connection profiles. An operator
-can reconcile a managed external profile, while a normal member calls
-`profiles.reconcileMember({ connector_alias, label })`; member ownership is
-always derived from the bearer token. The session supplies only the profile id:
+Session-specific identities use server-side connection profiles. A manager
+reconciles the profile through `kortix.project(projectId).connectors.profiles`,
+stores/rotates its credential there, then supplies only the profile id:
 
 ```ts
 await createProjectSession(projectId, {
@@ -188,10 +187,8 @@ await createProjectSession(projectId, {
 ```
 
 The profile must belong to the same project and logical connector, be active,
-be available to the caller, and remain within the agent's manifest connector
-grant. Member profiles are owner-only even for managers and force the session
-to remain private. Revoking one denies the next Executor catalog/call request
-without exposing the credential to runtime.
+and remain within the agent's manifest connector grant. Revoking it denies the
+next Executor catalog/call request without exposing the credential to runtime.
 
 **When to use:** you want a single REST call without holding a facade instance —
 e.g. in a server action or a script. In app code, prefer the facade so ids are

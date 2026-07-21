@@ -207,31 +207,6 @@ describe('handleCall — pipedream path', () => {
       app: 'gmail',
       actionKey: 'gmail-send-email',
       accountId: 'apn_abc123',
-      userId: null,
-    });
-  });
-
-  test('profile-bound Pipedream execution uses the same profile-specific OAuth identity', async () => {
-    const profileId = 'a4bbec83-32e5-4c2d-a5af-1dca4911d70f';
-    const { deps } = makeDeps({
-      connector: { ...PD, profileId, profileIsDefault: false },
-      action: SEND,
-      secret: 'apn_profile',
-    });
-    let captured: any = null;
-    deps.executePipedream = async (input) => {
-      captured = input;
-      return { status: 200, ok: true, data: { sent: true } };
-    };
-    await handleCall(deps, {
-      ...baseInput,
-      connectorSlug: 'gmail',
-      actionPath: 'send_email',
-      args: { to: 'owner@example.test' },
-    });
-    expect(captured).toMatchObject({
-      accountId: 'apn_profile',
-      userId: profileId,
     });
   });
 

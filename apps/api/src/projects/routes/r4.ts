@@ -1,6 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  ConnectionProfileMetadataSchema,
   ConnectionProfileSchema,
   ReconcileConnectionProfileInputSchema,
   UpdateConnectionProfileCredentialInputSchema,
@@ -67,11 +66,6 @@ import {
 } from '../../channels/turn-relay';
 import { config } from '../../config';
 import { upsertProfileCredential } from '../../executor/credentials';
-import {
-  finalizePipedreamProfileConnection,
-  pipedreamConfigured,
-  pipedreamConnectUrl,
-} from '../../executor/pipedream';
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -97,11 +91,7 @@ import {
   releaseExecutionLease,
   renewExecutionLease,
 } from '../execution-lease';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  projectCapabilityAllowed,
-} from '../lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
@@ -183,68 +173,6 @@ function serializeConnectionProfile(row: {
   };
 }
 
-function mayReadConnectionProfile(
-  profile: { ownerType: string; ownerId: string | null; isDefault: boolean },
-  userId: string,
-  mayManageSystemProfiles: boolean,
-): boolean {
-  if (profile.ownerType === 'member') return profile.ownerId === userId;
-  if (profile.ownerType === 'project' && profile.isDefault) return true;
-  return mayManageSystemProfiles;
-}
-
-function mayMutateConnectionProfile(
-  profile: { ownerType: string; ownerId: string | null },
-  userId: string,
-  mayManageSystemProfiles: boolean,
-): boolean {
-  if (profile.ownerType === 'member') return profile.ownerId === userId;
-  return mayManageSystemProfiles;
-}
-
-async function reconcileConnectionProfileRow(input: {
-  accountId: string;
-  projectId: string;
-  connectorId: string;
-  ownerType: 'agent' | 'member' | 'subject' | 'external';
-  ownerId: string;
-  label: string;
-  metadata: Record<string, unknown>;
-  createdBy: string;
-}) {
-  const identity = and(
-    eq(executorConnectionProfiles.connectorId, input.connectorId),
-    eq(executorConnectionProfiles.ownerType, input.ownerType),
-    eq(executorConnectionProfiles.ownerId, input.ownerId),
-  );
-  const [existing] = await db.select().from(executorConnectionProfiles).where(identity).limit(1);
-  if (existing) {
-    const [profile] = await db
-      .update(executorConnectionProfiles)
-      .set({ label: input.label, metadata: input.metadata, updatedAt: new Date() })
-      .where(eq(executorConnectionProfiles.profileId, existing.profileId))
-      .returning();
-    return { profile, created: false };
-  }
-  const [inserted] = await db
-    .insert(executorConnectionProfiles)
-    .values({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      connectorId: input.connectorId,
-      ownerType: input.ownerType,
-      ownerId: input.ownerId,
-      label: input.label,
-      metadata: input.metadata,
-      createdBy: input.createdBy,
-    })
-    .onConflictDoNothing()
-    .returning();
-  if (inserted) return { profile: inserted, created: true };
-  const [raced] = await db.select().from(executorConnectionProfiles).where(identity).limit(1);
-  return { profile: raced, created: false };
-}
-
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -262,7 +190,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const mayManageSystemProfiles = await projectCapabilityAllowed(
+    await assertProjectCapability(
       c,
       loaded.userId,
       loaded.row.accountId,
@@ -286,96 +214,7 @@ projectsApp.openapi(
         eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
       )
       .where(eq(executorConnectionProfiles.projectId, projectId));
-    return c.json({
-      profiles: rows
-        .filter((profile) =>
-          mayReadConnectionProfile(profile, loaded.userId, mayManageSystemProfiles),
-        )
-        .map(serializeConnectionProfile),
-    });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/connector-profiles/me',
-    tags: ['connectors'],
-    summary: 'Idempotently create or reconcile the calling member connection profile',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z
-              .object({
-                connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
-                label: z.string().trim().min(1).max(255),
-                metadata: ConnectionProfileMetadataSchema.optional(),
-              })
-              .strict(),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(ConnectionProfileViewSchema, 'Reconciled profile'),
-      201: json(ConnectionProfileViewSchema, 'Created profile'),
-      ...errors(400, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const body = await readBody(c);
-    const connectorAlias = canonicalConnectorAlias(
-      typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '',
-    );
-    const label = typeof body.label === 'string' ? body.label.trim() : '';
-    const metadata =
-      body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
-        ? (body.metadata as Record<string, unknown>)
-        : {};
-    if (!connectorAlias || !label) {
-      return c.json({ error: 'connector_alias and label are required' }, 400);
-    }
-    const [connector] = await db
-      .select({
-        connectorId: executorConnectors.connectorId,
-        providerType: executorConnectors.providerType,
-      })
-      .from(executorConnectors)
-      .where(
-        and(
-          eq(executorConnectors.projectId, projectId),
-          eq(executorConnectors.accountId, loaded.row.accountId),
-          eq(executorConnectors.slug, connectorAlias),
-        ),
-      )
-      .limit(1);
-    if (!connector) return c.json({ error: 'Connector not found' }, 404);
-    if (connector.providerType === 'channel') {
-      return c.json(
-        { error: 'Channel profiles are reconciled from verified channel installations' },
-        409,
-      );
-    }
-    const ownerType = 'member' as const;
-    const ownerId = loaded.userId;
-    const { profile, created } = await reconcileConnectionProfileRow({
-      accountId: loaded.row.accountId,
-      projectId,
-      connectorId: connector.connectorId,
-      ownerType,
-      ownerId,
-      label,
-      metadata,
-      createdBy: loaded.userId,
-    });
-    if (!profile) return c.json({ error: 'Profile could not be reconciled' }, 409);
-    return c.json(serializeConnectionProfile({ ...profile, connectorAlias }), created ? 201 : 200);
+    return c.json({ profiles: rows.map(serializeConnectionProfile) });
   },
 );
 
@@ -412,15 +251,7 @@ projectsApp.openapi(
       typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '';
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
-    // Backwards-compatible manager path: a submitted member owner is always
-    // rewritten to the caller. Managers may create their own member profile,
-    // but never mint one on behalf of (or later impersonate) another member.
-    const ownerId =
-      ownerType === 'member'
-        ? loaded.userId
-        : typeof body.owner_id === 'string'
-          ? body.owner_id.trim()
-          : '';
+    const ownerId = typeof body.owner_id === 'string' ? body.owner_id.trim() : '';
     const label = typeof body.label === 'string' ? body.label.trim() : '';
     const metadata =
       body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
@@ -451,16 +282,59 @@ projectsApp.openapi(
         409,
       );
     }
-    const { profile, created } = await reconcileConnectionProfileRow({
-      accountId: loaded.row.accountId,
-      projectId,
-      connectorId: connector.connectorId,
-      ownerType: ownerType as 'agent' | 'member' | 'subject' | 'external',
-      ownerId,
-      label,
-      metadata,
-      createdBy: loaded.userId,
-    });
+    const [existing] = await db
+      .select()
+      .from(executorConnectionProfiles)
+      .where(
+        and(
+          eq(executorConnectionProfiles.connectorId, connector.connectorId),
+          eq(executorConnectionProfiles.ownerType, ownerType as any),
+          eq(executorConnectionProfiles.ownerId, ownerId),
+        ),
+      )
+      .limit(1);
+    let profile = existing;
+    let created = false;
+    if (profile) {
+      const [updated] = await db
+        .update(executorConnectionProfiles)
+        .set({ label, metadata, updatedAt: new Date() })
+        .where(eq(executorConnectionProfiles.profileId, profile.profileId))
+        .returning();
+      profile = updated;
+    } else {
+      const [inserted] = await db
+        .insert(executorConnectionProfiles)
+        .values({
+          accountId: loaded.row.accountId,
+          projectId,
+          connectorId: connector.connectorId,
+          ownerType: ownerType as 'agent' | 'member' | 'subject' | 'external',
+          ownerId,
+          label,
+          metadata,
+          createdBy: loaded.userId,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (inserted) {
+        profile = inserted;
+        created = true;
+      } else {
+        const [raced] = await db
+          .select()
+          .from(executorConnectionProfiles)
+          .where(
+            and(
+              eq(executorConnectionProfiles.connectorId, connector.connectorId),
+              eq(executorConnectionProfiles.ownerType, ownerType as any),
+              eq(executorConnectionProfiles.ownerId, ownerId),
+            ),
+          )
+          .limit(1);
+        profile = raced;
+      }
+    }
     if (!profile) return c.json({ error: 'Profile could not be reconciled' }, 409);
     const view = serializeConnectionProfile({ ...profile, connectorAlias });
     return c.json(view, created ? 201 : 200);
@@ -498,7 +372,7 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
       const profileId = c.req.param('profileId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const mayManageSystemProfiles = await projectCapabilityAllowed(
+      await assertProjectCapability(
         c,
         loaded.userId,
         loaded.row.accountId,
@@ -506,11 +380,7 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
         PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
       );
       const [profile] = await db
-        .select({
-          connectorId: executorConnectionProfiles.connectorId,
-          ownerType: executorConnectionProfiles.ownerType,
-          ownerId: executorConnectionProfiles.ownerId,
-        })
+        .select({ connectorId: executorConnectionProfiles.connectorId })
         .from(executorConnectionProfiles)
         .where(
           and(
@@ -521,9 +391,6 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
         )
         .limit(1);
       if (!profile) return c.json({ error: 'Not found' }, 404);
-      if (!mayMutateConnectionProfile(profile, loaded.userId, mayManageSystemProfiles)) {
-        return c.json({ error: 'Not found' }, 404);
-      }
       if (operation === 'credential') {
         const body = await readBody(c);
         if (typeof body.value !== 'string' || !body.value) {
@@ -544,138 +411,6 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
           .where(eq(executorConnectionProfiles.profileId, profileId));
       }
       return c.json({ ok: true });
-    },
-  );
-}
-
-for (const operation of ['connect', 'connect/finalize'] as const) {
-  projectsApp.openapi(
-    createRoute({
-      method: 'post',
-      path: `/{projectId}/connector-profiles/{profileId}/${operation}`,
-      tags: ['connectors'],
-      summary:
-        operation === 'connect'
-          ? 'Start Pipedream OAuth for a connection profile'
-          : 'Finalize Pipedream OAuth for a connection profile',
-      ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
-        body: {
-          content: {
-            'application/json': {
-              schema:
-                operation === 'connect'
-                  ? z
-                      .object({
-                        success_redirect_uri: z.string().optional(),
-                        error_redirect_uri: z.string().optional(),
-                      })
-                      .strict()
-                  : z.object({}).strict(),
-            },
-          },
-        },
-      },
-      responses: {
-        200: json(z.any(), 'Pipedream connection result'),
-        ...errors(400, 403, 404, 409, 501),
-      },
-    }),
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const profileId = c.req.param('profileId');
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const mayManageSystemProfiles = await projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
-      );
-      const [profile] = await db
-        .select({
-          connectorId: executorConnectionProfiles.connectorId,
-          ownerType: executorConnectionProfiles.ownerType,
-          ownerId: executorConnectionProfiles.ownerId,
-          isDefault: executorConnectionProfiles.isDefault,
-          connectorAlias: executorConnectors.slug,
-          providerType: executorConnectors.providerType,
-          connectorConfig: executorConnectors.config,
-        })
-        .from(executorConnectionProfiles)
-        .innerJoin(
-          executorConnectors,
-          and(
-            eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
-            eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
-            eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
-          ),
-        )
-        .where(
-          and(
-            eq(executorConnectionProfiles.profileId, profileId),
-            eq(executorConnectionProfiles.projectId, projectId),
-            eq(executorConnectionProfiles.accountId, loaded.row.accountId),
-          ),
-        )
-        .limit(1);
-      if (
-        !profile ||
-        !mayMutateConnectionProfile(profile, loaded.userId, mayManageSystemProfiles)
-      ) {
-        return c.json({ error: 'Not found' }, 404);
-      }
-      if (profile.isDefault) {
-        return c.json(
-          { error: 'Use the shared connector connect endpoint for the default profile' },
-          409,
-        );
-      }
-      if (!pipedreamConfigured()) {
-        return c.json({ error: 'pipedream not configured' }, 501);
-      }
-      const app = (profile.connectorConfig as Record<string, unknown> | null)?.app;
-      if (profile.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
-        return c.json({ error: 'not a pipedream connector' }, 404);
-      }
-      if (operation === 'connect') {
-        const body = await readBody(c);
-        const redirects =
-          body.success_redirect_uri || body.error_redirect_uri
-            ? {
-                success:
-                  typeof body.success_redirect_uri === 'string'
-                    ? body.success_redirect_uri
-                    : undefined,
-                error:
-                  typeof body.error_redirect_uri === 'string' ? body.error_redirect_uri : undefined,
-              }
-            : undefined;
-        const result = await pipedreamConnectUrl(
-          projectId,
-          profile.connectorAlias,
-          app,
-          profileId,
-          redirects,
-        );
-        return c.json({
-          token: result.token,
-          app,
-          connectUrl: result.connectUrl,
-          expiresAt: result.expiresAt,
-        });
-      }
-      const result = await finalizePipedreamProfileConnection({
-        projectId,
-        slug: profile.connectorAlias,
-        app,
-        connectorId: profile.connectorId,
-        profileId,
-        createdBy: loaded.userId,
-      });
-      return c.json(result);
     },
   );
 }

@@ -74,7 +74,6 @@ import { graphToken } from '../channels/teams-auth';
 import {
   browsePipedreamApps,
   finalizePipedreamConnection,
-  finalizePipedreamProfileConnection,
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
@@ -1003,40 +1002,16 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         if (!verifyWebhookSig(extUserId, sig)) return false;
-        const [projectId, slug, identityId] = extUserId.split(':');
+        const [projectId, slug, userId] = extUserId.split(':');
         if (!projectId || !slug) return false;
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return false;
-        if (identityId) {
-          const [profile] = await db
-            .select({ profileId: executorConnectionProfiles.profileId })
-            .from(executorConnectionProfiles)
-            .where(
-              and(
-                eq(executorConnectionProfiles.profileId, identityId),
-                eq(executorConnectionProfiles.projectId, projectId),
-                eq(executorConnectionProfiles.connectorId, conn.connectorId),
-              ),
-            )
-            .limit(1);
-          if (profile) {
-            await finalizePipedreamProfileConnection({
-              projectId,
-              slug,
-              app: conn.app,
-              connectorId: conn.connectorId,
-              profileId: profile.profileId,
-              createdBy: null,
-            });
-            return true;
-          }
-        }
         await finalizePipedreamConnection({
           projectId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
-          userId: identityId ?? null,
+          userId: userId ?? null,
         });
         return true;
       }
