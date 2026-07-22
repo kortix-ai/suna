@@ -1,0 +1,170 @@
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+
+default_agent: seo-director
+
+project:
+  name: "{{projectName}}"
+  description: "A full SEO department: strategy, technical audits, repo monitoring, SERP intelligence, content operations, and growth reporting."
+
+env:
+  required: []
+  optional:
+    - SEO_PRIMARY_DOMAIN # canonical domain to monitor, e.g. example.com
+    - SEO_TARGET_MARKET # primary locale/market, e.g. US, UK, DACH
+    - SEO_TRACKED_COMPETITORS # comma-separated competitor domains
+    - SEO_BRAND_TERMS # comma-separated brand/product terms to protect
+    - SEO_ANALYTICS_PROPERTY # GA4 or analytics property identifier
+    - GSC_SITE_URL # Google Search Console site URL, when connected
+    - CONTENT_CMS_BASE_URL # CMS or docs base URL for content work
+    - SEO_REPO_URL # website repository URL, e.g. https://github.com/acme/site
+    - SEO_DEFAULT_BRANCH # production branch to monitor, e.g. main
+    - SEO_APPROVAL_CHANNEL # Slack/Teams channel for approvals and reports
+    - SEO_REPORT_RECIPIENTS # comma-separated emails for monthly reports
+    - WEBHOOK_SEO_SECRET # HMAC secret for the request-intake webhook
+    - SEO_REPO_WEBHOOK_SECRET # HMAC secret for GitHub/repo PR and push webhooks
+
+opencode:
+  config_dir: .kortix/opencode
+
+agents:
+  seo-director:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+  technical-seo:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+  content-strategist:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+  serp-analyst:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+  seo-repo-watchdog:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+triggers:
+  - slug: seo-request-intake
+    name: SEO request intake
+    description: "Turns an inbound stakeholder request into an SEO plan, brief, audit, or approval-ready task."
+    type: webhook
+    agent: seo-director
+    enabled: false
+    secret_env: WEBHOOK_SEO_SECRET
+    prompt: |
+      An SEO request arrived. Classify it, gather the needed context, assign the
+      right specialist agent in your final plan, and deliver the smallest useful
+      output now.
+
+      From: {{ body.from }}
+      Subject: {{ body.subject }}
+
+      {{ body.text }}
+
+  - slug: daily-serp-watch
+    name: Daily SERP watch
+    description: "Monitors target topics, competitors, brand terms, snippets, and material ranking changes."
+    type: cron
+    agent: serp-analyst
+    enabled: false
+    cron: "0 0 7 * * *"
+    timezone: UTC
+    prompt: |
+      Run the daily SERP watch for SEO_PRIMARY_DOMAIN. Use SEO_TRACKED_COMPETITORS,
+      SEO_BRAND_TERMS, and SEO_TARGET_MARKET. Report only material changes:
+      competitor movement, SERP feature shifts, brand risks, high-intent topic
+      opportunities, and any item that needs content or technical follow-up.
+
+  - slug: weekly-technical-audit
+    name: Weekly technical SEO audit
+    description: "Checks crawlability, indexation, performance, schema, sitemaps, robots, redirects, and internal links."
+    type: cron
+    agent: technical-seo
+    enabled: false
+    cron: "0 0 8 * * 1"
+    timezone: UTC
+    prompt: |
+      Run the weekly technical SEO audit for SEO_PRIMARY_DOMAIN. Prioritize
+      crawl/index blockers, canonical drift, sitemap/robots problems, broken
+      links, redirect chains, structured-data regressions, Core Web Vitals, and
+      internal-link opportunities. Open a change request only for safe repo
+      fixes; hold production/CMS changes for approval.
+
+  - slug: repo-seo-watch
+    name: Repo SEO watch
+    description: "Reviews PR and push events for SEO regressions before route, metadata, sitemap, robots, redirect, schema, or rendering changes ship."
+    type: webhook
+    agent: seo-repo-watchdog
+    enabled: false
+    secret_env: SEO_REPO_WEBHOOK_SECRET
+    prompt: |
+      A repository event arrived for the SEO Department. Load
+      `seo-repo-monitoring`, classify the event, inspect changed files and
+      affected routes, and produce a PR comment, change request, or concise
+      incident report with severity and verification steps.
+
+      Repository: {{ body.repository.full_name }}
+      Event: {{ headers.x-github-event }}
+      Action: {{ body.action }}
+      Ref: {{ body.ref }}
+      Before: {{ body.before }}
+      After: {{ body.after }}
+      Pull request: {{ body.pull_request.html_url }}
+      Sender: {{ body.sender.login }}
+
+  - slug: daily-repo-seo-sweep
+    name: Daily repo SEO sweep
+    description: "Checks the default branch for newly shipped SEO-affecting code and keeps the repo SEO ledger current."
+    type: cron
+    agent: seo-repo-watchdog
+    enabled: false
+    cron: "0 0 6 * * *"
+    timezone: UTC
+    prompt: |
+      Run the repo SEO sweep for SEO_REPO_URL on SEO_DEFAULT_BRANCH. Compare
+      changes since the last reviewed commit recorded in `.kortix/memory/SEO.md`.
+      Focus on route changes, metadata, canonicals, robots, sitemap generation,
+      redirects, schema, content templates, internal links, and
+      performance-sensitive rendering changes. Open safe change requests when
+      appropriate; otherwise report risks and update the reviewed-commit ledger.
+
+  - slug: weekly-content-refresh
+    name: Weekly content refresh
+    description: "Finds decaying pages, prepares briefs, updates content candidates, and keeps the editorial backlog sharp."
+    type: cron
+    agent: content-strategist
+    enabled: false
+    cron: "0 0 10 * * 2"
+    timezone: UTC
+    prompt: |
+      Run the weekly content refresh. Identify pages losing clicks, rankings, or
+      intent fit; cluster new topic opportunities; produce briefs or refresh
+      patches where useful; and maintain the editorial backlog in memory. Do not
+      publish or materially change live copy without approval unless the operator
+      has explicitly enabled auto-publishing for this project.
+
+  - slug: monthly-seo-growth-report
+    name: Monthly SEO growth report
+    description: "Produces the executive SEO report: wins, losses, risks, roadmap, and next-month commitments."
+    type: cron
+    agent: seo-director
+    enabled: false
+    cron: "0 0 9 1 * *"
+    timezone: UTC
+    prompt: |
+      Produce the monthly SEO growth report for SEO_PRIMARY_DOMAIN. Combine
+      technical audit results, SERP movement, content output, analytics/Search
+      Console data if connected, and the memory backlog. Deliver an executive
+      summary, KPI table, ranked opportunities, risks, owner-ready next steps,
+      and a short stakeholder update suitable for SEO_REPORT_RECIPIENTS.
