@@ -17,6 +17,25 @@ opsApp.use('/*', requireAdmin);
 type CountRow = { count: number | string | null };
 type GroupCountRow = { key: string | null; count: number | string | null };
 
+type RecentAuditEvent = {
+  event_id: string;
+  account_id: string | null;
+  actor_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  occurred_at: string;
+};
+
+type UsageRow = {
+  provider: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cost_usd: number;
+};
+
 function resultRows<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
   const rows = (result as { rows?: unknown[] } | null)?.rows;
@@ -33,7 +52,71 @@ async function groupCounts(query: ReturnType<typeof sql>): Promise<Record<string
   return Object.fromEntries(rows.map((row) => [row.key ?? 'unknown', Number(row.count ?? 0)]));
 }
 
-async function recentAuditEvents() {
+/**
+ * Controlled degradation for the ops overview dashboard.
+ *
+ * `/ops/overview` fans out ~10 independent count/group queries in a single
+ * `Promise.all`. Originally any one of them rejecting (a statement_timeout on
+ * an unindexed scan, a transient connection drop, a slow replica) rejected the
+ * WHOLE promise and 500'd the entire dashboard — even though the other 9
+ * metrics were perfectly healthy. That single-query failure mode was the path
+ * the audit_events 24h count reached Sentry/Better Stack as an unhandled error
+ * (4ba74f8c17f3e48e13c07511fb802ec55ba07294237c0985f3df792729e8f4d8): the
+ * account-agnostic `count(*) ... WHERE occurred_at >= now() - interval '24h'`
+ * had no usable index (all three audit_events indices have a different leading
+ * column) and, on a large audit_events table, exceeded the 25s
+ * statement_timeout.
+ *
+ * The structural fix is the new `idx_audit_events_occurred_at` index. These
+ * `safe*` wrappers are the resilience layer: a single failing metric degrades
+ * to a `null` sentinel and the dashboard still returns 200 with the rest,
+ * while the underlying error is still logged loudly here so a real DB outage
+ * is observable — it just no longer pages as an unhandled error.
+ *
+ * Scope is deliberately narrow: ONLY the ops-overview aggregation queries
+ * (each a self-contained read with no side effects) are wrapped. User-facing
+ * request paths keep throwing — this is not a blanket DB error suppressor.
+ */
+async function safeCount(label: string, query: ReturnType<typeof sql>): Promise<number | null> {
+  try {
+    return await oneCount(query);
+  } catch (err) {
+    console.error(`[ops/overview] ${label} query failed — degrading to null:`, err);
+    return null;
+  }
+}
+
+async function safeGroup(
+  label: string,
+  query: ReturnType<typeof sql>,
+): Promise<Record<string, number>> {
+  try {
+    return await groupCounts(query);
+  } catch (err) {
+    console.error(`[ops/overview] ${label} query failed — degrading to {} :`, err);
+    return {};
+  }
+}
+
+async function safeRecentAuditEvents(): Promise<RecentAuditEvent[] | null> {
+  try {
+    return await recentAuditEvents();
+  } catch (err) {
+    console.error('[ops/overview] recent audit events query failed — degrading to null:', err);
+    return null;
+  }
+}
+
+async function safeUsageLast24h(): Promise<UsageRow[] | null> {
+  try {
+    return await usageLast24h();
+  } catch (err) {
+    console.error('[ops/overview] usage 24h query failed — degrading to null:', err);
+    return null;
+  }
+}
+
+async function recentAuditEvents(): Promise<RecentAuditEvent[]> {
   const rows = resultRows<{
     event_id: string;
     account_id: string | null;
@@ -60,7 +143,7 @@ async function recentAuditEvents() {
   }));
 }
 
-async function usageLast24h() {
+async function usageLast24h(): Promise<UsageRow[]> {
   const rows = resultRows<{
     provider: string;
     calls: number | string;
@@ -132,24 +215,30 @@ opsApp.openapi(
     usage,
     recentAudit,
   ] = await Promise.all([
-    oneCount(sql`SELECT count(*)::int AS count FROM kortix.accounts`),
-    oneCount(sql`SELECT count(*)::int AS count FROM kortix.projects`),
-    oneCount(sql`
-      SELECT count(*)::int AS count
-      FROM kortix.sandboxes
-      WHERE status IN ('provisioning', 'active', 'stopped', 'error')
-    `),
-    groupCounts(sql`
+    // Each aggregation runs through a safe* wrapper so a single failing query
+    // degrades to a null/{} sentinel instead of rejecting the whole
+    // Promise.all and 500-ing the dashboard. See safeCount's doc comment.
+    safeCount('accounts', sql`SELECT count(*)::int AS count FROM kortix.accounts`),
+    safeCount('projects', sql`SELECT count(*)::int AS count FROM kortix.projects`),
+    safeCount(
+      'active_legacy_sandboxes',
+      sql`
+        SELECT count(*)::int AS count
+        FROM kortix.sandboxes
+        WHERE status IN ('provisioning', 'active', 'stopped', 'error')
+      `,
+    ),
+    safeGroup('sessions_by_status', sql`
       SELECT status AS key, count(*)::int AS count
       FROM kortix.project_sessions
       GROUP BY status
     `),
-    groupCounts(sql`
+    safeGroup('sandboxes_by_status', sql`
       SELECT status AS key, count(*)::int AS count
       FROM kortix.session_sandboxes
       GROUP BY status
     `),
-    groupCounts(sql`
+    safeGroup('sandboxes_by_provider', sql`
       SELECT provider AS key, count(*)::int AS count
       FROM kortix.session_sandboxes
       GROUP BY provider
@@ -158,18 +247,21 @@ opsApp.openapi(
     // table is gone and the git path doesn't persist events, so this is always
     // empty. Field kept for dashboard compatibility.
     Promise.resolve<Record<string, number>>({}),
-    oneCount(sql`
-      SELECT count(*)::int AS count
-      FROM kortix.audit_events
-      WHERE occurred_at >= now() - interval '24 hours'
-    `),
-    groupCounts(sql`
+    safeCount(
+      'audit_events_24h',
+      sql`
+        SELECT count(*)::int AS count
+        FROM kortix.audit_events
+        WHERE occurred_at >= now() - interval '24 hours'
+      `,
+    ),
+    safeGroup('legacy_sandbox_migrations_by_status', sql`
       SELECT status AS key, count(*)::int AS count
       FROM kortix.legacy_sandbox_migrations
       GROUP BY status
     `),
-    usageLast24h(),
-    recentAuditEvents(),
+    safeUsageLast24h(),
+    safeRecentAuditEvents(),
   ]);
 
   const queuedTriggerEvents = triggerEventStatus.queued ?? 0;
@@ -206,13 +298,16 @@ opsApp.openapi(
       queued_total: queuedTriggerEvents,
     },
     audit: {
+      // null when the audit_events 24h count failed (e.g. pre-index timeout).
+      // The dashboard renders "—" instead of the request 500-ing.
       events_24h: audit24h,
       recent: recentAudit,
     },
     usage: {
       last_24h_by_provider: usage,
-      calls_24h: usage.reduce((sum, row) => sum + row.calls, 0),
-      cost_usd_24h: usage.reduce((sum, row) => sum + row.cost_usd, 0),
+      // null when the usage 24h query failed — guard the aggregation.
+      calls_24h: usage ? usage.reduce((sum, row) => sum + row.calls, 0) : null,
+      cost_usd_24h: usage ? usage.reduce((sum, row) => sum + row.cost_usd, 0) : null,
     },
     observability: observabilityStatus(),
     migrations: {

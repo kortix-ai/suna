@@ -59,6 +59,13 @@ export interface ConnectorAuthDiscovery {
   candidates: ConnectorAuthCandidate[];
   warnings: string[];
   totalRequests: number;
+  /**
+   * The source document's own name — OpenAPI `info.title`, Postman `info.name`.
+   * Null when the document doesn't declare one. The dashboard uses it to
+   * propose a connector slug, so the suggestion comes from what the API calls
+   * itself rather than from a guess at its URL.
+   */
+  title: string | null;
 }
 
 const OPENAPI_METHODS = new Set([
@@ -99,6 +106,7 @@ function finish(
   candidates: ConnectorAuthCandidate[],
   totalRequests: number,
   warnings: string[],
+  title: string | null = null,
 ): ConnectorAuthDiscovery {
   const nonNone = candidates.filter((candidate) => candidate.scheme !== 'none');
   const ranked = nonNone
@@ -126,6 +134,7 @@ function finish(
     candidates,
     warnings: [...new Set(warnings)],
     totalRequests,
+    title,
   };
 }
 
@@ -292,7 +301,7 @@ export function discoverOpenApiAuth(
     if (!definitions[id])
       warnings.push(`${source} references undefined security scheme "${id}"`);
   }
-  return finish(candidates, totalRequests, warnings);
+  return finish(candidates, totalRequests, warnings, stringValue(doc.info?.title) ?? null);
 }
 
 interface PostmanAuthLike {
@@ -504,7 +513,7 @@ export function discoverPostmanAuth(
       (candidate) =>
         `${source} uses unsupported ${candidate.label} authentication for ${candidate.requestCount} request(s)`,
     );
-  return finish(candidates, totalRequests, warnings);
+  return finish(candidates, totalRequests, warnings, stringValue(doc.info?.name) ?? null);
 }
 
 export function mergeAuthDiscoveries(
@@ -521,6 +530,9 @@ export function mergeAuthDiscoveries(
     candidates,
     totalRequests,
     discoveries.flatMap((discovery) => discovery.warnings),
+    // Keep the first document that named itself — merging several sources
+    // shouldn't discard the title the slug suggestion is derived from.
+    discoveries.find((discovery) => discovery.title)?.title ?? null,
   );
 }
 

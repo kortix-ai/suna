@@ -82,7 +82,7 @@ function freshWorld(): World {
 const detectedBearer: ConnectorAuthDiscovery = {
   status: 'detected',
   recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
-  candidates: [], warnings: [], totalRequests: 12,
+  candidates: [], warnings: [], totalRequests: 12, title: null,
 };
 
 function credKey(connectorId: string, userId: string | null) {

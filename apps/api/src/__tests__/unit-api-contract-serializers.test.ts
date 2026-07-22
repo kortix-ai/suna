@@ -54,6 +54,8 @@ function sessionRow(
     error: null,
     createdBy: USER_ID,
     visibility: 'private',
+    origin: 'user',
+    originRef: null,
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,

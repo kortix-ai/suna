@@ -58,6 +58,11 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
   // Sensitive gates the connector's reads too — carried in config so the gateway
   // loader (toGatewayConnector) reads it back when resolving policy.
   if (spec.sensitive) base.sensitive = true;
+  // Static request headers, carried alongside `auth` so the gateway loader can
+  // hand them to executeCall. Omitted when empty (keeps existing config blobs
+  // byte-identical for connectors that declare none). Never secrets — plaintext
+  // in git AND here, same as `baseUrl`; the auth header always wins on collision.
+  if (Object.keys(spec.headers).length > 0) base.headers = { ...spec.headers };
   return base;
 }
 

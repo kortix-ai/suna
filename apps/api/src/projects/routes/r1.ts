@@ -27,7 +27,7 @@ import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../li
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -112,6 +112,14 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
   if (triggersPausedForProject(project.metadata)) {
     return c.json({ status: 'skipped', reason: 'triggers are paused server-side for this project' }, 200);
+  }
+
+  // Payload guard. A non-matching delivery is a successful no-op, NOT an error:
+  // the sender is behaving correctly and must not see a 4xx it would retry. The
+  // canonical use is loop-breaking — a source that reports both directions of a
+  // conversation would otherwise re-fire the agent with the agent's own reply.
+  if (!triggerFilterMatches(spec, payload)) {
+    return c.json({ status: 'skipped', reason: 'delivery did not match the trigger filter' }, 200);
   }
 
   const result = await fireGitTrigger({

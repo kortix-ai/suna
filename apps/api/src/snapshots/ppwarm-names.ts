@@ -10,6 +10,19 @@ import { createHash } from 'node:crypto';
 export const PPWARM_PREFIX = 'kortix-ppwarm-';
 
 /**
+ * A ppwarm image (re)built within this window is protected from supersession
+ * reaping — by the on-bake reaper AND the quota GC's superseded-tip rule. Two
+ * concurrently-live code versions (a rolling deploy; dev's ECS+EKS split-brain)
+ * compute DIFFERENT base identities, so each considers the other's current warm
+ * image "superseded" and deletes it on every bake — an infinite full-rebuild
+ * loop (observed live 2026-07-22). A freshly-built image is by definition some
+ * live runtime's current tip; leave it alone and reap it once it has actually
+ * gone stale. Kept short so a hot project's genuinely superseded tips still
+ * reclaim fast enough for the Daytona org snapshot quota.
+ */
+export const PPWARM_REAP_PROTECT_MS = 45 * 60 * 1000;
+
+/**
  * Suffix that distinguishes the warm bake's BUILD-LOG row from the template it
  * layers on top of. `project_snapshot_builds.metadata.slug` records
  * `<template>-warm` for a warm bake, but no such template exists in

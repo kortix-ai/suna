@@ -36,7 +36,7 @@ jobs:
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -66,7 +66,7 @@ jobs:
           # per-platform baselines), so a pixel diff shouldn't red-gate qa-staging.
           # It still runs and its results land in the report.
           make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: qa-staging-ui
@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -89,7 +89,7 @@ jobs:
         run: corepack enable pnpm && pnpm install --frozen-lockfile
       - name: Run migration tests
         run: make migration
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: qa-staging-migration
@@ -108,7 +108,7 @@ jobs:
       QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -133,7 +133,7 @@ jobs:
         env:
           S3_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
           RUN_ID: ${{ github.sha }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: allure-report

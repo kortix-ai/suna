@@ -14,9 +14,10 @@ import {
 } from '@kortix/sdk/projects-client';
 import { Boxes, ChevronRight, ExternalLink, Globe, Plus, Search, Zap } from 'lucide-react';
 import Image from 'next/image';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { useDebounce } from '@/hooks/use-debounce';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -58,7 +59,7 @@ export function DiscoverCatalogue({
   onAdded: (slug?: string) => void;
 }) {
   const [q, setQ] = useState('');
-  const deferredQuery = useDeferredValue(q.trim());
+  const { debouncedValue: deferredQuery } = useDebounce(q.trim(), 300);
   const [selectedIntegration, setSelectedIntegration] = useState<DiscoverIntegration | null>(null);
   const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({

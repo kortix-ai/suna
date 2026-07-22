@@ -189,6 +189,7 @@ async function createThreadSession(
     source: 'email',
     project,
     userId,
+    requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
       agent_name: 'default',
@@ -197,6 +198,7 @@ async function createThreadSession(
       },
     },
     enforceAccountCap: false,
+    mayManageSystemConnectorProfiles: true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: claimKey,
     postCreate: [

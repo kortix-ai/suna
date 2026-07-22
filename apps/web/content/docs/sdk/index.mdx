@@ -1,82 +1,78 @@
 ---
 title: TypeScript SDK
-description: '@kortix/sdk — one typed client for the Kortix platform: projects, sessions, and the live agent runtime, behind a single session-scoped facade.'
+description: Install, authenticate, and send your first message with the typed SDK.
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
 
-`@kortix/sdk` is the single, opinionated data layer for the Kortix platform. One
-typed client wraps the **Kortix REST API**, session-scoped **ACP**, and the
-provider-neutral runtime helpers, so a host app — web, mobile, or your own —
-imports **only `@kortix/sdk`** and never touches the raw API,
-`authenticatedFetch`, or a native harness SDK directly.
+`@kortix/sdk` is the typed client for the Kortix platform. It wraps the Kortix REST API and the OpenCode runtime in one interface — your app never calls the raw API or runtime directly. The core client is fetch-based and runs in Node, Bun, and browsers.
+
+## Install
+
+```bash
+npm install @kortix/sdk
+```
+
+`react` (18+) and `@tanstack/react-query` (5.75+) are optional peers, needed only for [React hooks](/docs/sdk/react).
+
+## Create a client
+
+Call `createKortix` once, with your API base URL and a function that returns your token.
 
 ```ts
 import { createKortix } from '@kortix/sdk';
 
-const kortix = createKortix({
+export const kortix = createKortix({
   backendUrl: 'https://api.kortix.com/v1',
-  getToken: async () => process.env.KORTIX_API_KEY!, // your Kortix API key
+  getToken: async () => process.env.KORTIX_API_KEY!,
 });
-
-const projects = await kortix.projects.list();
-
-const s = kortix.session(projectId, sessionId);
-await s.ensureReady(); // provision/resume, long-poll until ready
-await s.health(); // is the runtime ready?
-s.previewUrl(3000, '/docs'); // proxy URL for a port the agent exposed
 ```
 
-## Philosophy
+`backendUrl` and `getToken` are the only required fields. The SDK calls `getToken` on every request and caches nothing — your host owns token storage and refresh.
 
-- **One token.** Auth is a single Kortix token — a Supabase JWT or a `kortix_pat_…` — supplied once via `getToken`. Keys never leave the server.
-- **Session-scoped.** You hold a _session_ and ask it about its own runtime: `session.health()`, `session.previewUrl()`. The sandbox is an implementation detail you never name.
-- **Mutations own their side-effects** — server-side. You state intent; the SDK doesn't orchestrate side-effects client-side.
-- **One import.** No native harness SDKs, no raw `backendApi`, no `authenticatedFetch` in host code — everything is reachable through `createKortix` or a `@kortix/sdk/*` subpath.
+Create an API key at **User settings → API keys**. The key starts with `kortix_pat_` and shows only once. Store it as a secret and return it from `getToken`. See [Auth](/docs/sdk/auth) for token types and scopes.
 
-## Two layers
+## Start your first session
 
-The SDK gives you an **imperative** client for actions and **reactive** hooks for live UI data:
+1. Create a session in your project.
 
-- `createKortix(config)` → the facade. Call methods: `kortix.projects.list()`, `kortix.session(pid, sid).start()`.
-- `@kortix/sdk/react` → hooks. **`useSession(projectId, sessionId)` runs a whole session** in one hook — messages, `send`, status, the boot `phase` — with the runtime (start, SSE, readiness) handled for you. Plus models, config, and PTY.
+   ```ts
+   const created = await kortix.project(projectId).sessions.create();
+   const session = kortix.session(projectId, created.session_id);
+   ```
+
+2. Wait for the sandbox to accept work.
+
+   ```ts
+   await session.ensureReady();
+   ```
+
+   `ensureReady()` starts or resumes the session sandbox. If the sandbox is still starting, it throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`. Retry after a short delay. See [Sessions](/docs/sdk/sessions).
+
+3. Send a message to the agent.
+
+   ```ts
+   await session.send('Add a README');
+   ```
+
+   `send()` calls `ensureReady()` for you, then sends the message.
+
+`createKortix` gives you an imperative client: call methods for every action, like projects, sessions, secrets, and triggers. `@kortix/sdk/react` gives you hooks for live UI data — `useSession` runs a whole session in one hook.
 
 <Cards>
-  <Card title="Getting started" href="/docs/sdk/getting-started">
-    Install, configure, authenticate, and make your first calls.
-  </Card>
-  <Card title="Full example" href="/docs/sdk/full-example">
-    Zero to a streaming agent reply in one framework-free file.
+  <Card title="Full example" href="/docs/sdk/example">
+    Zero to a streaming agent reply.
   </Card>
   <Card title="Auth" href="/docs/sdk/auth">
-    API keys vs Supabase JWTs — the two ways to authenticate the SDK.
-  </Card>
-  <Card title="The client" href="/docs/sdk/the-client">
-    The full `createKortix` facade — accounts, projects, and the project handle.
+    API keys and Supabase JWTs.
   </Card>
   <Card title="Sessions" href="/docs/sdk/sessions">
-    The session handle: lifecycle, runtime health, previews, and ACP agent transport.
-  </Card>
-  <Card title="Streaming" href="/docs/sdk/streaming">
-    Live events, the readiness handshake, and the runtime support matrix.
-  </Card>
-  <Card title="ACP" href="/docs/sdk/acp">
-    The ACP layer underneath the facade — AcpClient, the AcpSession store, and transcript projections.
+    Lifecycle, streaming, and error handling.
   </Card>
   <Card title="React hooks" href="/docs/sdk/react">
-    `@kortix/sdk/react` — reactive data: live messages, events, config, PTY.
+    `useSession` and other reactive hooks.
   </Card>
-  <Card title="Modules" href="/docs/sdk/modules">
-    The functional areas — files, session runtime, runtime client, auth, turns — all on the
-    root entry.
-  </Card>
-  <Card title="Distribution" href="/docs/sdk/distribution">
-    npm, the CDN bundles, version lockstep, and the entry-point stability tiers.
+  <Card title="Reference" href="/docs/sdk/reference">
+    The full client, modules, turns, and distribution.
   </Card>
 </Cards>
-
-<Callout>
-  The Kortix REST API also has an auto-generated reference at
-  [api.kortix.com/v1/docs](https://api.kortix.com/v1/docs) (OpenAPI). The SDK wraps it with types
-  and ergonomics — prefer the SDK in application code.
-</Callout>

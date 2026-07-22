@@ -318,19 +318,20 @@ describe('kortix CLI black-box behavior', () => {
     const result = await runCli(['--help']);
 
     expect(result.code).toBe(0);
-    // Tier bands separate what lives outside the project, inside the linked
-    // project, and the CLI tool itself (rendered as a labeled divider).
-    for (const tier of ['Account', 'The linked project', 'CLI']) {
-      expect(result.stdout).toContain(`\n  ${tier} ─`);
+    // Tier bands lead with the navigable hierarchy, then the linked project,
+    // then the CLI tool itself (rendered as a labeled divider).
+    for (const tier of ['Where you are', 'The linked project', 'CLI']) {
+      expect(result.stdout).toContain(`\n  ${tier}`);
     }
-    // Section headings within the tiers.
+    // Section headings within the tiers — the hierarchy comes first, top-down.
     for (const heading of [
-      'Authentication',
-      'Hosts & accounts',
-      'Projects',
+      'Sign in — per host',
+      'Account — within the host',
+      'Project — within the account',
+      'Session — within the project',
       'Author & ship',
       'Agents & integrations',
-      'Sessions & work',
+      'Files, changes & triggers',
       'Access & permissions',
     ]) {
       expect(result.stdout).toContain(`\n  ${heading}\n`);

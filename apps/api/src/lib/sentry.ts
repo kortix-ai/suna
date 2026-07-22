@@ -54,6 +54,19 @@ export const SENTRY_IGNORE_ERRORS = [
   // upstream/network noise — drop it instead of paging
   // (Better Stack pattern c672fb5e…).
   'The operation timed out.',
+  // Bun/WHATWG `new URL()` throws `TypeError: "<input>" cannot be parsed as
+  // a URL.` when given a relative URL with no base. This is scanner noise:
+  // raw HTTP/1.0 port probes (`GET / HTTP/1.0\r\n\r\n`) and the Trinity
+  // scanner fingerprint (`/nice%20ports%2C/Tri%6Eity.txt%2ebak`) arrive at
+  // Bun.serve with no `Host` header, so `req.url` is path-only and every
+  // downstream `new URL(c.req.url)` call site throws. The root-cause fix in
+  // lib/request-url.ts (ensureAbsoluteRequestUrl at the Bun.serve boundary)
+  // prevents the throw for the request handler path; this filter is
+  // defense-in-depth so any residual edge case (a fire-and-forget path that
+  // re-parses a stale path-only URL, a future call site that bypasses the
+  // rebuild) stops paging instead of surfacing as a 0-user Sentry event.
+  // Better Stack pattern 28e9a65c…, first seen 2026-04-27, 0 users.
+  'cannot be parsed as a URL',
   // Expected HTTP errors (auth failures, not found, etc.)
   'HTTPException',
 ] as const;

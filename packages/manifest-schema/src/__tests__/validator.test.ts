@@ -396,6 +396,63 @@ spec = "https://example.com/openapi.json"
     expect(errorPaths).toContain('connectors[0].auth.secret');
   });
 
+  test('a valid `headers` table is accepted', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  Accept = "application/json"
+  "X-Tenant-Id" = "acme"
+`);
+    expect(errorPaths).toEqual([]);
+    expect(valid).toBe(true);
+  });
+
+  test('an illegal header name is an error', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  "X Tenant Id" = "acme"
+`);
+    expect(errorPaths).toContain('connectors[0].headers');
+    expect(issues.some((i) => i.message.includes('invalid header name'))).toBe(true);
+  });
+
+  test('CR/LF in a header value is an error (header injection)', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  "X-Tenant-Id" = "acme\\r\\nX-Admin: true"
+`);
+    expect(errorPaths).toContain('connectors[0].headers');
+    expect(issues.some((i) => i.message.includes('CR or LF'))).toBe(true);
+  });
+
+  test('headers on a platform-called provider are a warning (inert at runtime)', () => {
+    const { valid, warningPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "gmail"
+provider = "pipedream"
+app = "gmail"
+  [connectors.headers]
+  Accept = "application/json"
+`);
+    expect(warningPaths).toContain('connectors[0].headers');
+    expect(valid).toBe(true);
+  });
+
   test('policy action must be one of the known values', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1

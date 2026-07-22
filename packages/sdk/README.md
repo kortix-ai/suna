@@ -166,8 +166,8 @@ await kortix.project(projectId).sessions.create({
 });
 ```
 
-Do not put credentials in this map. For a white-label/backend wrapper, create a
-server-owned connection profile, store its credential through the dedicated
+Do not put credentials in this map. For a white-label/backend wrapper, create an
+operator-managed connection profile, store its credential through the dedicated
 credential endpoint, and pass only the non-secret profile id at session create:
 
 ```ts
@@ -198,11 +198,30 @@ await project.sessions.create({
 });
 ```
 
-Profiles are project/connector scoped, manager-authorized, and resolved on
-every Executor request. Revocation therefore takes effect without restarting
-the session. The credential is encrypted server-side and is never returned,
-placed in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment.
-Raw env and MCP configuration are not session-create inputs.
+For bring-your-own authorization, each logged-in member creates their own
+profile without supplying an owner id; Kortix derives ownership from the bearer
+token:
+
+```ts
+const profile = await project.connectors.profiles.reconcileMember({
+  connector_alias: 'gmail',
+  label: 'My Gmail',
+});
+await project.connectors.profiles.pipedreamConnect(profile.profile_id);
+// Complete OAuth, then:
+await project.connectors.profiles.pipedreamFinalize(profile.profile_id);
+await project.sessions.create({
+  connector_bindings: { gmail: { profile_id: profile.profile_id } },
+});
+```
+
+Member profiles are owner-only even for project managers, and sessions using
+one must remain private. Project defaults remain shared; external/agent/subject
+profiles remain operator-managed. Every profile is project/connector scoped
+and resolved on every Executor request, so revocation takes effect without a
+restart. Credentials are encrypted server-side and are never returned, placed
+in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
+and MCP configuration are not session-create inputs.
 
 `session.stream()` is a thin facade over the framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client

@@ -1,5 +1,40 @@
 # Kortix project
 
+## How to communicate: precise, technically accurate, no fluff
+
+Write every response — chat, PR text, commit messages, code comments, docs — in
+the spirit of **ASD-STE100 (Simplified Technical English)**. The goal is maximum
+technical precision with zero filler. Apply these rules:
+
+- **State facts, not vibes.** Every claim is specific and verifiable: name the
+  file, function, route, flag, SHA, status code, or number. No "should work",
+  "probably", "a bunch of", "various", "seems fine" — say what is true and how you
+  know, or say you do not know it yet.
+- **One idea per sentence.** Keep sentences short (aim ≤ 20 words) and each one
+  carries a single instruction or fact. Split compound thoughts instead of
+  chaining clauses.
+- **Active voice, present tense, direct.** "The gate rejects the request",
+  not "the request may end up being rejected". Give the instruction; do not
+  soften it.
+- **One term per concept.** Use the same word for the same thing every time —
+  do not alternate "session"/"run"/"task" for one concept. Match the codebase's
+  existing names exactly (`session_id`, not "session ID / run id").
+- **No filler, no hedging, no praise.** Cut "basically", "just", "simply",
+  "I think", "great question", "as we know", and marketing adjectives. Lead with
+  the answer; drop the throat-clearing.
+- **Quantify.** Prefer exact values over adjectives: "up to ~9 min", "returns
+  `402`", "3 of 7 flows", not "slow", "an error", "most".
+- **Show the evidence.** When you assert a behavior, cite the command you ran and
+  the real output. Distinguish verified fact from assumption explicitly.
+- **Structure over prose.** Use numbered/bulleted lists for steps, findings, and
+  status. Reserve paragraphs for genuine explanation, and keep them tight.
+- **Say the unknown plainly.** If something is unverified, blocked, or risky,
+  state it in one line — what, why, and what would resolve it — instead of
+  burying or omitting it.
+
+This standard governs how you talk. It does not override the technical rules
+below; it is how you report on them.
+
 ## First, at session start: where do you work?
 
 Before starting any non-trivial change, **ask the user which environment to work
@@ -134,10 +169,11 @@ mocked internals when a real surface exists.
 - **No silent gaps:** if a surface cannot be fully exercised in the current
   turn, say exactly which input/output remains unverified and why. Otherwise
   keep going until the real surface is verified.
-- **Final response format:** when work is finished, answer with low-fluff,
-  numbered lists. Include exactly what changed, what was verified, what remains
-  unverified or risky, and what the user should test next. Keep prose short and
-  concrete; do not bury the actionable testing path in a paragraph.
+- **Final response format:** when work is finished, answer per the **How to
+  communicate** standard at the top of this file — numbered/bulleted, no fluff.
+  Include exactly what changed, what was verified (with the command + output),
+  what remains unverified or risky, and what the user should test next. Do not
+  bury the actionable testing path in a paragraph.
 
 ### The stack (already wired)
 - **Web** — Next.js dev server on `http://localhost:3000`.

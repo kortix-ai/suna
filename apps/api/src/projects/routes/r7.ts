@@ -7,7 +7,7 @@ import {
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
@@ -17,10 +17,11 @@ import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, resolveSessionOwnerIdentities } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
+import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import {
   createSession,
@@ -374,19 +375,18 @@ projectsApp.openapi(
   // must hold project.session.start (no-op for human/PAT tokens).
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
   const requestedConnectorBindings = body.connector_bindings;
-  if (
+  const mayManageSystemConnectorProfiles =
     requestedConnectorBindings &&
     typeof requestedConnectorBindings === 'object' &&
     Object.keys(requestedConnectorBindings).length > 0
-  ) {
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
-    );
-  }
+      ? await projectCapabilityAllowed(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
+        )
+      : false;
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
@@ -405,9 +405,21 @@ projectsApp.openapi(
     source: 'ui',
     project: loaded.row,
     userId: loaded.userId,
+    requestingPrincipalType:
+      c.get('authType') === 'service_account' ? 'service_account' : 'human',
     body,
+    // Origin is derived from the caller's token kind (service_account / pat /
+    // 'user' apiKey → backend), never the body — see resolveSessionOrigin. A
+    // token operating from INSIDE a session stays 'user' so an in-sandbox agent
+    // can't vouch via origin_ref. Keyed on session-binding (`sessionId`, set on
+    // the executor PAT injected into every sandbox) OR an agent grant — NOT the
+    // grant alone, which is null for v1/default agents and would fail open.
+    authType: c.get('authType') as string | undefined,
+    apiKeyType: c.get('apiKeyType') as string | undefined,
+    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
     request: requestAuditContext(c),
     idempotencyKey: c.req.header('idempotency-key') ?? null,
+    mayManageSystemConnectorProfiles,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
   for (const [key, value] of Object.entries(result.headers ?? {})) {
@@ -1168,7 +1180,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -1188,6 +1200,23 @@ projectsApp.openapi(
 
   const intent = parseSharingIntent(body, loaded.userId);
   if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+
+  if (
+    intent.mode !== 'private' &&
+    (await sessionHasMemberConnectorBinding({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+    }))
+  ) {
+    return c.json(
+      {
+        error: 'Sessions using a personal connector profile must remain private',
+        code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+      },
+      409,
+    );
+  }
 
   await setSessionSharing(sessionId, intent);
 

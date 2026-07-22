@@ -1,5 +1,6 @@
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
+import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
@@ -347,7 +348,14 @@ export async function restartSession(input: {
           .set({ status: 'running', updatedAt: new Date() })
           .where(eq(projectSessions.sessionId, sessionId));
       } catch (err) {
-        console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
+        // Detached from the request (the 202 already went out) — a structured
+        // error is the only trace the reboot died and the session was parked.
+        logger.error('[projects] restart-in-place failed — session parked stopped', {
+          session_id: sessionId,
+          project_id: projectId,
+          external_id: externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         if (isMissingRuntimeError(err)) {
           const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
           if (!claim) return;

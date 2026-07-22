@@ -113,8 +113,8 @@ module "api" {
   # dev sizing: small + spot, floor of 1
   task_cpu         = 512
   task_memory      = 1024
-  desired_count    = 1
-  min_capacity     = 1
+  desired_count    = 2
+  min_capacity     = 2
   max_capacity     = 3
   use_fargate_spot = true
   # Validate the request-count scaling policy here before prod. Low traffic, so

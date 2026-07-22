@@ -19,6 +19,7 @@ import {
   Pencil,
   Plug,
   Plus,
+  X,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -29,7 +30,7 @@ import {
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { isConnectorsEnabled } from '@/lib/config';
@@ -116,6 +117,7 @@ import {
   setConnectorSensitive,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
+import { Icon } from '@/features/icon/icon';
 import { DiscoverCatalogue } from './discover-catalogue';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -990,6 +992,7 @@ function ConnectorDetail({
                   connector={connector}
                   onChanged={onChanged}
                   canWrite={canWrite}
+                  onSetCredential={isPipedream ? undefined : () => setCredOpen(true)}
                 />
               )}
             </TabsContent>
@@ -1072,7 +1075,9 @@ function ConnectorDetail({
 type ChannelPlatform = 'slack' | 'email';
 
 function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
-  if (connector.platform === 'slack' || connector.platform === 'email') return connector.platform;
+  if (connector.platform === 'slack' || connector.platform === 'email') {
+    return connector.platform;
+  }
   if (connector.slug === 'kortix_slack') return 'slack';
   if (connector.slug === 'kortix_email') return 'email';
   if (connector.slug.startsWith('email_')) return 'email';
@@ -1980,6 +1985,7 @@ function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
       name: cfg.auth.name ?? undefined,
       prefix: cfg.auth.prefix ?? undefined,
     },
+    headers: cfg.headers ?? {},
   };
 }
 
@@ -1998,6 +2004,8 @@ function connectionSig(d: ConnectorDraftInput): string {
       name: d.auth?.name ?? '',
       prefix: d.auth?.prefix ?? '',
     },
+    // Order matters: reordering headers IS an edit worth saving.
+    headers: Object.entries(d.headers ?? {}),
   });
 }
 
@@ -2006,11 +2014,15 @@ function ConnectionSection({
   connector,
   onChanged,
   canWrite = false,
+  onSetCredential,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
   canWrite?: boolean;
+  /** Opens the credential dialog. The credential belongs with the auth config
+   *  it satisfies, not only in a banner at the top of the page. */
+  onSetCredential?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -2081,6 +2093,30 @@ function ConnectionSection({
         ) : (
           <div className="space-y-4">
             <ConnectorConfigFields draft={draft} onChange={setDraft} readOnly={!canWrite} />
+            {/* The credential lives next to the auth settings that consume it. */}
+            {connector.authSecret && onSetCredential && (
+              <div className="border-border/60 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Credential</p>
+                  <p className="text-muted-foreground text-xs">
+                    {connector.secretSet
+                      ? 'Stored and in use. Setting a new value replaces it.'
+                      : 'Not set yet — the agent and your triggers cannot call this connector.'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
+                    {connector.secretSet ? 'Set' : 'Not set'}
+                  </Badge>
+                  {canWrite && (
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={onSetCredential}>
+                      <KeyRound className="size-3.5" />
+                      {connector.secretSet ? 'Replace' : 'Set credential'}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
             {canWrite && (
               <SaveBar
                 dirty={dirty}
@@ -3206,20 +3242,175 @@ function AppCatalogue({
   );
 }
 
+/**
+ * Slugify the source document's own name — OpenAPI `info.title`, Postman
+ * `info.name` — so adding a spec proposes the slug the API calls itself
+ * ("Kortix WhatsApp Gateway" → `kortix-whatsapp-gateway`). Derived from the
+ * document rather than its URL: a hostname is a guess, a title is a statement.
+ */
+function slugFromTitle(title: string | null | undefined): string {
+  return (title ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '');
+}
+
+/**
+ * Postman-style static header table. Any header, any value, sent on every call
+ * this connector makes. Kept as ordered rows (not an object) while editing so a
+ * half-typed or duplicate name doesn't silently drop a row out from under the
+ * user — the object is only rebuilt on the way out.
+ */
+function HeadersEditor({
+  value,
+  onChange,
+  readOnly,
+  authHeaderName,
+}: {
+  value: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+  readOnly?: boolean;
+  authHeaderName?: string | null;
+}) {
+  const [rows, setRows] = useState<Array<[string, string]>>(() => Object.entries(value));
+  // Re-seed only when the saved value genuinely differs from what we're showing,
+  // so a refetch can't wipe a row the user is mid-way through typing.
+  const seeded = useRef(JSON.stringify(Object.entries(value)));
+  useEffect(() => {
+    const incoming = JSON.stringify(Object.entries(value));
+    if (incoming !== seeded.current && incoming !== JSON.stringify(rows)) {
+      seeded.current = incoming;
+      setRows(Object.entries(value));
+    }
+  }, [value, rows]);
+
+  const commit = (next: Array<[string, string]>) => {
+    setRows(next);
+    const out: Record<string, string> = {};
+    for (const [k, v] of next) {
+      const name = k.trim();
+      if (name) out[name] = v;
+    }
+    seeded.current = JSON.stringify(Object.entries(out));
+    onChange(out);
+  };
+
+  const nameError = (name: string, index: number): string | null => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(trimmed)) return 'Not a valid header name';
+    if (trimmed.length > 128) return 'Too long (max 128)';
+    if (authHeaderName && trimmed.toLowerCase() === authHeaderName.toLowerCase()) {
+      return 'Reserved for the credential — the auth header always wins';
+    }
+    const dupe = rows.some(
+      ([other], i) => i !== index && other.trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    return dupe ? 'Duplicate header name' : null;
+  };
+
+  return (
+    <Field>
+      <FieldLabel>Headers</FieldLabel>
+      <div className="space-y-2">
+        {rows.map(([name, val], i) => {
+          const err = nameError(name, i);
+          return (
+            // Rows are positional and freely reorderable, so the index IS the identity.
+            // biome-ignore lint/suspicious/noArrayIndexKey: positional rows
+            <div key={i} className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={name}
+                  onChange={(e) =>
+                    commit(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))
+                  }
+                  placeholder="X-Tenant-Id"
+                  className="font-mono text-xs"
+                  variant="popover"
+                  disabled={readOnly}
+                  aria-invalid={!!err}
+                />
+                <Input
+                  value={val}
+                  onChange={(e) =>
+                    commit(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))
+                  }
+                  placeholder="acme"
+                  className="font-mono text-xs"
+                  variant="popover"
+                  disabled={readOnly}
+                />
+                {!readOnly && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0"
+                    aria-label="Remove header"
+                    onClick={() => commit(rows.filter((_, j) => j !== i))}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                )}
+              </div>
+              {err && <p className="text-destructive text-xs">{err}</p>}
+            </div>
+          );
+        })}
+        {!readOnly && rows.length < 32 && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => setRows([...rows, ['', '']])}
+          >
+            <Plus className="size-3.5" /> Add header
+          </Button>
+        )}
+      </div>
+      <FieldDescription>
+        Sent on every call this connector makes. Stored in the manifest in plain text — put
+        credentials in Auth, not here.
+      </FieldDescription>
+    </Field>
+  );
+}
+
 function ConnectorConfigFields({
   draft,
   onChange,
   slugEditable,
   emailChannelEnabled = true,
   readOnly = false,
+  detectedAuth = null,
+  detectedTitle = null,
 }: {
   draft: ConnectorDraftInput;
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
   emailChannelEnabled?: boolean;
   readOnly?: boolean;
+  /** What auto-detect found on the source, surfaced inline on the Auth field. */
+  detectedAuth?: { type: string; parameterName: string | null } | null;
+  /** The source document's own name, used to propose a slug. */
+  detectedTitle?: string | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Once the slug is typed in by hand, never overwrite it from the source again.
+  const slugTouched = useRef(false);
+  const suggestedSlug = slugFromTitle(detectedTitle);
+  useEffect(() => {
+    // Only ever fills a blank slug, and only before the user types one. Editing
+    // an existing connector (slugEditable false) is never touched.
+    if (!slugEditable || readOnly || slugTouched.current) return;
+    if (!suggestedSlug || draft.slug) return;
+    onChange({ ...draft, slug: suggestedSlug });
+  }, [suggestedSlug, slugEditable, readOnly, draft, onChange]);
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
   const setAuth = (patch: Partial<NonNullable<ConnectorDraftInput['auth']>>) =>
     onChange({ ...draft, auth: { ...draft.auth, ...patch } });
@@ -3234,9 +3425,10 @@ function ConnectorConfigFields({
           <Input
             id="connector-slug"
             value={draft.slug}
-            onChange={(e) =>
-              set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') })
-            }
+            onChange={(e) => {
+              slugTouched.current = true;
+              set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') });
+            }}
             placeholder="my-api"
             className="font-mono text-xs"
             variant="popover"
@@ -3456,9 +3648,41 @@ function ConnectorConfigFields({
               </SelectContent>
             </Select>
             <FieldDescription>
-              Auto-detect reads authentication metadata from the source. Choose None to opt out.
+              {draft.auth === undefined && detectedAuth ? (
+                <>
+                  Detected <span className="font-medium">{detectedAuth.type}</span>
+                  {detectedAuth.parameterName ? (
+                    <>
+                      {' '}
+                      via{' '}
+                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
+                        {detectedAuth.parameterName}
+                      </code>
+                    </>
+                  ) : null}
+                  . Add the credential after saving — you can override this anytime.
+                </>
+              ) : (
+                'Auto-detect reads authentication metadata from the source. Choose None to opt out.'
+              )}
             </FieldDescription>
           </Field>
+          {/* Show the detected header alongside the select so the actual header
+              name is visible without saving first — read-only, because the
+              source is the authority until the user picks an explicit override. */}
+          {draft.auth === undefined && detectedAuth?.parameterName && (
+            <Field>
+              <FieldLabel htmlFor="connector-auth-detected">Header name</FieldLabel>
+              <Input
+                id="connector-auth-detected"
+                value={detectedAuth.parameterName}
+                readOnly
+                variant="popover"
+                className="font-mono text-xs"
+              />
+              <FieldDescription>From the source. Choose Custom header to change it.</FieldDescription>
+            </Field>
+          )}
           {draft.auth?.type === 'custom' && (
             <Field>
               <FieldLabel htmlFor="connector-auth-header">
@@ -3478,6 +3702,14 @@ function ConnectorConfigFields({
             </Field>
           )}
         </div>
+      )}
+      {needsAuth && (
+        <HeadersEditor
+          value={draft.headers ?? {}}
+          onChange={(headers) => set({ headers })}
+          readOnly={readOnly}
+          authHeaderName={draft.auth?.type === 'custom' ? draft.auth?.name : detectedAuth?.parameterName}
+        />
       )}
     </FieldGroup>
   );
@@ -3556,17 +3788,18 @@ export function CustomConnectorForm({
             onChange={setDraft}
             slugEditable
             emailChannelEnabled={emailChannelEnabled}
+            detectedAuth={
+              discovery.data?.recommended
+                ? {
+                    type: discovery.data.recommended.type,
+                    parameterName: discovery.data.candidates[0]?.parameterName ?? null,
+                  }
+                : null
+            }
+            detectedTitle={discovery.data?.title ?? null}
           />
           {draft.auth === undefined && discovery.isFetching && (
             <InfoBanner tone="info">Checking the source for authentication settings…</InfoBanner>
-          )}
-          {draft.auth === undefined && discovery.data?.recommended && (
-            <InfoBanner tone="info">
-              Detected {discovery.data.recommended.type} authentication from the source
-              {discovery.data.candidates[0]?.parameterName
-                ? ` (${discovery.data.candidates[0].parameterName})`
-                : ''}. You only need to provide the credential after adding it.
-            </InfoBanner>
           )}
           {draft.auth === undefined && discovery.data?.status === 'none' && (
             <InfoBanner tone="neutral">The source does not advertise authentication.</InfoBanner>

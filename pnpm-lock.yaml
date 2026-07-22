@@ -16,8 +16,8 @@ overrides:
   '@opentelemetry/api': 1.9.0
   '@opentelemetry/sdk-node@>=0.0.0 <0.217.0': 0.217.0
   '@opentelemetry/exporter-prometheus@>=0.0.0 <0.217.0': 0.217.0
-  fast-uri@>=3.0.0 <3.1.2: 3.1.2
-  hono@>=4.0.0 <4.12.25: 4.12.25
+  fast-uri@>=3.0.0 <3.1.3: 3.1.3
+  hono@>=4.0.0 <4.12.27: 4.12.27
   next-intl@>=4.0.0 <4.9.2: 4.9.2
   icu-minify@>=4.0.0 <4.9.2: 4.9.2
   uuid@>=7.0.0 <11.1.1: 11.1.1
@@ -25,7 +25,7 @@ overrides:
   postcss@>=8.0.0 <8.5.10: 8.5.10
   fast-xml-parser@>=5.0.0 <5.7.0: 5.7.2
   '@xmldom/xmldom@>=0.0.0 <0.8.13': 0.8.13
-  dompurify@>=3.0.0 <3.4.11: 3.4.11
+  dompurify@>=3.0.0 <3.4.12: 3.4.12
   follow-redirects@>=1.0.0 <1.16.0: 1.16.0
   '@hono/node-server@>=1.0.0 <1.19.13': 1.19.13
   esbuild@>=0.0.0 <0.28.1: 0.28.1
@@ -39,6 +39,8 @@ overrides:
   diff@>=7.0.0 <8.0.3: 8.0.3
   js-yaml@>=3.0.0 <4.3.0: 4.3.0
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
+  '@opentelemetry/propagator-jaeger@>=0.0.0 <2.9.0': 2.9.0
+  svgo@>=3.0.0 <3.3.4: 3.3.4
   brace-expansion@>=2.0.0 <2.1.2: 2.1.2
   yaml@>=1.0.0 <1.10.3: 1.10.3
   picomatch@>=4.0.0 <4.0.4: 4.0.4
@@ -92,7 +94,7 @@ importers:
         version: 0.184.0(ws@8.21.0)
       '@hono/zod-openapi':
         specifier: ^0.19.10
-        version: 0.19.10(hono@4.12.25)(zod@3.25.76)
+        version: 0.19.10(hono@4.12.27)(zod@3.25.76)
       '@kortix/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
@@ -125,7 +127,7 @@ importers:
         version: 0.5.8
       '@scalar/hono-api-reference':
         specifier: ^0.10.20
-        version: 0.10.20(hono@4.12.25)
+        version: 0.10.20(hono@4.12.27)
       '@sentry/bun':
         specifier: ^10.47.0
         version: 10.63.0(@opentelemetry/core@2.8.0)
@@ -151,8 +153,8 @@ importers:
         specifier: 2.32.0
         version: 2.32.0
       hono:
-        specifier: 4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -238,8 +240,8 @@ importers:
   apps/kortix-sandbox-agent-server:
     dependencies:
       hono:
-        specifier: ^4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -266,8 +268,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       hono:
-        specifier: 4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
       langfuse:
         specifier: ^3.38.20
         version: 3.38.20
@@ -1332,8 +1334,8 @@ importers:
   packages/agent-tunnel:
     dependencies:
       hono:
-        specifier: 4.12.25
-        version: 4.12.25
+        specifier: 4.12.27
+        version: 4.12.27
     devDependencies:
       '@types/bun':
         specifier: ^1.3.9
@@ -4871,27 +4873,27 @@ packages:
       - utf-8-validate
     dev: true
 
-  /@hono/zod-openapi@0.19.10(hono@4.12.25)(zod@3.25.76):
+  /@hono/zod-openapi@0.19.10(hono@4.12.27)(zod@3.25.76):
     resolution: {integrity: sha512-dpoS6DenvoJyvxtQ7Kd633FRZ/Qf74+4+o9s+zZI8pEqnbjdF/DtxIib08WDpCaWabMEJOL5TXpMgNEZvb7hpA==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
-      hono: 4.12.25
+      hono: 4.12.27
       zod: '>=3.0.0'
     dependencies:
       '@asteasolutions/zod-to-openapi': 7.3.4(zod@3.25.76)
-      '@hono/zod-validator': 0.7.6(hono@4.12.25)(zod@3.25.76)
-      hono: 4.12.25
+      '@hono/zod-validator': 0.7.6(hono@4.12.27)(zod@3.25.76)
+      hono: 4.12.27
       openapi3-ts: 4.6.0
       zod: 3.25.76
     dev: false
 
-  /@hono/zod-validator@0.7.6(hono@4.12.25)(zod@3.25.76):
+  /@hono/zod-validator@0.7.6(hono@4.12.27)(zod@3.25.76):
     resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
     peerDependencies:
-      hono: 4.12.25
+      hono: 4.12.27
       zod: ^3.25.0 || ^4.0.0
     dependencies:
-      hono: 4.12.25
+      hono: 4.12.27
       zod: 3.25.76
     dev: false
 
@@ -6100,14 +6102,14 @@ packages:
       '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.0)
     dev: false
 
-  /@opentelemetry/propagator-jaeger@2.7.1(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-KMjVBHzP4N60bOzxja76M1F1hZZ43lGPga5ix+mkv9+kk1nx9SbkxSvJsMbuVUxdPQmsPTqGShmhN8ulrMOg6Q==}
+  /@opentelemetry/propagator-jaeger@2.9.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-4mYGty27rYvSM0jtp1ZUOqd3LfVRCYg9H5G9OFzSx5HViYToU21MFhWfco7x1HwXr7ER8yGOiCIHZUwjPksc0Q==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': 1.9.0
     dependencies:
       '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/core': 2.9.0(@opentelemetry/api@1.9.0)
     dev: false
 
   /@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0):
@@ -6181,7 +6183,7 @@ packages:
       '@opentelemetry/instrumentation': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/otlp-exporter-base': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/propagator-b3': 2.7.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/propagator-jaeger': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/propagator-jaeger': 2.9.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-logs': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics': 2.7.1(@opentelemetry/api@1.9.0)
@@ -9279,14 +9281,14 @@ packages:
     engines: {node: '>=22'}
     dev: false
 
-  /@scalar/hono-api-reference@0.10.20(hono@4.12.25):
+  /@scalar/hono-api-reference@0.10.20(hono@4.12.27):
     resolution: {integrity: sha512-/Ae0M9rOpsJJb5b121G8LX4vvBo1t2qFX1ffRKkTgCS9VWfpsfq11r0yBcYy1fmAn1x8YLO21Ls1/9h8LzHuDw==}
     engines: {node: '>=22'}
     peerDependencies:
-      hono: 4.12.25
+      hono: 4.12.27
     dependencies:
       '@scalar/client-side-rendering': 0.1.13
-      hono: 4.12.25
+      hono: 4.12.27
     dev: false
 
   /@scalar/schemas@0.3.3:
@@ -10010,7 +10012,7 @@ packages:
       '@svgr/core': 8.1.0(typescript@5.9.3)
       cosmiconfig: 8.3.6(typescript@5.9.3)
       deepmerge: 4.3.1
-      svgo: 3.3.3
+      svgo: 3.3.4
     transitivePeerDependencies:
       - typescript
     dev: true
@@ -12302,7 +12304,7 @@ packages:
     resolution: {integrity: sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A==}
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.2
+      fast-uri: 3.1.3
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -14557,8 +14559,8 @@ packages:
     dependencies:
       domelementtype: 2.3.0
 
-  /dompurify@3.4.11:
-    resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
+  /dompurify@3.4.12:
+    resolution: {integrity: sha512-zQvGet8Z2sWbQhCmfFz/T5QWH2oBmjnqK3qvOjaqaNLrLEF912WamU+ohnTp0TCep/MFVHpdJuCZEdFOdTnEFg==}
     optionalDependencies:
       '@types/trusted-types': 2.0.7
     dev: false
@@ -16315,8 +16317,8 @@ packages:
       iobuffer: 6.0.1
     dev: false
 
-  /fast-uri@3.1.2:
-    resolution: {integrity: sha512-rVjf7ArG3LTk+FS6Yw81V1DLuZl1bRbNrev6Tmd/9RaroeeRRJhAt7jg/6YFxbvAQXUCavSoZhPPj6oOx+5KjQ==}
+  /fast-uri@3.1.3:
+    resolution: {integrity: sha512-i70LwGWUduXqzicKXWshooq+sWL1K3WUU5rKZNG/0i3a1OSoX3HqhH5WbWwTmqWfor4urUakGPiRQcleRZTwOg==}
 
   /fast-xml-builder@1.3.0:
     resolution: {integrity: sha512-F74cZEdCvuw9P41GAC3rod4X04jjWGM1JPEv/GWSqFTWLsdyMSBMBMlm9Hk3GLBgLBbdBNY8yee0pQh2RBVESQ==}
@@ -17368,8 +17370,8 @@ packages:
       parse-passwd: 1.0.0
     dev: false
 
-  /hono@4.12.25:
-    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
+  /hono@4.12.27:
+    resolution: {integrity: sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q==}
     engines: {node: '>=16.9.0'}
     dev: false
 
@@ -18324,7 +18326,7 @@ packages:
     optionalDependencies:
       canvg: 3.0.11
       core-js: 3.49.0
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       html2canvas: 1.4.1
     dev: false
 
@@ -19254,7 +19256,7 @@ packages:
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.21
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       es-toolkit: 1.49.0
       katex: 0.16.47
       khroma: 2.1.0
@@ -21358,7 +21360,7 @@ packages:
       '@posthog/core': 1.39.6
       '@posthog/types': 1.392.1
       core-js: 3.49.0
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       fflate: 0.4.8
       preact: 10.29.4
       query-selector-shadow-dom: 1.0.1
@@ -21380,7 +21382,7 @@ packages:
       react-icons: ^5.6.0
     dependencies:
       clsx: 2.1.1
-      dompurify: 3.4.11
+      dompurify: 3.4.12
       fast-xml-parser: 5.10.0
       framer-motion: 12.42.2(react-dom@19.1.0)(react@19.1.0)
       html2canvas-pro: 2.2.3
@@ -24168,8 +24170,8 @@ packages:
     dev: false
     optional: true
 
-  /svgo@3.3.3:
-    resolution: {integrity: sha512-+wn7I4p7YgJhHs38k2TNjy1vCfPIfLIJWR5MnCStsN8WuuTcBnRKcMHQLMM2ijxGZmDoZwNv8ipl5aTTen62ng==}
+  /svgo@3.3.4:
+    resolution: {integrity: sha512-GsNRis4e8jxn2Y9ENz/8lbJ93CstG8svtMnuRaHbiF2LTJ5tK0/q3t/URPq9Zc7zVWBJnNnJMIp6bevK7bSmNg==}
     engines: {node: '>=14.0.0'}
     hasBin: true
     dependencies:

@@ -350,6 +350,9 @@ export function ComposerChatInput({
   clearOnSend,
   live,
   onFileSearch,
+  queuedMessages,
+  onQueueMessage,
+  onRemoveQueuedMessage,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -381,6 +384,12 @@ export function ComposerChatInput({
   /** Present for an already-started ACP session — see {@link LiveAcpComposer}. */
   live?: LiveAcpComposer;
   onFileSearch?: (query: string) => Promise<string[]>;
+  /** Queued-while-busy support for composers with no `live` session yet (the
+   *  instant-session shell), passed straight through to SessionChatInput. A
+   *  live ACP session supplies the same three through {@link LiveAcpComposer}. */
+  queuedMessages?: { id: string; text: string }[];
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -599,9 +608,9 @@ export function ComposerChatInput({
       onContextClick={live?.onContextClick}
       todos={live?.todos}
       mentionSessions={live ? (mentionSessions ?? []) : []}
-      queuedMessages={live?.queuedMessages}
-      onQueueMessage={live?.onQueueMessage}
-      onRemoveQueuedMessage={live?.onRemoveQueuedMessage}
+      queuedMessages={live?.queuedMessages ?? queuedMessages}
+      onQueueMessage={live?.onQueueMessage ?? onQueueMessage}
+      onRemoveQueuedMessage={live?.onRemoveQueuedMessage ?? onRemoveQueuedMessage}
       replyTo={live?.replyTo}
       onClearReply={live?.onClearReply}
       lockForQuestion={live?.lockForQuestion}

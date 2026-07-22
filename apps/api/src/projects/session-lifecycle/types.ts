@@ -48,8 +48,10 @@ export interface CreateSessionCommand {
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   visibility?: 'private' | 'project' | 'restricted';
+  mayManageSystemConnectorProfiles?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -57,15 +59,33 @@ export interface CreateSessionCommand {
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
   postCreate?: SessionLifecyclePostCreateAction[];
+  // Caller's token kind (auth.ts `authType`) + apiKeyType + whether the token
+  // operates from inside a running session (`inSession`: session-bound or
+  // agent-scoped); used only to derive the session origin (a not-in-session
+  // service_account / pat / 'user' apiKey → backend). Never trusted from the
+  // request body. See session-origin.ts.
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
 }
 
 export interface QueuedCreateSessionPayload {
   body: Record<string, unknown>;
+  /** Absent on commands persisted before principal type was added. */
+  requestingPrincipalType?: 'human' | 'service_account';
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
+  mayManageSystemConnectorProfiles?: boolean;
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
+  // Origin-derivation signals captured at ENQUEUE time. Without them a queued
+  // backend create would replay as origin 'user' and 403 its origin_ref
+  // asynchronously — after the caller already got a 202. Absent on rows queued
+  // before this field existed → 'user', matching their pre-origin behavior.
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
 }
 
 export interface ContinueSessionCommand {
