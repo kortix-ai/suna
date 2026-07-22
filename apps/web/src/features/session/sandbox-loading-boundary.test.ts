@@ -30,4 +30,10 @@ describe('session navigation loading boundaries', () => {
     expect(projectAccessSource).toContain('<KortixHyperLogo');
     expect(projectAccessSource).toContain('min-h-screen');
   });
+
+  test('the access boundary uses the lightweight project route', () => {
+    expect(projectAccessSource).toContain('getProject(projectId');
+    expect(projectAccessSource).not.toContain('getProjectDetail(projectId');
+    expect(projectAccessSource).toContain("queryKey: ['project-access', projectId]");
+  });
 });
