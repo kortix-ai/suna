@@ -110,6 +110,42 @@ describe('AcpConfigOptionPill — select-typed option', () => {
     expect(onChange).toHaveBeenCalledWith('fast');
   });
 
+  // The Connect + Manage footer belongs ONLY to the harness-native MODEL pill
+  // (opted in via `modelServiceActions`) — mode/effort/etc. pills never show it.
+  test('no modelServiceActions: no Connect/Manage footer (mode/effort pills stay footer-less)', async () => {
+    renderWithTooltip(<AcpConfigOptionPill option={selectOption()} onChange={() => {}} />);
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    expect(screen.queryByTestId('acp-model-connect-action')).toBeNull();
+    expect(screen.queryByTestId('acp-model-manage-action')).toBeNull();
+  });
+
+  test('modelServiceActions present: Connect (+) routes to onConnect, Manage routes to onManage', async () => {
+    const onConnect = mock(() => {});
+    const onManage = mock(() => {});
+    renderWithTooltip(
+      <AcpConfigOptionPill
+        option={selectOption()}
+        onChange={() => {}}
+        modelServiceActions={{ onConnect, onManage }}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    fireEvent.click(screen.getByTestId('acp-model-connect-action'));
+    await flush();
+    expect(onConnect).toHaveBeenCalledTimes(1);
+    expect(onManage).toHaveBeenCalledTimes(0);
+
+    // The footer click closes the popover — reopen for the second action.
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    fireEvent.click(screen.getByTestId('acp-model-manage-action'));
+    await flush();
+    expect(onManage).toHaveBeenCalledTimes(1);
+  });
+
   // 2026-07-22 fix: no stored pick + a real advertised option list used to
   // render an EMPTY, chevron-only trigger (`currentValue` unset → the old
   // `currentLabel` fell through to `null`) — live-reproduced on the

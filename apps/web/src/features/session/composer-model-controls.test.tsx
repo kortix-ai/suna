@@ -43,6 +43,23 @@ mock.module('./reasoning-effort-selector', () => ({
   },
 }));
 
+// `HarnessManagedModelSelector` now consults `useModelConnectionGate` to wire
+// its Connect + Manage footer (the same connect-modal host the catalog
+// selector uses). Stub it to plain spies so the harness-native render tests
+// stay a pure DOM test with no QueryClient/router/ConnectModalHost harness,
+// AND so the footer wiring is assertable.
+const connectProviderCalls: Array<unknown[]> = [];
+mock.module('./use-model-connection-gate', () => ({
+  useModelConnectionGate: () => ({
+    openConnectProvider: (...args: unknown[]) => connectProviderCalls.push(args),
+    openUpgrade: () => {},
+    modal: null,
+    hasSelectableModels: true,
+    entitlementsPending: false,
+    showUpgradeOption: true,
+  }),
+}));
+
 const { ComposerModelControls } = await import('./composer-model-controls');
 const { HARNESS_MODEL_OPTION_FALLBACK } = await import('@kortix/sdk/react');
 
@@ -67,6 +84,7 @@ afterAll(() => {
 function resetCaptures() {
   capturedModelSelectorProps = null;
   capturedReasoningEffortSelectorProps = null;
+  connectProviderCalls.length = 0;
 }
 
 const MODELS: FlatModel[] = [
@@ -205,6 +223,34 @@ describe('ComposerModelControls — harness-native live selector (Claude Code / 
     expect(onModelOptionChange).toHaveBeenCalledWith('opus');
     // The catalog's own onModelChange must never fire for a harness-native pick.
     expect(capturedModelSelectorProps).toBeNull();
+  });
+
+  test('offers the SAME Connect + Manage-models actions as the catalog selector — every harness gets them, wired to the shared connect-modal host', async () => {
+    resetCaptures();
+    renderControls({
+      harnessManagedModel: {
+        harness: 'claude',
+        modelOption: CLAUDE_MODEL_OPTION,
+        onModelOptionChange: () => {},
+      },
+    });
+
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    expect(screen.getByTestId('acp-model-connect-action')).toBeTruthy();
+    expect(screen.getByTestId('acp-model-manage-action')).toBeTruthy();
+
+    // "+" routes to the connect modal's api-keys tab (clicking closes the
+    // popover, so reopen before the second action).
+    fireEvent.click(screen.getByTestId('acp-model-connect-action'));
+    await flush();
+    fireEvent.click(screen.getByTestId('acp-config-option-pill'));
+    await flush();
+    // "Manage models" opens the same connect surface on its default view —
+    // identical to `ModelSelector`'s header affordances.
+    fireEvent.click(screen.getByTestId('acp-model-manage-action'));
+    await flush();
+    expect(connectProviderCalls).toEqual([['api-keys'], []]);
   });
 
   test('a modelOption with zero choices renders nothing from the selector wrapper (defensive — ComposerModelControls itself never passes one, per isWritableAcpModelConfigOption)', () => {

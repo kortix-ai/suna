@@ -16,7 +16,7 @@ import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs'
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { AcpSessionConfigOption } from '@kortix/sdk';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Plus, SlidersHorizontal } from 'lucide-react';
 
 import {
   COMPOSER_PILL_ACTIVE_CLASS,
@@ -108,14 +108,32 @@ export function dedupeConfigChoices<T extends Record<string, unknown>>(choices: 
  *  model/agent selectors (rounded-full trigger, popover select). Grafted
  *  from main (merge policy P1), moved out of `acp-session-chat.tsx` onto the
  *  shared pill constants (Task 22) — behavior is unchanged. */
+/** The "connect a provider" / "manage models" actions the catalog
+ *  `ModelSelector` exposes in its search header — offered here as a popover
+ *  footer so the HARNESS-NATIVE model selector (Claude Code / Codex) has the
+ *  exact same two affordances as the OpenCode/Pi catalog selector (see
+ *  `HarnessManagedModelSelector`, composer-model-controls.tsx). Only the model
+ *  pill passes these — mode/effort pills leave them unset and render no
+ *  footer. */
+export interface ModelServiceActions {
+  /** "+" — connect a new model service (opens the connect modal, api-keys tab). */
+  onConnect: () => void;
+  /** "Manage models" — opens the same connect/models surface on its default view. */
+  onManage: () => void;
+}
+
 export function AcpConfigOptionPill({
   option,
   onChange,
   disabled = false,
+  modelServiceActions,
 }: {
   option: AcpSessionConfigOption;
   onChange: (value: unknown) => void;
   disabled?: boolean;
+  /** When set (the harness-native MODEL pill only), renders a Connect +
+   *  Manage-models footer identical in intent to the catalog selector's. */
+  modelServiceActions?: ModelServiceActions;
 }) {
   const [open, setOpen] = useState(false);
   // See `dedupeConfigChoices`'s doc comment — the harness's own advertised
@@ -212,6 +230,35 @@ export function AcpConfigOptionPill({
             })}
           </CommandGroup>
         </CommandList>
+        {modelServiceActions ? (
+          <div className="border-border/60 flex items-center gap-0.5 border-t p-1">
+            <button
+              type="button"
+              data-testid="acp-model-connect-action"
+              aria-label="Connect a model service"
+              onClick={() => {
+                setOpen(false);
+                modelServiceActions.onConnect();
+              }}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors"
+            >
+              <Plus className="size-3.5 shrink-0" />
+              <span className="truncate">Connect a model service</span>
+            </button>
+            <button
+              type="button"
+              data-testid="acp-model-manage-action"
+              aria-label="Manage models"
+              onClick={() => {
+                setOpen(false);
+                modelServiceActions.onManage();
+              }}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex cursor-pointer items-center justify-center rounded-md p-1.5 transition-colors"
+            >
+              <SlidersHorizontal className="size-3.5 shrink-0" />
+            </button>
+          </div>
+        ) : null}
       </CommandPopoverContent>
     </CommandPopover>
   );

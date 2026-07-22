@@ -306,24 +306,38 @@ export function buildComposerOptions(input: {
   const options: ComposerOptions = {};
   const agentName = input.lockedAgentName?.trim() || input.agent?.name;
   if (agentName) options.agent = agentName;
-  if (agentRequiresCatalogModel(input.agent) && input.model) options.model = input.model;
-  if (!agentRequiresCatalogModel(input.agent) && input.runtimeModel?.trim()) {
+  const catalogModel = agentRequiresCatalogModel(input.agent);
+  if (catalogModel && input.model) options.model = input.model;
+  if (!catalogModel && input.runtimeModel?.trim()) {
     options.runtimeModel = input.runtimeModel.trim();
   }
-  const selectedModel = agentRequiresCatalogModel(input.agent)
-    ? input.model
-      ? formatModelString(input.model)
-      : null
-    : input.runtimeModel?.trim() || null;
   if (input.connectionId) options.connectionId = input.connectionId;
-  if (input.connectionId || selectedModel) {
+  // *** Harness-owned harnesses (Claude Code / Codex) — the leak this closes ***
+  // Their model value (`default`, `opus`, `sonnet`, …) is an ACP config-option
+  // value, applied over the protocol via `session/set_config_option` (carried
+  // by `options.runtimeModel` and fired by `ComposerChatInput`'s deferred-apply
+  // effect once the session goes live) — NOT a gateway catalog model. Sending
+  // it as a `preset`/`custom` `model_id` made the create path stamp
+  // `metadata.model = 'default'` (apps/api/src/projects/lib/sessions.ts's
+  // `runtimeModel`/`model_selection` derivation), which the launch then tried
+  // to resolve as a real catalog model and rejected — "There's an issue with
+  // the selected model (default). It may not exist or you may not have access
+  // to it." A concrete pick (`opus`/…) only "worked" incidentally; `default`
+  // is not a catalog id at all, so it always failed. Fix: for these harnesses
+  // `model_selection` is ALWAYS `kind: 'default'` with NO `model_id`, so
+  // nothing harness-native ever reaches gateway catalog existence/access
+  // validation. `default` is the harness's own bootstrap default (needs no
+  // override); a non-default pick is driven purely by the ACP round-trip.
+  const catalogSelected = catalogModel && input.model ? formatModelString(input.model) : null;
+  const harnessNativeSelection = !catalogModel && Boolean(options.runtimeModel);
+  if (input.connectionId || catalogSelected || harnessNativeSelection) {
     options.modelSelection = {
-      kind: selectedModel
-        ? input.presets?.some((preset) => preset.id === selectedModel)
+      kind: catalogSelected
+        ? input.presets?.some((preset) => preset.id === catalogSelected)
           ? 'preset'
           : 'custom'
         : 'default',
-      modelId: selectedModel,
+      modelId: catalogSelected,
       connectionId: input.connectionId ?? null,
     };
   }

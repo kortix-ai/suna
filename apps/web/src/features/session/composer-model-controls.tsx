@@ -9,6 +9,7 @@ import { AcpConfigOptionPill } from './acp-config-option-pills';
 import { ModelSelector } from './model-selector';
 import { ReasoningEffortSelector } from './reasoning-effort-selector';
 import type { FlatModel } from './session-chat-input';
+import { useModelConnectionGate } from './use-model-connection-gate';
 
 /**
  * Composer state for a harness that owns its default model (Claude Code,
@@ -175,6 +176,15 @@ function HarnessManagedModelSelector({
   onModelOptionChange,
   disabled = false,
 }: HarnessManagedModelState) {
+  // Every model selector — catalog (OpenCode/Pi) OR harness-native
+  // (Claude Code/Codex) — offers the same "connect a model service" (+) and
+  // "manage models" affordances (2026-07-22 decree: no harness is a
+  // second-class selector). The catalog `ModelSelector` renders them in its
+  // search header; the harness-native pill has no search header, so they ride
+  // as a popover footer instead — both routing through the SAME
+  // `useModelConnectionGate` connect-modal host the catalog selector uses, so
+  // there is one connect/manage surface regardless of harness.
+  const { openConnectProvider } = useModelConnectionGate();
   // No extra `Hint` wrapper here: the harness's identity is already visible
   // one control to the left (`AgentSelector`) in the same toolbar row, and
   // `AcpConfigOptionPill` already wraps its OWN trigger in a `Hint` when
@@ -187,6 +197,10 @@ function HarnessManagedModelSelector({
         option={modelOption}
         onChange={onModelOptionChange}
         disabled={disabled}
+        modelServiceActions={{
+          onConnect: () => openConnectProvider('api-keys'),
+          onManage: () => openConnectProvider(),
+        }}
       />
     </span>
   );

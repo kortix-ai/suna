@@ -31,6 +31,16 @@ describe('harness-aware composer options', () => {
     });
   }
 
+  // *** THE `default`-model leak (live-reproduced on Claude Code, 2026-07-22) ***
+  // A harness-owned harness's model value (`default`/`opus`/`sonnet`/`haiku`
+  // for Claude; `gpt-5.x` for Codex) is an ACP config-option value applied via
+  // `session/set_config_option`, NOT a gateway catalog model. It must therefore
+  // ride ONLY in `runtimeModel` (the ACP field) and NEVER in
+  // `model_selection.model_id` (which the server stamps onto `metadata.model`
+  // and resolves against the gateway catalog — where `default` does not exist,
+  // producing "There's an issue with the selected model (default)..."). So
+  // `model_selection.kind` is always `'default'` with a `null` `modelId` for
+  // these harnesses, regardless of which native value is picked.
   for (const harness of ['claude', 'codex'] as const) {
     test(`${harness} carries an explicit harness-native model without a gateway model key`, () => {
       expect(
@@ -43,13 +53,50 @@ describe('harness-aware composer options', () => {
         agent: harness,
         runtimeModel: 'native/model',
         modelSelection: {
-          kind: 'custom',
-          modelId: 'native/model',
+          kind: 'default',
+          modelId: null,
           connectionId: null,
         },
       });
     });
   }
+
+  // Every real claude-agent-acp `model` config-option value (verified live,
+  // `kortix.acp_session_envelopes`) — `default` is the exact one that 400s at
+  // the gateway; the rest only "worked" incidentally. NONE may become a gateway
+  // `model_id`.
+  for (const native of ['default', 'opus', 'sonnet', 'haiku'] as const) {
+    test(`claude '${native}' never reaches gateway catalog validation (kind stays 'default', no model_id)`, () => {
+      const options = buildComposerOptions({
+        agent: { name: 'claude', harness: 'claude' },
+        runtimeModel: native,
+        connectionId: 'claude_subscription',
+        // Even if a preset list happens to contain the native token, it must
+        // NOT be classified as a `preset` and sent as a gateway model.
+        presets: [{ id: native }],
+      });
+      expect(options.model).toBeUndefined();
+      expect(options.runtimeModel).toBe(native);
+      expect(options.modelSelection).toEqual({
+        kind: 'default',
+        modelId: null,
+        connectionId: 'claude_subscription',
+      });
+    });
+  }
+
+  test('claude with a connection but no explicit pick sends kind default and no model_id', () => {
+    expect(
+      buildComposerOptions({
+        agent: { name: 'claude', harness: 'claude' },
+        connectionId: 'claude_subscription',
+      }),
+    ).toEqual({
+      agent: 'claude',
+      connectionId: 'claude_subscription',
+      modelSelection: { kind: 'default', modelId: null, connectionId: 'claude_subscription' },
+    });
+  });
 
   test('OpenCode retains the selected catalog model', () => {
     expect(
