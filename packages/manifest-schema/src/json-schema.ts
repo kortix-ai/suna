@@ -64,6 +64,12 @@ import {
   V3_HARNESS_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
+import {
+  CONNECTOR_HEADER_NAME_MAX_LENGTH,
+  CONNECTOR_HEADER_NAME_RE,
+  CONNECTOR_HEADER_VALUE_MAX_LENGTH,
+  CONNECTOR_HEADERS_MAX_COUNT,
+} from './connector-headers';
 
 /** A JSON Schema fragment — plain data, no `$id`/`$schema` (those belong on
  *  the top-level documents only). Kept loose (not the full 2020-12 meta-type)
@@ -325,8 +331,11 @@ function triggerSchema(): JsonSchemaFragment {
       agent: { type: 'string', minLength: 1 },
       agent_name: { type: 'string', minLength: 1 },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned'] },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned'] },
+      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      session_key: { type: 'string' },
+      sessionKey: { type: 'string' },
+      filter: { type: 'object', additionalProperties: { type: 'string' } },
+      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
       session_id: { type: 'string', minLength: 1 },
       sessionId: { type: 'string', minLength: 1 },
       prompt: NON_EMPTY_STRING,
@@ -418,6 +427,25 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           secret: false,
         },
         additionalProperties: true,
+      },
+      // Arbitrary static request headers, sent on every outbound call. Names
+      // are RFC 7230 tokens; values are plaintext (NEVER a credential — that
+      // is `auth`) and may not contain CR/LF. Mirrors the shared ruleset in
+      // `connector-headers.ts` (the transport-owned forbidden names are
+      // enforced by the imperative validator, which can compare
+      // case-insensitively).
+      headers: {
+        type: 'object',
+        maxProperties: CONNECTOR_HEADERS_MAX_COUNT,
+        propertyNames: {
+          pattern: CONNECTOR_HEADER_NAME_RE.source,
+          maxLength: CONNECTOR_HEADER_NAME_MAX_LENGTH,
+        },
+        additionalProperties: {
+          type: 'string',
+          maxLength: CONNECTOR_HEADER_VALUE_MAX_LENGTH,
+          pattern: '^[^\\r\\n]*$',
+        },
       },
       policies: {
         type: 'array',

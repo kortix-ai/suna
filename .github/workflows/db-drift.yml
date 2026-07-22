@@ -52,7 +52,7 @@ jobs:
       - if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@v7
       - if: steps.gate.outputs.skip != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - if: steps.gate.outputs.skip != 'true'
@@ -126,7 +126,7 @@ jobs:
       - if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@v7
       - if: steps.gate.outputs.skip != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - if: steps.gate.outputs.skip != 'true'

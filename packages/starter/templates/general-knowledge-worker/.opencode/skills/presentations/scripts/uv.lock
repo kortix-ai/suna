@@ -208,7 +208,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "lxml", specifier = ">=6.1.0" },
-    { name = "pillow", specifier = ">=12.2.0" },
+    { name = "pillow", specifier = ">=12.3.0" },
     { name = "playwright", marker = "sys_platform == 'darwin'", specifier = ">=1.58.0" },
     { name = "pypdf", specifier = ">=4.0.0" },
     { name = "python-pptx", specifier = ">=1.0.2" },

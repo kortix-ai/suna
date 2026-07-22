@@ -290,14 +290,59 @@ export const classifyAcpMethod: AcpMethodClassifier = (method) => METHOD_KINDS[m
  *  claude-agent-acp sends `session_info_update` on session rename,
  *  codex-acp sends it for thread-status ticks; both send
  *  `config_option_update` when a config option changes out of band, e.g. an
- *  in-transcript `/model` slash command). */
+ *  in-transcript `/model` slash command).
+ *
+ *  Everything here except `user_message_chunk` is also covered by
+ *  `isStateSyncUpdate`'s suffix rule; the names stay listed because a reader
+ *  asking "what does the transcript deliberately drop?" should find the
+ *  answer here rather than infer it from a regex. */
 const NON_VISUAL_UPDATES = new Set([
   'usage_update',
   'current_mode_update',
   'available_commands_update',
+  // Session metadata sync (model, cwd, title, …). Carries nothing the
+  // transcript renders, and arrives repeatedly during a turn. Also feeds
+  // `sessionInfo` via its own bookkeeping block below.
   'session_info_update',
+  // Out-of-band config option change (e.g. an in-transcript `/model` slash
+  // command). Feeds `liveConfigOptions` via its own bookkeeping block below.
   'config_option_update',
+  // The agent echoing back the prompt it was just handed. The user's turn is
+  // already projected from the client→agent `session/prompt` frame — that is
+  // where its `prompt-N` id comes from — so projecting this one too would
+  // print the user's own message a second time.
+  //
+  // Harnesses that echo only while replaying under `session/load` never
+  // reached here (the bootstrap-replay guard above swallows the whole window),
+  // which is why every fixture that carries this kind still passes without it.
+  // A harness that echoes LIVE fell through to the `raw` branch instead and
+  // surfaced in the transcript as "Unrecognized agent event" — an event that
+  // is neither unrecognized nor the agent's.
+  'user_message_chunk',
 ]);
+
+/** Whether an unrecognized `session/update` kind is harness state-sync
+ *  bookkeeping rather than conversation content.
+ *
+ *  ACP's naming convention is load-bearing here: content-carrying kinds are
+ *  `*_chunk` (`agent_message_chunk`, `agent_thought_chunk`,
+ *  `user_message_chunk`), `tool_call`/`tool_call_update`, and `plan` — every
+ *  one of which is classified by an explicit branch BEFORE this is consulted.
+ *  A `*_update` that reaches the fallback is therefore some harness's private
+ *  state-sync frame (`session_info_update` was the one that prompted this;
+ *  `usage_update`/`current_mode_update`/`available_commands_update` are the
+ *  spec's own), and rendering it as "Unrecognized agent event" is noise in the
+ *  user's transcript for a frame they neither caused nor can act on.
+ *
+ *  Deliberately a suffix rule, not another name in the set above: harnesses
+ *  keep inventing these, and a set means every new one ships a visible defect
+ *  until someone notices and adds a line. Anything genuinely new-shaped —
+ *  a kind that does NOT follow the convention — still surfaces as a raw frame,
+ *  which is what that card is for. Nothing is lost either way: `envelopes`
+ *  remains the lossless log, and the raw JSON is still there for debugging. */
+function isStateSyncUpdate(kind: string): boolean {
+  return kind.endsWith('_update');
+}
 
 /** A tool call that has reached one of these statuses is done; a later
  *  update (e.g. a stray/out-of-order `in_progress`) must never regress it
@@ -588,10 +633,12 @@ export function reduceEnvelope(state: AcpReducerState, row: AcpStoredEnvelope, o
         } else {
           chatItems = [...chatItems, { kind: 'plan', ...plan }];
         }
-      } else if (typeof kind === 'string' && NON_VISUAL_UPDATES.has(kind)) {
-        // No chat item: usage_update/current_mode_update/available_commands_update
-        // are protocol bookkeeping, not something to render in the transcript.
-        // usage_update still feeds `usage`/`usageContext` in the block below.
+      } else if (typeof kind === 'string' && (NON_VISUAL_UPDATES.has(kind) || isStateSyncUpdate(kind))) {
+        // No chat item: these are protocol/harness bookkeeping, or
+        // (user_message_chunk) an echo of something the transcript already
+        // renders from the other direction — see NON_VISUAL_UPDATES and
+        // isStateSyncUpdate. usage_update still feeds `usage`/`usageContext`
+        // in the block below.
       } else {
         chatItems = [...chatItems, { kind: 'raw', method: String(kind ?? envelope.method), data: update }];
       }

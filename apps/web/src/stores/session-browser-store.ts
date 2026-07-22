@@ -46,6 +46,30 @@ export interface SessionFileOpenRequest {
   requestedAt: number;
 }
 
+/**
+ * A pending "open this running port in the panel" request for a session. Set
+ * when the user clicks a localhost URL in the transcript (the chips and cards
+ * `SandboxUrlDetector` appends); consumed by the mounted Easy panel, which
+ * opens it as the same `AppPreview` detail a Preview-card row opens.
+ *
+ * Nonce'd for the same reason {@link SessionFileOpenRequest} is: clicking the
+ * same port twice must re-open it, and an identical payload wouldn't re-render
+ * the consumer on its own.
+ */
+export interface SessionAppOpenRequest {
+  /**
+   * The INTERNAL sandbox url — `http://localhost:PORT/path`. `AppPreview`
+   * proxies whatever it is given, so handing it an already-proxied url would
+   * proxy it twice and 404.
+   */
+  url: string;
+  /** Label for the detail header. Falls back to the port when absent. */
+  name?: string;
+  nonce: number;
+  /** Epoch ms — same staleness contract as {@link SessionFileOpenRequest}. */
+  requestedAt: number;
+}
+
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
   viewBySession: Record<string, SessionPanelView>;
@@ -80,6 +104,22 @@ interface SessionBrowserState {
    */
   consumeFileOpen: (sessionId: string, nonce: number) => void;
 
+  /** Pending port-open request per session (transient — not persisted). */
+  appOpenBySession: Record<string, SessionAppOpenRequest>;
+
+  /**
+   * Ask the session's panel to open `url` (an internal `http://localhost:PORT`
+   * address) as a running app. Deliberately silent about `viewBySession` — the
+   * same reasoning as {@link requestFileOpenSilently}: Easy mode has no tab
+   * strip for that view to point at, and Advanced mode's promise is that it
+   * resumes wherever the user left it. Callers that need Advanced's own
+   * `BrowserPanel` flip the view themselves (see `openPortInSessionPanel`).
+   */
+  requestAppOpen: (sessionId: string, url: string, name?: string) => void;
+
+  /** Remove a delivered (or discarded) port-open request. Nonce-guarded. */
+  consumeAppOpen: (sessionId: string, nonce: number) => void;
+
   /**
    * The panel-store key of the session whose layout is currently visible —
    * i.e. the Runtime `chatSessionId` the {@link SessionLayout} keys its panel
@@ -98,12 +138,16 @@ interface SessionBrowserState {
 // (and deleted) via `consumeFileOpen`, silently swallowing the new request.
 let nextFileOpenNonce = 1;
 
+/** Same monotonic-across-sessions contract as `nextFileOpenNonce` above. */
+let nextAppOpenNonce = 1;
+
 export const useSessionBrowserStore = create<SessionBrowserState>()(
   persist(
     (set, get) => ({
       viewBySession: {},
       terminalPtyBySession: {},
       fileOpenBySession: {},
+      appOpenBySession: {},
       activeSessionId: null,
 
       setActiveSessionId: (id) => set({ activeSessionId: id }),
@@ -156,6 +200,27 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
           const next = { ...state.fileOpenBySession };
           delete next[sessionId];
           return { fileOpenBySession: next };
+        }),
+
+      requestAppOpen: (sessionId, url, name) =>
+        set((state) => ({
+          appOpenBySession: {
+            ...state.appOpenBySession,
+            [sessionId]: {
+              url,
+              name,
+              nonce: nextAppOpenNonce++,
+              requestedAt: Date.now(),
+            },
+          },
+        })),
+
+      consumeAppOpen: (sessionId, nonce) =>
+        set((state) => {
+          if (state.appOpenBySession[sessionId]?.nonce !== nonce) return {};
+          const next = { ...state.appOpenBySession };
+          delete next[sessionId];
+          return { appOpenBySession: next };
         }),
     }),
     {

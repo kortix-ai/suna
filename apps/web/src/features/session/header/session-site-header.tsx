@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
@@ -41,6 +42,7 @@ import {
   MoreHorizontal,
   PanelRight,
   RotateCcw,
+  ShieldCheck,
   Square,
   SquareTerminal,
 } from 'lucide-react';
@@ -58,6 +60,15 @@ interface SessionSiteHeaderProps {
   supportsCompact?: boolean;
   /** ACP agent identity (e.g. `agentInfo.name` from `useSession().acp`) — shown as a quiet outline badge next to the title. */
   agentName?: string;
+  /** Session-scoped "allow every permission request" backstop, owned by
+   *  `useAcpSession`. It lives up here rather than in the permission prompt
+   *  because it is a SESSION MODE, not a pending request: once it is on there
+   *  are no requests left for that surface to render, so the strip that used
+   *  to carry it kept an otherwise-empty card pinned above the composer with
+   *  nothing in it. A mode belongs with the other session-wide actions.
+   *  Omitted by non-ACP call sites, which have no such backstop. */
+  autoApprovePermissions?: boolean;
+  onAutoApprovePermissionsChange?: (value: boolean) => void;
 }
 
 export function SessionSiteHeader({
@@ -69,6 +80,8 @@ export function SessionSiteHeader({
   leadingAction,
   supportsCompact = true,
   agentName,
+  autoApprovePermissions = false,
+  onAutoApprovePermissionsChange,
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -195,12 +208,47 @@ export function SessionSiteHeader({
                       'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
                     )}
                   >
-                    <MoreHorizontal />
+                    <span className="relative inline-flex">
+                      <MoreHorizontal />
+                      {/* Auto-approve is a mode the user cannot otherwise SEE
+                          once its strip is gone — an invisible mode that
+                          silently approves everything is exactly the wrong
+                          thing to hide. Same dot vocabulary the panel toggle
+                          already uses for its ready chip, in the attention
+                          token rather than the success one: this is a state
+                          to notice, not a job well done. */}
+                      {autoApprovePermissions && onAutoApprovePermissionsChange ? (
+                        <span
+                          data-testid="session-auto-approve-dot"
+                          className="bg-kortix-yellow ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
+                          aria-hidden
+                        />
+                      ) : null}
+                    </span>
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
 
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-56">
+                {autoApprovePermissions && onAutoApprovePermissionsChange ? (
+                  <>
+                    <DropdownMenuItem
+                      className="cursor-pointer items-start"
+                      data-testid="session-auto-approve-off"
+                      onClick={() => onAutoApprovePermissionsChange(false)}
+                    >
+                      <ShieldCheck className="text-kortix-yellow mt-1" />
+                      <span className="flex min-w-0 flex-col">
+                        Stop allowing everything
+                        <span className="text-muted-foreground text-xs">
+                          Kortix is approving every request
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem

@@ -196,6 +196,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B11 | **`reduceEnvelope` drops genuinely-new `tool_call` updates that interleave with an open `session/load`.** The `openSessionLoadOrdinals`/`isLiveSessionLoadReplay` bootstrap-replay guard (`reduce.ts:305`) blanket-suppresses ALL `session/update` chat items while a `session/load` request is unanswered — including a NEW `tool_call` (e.g. the daemon's async synthetic outputs `show`) that lands inside the window. Replayed tool_calls already dedupe by `toolIndex`; only message/thought chunks need the guard. | Codex D2: real persisted stream `8023ee8f…` — synthetic show `kortix-outputs:1` at ordinal 84836 falls inside open load `1784486906549-18-2` [84798→85120] and vanishes from `chatItems`, so the Easy-panel Outputs card renders empty on reload of the error-terminated run. `.superpowers/sdd/d2-fix-report.md`. | **DONE (Task W5)** — see session log below |
 | B12 | **`acpToolName` misclassifies a harness-declared tool by a free-text substring.** The `/write\|create file/` hint check (`tool-part.ts:48`) fires on any title *containing* "write" — so codex's `write_stdin` (an MCP-wrapped PTY-poll tool, `rawInput: { name: "write_stdin", arguments: {...} }`, NO file path) resolves to `'write'` → family `edit` → dropped from BOTH Context and Outputs (44% of one real codex session's tool volume, 16/16 false positives). Fix generically: prefer the harness's own declared name (`rawInput.name`, the MCP wrapper) BEFORE the substring guesses, and reorder the web-search hint ahead of `/search\|grep/` so a native web search lands in the `web` family, not `explore`. No harness branch, no `write_stdin` literal. | W3 diagnosis `.superpowers/sdd/w3-context-diagnosis.md` (Mechanisms 2 & 3), DB-verified real shapes from session `8023ee8f…`. | **DONE (Task W4)** — `1254f53201` (SDK); web dedup `243b856fff`. See session log below. |
 | B14 | **ModelPicker `defaultControls` omitted.** The unified ModelPicker (commits `9dbe2c24b`, `6be202616`) omits the old picker's "Set as my/project/agent default" footer because `ModelPickerViewModel` has no persistence seam. Restoring it requires either a vm seam (follow-up P0-a) or wiring the footer to `useModelStore`; **must be resolved or explicitly cut by Jay before `unified_model_picker` flag defaults on**. | `apps/web/src/features/session/model-picker.tsx` (new); `packages/sdk/PROGRESS.md` (TS SDK takeover) | **RESOLVED — no cut needed, WS5-P0-c.** Verified (`grep -rn "modelDefaultControls" apps/web/src`) that `modelDefaultControls`/`ModelDefaultControls` is declared and consumed ONLY inside `model-selector.tsx` and `session-chat-input.tsx`'s own prop plumbing — **zero call sites ever populate it**: `ComposerChatInput` (the composer's only `SessionChatInput` wiring path, confirmed the sole non-test caller via `grep -rln "SessionChatInput" apps/web/src`) never passes `modelDefaultControls`, so the "Set as my/project/agent default" footer was already unreachable dead code in the live composer BEFORE this flag existed. Flag OFF and flag ON are therefore both "no default-controls footer in the composer" — not a regression, a parity. (Every other `<ModelSelector>` call site — Customize/schedule/task-config pages — is untouched, out of this task's composer-only scope, and keeps whatever `defaultControls` behavior it already had.) See Open decisions and the 2026-07-17 session log entry for the full evidence trail. |
+| B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.** | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`. | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -242,7 +243,10 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-17 | `ws5-p0-c` | The SDK's OWN `ExperimentalFeatureKey` union (`core/rest/projects-client/projects.ts`) is a hand-maintained mirror of `apps/api/src/experimental/features.ts` / `@kortix/api-contract`'s `ExperimentalFeatureMapSchema` — and it was already missing `experimental_harnesses` (added to apps/api by commit `8658acde6`) before this session touched it. Added `unified_model_picker` (this task's own key, required for `apps/web` typecheck) but left `experimental_harnesses` unfixed — pre-existing drift, out of this task's granted scope. A consumer reading `project.experimental.experimental_harnesses` off the SDK's `KortixProject` type today gets a `Record<ExperimentalFeatureKey, boolean>` whose key type doesn't statically include it (works at runtime via bracket access or the api-contract-typed route, just not through the SDK's own narrower type). | `packages/sdk/src/core/rest/projects-client/projects.ts:16` |
 | 2026-07-17 | `ws5-p0-c` | `apps/api/.env.keys` (the dotenvx private key for the **local** profile) is absent from this sandbox and no `dotenvx-armor` CLI/session is available to pull it — `apps/api`'s own test suite (`bash scripts/test.sh`, per-file `dotenvx run -- bun test`) cannot execute here; `bun test` fails at `config.ts`'s env validation before any test file even loads (every encrypted var decrypts to `encrypted:…` literal, fails Zod). Not a regression from this task — pre-existing sandbox/environment gap. `apps/api`'s `tsc --noEmit` (no env needed) DOES run clean here, and was used as the substitute verification for the two `apps/api` files this task touched. | `apps/api/.env`, `apps/api/scripts/test.sh`, `apps/api/src/config.ts` |
 | 2026-07-17 | `fast-follow-disc07` | **DISC-07 closed.** The gap flagged on the row above (`ws5-p0-c`, `experimental_harnesses` missing from the SDK's own `ExperimentalFeatureKey` mirror) is fixed: the union now lists `experimental_harnesses` alongside `unified_model_picker`, matching `@kortix/api-contract`'s `ExperimentalFeatureMapSchema` key-for-key. Stale "missing / out of scope" NOTE comment corrected. Type-level regression test added (`projects.test.ts`). Gates: `typecheck` clean, `test` 1184/1184 (was 1183), `smoke:install` passed. Public snapshot untouched (name-only, doesn't track union members). | `packages/sdk/src/core/rest/projects-client/projects.ts:15-27`, `packages/sdk/src/core/rest/projects-client/projects.test.ts` |
+| 2026-07-22 | `acp-harness-runtime-v2` | **`public-surface.snapshot.json` is pre-existing STALE on this branch, unrelated to this task.** Both surface tests fail: the snapshot lacks `ACP_BOOTSTRAP_TIMEOUT_MS` / `AcpBootstrapTimeoutError` (added by earlier branch work) and still lists `buildModelPickerViewModel` / `useModelPicker` (since removed). Verified pre-existing by stashing this session's 2 changed files and re-running — identical diff. The removals are the interesting half: per this package's rules a removed export is breaking and wants a `@deprecated` alias, not a re-record — so this needs a human decision, not `UPDATE_SURFACE_SNAPSHOT=1`. Left unfixed; flagging for whoever owns the model-picker removal. | `packages/sdk/src/public-surface.snapshot.json`, `packages/sdk/src/public-surface.test.ts` |
+| 2026-07-22 | `acp-harness-runtime-v2` | `apps/web`'s ACP design guard is pre-existing RED: "off-scale radius in session-chat-input.tsx" (file last touched by `918b6e086`, styling adjustments). Unrelated to the SDK — flagged, not fixed. Rest of `apps/web/src/features/session` is 948/949 green. | `apps/web/src/features/session/session-chat-input.tsx` |
 | 2026-07-19 | `listening-ports-synthetic-pin` | **`pnpm --filter @kortix/sdk typecheck` is pre-existing RED on this branch, unrelated to this task.** `src/react/model-flatten.test.ts:4` imports a type from `./use-opencode-sessions`, a module that no longer exists (deleted by an earlier OpenCode-session-mapping removal); `src/react/use-model-store.test.ts` has its entire body duplicated (two `import {describe,expect,test}` blocks, `TS2300` duplicate-identifier ×6), which reads as an incompletely-resolved merge — present already at `7398090d4` ("Merge branch 'main' into acp-harness-runtime-v2"), before this session's claim commit. Verified by stashing this task's 3 changed files and re-running `typecheck`: identical 7 errors, byte-for-byte. `bun test` (this task's actual gate per `AGENTS.md`) is unaffected and green. Left unfixed — out of this task's scope; flagging for whichever session owns `src/react/{model-flatten,use-model-store}.test.ts` next. | `packages/sdk/src/react/model-flatten.test.ts:4`, `packages/sdk/src/react/use-model-store.test.ts` |
+| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path. | `apps/api/src/executor/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 
 ---
@@ -1613,6 +1617,49 @@ feature lifecycle.
 
 ---
 
+### 2026-07-21 — session `profile-owned-bindings` (B11 completion)
+
+Completed the additive member-owned connection-profile and session-binding
+surface in implementation commit `3eb18b361`. A member can reconcile a profile
+whose owner is derived from the bearer token, connect/finalize its distinct
+Pipedream identity, and select it explicitly when starting a private session.
+Project defaults remain shared. External, agent, and subject profiles retain the
+management-capability path; that capability never exposes or mutates another
+member's profile. Runtime resolution fails closed on owner or visibility drift.
+No exported SDK name or existing field was removed or renamed.
+
+**TDD and focused evidence:** profile/Postgres integration reported **15 pass / 0
+fail**; authenticated HTTP authorization reported **5 pass / 0 fail**; Executor
+gateway reported **32 pass / 0 fail**; and the computer connector regression
+reported **8 pass / 0 fail**. The public runtime and type snapshots contain
+additions only.
+
+**Real local E2E:** two real Supabase users created, listed, mutated, and bound
+only their own profiles; two real session starts persisted distinct bindings;
+project/public sharing was rejected for the personal-profile session; and two
+real Executor calls resolved distinct hidden credentials. The black-box proof
+reported **21 pass / 0 fail**. Cleanup then verified zero synthetic projects,
+users, tokens, and sandbox rows remained.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1145 pass / 0 fail** across 86 files with 5077 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully. API typecheck exited 0 and `git diff
+--check` was clean.
+
+**Post-rebase addendum:** after rebasing onto current `origin/main` at
+`962498c4f`, SDK typecheck and packed-install smoke remained green; the full SDK
+suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; API
+typecheck exited 0; and the focused profile/authorization/Executor run reported
+**52 pass / 0 fail**. The unrelated computer integration finding is recorded in
+Discovered this session rather than changed inside B11.
+
+**Shippable to production: YES** for the SDK surface and local end-to-end path.
+Repository PR, Deploy Dev, deployed-SHA proof, and live-dev verification remain
+the parent feature lifecycle.
+
+---
+
 ### 2026-07-21 — session `revert-owner-profile-bindings` (completion)
 
 Reverted the unfinished owner-scoped connector-profile session-start surface
@@ -1627,3 +1674,87 @@ API regression run reported **41 pass / 0 fail** with 83 assertions.
 
 **Shippable to production: YES** for the rollback. The owner-scoped binding
 feature itself is **NOT YET** shippable and remains open as WIP.
+
+---
+
+### 2026-07-21 — session `service-account-profile-hardening` (claim)
+
+Claimed the user-directed restoration of owner-scoped connector-profile bindings
+after the security rollback, including the late Strix findings on both #5139 and
+#5143. The restored additive SDK contract will remain unchanged; API enforcement
+will additionally prove that service-account principals cannot create, list,
+mutate, OAuth-connect, bind, or execute human `member` profiles, including
+queued session creation and pre-existing forged bindings. Work will follow
+RED → GREEN → REFACTOR and finish with the full SDK typecheck, test, and packed-
+install smoke gates plus real HTTP/Executor proof.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-21 — session `service-account-profile-hardening` (completion)
+
+Completed the security restoration in `de11be3b0` and the post-rebase WhatsApp
+principal propagation in `396a63823`. Direct service-account principals can no
+longer create, enumerate, mutate, OAuth-connect, bind, or execute `member`
+connection profiles, even when a forged row uses the service-account UUID as its
+owner. Principal type survives durable queue persistence; older queued commands
+infer it from the stored actor. Runtime resolution also rejects pre-existing
+service-account sessions bound to forged member profiles. The restored manager
+ownership and personal-session privacy checks cover every Strix thread from
+#5139 and #5143.
+
+**Focused evidence:** authenticated profile HTTP authorization reported **9 pass
+/ 0 fail**; profile binding and Executor resolution reported **18 pass / 0
+fail**; Executor gateway, sharing, public share, transcript, share endpoint,
+session sandbox, and queue payload suites reported **86 pass / 0 fail**. Email,
+Slack selection/dispatch, Teams, Telegram, trigger attribution, and WhatsApp
+reported **60 pass / 0 fail**. API typecheck exited 0 and `git diff --check` was
+clean. Multi-file Bun invocations reproduced the suite's known global mock
+contamination; every affected file passed in its own isolated process.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0; the full SDK
+suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; and
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface and locally verified API
+hardening. Replacement PR review, Deploy Dev, deployed-SHA proof, and live-dev
+HTTP/Executor verification remain part of the repository lifecycle.
+
+---
+
+### 2026-07-22 — session `acp-harness-runtime-v2`: `session_info_update` transcript noise
+
+Harness `session_info_update` frames were rendering in the transcript as
+"Unrecognized agent event" cards. They are session-metadata sync frames — no
+content, repeated during a turn, nothing the user caused or can act on.
+
+Fixed in the reducer (`src/acp/reduce.ts`), the single producer of `raw` chat
+items for `session/update`. Two parts: `session_info_update` joins
+`NON_VISUAL_UPDATES` (documentation of intent), and a new `isStateSyncUpdate`
+suffix rule drops any *unrecognized* `*_update` kind before the `raw` fallback.
+The suffix rule is safe because every content-carrying ACP kind (`*_chunk`,
+`tool_call`, `tool_call_update`, `plan`) is classified by an explicit branch
+first; a kind that does NOT follow the convention still surfaces as a raw frame.
+Rationale for the rule over another set entry: harnesses keep inventing these,
+and a set means each new one ships a visible defect until someone notices.
+`envelopes` stays lossless, and because `chatItems` is projected from it on
+every fold, already-persisted sessions clean up on reload — no migration.
+
+TDD: both tests written first and watched fail/pass for the right reason
+(`reduce.test.ts` — the drop test, plus a guard asserting a non-`_update`
+unknown kind still renders raw).
+
+**Verification:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk run smoke:install` packed, installed, imported, and
+constructed successfully; the full SDK suite reported **1280 pass / 2 fail**
+(1282 across 96 files) — both failures are the pre-existing stale
+`public-surface.snapshot.json`, logged in DISCOVERED above and verified
+identical with this session's changes stashed. `apps/web/src/features/session`
+reported **948 pass / 1 fail**, the pre-existing `session-chat-input.tsx` radius
+guard, also logged above. No public export added, removed, or renamed
+(`isStateSyncUpdate` is module-local).
+
+**Shippable to production: YES** for this change. The two red tests it did not
+cause are pre-existing on the branch and need their own owner.

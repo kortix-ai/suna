@@ -182,7 +182,7 @@ function BootStepList({
     // activeStep), but clamp defensively so the row is always resolvable.
     const step = STEPS[Math.min(active, STEPS.length - 1)];
     return (
-      <div className="flex h-4 min-w-0 items-center">
+      <div className="flex  min-w-0 items-center">
         <StepLabelShimmer key={step.label} label={step.label} />
       </div>
     );
@@ -218,7 +218,7 @@ function BootStepList({
               </StepperIndicator>
               <StepperSeparator className="bg-border group-data-[state=completed]/step:bg-kortix-green/40 m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-3" />
             </StepperItem>
-            <div className="flex h-4 min-w-0 items-center">
+            <div className="flex  min-w-0 items-center">
               {current ? (
                 <StepLabelShimmer label={step.label} />
               ) : (

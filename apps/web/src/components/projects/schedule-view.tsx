@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/select';
 import { Sheet, SheetBody, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -72,6 +73,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type ProjectTrigger,
+  type UpdateProjectTriggerInput,
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
@@ -226,6 +228,15 @@ function generateSecret(): string {
   return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
+/** project_secrets keys are UPPER_SNAKE_CASE — mirror the API's own validation
+ *  so a typed name can't 400 on save. Empty in, empty out. */
+function normalizeSecretEnvName(input: string): string {
+  return input
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, '_');
+}
+
 async function copyValue(value: string, label = 'Copied'): Promise<boolean> {
   const ok = await copyToClipboard(value);
   if (ok) {
@@ -268,6 +279,252 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
     },
   },
 };
+
+/* ─── Session strategy + delivery filter ────────────────────────────────── */
+
+type SessionMode = ProjectTrigger['session_mode'];
+
+const SESSION_MODES: readonly SessionMode[] = ['fresh', 'reuse', 'pinned', 'keyed'];
+
+/** Deliberately plain-language — the manifest calls the last one "keyed", but
+ *  nobody configuring a webhook thinks in those terms. */
+const SESSION_MODE_LABEL: Record<SessionMode, string> = {
+  fresh: 'New session each run',
+  reuse: "Reuse this trigger's session (loop)",
+  pinned: 'Pin a specific session…',
+  keyed: 'One session per conversation',
+};
+
+const SESSION_MODE_HELP =
+  'Fresh mints a new session each run; reuse loops this trigger’s own session; pinned loops one specific session you choose; one-per-conversation routes each value below to its own session.';
+
+const SESSION_KEY_PLACEHOLDER = '{{ body.data.chat_jid }}';
+
+/** Read-only summary of a trigger's session strategy (the no-write view). */
+function describeSessionStrategy(trigger: ProjectTrigger): string {
+  const base = SESSION_MODE_LABEL[trigger.session_mode];
+  if (trigger.session_mode === 'pinned' && trigger.session_id) {
+    return `${base} · ${trigger.session_id.slice(0, 8)}`;
+  }
+  if (trigger.session_mode === 'keyed' && trigger.session_key) {
+    return `${base} · ${trigger.session_key}`;
+  }
+  return base;
+}
+
+interface FilterRow {
+  path: string;
+  value: string;
+}
+
+function filterToRows(filter: Record<string, string> | null | undefined): FilterRow[] {
+  return Object.entries(filter ?? {}).map(([path, value]) => ({ path, value }));
+}
+
+/** Drop blank paths and collapse to the wire shape. `null` means "unfiltered". */
+function rowsToFilter(rows: FilterRow[]): Record<string, string> | null {
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    const path = row.path.trim();
+    if (!path) continue;
+    out[path] = row.value.trim();
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function sameFilter(
+  a: Record<string, string> | null,
+  b: Record<string, string> | null | undefined,
+): boolean {
+  const left = a ?? {};
+  const right = b ?? {};
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((k) => left[k] === right[k]);
+}
+
+/**
+ * The session-strategy controls, shared by the create wizard and the detail
+ * sheet so the two can never drift. Purely presentational — the caller decides
+ * whether a change is staged locally or written straight back to the manifest.
+ */
+function SessionStrategyFields({
+  mode,
+  onModeChange,
+  pinnedSessionId,
+  onPinnedSessionChange,
+  sessionKey,
+  onSessionKeyChange,
+  sessions,
+  sessionsLoading,
+  sessionKeyAction,
+  disabled,
+}: {
+  mode: SessionMode;
+  onModeChange: (next: SessionMode) => void;
+  pinnedSessionId: string | null;
+  onPinnedSessionChange: (next: string) => void;
+  sessionKey: string;
+  onSessionKeyChange: (next: string) => void;
+  sessions: { session_id: string; name?: string | null; branch_name?: string | null }[];
+  sessionsLoading: boolean;
+  /** Optional save affordance rendered beside the session-key input. */
+  sessionKeyAction?: ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="bg-card space-y-2 rounded-2xl border px-3 py-2">
+      <Select
+        value={mode}
+        onValueChange={(v) => onModeChange(v as SessionMode)}
+        disabled={disabled}
+      >
+        <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SESSION_MODES.map((m) => (
+            <SelectItem key={m} value={m} className="cursor-pointer">
+              {SESSION_MODE_LABEL[m]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {mode === 'pinned' && (
+        <Select
+          value={pinnedSessionId ?? ''}
+          onValueChange={onPinnedSessionChange}
+          disabled={sessionsLoading || disabled}
+        >
+          <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
+            <SelectValue
+              placeholder={sessionsLoading ? 'Loading sessions…' : 'Choose a session to loop'}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {sessions.map((s) => (
+              <SelectItem key={s.session_id} value={s.session_id} className="cursor-pointer">
+                {s.name || s.branch_name || s.session_id}
+              </SelectItem>
+            ))}
+            {!sessionsLoading && sessions.length === 0 && (
+              <div className="text-muted-foreground px-2 py-1.5 text-xs">
+                No sessions in this project yet.
+              </div>
+            )}
+          </SelectContent>
+        </Select>
+      )}
+
+      {mode === 'keyed' && (
+        <div className="space-y-2">
+          <Label className="text-xs">Session key</Label>
+          <div className="flex gap-2">
+            <Input
+              value={sessionKey}
+              onChange={(e) => onSessionKeyChange(e.target.value)}
+              placeholder={SESSION_KEY_PLACEHOLDER}
+              className="font-mono text-sm"
+              disabled={disabled}
+            />
+            {sessionKeyAction}
+          </div>
+          <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+            A mustache template rendered against the delivery payload, same placeholders as the
+            prompt. Every distinct value gets its own session — so{' '}
+            <code className="font-mono">{SESSION_KEY_PLACEHOLDER}</code> gives each chat its own
+            thread instead of blending them all together. A value that renders empty falls back to a
+            fresh session.
+          </p>
+        </div>
+      )}
+
+      <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+        {SESSION_MODE_HELP}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Repeatable path/value rows for a trigger's delivery `filter`. Not a JSON
+ * textarea on purpose: the shape is always a flat map, and the loop-breaking
+ * case below is the one everybody needs.
+ */
+function FilterRowsEditor({
+  rows,
+  onChange,
+  disabled,
+}: {
+  rows: FilterRow[];
+  onChange: (next: FilterRow[]) => void;
+  disabled?: boolean;
+}) {
+  const patch = (index: number, next: Partial<FilterRow>) =>
+    onChange(rows.map((row, i) => (i === index ? { ...row, ...next } : row)));
+
+  return (
+    <div className="bg-card space-y-2 rounded-2xl border px-3 py-2">
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground text-xs">
+          No conditions — every delivery starts a run.
+        </p>
+      ) : (
+        rows.map((row, index) => (
+          // Rows are edited in place and identified positionally; there is no
+          // stable id to key on until a path is typed.
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional rows
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              value={row.path}
+              onChange={(e) => patch(index, { path: e.target.value })}
+              placeholder="body.data.direction"
+              className="font-mono text-xs"
+              disabled={disabled}
+            />
+            <span className="text-muted-foreground shrink-0 text-xs">=</span>
+            <Input
+              value={row.value}
+              onChange={(e) => patch(index, { value: e.target.value })}
+              placeholder="inbound"
+              className="font-mono text-xs"
+              disabled={disabled}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Remove condition"
+              disabled={disabled}
+              onClick={() => onChange(rows.filter((_, i) => i !== index))}
+            >
+              <TrashSolid className="size-4 shrink-0" />
+            </Button>
+          </div>
+        ))
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        disabled={disabled}
+        onClick={() => onChange([...rows, { path: '', value: '' }])}
+      >
+        <Icon.Plus className="size-3.5 shrink-0" />
+        Add condition
+      </Button>
+      <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+        Every condition must match or the delivery is accepted (HTTP 200) and recorded, but starts
+        no session. The classic use is breaking a reply loop:{' '}
+        <code className="font-mono">body.data.direction</code> ={' '}
+        <code className="font-mono">inbound</code> stops the agent&apos;s own outbound messages from
+        re-triggering it. Paths are dotted and rooted at the same payload the prompt sees.
+      </p>
+    </div>
+  );
+}
 
 export function ScheduleView({ projectId, type }: { projectId: string; type: TriggerKind }) {
   const meta = TYPE_META[type];
@@ -616,13 +873,41 @@ function TriggerDetailSheet({
           </header>
 
           <div className="space-y-8">
-            {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
+            <NameSection
+              projectId={projectId}
+              trigger={trigger}
+              canWrite={canWrite}
+              onMutated={onMutated}
+            />
+            {isCron ? (
+              <CronSection
+                projectId={projectId}
+                trigger={trigger}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+            ) : (
+              <WebhookSection
+                projectId={projectId}
+                trigger={trigger}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+            )}
             <PromptTemplateSection
               projectId={projectId}
               trigger={trigger}
               canWrite={canWrite}
               onMutated={onMutated}
             />
+            {!isCron && (
+              <DeliveryFilterSection
+                projectId={projectId}
+                trigger={trigger}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+            )}
             <AgentModelSection
               projectId={projectId}
               trigger={trigger}
@@ -728,8 +1013,16 @@ function AgentModelSection({
     onError: (e: Error) => errorToast(e.message || 'Failed to update model'),
   });
 
-  const [modeDraft, setModeDraft] = useState<'fresh' | 'reuse' | 'pinned'>(trigger.session_mode);
+  const [modeDraft, setModeDraft] = useState<SessionMode>(trigger.session_mode);
   const [pinDraft, setPinDraft] = useState<string | null>(trigger.session_id);
+  const [keyDraft, setKeyDraft] = useState(trigger.session_key ?? '');
+  // Re-sync when the manifest write lands (or another editor changes it).
+  useEffect(() => {
+    setModeDraft(trigger.session_mode);
+    setPinDraft(trigger.session_id);
+    setKeyDraft(trigger.session_key ?? '');
+  }, [trigger.session_mode, trigger.session_id, trigger.session_key]);
+
   const pinnableSessions = useQuery({
     queryKey: ['project-sessions', projectId, 'trigger-pin'],
     queryFn: () => listProjectSessions(projectId),
@@ -737,7 +1030,7 @@ function AgentModelSection({
     staleTime: 30_000,
   });
   const saveSession = useMutation({
-    mutationFn: (input: { session_mode: 'fresh' | 'reuse' | 'pinned'; session_id: string | null }) =>
+    mutationFn: (input: UpdateProjectTriggerInput) =>
       updateProjectTrigger(projectId, trigger.slug, input),
     onSuccess: () => {
       successToast('Session strategy updated');
@@ -745,11 +1038,6 @@ function AgentModelSection({
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to update session strategy'),
   });
-  const sessionModeLabel: Record<'fresh' | 'reuse' | 'pinned', string> = {
-    fresh: 'New session each run',
-    reuse: "Reuse this trigger's session",
-    pinned: 'Pinned session',
-  };
 
   if (!canWrite) {
     return (
@@ -763,20 +1051,11 @@ function AgentModelSection({
             },
             {
               label: 'Model',
-              value: (
-                <span className="font-mono text-xs">{trigger.model ?? 'Agent default'}</span>
-              ),
+              value: <span className="font-mono text-xs">{trigger.model ?? 'Agent default'}</span>,
             },
             {
               label: 'Session',
-              value: (
-                <span className="text-xs">
-                  {sessionModeLabel[trigger.session_mode]}
-                  {trigger.session_mode === 'pinned' && trigger.session_id
-                    ? ` · ${trigger.session_id.slice(0, 8)}`
-                    : ''}
-                </span>
-              ),
+              value: <span className="text-xs">{describeSessionStrategy(trigger)}</span>,
             },
           ]}
         />
@@ -828,65 +1107,127 @@ function AgentModelSection({
       </div>
       <div className="space-y-2">
         <Label>Session strategy</Label>
-        <div className="bg-card space-y-2 rounded-2xl border px-3 py-2">
-          <Select
-            value={modeDraft}
-            onValueChange={(v) => {
-              const m = v as 'fresh' | 'reuse' | 'pinned';
-              setModeDraft(m);
-              if (m !== 'pinned') {
-                setPinDraft(null);
-                saveSession.mutate({ session_mode: m, session_id: null });
+        <SessionStrategyFields
+          mode={modeDraft}
+          onModeChange={(m) => {
+            setModeDraft(m);
+            setPinDraft(null);
+            // `pinned` and one-per-conversation both need a second value before
+            // the manifest write can be valid — stage them and save once the
+            // session / key is supplied.
+            if (m === 'pinned' || m === 'keyed') return;
+            setKeyDraft('');
+            saveSession.mutate({ session_mode: m, session_id: null, session_key: null });
+          }}
+          pinnedSessionId={pinDraft}
+          onPinnedSessionChange={(sid) => {
+            setPinDraft(sid);
+            saveSession.mutate({ session_mode: 'pinned', session_id: sid, session_key: null });
+          }}
+          sessionKey={keyDraft}
+          onSessionKeyChange={setKeyDraft}
+          sessionKeyAction={
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0"
+              disabled={
+                saveSession.isPending ||
+                !keyDraft.trim() ||
+                (trigger.session_mode === 'keyed' && keyDraft.trim() === trigger.session_key)
               }
-            }}
-            disabled={saveSession.isPending}
-          >
-            <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="fresh" className="cursor-pointer">
-                New session each run
-              </SelectItem>
-              <SelectItem value="reuse" className="cursor-pointer">
-                Reuse this trigger&apos;s session (loop)
-              </SelectItem>
-              <SelectItem value="pinned" className="cursor-pointer">
-                Pin a specific session…
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          {modeDraft === 'pinned' && (
-            <Select
-              value={pinDraft ?? ''}
-              onValueChange={(sid) => {
-                setPinDraft(sid);
-                saveSession.mutate({ session_mode: 'pinned', session_id: sid });
-              }}
-              disabled={pinnableSessions.isLoading || saveSession.isPending}
+              onClick={() =>
+                saveSession.mutate({
+                  session_mode: 'keyed',
+                  session_key: keyDraft.trim(),
+                  session_id: null,
+                })
+              }
             >
-              <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
-                <SelectValue
-                  placeholder={
-                    pinnableSessions.isLoading ? 'Loading sessions…' : 'Choose a session to loop'
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {(pinnableSessions.data ?? []).map((s) => (
-                  <SelectItem key={s.session_id} value={s.session_id} className="cursor-pointer">
-                    {s.name || s.branch_name || s.session_id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
-            Fresh mints a new session each run; reuse loops this trigger&apos;s own session; pinned
-            loops one specific session you choose.
-          </p>
-        </div>
+              {saveSession.isPending ? <Loading className="size-3 shrink-0" /> : 'Save'}
+            </Button>
+          }
+          sessions={pinnableSessions.data ?? []}
+          sessionsLoading={pinnableSessions.isLoading}
+        />
       </div>
+    </section>
+  );
+}
+
+/**
+ * Delivery filter — webhook-only. A non-matching delivery is still accepted;
+ * it just doesn't start a run. See {@link FilterRowsEditor} for the copy.
+ */
+function DeliveryFilterSection({
+  projectId,
+  trigger,
+  canWrite,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  canWrite: boolean;
+  onMutated: () => void;
+}) {
+  const [rows, setRows] = useState<FilterRow[]>(() => filterToRows(trigger.filter));
+
+  // The listing refetches every 10s and `trigger.filter` is a FRESH object each
+  // time — resetting on its identity would wipe whatever the user is typing.
+  // Key the reset off its value instead.
+  const savedFilter = JSON.stringify(trigger.filter ?? {});
+  useEffect(() => {
+    setRows(filterToRows(JSON.parse(savedFilter) as Record<string, string>));
+  }, [savedFilter]);
+
+  const save = useMutation({
+    mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { filter: rowsToFilter(rows) }),
+    onSuccess: () => {
+      successToast('Filter saved');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to save filter'),
+  });
+
+  if (!canWrite) {
+    const entries = Object.entries(trigger.filter ?? {});
+    return (
+      <section className="space-y-2">
+        <Label>Delivery filter</Label>
+        {entries.length === 0 ? (
+          <p className="text-muted-foreground text-xs">
+            No conditions — every delivery starts a run.
+          </p>
+        ) : (
+          <PropertyTable
+            rows={entries.map(([path, value]) => ({
+              label: path,
+              value: <span className="font-mono text-xs">{value}</span>,
+            }))}
+          />
+        )}
+      </section>
+    );
+  }
+
+  const dirty = !sameFilter(rowsToFilter(rows), trigger.filter);
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Delivery filter</Label>
+        {dirty && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? <Loading className="size-3 shrink-0" /> : 'Save'}
+          </Button>
+        )}
+      </div>
+      <FilterRowsEditor rows={rows} onChange={setRows} disabled={save.isPending} />
     </section>
   );
 }
@@ -908,15 +1249,173 @@ function PropertyTable({ rows }: { rows: { label: string; value: ReactNode }[] }
   );
 }
 
-function CronSection({ trigger }: { trigger: ProjectTrigger }) {
+/** Rename a trigger. The slug is immutable (renaming it would orphan the
+ *  trigger's runtime state and change its public webhook URL), so it stays a
+ *  read-only property in {@link MetaSection}. */
+function NameSection({
+  projectId,
+  trigger,
+  canWrite,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  canWrite: boolean;
+  onMutated: () => void;
+}) {
+  const [draft, setDraft] = useState(trigger.name);
+
+  useEffect(() => {
+    setDraft(trigger.name);
+  }, [trigger.name]);
+
+  const save = useMutation({
+    mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { name: draft.trim() }),
+    onSuccess: () => {
+      successToast('Name updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update name'),
+  });
+
+  if (!canWrite) return null;
+
+  const dirty = draft.trim() !== trigger.name && draft.trim().length > 0;
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Name</Label>
+        {dirty && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? <Loading className="size-3 shrink-0" /> : 'Save'}
+          </Button>
+        )}
+      </div>
+      <Input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={64} />
+    </section>
+  );
+}
+
+function CronSection({
+  projectId,
+  trigger,
+  canWrite,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  canWrite: boolean;
+  onMutated: () => void;
+}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const [editing, setEditing] = useState(false);
+  const [cronDraft, setCronDraft] = useState(trigger.cron ?? '0 0 9 * * *');
+  const [runAtDraft, setRunAtDraft] = useState<string | null>(trigger.run_at);
+  const [tzDraft, setTzDraft] = useState(trigger.timezone);
+
+  useEffect(() => {
+    if (editing) return;
+    setCronDraft(trigger.cron ?? '0 0 9 * * *');
+    setRunAtDraft(trigger.run_at);
+    setTzDraft(trigger.timezone);
+  }, [trigger.cron, trigger.run_at, trigger.timezone, editing]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateProjectTrigger(
+        projectId,
+        trigger.slug,
+        // Always send BOTH keys: `run_at` and `cron` are mutually exclusive on
+        // the manifest, so switching between them means explicitly clearing the
+        // other one.
+        runAtDraft
+          ? { run_at: runAtDraft, cron: null, timezone: tzDraft }
+          : { cron: cronDraft.trim(), run_at: null, timezone: tzDraft },
+      ),
+    onSuccess: () => {
+      successToast('Schedule updated');
+      setEditing(false);
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update schedule'),
+  });
+
+  const header = (
+    <div className="flex items-center justify-between gap-2">
+      <Label>Schedule</Label>
+      {!canWrite ? null : editing ? (
+        <ButtonGroup>
+          <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={save.isPending || (!runAtDraft && !cronDraft.trim())}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? <Loading className="size-3 shrink-0" /> : 'Save'}
+          </Button>
+        </ButtonGroup>
+      ) : (
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+          <Pencil className="size-3.5 shrink-0" />
+          Edit
+        </Button>
+      )}
+    </div>
+  );
+
+  if (canWrite && editing) {
+    return (
+      <section className="space-y-2">
+        {header}
+        <ScheduleBuilder
+          value={cronDraft}
+          onChange={setCronDraft}
+          allowOnce
+          runAt={runAtDraft}
+          onRunAtChange={setRunAtDraft}
+        />
+        {!runAtDraft && (
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <p className="text-muted-foreground text-xs text-pretty">
+              Times follow the selected timezone.
+            </p>
+            <Select value={tzDraft} onValueChange={setTzDraft}>
+              <SelectTrigger
+                className="text-muted-foreground hover:text-foreground h-8 w-auto cursor-pointer gap-1.5 rounded-full border-none bg-transparent px-3 text-xs"
+                title="Timezone"
+              >
+                <AlarmClockSolid className="size-3.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEZONES.map((tz) => (
+                  <SelectItem key={tz} value={tz} className="cursor-pointer">
+                    {tz}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   if (trigger.run_at) {
     const d = new Date(trigger.run_at);
     const valid = !Number.isNaN(d.getTime());
     return (
       <section className="space-y-2">
-        <Label>Schedule</Label>
+        {header}
         <PropertyTable
           rows={[
             {
@@ -940,7 +1439,7 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
 
   return (
     <section className="space-y-2">
-      <Label>Schedule</Label>
+      {header}
       <PropertyTable
         rows={[
           { label: 'When', value: describeCron(expr) },
@@ -955,10 +1454,41 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
   );
 }
 
-function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
+function WebhookSection({
+  projectId,
+  trigger,
+  canWrite,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  canWrite: boolean;
+  onMutated: () => void;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const url = trigger.webhook_url ?? '';
   const curl = useMemo(() => buildCurlExample(url), [url]);
+
+  // `secret_env` names the project_secrets entry holding the HMAC secret — the
+  // manifest never inlines the value. Editable so a trigger can be pointed at an
+  // existing secret instead of the one auto-derived at create time.
+  const [secretEnvDraft, setSecretEnvDraft] = useState(trigger.secret_env ?? '');
+  useEffect(() => {
+    setSecretEnvDraft(trigger.secret_env ?? '');
+  }, [trigger.secret_env]);
+
+  const saveSecretEnv = useMutation({
+    mutationFn: () =>
+      updateProjectTrigger(projectId, trigger.slug, { secret_env: secretEnvDraft.trim() }),
+    onSuccess: () => {
+      successToast('Signing secret updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update signing secret'),
+  });
+
+  const secretEnvDirty =
+    secretEnvDraft.trim().length > 0 && secretEnvDraft.trim() !== (trigger.secret_env ?? '');
 
   return (
     <div className="space-y-8">
@@ -991,6 +1521,35 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
           </InfoBanner>
         )}
       </section>
+
+      {canWrite && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Signing secret name</Label>
+            {secretEnvDirty && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={saveSecretEnv.isPending}
+                onClick={() => saveSecretEnv.mutate()}
+              >
+                {saveSecretEnv.isPending ? <Loading className="size-3 shrink-0" /> : 'Save'}
+              </Button>
+            )}
+          </div>
+          <Input
+            value={secretEnvDraft}
+            onChange={(e) => setSecretEnvDraft(e.target.value.toUpperCase())}
+            placeholder="WEBHOOK_MY_TRIGGER_SECRET"
+            className="font-mono text-sm"
+          />
+          <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+            The project secret holding this webhook&apos;s HMAC key — the value itself never lives
+            in the manifest. Must name an existing entry in Customize → Secrets, in{' '}
+            <code className="font-mono">UPPER_SNAKE_CASE</code>.
+          </p>
+        </section>
+      )}
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -1178,7 +1737,6 @@ function TriggerModalSection({
   );
 }
 
-
 function CreateTriggerModal({
   projectId,
   open,
@@ -1201,13 +1759,22 @@ function CreateTriggerModal({
   const [timezone, setTimezone] = useState('UTC');
   const [webhookSecret, setWebhookSecret] = useState('');
 
+  const [secretEnvName, setSecretEnvName] = useState('');
+
   const [name, setName] = useState('');
+  const [slugOverride, setSlugOverride] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [enabled, setEnabled] = useState(true);
   const [agentName, setAgentName] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelKey | null>(null);
   // Session strategy: how each fire uses sessions.
-  const [sessionMode, setSessionMode] = useState<'fresh' | 'reuse' | 'pinned'>('fresh');
+  const [sessionMode, setSessionMode] = useState<SessionMode>('fresh');
   const [pinnedSessionId, setPinnedSessionId] = useState<string | null>(null);
+  // For the one-session-per-conversation strategy: the payload template that
+  // decides which session a delivery lands in.
+  const [sessionKey, setSessionKey] = useState('');
+  // Webhook-only delivery filter (path → expected value).
+  const [filterRows, setFilterRows] = useState<FilterRow[]>([]);
   // Sessions to choose from when pinning (only fetched once the user picks 'pinned').
   const pinnableSessions = useQuery({
     queryKey: ['project-sessions', projectId, 'trigger-pin'],
@@ -1230,10 +1797,17 @@ function CreateTriggerModal({
       setRunAt(null);
       setTimezone('UTC');
       setWebhookSecret('');
+      setSecretEnvName('');
       setName('');
+      setSlugOverride('');
       setPrompt('');
+      setEnabled(true);
       setAgentName(null);
       setSelectedModel(null);
+      setSessionMode('fresh');
+      setPinnedSessionId(null);
+      setSessionKey('');
+      setFilterRows([]);
       setError(null);
     }
   }, [open, forcedType]);
@@ -1255,11 +1829,14 @@ function CreateTriggerModal({
         throw new Error('Webhook secret is required');
       if (!trimmedPrompt) throw new Error('Prompt is required');
 
-      const slug = slugifyName(trimmedName);
+      const slug = slugifyName(slugOverride.trim() || trimmedName);
+      const filter = rowsToFilter(filterRows);
 
       let secretEnv: string | undefined;
       if (sourceType === 'webhook') {
-        secretEnv = `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
+        secretEnv =
+          normalizeSecretEnvName(secretEnvName) ||
+          `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
         await upsertProjectSecret(projectId, {
           name: secretEnv,
           value: webhookSecret.trim(),
@@ -1268,12 +1845,16 @@ function CreateTriggerModal({
 
       return createProjectTrigger(projectId, {
         name: trimmedName,
+        slug,
         type: sourceType,
         prompt_template: trimmedPrompt,
+        enabled,
         ...(agentName ? { agent: agentName } : {}),
         ...(selectedModel ? { model: modelKeyToWire(selectedModel) } : {}),
         ...(sessionMode !== 'fresh' ? { session_mode: sessionMode } : {}),
         ...(sessionMode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
+        ...(sessionMode === 'keyed' ? { session_key: sessionKey.trim() } : {}),
+        ...(sourceType === 'webhook' && filter ? { filter } : {}),
         ...(sourceType === 'cron'
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
@@ -1315,6 +1896,11 @@ function CreateTriggerModal({
     if (!name.trim()) return 'Name is required';
     if (!prompt.trim()) return 'Prompt is required';
     if (sessionMode === 'pinned' && !pinnedSessionId) return 'Pick a session to pin';
+    if (sessionMode === 'keyed' && !sessionKey.trim())
+      return 'Add a session key so each conversation gets its own session';
+    // A half-filled row is a silent no-op otherwise — say so instead.
+    if (filterRows.some((row) => Boolean(row.path.trim()) !== Boolean(row.value.trim())))
+      return 'Each filter condition needs both a path and a value';
     return null;
   };
 
@@ -1485,7 +2071,12 @@ function CreateTriggerModal({
               label="Signing secret"
               description="Used to verify inbound requests before the trigger fires."
             >
-              <WebhookSourceConfig secret={webhookSecret} onSecretChange={setWebhookSecret} />
+              <WebhookSourceConfig
+                secret={webhookSecret}
+                onSecretChange={setWebhookSecret}
+                secretName={secretEnvName}
+                onSecretNameChange={setSecretEnvName}
+              />
             </TriggerModalSection>
           )}
 
@@ -1512,6 +2103,24 @@ function CreateTriggerModal({
                   maxLength={64}
                   autoFocus
                 />
+                <div className="space-y-1.5">
+                  <Label htmlFor="trigger-slug" className="text-xs">
+                    Slug (optional)
+                  </Label>
+                  <Input
+                    id="trigger-slug"
+                    type="text"
+                    value={slugOverride}
+                    onChange={(e) => setSlugOverride(e.target.value)}
+                    placeholder={name.trim() ? slugifyName(name.trim()) : 'daily-standup-digest'}
+                    maxLength={128}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+                    The manifest key for this trigger, and the last path segment of a webhook&apos;s
+                    URL. Derived from the name when left blank; immutable afterwards.
+                  </p>
+                </div>
               </TriggerModalSection>
 
               <TriggerModalSection
@@ -1568,65 +2177,42 @@ function CreateTriggerModal({
 
               <TriggerModalSection
                 label="Session strategy"
-                description="How each run uses sessions: a fresh one every time, loop this trigger's own session, or pin one specific existing session."
+                description="How each run uses sessions: a fresh one every time, loop this trigger's own session, pin one specific existing session, or give every conversation its own."
               >
-                <div className="bg-card space-y-2 rounded-2xl border px-3 py-2">
-                  <Select
-                    value={sessionMode}
-                    onValueChange={(v) => {
-                      setSessionMode(v as 'fresh' | 'reuse' | 'pinned');
-                      if (v !== 'pinned') setPinnedSessionId(null);
-                    }}
-                  >
-                    <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="fresh" className="cursor-pointer">
-                        New session each run
-                      </SelectItem>
-                      <SelectItem value="reuse" className="cursor-pointer">
-                        Reuse this trigger&apos;s session (loop)
-                      </SelectItem>
-                      <SelectItem value="pinned" className="cursor-pointer">
-                        Pin a specific session…
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {sessionMode === 'pinned' && (
-                    <Select
-                      value={pinnedSessionId ?? ''}
-                      onValueChange={setPinnedSessionId}
-                      disabled={pinnableSessions.isLoading}
-                    >
-                      <SelectTrigger className="h-9 w-full cursor-pointer text-sm">
-                        <SelectValue
-                          placeholder={
-                            pinnableSessions.isLoading
-                              ? 'Loading sessions…'
-                              : 'Choose a session to loop'
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(pinnableSessions.data ?? []).map((s) => (
-                          <SelectItem
-                            key={s.session_id}
-                            value={s.session_id}
-                            className="cursor-pointer"
-                          >
-                            {s.name || s.branch_name || s.session_id}
-                          </SelectItem>
-                        ))}
-                        {!pinnableSessions.isLoading &&
-                          (pinnableSessions.data ?? []).length === 0 && (
-                            <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                              No sessions in this project yet.
-                            </div>
-                          )}
-                      </SelectContent>
-                    </Select>
-                  )}
+                <SessionStrategyFields
+                  mode={sessionMode}
+                  onModeChange={(m) => {
+                    setSessionMode(m);
+                    if (m !== 'pinned') setPinnedSessionId(null);
+                    if (m !== 'keyed') setSessionKey('');
+                  }}
+                  pinnedSessionId={pinnedSessionId}
+                  onPinnedSessionChange={setPinnedSessionId}
+                  sessionKey={sessionKey}
+                  onSessionKeyChange={setSessionKey}
+                  sessions={pinnableSessions.data ?? []}
+                  sessionsLoading={pinnableSessions.isLoading}
+                />
+              </TriggerModalSection>
+
+              {sourceType === 'webhook' && (
+                <TriggerModalSection
+                  label="Delivery filter"
+                  description="Optional — only start a run when the payload matches every condition."
+                >
+                  <FilterRowsEditor rows={filterRows} onChange={setFilterRows} />
+                </TriggerModalSection>
+              )}
+
+              <TriggerModalSection
+                label="Activation"
+                description="Create it paused if you want to review the manifest entry before it can run."
+              >
+                <div className="bg-card flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5">
+                  <Label htmlFor="trigger-enabled" className="text-sm font-normal">
+                    {enabled ? 'Enabled' : 'Paused'}
+                  </Label>
+                  <Switch id="trigger-enabled" checked={enabled} onCheckedChange={setEnabled} />
                 </div>
               </TriggerModalSection>
 
@@ -1726,9 +2312,15 @@ function SourceCard({
 function WebhookSourceConfig({
   secret,
   onSecretChange,
+  secretName,
+  onSecretNameChange,
 }: {
   secret: string;
   onSecretChange: (next: string) => void;
+  /** Optional override for the project_secrets key the manifest references
+   *  (`secret_env`). Blank derives it from the trigger slug. */
+  secretName: string;
+  onSecretNameChange: (next: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -1756,6 +2348,22 @@ function WebhookSourceConfig({
             Generate
           </Button>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs">Secret name (optional)</Label>
+        <Input
+          value={secretName}
+          onChange={(e) => onSecretNameChange(e.target.value.toUpperCase())}
+          placeholder="WEBHOOK_MY_TRIGGER_SECRET"
+          type="text"
+          className="font-mono text-sm"
+        />
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+          The project-secret key the manifest points at (
+          <code className="font-mono">secret_env</code>) — the value above is stored under it, never
+          inlined. Derived from the slug when left blank.
+        </p>
       </div>
 
       <div className="bg-muted/40 space-y-1.5 rounded-md p-4">

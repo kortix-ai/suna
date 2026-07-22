@@ -198,7 +198,32 @@ describe('Daytona snapshot state', () => {
       });
     };
 
-    expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('unknown');
+    expect(await daytonaProvider.getSnapshotState('kortix-transient-probe')).toBe('unknown');
+  });
+
+  test('briefly caches a negative probe result per name (burst collapse)', async () => {
+    let calls = 0;
+    getSnapshotImpl = async () => {
+      calls += 1;
+      throw Object.assign(new Error('Snapshot with name kortix-neg-cache not found'), {
+        statusCode: 404,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-neg-cache')).toBe('missing');
+    expect(await daytonaProvider.getSnapshotState('kortix-neg-cache')).toBe('missing');
+    expect(calls).toBe(1);
+  });
+
+  test('never caches unknown — recovery after an outage is observed immediately', async () => {
+    getSnapshotImpl = async () => {
+      throw Object.assign(new Error('upstream unavailable'), { statusCode: 503 });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-outage-recovery')).toBe('unknown');
+
+    getSnapshotImpl = async () => ({ state: 'active' });
+    expect(await daytonaProvider.getSnapshotState('kortix-outage-recovery')).toBe('active');
   });
 
   test('keeps a timed-out Daytona probe unknown', async () => {

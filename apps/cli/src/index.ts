@@ -60,42 +60,46 @@ interface CommandTier {
   sections: readonly CommandSection[];
 }
 
-// The help layout is three tiers matching how you actually think about the CLI:
-// what lives OUTSIDE any project (who you are, which cloud/account, which
-// projects exist), what operates ON the linked project (its code, its agents &
-// integrations, its sessions, its access), and the CLI tool itself. Order +
-// membership here IS the layout.
+// The help layout leads with the navigable hierarchy — Host › Account ›
+// Project › Session, top-down, each with its `use` selection verb — then the
+// feature bands that operate ON the linked project, then the CLI tool itself.
+// You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
+// and open SESSIONS in the project. Order + membership here IS the layout.
 const TIERS: readonly CommandTier[] = [
   {
-    label: 'Account',
+    label: 'Where you are  (host › account › project › session)',
     sections: [
       {
-        title: 'Authentication',
+        title: 'Sign in — per host',
         commands: [
-          { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
-          { name: 'logout', blurb: 'Remove the stored auth token' },
-          { name: 'whoami', blurb: 'Show the currently authenticated user' },
-          { name: 'token', blurb: 'Show the active token context (project/session/agent grants)' },
-        ],
-      },
-      {
-        title: 'Hosts & accounts',
-        commands: [
-          { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
           {
-            name: 'accounts',
+            name: 'hosts',
             args: '<subcommand>',
-            blurb: 'List + switch the active account (multi-account logins)',
+            blurb: 'Sign in + switch Kortix instances (login/logout/use/ls)',
           },
+          { name: 'login', blurb: 'Sign in to the active host (shortcut for `hosts login`)' },
+          { name: 'logout', blurb: 'Sign out of the active host (shortcut for `hosts logout`)' },
+          { name: 'whoami', blurb: 'Inspect the active host — signed-in user + account' },
+          { name: 'token', blurb: 'Inspect the active token context (project/session/agent grants)' },
           {
             name: 'self-host',
             args: '<subcommand>',
-            blurb: 'Run your own Kortix Cloud from Docker images',
+            blurb: 'Run your own Kortix instance from Docker images',
           },
         ],
       },
       {
-        title: 'Projects',
+        title: 'Account — within the host',
+        commands: [
+          {
+            name: 'accounts',
+            args: '<subcommand>',
+            blurb: 'Switch the active account (use / ls / current)',
+          },
+        ],
+      },
+      {
+        title: 'Project — within the account',
         commands: [
           {
             name: 'init',
@@ -105,7 +109,22 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'projects',
             args: '<subcommand>',
-            blurb: 'List, link, set-default, open Kortix cloud projects',
+            blurb: 'List, link, set-default (use), open Kortix cloud projects',
+          },
+        ],
+      },
+      {
+        title: 'Session — within the project',
+        commands: [
+          {
+            name: 'sessions',
+            args: '<subcommand>',
+            blurb: 'List, create, restart project sessions',
+          },
+          {
+            name: 'chat',
+            args: '[session-id]',
+            blurb: "Talk to a session's agent (REPL or --prompt)",
           },
         ],
       },
@@ -183,18 +202,8 @@ const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Sessions & work',
+        title: 'Files, changes & triggers',
         commands: [
-          {
-            name: 'sessions',
-            args: '<subcommand>',
-            blurb: 'List, create, restart project sessions',
-          },
-          {
-            name: 'chat',
-            args: '[session-id]',
-            blurb: "Talk to a session's agent (REPL or --prompt)",
-          },
           {
             name: 'files',
             args: '<subcommand>',

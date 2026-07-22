@@ -42,6 +42,12 @@ export interface ConnectorDraft {
    *  into the manifest, since `shared` is already the implicit default. */
   credential?: 'shared';
   auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in?: 'header' | 'query'; name?: string; prefix?: string };
+  /** Static request headers sent on every call — an ordered map of header name
+   *  → value (`{ Accept: 'application/json', 'X-Tenant-Id': 'acme' }`).
+   *  NOT secrets: they are committed to kortix.yaml in plaintext, exactly like
+   *  `baseUrl`. Names must be RFC 7230 tokens and values may not contain CR/LF;
+   *  a header that collides with the auth header never overrides it. */
+  headers?: Record<string, string>;
 }
 
 export type CrudResult =
@@ -79,6 +85,11 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.auth.prefix) auth.prefix = d.auth.prefix;
     entry.auth = auth;
   }
+  // Validated by the parser (extractConnectors) right after this entry is
+  // written, so a bad name/value fails the request with the parser's message
+  // instead of committing an unusable manifest. Omit when empty so the
+  // manifest stays minimal (same rule as `sensitive`).
+  if (d.headers && Object.keys(d.headers).length > 0) entry.headers = { ...d.headers };
   return entry;
 }
 
@@ -152,6 +163,11 @@ export async function upsertConnectorInManifest(
     // omits it) — so editing the connection never clobbers permissions or rename.
     const prev = current[idx]!;
     if (prev.policies !== undefined) entry.policies = prev.policies;
+    // A draft that doesn't mention `headers` keeps the ones already declared —
+    // same carry-over rule as policies/enabled/name, so editing the connection
+    // from a form that doesn't own the header table can't silently drop it.
+    // (Send `headers: {}` to clear them.)
+    if (draft.headers === undefined && prev.headers !== undefined) entry.headers = prev.headers;
     if (prev.enabled !== undefined) entry.enabled = prev.enabled;
     if (entry.name === undefined && prev.name !== undefined) entry.name = prev.name;
     current[idx] = entry;
@@ -340,6 +356,8 @@ export interface ConnectorConfigView {
   baseUrl: string | null;
   spec: string | null;
   auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  /** Static request headers (ordered map of name → value); `{}` when none. */
+  headers: Record<string, string>;
 }
 
 /**
@@ -370,6 +388,7 @@ export async function getConnectorConfigFromManifest(
     baseUrl: spec.baseUrl,
     spec: spec.spec,
     auth: { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix },
+    headers: { ...spec.headers },
   };
 }
 

@@ -1,0 +1,60 @@
+---
+title: Running work
+description: How work moves from prompt to merged change, and the three ways it starts.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Kortix does work inside a [session](/docs/work/sessions): a branch and a sandbox for one
+unit of work. A session ends when its [change request](/docs/work/change-requests) (CR)
+merges back to the default branch. This page walks through the loop, then shows the
+three ways a session can start.
+
+<Cards>
+  <Card title="Sessions" href="/docs/work/sessions">A branch and a sandbox for one unit of work.</Card>
+  <Card title="Change requests" href="/docs/work/change-requests">The reviewed merge back to the default branch.</Card>
+  <Card title="Runtime" href="/docs/work/runtime">Env vars, tokens, and the sandbox image a session runs in.</Card>
+</Cards>
+
+## What happens when a session starts
+
+1. Kortix creates the session row and cuts a branch from the default branch.
+   The branch name is the session id.
+2. Kortix resolves a sandbox image: the default image, or your own
+   `.kortix/Dockerfile` if the manifest declares one.
+3. The sandbox boots. Its daemon, `kortix-agent`, clones the repo to
+   `/workspace` and starts OpenCode. Session status becomes `running`.
+4. The agent works. It reads [secrets](/docs/project/secrets) as environment
+   variables, then commits and pushes to the session branch.
+5. The agent opens a [change request](/docs/work/change-requests). You review
+   it and merge it — the only way work reaches the default branch.
+
+<Callout type="info" title="Git is the only durable record">
+Stopping a session pauses the sandbox but keeps its files. Deleting a session
+destroys the sandbox for good. Only work committed and pushed to the branch
+survives, and only a merged change request makes it permanent.
+</Callout>
+
+## Three ways work runs
+
+A session starts one of three ways.
+
+| Mode | How it works |
+|---|---|
+| On-demand | You ask in chat and get the result now. |
+| Human-assisted | The agent works and checks in with you for the calls that matter. |
+| Automated | A [trigger](/docs/connect/triggers) — a schedule or webhook — starts the session end to end. |
+
+## Related
+
+<Cards>
+  <Card title="Projects" href="/docs/project">A git repo with a manifest.</Card>
+  <Card title="Agents" href="/docs/project/agents">A markdown persona with scoped tools.</Card>
+  <Card title="Models" href="/docs/project/models">Which model a session uses, and who pays.</Card>
+  <Card title="Triggers" href="/docs/connect/triggers">Schedules and webhooks that start sessions.</Card>
+  <Card title="Connectors" href="/docs/connect/connectors">Scoped reach into external apps.</Card>
+  <Card title="Slack & channels" href="/docs/connect/slack">Chat surfaces that start sessions.</Card>
+  <Card title="Computers" href="/docs/connect/computers">Machines distinct from session sandboxes.</Card>
+  <Card title="Accounts" href="/docs/accounts">Who owns projects, and who can access them.</Card>
+</Cards>

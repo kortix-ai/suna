@@ -226,15 +226,29 @@
                   "enum": [
                     "fresh",
                     "reuse",
-                    "pinned"
+                    "pinned",
+                    "keyed"
                   ]
+                },
+                "session_key": {
+                  "type": "string"
+                },
+                "sessionKey": {
+                  "type": "string"
+                },
+                "filter": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
                 },
                 "sessionMode": {
                   "type": "string",
                   "enum": [
                     "fresh",
                     "reuse",
-                    "pinned"
+                    "pinned",
+                    "keyed"
                   ]
                 },
                 "session_id": {
@@ -436,6 +450,19 @@
                     "secret": false
                   },
                   "additionalProperties": true
+                },
+                "headers": {
+                  "type": "object",
+                  "maxProperties": 32,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+                    "maxLength": 128
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "pattern": "^[^\\r\\n]*$"
+                  }
                 },
                 "policies": {
                   "type": "array",
@@ -1179,15 +1206,29 @@
                   "enum": [
                     "fresh",
                     "reuse",
-                    "pinned"
+                    "pinned",
+                    "keyed"
                   ]
+                },
+                "session_key": {
+                  "type": "string"
+                },
+                "sessionKey": {
+                  "type": "string"
+                },
+                "filter": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
                 },
                 "sessionMode": {
                   "type": "string",
                   "enum": [
                     "fresh",
                     "reuse",
-                    "pinned"
+                    "pinned",
+                    "keyed"
                   ]
                 },
                 "session_id": {
@@ -1391,6 +1432,19 @@
                     "secret": false
                   },
                   "additionalProperties": true
+                },
+                "headers": {
+                  "type": "object",
+                  "maxProperties": 32,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+                    "maxLength": 128
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "pattern": "^[^\\r\\n]*$"
+                  }
                 },
                 "policies": {
                   "type": "array",

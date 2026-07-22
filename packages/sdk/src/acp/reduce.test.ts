@@ -81,6 +81,79 @@ describe('reduceEnvelope', () => {
     expect(state.envelopes).toContainEqual(inert);
   });
 
+  test('a LIVE user_message_chunk echo is projected away, not surfaced as an unknown frame', () => {
+    // A harness that echoes the prompt back OUTSIDE a `session/load` window —
+    // the bootstrap-replay guard (covered by the replay test below) never sees
+    // this one, so before `user_message_chunk` joined NON_VISUAL_UPDATES it
+    // fell through to the `raw` branch and rendered as "Unrecognized agent
+    // event". The user's turn already comes from the `session/prompt` frame.
+    const echo = stored(2, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'hello' } } },
+    });
+
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, userPrompt(1, 'hello', 'prompt-1', 'session-1'));
+    state = reduceEnvelope(state, echo);
+    state = reduceEnvelope(state, agentChunk(3, 'hi there'));
+
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'hello' },
+      { kind: 'message', id: 'assistant-3', role: 'assistant', text: 'hi there' },
+    ]);
+    expect(state.chatItems.some((item) => item.kind === 'raw')).toBe(false);
+    // Inert for the transcript, but the envelope log stays lossless.
+    expect(state.envelopes).toContainEqual(echo);
+  });
+
+  test('harness state-sync `*_update` frames are projected away, not surfaced as unknown frames', () => {
+    // `session_info_update` is one harness's session-metadata sync frame: it
+    // carries no content the transcript renders, but the `raw` fallback below
+    // the known-kind branches surfaced it as "Unrecognized agent event" on
+    // every turn. It is neither unrecognized nor an event the user did
+    // anything to cause. The same holds for any future harness-specific
+    // `*_update` — content-carrying ACP kinds are `*_chunk` / `tool_call` /
+    // `plan`, and every one of those is classified before the fallback.
+    const infoUpdate = stored(2, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { update: { sessionUpdate: 'session_info_update', info: { model: 'opus', cwd: '/workspace' } } },
+    });
+    const futureUpdate = stored(3, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { update: { sessionUpdate: 'some_future_harness_update', anything: true } },
+    });
+
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, userPrompt(1, 'hello', 'prompt-1', 'session-1'));
+    state = reduceEnvelope(state, infoUpdate);
+    state = reduceEnvelope(state, futureUpdate);
+    state = reduceEnvelope(state, agentChunk(4, 'hi there'));
+
+    expect(state.chatItems).toEqual([
+      { kind: 'message', id: 'prompt-1', role: 'user', text: 'hello' },
+      { kind: 'message', id: 'assistant-4', role: 'assistant', text: 'hi there' },
+    ]);
+    expect(state.chatItems.some((item) => item.kind === 'raw')).toBe(false);
+    // Inert for the transcript, but the envelope log stays lossless.
+    expect(state.envelopes).toContainEqual(infoUpdate);
+    expect(state.envelopes).toContainEqual(futureUpdate);
+  });
+
+  test('an unknown NON-`_update` session/update kind still surfaces as a raw frame', () => {
+    // The suffix rule above must not swallow everything unknown — a kind that
+    // does not follow the state-sync naming convention could carry content,
+    // so it keeps its visible "Unrecognized agent event" row.
+    let state = emptyReducerState();
+    state = reduceEnvelope(state, stored(1, 'agent_to_client', {
+      jsonrpc: '2.0', method: 'session/update',
+      params: { update: { sessionUpdate: 'mystery_frame', payload: 'x' } },
+    }));
+
+    expect(state.chatItems).toEqual([
+      { kind: 'raw', method: 'mystery_frame', data: { sessionUpdate: 'mystery_frame', payload: 'x' } },
+    ]);
+  });
+
   test('a message chunk gives new identity only to the tail item', () => {
     let state = emptyReducerState();
     state = reduceEnvelope(state, userPrompt(1));

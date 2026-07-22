@@ -39,6 +39,10 @@ agents:
     secrets: all
     connectors: all
 `;
+
+const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
+const PROJECT_AGENT_PAT = 'kortix_pat_agent_session';
+const PROJECT_EXECUTOR_PAT = 'kortix_pat_executor_sandbox';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -146,6 +150,8 @@ function resetState() {
     error: null,
     createdBy: USER_ID,
     visibility: 'private',
+    origin: 'user',
+    originRef: null,
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -179,6 +185,44 @@ mock.module('../middleware/auth', () => ({
       c.set('accountId', ACCOUNT_ID);
       c.set('tokenProjectId', PROJECT_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000901');
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_SA_TOKEN}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'service_account');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000902');
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_AGENT_PAT}`) {
+      // An agent-session PAT: same principal as the runtime PAT but carrying a
+      // resolved agent grant — i.e. a token acting AS an agent inside a session.
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      c.set('agentGrant', { agent: 'default', kortixCli: 'all', connectors: 'all' });
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_EXECUTOR_PAT}`) {
+      // The REAL executor PAT injected into every sandbox (KORTIX_CLI_TOKEN):
+      // session-bound (sessionId set) but with a NULL agent grant — the common
+      // v1/default-agent case. It must still be excluded from 'backend'; keying
+      // the exclusion on the agent grant alone would fail open here.
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000904');
       await next();
       return;
     }
@@ -568,6 +612,8 @@ mock.module('../shared/db', () => ({
             error: null,
             createdBy: values.createdBy ?? null,
             visibility: values.visibility ?? 'private',
+            origin: values.origin ?? 'user',
+            originRef: values.originRef ?? null,
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -1030,6 +1076,93 @@ describe('project session API contract', () => {
         type: 'basic',
       },
     });
+  });
+
+  test('derives session origin from the caller token; only a backend-origin caller may set origin_ref', async () => {
+    const app = createApp();
+    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    const whitespace = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: '   ' }),
+    });
+    expect(whitespace.status).toBe(400);
+
+    const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(userRes.status).toBe(201);
+    const userBody = (await userRes.json()) as { origin: string; origin_ref: string | null };
+    expect(userBody.origin).toBe('user');
+    expect(userBody.origin_ref).toBeNull();
+
+    const backendRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_SA_TOKEN}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(backendRes.status).toBe(201);
+    const backendBody = (await backendRes.json()) as { origin: string; origin_ref: string | null };
+    expect(backendBody.origin).toBe('backend');
+    expect(backendBody.origin_ref).toBe('tenant-42');
+
+    const patRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-43' }),
+    });
+    expect(patRes.status).toBe(201);
+    const patBody = (await patRes.json()) as { origin: string; origin_ref: string | null };
+    expect(patBody.origin).toBe('backend');
+    expect(patBody.origin_ref).toBe('tenant-43');
+
+    const sandboxRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(sandboxRes.status).toBe(403);
+    expect(await sandboxRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    const agentRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_AGENT_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(agentRes.status).toBe(403);
+    expect(await agentRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+
+    const executorRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_EXECUTOR_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    });
+    expect(executorRes.status).toBe(403);
+    expect(await executorRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {

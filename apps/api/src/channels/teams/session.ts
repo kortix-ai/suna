@@ -144,6 +144,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     source: 'teams',
     project,
     userId,
+    requestingPrincipalType: 'human',
     body: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',

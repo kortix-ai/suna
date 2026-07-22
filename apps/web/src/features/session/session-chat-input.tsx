@@ -86,7 +86,7 @@ function formatRelativeTime(timestamp: number): string {
 // working.
 import type { FlatModel } from './model-flatten';
 
-export { type FlatModel, flattenModels } from './model-flatten';
+export { flattenModels, type FlatModel } from './model-flatten';
 
 // AgentSelector is now a standalone component: ./agent-selector.tsx
 // ModelSelector is now a standalone component: ./model-selector.tsx
@@ -1801,7 +1801,7 @@ function SessionChatInputImpl({
   }, [text, mentions]);
 
   return (
-    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 sm:px-4">
+    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 md:px-0">
       {/* Todo panel removed — now inline inside the card as TodoChip */}
       <div
         ref={cardRef}
@@ -1810,7 +1810,7 @@ function SessionChatInputImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border shadow transition-colors',
+          'bg-accent border-border relative z-10 w-full overflow-visible rounded-xl border shadow-sm transition-colors',
           cardClassName,
           isDragOver && 'border-primary',
         )}
@@ -2045,7 +2045,7 @@ function SessionChatInputImpl({
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
-                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto  border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}

@@ -1,0 +1,872 @@
+---
+title: SDK reference
+description: The full @kortix/sdk API surface — client methods, modules, turns, and distribution.
+---
+
+This page is the full `@kortix/sdk` API surface: every client method, the
+framework-free modules, the turns helpers, and how the package ships. Use
+[SDK](/docs/sdk) to get started and [Sessions](/docs/sdk/sessions) for the
+session lifecycle in depth.
+
+## The client
+
+`createKortix(config)` returns one client. Every method is a typed call to
+the platform API. The `project(id)` and `session(pid, sid)` handles bind ids
+so you never repeat them.
+
+```ts
+const kortix = createKortix({ backendUrl, getToken });
+
+kortix.accounts; // account / team operations
+kortix.accountInvites; // invite accept/decline by token alone
+kortix.projects; // top-level project operations
+kortix.project(id); // id-bound project handle
+kortix.session(pid, sid); // id-bound session handle → see Sessions
+kortix.github; // GitHub App install + repo linking
+kortix.billing; // credits, subscription, tier, transactions
+kortix.sandboxShares; // public share links for a sandbox port
+kortix.transcribe; // speech-to-text
+kortix.connectStatus; // easy-connect (Pipedream) status
+kortix.marketplace; // public marketplace catalog
+kortix.validateToken; // pasted-API-key check
+kortix.config; // platform config in effect
+kortix.runtime(); // OpenCode client for the active runtime
+```
+
+### Accounts — `kortix.accounts`
+
+| method | what |
+| --- | --- |
+| `list()` · `get(accountId)` | accounts you belong to · one account |
+| `create({ name })` · `updateName(accountId, name)` | create · rename an account |
+| `members(accountId)` · `invite(accountId, input)` | list members · invite one |
+| `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | change a role · remove a member |
+| `invites(accountId)` | pending invites |
+| `cancelInvite(accountId, inviteId)` · `resendInvite(accountId, inviteId)` | cancel · resend a pending invite |
+| `leave(accountId)` | leave the account |
+
+`accounts.tokens` mints account-scoped API keys (`kortix_pat_...`). See
+[SDK auth](/docs/sdk/auth) for the full token model.
+
+| method | what |
+| --- | --- |
+| `tokens.list(accountId?)` | list your API keys |
+| `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
+| `tokens.revoke(tokenId, accountId?)` | revoke one |
+
+`accounts.audit` is the enterprise audit log.
+
+| method | what |
+| --- | --- |
+| `audit.log(...)` · `audit.export(...)` · `audit.webhooks.list/create/update/remove(...)` | audit events · CSV/JSONL export · manage SIEM webhooks |
+
+### Account invites — `kortix.accountInvites`
+
+Reached by invite token alone — the invitee may not be a member yet.
+
+| method | what |
+| --- | --- |
+| `describe(inviteId)` · `accept(inviteId)` · `decline(inviteId)` | preview · accept · decline an invite |
+
+### Projects — `kortix.projects`
+
+| method | what |
+| --- | --- |
+| `list()` · `listForAccount(accountId)` | your projects · projects in an account |
+| `get(id)` · `detail(id)` | summary · full detail |
+| `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
+| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id? }` |
+| `update(id, input)` · `archive(id)` | update settings · archive |
+| `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
+| `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
+| `sessions(id)` · `createSession(id, input?)` | list visible sessions · create a session |
+
+`provision` creates a new project; it does not start an existing project's
+sandbox. Start a session instead — see [Sessions](/docs/sdk/sessions).
+
+`project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
+private, unavailable, and soft-deleted sessions, with ownership and
+runtime-state metadata.
+
+### GitHub — `kortix.github`
+
+Account-scoped GitHub App install and repo linking, not project-scoped.
+
+| method | what |
+| --- | --- |
+| `getInstallation(accountId)` · `listInstallations(accountId)` | this account's install · installs the user can reach |
+| `saveInstallation(input)` · `deleteInstallation(accountId, installationId?)` | record · unlink an install |
+| `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
+| `linkRepository(input)` | import a repo as a project |
+
+### Billing — `kortix.billing`
+
+Reads for credits, subscription, tier, and transaction history. Checkout,
+the customer portal, and credit purchases are Stripe flows, app-owned.
+
+| method | what |
+| --- | --- |
+| `accountState(accountId?)` · `accountStateMinimal(accountId?)` | full · minimal billing state |
+| `transactions(params?)` · `transactionsSummary(params?)` | history · summarized totals |
+| `creditBreakdown(accountId?)` · `usageHistory(params?)` | credit balance by source · usage over time |
+| `tierConfigurations()` | available plan tiers |
+| `checkout.createSession(input)` · `checkout.confirmSession(sessionId, accountId?)` | start · confirm a Stripe Checkout session |
+| `subscription.createPortalSession(...)` · `subscription.cancel(...)` · `subscription.reactivate(...)` | open the customer portal · cancel · reactivate |
+| `subscription.scheduleDowngrade(...)` · `cancelScheduledChange(...)` · `prorationPreview(...)` | schedule · cancel · preview a plan change |
+| `credits.purchase(input)` · `credits.autoTopupSettings(...)` · `credits.configureAutoTopup(...)` | one-off purchase · read · configure auto-topup |
+
+### Sandbox shares — `kortix.sandboxShares`
+
+Public share links for one exposed sandbox port. Sandbox-scoped, not
+project-scoped.
+
+| method | what |
+| --- | --- |
+| `list(sandboxId)` | active share links |
+| `create(input)` | create one — `{ sandboxId, port, ttl?, label? }` |
+| `revoke(sandboxId, token)` | revoke one |
+
+### Marketplace catalog — `kortix.marketplace`
+
+Public catalog browsing, read-only — distinct from `project(id).marketplace`,
+which installs an item onto a project.
+
+| method | what |
+| --- | --- |
+| `items(options?)` · `item(id)` · `itemFile(id, path)` | browse · one item · a file inside an item |
+| `marketplaces()` · `featured()` | all · featured marketplaces |
+| `sources.list()` · `sources.add(input)` · `sources.remove(id)` | list · add · remove a source |
+
+### The project handle — `kortix.project(id)`
+
+Binds the project id; every sub-resource hangs off it.
+
+```ts
+const p = kortix.project(projectId);
+await p.detail();
+await p.update({ name });
+await p.llmCatalog();
+```
+
+| method | what |
+| --- | --- |
+| `get` · `detail` · `update` · `archive` | read · full detail · update · archive |
+| `llmCatalog` · `modelPicker` · `sandboxHealth` | model and sandbox-build reads |
+| `onboardingComplete` | mark project onboarding done |
+| `validateManifest(raw)` | validate a `kortix.yaml` (or legacy `kortix.toml`) manifest server-side |
+| `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
+| `setAgentScope(agentName, scope)` | bind an agent's allowed secrets and connectors |
+
+#### `p.tokens` — project-scoped API keys
+
+Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
+
+| method | what |
+| --- | --- |
+| `list()` | project API keys |
+| `create(input?)` | mint a new one |
+| `revoke(tokenId)` | revoke one |
+
+#### `p.setupLinks` — agent-minted setup links
+
+A link a person opens to enter a secret or connect an app, without full
+project access.
+
+| method | what |
+| --- | --- |
+| `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
+
+#### `p.secrets` — project secrets
+
+| method | what |
+| --- | --- |
+| `list()` · `upsert({ name, value })` | all project secrets · create or update one |
+| `remove(name)` | delete a secret |
+| `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
+| `setGitCredential(input)` | set a git auth credential |
+
+#### `p.access` — members, invites, requests
+
+| method | what |
+| --- | --- |
+| `list()` · `invite(email, role)` | members with access · invite a user |
+| `update(userId, role)` · `revoke(userId)` | change a role · remove access |
+| `pendingInvites()` · `requests()` | outstanding invites · pending access requests |
+| `resendInvite(inviteId)` · `revokeInvite(inviteId)` · `approveRequest(id)` · `rejectRequest(id)` | resend/revoke an invite · approve/reject a request |
+| `groupGrants()` · `attachGroupGrant(...)` · `updateGroupGrant(...)` · `detachGroupGrant(...)` | list, grant, change, or remove an IAM group grant |
+
+`p.access.resourceGrants` grants a member or group access to one resource (an
+agent, a skill, a secret) instead of the whole project.
+
+| method | what |
+| --- | --- |
+| `resourceGrants.list()` | per-resource grants |
+| `resourceGrants.create(input)` | grant a member or group access to a resource |
+| `resourceGrants.remove(grantId)` | revoke a resource grant |
+
+#### `p.connectors` — tool connectors
+
+| method | what |
+| --- | --- |
+| `list()` · `config(connectorId)` | configured connectors · one connector's config |
+| `create(input)` | add a connector |
+| `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
+| `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
+| `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
+| `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
+| `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
+| `profiles.list()` · `profiles.reconcile(input)` | server-side identities (manager-only) · create/update one |
+| `profiles.updateCredential(profileId, input)` | rotate a profile's credential |
+| `profiles.revoke(profileId)` · `profiles.activate(profileId)` | deny · restore the identity live |
+
+`p.connectors.discover` browses the direct-integration catalog.
+
+| method | what |
+| --- | --- |
+| `discover.list(query?, cursor?)` · `discover.detail(id)` | search OpenAPI/MCP/GraphQL/CLI entries · one entry's detail |
+
+`p.connectors.pipedream` is the optional managed-OAuth path; `listApps`
+returns OAuth apps only. Connect API-key apps directly instead.
+
+| method | what |
+| --- | --- |
+| `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
+
+A connector is how a session reaches an external tool; `profiles` select the
+identity it uses (`connector_bindings: { alias: { profile_id } }` at session
+create). Credentials stay encrypted and resolve per request.
+
+#### `p.policies` — project policies
+
+| method | what |
+| --- | --- |
+| `list()` · `set(policies)` | the project's policies · replace the set |
+
+#### `p.triggers` — cron and webhook automations
+
+A trigger starts an agent action on a schedule or an inbound webhook. See
+[Triggers](/docs/connect/triggers) for session strategy and payload
+templating.
+
+| method | what |
+| --- | --- |
+| `list()` | all triggers |
+| `create(input)` | create one |
+| `update(triggerId, input)` | edit a trigger |
+| `remove(triggerId)` | delete a trigger |
+| `fire(triggerId)` | run it now |
+| `setActivation(paused)` | pause or resume every trigger on the project |
+
+`create(input)` takes `{ name, type: 'cron' | 'webhook', prompt_template,
+slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
+timezone?, secret_env? }`. `name` and `prompt_template` are required.
+`cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
+webhook HMAC secret) applies to `type: 'webhook'`.
+
+#### `p.marketplace` / `p.registry` — installed items
+
+Installs a catalog item's files onto the project's default branch.
+`registry.*` is an identical alias of `marketplace.*`.
+
+| method | what |
+| --- | --- |
+| `marketplace.list()` · `marketplace.install(id)` | installed items · install a catalog item |
+| `marketplace.updates()` · `marketplace.update(name)` · `marketplace.updateAll()` | available updates · update one · update all |
+| `marketplace.remove(name)` | uninstall an item |
+
+#### `p.files` — repo files (read)
+
+Read-only access to the project's git tree. To read and write files inside a
+running session, use the session's file operations — see
+[Files](#files) under Modules below.
+
+| method | what |
+| --- | --- |
+| `list(options?)` · `read(path, ref?)` | the repo tree · a file's contents at a git ref |
+| `search(query)` | search the repo |
+| `archive(options?)` · `history(path)` | download a tarball · a file's git history |
+
+#### `p.git` — history
+
+| method | what |
+| --- | --- |
+| `commits()` | the commit log |
+| `commit(sha)` · `commitDiff(sha)` | one commit · its diff |
+| `branches()` · `versionDiff(from, to)` | branches · diff between two refs |
+
+#### `p.changeRequests` — lifecycle and merge
+
+A change request (CR) is how a session's work merges into the default branch.
+
+| method | what |
+| --- | --- |
+| `list()` · `get(crId)` | open CRs · one CR |
+| `diff(crId)` · `mergePreview(crId)` | its diff · preview the merge result |
+| `open(input)` · `merge(crId, input?)` | open · merge a CR |
+| `close(crId, input?)` · `reopen(crId, input?)` | close without merging · reopen a closed one |
+| `requestChanges(crId, input)` | record feedback, optionally delivered back to the originating session |
+
+#### `p.sessions` — and the session handle
+
+| method | what |
+| --- | --- |
+| `list()` | the project's sessions |
+| `create(input?)` | create a session |
+| `session(sid)` | the session handle (same as `kortix.session(id, sid)`) |
+
+The session handle is the heart of the runtime — see
+[Sessions](/docs/sdk/sessions).
+
+#### `p.approvals` — the executor approval inbox
+
+Pending executor-gated actions awaiting a decision — backs the
+permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
+
+| method | what |
+| --- | --- |
+| `list(options?)` · `sessionsNeedingInput(options?)` | pending approvals · sessions blocked on a decision |
+| `resolve(executionId, decision, scope?)` | approve or deny one — `decision: 'approve' \| 'deny'`, `scope: 'once' \| 'session' \| 'session_all'` |
+
+#### `p.gateway` — LLM observability
+
+Request logs, cost/latency rollups, budgets, and gateway API keys for this
+project's model traffic.
+
+| method | what |
+| --- | --- |
+| `logs(opts?)` · `log(logId)` | request log entries · one log entry |
+| `overview(days?)` · `series(days?)` · `breakdown(days?)` · `sessions(days?)` · `errors(days?)` | rollups, per-session cost, and errors over a window |
+| `budgets()` · `setBudget(input)` · `deleteBudget(budgetId)` | read · create/edit · remove a budget |
+| `keys()` · `createKey(name)` · `revokeKey(keyId)` | list · mint · revoke a gateway API key |
+| `playground(prompt, models)` | run one prompt against up to 6 models |
+| `routing.get()` · `routing.set(policy)` · `routing.reset()` | read · replace · inherit the routing policy |
+| `routing.preview(input)` | resolve a route without invoking a model |
+
+A routing policy holds a default model, a vision model, and an ordered
+fallback chain, each model attempted at most once; `fallbackOn` is
+`transient` or `any-error`.
+
+#### `p.channels` — Slack / email / Meet
+
+Integration surfaces that let an agent act as a Slack app, an email address,
+or a meeting bot.
+
+| method | what |
+| --- | --- |
+| `slack.installation()` · `slack.mode()` · `slack.manifest()` | current install · mode · app manifest |
+| `slack.connect(input)` · `slack.disconnect()` | connect · disconnect |
+| `slack.getFile(url)` · `slack.uploadFile(input)` | download · upload a file via the server proxy |
+| `email.installation(connectorSlug?)` · `email.mode()` | current install · mode |
+| `email.connect(input)` · `email.disconnect(...)` · `email.updatePolicy(input)` | connect · disconnect · update the send/reply policy |
+| `meet.voices()` · `meet.setVoice(voice)` · `meet.previewVoice(voiceId)` | list · set · preview a bot voice |
+| `meet.setBotName(name)` · `meet.speak(botId, text, voice?)` | rename the bot · make it speak in a live meeting |
+
+#### `p.modelDefaults` — default model preferences
+
+Account, agent, and project-scoped model defaults, resolved by the gateway.
+
+| method | what |
+| --- | --- |
+| `get()` · `set(input)` · `clear(params)` | read · set a default · clear an override |
+
+#### `p.setDefaultAgent` — project default agent
+
+`p.setDefaultAgent(agentName)` checks that the agent is declared and enabled,
+then sets it as `default_agent` in the project's `kortix.yaml`. New sessions
+prefer this agent unless a user picks another one.
+
+#### `p.updateExperimentalFeature` — feature flags
+
+`p.updateExperimentalFeature(feature, enabled)` toggles an experimental
+feature for the project. Pass `enabled: null` to clear the override.
+
+#### `p.sandbox` — templates and snapshot builds
+
+Sandbox build config beyond `sandboxHealth`/`sandboxTemplates` on the project
+handle: Dockerfile/image/warm-pool templates and their snapshot builds.
+
+| method | what |
+| --- | --- |
+| `list()` · `snapshots()` | sandboxes for this project · built snapshots |
+| `rebuildSnapshot(slug?)` · `fixWithAgent()` | rebuild a snapshot · ask an agent to fix a broken build |
+| `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
+| `setProvider(provider)` | pin or clear the sandbox provider (`null` follows the platform default) |
+
+### Escape hatch
+
+`kortix.runtime()` returns the typed OpenCode client for the active runtime.
+Prefer the session-scoped `kortix.session(pid, sid).runtime` instead.
+
+## Modules
+
+The framework-free modules behind [the client](#the-client) facade and the
+React hooks. Reach for them when you need one operation without the facade,
+a pure helper, or a Node-only isolation layer. Each module carries a
+stability tier so you know what to build on.
+
+| Tier | Meaning |
+| --- | --- |
+| Canonical | Import from the root `@kortix/sdk`. Use this for all new code. |
+| Supported | A dedicated subpath (`@kortix/sdk/react`, `@kortix/sdk/server`). First-class, not deprecated. |
+| Deprecated alias | An old subpath that still works. It re-exports code the root already exports. Import from root instead. |
+| Internal | Outside semver. Do not import this in host code. |
+
+The root entry is canonical. Every framework-free name below is importable
+straight from `@kortix/sdk`:
+
+```ts
+import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } from '@kortix/sdk';
+```
+
+### Canonical modules
+
+| Module | What it does |
+| --- | --- |
+| Files | Workspace file operations: list, read, search, write |
+| Session runtime | Health probe and preview/proxy URL builders |
+| OpenCode client | The typed OpenCode v2 client and its full type surface |
+| Auth | `authenticatedFetch` and token accessors |
+| Projects REST | The raw REST functions the facade wraps |
+| API client | `backendApi`, the low-level typed HTTP client |
+| Turns | Message-to-turn grouping, cost, and status math — see [Turns](#turns) |
+| Transcripts | `formatTranscript`, a client-side Markdown export |
+
+#### Files
+
+```ts
+import { files } from '@kortix/sdk';
+
+const tree = await files.list('/workspace/src');
+const { content } = await files.read('/workspace/README.md');
+const hits = await files.findText('TODO');
+await files.upload(file, '/workspace/uploads');
+```
+
+`files` targets the globally active sandbox. If your host runs more than one
+session at a time, call `s.files` on the session handle instead. It always
+targets that session's own sandbox. See [Sessions](/docs/sdk/sessions).
+
+#### Session runtime helpers
+
+```ts
+import { getSessionHealth, isRuntimeReady } from '@kortix/sdk';
+
+const result = await getSessionHealth();
+if (result.ok && isRuntimeReady(result.health)) {
+  // the runtime is up and OpenCode is ready
+}
+```
+
+`getSessionHealth` never throws on a non-2xx status. It returns
+`{ status, ok, health, body }` and lets you decide what a status means. The
+same module exports the URL helpers that rewrite an agent's `localhost` output
+into a reachable proxy URL: `detectLocalhostUrls`, `rewriteLocalhostUrl`,
+`proxyLocalhostUrl`, `parseLocalhostUrl`, and `buildWebProxyUrl`.
+
+#### OpenCode client
+
+```ts
+import { getClient } from '@kortix/sdk';
+
+const client = getClient();
+const { data } = await client.session.list({ limit: 100 });
+```
+
+`getClient()` returns the typed OpenCode v2 client for the active runtime,
+with auth already injected. Prefer `kortix.session(pid, sid).runtime`, the
+same client scoped to one session, over the global `getClient()` when your
+host runs more than one session.
+
+#### Auth helpers
+
+```ts
+import { authenticatedFetch, getAuthToken } from '@kortix/sdk';
+
+const res = await authenticatedFetch(`${runtimeUrl}/kortix/health`);
+const token = await getAuthToken();
+```
+
+The token comes from the `getToken` function you passed to `createKortix`.
+Most app code does not need this module — the file, session, and facade
+layers already authenticate for you.
+
+#### API client
+
+```ts
+import { backendApi } from '@kortix/sdk';
+
+const data = await backendApi.get('/some/endpoint');
+await backendApi.post('/some/endpoint', { name: 'x' });
+```
+
+`backendApi` is the typed HTTP client every REST function builds on. Use it
+only for an endpoint that has no typed wrapper yet.
+
+### Supported subpaths
+
+| Subpath | What it does |
+| --- | --- |
+| `@kortix/sdk/react` | React hooks — see [React hooks](/docs/sdk/react) |
+| `@kortix/sdk/server` | Request-scoped config for multi-tenant backends |
+
+#### Server-side isolation
+
+`createKortix` stores its config, including the token function, in one
+process-wide variable. That is fine for a browser tab, a CLI, or a
+single-tenant server. It is unsafe for a Node server that handles concurrent
+requests for different users, because the last `createKortix` call wins for
+every in-flight request. `@kortix/sdk/server` fixes this with per-request
+isolation:
+
+```ts
+import { createScopedKortix } from '@kortix/sdk/server';
+
+export async function handler(req: Request) {
+  const kortix = createScopedKortix({ backendUrl, getToken: () => tokenFor(req) });
+  return kortix.projects.list();
+}
+```
+
+`createScopedKortix` and `runWithKortix` isolate config per request with
+Node's `AsyncLocalStorage`. Never import `@kortix/sdk/server` from a browser
+bundle — it statically pulls in `node:async_hooks`.
+
+### Deprecated aliases
+
+About twenty old subpaths still work: `/files`, `/turns`, `/session`, `/auth`,
+`/projects-client`, `/api-client`, `/config`, `/event-stream`,
+`/opencode-client`, `/platform-client`, and more. Each one re-exports code the
+root `@kortix/sdk` entry already exports. They stay working so no existing
+import breaks, but new code should import from the root.
+
+### Internal modules
+
+`@kortix/sdk/internal/*` holds the zustand stores apps/web's own runtime uses
+internally — session sync state, active-runtime tracking, and reconnect
+bookkeeping. This subpath is explicitly outside semver. Do not import it in
+host code; the [React hooks](/docs/sdk/react) already expose the state you
+need.
+
+## Turns
+
+Plain functions that group session messages into turns and classify each
+message part. Use them to build a custom chat renderer instead of the
+reference one in `apps/web`. No React, no DOM — every export is a plain
+function or type, safe to call from any host.
+
+```ts
+import { classifyPart, classifyTurn, toolInfo, toolViewModel } from '@kortix/sdk';
+```
+
+Import every function from the root `@kortix/sdk` entry. The
+`@kortix/sdk/turns` subpath still works, but it is a deprecated alias. New
+code must use the root entry — see [Distribution](#distribution).
+
+### Classify a part
+
+`classifyPart(part)` normalizes one of OpenCode's 12 wire part types into a
+`ClassifiedPart` — a union keyed by `kind`. Each variant already resolves the
+fields a renderer needs: tool status, parsed JSON output, image detection.
+
+```ts
+import { classifyPart, type ClassifiedPart } from '@kortix/sdk';
+
+for (const part of message.parts) {
+  const classified: ClassifiedPart = classifyPart(part);
+  switch (classified.kind) {
+    case 'text':
+      render(classified.text);
+      break;
+    case 'tool':
+      render(classified.tool.title, classified.tool.status);
+      break;
+  }
+}
+```
+
+| `kind` | shape |
+| --- | --- |
+| `text` | `{ id, text, synthetic }` — skip `synthetic` parts; they mark shell mode's synthetic prompt |
+| `reasoning` | `{ id, text }` |
+| `tool` | `{ id, tool: ToolView }` |
+| `file` | `{ id, filename?, mime, url, isImage, isPdf }` |
+| `subtask` | `{ id, description, agent, prompt, model? }` |
+| `patch` | `{ id, hash, files, fileCount }` |
+| `snapshot` | `{ id, snapshot }` |
+| `agent` | `{ id, name }` |
+| `retry` | `{ id, attempt, message, createdAt }` |
+| `compaction` | `{ id, auto, overflow, tailStartId? }` |
+| `step` | `{ id, phase: 'start' \| 'finish', snapshot?, reason?, cost?, tokens? }` |
+| `unknown` | `{ raw }` — a part type this SDK version does not know |
+
+An unrecognized wire part degrades to `unknown` at runtime instead of
+throwing. This lets an older client talk to a newer server.
+
+A tool part classifies into `ToolView`:
+
+```ts
+interface ToolView {
+  name: string;
+  title: string;
+  status: 'pending' | 'running' | 'done' | 'error';
+  input?: Record<string, unknown>;
+  output?: string;
+  error?: string;
+  outputParsed?: unknown; // JSON.parse(output) when it parses, capped at 256KB
+  outputText?: string;    // the raw output text, always present
+}
+```
+
+Some tools (`web_search`, `image_search`, connector calls) report
+`state.status: 'completed'` even when their JSON body carries
+`success: false`. `classifyPart` detects this and sets `ToolView.status` to
+`'error'` in that case too.
+
+`classifyTurn(message)` classifies every part of one assistant message and
+returns a `ClassifiedTurn` with three fields:
+
+- `parts` — each part, classified
+- `error` — from `message.info.error`, if any
+- `isEmpty` — true when the turn has no error and no part with visible content
+
+### Tool metadata
+
+Two lookups both describe a tool. Do not confuse them.
+
+- `toolInfo(name)` — icon-free, returns `{ label, category }`. `classifyPart`
+  uses this internally. `ToolCategory` is `'shell' | 'files' | 'search' |
+  'edit' | 'web' | 'task' | 'other'`.
+- `getToolInfo(name, input)` — icon-aware, returns `{ icon, title, subtitle }`
+  for the reference tool-card UI. The subtitle comes from the tool's input,
+  for example a file path or a search query.
+
+```ts
+toolInfo('bash'); // { label: 'Shell', category: 'shell' }
+getToolInfo('write', { filePath: '/workspace/main.go' });
+// { icon: 'file-pen', title: 'Write', subtitle: 'main.go /workspace' }
+```
+
+Both functions match tool-name prefixes, so Kortix's plugin tool families
+(`agent_*`, `session_*`, `task_*`, `trigger_*`, `project_*`, `pty_*`) resolve
+without a registry update. An unknown tool name never throws — it falls back
+to `humanizeToolName(name)` with category `'other'`.
+
+### Tool view models
+
+`toolViewModel(classifiedTool)` maps a classified tool part to a shape built
+for one tool family. A UI can then render it specially instead of as a
+generic JSON blob.
+
+```ts
+const vm = toolViewModel(classifiedTool);
+if (vm.kind === 'shell') {
+  render(vm.command, vm.stdout, vm.exitCode);
+}
+```
+
+| `kind` | shape | tools |
+| --- | --- | --- |
+| `web-search` | `{ query, results?, answer?, error? }` | `web_search`, `image_search` |
+| `shell` | `{ command, stdout?, exitCode? }` | `bash` |
+| `file-read` | `{ path, preview? }` | `read` |
+| `file-write` | `{ path, preview? }` | `write` |
+| `file-edit` | `{ path, diff?: DiffLine[] }` | `edit`, `morph_edit` |
+| `search` | `{ pattern, matches?: SearchMatch[] }` | `grep`, `glob` |
+| `task` | `{ description, agent? }` | `task` |
+| `todo` | `{ items: TodoItem[] }` | `todowrite` |
+| `question` | `{ questions: QuestionItem[], answers? }` | `question`, `ask` |
+| `generic` | `{ label, inputPretty?, outputPretty? }` | everything else, always safe to render |
+
+`DiffLine` is `{ type: 'added' | 'removed' | 'unchanged', text }`. String
+fields are capped so one large tool output never breaks a render: 4000
+characters for pretty-printed JSON, 256KB before a diff runs.
+
+### Group messages into turns
+
+A turn pairs one user message with the assistant messages that answered it.
+It is the unit a chat UI renders as one exchange.
+
+```ts
+import { groupMessagesIntoTurns, collectTurnParts, type TurnLike } from '@kortix/sdk';
+
+const turns: TurnLike[] = groupMessagesIntoTurns(messages);
+for (const turn of turns) {
+  const parts = collectTurnParts(turn);
+}
+```
+
+`groupMessagesIntoTurns` links each assistant message to its parent user
+message. It falls back to message order when a parent link is missing. It
+also attaches an orphan assistant message — one with no parent that precedes
+every user message — to the first turn, not the last.
+
+Related helpers:
+
+- `findLastTextPart(parts)` — the turn's final response text
+- `turnHasSteps(parts)` — true if a `tool`, `compaction`, `snapshot`, or `patch` part exists
+- `isShellMode(turn)` / `getShellModePart(turn)` — a turn that is one synthetic prompt driving one `bash` call
+
+### Type guards
+
+Narrow a part by `type`:
+
+```ts
+import { isTextPart, isToolPart, getPartText } from '@kortix/sdk';
+
+if (isTextPart(part)) {
+  // part.type narrowed to 'text'
+}
+const text = getPartText(part); // works for 'text' and 'reasoning' parts
+```
+
+Also available: `isReasoningPart`, `isFilePart`, `isAgentPart`,
+`isCompactionPart`, `isSnapshotPart`, `isPatchPart`.
+
+### Status and errors
+
+```ts
+import { getWorkingState, getTurnStatus, formatDuration } from '@kortix/sdk';
+
+const status = getTurnStatus(parts, childMessages); // "Running commands..."
+formatDuration(4300); // "4s" — durations under 1s return ''
+```
+
+`getTurnStatus` scans a turn's parts for the last status line. When the last
+part is a running `task` delegation, pass `childMessages` so the status shows
+the sub-agent's real activity instead of a generic "Delegating..." line.
+
+```ts
+import { getTurnError, getChildSessionError, unwrapError } from '@kortix/sdk';
+
+getTurnError(turn);                    // the first assistant error, unwrapped
+getChildSessionError(childMessages);   // newest error in a sub-agent's messages
+unwrapError(rawError);                 // normalizes double-JSON and mixed error shapes
+```
+
+### Cost and token totals
+
+```ts
+import { getTurnCost, getSessionCost, formatCost, formatTokens, COST_MARKUP } from '@kortix/sdk';
+
+const info = getTurnCost(partsWithMessage, modelPricingLookup);
+const sessionCost = getSessionCost(messages, modelPricingLookup);
+
+formatCost(0.0032);  // "$0.003"
+formatTokens(12345); // "12k"
+```
+
+Both functions read cost and token totals from `step-finish` parts. When a
+part reports zero, they estimate cost from token counts using a
+`ModelPricingLookup`. Every total is multiplied by `COST_MARKUP` (`1.2`) to
+match what Kortix bills.
+
+### Child sessions and pending requests
+
+A `task` tool call delegates to a child session. These helpers connect a
+parent turn to that child's own messages.
+
+```ts
+import { getChildSessionId, getChildSessionToolParts } from '@kortix/sdk';
+
+const childId = getChildSessionId(taskToolPart);
+const steps = getChildSessionToolParts(childMessages);
+```
+
+Match a pending permission or question request to its tool call, and find
+which tool parts to hide while one is active:
+
+```ts
+import { getPermissionForTool, getHiddenToolParts, isToolPartHidden } from '@kortix/sdk';
+
+const permission = getPermissionForTool(permissions, callID);
+const hidden = getHiddenToolParts(activePermission, activeQuestion);
+```
+
+### Formatting and lists
+
+```ts
+import { getFilename, getDirectory, relativizePath, stripAnsi } from '@kortix/sdk';
+
+getFilename('/workspace/src/main.go');               // "main.go"
+getDirectory('/workspace/src/main.go');               // "/workspace/src"
+relativizePath('/workspace/src/main.go', '/workspace'); // "src/main.go"
+```
+
+Session-list helpers operate on the same session data:
+
+```ts
+import { sortSessions, childMapByParent, allDescendantIds } from '@kortix/sdk';
+
+sessions.sort(sortSessions(Date.now())); // pins sessions updated in the last 60s
+const childMap = childMapByParent(sessions);
+const descendants = allDescendantIds(childMap, sessionId);
+```
+
+Retry state: `getRetryInfo(sessionStatus)` returns `{ attempt, message, next
+}` when `status.type === 'retry'`, with `message` capped to 60 characters.
+`getRetryMessage(sessionStatus)` returns the full message.
+
+### Structural types
+
+The grouping and status functions accept minimal structural types —
+`PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike`,
+`SessionStatusLike` — instead of the concrete `@opencode-ai/sdk` wire types.
+Your own message and part shapes flow through unchanged as long as they match
+the required fields. `classifyPart` and `classifyTurn` are the exception.
+They type against the real `@opencode-ai/sdk` `Part` union, so their
+exhaustiveness check catches a new wire part type at build time.
+
+## Distribution
+
+```sh
+npm install @kortix/sdk
+```
+
+The package ships as compiled ESM with full TypeScript type declarations.
+`react` and `@tanstack/react-query` are optional peer dependencies. If you
+use `@kortix/sdk/react`, install both.
+
+```ts
+import { createKortix } from '@kortix/sdk'; // framework-free core
+import { useSession } from '@kortix/sdk/react'; // optional React layer
+import { createScopedKortix } from '@kortix/sdk/server'; // Node and Bun servers
+```
+
+### Entry points and stability
+
+The root entry, `@kortix/sdk`, is canonical. It exports the full
+framework-free surface and runs in browsers, Node 18+, Bun, and edge
+runtimes.
+
+| Entry | Tier | Contract |
+| --- | --- | --- |
+| `@kortix/sdk` | Canonical | Framework-free. Never imports React or `node:*`. |
+| `@kortix/sdk/react` | Supported | React hooks. The only entry that imports React. |
+| `@kortix/sdk/server` | Supported | Per-request config isolation for Node and Bun servers, via `node:async_hooks`. Never bundle it into a browser. |
+| Legacy subpaths (`/projects-client`, `/turns`, `/files`, and more) | Deprecated | Still work. Each re-exports from the root. Import from the root instead. |
+| `@kortix/sdk/internal/*` | Internal | Used by the Kortix web app only. Not a supported API. |
+
+### CDN bundles
+
+The package also ships two browser bundles, built by `tsup`: an ESM bundle
+(`dist/kortix.esm.min.js`) and an IIFE global (`dist/kortix.global.js`) that
+defines `window.Kortix`.
+
+```html
+<script src="https://unpkg.com/@kortix/sdk/dist/kortix.global.js"></script>
+<script>
+  const kortix = Kortix.createKortix({
+    backendUrl: 'https://api.kortix.com/v1',
+    getToken: async () => KEY,
+  });
+</script>
+```
+
+`window.Kortix` exposes the same root entry as the npm import:
+`Kortix.createKortix`, `Kortix.classifyTurn`, `Kortix.ApiError`.
+
+## See also
+
+- [SDK](/docs/sdk) — install and your first session.
+- [Sessions](/docs/sdk/sessions) — lifecycle, streaming, and error handling.
+- [React hooks](/docs/sdk/react) — the reactive layer built on these modules.

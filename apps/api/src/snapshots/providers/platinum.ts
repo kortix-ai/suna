@@ -74,6 +74,9 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
     m.includes('timeout') || m.includes('timed out') || m.includes('econnreset') ||
     m.includes('econnrefused') || m.includes('network') || m.includes('gateway') ||
     m.includes(' 502') || m.includes(' 503') || m.includes(' 504') ||
+    // Rate limiting is transient by definition — failing the build on a 429
+    // re-queues the whole bake later, generating more traffic, not less.
+    m.includes(' 429') || m.includes('too many requests') ||
     m.includes('last state: missing')
   );
 }
