@@ -361,8 +361,11 @@ export function surfaceApiError(err: unknown): number {
         `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
       );
     } else if (err.status === 403) {
+      // Surface the server's specific reason when it has one (e.g. the
+      // backend-only origin_ref/secrets 403 tells you to use an API key/PAT);
+      // fall back to the generic role message otherwise.
       process.stderr.write(
-        `${status.err('Forbidden — you may not have permission on this project.')}\n`,
+        `${status.err(err.message || 'Forbidden — you may not have permission on this project.')}\n`,
       );
     } else if (err.status === 404) {
       process.stderr.write(`${status.err(err.message || 'Not found.')}\n`);

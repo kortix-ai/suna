@@ -50,4 +50,13 @@ describe('parseSessionOverrides', () => {
     expect(() => parseSessionOverrides(['--connector', 'noeq'])).toThrow(/alias=profile_id/);
     expect(() => parseSessionOverrides(['--context', 'noeq'])).toThrow(/key=value/);
   });
+
+  test('--no-secrets narrows to zero secrets (distinct from omitting the field)', () => {
+    expect(parseSessionOverrides(['--no-secrets']).secrets).toEqual([]);
+    expect(parseSessionOverrides([]).secrets).toBeUndefined();
+  });
+
+  test('rejects --secret together with --no-secrets', () => {
+    expect(() => parseSessionOverrides(['--secret', 'X', '--no-secrets'])).toThrow(/not both/);
+  });
 });

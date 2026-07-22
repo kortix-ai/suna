@@ -37,11 +37,13 @@ Subcommands:
                                     prints the session object (capture
                                     session_id to orchestrate).
                                     Backend overrides (require a backend token —
-                                    see docs/kortix-as-a-backend.md):
+                                    see docs/KORTIX_AS_A_BACKEND_GUIDE.md):
                                     --origin-ref <user-id>  attribute to your
                                       end-user (surfaced as KORTIX_ORIGIN_REF).
                                     --secret <id>           narrow injected
                                       secrets to these identifiers (repeatable).
+                                    --no-secrets            inject zero project
+                                      secrets into the session.
                                     --connector <alias>=<profile-id>  bind a
                                       connector to a profile (repeatable).
                                     --context <key>=<value>  runtime context
@@ -197,7 +199,7 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 /** Start-time override flags for `sessions new`. Model/agent apply to any
  *  caller; origin_ref + secrets are Kortix-as-a-Backend fields the API accepts
  *  only from a backend-origin token (a PAT / service-account bearer) and 403s
- *  otherwise — see docs/kortix-as-a-backend.md. */
+ *  otherwise — see docs/KORTIX_AS_A_BACKEND_GUIDE.md. */
 export type SessionOverrides = {
   model?: string;
   originRef?: string;
@@ -215,7 +217,14 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   const originRef = takeFlagValue(argv, ['--origin-ref']);
   if (originRef) out.originRef = originRef;
   const secrets = takeFlagValues(argv, ['--secret']);
+  const noSecrets = takeFlagBool(argv, ['--no-secrets']);
+  if (secrets.length && noSecrets) {
+    throw new Error('pass either --secret <id> or --no-secrets, not both');
+  }
+  // `secrets: []` (inject zero project secrets) is a distinct, documented state
+  // from omitting the field (agent's normal set); --no-secrets expresses it.
   if (secrets.length) out.secrets = secrets;
+  else if (noSecrets) out.secrets = [];
   for (const pair of takeFlagValues(argv, ['--connector'])) {
     const eq = pair.indexOf('=');
     if (eq <= 0) throw new Error(`--connector expects alias=profile_id, got "${pair}"`);
@@ -289,7 +298,7 @@ async function sessionsNew(
   if (agent) body.agent_name = agent;
   if (overrides.model) body.opencode_model = overrides.model;
   if (overrides.originRef) body.origin_ref = overrides.originRef;
-  if (overrides.secrets) body.secrets = overrides.secrets;
+  if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
   if (overrides.connectors) body.connector_bindings = overrides.connectors;
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
 
@@ -312,6 +321,7 @@ async function sessionsNew(
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
     }
+    let ready = false;
     for (let i = 0; i < 75; i += 1) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
       try {
@@ -325,7 +335,10 @@ async function sessionsNew(
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
-        if (start.stage === 'ready') break;
+        if (start.stage === 'ready') {
+          ready = true;
+          break;
+        }
         if (start.stage === 'failed' || start.stage === 'stopped') {
           if (json) {
             emitJson(created);
@@ -345,6 +358,18 @@ async function sessionsNew(
         }
         return 1;
       }
+    }
+    // Loop exhausted without reaching 'ready' — --wait is a hard readiness
+    // gate, so a timeout is a failure (exit 1), not a silent success.
+    if (!ready) {
+      if (json) {
+        emitJson(created);
+      } else {
+        process.stderr.write(
+          `${status.err(`Timed out waiting for session readiness after ~5 min (status: ${created.status}).`)}\n`,
+        );
+      }
+      return 1;
     }
   }
 
