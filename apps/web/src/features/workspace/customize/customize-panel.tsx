@@ -15,7 +15,6 @@ import { ComputersView } from '@/features/workspace/customize/sections/view/comp
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
-import { RuntimeView } from '@/features/workspace/customize/sections/view/runtime-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
