@@ -1,5 +1,32 @@
 export type PtyCloseAction = 'ended' | 'reconnect' | 'replace';
 
+export type TerminalPanelState = 'connecting' | 'error' | 'empty' | 'terminal';
+
+export function deriveTerminalPanelState(input: {
+  hasServerUrl: boolean;
+  serverWaitExpired: boolean;
+  hasPty: boolean;
+  isListLoading: boolean;
+  isListError: boolean;
+  isCreatePending: boolean;
+  isCreateError: boolean;
+  isEnsuring: boolean;
+}): TerminalPanelState {
+  if (input.hasPty) return 'terminal';
+  if (!input.hasServerUrl) return input.serverWaitExpired ? 'error' : 'connecting';
+  if (input.isListError || input.isCreateError) return 'error';
+  if (input.isListLoading || input.isCreatePending || input.isEnsuring) return 'connecting';
+  return 'empty';
+}
+
+export function shouldExpirePtyConnect(
+  startedAt: number,
+  now: number,
+  timeoutMs: number,
+): boolean {
+  return now - startedAt >= timeoutMs;
+}
+
 export function classifyPtyClose(input: {
   code: number;
   reason: string;

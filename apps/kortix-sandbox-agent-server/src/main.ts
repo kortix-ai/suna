@@ -15,6 +15,7 @@ import {
 import { logger } from './logger'
 import {
   createOpencodeSupervisor,
+  hasKortixLlmGateway,
   OPENCODE_HOME,
   refreshGatewayCatalogFile,
   waitForOpencodeReady,
@@ -1391,12 +1392,23 @@ async function isRootOpencodeSession(
   }
 }
 
-/** Per-session model override from KORTIX_OPENCODE_MODEL. Most models use
- *  provider/model form and are returned in OpenCode's `{ providerID, modelID }`
- *  shape. Bare legacy Zen ids are normalized onto the OpenCode provider so old
- *  queued boot prompts keep using the schema accepted by `prompt_async`. */
+/** Per-session model override from KORTIX_OPENCODE_MODEL.
+ *
+ * Gateway mode exposes one OpenCode provider (`kortix`). Its model ids are the
+ * complete gateway wire refs, including nested refs such as
+ * `codex/gpt-5.6-sol` and `anthropic/claude-sonnet-4-6`. Gateway overrides must
+ * therefore keep the complete wire ref as `modelID` instead of treating its
+ * first segment as an OpenCode provider.
+ *
+ * Gateway-disabled sessions keep the native `provider/model` split. Bare
+ * legacy Zen ids remain normalized onto the native OpenCode provider. */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
+  if (!raw) return undefined
+  if (hasKortixLlmGateway(process.env)) {
+    const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+    return modelID ? { providerID: 'kortix', modelID } : undefined
+  }
   if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
   const slash = raw.indexOf('/')
   if (slash <= 0 || slash === raw.length - 1) return undefined

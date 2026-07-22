@@ -133,13 +133,13 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     expect(config.model).toMatch(/^kortix\//)
   })
 
-  test('preserves user-set default model from pre-existing config', async () => {
+  test('routes a user-set default model through the Kortix provider', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const existing = JSON.stringify({ model: 'anthropic/claude-sonnet-4.6' })
     const config = JSON.parse(
       (await buildOpencodeConfigContent({ ...GATEWAY_ENV, OPENCODE_CONFIG_CONTENT: existing }))!,
     )
-    expect(config.model).toBe('anthropic/claude-sonnet-4.6')
+    expect(config.model).toBe('kortix/anthropic/claude-sonnet-4.6')
   })
 
   test('does not include executor MCP alongside the provider unless explicitly enabled', async () => {
@@ -274,14 +274,31 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
     expect(await buildOpencodeConfigContent({})).toBeUndefined()
   })
 
-  test('the gateway overlay fills small_model but leaves the compiled top-level model untouched', async () => {
+  test('the gateway overlay normalizes compiled top-level and agent models', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const config = JSON.parse(
       (await buildOpencodeConfigContent({ ...GATEWAY_ENV, KORTIX_COMPILED_AGENT_CONFIG: COMPILED }))!,
     )
-    expect(config.model).toBe('anthropic/claude-sonnet-5')
+    expect(config.model).toBe('kortix/anthropic/claude-sonnet-5')
     expect(config.small_model).toMatch(/^kortix\//)
-    expect(config.agent.support).toBeDefined()
+    expect(config.agent.support.model).toBe('kortix/anthropic/claude-sonnet-5')
+  })
+
+  test('the gateway overlay keeps the complete Codex wire model as the Kortix model id', async () => {
+    stubGatewayModels(GATEWAY_CATALOG)
+    const compiled = JSON.stringify({
+      model: 'codex/gpt-5.6-sol',
+      agent: { mike: { mode: 'primary', model: 'codex/gpt-5.6-sol' } },
+    })
+    const raw = await buildOpencodeConfigContent({
+      ...GATEWAY_ENV,
+      KORTIX_COMPILED_AGENT_CONFIG: compiled,
+    })
+    expect(raw).toBeDefined()
+    if (!raw) throw new Error('expected gateway config')
+    const config = JSON.parse(raw)
+    expect(config.model).toBe('kortix/codex/gpt-5.6-sol')
+    expect(config.agent.mike.model).toBe('kortix/codex/gpt-5.6-sol')
   })
 
   test('a Slack session still gets its question:deny overlay on top of the compiled agent map', async () => {
