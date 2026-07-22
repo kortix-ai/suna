@@ -18,7 +18,7 @@ set -euo pipefail
 
 # Some providers start the image as root with only HOME=/ and omit the image
 # PATH. Restore the runtime environment before any command resolves.
-KORTIX_PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.venv/bin:/home/kortix/.bun/bin"
+KORTIX_PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin"
 case ":${PATH:-}:" in
   *:"${KORTIX_PATH}":*) ;;
   *) PATH="${KORTIX_PATH}:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" ;;

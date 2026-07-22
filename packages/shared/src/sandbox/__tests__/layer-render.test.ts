@@ -90,32 +90,27 @@ describe('rendered layer (golden)', () => {
   }
 });
 
-describe('the Python floor is managed by uv', () => {
+describe('the Python runtime is managed by uv', () => {
   const toolchain = kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION });
 
   test('does not install or mutate the distro Python', () => {
     expect(toolchain).not.toContain('python3 python3-dev python3-pip python3-venv');
     expect(toolchain).not.toContain('--break-system-packages');
-    expect(toolchain).toContain('RUN uv pip install --python /home/kortix/.venv/bin/python --no-cache \\');
+    expect(toolchain).not.toContain('uv pip install');
   });
 
-  test('installs an exact managed Python and seeds a user-facing venv', () => {
-    expect(toolchain).toContain('UV_PYTHON_DOWNLOADS=automatic uv python install 3.12.13');
-    expect(toolchain).toContain('uv venv --seed --python 3.12.13 /home/kortix/.venv');
+  test('installs an exact managed Python as python and python3', () => {
+    expect(toolchain).toContain('UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13');
     expect(toolchain).toContain('assert sys.version_info[:3] == (3, 12, 13)');
-  });
-
-  test('verifies the import floor through the venv interpreter', () => {
-    expect(toolchain).toContain(
-      "    && python -c 'import importlib;",
-    );
+    expect(toolchain).toContain("&& python3 -c 'import sys;");
   });
 
   test('extends PATH rather than stomping it', () => {
     // Verified against BuildKit AND buildah's classic imagebuilder: both expand
     // $PATH in ENV from the base image config. A hardcoded absolute PATH here
     // would silently drop a user's cargo/nvm/conda entries.
-    expect(toolchain).toContain('/home/kortix/.venv/bin');
+    expect(toolchain).toContain('/home/kortix/.local/bin');
+    expect(toolchain).not.toContain('/home/kortix/.venv/bin');
   });
 
   test('sets DEBIAN_FRONTEND itself instead of inheriting it by luck', () => {

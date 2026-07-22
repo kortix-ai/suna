@@ -65,12 +65,9 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
     expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
-    expect(merged).toContain('uv python install 3.12.13');
-    expect(merged).toContain('uv venv --seed --python 3.12.13 /home/kortix/.venv');
-    expect(merged).toContain('"openpyxl>=3.1"');
-    expect(merged).toContain('"pandas>=2.2"');
-    expect(merged).toContain('"playwright>=1.58"');
-    expect(merged).toContain('importlib.import_module(m)');
+    expect(merged).toContain('uv python install --default 3.12.13');
+    expect(merged).not.toContain('uv venv');
+    expect(merged).not.toContain('uv pip install');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     // The admin CLI is baked alongside the daemon and verified at build time.

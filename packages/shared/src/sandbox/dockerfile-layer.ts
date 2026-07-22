@@ -58,12 +58,12 @@ import {
  */
 /**
  * The `kortix` user's toolchain directories — everything the runtime resolves
- * from PATH (opencode via pnpm-global, pnpm itself, the uv venv, bun). Shared
+ * from PATH (opencode via pnpm-global, pnpm itself, uv-managed Python, bun). Shared
  * between the toolchain layer's `ENV PATH` and the staged entrypoint script.
  * Some providers discard `ENV` at boot, so the entrypoint restores this value.
  */
 export const KORTIX_USER_PATH_DIRS =
-  '/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.venv/bin:/home/kortix/.bun/bin';
+  '/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin';
 
 export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '# syntax=docker/dockerfile:1.7',
@@ -232,7 +232,7 @@ export interface BuildLayeredDockerfileOpts
 
 /**
  * The network-install half of the Kortix runtime layer: the apt floor, the
- * starter Python package floor, opencode + its baked config deps, bun, the
+ * uv-managed Python, opencode + its baked config deps, bun, the
  * build-time opencode warm-ups (incl. the optional per-project repo bake), and
  * agent-browser + its Playwright Chromium.
  *
@@ -382,11 +382,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'USER root',
     // tmux: lets the agent run long-running processes (dev servers for preview)
     // in a detached session that survives the agent\'s bash tool call.
-    // python3 + pip + office/PDF/data packages: the starter marketplace skills
-    // assume these are present (xlsx/openpyxl, visualization/pandas,
-    // pdf/docx/pptx/presentations, LaTeX paper creation). Bake them into every
-    // layered image so custom sandbox Dockerfiles get the same runtime floor as
-    // the platform default image.
+    // Office, PDF, OCR, and LaTeX tools support the starter marketplace skills.
+    // Bake them into every layered image so custom sandbox Dockerfiles get the
+    // same system tool floor as the platform default image.
     // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a
     // snapshot-restored VM keeps its snapshot-baked IP until the
     // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
@@ -418,53 +416,13 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `ENV PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
     'USER kortix',
     '',
-    // uv owns the complete Python floor: its standalone binary needs no system
-    // Python, and the exact managed CPython patch is downloaded into a stable
-    // image path. --seed keeps pip available to users at runtime; package
-    // installation itself goes through uv for speed and reproducibility.
+    // Install one exact managed Python and expose it as python/python3. Agents
+    // use `uv run --with` for dependencies instead of sharing a global venv.
     `RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh \\`,
     '    && uv --version \\',
-    `    && UV_PYTHON_DOWNLOADS=automatic uv python install ${PYTHON_VERSION} \\`,
-    `    && UV_PYTHON_DOWNLOADS=never uv venv --seed --python ${PYTHON_VERSION} /home/kortix/.venv \\`,
-    `    && python -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')}); print("managed python:", sys.version)'`,
-    '',
-    '# Starter skill Python package floor (document/data/PDF/presentation helpers).',
-    '# Installed into the uv-created, uv-managed Python environment.',
-    'RUN uv pip install --python /home/kortix/.venv/bin/python --no-cache \\',
-    '        "beautifulsoup4>=4.12" \\',
-    '        "lxml>=5" \\',
-    '        "markdownify>=0.13" \\',
-    '        "markitdown[pptx]>=0.1.0" \\',
-    '        "matplotlib>=3.8" \\',
-    '        "numpy>=1.26" \\',
-    '        "openpyxl>=3.1" \\',
-    '        "pandas>=2.2" \\',
-    '        "pdf2docx>=0.5" \\',
-    '        "pdf2image>=1.17" \\',
-    '        "pdfplumber>=0.11" \\',
-    '        "pillow>=10" \\',
-    '        "playwright>=1.58" \\',
-    '        "plotly>=5.22" \\',
-    '        "pymupdf>=1.24" \\',
-    '        "pypdf>=4" \\',
-    '        "pypdfium2>=4.30" \\',
-    '        "pytesseract>=0.3" \\',
-    '        "python-docx>=1.1" \\',
-    '        "python-pptx>=1.0" \\',
-    '        "reportlab>=4.2" \\',
-    '        "requests>=2.32" \\',
-    '        "scikit-learn>=1.4" \\',
-    '        "scipy>=1.12" \\',
-    '        "seaborn>=0.13" \\',
-    '        "youtube-transcript-api>=0.6" \\',
-    // Verify the import floor with a `python3 -c` ONE-LINER, NOT a RUN heredoc.
-    // Platinum builds with buildah's classic imagebuilder, which does not support
-    // Dockerfile RUN heredocs (and ignores `# syntax=docker/dockerfile:1.7`): it
-    // parses the heredoc body's first line ("import importlib") as a Dockerfile
-    // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
-    // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
-    // equivalent (still fails the layer if any module is missing) and portable.
-    '    && python -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
+    `    && UV_PYTHON_DOWNLOADS=automatic uv python install --default ${PYTHON_VERSION} \\`,
+    `    && python -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')}); print("managed python:", sys.version)' \\`,
+    `    && python3 -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')})'`,
     '',
     // Bootstrap pnpm without relying on a Node/npm already being present in the
     // user's image. pnpm's standalone executable then owns the JavaScript

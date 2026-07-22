@@ -29,45 +29,14 @@ RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
     && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral
-ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.venv/bin:/home/kortix/.bun/bin:$PATH
+ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
 USER kortix
 
 RUN curl -LsSf https://astral.sh/uv/0.11.30/install.sh | sh \\
     && uv --version \\
-    && UV_PYTHON_DOWNLOADS=automatic uv python install 3.12.13 \\
-    && UV_PYTHON_DOWNLOADS=never uv venv --seed --python 3.12.13 /home/kortix/.venv \\
-    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)'
-
-# Starter skill Python package floor (document/data/PDF/presentation helpers).
-# Installed into the uv-created, uv-managed Python environment.
-RUN uv pip install --python /home/kortix/.venv/bin/python --no-cache \\
-        "beautifulsoup4>=4.12" \\
-        "lxml>=5" \\
-        "markdownify>=0.13" \\
-        "markitdown[pptx]>=0.1.0" \\
-        "matplotlib>=3.8" \\
-        "numpy>=1.26" \\
-        "openpyxl>=3.1" \\
-        "pandas>=2.2" \\
-        "pdf2docx>=0.5" \\
-        "pdf2image>=1.17" \\
-        "pdfplumber>=0.11" \\
-        "pillow>=10" \\
-        "playwright>=1.58" \\
-        "plotly>=5.22" \\
-        "pymupdf>=1.24" \\
-        "pypdf>=4" \\
-        "pypdfium2>=4.30" \\
-        "pytesseract>=0.3" \\
-        "python-docx>=1.1" \\
-        "python-pptx>=1.0" \\
-        "reportlab>=4.2" \\
-        "requests>=2.32" \\
-        "scikit-learn>=1.4" \\
-        "scipy>=1.12" \\
-        "seaborn>=0.13" \\
-        "youtube-transcript-api>=0.6" \\
-    && python -c 'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")'
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
+    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
+    && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
 
 ENV PNPM_VERSION=11.15.1 \\
     SHELL=/bin/bash
@@ -184,45 +153,14 @@ RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
     && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral
-ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.venv/bin:/home/kortix/.bun/bin:$PATH
+ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
 USER kortix
 
 RUN curl -LsSf https://astral.sh/uv/0.11.30/install.sh | sh \\
     && uv --version \\
-    && UV_PYTHON_DOWNLOADS=automatic uv python install 3.12.13 \\
-    && UV_PYTHON_DOWNLOADS=never uv venv --seed --python 3.12.13 /home/kortix/.venv \\
-    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)'
-
-# Starter skill Python package floor (document/data/PDF/presentation helpers).
-# Installed into the uv-created, uv-managed Python environment.
-RUN uv pip install --python /home/kortix/.venv/bin/python --no-cache \\
-        "beautifulsoup4>=4.12" \\
-        "lxml>=5" \\
-        "markdownify>=0.13" \\
-        "markitdown[pptx]>=0.1.0" \\
-        "matplotlib>=3.8" \\
-        "numpy>=1.26" \\
-        "openpyxl>=3.1" \\
-        "pandas>=2.2" \\
-        "pdf2docx>=0.5" \\
-        "pdf2image>=1.17" \\
-        "pdfplumber>=0.11" \\
-        "pillow>=10" \\
-        "playwright>=1.58" \\
-        "plotly>=5.22" \\
-        "pymupdf>=1.24" \\
-        "pypdf>=4" \\
-        "pypdfium2>=4.30" \\
-        "pytesseract>=0.3" \\
-        "python-docx>=1.1" \\
-        "python-pptx>=1.0" \\
-        "reportlab>=4.2" \\
-        "requests>=2.32" \\
-        "scikit-learn>=1.4" \\
-        "scipy>=1.12" \\
-        "seaborn>=0.13" \\
-        "youtube-transcript-api>=0.6" \\
-    && python -c 'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")'
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
+    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
+    && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
 
 ENV PNPM_VERSION=11.15.1 \\
     SHELL=/bin/bash
@@ -340,45 +278,14 @@ RUN useradd --create-home --shell /bin/bash --user-group kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
     && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral
-ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.venv/bin:/home/kortix/.bun/bin:$PATH
+ENV PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:/home/kortix/.bun/bin:$PATH
 USER kortix
 
 RUN curl -LsSf https://astral.sh/uv/0.11.30/install.sh | sh \\
     && uv --version \\
-    && UV_PYTHON_DOWNLOADS=automatic uv python install 3.12.13 \\
-    && UV_PYTHON_DOWNLOADS=never uv venv --seed --python 3.12.13 /home/kortix/.venv \\
-    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)'
-
-# Starter skill Python package floor (document/data/PDF/presentation helpers).
-# Installed into the uv-created, uv-managed Python environment.
-RUN uv pip install --python /home/kortix/.venv/bin/python --no-cache \\
-        "beautifulsoup4>=4.12" \\
-        "lxml>=5" \\
-        "markdownify>=0.13" \\
-        "markitdown[pptx]>=0.1.0" \\
-        "matplotlib>=3.8" \\
-        "numpy>=1.26" \\
-        "openpyxl>=3.1" \\
-        "pandas>=2.2" \\
-        "pdf2docx>=0.5" \\
-        "pdf2image>=1.17" \\
-        "pdfplumber>=0.11" \\
-        "pillow>=10" \\
-        "playwright>=1.58" \\
-        "plotly>=5.22" \\
-        "pymupdf>=1.24" \\
-        "pypdf>=4" \\
-        "pypdfium2>=4.30" \\
-        "pytesseract>=0.3" \\
-        "python-docx>=1.1" \\
-        "python-pptx>=1.0" \\
-        "reportlab>=4.2" \\
-        "requests>=2.32" \\
-        "scikit-learn>=1.4" \\
-        "scipy>=1.12" \\
-        "seaborn>=0.13" \\
-        "youtube-transcript-api>=0.6" \\
-    && python -c 'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")'
+    && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
+    && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
+    && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
 
 ENV PNPM_VERSION=11.15.1 \\
     SHELL=/bin/bash

@@ -314,7 +314,7 @@ Finance figures are only correct for a specific fiscal period. Derive the period
 - Always pin the fiscal year + quarter; an unqualified figure isn't verifiable.
 - Non-GAAP metrics (e.g. adjusted EBITDA) live in earnings commentary, not standardized statements — check transcripts/press releases.
 - If structured data is unavailable or empty for a claim, fall back to web search; don't retry the same lookup repeatedly.
-- For a stock-price change, fetch the start and end close, then use `bash` with `python -c` to compute the percentage change.
+- For a stock-price change, fetch the start and end close, then use `bash` with `uv run python -c` to compute the percentage change.
 
 ## Evidence Examples
 

@@ -7,6 +7,8 @@ defaultProjectInstallOrder: 40
 
 # PDF Processing
 
+Run Python files with `uv run --with <package>`. Add one `--with` flag for each imported package.
+
 ## Quick Start
 
 ```python

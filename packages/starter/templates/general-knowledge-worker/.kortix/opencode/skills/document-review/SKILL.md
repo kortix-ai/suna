@@ -53,7 +53,7 @@ A "claim" is a factual statement in the document that requires external verifica
   - Published data ("The study had 10,000 participants")
   - Attributed claims ("According to WHO, global life expectancy is 73 years")
 
-- `numerical_consistency`: Calculations using numbers from within the document. Requires python code to perform calculations to verify.
+- `numerical_consistency`: Calculations using numbers from within the document. Requires Python code to perform calculations to verify.
   - Addition/subtraction ("Region A: 500 + Region B: 300 = 800 total")
   - Percentages ("40% of 1,000 respondents = 400")
   - Ratios ("$2.4M budget / 12 months = $200K per month")
@@ -239,12 +239,12 @@ Fact-check each claim using the `web_search` and `bash` tools, then record resul
 - Be pragmatic: if a claim cannot be verified after 2-3 search attempts with different query formulations, mark it as inconclusive and move on. Do not spend unlimited turns chasing a single claim.
 
 
-**bash tool** — Verify `numerical_consistency` claims with Python calculations. Takes a `command` string — use `python -c` one-liners with exact values from the document. **NEVER do mental math** — always use bash with Python for numerical verification.
+**bash tool** — Verify `numerical_consistency` claims with Python calculations. Takes a `command` string — use `uv run python -c` one-liners with exact values from the document. **NEVER do mental math** — always use bash with Python for numerical verification.
 - Examples:
-  - `python -c "print(500 + 300)"` → verify "500 + 300 = 800"
-  - `python -c "print(0.40 * 1000)"` → verify "40% of 1,000 = 400"
-  - `python -c "print(2.4 / 12)"` → verify "$2.4M / 12 months = $200K"
-  - `python -c "print((125 - 100) / 100 * 100)"` → verify "25% growth from 100 to 125"
+  - `uv run python -c "print(500 + 300)"` → verify "500 + 300 = 800"
+  - `uv run python -c "print(0.40 * 1000)"` → verify "40% of 1,000 = 400"
+  - `uv run python -c "print(2.4 / 12)"` → verify "$2.4M / 12 months = $200K"
+  - `uv run python -c "print((125 - 100) / 100 * 100)"` → verify "25% growth from 100 to 125"
 
 **Parallelism** — Fact-checking is the most time-consuming phase. `web_search` and `bash` (Python calculations) are independent and can run in parallel (up to 4 per turn).
 
@@ -280,9 +280,9 @@ One section per call, sequential in document order. Categorize each issue by its
 Create an annotated copy of the document with issues as comments. `{base_name}` is the original filename without its extension.
 
 - **PDF/PPTX/XLSX** — Single command; the script reads issues from `document_review_state.json` automatically:
-  - `python skills/document-review/scripts/annotate_pdf.py input.pdf {base_name}_reviewed.pdf`
-  - `python skills/document-review/scripts/annotate_pptx.py input.pptx {base_name}_reviewed.pptx`
-  - `python skills/document-review/scripts/annotate_xlsx.py input.xlsx {base_name}_reviewed.xlsx`
+  - `uv run --with pymupdf skills/document-review/scripts/annotate_pdf.py input.pdf {base_name}_reviewed.pdf`
+  - `uv run skills/document-review/scripts/annotate_pptx.py input.pptx {base_name}_reviewed.pptx`
+  - `uv run --with openpyxl skills/document-review/scripts/annotate_xlsx.py input.xlsx {base_name}_reviewed.xlsx`
 - **DOCX** — `read `skills/docx/SKILL.md`` and follow its workflow to unpack, edit XML, and repack. Use `manage_state.py get-issues` to list all issues, then for each issue:
   1. **Add a comment** using `comment.py --author "Kortix"`, then insert `<w:commentRangeStart>`, `<w:commentRangeEnd>`, and `<w:commentReference>` markers in `document.xml`. Place `<w:commentRangeStart>` immediately before the first `<w:r>` that contains the `original_text`, and `<w:commentRangeEnd>` immediately after the last `<w:r>` that contains it — do NOT place these at the paragraph or body level.
 
@@ -296,12 +296,12 @@ Create an annotated copy of the document with issues as comments. `{base_name}` 
 
      Example `comment.py` call for a spelling issue:
      ```bash
-     python skills/docx/scripts/comment.py unpacked/ 0 "[Spelling/Grammar | low] The word 'acheived' is misspelled." --author "Kortix"
+     uv run --with lxml skills/docx/scripts/comment.py unpacked/ 0 "[Spelling/Grammar | low] The word 'acheived' is misspelled." --author "Kortix"
      ```
 
      Example for a numerical consistency issue:
      ```bash
-     python skills/docx/scripts/comment.py unpacked/ 1 "[Numerical Consistency | high] Region totals sum to 800, not the stated 900." --author "Kortix"
+     uv run --with lxml skills/docx/scripts/comment.py unpacked/ 1 "[Numerical Consistency | high] Region totals sum to 800, not the stated 900." --author "Kortix"
      ```
   2. **Apply tracked changes** (best effort) when `new_text` differs from `original_text`: find the exact `<w:r>` in `document.xml` whose `<w:t>` contains `original_text` and replace that `<w:r>` with a `<w:del>` + `<w:ins>` pair. Copy the `<w:rPr>` from that specific `<w:r>` into both the `<w:del>` and `<w:ins>` runs — do NOT use `<w:rPr>` from any other run (e.g., the title or a different paragraph). Wrap the comment markers tightly around the `<w:del>` and `<w:ins>` so the comment is anchored to the change.
 
@@ -392,7 +392,7 @@ Phase 4: Create issues
   → Issues created for all problems
 
 Phase 5: Annotate document
-  Step 17: python skills/document-review/scripts/annotate_pdf.py Report.pdf Report_reviewed.pdf
+  Step 17: uv run --with pymupdf skills/document-review/scripts/annotate_pdf.py Report.pdf Report_reviewed.pdf
   → Annotated document saved to workspace
 
 Phase 6: Submit review
