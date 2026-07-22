@@ -42,7 +42,6 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Modal,
   ModalBody,
@@ -61,6 +60,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useConnectModal } from '@/features/workspace/customize/sections/llm-provider/connect-modal-host';
@@ -75,23 +75,30 @@ import {
 import {
   buildRuntimeRows,
   connectedHarnessesFromModelsPage,
+  nextAgentBlockForRuntime,
+  runtimeSelectOptions,
+  savingBarStyle,
   type RuntimeRowViewModel,
+  type SavePhase,
 } from '@/features/workspace/customize/sections/view/runtime-view-model';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   enableAcpRuntimeProfiles,
   getProject,
+  getProjectDetail,
   getRuntimeProfiles,
-  type RuntimeProfile,
   updateRuntimeProfiles,
+  type RuntimeProfile,
 } from '@kortix/sdk/projects-client';
 import { useModelsPage } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const RUNTIME_PROFILES_QUERY_KEY = (projectId: string) => ['runtime-profiles', projectId] as const;
 
@@ -120,8 +127,9 @@ export function RuntimeView({ projectId }: { projectId: string }) {
     staleTime: 20_000,
   });
   const experimentalHarnessesEnabled = Boolean(
-    projectQuery.data?.experimental_features?.find((entry) => entry.key === 'experimental_harnesses')
-      ?.enabled,
+    projectQuery.data?.experimental_features?.find(
+      (entry) => entry.key === 'experimental_harnesses',
+    )?.enabled,
   );
   const modelsPage = useModelsPage(projectId, canWrite);
   const connectedHarnesses = useMemo(
@@ -131,7 +139,11 @@ export function RuntimeView({ projectId }: { projectId: string }) {
   const rows = useMemo<RuntimeRowViewModel[]>(
     () =>
       profilesQuery.data?.editable
-        ? buildRuntimeRows(profilesQuery.data.runtimes, connectedHarnesses, experimentalHarnessesEnabled)
+        ? buildRuntimeRows(
+            profilesQuery.data.runtimes,
+            connectedHarnesses,
+            experimentalHarnessesEnabled,
+          )
         : [],
     [profilesQuery.data, connectedHarnesses, experimentalHarnessesEnabled],
   );
@@ -148,6 +160,7 @@ export function RuntimeView({ projectId }: { projectId: string }) {
       description="The coding harness that runs each agent, and how it's connected."
     >
       <div className="space-y-5">
+        <ActiveRuntimeSelector projectId={projectId} canWrite={canWrite} />
         {profilesQuery.isLoading ? (
           <div className="space-y-2" aria-hidden="true">
             <Skeleton className="h-16 rounded-md" />
@@ -199,7 +212,8 @@ export function RuntimeView({ projectId }: { projectId: string }) {
             </Button>
           }
         >
-          Prompts, models, and hooks live in the runtime&apos;s own files — open Files to edit them directly.
+          Prompts, models, and hooks live in the runtime&apos;s own files — open Files to edit them
+          directly.
         </InfoBanner>
 
         {profilesQuery.data?.editable ? (
@@ -224,6 +238,140 @@ export function RuntimeView({ projectId }: { projectId: string }) {
         ) : null}
       </div>
     </CustomizeSectionWrapper>
+  );
+}
+
+/**
+ * The saving state for the harness `Select`, drawn as a progress bar pinned to
+ * the trigger's own width rather than a spinner beside it. A spinner sits
+ * outside the control it describes and says only "something is happening"; a
+ * bar bound to the trigger says "*this* is what's busy", and costs no layout
+ * space next to a control that is already right-aligned.
+ *
+ * It is INDETERMINATE dressed as determinate, deliberately. A git-backed
+ * manifest commit has no knowable duration, so the bar eases out to 90% and
+ * waits there — the strong ease-out (`cubic-bezier(0.23, 1, 0.32, 1)`) means
+ * most of that travel happens in the first ~250ms, which is what makes it read
+ * as responsive. On settle it completes to 100% and fades. It never claims to
+ * be finished before the write actually is, which a fixed 0→100% sweep would.
+ *
+ * Transitions rather than keyframes (the retriggerable rule): change the
+ * harness twice quickly and the bar retargets mid-flight instead of jumping
+ * back to zero. `scaleX` + `transform-origin: left` rather than `width`, so it
+ * composites on the GPU and never triggers layout.
+ */
+function SavingBar({ phase }: { phase: SavePhase }) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full overflow-hidden opacity-20 transition-opacity duration-200"
+    >
+      <span
+        data-phase={phase}
+        className="bg-kortix-base block h-full w-full origin-left"
+        style={savingBarStyle(phase, Boolean(reduceMotion))}
+      />
+    </span>
+  );
+}
+
+/**
+ * The one control this section was missing: pick the harness that actually
+ * runs this project, without leaving the page.
+ *
+ * The same `Select` already existed — buried at Customize → Agents → the agent
+ * → Edit configuration → "ACP runtime", five levels down, which is no place
+ * for the single most important question about a session ("which AI runs
+ * this?"). This surfaces it where someone looking at Runtime would expect it,
+ * and edits the same manifest field through the same route; the agent editor's
+ * copy stays where it is for per-agent routing.
+ *
+ * It targets the project's DEFAULT agent, because that's the one new sessions
+ * start with — the thing a non-technical viewer means by "my harness".
+ */
+function ActiveRuntimeSelector({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const detailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 20_000,
+  });
+  const defaultAgent = detailQuery.data?.config?.runtime_default_agent ?? null;
+  const configQuery = useAgentConfig(projectId, defaultAgent ?? undefined);
+  const updateAgent = useUpdateAgentConfig(projectId, defaultAgent ?? '');
+
+  const [savePhase, setSavePhase] = useState<SavePhase>('idle');
+  // 400ms > the completion transition (180ms) plus the trailing fade
+  // (140ms delay + 200ms), so the reset to scaleX(0) always happens while the
+  // bar is already invisible — otherwise it would visibly rewind right to left.
+  useEffect(() => {
+    if (savePhase !== 'done') return;
+    const timer = setTimeout(() => setSavePhase('idle'), 400);
+    return () => clearTimeout(timer);
+  }, [savePhase]);
+
+  const block = configQuery.data?.block ?? null;
+  const runtimes = configQuery.data?.runtimes ?? {};
+  const profileNames = Object.keys(runtimes);
+
+  // v2 projects have no runtime profiles to choose between, and a project
+  // whose manifest declares no `default_agent` has nothing to point at. Both
+  // render nothing rather than an inert control.
+  if (!defaultAgent || !configQuery.data?.editable || profileNames.length === 0) return null;
+
+  const save = (profileName: string) => {
+    // Both traps (grant-stripping, the stale `agent` field) live in this pure
+    // helper so they're covered without a DOM — see `runtime-view-model.ts`.
+    const next = nextAgentBlockForRuntime(
+      block as Record<string, unknown> | null,
+      profileName,
+      runtimes[profileName]?.harness,
+    );
+    setSavePhase('saving');
+    updateAgent.mutate(next, {
+      onSuccess: () => {
+        const harness = runtimes[profileName]?.harness;
+        successToast(`Now running on ${harness ? ACP_HARNESS_LABELS[harness] : profileName}`);
+      },
+      onError: (error: Error) => errorToast(error.message || 'Could not change the harness'),
+      // `onSettled`, not `onSuccess`: a failed save must also complete and
+      // clear the bar, or the control reads as permanently busy.
+      onSettled: () => setSavePhase('done'),
+    });
+  };
+
+  return (
+    <div className="bg-popover rounded-md border px-4 py-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-foreground text-sm font-medium">Coding harness</p>
+          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+            What runs the <span className="font-medium">{defaultAgent}</span> agent, which new
+            sessions start with.
+          </p>
+        </div>
+        <div className="relative w-full shrink-0 overflow-hidden rounded-md sm:w-52">
+          <Select
+            value={block?.runtime ?? undefined}
+            onValueChange={save}
+            disabled={!canWrite || updateAgent.isPending || configQuery.isLoading}
+          >
+            <SelectTrigger aria-label="Coding harness" variant="popover" className="w-full">
+              <SelectValue placeholder="Choose a harness" />
+            </SelectTrigger>
+            <SelectContent>
+              {runtimeSelectOptions(runtimes).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <SavingBar phase={savePhase} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -272,7 +420,7 @@ function RuntimeEntityRow({
           <Button
             size="sm"
             variant="transparent"
-            className="min-h-10 active:scale-[0.96] transition-transform"
+            className="min-h-10 transition-transform active:scale-[0.96]"
             onClick={onChooseModel}
           >
             Choose model
@@ -282,7 +430,7 @@ function RuntimeEntityRow({
           <Button
             size="sm"
             variant="secondary"
-            className="min-h-10 active:scale-[0.96] transition-transform"
+            className="min-h-10 transition-transform active:scale-[0.96]"
             onClick={onConnect}
           >
             Connect
@@ -325,7 +473,7 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
         <Button
           size="sm"
           variant="secondary"
-          className="shrink-0 active:scale-[0.96] transition-transform"
+          className="shrink-0 transition-transform active:scale-[0.96]"
           disabled={!canWrite || enableMutation.isPending}
           onClick={() => enableMutation.mutate()}
         >
@@ -348,7 +496,13 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
  * `['runtime-profiles', projectId]` query the primary rows already fetched —
  * a second read of the same cache entry, not a second request.
  */
-function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+function RuntimeProfilesAdvancedEditor({
+  projectId,
+  canWrite,
+}: {
+  projectId: string;
+  canWrite: boolean;
+}) {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId),
@@ -359,7 +513,8 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
   const [draft, setDraft] = useState<Record<string, RuntimeProfile>>({});
   const [removeName, setRemoveName] = useState<string | null>(null);
   const mutation = useMutation({
-    mutationFn: (runtimes: Record<string, RuntimeProfile>) => updateRuntimeProfiles(projectId, runtimes),
+    mutationFn: (runtimes: Record<string, RuntimeProfile>) =>
+      updateRuntimeProfiles(projectId, runtimes),
     onSuccess: async () => {
       successToast('Runtime profiles saved');
       setOpen(false);
@@ -383,7 +538,10 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
   };
   const addMissingHarnesses = () => setDraft(withAllAcpHarnesses);
   const rename = (from: string, toRaw: string) => {
-    const to = toRaw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    const to = toRaw
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '-');
     if (!to || to === from || draft[to]) return;
     setDraft((current) => {
       const next = { ...current, [to]: current[from]! };
@@ -432,36 +590,105 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
             <ModalTitle>Runtime profiles</ModalTitle>
-            <ModalDescription>Each profile launches one official ACP harness against its native project configuration.</ModalDescription>
+            <ModalDescription>
+              Each profile launches one official ACP harness against its native project
+              configuration.
+            </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-3 overflow-y-auto">
             {Object.entries(draft).map(([name, profile]) => (
               <div key={name} className="bg-popover rounded-md border px-4 py-3">
                 <div className="grid gap-3 sm:grid-cols-[1fr_150px_1.4fr_auto] sm:items-end">
-                  <label className="space-y-1.5 text-xs font-medium">Profile
-                    <Input variant="popover" defaultValue={name} onBlur={(event) => rename(name, event.target.value)} />
+                  <label className="space-y-1.5 text-xs font-medium">
+                    Profile
+                    <Input
+                      variant="popover"
+                      defaultValue={name}
+                      onBlur={(event) => rename(name, event.target.value)}
+                    />
                   </label>
-                  <label className="space-y-1.5 text-xs font-medium">Harness
-                    <Select value={profile.harness} onValueChange={(harness) => setDraft((current) => ({ ...current, [name]: { ...profile, harness: harness as RuntimeProfile['harness'] } }))}>
-                      <SelectTrigger variant="popover"><SelectValue /></SelectTrigger>
-                      <SelectContent>{ACP_HARNESSES.map((harness) => <SelectItem key={harness} value={harness}>{ACP_HARNESS_LABELS[harness]}</SelectItem>)}</SelectContent>
+                  <label className="space-y-1.5 text-xs font-medium">
+                    Harness
+                    <Select
+                      value={profile.harness}
+                      onValueChange={(harness) =>
+                        setDraft((current) => ({
+                          ...current,
+                          [name]: { ...profile, harness: harness as RuntimeProfile['harness'] },
+                        }))
+                      }
+                    >
+                      <SelectTrigger variant="popover">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ACP_HARNESSES.map((harness) => (
+                          <SelectItem key={harness} value={harness}>
+                            {ACP_HARNESS_LABELS[harness]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                     </Select>
                   </label>
-                  <label className="space-y-1.5 text-xs font-medium">Config directory
-                    <Input variant="popover" value={profile.config_dir ?? ''} placeholder={ACP_HARNESS_CONFIG_DIRS[profile.harness]} onChange={(event) => setDraft((current) => ({ ...current, [name]: { ...profile, config_dir: event.target.value || undefined } }))} />
+                  <label className="space-y-1.5 text-xs font-medium">
+                    Config directory
+                    <Input
+                      variant="popover"
+                      value={profile.config_dir ?? ''}
+                      placeholder={ACP_HARNESS_CONFIG_DIRS[profile.harness]}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          [name]: { ...profile, config_dir: event.target.value || undefined },
+                        }))
+                      }
+                    />
                   </label>
-                  <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${name}`} onClick={() => setRemoveName(name)}><Trash2 className="size-4" /></Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove ${name}`}
+                    onClick={() => setRemoveName(name)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
                 </div>
               </div>
             ))}
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" className="active:scale-[0.96] transition-transform" onClick={addMissingHarnesses}>Enable all harnesses</Button>
-              <Button type="button" variant="outline" size="sm" className="active:scale-[0.96] transition-transform" onClick={addProfile}><Plus className="size-4 shrink-0" />Add custom profile</Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="transition-transform active:scale-[0.96]"
+                onClick={addMissingHarnesses}
+              >
+                Enable all harnesses
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="transition-transform active:scale-[0.96]"
+                onClick={addProfile}
+              >
+                <Plus className="size-4 shrink-0" />
+                Add custom profile
+              </Button>
             </div>
           </ModalBody>
           <ModalFooter className="sm:justify-between">
-            <Button type="button" variant="outline-ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="button" disabled={mutation.isPending || Object.keys(draft).length === 0} onClick={() => mutation.mutate(draft)}>{mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}Save profiles</Button>
+            <Button type="button" variant="outline-ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={mutation.isPending || Object.keys(draft).length === 0}
+              onClick={() => mutation.mutate(draft)}
+            >
+              {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}Save profiles
+            </Button>
           </ModalFooter>
 
           {/* Kept INSIDE the editor's tree on purpose. Radix decides
@@ -474,7 +701,9 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
               confirm one z band above it for free. */}
           <ConfirmDialog
             open={removeName !== null}
-            onOpenChange={(next) => { if (!next) setRemoveName(null); }}
+            onOpenChange={(next) => {
+              if (!next) setRemoveName(null);
+            }}
             title={`Remove ${removeName ?? 'runtime'}?`}
             description="Agents that reference this profile must be moved before the manifest can be saved."
             confirmLabel="Remove profile"
@@ -482,7 +711,11 @@ function RuntimeProfilesAdvancedEditor({ projectId, canWrite }: { projectId: str
             confirmIcon={<Trash2 className="size-4" />}
             onConfirm={() => {
               if (!removeName) return;
-              setDraft((current) => { const next = { ...current }; delete next[removeName]; return next; });
+              setDraft((current) => {
+                const next = { ...current };
+                delete next[removeName];
+                return next;
+              });
               setRemoveName(null);
             }}
           />

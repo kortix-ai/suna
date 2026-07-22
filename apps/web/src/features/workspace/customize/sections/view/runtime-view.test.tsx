@@ -40,12 +40,37 @@ let runtimeProfiles: RuntimeProfilesResponse = {
 // existed) keeps seeing experimental-harness rows unless it opts into the
 // flag-off scenario itself (see the "experimental gating" describe block).
 let experimentalHarnessesEnabled = true;
+// Drives `ActiveRuntimeSelector` — the harness Select moved up out of
+// Customize -> Agents -> <agent> -> Edit configuration. `null` means the
+// manifest declares no `default_agent`, in which case the panel renders
+// nothing (the default for every test written before it existed).
+let defaultAgentName: string | null = null;
+let agentConfigData: {
+  editable: boolean;
+  block: Record<string, unknown> | null;
+  runtimes: Record<string, { harness: string }>;
+} | null = null;
+let savedBlocks: Array<Record<string, unknown>> = [];
+mock.module('@/hooks/projects/use-agent-config', () => ({
+  useAgentConfig: () => ({ data: agentConfigData, isLoading: false, isError: false }),
+  useUpdateAgentConfig: () => ({
+    mutate: (block: Record<string, unknown>) => savedBlocks.push(block),
+    isPending: false,
+  }),
+}));
 const actualReactQuery = await import('@tanstack/react-query');
 mock.module('@tanstack/react-query', () => ({
   ...actualReactQuery,
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
     if (queryKey[0] === 'runtime-profiles') {
       return { data: runtimeProfiles, isLoading: false, isError: false };
+    }
+    if (queryKey[0] === 'project-detail') {
+      return {
+        data: { config: { runtime_default_agent: defaultAgentName } },
+        isLoading: false,
+        isError: false,
+      };
     }
     if (queryKey[0] === 'project') {
       return {
@@ -133,6 +158,9 @@ afterEach(() => {
   };
   canWriteMock = true;
   experimentalHarnessesEnabled = true;
+  defaultAgentName = null;
+  agentConfigData = null;
+  savedBlocks = [];
   useCustomizeStore.setState({ open: true, section: 'runtime' });
   useConnectModalStore.setState({
     isOpen: false,
@@ -579,5 +607,74 @@ describe('RuntimeView — experimental harness gating', () => {
 
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(screen.getByText('Pick a runtime, connect it, go')).toBeDefined();
+  });
+});
+
+describe('RuntimeView — the harness Select, moved up from the agent editor', () => {
+  // Was: Customize -> Agents -> <agent> -> Edit configuration -> scroll to
+  // "ACP runtime". Five levels to answer "which AI runs this?". Now it sits
+  // directly under the section description.
+
+  function withDefaultAgent(
+    runtimes: Record<string, { harness: string }>,
+    block: Record<string, unknown> | null = { runtime: 'opencode' },
+  ) {
+    defaultAgentName = 'kortix';
+    agentConfigData = { editable: true, block, runtimes };
+  }
+
+  test('renders the harness picker above the connection rows, naming the agent it affects', () => {
+    setRuntimes({ opencode: { harness: 'opencode' } });
+    withDefaultAgent({ opencode: { harness: 'opencode' }, claude: { harness: 'claude' } });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.getByText('Coding harness')).toBeDefined();
+    expect(screen.getByLabelText('Coding harness')).toBeDefined();
+    expect(screen.getByText(/agent, which new\s+sessions start with/)).toBeDefined();
+  });
+
+  test('the trigger shows the harness LABEL, never the profile slug', () => {
+    setRuntimes({ opencode: { harness: 'opencode' } });
+    withDefaultAgent({ 'my-slug': { harness: 'claude' } }, { runtime: 'my-slug' });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    const trigger = screen.getByLabelText('Coding harness');
+    expect(within(trigger).getByText('Claude Code')).toBeDefined();
+    expect(trigger.textContent).not.toContain('my-slug');
+  });
+
+  test('a read-only viewer sees the current harness but cannot change it', () => {
+    canWriteMock = false;
+    setRuntimes({ opencode: { harness: 'opencode' } });
+    withDefaultAgent({ opencode: { harness: 'opencode' }, claude: { harness: 'claude' } });
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.getByLabelText('Coding harness').hasAttribute('disabled')).toBe(true);
+  });
+
+  test('renders nothing when the manifest declares no default agent — no inert control', () => {
+    setRuntimes({ opencode: { harness: 'opencode' } });
+    defaultAgentName = null;
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.queryByText('Coding harness')).toBeNull();
+  });
+
+  test('renders nothing on a v2 project, which has no runtime profiles to choose between', () => {
+    setRuntimes({ opencode: { harness: 'opencode' } });
+    defaultAgentName = 'kortix';
+    agentConfigData = { editable: false, block: null, runtimes: {} };
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.queryByText('Coding harness')).toBeNull();
+  });
+
+  test('renders nothing when no runtime profile is declared at all', () => {
+    setRuntimes({});
+    defaultAgentName = 'kortix';
+    agentConfigData = { editable: true, block: null, runtimes: {} };
+    render(<RuntimeView projectId={PROJECT_ID} />);
+
+    expect(screen.queryByText('Coding harness')).toBeNull();
   });
 });

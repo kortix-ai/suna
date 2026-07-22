@@ -5,6 +5,9 @@ import type { ModelsPageConnection } from '@kortix/sdk/react';
 import {
   buildRuntimeRows,
   connectedHarnessesFromModelsPage,
+  nextAgentBlockForRuntime,
+  runtimeSelectOptions,
+  savingBarStyle,
 } from './runtime-view-model';
 
 function modelsPageConnection(
@@ -203,5 +206,161 @@ describe('buildRuntimeRows', () => {
       false,
     );
     expect(rows).toEqual([]);
+  });
+});
+
+describe('nextAgentBlockForRuntime', () => {
+  // The Runtime section's harness Select writes through `PUT
+  // /agents/:name/config`, which rebuilds the whole governance block from the
+  // request body. These pin the two ways that can go wrong.
+
+  test('carries the existing governance over — a bare { runtime } would strip the agent grants', () => {
+    const next = nextAgentBlockForRuntime(
+      {
+        runtime: 'opencode',
+        agent: 'kortix',
+        connectors: 'all',
+        secrets: 'all',
+        kortix_cli: ['project.cr.open'],
+        skills: 'all',
+      },
+      'opencode',
+      'opencode',
+    );
+    expect(next).toEqual({
+      runtime: 'opencode',
+      agent: 'kortix',
+      connectors: 'all',
+      secrets: 'all',
+      kortix_cli: ['project.cr.open'],
+      skills: 'all',
+    });
+  });
+
+  test('switching to a brand harness drops `agent` — only OpenCode has named sub-agents', () => {
+    const next = nextAgentBlockForRuntime(
+      { runtime: 'opencode', agent: 'kortix', connectors: 'all' },
+      'claude',
+      'claude',
+    );
+    expect(next.runtime).toBe('claude');
+    expect('agent' in next).toBe(false);
+    // Governance still survives the harness switch.
+    expect(next.connectors).toBe('all');
+  });
+
+  test('switching back to OpenCode keeps whatever `agent` the block already had', () => {
+    const next = nextAgentBlockForRuntime({ runtime: 'claude' }, 'opencode', 'opencode');
+    expect(next).toEqual({ runtime: 'opencode' });
+  });
+
+  test('an unknown harness is treated as non-OpenCode rather than assumed safe', () => {
+    const next = nextAgentBlockForRuntime({ agent: 'kortix' }, 'runtime-1', undefined);
+    expect('agent' in next).toBe(false);
+  });
+
+  test('a null block still produces a valid write — runtime is required by the route', () => {
+    expect(nextAgentBlockForRuntime(null, 'claude', 'claude')).toEqual({ runtime: 'claude' });
+  });
+
+  test('never mutates the block it was given', () => {
+    const block = { runtime: 'opencode', agent: 'kortix' };
+    nextAgentBlockForRuntime(block, 'claude', 'claude');
+    expect(block).toEqual({ runtime: 'opencode', agent: 'kortix' });
+  });
+});
+
+describe('runtimeSelectOptions', () => {
+  test('labels by harness — a profile slug is jargon this section keeps behind Advanced', () => {
+    expect(runtimeSelectOptions({ 'my-slug': { harness: 'claude' } })).toEqual([
+      { value: 'my-slug', label: 'Claude Code' },
+    ]);
+  });
+
+  test('appends the profile key only when two profiles share one harness', () => {
+    expect(
+      runtimeSelectOptions({
+        work: { harness: 'claude' },
+        personal: { harness: 'claude' },
+        opencode: { harness: 'opencode' },
+      }),
+    ).toEqual([
+      { value: 'work', label: 'Claude Code · work' },
+      { value: 'personal', label: 'Claude Code · personal' },
+      // Unambiguous, so it stays quiet even though its siblings didn't.
+      { value: 'opencode', label: 'OpenCode' },
+    ]);
+  });
+
+  test('the option value stays the manifest key — that is what the PUT writes', () => {
+    const [option] = runtimeSelectOptions({ 'runtime-1': { harness: 'pi' } });
+    expect(option!.value).toBe('runtime-1');
+    expect(option!.label).toBe('Pi');
+  });
+
+  test('an empty runtimes map yields no options', () => {
+    expect(runtimeSelectOptions({})).toEqual([]);
+  });
+});
+
+describe('savingBarStyle', () => {
+  // The saving bar replaced a spinner sitting beside the Select. It is pinned
+  // to the trigger's width and travels left to right.
+
+  test('idle is collapsed and invisible', () => {
+    const style = savingBarStyle('idle', false);
+    expect(style.transform).toBe('scaleX(0)');
+    expect(style.opacity).toBe(0);
+  });
+
+  test('saving holds at 90%, never 100% — the write has no knowable duration', () => {
+    const style = savingBarStyle('saving', false);
+    // Completing on a timer would claim the save finished before it did.
+    expect(style.transform).toBe('scaleX(0.9)');
+    expect(style.opacity).toBe(1);
+  });
+
+  test('done completes to full width', () => {
+    expect(savingBarStyle('done', false).transform).toBe('scaleX(1)');
+  });
+
+  test('travel is long and strongly eased; completion is fast — slow to decide, fast to respond', () => {
+    expect(savingBarStyle('saving', false).transition).toContain('transform 900ms');
+    expect(savingBarStyle('done', false).transition).toContain('transform 180ms');
+  });
+
+  test('never ease-in, and never the weak built-ins, on the travelling property', () => {
+    for (const phase of ['saving', 'done'] as const) {
+      const { transition } = savingBarStyle(phase, false);
+      expect(transition).toContain('cubic-bezier(0.23, 1, 0.32, 1)');
+      expect(transition).not.toMatch(/transform [0-9]+ms ease-in/);
+    }
+  });
+
+  test('the fade trails the completion so 100% is actually seen', () => {
+    // 140ms delay on opacity vs a 180ms transform — the bar reaches full width
+    // while still fully opaque.
+    expect(savingBarStyle('done', false).transition).toContain('opacity 200ms ease 140ms');
+  });
+
+  test('scales, never widths — width would reflow every frame', () => {
+    for (const phase of ['idle', 'saving', 'done'] as const) {
+      expect(savingBarStyle(phase, false).transition).not.toContain('width');
+    }
+  });
+
+  test('reduced motion drops the travel but keeps the appear/disappear signal', () => {
+    const saving = savingBarStyle('saving', true);
+    expect(saving.transform).toBe('none');
+    expect(saving.opacity).toBe(1);
+    expect(saving.transition).toBe('opacity 200ms ease');
+    // Still legible as "not busy" when idle.
+    expect(savingBarStyle('idle', true).opacity).toBe(0);
+  });
+
+  test('reduced motion never animates a transform at all', () => {
+    for (const phase of ['idle', 'saving', 'done'] as const) {
+      expect(savingBarStyle(phase, true).transition).not.toContain('transform');
+    }
   });
 });

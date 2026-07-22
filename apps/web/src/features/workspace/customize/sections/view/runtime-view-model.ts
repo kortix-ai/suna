@@ -15,7 +15,7 @@ import type { AcpHarness, RuntimeProfile } from '@kortix/sdk/projects-client';
 import { connectionDisplayName, harnessPresentation, type KortixHarness, type ModelsPageConnection } from '@kortix/sdk/react';
 
 import { METHOD_COMPATIBLE_HARNESSES } from '../llm-provider/harness-method-compat';
-import { ACP_HARNESS_STABILITY } from './runtime-profile-options';
+import { ACP_HARNESS_LABELS, ACP_HARNESS_STABILITY } from './runtime-profile-options';
 
 export interface RuntimeRowViewModel {
   /** The manifest profile key (`runtime-1`, `claude`, …) — identity only,
@@ -31,6 +31,95 @@ export interface RuntimeRowViewModel {
   /** True for a harness whose `HARNESSES[id].stability` is `'experimental'`. */
   experimental: boolean;
   connected: boolean;
+}
+
+export type SavePhase = 'idle' | 'saving' | 'done';
+
+/** Strong ease-out (`ease-out-quint`). Front-loads the travel so the bar reads
+ * as responsive within the first frames — the built-in `ease-out` is too weak
+ * for this. */
+const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)';
+
+/**
+ * Inline style for the harness `Select`'s saving bar, by phase. Pure so the
+ * timing contract is assertable without a DOM (the bar is `aria-hidden` and
+ * only reachable by driving a Radix `Select`, which this test harness can't).
+ *
+ * `transform: scaleX()` with a left origin, never `width` — width is a layout
+ * property and would reflow every frame; scaleX composites on the GPU.
+ *
+ * The bar is indeterminate wearing determinate clothes: a git-backed manifest
+ * commit has no knowable duration, so `saving` eases to 90% and holds rather
+ * than completing on a timer it can't honor. `done` finishes fast (the system
+ * responding) with the fade trailing behind, so 100% is actually seen.
+ */
+export function savingBarStyle(
+  phase: SavePhase,
+  reduceMotion: boolean,
+): { transform: string; opacity: number; transition: string } {
+  const scale = phase === 'idle' ? 0 : phase === 'saving' ? 0.9 : 1;
+  return {
+    // Reduced motion keeps the appear/disappear signal and drops only the
+    // travel — removing movement, not information.
+    transform: reduceMotion ? 'none' : `scaleX(${scale})`,
+    opacity: phase === 'saving' ? 1 : 0,
+    transition: reduceMotion
+      ? 'opacity 200ms ease'
+      : phase === 'saving'
+        ? `transform 900ms ${EASE_OUT}, opacity 120ms ease`
+        : `transform 180ms ${EASE_OUT}, opacity 200ms ease 140ms`,
+  };
+}
+
+/**
+ * Options for the Runtime section's harness `Select`, labelled the way this
+ * de-jargoned section labels everything else: by harness, not by manifest key.
+ *
+ * The profile key is appended ONLY when two profiles resolve to the same
+ * harness, because that is the only case where the bare label is genuinely
+ * ambiguous. The agent editor appends it whenever key !== harness id, which is
+ * right for an advanced routing surface but wrong here — "Claude Code ·
+ * my-slug" hands a profile slug to exactly the person this control exists for.
+ * Disambiguate when ambiguous; stay quiet otherwise.
+ */
+export function runtimeSelectOptions(
+  runtimes: Record<string, { harness: AcpHarness }>,
+): Array<{ value: string; label: string }> {
+  const perHarness = new Map<AcpHarness, number>();
+  for (const profile of Object.values(runtimes)) {
+    perHarness.set(profile.harness, (perHarness.get(profile.harness) ?? 0) + 1);
+  }
+  return Object.entries(runtimes).map(([name, profile]) => ({
+    value: name,
+    label:
+      (perHarness.get(profile.harness) ?? 0) > 1
+        ? `${ACP_HARNESS_LABELS[profile.harness]} · ${name}`
+        : ACP_HARNESS_LABELS[profile.harness],
+  }));
+}
+
+/**
+ * Build the agent block to PUT when the Runtime section's harness `Select`
+ * changes. Pure so the two traps below are unit-testable without a DOM.
+ *
+ * Trap 1 — the PUT route rebuilds the whole `agents.<name>` governance block
+ * from the request body (`agent-config.ts`'s `governanceRaw` spread), so a
+ * bare `{ runtime }` would silently strip this agent's
+ * connectors/secrets/skills/kortix_cli grants. The existing block must be
+ * carried over.
+ *
+ * Trap 2 — only OpenCode has named sub-agents. Carrying `agent` across to a
+ * brand harness writes a field it can't honor, so it's dropped. Mirrors the
+ * agent editor's own rule (`agent-editor.tsx`).
+ */
+export function nextAgentBlockForRuntime(
+  block: Record<string, unknown> | null | undefined,
+  profileName: string,
+  harness: AcpHarness | undefined,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(block ?? {}), runtime: profileName };
+  if (harness !== 'opencode') delete next.agent;
+  return next;
 }
 
 /** Maps `useModelsPage(...).connections` — the harness-scoped auth-connection
