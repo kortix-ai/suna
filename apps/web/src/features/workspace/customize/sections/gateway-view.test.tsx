@@ -15,7 +15,7 @@ delete (globalThis as any).document;
 GlobalRegistrator.register();
 
 const { afterAll, afterEach, describe, expect, mock, test } = await import('bun:test');
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 const ReactModule = await import('react');
 
 // `LlmManagementView` calls raw `useIsMutating`/`useQuery`/`useMutation`/
@@ -88,10 +88,22 @@ afterAll(() => {
   GlobalRegistrator.unregister();
 });
 
-describe('LlmManagementView — Task 16 Models section IA (3 top-level tabs)', () => {
-  test('shows exactly 3 top-level tabs labeled Models / Usage / Developer', () => {
+describe('LlmManagementView — Models leads, power tabs behind Advanced (item 6)', () => {
+  test('by default shows only the Models tab; Usage + Developer are hidden behind Advanced', () => {
     useCustomizeStore.setState({ open: true, section: 'llm-management' });
     render(<LlmManagementView projectId={PROJECT_ID} />);
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual(['Models']);
+    // The disclosure affordance is present but the power tabs are not yet.
+    expect(screen.getByRole('button', { name: /Advanced/ })).toBeDefined();
+  });
+
+  test('clicking Advanced reveals the Usage + Developer tabs', () => {
+    useCustomizeStore.setState({ open: true, section: 'llm-management' });
+    render(<LlmManagementView projectId={PROJECT_ID} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Advanced/ }));
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual(['Models', 'Usage', 'Developer']);

@@ -23,8 +23,10 @@
  */
 
 import { useIsMutating } from '@tanstack/react-query';
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ModelsView } from '@/features/workspace/customize/sections/llm-provider/models-view';
 import { GatewayApiAccess } from '@/features/workspace/customize/sections/view/gateway/gateway-api-access';
@@ -36,6 +38,7 @@ import { GatewayRouting } from '@/features/workspace/customize/sections/view/gat
 import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
 import { modelDefaultsKey } from '@/hooks/runtime/use-model-defaults';
 import type { CustomizeSection } from '@/lib/customize-sections';
+import { cn } from '@/lib/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -44,8 +47,10 @@ type LlmTab = 'models' | 'usage' | 'developer';
 type UsageSubTab = 'overview' | 'activity' | 'limits';
 type DeveloperSubTab = 'routing' | 'playground' | 'api';
 
-const LLM_TABS: { id: LlmTab; label: string }[] = [
-  { id: 'models', label: 'Models' },
+// Models leads, always visible; Usage + Developer are the power surfaces, kept
+// behind an "Advanced" disclosure so the Models tab isn't one-of-three equal
+// peers a first-timer has to visually skip.
+const ADVANCED_TABS: { id: LlmTab; label: string }[] = [
   { id: 'usage', label: 'Usage' },
   { id: 'developer', label: 'Developer' },
 ];
@@ -92,6 +97,12 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const [developerTab, setDeveloperTab] = useState<DeveloperSubTab>(
     () => DEVELOPER_SUB_TAB_BY_SECTION[section] ?? 'routing',
   );
+  // Advanced (Usage + Developer) is collapsed by default so Models leads;
+  // open it when the initial deep-link targets one of those surfaces.
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    const initial = TAB_BY_SECTION[section];
+    return initial === 'usage' || initial === 'developer';
+  });
 
   // The project default is the single model authority for this project. Account
   // and platform defaults are display-only inheritance when no project value is
@@ -125,11 +136,22 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   useEffect(() => {
     const next = TAB_BY_SECTION[section];
     if (next) setTab(next);
+    // A deep-link to a power surface reveals Advanced so its tab is reachable.
+    if (next === 'usage' || next === 'developer') setAdvancedOpen(true);
     const nextUsage = USAGE_SUB_TAB_BY_SECTION[section];
     if (nextUsage) setUsageTab(nextUsage);
     const nextDeveloper = DEVELOPER_SUB_TAB_BY_SECTION[section];
     if (nextDeveloper) setDeveloperTab(nextDeveloper);
   }, [section]);
+
+  const toggleAdvanced = () => {
+    setAdvancedOpen((open) => {
+      const next = !open;
+      // Collapsing back must not strand the view on a now-hidden tab.
+      if (!next && tab !== 'models') setTab('models');
+      return next;
+    });
+  };
 
   return (
     <Tabs
@@ -138,17 +160,35 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       className="bg-background flex h-full min-h-0 flex-col gap-0"
     >
       {/* The underline list sits flush on the container's divider (no vertical
-          padding so the active underline lands exactly on the border). The
-          default-model picker that used to share this row moved into the
-          Models tab (Task 17). */}
-      <div className="border-border flex shrink-0 items-center border-b px-5 pt-2">
+          padding so the active underline lands exactly on the border). Models
+          leads; Usage + Developer are revealed by the Advanced toggle so the
+          surface opens on connect + models, not one-of-three power tabs. */}
+      <div className="border-border flex shrink-0 items-center justify-between gap-2 border-b px-5 pt-2">
         <TabsList type="underline" size="lg" className="border-b-0">
-          {LLM_TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} className="w-fit flex-none text-xs">
-              {t.label}
-            </TabsTrigger>
-          ))}
+          <TabsTrigger value="models" className="w-fit flex-none text-xs">
+            Models
+          </TabsTrigger>
+          {advancedOpen
+            ? ADVANCED_TABS.map((t) => (
+                <TabsTrigger key={t.id} value={t.id} className="w-fit flex-none text-xs">
+                  {t.label}
+                </TabsTrigger>
+              ))
+            : null}
         </TabsList>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          aria-expanded={advancedOpen}
+          className="text-muted-foreground hover:text-foreground -mb-px shrink-0 gap-1 active:scale-[0.96] transition-transform"
+          onClick={toggleAdvanced}
+        >
+          Advanced
+          <ChevronDown
+            className={cn('size-3.5 shrink-0 transition-transform', advancedOpen && 'rotate-180')}
+          />
+        </Button>
       </div>
 
       {/* min-h-0 lets each panel actually shrink inside the flex column so
