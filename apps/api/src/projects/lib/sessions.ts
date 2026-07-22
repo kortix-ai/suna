@@ -574,7 +574,8 @@ export async function createProjectSession(input: {
       error: {
         status: 403,
         body: {
-          error: 'secrets may only be set by a service-account (backend) session',
+          error:
+            'secrets may only be set by a backend-origin session — authenticate with an API key / PAT or a service-account bearer',
           code: 'origin_override_forbidden',
         },
       },
