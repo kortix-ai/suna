@@ -26,7 +26,8 @@ import { apiJson, apiStatus } from '../helpers/http';
 // `SessionApprovalPrompt` "amber twins"), pinned above the composer via
 // `SessionChatInput`'s `inputSlot` and still carrying the container testid
 // `acp-session-permission-prompt` and the "Allow once" button's testid
-// `acp-permission-allow-once` for backward compatibility. Answering it
+// `acp-permission-allow-once` (now the plain "Allow" button — every row is
+// a two-button binary question) for backward compatibility. Answering it
 // resolves the blocked turn in place; UNLIKE the pre-P1-c behavior, the
 // resolved request now swaps in place for a compact answered RECORD row
 // (`data-testid="permission-record-row"`, auto-clearing itself a couple
@@ -34,11 +35,15 @@ import { apiJson, apiStatus } from '../helpers/http';
 // asserts the record row appears, not just that the prompt vanishes.
 //
 // Test 2 exercises the persistent project permission policy (Task
-// WS5-P1-a/b/c): toggling a pending row's "Remember for this project"
-// switch calls `rememberToolDecision(tool, 'allow')`, which both
-// auto-resolves the currently-open request (through the SAME respond path
-// the manual buttons use) and persists the decision project-wide — a
-// SECOND shell-command request in the same session for the same tool kind
+// WS5-P1-a/b/c). The control is a SCOPE MENU on the left of each row
+// (`data-testid="permission-scope-trigger"`), carrying every duration an
+// approval can have — once / this session / always in this project — rather
+// than a switch that silently granted permission the instant it was flipped.
+// Pick "Always, in this project → All <noun>", then press the primary button:
+// the row's answer both resolves the open request (through the SAME respond
+// path every button uses) and calls `rememberToolDecision(policyKeyFor(tool),
+// 'allow')` to persist it project-wide under the canonical first-token key —
+// a SECOND shell-command request in the same session for the same tool kind
 // is then auto-allowed with no prompt ever requiring a click.
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:19008/v1';
@@ -197,14 +202,23 @@ test.describe('15 — ACP permission request/response flow', () => {
       const permissionPrompt = page.getByTestId('acp-session-permission-prompt');
       await expect(permissionPrompt).toBeVisible({ timeout: 120_000 });
 
-      // Toggling "Remember for this project" both persists
-      // `toolDecisions[tool] = 'allow'` (`usePermissionPolicy.rememberToolDecision`)
-      // AND auto-resolves the currently-open request through the same
-      // `onReply` respond path the manual buttons use — no separate click
-      // needed.
-      const rememberSwitch = permissionPrompt.getByRole('switch', { name: /Remember for this project/i });
-      await expect(rememberSwitch).toBeVisible();
-      await rememberSwitch.click();
+      // Choosing a scope is NOT an answer on its own — it only changes how
+      // long the next answer lasts. Pressing the primary button then resolves
+      // the open request through the same `onReply` respond path every button
+      // uses AND persists `toolDecisions[key] = 'allow'`
+      // (`usePermissionPolicy.rememberToolDecision`).
+      //
+      // The menu's last group is "Always, in this project"; its first entry
+      // ("All <noun>") is the project-scoped tool grant. Selected by position
+      // because the same "All <noun>" label deliberately appears in the
+      // session tier too — the group heading is what distinguishes them.
+      const scopeTrigger = permissionPrompt.getByTestId('permission-scope-trigger').first();
+      await expect(scopeTrigger).toBeVisible();
+      await scopeTrigger.click();
+      const scopeItems = page.getByRole('menuitemradio');
+      await expect(scopeItems.first()).toBeVisible();
+      await scopeItems.nth(3).click();
+      await permissionPrompt.getByTestId('acp-permission-allow-once').first().click();
 
       await expect(page.getByTestId('permission-record-row').first()).toBeVisible({ timeout: 5_000 });
       await expect(page.getByText('ACP_PONG_1').first()).toBeVisible({ timeout: 120_000 });
@@ -216,7 +230,7 @@ test.describe('15 — ACP permission request/response flow', () => {
       await composer.press('Enter');
 
       await expect(page.getByText('ACP_PONG_2').first()).toBeVisible({ timeout: 120_000 });
-      // No manual "Allow once" click happened for the second request — if
+      // No manual "Run" click happened for the second request — if
       // one had been required, the turn would still be blocked and this
       // text would never land within the timeout above.
     } finally {

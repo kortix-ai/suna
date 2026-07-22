@@ -499,6 +499,12 @@ export function AcpSessionChat({
         onToggleSidePanel={() => setIsSidePanelOpen(!isSidePanelOpen)}
         supportsCompact={false}
         agentName={agentInfo?.name}
+        // Session-wide auto-approve is a MODE, so it lives with the other
+        // session-wide actions instead of as a strip inside the permission
+        // prompt — which, once the mode is on, has no requests left to render
+        // and was reduced to an empty card hosting one line of status.
+        autoApprovePermissions={autoApprovePermissions}
+        onAutoApprovePermissionsChange={setAutoApprovePermissions}
       />
       <div ref={chatAreaRef} className="relative min-h-0 flex-1">
         <div
@@ -702,6 +708,35 @@ export function AcpSessionChat({
                 ) : null}
               </>
             )}
+            {/* A terminal error means the JSON-RPC channel this prompt answers
+                OVER is gone — `respondPermission` resumes a blocked call on a
+                connection that no longer exists, so every button on the card
+                could only fail. Offering Skip/Run next to "The connection to
+                the agent failed." is the interface contradicting itself: two
+                cards, one saying the session is dead and one inviting the user
+                to drive it.
+
+                So the prompt unmounts and `retry` is left as the single call
+                to action. Nothing is lost by hiding it — pending permissions
+                are projected from the envelope log (`AcpSession`'s
+                `pendingPrompts`), so a request still open when the connection
+                comes back is re-derived and the card returns on its own.
+
+                Deliberately keyed on `errorInfo.terminal` and NOT on
+                `connection === 'reconnecting'`: a reconnect is expected to
+                recover within seconds, and unmounting/remounting the card
+                across it would flicker away a decision the user may already
+                be reading. */}
+            {errorInfo?.terminal ? null : (
+              <AcpSessionPermissionPrompt
+                projectId={projectId}
+                sessionId={sessionId}
+                permissions={pendingPrompts.permissions}
+                autoApprove={autoApprovePermissions}
+                onAutoApproveChange={setAutoApprovePermissions}
+                onReply={respondPermission}
+              />
+            )}
             {busy ? <AcpBusyIndicator statusText={liveStatusText} /> : null}
             <div ref={spacerElRef} />
           </div>
@@ -831,26 +866,20 @@ export function AcpSessionChat({
             ) : undefined
           }
           inputSlot={
-            <>
-              <AcpSessionPermissionPrompt
-                projectId={projectId}
-                sessionId={sessionId}
-                permissions={pendingPrompts.permissions}
-                autoApprove={autoApprovePermissions}
-                onAutoApproveChange={setAutoApprovePermissions}
-                onReply={respondPermission}
+            // Same rule as the permission card above: an answer to a pending
+            // question travels the same dead channel, so a terminal error
+            // retires the prompt rather than leaving an un-submittable form
+            // pinned over the composer.
+            activeQuestionRequest && !errorInfo?.terminal ? (
+              <QuestionPrompt
+                key={activeQuestionRequest.id}
+                ref={questionPromptRef}
+                request={activeQuestionRequest}
+                onReply={handleQuestionReply}
+                onReject={handleQuestionReject}
+                onActionChange={handleQuestionActionChange}
               />
-              {activeQuestionRequest ? (
-                <QuestionPrompt
-                  key={activeQuestionRequest.id}
-                  ref={questionPromptRef}
-                  request={activeQuestionRequest}
-                  onReply={handleQuestionReply}
-                  onReject={handleQuestionReject}
-                  onActionChange={handleQuestionActionChange}
-                />
-              ) : null}
-            </>
+            ) : null
           }
         />
       </div>

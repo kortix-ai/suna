@@ -82,7 +82,16 @@ if (typeof (globalThis as any).localStorage === 'undefined') {
 // all three are stubbed to `null`. Must be registered before the first
 // `import('./acp-session-chat')` below.
 mock.module('@/components/markdown', () => ({ UnifiedMarkdown: () => null }));
-mock.module('./header/session-site-header', () => ({ SessionSiteHeader: () => null }));
+// Props-capturing stub (same trick as `ComposerChatInput` below) so tests can
+// assert what `AcpSessionChat` hands the header — the session-wide
+// auto-approve mode is owned by `useAcpSession` here and rendered up there.
+let lastSessionSiteHeaderProps: Record<string, unknown> | null = null;
+mock.module('./header/session-site-header', () => ({
+  SessionSiteHeader: (props: Record<string, unknown>) => {
+    lastSessionSiteHeaderProps = props;
+    return null;
+  },
+}));
 // `AcpSessionChat` now routes the composer through `ComposerChatInput`, which
 // pulls in the full Runtime catalog-query / model-store wiring (react-query,
 // SDK hooks) — none of which this file's ready/empty/error/raw-frame render
@@ -566,51 +575,137 @@ describe('AcpSessionChat — raw protocol frame rendering', () => {
   });
 });
 
-describe('AcpSessionChat — permission prompt in the composer', () => {
-  test('a pending permission is handed to the composer inputSlot as an AcpSessionPermissionPrompt (not an inline transcript card)', async () => {
-    const { AcpSessionChat } = await import('./acp-session-chat');
-    const { AcpSessionPermissionPrompt } = await import('./acp-session-permission-prompt');
+describe('AcpSessionChat — pending prompts vs. a dead connection', () => {
+  const permission = {
+    id: 7,
+    method: 'session/request_permission',
+    permission: 'Run shell command',
+    patterns: [],
+    options: [{ optionId: 'allow', label: 'Allow' }],
+    params: {},
+  };
+
+  function renderChat(acpOverrides: Record<string, unknown>) {
     lastComposerChatInputProps = null;
-
-    const permission = {
-      id: 7,
-      method: 'session/request_permission',
-      permission: 'Run shell command',
-      patterns: [],
-      options: [{ optionId: 'allow', label: 'Allow' }],
-      params: {},
-    };
-
     let renderer!: ReactTestRenderer;
     act(() => {
       renderer = create(
-        <AcpSessionChat
-          acp={baseAcp({
-            ready: true,
-            chatItems: [userMsg('u1', 'run pwd'), permissionItem(7)],
-            pendingPrompts: { permissions: [permission as any], questions: [] },
-          })}
+        <AcpSessionChatComponent
+          acp={baseAcp(acpOverrides as never)}
           sessionId="s1"
           sessionTitle="Session"
           projectId="p1"
         />,
       );
     });
+    return renderer;
+  }
+
+  let AcpSessionChatComponent: typeof import('./acp-session-chat').AcpSessionChat;
+  let AcpSessionPermissionPrompt: typeof import('./acp-session-permission-prompt').AcpSessionPermissionPrompt;
+
+  test('a pending permission renders as a prompt in the transcript, not as an inline permission card', async () => {
+    ({ AcpSessionChat: AcpSessionChatComponent } = await import('./acp-session-chat'));
+    ({ AcpSessionPermissionPrompt } = await import('./acp-session-permission-prompt'));
+
+    const renderer = renderChat({
+      ready: true,
+      chatItems: [userMsg('u1', 'run pwd'), permissionItem(7)],
+      pendingPrompts: { permissions: [permission as any], questions: [] },
+    });
 
     try {
-      const slot = (lastComposerChatInputProps as Record<string, unknown> | null)?.inputSlot as ReactElement;
-      expect(slot).toBeTruthy();
-      const children = Children.toArray((slot.props as { children?: ReactNode }).children);
-      const promptEl = children.find(
-        (child): child is ReactElement => isValidElement(child) && child.type === AcpSessionPermissionPrompt,
+      const prompts = renderer.root.findAllByType(AcpSessionPermissionPrompt);
+      expect(prompts).toHaveLength(1);
+      expect((prompts[0]!.props as { permissions: unknown[] }).permissions).toHaveLength(1);
+      expect((prompts[0]!.props as { permissions: Array<{ id: number }> }).permissions[0]?.id).toBe(
+        7,
       );
-      expect(promptEl).toBeTruthy();
-      expect((promptEl!.props as { permissions: unknown[] }).permissions).toHaveLength(1);
-      expect((promptEl!.props as { permissions: Array<{ id: number }> }).permissions[0]?.id).toBe(7);
 
-      // The permission does NOT render as an inline transcript card any more —
-      // its chat item renders nothing, so the old testids are absent.
-      expect(renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-permission-card')).toHaveLength(0);
+      // The permission's own chat item still renders nothing — the prompt is
+      // the single surface, never a duplicate inline card beside it.
+      expect(
+        renderer.root.findAll((node) => node.props?.['data-testid'] === 'acp-permission-card'),
+      ).toHaveLength(0);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  // `respondPermission` resumes a blocked JSON-RPC call over the connection
+  // that just died, so every button on the card could only fail. Leaving it
+  // up next to "The connection to the agent failed." makes the interface
+  // contradict itself.
+  test('a terminal error retires the permission prompt, leaving Retry as the only action', async () => {
+    ({ AcpSessionChat: AcpSessionChatComponent } = await import('./acp-session-chat'));
+    ({ AcpSessionPermissionPrompt } = await import('./acp-session-permission-prompt'));
+
+    const renderer = renderChat({
+      ready: true,
+      chatItems: [userMsg('u1', 'run pwd'), permissionItem(7)],
+      pendingPrompts: { permissions: [permission as any], questions: [] },
+      errorInfo: { terminal: true, message: 'The connection to the agent failed.' },
+    });
+
+    try {
+      expect(renderer.root.findAllByType(AcpSessionPermissionPrompt)).toHaveLength(0);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  // A non-terminal blip (reconnect in flight) is expected to recover within
+  // seconds; unmounting the card across it would flicker away a decision the
+  // user may already be reading.
+  test('a reconnect does NOT retire the prompt', async () => {
+    ({ AcpSessionChat: AcpSessionChatComponent } = await import('./acp-session-chat'));
+    ({ AcpSessionPermissionPrompt } = await import('./acp-session-permission-prompt'));
+
+    const renderer = renderChat({
+      ready: true,
+      chatItems: [userMsg('u1', 'run pwd'), permissionItem(7)],
+      pendingPrompts: { permissions: [permission as any], questions: [] },
+      connection: 'reconnecting',
+      errorInfo: { terminal: false, message: 'Reconnecting' },
+    });
+
+    try {
+      expect(renderer.root.findAllByType(AcpSessionPermissionPrompt)).toHaveLength(1);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
+  });
+
+  test('a terminal error retires the pending question prompt too', async () => {
+    ({ AcpSessionChat: AcpSessionChatComponent } = await import('./acp-session-chat'));
+
+    const renderer = renderChat({
+      ready: true,
+      chatItems: [userMsg('u1', 'pick one')],
+      pendingPrompts: {
+        permissions: [],
+        questions: [
+          {
+            id: 9,
+            method: 'session/request_input',
+            params: {},
+            questions: [{ question: 'Which?', options: ['a', 'b'] }],
+          } as any,
+        ],
+      },
+      errorInfo: { terminal: true, message: 'The connection to the agent failed.' },
+    });
+
+    try {
+      expect(
+        (lastComposerChatInputProps as Record<string, unknown> | null)?.inputSlot ?? null,
+      ).toBeNull();
     } finally {
       act(() => {
         renderer.unmount();
@@ -1210,5 +1305,45 @@ describe('ACP-native chat projection', () => {
       { kind: 'permission', id: 9, method: 'session/request_permission' },
       { kind: 'question', id: 10, method: 'elicitation/create', questions: [{ key: 'environment', question: 'Environment' }] },
     ]);
+  });
+});
+
+describe('AcpSessionChat — session auto-approve lives in the header', () => {
+  // The mode used to render as a strip inside the permission prompt, which
+  // meant that once it was on — and therefore no requests were left to show —
+  // an empty bordered card stayed pinned above the composer with nothing in
+  // it but that one line. A session-wide mode is not a pending request.
+  test('hands the auto-approve flag and its setter to SessionSiteHeader', async () => {
+    const { AcpSessionChat } = await import('./acp-session-chat');
+    lastSessionSiteHeaderProps = null;
+    const setAutoApprovePermissions = mock((_v: React.SetStateAction<boolean>) => {});
+
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(
+        <AcpSessionChat
+          acp={baseAcp({
+            ready: true,
+            chatItems: [userMsg('u1', 'hi')],
+            autoApprovePermissions: true,
+            setAutoApprovePermissions,
+          })}
+          sessionId="s1"
+          sessionTitle="Session"
+          projectId="p1"
+        />,
+      );
+    });
+
+    try {
+      const props = lastSessionSiteHeaderProps as Record<string, unknown> | null;
+      expect(props?.autoApprovePermissions).toBe(true);
+      (props?.onAutoApprovePermissionsChange as (v: boolean) => void)(false);
+      expect(setAutoApprovePermissions).toHaveBeenCalledWith(false);
+    } finally {
+      act(() => {
+        renderer.unmount();
+      });
+    }
   });
 });

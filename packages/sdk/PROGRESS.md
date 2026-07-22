@@ -242,6 +242,8 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-17 | `ws5-p0-c` | The SDK's OWN `ExperimentalFeatureKey` union (`core/rest/projects-client/projects.ts`) is a hand-maintained mirror of `apps/api/src/experimental/features.ts` / `@kortix/api-contract`'s `ExperimentalFeatureMapSchema` — and it was already missing `experimental_harnesses` (added to apps/api by commit `8658acde6`) before this session touched it. Added `unified_model_picker` (this task's own key, required for `apps/web` typecheck) but left `experimental_harnesses` unfixed — pre-existing drift, out of this task's granted scope. A consumer reading `project.experimental.experimental_harnesses` off the SDK's `KortixProject` type today gets a `Record<ExperimentalFeatureKey, boolean>` whose key type doesn't statically include it (works at runtime via bracket access or the api-contract-typed route, just not through the SDK's own narrower type). | `packages/sdk/src/core/rest/projects-client/projects.ts:16` |
 | 2026-07-17 | `ws5-p0-c` | `apps/api/.env.keys` (the dotenvx private key for the **local** profile) is absent from this sandbox and no `dotenvx-armor` CLI/session is available to pull it — `apps/api`'s own test suite (`bash scripts/test.sh`, per-file `dotenvx run -- bun test`) cannot execute here; `bun test` fails at `config.ts`'s env validation before any test file even loads (every encrypted var decrypts to `encrypted:…` literal, fails Zod). Not a regression from this task — pre-existing sandbox/environment gap. `apps/api`'s `tsc --noEmit` (no env needed) DOES run clean here, and was used as the substitute verification for the two `apps/api` files this task touched. | `apps/api/.env`, `apps/api/scripts/test.sh`, `apps/api/src/config.ts` |
 | 2026-07-17 | `fast-follow-disc07` | **DISC-07 closed.** The gap flagged on the row above (`ws5-p0-c`, `experimental_harnesses` missing from the SDK's own `ExperimentalFeatureKey` mirror) is fixed: the union now lists `experimental_harnesses` alongside `unified_model_picker`, matching `@kortix/api-contract`'s `ExperimentalFeatureMapSchema` key-for-key. Stale "missing / out of scope" NOTE comment corrected. Type-level regression test added (`projects.test.ts`). Gates: `typecheck` clean, `test` 1184/1184 (was 1183), `smoke:install` passed. Public snapshot untouched (name-only, doesn't track union members). | `packages/sdk/src/core/rest/projects-client/projects.ts:15-27`, `packages/sdk/src/core/rest/projects-client/projects.test.ts` |
+| 2026-07-22 | `acp-harness-runtime-v2` | **`public-surface.snapshot.json` is pre-existing STALE on this branch, unrelated to this task.** Both surface tests fail: the snapshot lacks `ACP_BOOTSTRAP_TIMEOUT_MS` / `AcpBootstrapTimeoutError` (added by earlier branch work) and still lists `buildModelPickerViewModel` / `useModelPicker` (since removed). Verified pre-existing by stashing this session's 2 changed files and re-running — identical diff. The removals are the interesting half: per this package's rules a removed export is breaking and wants a `@deprecated` alias, not a re-record — so this needs a human decision, not `UPDATE_SURFACE_SNAPSHOT=1`. Left unfixed; flagging for whoever owns the model-picker removal. | `packages/sdk/src/public-surface.snapshot.json`, `packages/sdk/src/public-surface.test.ts` |
+| 2026-07-22 | `acp-harness-runtime-v2` | `apps/web`'s ACP design guard is pre-existing RED: "off-scale radius in session-chat-input.tsx" (file last touched by `918b6e086`, styling adjustments). Unrelated to the SDK — flagged, not fixed. Rest of `apps/web/src/features/session` is 948/949 green. | `apps/web/src/features/session/session-chat-input.tsx` |
 | 2026-07-19 | `listening-ports-synthetic-pin` | **`pnpm --filter @kortix/sdk typecheck` is pre-existing RED on this branch, unrelated to this task.** `src/react/model-flatten.test.ts:4` imports a type from `./use-opencode-sessions`, a module that no longer exists (deleted by an earlier OpenCode-session-mapping removal); `src/react/use-model-store.test.ts` has its entire body duplicated (two `import {describe,expect,test}` blocks, `TS2300` duplicate-identifier ×6), which reads as an incompletely-resolved merge — present already at `7398090d4` ("Merge branch 'main' into acp-harness-runtime-v2"), before this session's claim commit. Verified by stashing this task's 3 changed files and re-running `typecheck`: identical 7 errors, byte-for-byte. `bun test` (this task's actual gate per `AGENTS.md`) is unaffected and green. Left unfixed — out of this task's scope; flagging for whichever session owns `src/react/{model-flatten,use-model-store}.test.ts` next. | `packages/sdk/src/react/model-flatten.test.ts:4`, `packages/sdk/src/react/use-model-store.test.ts` |
 
 
@@ -1627,3 +1629,40 @@ API regression run reported **41 pass / 0 fail** with 83 assertions.
 
 **Shippable to production: YES** for the rollback. The owner-scoped binding
 feature itself is **NOT YET** shippable and remains open as WIP.
+
+---
+
+### 2026-07-22 — session `acp-harness-runtime-v2`: `session_info_update` transcript noise
+
+Harness `session_info_update` frames were rendering in the transcript as
+"Unrecognized agent event" cards. They are session-metadata sync frames — no
+content, repeated during a turn, nothing the user caused or can act on.
+
+Fixed in the reducer (`src/acp/reduce.ts`), the single producer of `raw` chat
+items for `session/update`. Two parts: `session_info_update` joins
+`NON_VISUAL_UPDATES` (documentation of intent), and a new `isStateSyncUpdate`
+suffix rule drops any *unrecognized* `*_update` kind before the `raw` fallback.
+The suffix rule is safe because every content-carrying ACP kind (`*_chunk`,
+`tool_call`, `tool_call_update`, `plan`) is classified by an explicit branch
+first; a kind that does NOT follow the convention still surfaces as a raw frame.
+Rationale for the rule over another set entry: harnesses keep inventing these,
+and a set means each new one ships a visible defect until someone notices.
+`envelopes` stays lossless, and because `chatItems` is projected from it on
+every fold, already-persisted sessions clean up on reload — no migration.
+
+TDD: both tests written first and watched fail/pass for the right reason
+(`reduce.test.ts` — the drop test, plus a guard asserting a non-`_update`
+unknown kind still renders raw).
+
+**Verification:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk run smoke:install` packed, installed, imported, and
+constructed successfully; the full SDK suite reported **1280 pass / 2 fail**
+(1282 across 96 files) — both failures are the pre-existing stale
+`public-surface.snapshot.json`, logged in DISCOVERED above and verified
+identical with this session's changes stashed. `apps/web/src/features/session`
+reported **948 pass / 1 fail**, the pre-existing `session-chat-input.tsx` radius
+guard, also logged above. No public export added, removed, or renamed
+(`isStateSyncUpdate` is module-local).
+
+**Shippable to production: YES** for this change. The two red tests it did not
+cause are pre-existing on the branch and need their own owner.
