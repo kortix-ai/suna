@@ -398,6 +398,19 @@ export function takeFlagValue(argv: string[], names: string[]): string | undefin
   return undefined;
 }
 
+/** Collect EVERY occurrence of a repeatable flag (`--secret A --secret B`, or
+ *  the `--secret=A` form). Returns [] when absent. Same value rules as
+ *  takeFlagValue; mutates argv. */
+export function takeFlagValues(argv: string[], names: string[]): string[] {
+  const out: string[] = [];
+  for (;;) {
+    const v = takeFlagValue(argv, names);
+    if (v === undefined) break;
+    out.push(v);
+  }
+  return out;
+}
+
 export function takeFlagBool(argv: string[], names: string[]): boolean {
   for (let i = 0; i < argv.length; i += 1) {
     if (names.includes(argv[i])) {
