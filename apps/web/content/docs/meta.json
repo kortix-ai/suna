@@ -7,8 +7,10 @@
     "project",
     "work",
     "connect",
+    "host",
+    "---Develop---",
     "cli",
     "sdk",
-    "host"
+    "[API reference](/docs/api)"
   ]
 }
