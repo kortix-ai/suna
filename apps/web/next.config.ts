@@ -250,6 +250,15 @@ const nextConfig = (): NextConfig => ({
 
   async rewrites() {
     return [
+      // Agent discovery documents. The App Router ignores dot-prefixed
+      // directories, so the handlers live under `(public)/well-known/…` and are
+      // surfaced at their spec-mandated paths here. These are `afterFiles`
+      // rewrites (a bare array), so `public/` wins on collision — none of these
+      // paths collide with the two existing files in public/.well-known/.
+      {
+        source: '/.well-known/api-catalog',
+        destination: '/well-known/api-catalog',
+      },
       // Proxy API calls to backend to avoid CORS in local dev. The target is
       // env-driven so an isolated `pnpm worktree` instance proxies the browser
       // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
