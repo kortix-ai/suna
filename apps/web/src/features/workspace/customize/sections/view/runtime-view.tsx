@@ -39,7 +39,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
@@ -69,15 +68,14 @@ import {
   ACP_HARNESS_CONFIG_DIRS,
   ACP_HARNESS_ICON_PROVIDER_ID,
   ACP_HARNESS_LABELS,
-  projectFilesHref,
   withAllAcpHarnesses,
 } from '@/features/workspace/customize/sections/view/runtime-profile-options';
 import {
   agentsOnProfile,
   buildRuntimeRows,
   carryReferencesThroughRename,
-  listAgentNames,
   connectedHarnessesFromModelsPage,
+  listAgentNames,
   nextAgentBlockForRuntime,
   orphanedAgentRefs,
   pickFallbackProfile,
@@ -109,9 +107,8 @@ import {
 } from '@kortix/sdk/projects-client';
 import { useModelsPage } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Cpu, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { ArrowRight, Cpu, Plus, Trash2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 const RUNTIME_PROFILES_QUERY_KEY = (projectId: string) => ['runtime-profiles', projectId] as const;
@@ -215,20 +212,6 @@ export function RuntimeView({ projectId }: { projectId: string }) {
             ))}
           </ul>
         )}
-
-        <InfoBanner
-          tone="info"
-          icon={FolderOpen}
-          title="Each runtime owns its own behavior"
-          action={
-            <Button asChild variant="transparent" size="sm">
-              <Link href={projectFilesHref(projectId)}>Open Files</Link>
-            </Button>
-          }
-        >
-          Prompts, models, and hooks live in the runtime&apos;s own files — open Files to edit them
-          directly.
-        </InfoBanner>
 
         {profilesQuery.data?.editable ? (
           <Disclosure
@@ -567,7 +550,10 @@ function MovingAgentsPanel({
               {agent}
             </Badge>
             <ArrowRight className="text-muted-foreground size-3 shrink-0" />
-            <Select value={reassignments[agent] ?? ''} onValueChange={(next) => onChange(agent, next)}>
+            <Select
+              value={reassignments[agent] ?? ''}
+              onValueChange={(next) => onChange(agent, next)}
+            >
               <SelectTrigger
                 variant="popover"
                 aria-label={`Runtime for ${agent}`}
