@@ -49,6 +49,7 @@ describe('runtime version drift guards', () => {
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
+      machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
       executorSdkPath: 'kortix-executor-sdk',
     });

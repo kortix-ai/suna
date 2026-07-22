@@ -11,6 +11,9 @@ session you're in is an isolated VM sandbox — an ephemeral branch of
 this repo, your own \`/workspace\` — so you can install, experiment,
 and recover freely. Only what you commit + push survives.
 
+Use \`pnpm\` for JavaScript and TypeScript. Use \`uv\` for Python.
+Read \`/MACHINE.md\` for machine details.
+
 ## How you work
 
 1. **Understand first.** Read the relevant files, search the codebase

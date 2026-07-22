@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   AGENT_BROWSER_VERSION,
+  NODE_VERSION,
+  NPM_VERSION,
   OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
+  PNPM_VERSION,
 } from '@kortix/shared';
 import {
   buildDefaultSandboxTemplate,
@@ -20,11 +23,41 @@ const COMMON = {
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
+  machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
   executorSdkPath: 'kortix-executor-sdk',
+  opencodeWarmupScriptPath: 'kortix-opencode-warmup',
 };
 
 describe('buildLayeredDockerfile', () => {
+  test('installs the JavaScript runtime floor through pinned pnpm managed runtimes', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(merged).not.toContain('ca-certificates curl git gzip nodejs npm unzip');
+    expect(merged).toContain(`ENV PNPM_VERSION=${PNPM_VERSION}`);
+    expect(merged).toContain('USER kortix');
+    expect(merged).toContain('/home/kortix/.local/share/pnpm/bin');
+    expect(merged).toContain('curl -fsSL https://get.pnpm.io/install.sh | sh -');
+    expect(merged).toContain(`pnpm runtime set node ${NODE_VERSION} -g`);
+    expect(merged).toContain(`pnpm add -g "npm@${NPM_VERSION}"`);
+    expect(merged).toContain(`pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}"`);
+    expect(merged).toContain(`pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`);
+    expect(merged).not.toContain('npm install -g');
+    expect(merged).not.toContain('npx -y');
+  });
+
+  test('runs build-time and runtime tools as the standard kortix user', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
+    expect(merged).toContain("printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix");
+    expect(merged).toContain('chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral');
+    expect(merged).not.toContain('ENV HOME=');
+    expect(merged).not.toContain('XDG_DATA_HOME=');
+    expect(merged).not.toContain('XDG_CONFIG_HOME=');
+    expect(merged).not.toContain('XDG_CACHE_HOME=');
+    expect(merged).toContain('USER root\nCOPY kortix-agent.gz');
+    expect(merged).toContain('ENV KORTIX_WORKSPACE=/workspace\nUSER kortix\nWORKDIR /workspace');
+  });
+
   test('preserves the user Dockerfile verbatim and appends the Kortix layer', () => {
     const user = 'FROM ubuntu:24.04\nRUN apt-get install -y foo\n';
     const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
@@ -32,7 +65,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
     expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
-    expect(merged).toContain('python3 python3-dev python3-pip python3-venv');
+    expect(merged).toContain('uv python install 3.12.13');
+    expect(merged).toContain('uv venv --seed --python 3.12.13 /home/kortix/.venv');
     expect(merged).toContain('"openpyxl>=3.1"');
     expect(merged).toContain('"pandas>=2.2"');
     expect(merged).toContain('"playwright>=1.58"');
@@ -41,6 +75,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     // The admin CLI is baked alongside the daemon and verified at build time.
     expect(merged).toContain('COPY kortix.gz /tmp/kortix.gz');
+    expect(merged).toContain('COPY MACHINE.md /MACHINE.md');
     expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
     expect(merged).toContain('kortix --version');
     expect(merged).toContain('COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/');
@@ -55,10 +90,10 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     // Wired BOTH ways: the documented env var → a stable symlink, AND
     // agent-browser's own auto-detected cache (env-independent, #422-proof).
-    expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium');
-    expect(merged).toContain('/opt/kortix/home/.agent-browser/browsers/chrome-linux64');
+    expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium');
+    expect(merged).toContain('/home/kortix/.agent-browser/browsers/chrome-linux64');
     // The build FAILS LOUDLY if Chromium didn't wire up — never install at runtime.
-    expect(merged).toContain('/usr/local/bin/chromium --version');
+    expect(merged).toContain('chromium --version');
     // Gate matches the resolved PATH (deterministic), not the browser name —
     // doctor says "Chromium" on arm64 but "Google Chrome for Testing" on x64.
     expect(merged).toContain("agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'");
@@ -113,7 +148,7 @@ describe('buildLayeredDockerfile', () => {
     });
     const chromiumIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     const cloneIdx = merged.indexOf('Per-project COLD warm: bake repo checkout into /workspace');
-    const opencodeWarmupIdx = merged.indexOf('opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log');
+    const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance keep');
     expect(chromiumIdx).toBeGreaterThanOrEqual(0);
     expect(cloneIdx).toBeGreaterThanOrEqual(0);
     expect(opencodeWarmupIdx).toBeGreaterThanOrEqual(0);

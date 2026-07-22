@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import { access, constants, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -23,10 +24,9 @@ const READY_TIMEOUT_MS = 20_000
 // drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
 const READY_LIVENESS_MS = 5_000
 
-export const OPENCODE_HOME = '/opt/kortix/home'
+export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
 const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
-const OPENCODE_CACHE_HOME = `${OPENCODE_HOME}/.cache`
 const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
@@ -764,10 +764,6 @@ export function createOpencodeSupervisor(
     const env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
-      HOME: OPENCODE_HOME,
-      XDG_DATA_HOME: OPENCODE_DATA_HOME,
-      XDG_CONFIG_HOME: OPENCODE_CONFIG_HOME,
-      XDG_CACHE_HOME: OPENCODE_CACHE_HOME,
       OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
       // Every non-interactive shell opencode spawns (`bash -c`) sources this,
       // so live project secrets reach the agent's commands without any
