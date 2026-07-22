@@ -51,6 +51,9 @@ function channelSpec(
     platform,
     spec: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    // Platform-called connector — the request isn't built by executeCall's
+    // HTTP builders, so a static header table would be inert. Always empty.
+    headers: {},
     policies: [],
   };
 }

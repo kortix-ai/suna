@@ -66,6 +66,8 @@ export interface ConnectorAuthDiscovery {
   status: 'detected' | 'none' | 'ambiguous' | 'unsupported';
   recommended: ExecutableConnectorAuth | null;
   candidates: ConnectorAuthCandidate[]; warnings: string[]; totalRequests: number;
+  /** The source document's own name (OpenAPI `info.title`, Postman `info.name`). */
+  title: string | null;
 }
 
 export interface ConnectionProfile {
@@ -266,6 +268,12 @@ export interface ConnectorConfig {
     name: string | null;
     prefix: string | null;
   };
+  /** Static request headers sent on EVERY call this connector makes — an
+   *  ordered map of header name → value (`{ Accept: 'application/json' }`);
+   *  `{}` when none are declared. NOT secrets: stored in kortix.yaml in
+   *  plaintext, like `baseUrl`. The credential (see `auth`) always wins if a
+   *  header here has the same name. */
+  headers: Record<string, string>;
 }
 
 export async function getConnectorConfig(projectId: string, slug: string) {
@@ -315,6 +323,12 @@ export interface ConnectorDraftInput {
     name?: string;
     prefix?: string;
   };
+  /** Static request headers, an ordered map of header name → value. Omit to
+   *  keep whatever the connector already declares; send `{}` to clear them.
+   *  Names must be RFC 7230 tokens (`^[A-Za-z0-9!#$%&'*+.^_\`|~-]+$`, max 128
+   *  chars), values may not contain CR/LF (max 2048 chars), at most 32 entries.
+   *  NOT secrets — they are committed to kortix.yaml in plaintext. */
+  headers?: Record<string, string>;
 }
 
 export async function createConnector(projectId: string, draft: ConnectorDraftInput) {

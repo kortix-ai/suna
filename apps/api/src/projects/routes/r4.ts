@@ -149,6 +149,9 @@ const TRIGGER_MANIFEST_KEYS = [
   'sessionMode',
   'session_id',
   'sessionId',
+  'session_key',
+  'sessionKey',
+  'filter',
 ] as const;
 
 interface SlackAuthTest {
@@ -939,10 +942,15 @@ projectsApp.openapi(
     if (touchesManifest) {
       // Merge the patch onto the current spec so callers can send partial bodies
       // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
-      const draft = parseTriggerDraft(
-        { ...specToBody(current), ...body, slug: slug },
-        { existingSlug: slug },
-      );
+      const base = specToBody(current);
+      // Setting a `session_key` is itself the opt-in to keyed sessions (see
+      // parseTriggerDraft). The merge base always carries an explicit
+      // `session_mode`, which would outvote a caller that sent ONLY a key — so
+      // drop it and let the key decide. An explicit mode in the patch still wins.
+      const patchesKey = 'session_key' in body || 'sessionKey' in body;
+      const patchesMode = 'session_mode' in body || 'sessionMode' in body;
+      if (patchesKey && !patchesMode) delete base.session_mode;
+      const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
       if ('error' in draft) return c.json({ error: draft.error }, 400);
 
       // A `pinned` trigger may only target a session that belongs to THIS project.

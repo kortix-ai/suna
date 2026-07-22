@@ -68,7 +68,7 @@ export interface SyncResult {
 }
 
 const EMPTY_AUTH_DISCOVERY: ConnectorAuthDiscovery = {
-  status: 'none', recommended: null, candidates: [], warnings: [], totalRequests: 0,
+  status: 'none', recommended: null, candidates: [], warnings: [], totalRequests: 0, title: null,
 };
 
 export async function discoverDraftConnectorAuth(

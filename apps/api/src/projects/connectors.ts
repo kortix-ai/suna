@@ -20,6 +20,9 @@
  *       auth:
  *         type: bearer
  *         secret: STRIPE_API_KEY     # project-secret NAME; value set in dashboard
+ *       headers:                     # static headers on every call (never secrets)
+ *         Accept: application/json
+ *         Stripe-Version: "2024-06-20"
  *       policies:                    # connector-scoped; built last
  *         - match: "*.delete*"
  *           action: block
@@ -35,7 +38,12 @@
 import { createHash } from 'node:crypto';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 import { isValidSecretName } from './secrets';
-import { CHANNEL_PLATFORMS, RESERVED_SLUG_PROVIDERS, SLUG_RE } from '@kortix/manifest-schema';
+import {
+  CHANNEL_PLATFORMS,
+  RESERVED_SLUG_PROVIDERS,
+  SLUG_RE,
+  parseConnectorHeaders,
+} from '@kortix/manifest-schema';
 
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel', 'computer'];
@@ -136,6 +144,21 @@ export interface ConnectorSpec {
   spec: string | null;
   // ── shared ──
   auth: ConnectorAuthSpec;
+  /**
+   * Arbitrary static request headers, sent on EVERY outbound call this
+   * connector makes (openapi / http / postman / graphql / mcp) — the
+   * "headers table" you'd fill in in Postman: `Accept: application/json`,
+   * `X-Tenant-Id: acme`, a custom `User-Agent`, …
+   *
+   * Ordered map of header name → value; `{}` when none are declared.
+   *
+   * NOT SECRETS: these values live in the manifest, in git, in plaintext —
+   * exactly like `baseUrl`. The credential belongs in `auth` + the platform
+   * credential store, and the auth header ALWAYS wins over a static header
+   * with the same name (executor/execute.ts `applyConnectorHeaders`), so a
+   * static header can never spoof or clobber it.
+   */
+  headers: Record<string, string>;
   /** Omitted auth is auto-detected for direct providers; explicit none opts out. */
   authAuto?: boolean;
   policies: ConnectorPolicySpec[];
@@ -249,6 +272,12 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     entry.auth = auth;
   }
 
+  // Only emit a `headers` table when there is one — an empty map carries no
+  // information and would just churn the manifest (same rule as `policies`).
+  if (Object.keys(spec.headers).length > 0) {
+    entry.headers = { ...spec.headers };
+  }
+
   if (spec.policies.length > 0) {
     entry.policies = spec.policies.map((p) => ({ match: p.match, action: p.action }));
   }
@@ -276,6 +305,11 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     spec: spec.spec,
     auth: spec.auth,
     authAuto: spec.authAuto ?? false,
+    // Static headers change what every outbound request looks like, and they
+    // are persisted in the connector's materialized `config` — which is only
+    // rewritten when this hash changes. Leaving them out would let a header
+    // edit commit to kortix.yaml and never reach the gateway.
+    headers: spec.headers,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -332,7 +366,7 @@ function parseConnectorEntry(entry: unknown, index: number, filename: string = M
   const credentialMode: 'shared' = 'shared';
 
   // Defaults; provider blocks fill them in.
-  const base: Omit<ConnectorSpec, 'auth' | 'policies'> = {
+  const base: Omit<ConnectorSpec, 'auth' | 'headers' | 'policies'> = {
     slug,
     path: `${filename}#connectors.${slug}`,
     name,
@@ -356,6 +390,9 @@ function parseConnectorEntry(entry: unknown, index: number, filename: string = M
   const authParsed = parseAuth(slug, provider as ConnectorProvider, row.auth, filename);
   if (!authParsed.ok) return authParsed;
 
+  const headersParsed = parseHeaders(slug, provider as ConnectorProvider, row.headers, filename);
+  if (!headersParsed.ok) return headersParsed;
+
   const policiesParsed = parsePolicies(slug, row.policies, filename);
   if (!policiesParsed.ok) return policiesParsed;
 
@@ -364,6 +401,7 @@ function parseConnectorEntry(entry: unknown, index: number, filename: string = M
     spec: {
       ...providerParsed.value,
       auth: authParsed.value,
+      headers: headersParsed.value,
       authAuto:
         (row.auth === undefined || row.auth === null) &&
         provider !== 'pipedream' && provider !== 'channel' && provider !== 'computer',
@@ -376,9 +414,9 @@ function parseProviderFields(
   slug: string,
   provider: ConnectorProvider,
   row: Record<string, unknown>,
-  base: Omit<ConnectorSpec, 'auth' | 'policies'>,
+  base: Omit<ConnectorSpec, 'auth' | 'headers' | 'policies'>,
   filename: string = MANIFEST_FILENAME,
-): { ok: true; value: Omit<ConnectorSpec, 'auth' | 'policies'> } | ParseErr {
+): { ok: true; value: Omit<ConnectorSpec, 'auth' | 'headers' | 'policies'> } | ParseErr {
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
   if (provider === 'pipedream') {
@@ -480,6 +518,44 @@ function parseAuth(
   }
 
   return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret } };
+}
+
+/**
+ * `headers:` — arbitrary static request headers sent on every outbound call
+ * (the Postman-style headers table). Ordered map of name → value.
+ *
+ *   connectors:
+ *     - slug: acme
+ *       provider: http
+ *       base_url: https://api.acme.com
+ *       headers:
+ *         Accept: application/json
+ *         X-Tenant-Id: acme
+ *
+ * The rules (RFC 7230 token names, no CR/LF in values, caps, no
+ * transport-owned names) live in `@kortix/manifest-schema` so the CR-merge
+ * gate, this parser and the executor can never drift. Values are NOT secrets —
+ * they sit in git in plaintext; the credential goes in `auth`.
+ */
+function parseHeaders(
+  slug: string,
+  provider: ConnectorProvider,
+  raw: unknown,
+  filename: string = MANIFEST_FILENAME,
+): { ok: true; value: Record<string, string> } | ParseErr {
+  if (raw === undefined || raw === null) return { ok: true, value: {} };
+  // Platform-called providers never build the raw HTTP request themselves, so
+  // a header table there would be silently dropped — reject it loudly instead
+  // (mirrors how `auth` is rejected for the same two providers).
+  if (provider === 'pipedream') {
+    return err(slug, 'provider="pipedream" calls run through Pipedream — `headers` is not supported', filename);
+  }
+  if (provider === 'channel') {
+    return err(slug, 'provider="channel" calls run through the platform API — `headers` is not supported', filename);
+  }
+  const parsed = parseConnectorHeaders(raw);
+  if (!parsed.ok) return err(slug, `[connectors.headers] ${parsed.error}`, filename);
+  return { ok: true, value: parsed.value };
 }
 
 function parsePolicies(

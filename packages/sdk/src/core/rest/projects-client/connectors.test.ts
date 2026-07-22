@@ -185,7 +185,7 @@ test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async
   const discovery: import('./connectors').ConnectorAuthDiscovery = {
     status: 'detected',
     recommended: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
-    candidates: [], warnings: [], totalRequests: 10,
+    candidates: [], warnings: [], totalRequests: 10, title: 'HubSpot',
   };
   nextResponse = { status: 200, body: discovery };
   const draft = {

@@ -10,6 +10,7 @@ import {
   projects,
   sessionToolApprovals,
 } from '@kortix/db';
+import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 /**
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
@@ -278,6 +279,16 @@ function authOf(row: ConnectorRow): { auth: ExecutorAuth; hasAuth: boolean } {
   return { auth, hasAuth };
 }
 
+/**
+ * The connector's static request headers (kortix.yaml `headers:`, persisted
+ * into `config` by the materializer). Sanitized on the way out — a row written
+ * before the header rules existed can never inject an illegal header.
+ */
+function headersOf(row: ConnectorRow): Record<string, string> {
+  const cfg = (row.config ?? {}) as Record<string, any>;
+  return sanitizeConnectorHeaders(cfg.headers);
+}
+
 function baseUrlOf(row: ConnectorRow): string | null {
   const cfg = (row.config ?? {}) as Record<string, any>;
   switch (row.providerType) {
@@ -396,6 +407,7 @@ function toGatewayConnector(
     platform: channelPlatform(row.config),
     baseUrl: baseUrlOf(row),
     auth,
+    headers: headersOf(row),
     hasAuth,
     // `per_user` was removed 2026-07-05; every row is `shared` (DB-enforced by
     // a CHECK constraint), so this is a defensive cast, not a live branch.
@@ -924,6 +936,7 @@ async function getConnectorConfig(
     baseUrl: baseUrlOf(row),
     spec: cfg.spec ?? null,
     auth: { type: auth.type, in: auth.in, name: auth.name, prefix: auth.prefix },
+    headers: headersOf(row),
   };
 }
 

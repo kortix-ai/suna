@@ -1260,9 +1260,16 @@ export function parseTriggerDraft(
       error: `session_mode must be one of ${GIT_TRIGGER_SESSION_MODES.map((m) => `"${m}"`).join(', ')}`,
     };
   }
+  // Declaring a `session_key` IS the opt-in to keyed sessions — requiring both
+  // it and `session_mode: keyed` was redundant. An explicit mode still wins, so
+  // `session_mode: fresh` + a stray key stays fresh (and nulls the key below).
+  const sessionKeyRaw = normalizeString((body as any).session_key ?? (body as any).sessionKey);
+
   const sessionMode: GitTriggerSessionMode = sessionModeRaw
     ? (sessionModeRaw as GitTriggerSessionMode)
-    : 'fresh';
+    : sessionKeyRaw
+      ? 'keyed'
+      : 'fresh';
   const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
@@ -1270,7 +1277,7 @@ export function parseTriggerDraft(
   const pinnedSessionId: string | null =
     sessionMode === 'pinned' ? (pinnedSessionIdRaw ?? null) : null;
 
-  const sessionKeyRaw = normalizeString((body as any).session_key ?? (body as any).sessionKey);
+  // An EXPLICIT keyed mode with no key is still an error — nothing to bucket by.
   if (sessionMode === 'keyed' && !sessionKeyRaw) {
     return {
       error: 'session_mode "keyed" requires a session_key template (e.g. "{{ body.data.chat_jid }}")',
@@ -1382,6 +1389,10 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     enabled: spec.enabled,
     prompt_template: spec.promptTemplate,
     cron: spec.cron,
+    // Carry the one-off instant too, or a PATCH that touches anything else on a
+    // `run_at` trigger would drop its schedule and fail re-validation ("cron
+    // triggers must declare a `cron` expression or a one-off `run_at`").
+    run_at: spec.runAt,
     timezone: spec.timezone,
     secret_env: spec.secretEnv,
     session_mode: spec.sessionMode,

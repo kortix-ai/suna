@@ -445,9 +445,15 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   // Only emit model when set so manifests on the "Default" path stay byte-stable.
   if (spec.model) entry.model = spec.model;
   entry.enabled = spec.enabled;
+  // `keyed` is written as `session_key` alone: the key implies the mode on read
+  // (see parseTriggerEntry), so emitting both would be redundant in the file a
+  // human actually reads. It also keeps the manifest valid against the
+  // `session_mode` enum in @kortix/manifest-schema, which the `kortix validate`
+  // / CR-merge gate gets to before it learns about new modes.
+  const keyedByKey = spec.sessionMode === 'keyed' && !!spec.sessionKey;
   // Only emit session_mode when it deviates from the default ('fresh') so
   // existing manifests stay byte-stable on round-trip.
-  if (spec.sessionMode !== 'fresh') {
+  if (spec.sessionMode !== 'fresh' && !keyedByKey) {
     entry.session_mode = spec.sessionMode;
   }
   // `pinned` carries the exact session id to loop.
@@ -455,7 +461,7 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     entry.session_id = spec.pinnedSessionId;
   }
   // `keyed` carries the template that derives one session per key.
-  if (spec.sessionMode === 'keyed' && spec.sessionKey) {
+  if (keyedByKey) {
     entry.session_key = spec.sessionKey;
   }
   if (spec.filter && Object.keys(spec.filter).length > 0) {
@@ -556,9 +562,23 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
       `session_mode must be one of ${GIT_TRIGGER_SESSION_MODES.map((m) => `"${m}"`).join(', ')} (got "${sessionModeRaw}")`,
     );
   }
+  // `keyed` carries the template that derives one session per key
+  // (manifest key `session_key`). Read BEFORE resolving the mode: declaring a
+  // `session_key` is itself the opt-in, so `session_mode: keyed` is redundant
+  // noise a manifest never has to write. An EXPLICIT mode always wins, so
+  // `session_mode: fresh` + a stray key stays fresh (and drops the key below).
+  const sessionKeyRaw =
+    typeof row.session_key === 'string'
+      ? row.session_key.trim()
+      : typeof row.sessionKey === 'string'
+        ? row.sessionKey.trim()
+        : '';
+
   const sessionMode: GitTriggerSessionMode = sessionModeRaw
     ? (sessionModeRaw as GitTriggerSessionMode)
-    : 'fresh';
+    : sessionKeyRaw
+      ? 'keyed'
+      : 'fresh';
 
   // `pinned` carries the exact session id to loop (manifest key `session_id`).
   const pinnedSessionIdRaw =
@@ -572,14 +592,9 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
   }
   const pinnedSessionId: string | null = sessionMode === 'pinned' ? pinnedSessionIdRaw : null;
 
-  // `keyed` carries the template that derives one session per key
-  // (manifest key `session_key`).
-  const sessionKeyRaw =
-    typeof row.session_key === 'string'
-      ? row.session_key.trim()
-      : typeof row.sessionKey === 'string'
-        ? row.sessionKey.trim()
-        : '';
+  // An EXPLICIT `session_mode: keyed` with no key is still an error — there is
+  // nothing to bucket sessions by. (The inferred path can't reach this: it only
+  // resolves to `keyed` when a key is present.)
   if (sessionMode === 'keyed' && !sessionKeyRaw) {
     return err(
       slug,
