@@ -50,6 +50,10 @@ describe('auth.md', () => {
     expect(body).toContain(String(OAUTH_TOKEN_RATE_LIMIT_PER_MINUTE));
   });
 
+  test('leads with the bearer token credentials, before the OAuth flow', () => {
+    expect(body.indexOf('kortix_pat_')).toBeLessThan(body.indexOf('## Flow'));
+  });
+
   test('links the machine-readable companions', () => {
     expect(body).toContain('/.well-known/oauth-authorization-server');
     expect(body).toContain('/.well-known/oauth-protected-resource');
