@@ -135,3 +135,66 @@ describe('runProviders login — github-copilot is removed dead CLI surface', ()
     expect(out).not.toContain('github-copilot');
   });
 });
+
+describe('runProviders login — registry-driven account resolution (no hardcoded set)', () => {
+  const captureErr = async (args: string[]): Promise<{ code: number; out: string }> => {
+    const chunks: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    (process.stderr.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    let code: number;
+    try {
+      code = await runProviders(args);
+    } finally {
+      process.stderr.write = orig;
+    }
+    return { code, out: chunks.join('') };
+  };
+
+  test('no provider → exit 2 with a usage hint, before any context', async () => {
+    const { code, out } = await captureErr(['login']);
+    expect(code).toBe(2);
+    expect(out).toContain('Pass a provider');
+  });
+
+  test('an unknown provider → exit 2, points at account sign-in, no HTTP', async () => {
+    const { code, out } = await captureErr(['login', 'not-a-real-provider']);
+    expect(code).toBe(2);
+    expect(out).toContain("isn't an account provider");
+    // aliases are surfaced so the user can discover codex/claude
+    expect(out).toContain('claude');
+    expect(out).toContain('codex');
+    expect(out).not.toContain('HTTP');
+  });
+
+  test('an api-key-only provider (openrouter) → exit 2, redirected to `set`', async () => {
+    const { code, out } = await captureErr(['login', 'openrouter']);
+    expect(code).toBe(2);
+    expect(out).toContain('API key');
+    expect(out).toContain('providers set openrouter');
+    expect(out).not.toContain('HTTP');
+  });
+});
+
+describe('providers --help — two-door registry surface', () => {
+  test('names both doors and the codex/claude account entry points', async () => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    (process.stdout.write as unknown) = (s: string) => {
+      chunks.push(s);
+      return true;
+    };
+    try {
+      await runProviders(['--help']);
+    } finally {
+      process.stdout.write = orig;
+    }
+    const out = chunks.join('');
+    expect(out).toContain('Account');
+    expect(out).toContain('API key');
+    expect(out).toContain('codex');
+    expect(out).toContain('claude');
+  });
+});

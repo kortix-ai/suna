@@ -32,10 +32,10 @@ Subcommands:
   model <agent> --clear           Clear the pin — the agent follows the default again.
 
 Note: an agent NAMED after a harness that owns its own default model
-(claude, codex, pi) rejects a pin here — that harness always uses its own
-default, so this table would silently have no effect. Only opencode-named
-agents (and any custom-named agent that doesn't run one of those harnesses)
-are affected by this command.
+(claude, codex) rejects a pin here — that harness always uses its own
+default, so this table would silently have no effect. OpenCode and Pi
+(and any custom-named agent that doesn't run one of those harnesses)
+are settable with this command.
 
 Global:
   --project <id>     Operate on this project id (default: linked).
@@ -85,9 +85,9 @@ export async function runAgents(argv: string[]): Promise<number> {
     if (inertHarness) {
       process.stderr.write(
         `${status.err(`"${inertHarness}" owns its own default model — this command can't change it.`)}\n` +
-          `  ${C.dim}Claude Code, Codex, and Pi always use their own default model; they${C.reset}\n` +
+          `  ${C.dim}Claude Code and Codex always use their own default model; they${C.reset}\n` +
           `  ${C.dim}never read account_model_preferences (the table this command writes).${C.reset}\n` +
-          `  ${C.dim}Only OpenCode's model is settable this way.${C.reset}\n`,
+          `  ${C.dim}OpenCode and Pi are settable this way.${C.reset}\n`,
       );
       return 1;
     }
@@ -107,8 +107,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           emitJson(d);
           return 0;
         }
-        const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'auto';
+        const fallback = d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'auto';
         const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(
@@ -134,9 +133,7 @@ export async function runAgents(argv: string[]): Promise<number> {
         const agent = positional[0];
         if (!agent) return missing('an agent name');
         if (clear) {
-          await ctx.client.delete(
-            `${base}?scope=agent&agentName=${encodeURIComponent(agent)}`,
-          );
+          await ctx.client.delete(`${base}?scope=agent&agentName=${encodeURIComponent(agent)}`);
           process.stdout.write(
             `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
           );

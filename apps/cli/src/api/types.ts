@@ -68,6 +68,54 @@ export interface ProjectSecretsResponse {
   manifest_error?: string;
 }
 
+// ── Auth providers (unified registry — GET /projects/:id/auth-providers) ────
+// The two-door connect surface both web and CLI read (docs/specs/2026-07-22-
+// unified-auth-gateway.md §8.3). `apps/api/src/projects/routes/auth-providers.ts`
+// is the source of truth for these shapes; keep them in sync.
+
+/** Mirrors the server's `CredentialStatus` enum (resolve-credential-status.ts). */
+export type CredentialStatusWord = 'healthy' | 'expired' | 'invalid' | 'unverified' | 'absent';
+
+/** Typed, read-side credential health for one provider door. */
+export interface CredentialRecord {
+  providerId: string;
+  authKind: string;
+  door: 'account' | 'api-key';
+  scope: 'shared' | 'personal';
+  status: CredentialStatusWord;
+  refreshable: boolean;
+  expiresAt: number | null;
+  lastCheckedAt: number | null;
+  reason: string | null;
+}
+
+/** One registry provider door, with live status layered on by the route. */
+export interface AuthProviderView {
+  id: string;
+  label: string;
+  door: 'account' | 'api-key';
+  producesAuthKind: string;
+  /** Harness ids a successful connection unlocks (compatibleHarnessesFor). */
+  compatibleHarnesses: string[];
+  flows: { web: string[] };
+  /** true when a flow is present but flag-gated OFF (Anthropic one-click). */
+  gated: boolean;
+  refresh: 'refresh-token' | 'none';
+  status: CredentialRecord | null;
+}
+
+/** The long BYOK catalog tail — connect-only metadata, no `HarnessAuthKind`. */
+export interface CatalogByokProvider {
+  id: string;
+  label: string;
+  apiKeyEnvVars: string[];
+}
+
+export interface AuthProvidersResponse {
+  providers: AuthProviderView[];
+  byok: CatalogByokProvider[];
+}
+
 // ── Provider OAuth ───────────────────────────────────────────────────────
 
 export interface OauthCredentialSummary {
