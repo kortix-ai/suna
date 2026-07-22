@@ -36,4 +36,11 @@ describe('customize sections', () => {
     expect(parseCustomizeSection(null)).toBeNull();
     expect(parseCustomizeSection(undefined)).toBeNull();
   });
+
+  test('channels is not a customize section — it was folded into Connectors', () => {
+    expect(CUSTOMIZE_SECTIONS).not.toContain('channels');
+    // Legacy deep links (`/customize/channels`, `?section=channels`) still
+    // resolve — to the merged Connectors surface, not a blank/reset panel.
+    expect(parseCustomizeSection('channels')).toBe('connectors');
+  });
 });

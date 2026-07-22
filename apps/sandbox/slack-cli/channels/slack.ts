@@ -206,7 +206,7 @@ async function send(opts: {
     const projectId = kortixProjectId();
     if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot upload.');
     const res = await kortixPost<{ ok?: boolean; files?: unknown }>(
-      `/projects/${projectId}/channels/slack/file/upload`,
+      `/projects/${projectId}/connectors/channels/slack/actions/uploadFile`,
       {
         channel: opts.channel,
         filename: fileName,
@@ -364,7 +364,7 @@ async function download(opts: { url: string; out: string }) {
     );
   }
   const proxyUrl = new URL(
-    `/v1/projects/${projectId}/channels/slack/file?url=${encodeURIComponent(opts.url)}`,
+    `/v1/projects/${projectId}/connectors/channels/slack/actions/getFile?url=${encodeURIComponent(opts.url)}`,
     apiUrl,
   ).href;
   const res = await fetch(proxyUrl, {
@@ -541,7 +541,7 @@ async function main(): Promise<void> {
       if (!sessionId) throw new CliError('KORTIX_SESSION_ID not set — cannot bind this session.');
       if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot bind.');
       out(
-        await kortixPost(`/projects/${projectId}/channels/slack/bind-thread`, {
+        await kortixPost(`/projects/${projectId}/connectors/channels/slack/actions/bindThread`, {
           session_id: sessionId,
           channel,
           thread_ts: threadTs,

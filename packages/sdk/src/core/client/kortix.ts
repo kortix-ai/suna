@@ -435,6 +435,34 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           detail: (...a: DropFirst<Parameters<typeof P.getDiscoverIntegration>>) =>
             P.getDiscoverIntegration(projectId, ...a),
         },
+        /**
+         * Inbound chat/messaging channels (Slack, Teams, Email, Meet) as
+         * connectors. One generic surface dispatches every channel by `platform`
+         * through the server-side descriptor registry — adding a channel adds no
+         * new SDK methods. `action` invokes a channel's runtime capabilities
+         * (slack uploadFile/getFile, meet speak/voices, email updatePolicy, …).
+         */
+        channels: {
+          list: () => P.listChannels(projectId),
+          mode: (platform: P.ChannelPlatform) => P.getChannelMode(projectId, platform),
+          installation: (platform: P.ChannelPlatform, slug?: string | null) =>
+            P.getChannelInstallation(projectId, platform, slug),
+          connect: (
+            platform: P.ChannelPlatform,
+            config: Record<string, unknown>,
+            slug?: string | null,
+          ) => P.connectChannel(projectId, platform, config, slug),
+          disconnect: (platform: P.ChannelPlatform, slug?: string | null) =>
+            P.disconnectChannel(projectId, platform, slug),
+          action: (...a: DropFirst<Parameters<typeof P.channelAction>>) =>
+            P.channelAction(projectId, ...a),
+          /** Which agent/model/join-policy an already-connected channel routes to. */
+          bindings: {
+            list: () => P.listChannelBindings(projectId),
+            update: (...a: DropFirst<Parameters<typeof P.updateChannelBinding>>) =>
+              P.updateChannelBinding(projectId, ...a),
+          },
+        },
       },
 
       policies: {
@@ -557,43 +585,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
         playground: (prompt: string, models: string[], system?: string) =>
           P.runGatewayPlayground(projectId, prompt, models, system),
-      },
-
-      /** Slack + email + Meet channel integrations. */
-      channels: {
-        slack: {
-          installation: () => P.getSlackInstallation(projectId),
-          connect: (input: Parameters<typeof P.connectSlack>[1]) =>
-            P.connectSlack(projectId, input),
-          mode: () => P.getSlackMode(projectId),
-          manifest: () => P.getSlackManifest(projectId),
-          disconnect: () => P.disconnectSlack(projectId),
-          /** Download a Slack-hosted file through the server-side proxy (bot token stays server-side). */
-          getFile: (url: string) => P.getSlackChannelFile(projectId, url),
-          /** Upload a file to Slack through the server-side 3-step external-upload proxy. */
-          uploadFile: (input: Parameters<typeof P.uploadSlackChannelFile>[1]) =>
-            P.uploadSlackChannelFile(projectId, input),
-        },
-        email: {
-          installation: (connectorSlug?: string | null) =>
-            P.getEmailInstallation(projectId, connectorSlug),
-          mode: () => P.getEmailMode(projectId),
-          connect: (input: Parameters<typeof P.connectEmail>[1]) =>
-            P.connectEmail(projectId, input),
-          disconnect: (connectorSlug?: string | null) =>
-            P.disconnectEmail(projectId, connectorSlug),
-          updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
-            P.updateEmailPolicy(projectId, ...a),
-        },
-        meet: {
-          voices: () => P.getMeetVoices(projectId),
-          setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
-          setBotName: (name: string) => P.setMeetBotName(projectId, name),
-          previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
-          /** Make the meeting bot speak text (text → ElevenLabs → Recall `output_audio`). */
-          speak: (botId: string, text: string, voice?: string) =>
-            P.speakInMeeting(projectId, botId, text, voice),
-        },
       },
 
       /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */

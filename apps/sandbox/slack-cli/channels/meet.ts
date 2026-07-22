@@ -90,7 +90,7 @@ async function chat(id: string, message: string) {
 async function speak(id: string, text: string, voice?: string) {
   const projectId = kortixProjectId();
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot speak.');
-  const res = await kortixPost<Record<string, unknown>>(`/projects/${projectId}/channels/meet/speak`, {
+  const res = await kortixPost<Record<string, unknown>>(`/projects/${projectId}/connectors/channels/meet/actions/speak`, {
     bot_id: id,
     text,
     ...(voice ? { voice } : {}),

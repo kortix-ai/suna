@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 498,
+  "count": 500,
   "routes": [
     {
       "method": "GET",
@@ -827,34 +827,6 @@
       "path": "/v1/health/live"
     },
     {
-      "method": "POST",
-      "path": "/v1/llm/chat/completions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/health"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/messages"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/models"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/v1/chat/completions"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/v1/messages"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/v1/models"
-    },
-    {
       "method": "GET",
       "path": "/v1/marketplace/items"
     },
@@ -1285,6 +1257,42 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connector-profiles/me"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connectors/channels"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/actions/:action"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/actions/:action"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/actions/:action"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/actions/:action"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/connect"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connectors/channels/:platform/mode"
     },
     {
       "method": "PUT",

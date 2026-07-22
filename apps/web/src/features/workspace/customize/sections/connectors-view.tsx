@@ -76,6 +76,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { Icon } from '@/features/icon/icon';
+import { ChannelBindingsSection } from '@/features/workspace/customize/sections/channel-bindings-section';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -91,6 +93,14 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
+import {
+  type TeamsInstallation,
+  useConnectTeams,
+  useDisconnectTeams,
+  useTeamsInstall,
+  useTeamsManifest,
+  useTeamsMode,
+} from '@/hooks/channels/use-teams-installations';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
@@ -117,7 +127,6 @@ import {
   setConnectorSensitive,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
-import { Icon } from '@/features/icon/icon';
 import { DiscoverCatalogue } from './discover-catalogue';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -1072,7 +1081,10 @@ function ConnectorDetail({
 
 // ─── Channel connection profile (Email / Slack install state) ───────────────
 
-type ChannelPlatform = 'slack' | 'email';
+type ChannelPlatform = 'slack' | 'email' | 'teams';
+
+/** Reserved slug the Teams channel materializes under (mirrors `kortix_slack`). */
+const TEAMS_CONNECTOR_SLUG = 'kortix_teams';
 
 function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
   if (connector.platform === 'slack' || connector.platform === 'email') {
@@ -1081,6 +1093,7 @@ function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
   if (connector.slug === 'kortix_slack') return 'slack';
   if (connector.slug === 'kortix_email') return 'email';
   if (connector.slug.startsWith('email_')) return 'email';
+  if (connector.slug === TEAMS_CONNECTOR_SLUG) return 'teams';
   return null;
 }
 
@@ -1112,6 +1125,16 @@ function ChannelConnectionSection({
   if (platform === 'slack') {
     return (
       <SlackChannelProfile
+        projectId={projectId}
+        onChanged={onChanged}
+        onRemoved={onRemoved}
+        canWrite={canWrite}
+      />
+    );
+  }
+  if (platform === 'teams') {
+    return (
+      <TeamsChannelProfile
         projectId={projectId}
         onChanged={onChanged}
         onRemoved={onRemoved}
@@ -1173,6 +1196,9 @@ function EmailChannelProfile({
           </InfoBanner>
         )}
       </div>
+      {install.data ? (
+        <ChannelBindingsSection projectId={projectId} canWrite={canWrite} platform="email" />
+      ) : null}
     </section>
   );
 }
@@ -1699,6 +1725,9 @@ function SlackChannelProfile({
           </InfoBanner>
         )}
       </div>
+      {install.data ? (
+        <ChannelBindingsSection projectId={projectId} canWrite={canWrite} platform="slack" />
+      ) : null}
     </section>
   );
 }
@@ -1964,6 +1993,319 @@ export function SlackConnectForm({
             </div>
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── Microsoft Teams channel profile (mirrors the Slack profile above) ──────
+
+function TeamsChannelProfile({
+  projectId,
+  onChanged,
+  onRemoved,
+  canWrite = false,
+}: {
+  projectId: string;
+  onChanged: () => void;
+  onRemoved: () => void;
+  canWrite?: boolean;
+}) {
+  const install = useTeamsInstall(projectId);
+  return (
+    <section className="space-y-4">
+      <Label>Microsoft Teams connection</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">
+        Azure AD tenant assigned to this connector profile.
+      </p>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        {install.isLoading ? (
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        ) : install.data ? (
+          <ConnectedTeamsProfile
+            projectId={projectId}
+            installation={install.data}
+            onRemoved={onRemoved}
+            canWrite={canWrite}
+          />
+        ) : canWrite ? (
+          <TeamsConnectForm projectId={projectId} onConnected={onChanged} />
+        ) : (
+          <InfoBanner
+            tone="neutral"
+            icon={<Icon.MicrosoftTeams className="size-4" />}
+            title="Teams not connected"
+          >
+            This channel profile has no Microsoft Teams tenant yet.
+          </InfoBanner>
+        )}
+      </div>
+      {install.data ? (
+        <ChannelBindingsSection projectId={projectId} canWrite={canWrite} platform="teams" />
+      ) : null}
+    </section>
+  );
+}
+
+function ConnectedTeamsProfile({
+  projectId,
+  installation,
+  onRemoved,
+  canWrite = false,
+}: {
+  projectId: string;
+  installation: TeamsInstallation;
+  onRemoved: () => void;
+  canWrite?: boolean;
+}) {
+  const disconnect = useDisconnectTeams();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="space-y-4">
+      <InfoBanner tone="success" icon={Check} title="Teams connected">
+        Tenant <code className="font-mono">{installation.teamName || installation.tenantId}</code>
+      </InfoBanner>
+      {canWrite && (
+        <div className="flex items-center justify-end gap-2">
+          {confirming ? (
+            <>
+              <span className="text-muted-foreground mr-auto text-xs">
+                Removes the Teams channel profile from this project.
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(projectId, {
+                    onSuccess: () => {
+                      setConfirming(false);
+                      onRemoved();
+                    },
+                  })
+                }
+              >
+                {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
+                Disconnect
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+              Disconnect
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TeamsConnectForm({
+  projectId,
+  onConnected,
+}: {
+  projectId: string;
+  onConnected: () => void;
+}) {
+  const mode = useTeamsMode(projectId);
+  const manifest = useTeamsManifest(projectId);
+  const connect = useConnectTeams();
+  const [tenantId, setTenantId] = useState('');
+  const [teamName, setTeamName] = useState('');
+  const [byoOpen, setByoOpen] = useState(false);
+  const [appId, setAppId] = useState('');
+  const [appPassword, setAppPassword] = useState('');
+  const [copiedManifest, setCopiedManifest] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const managedAvailable = Boolean(mode.data?.available && !mode.data?.byo);
+  const showByo = byoOpen || (!mode.isLoading && !managedAvailable);
+
+  const submit = () => {
+    setError(null);
+    connect.mutate(
+      {
+        projectId,
+        tenant_id: tenantId.trim(),
+        team_name: teamName.trim() || undefined,
+        ...(showByo ? { app_id: appId.trim(), app_password: appPassword.trim() } : {}),
+      },
+      {
+        onSuccess: onConnected,
+        onError: (e) => setError((e as Error).message),
+      },
+    );
+  };
+
+  const copyManifest = async () => {
+    if (!manifest.data) return;
+    try {
+      await navigator.clipboard.writeText(manifest.data);
+      setCopiedManifest(true);
+      successToast('Teams manifest copied');
+      setTimeout(() => setCopiedManifest(false), 1500);
+    } catch {
+      errorToast('Copy failed - select and copy manually');
+    }
+  };
+
+  const canSubmit = tenantId.trim() && (!showByo || (appId.trim() && appPassword.trim()));
+
+  return (
+    <div className="space-y-4">
+      {mode.isLoading ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : managedAvailable ? (
+        <InfoBanner
+          tone="info"
+          icon={<Icon.MicrosoftTeams className="size-4" />}
+          title="Add Kortix to Microsoft Teams"
+          action={
+            <Button size="sm" className="shrink-0 gap-1.5" asChild>
+              <a href={mode.data?.adminConsentUrl ?? '#'} target="_blank" rel="noopener noreferrer">
+                Grant admin consent
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </Button>
+          }
+        >
+          Upload the app manifest to your tenant, grant consent, then paste the tenant ID below.
+        </InfoBanner>
+      ) : (
+        <InfoBanner
+          tone="warning"
+          icon={<Icon.MicrosoftTeams className="size-4" />}
+          title="Managed Teams install is not configured"
+        >
+          Register a multi-tenant Azure Bot and connect its credentials below; after connecting,
+          point its messaging endpoint at this project&apos;s Teams webhook.
+        </InfoBanner>
+      )}
+
+      {managedAvailable ? (
+        <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              App manifest
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={copyManifest}
+              disabled={!manifest.data}
+            >
+              {copiedManifest ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedManifest ? 'Copied' : 'Copy'}
+            </Button>
+          </div>
+          {manifest.isLoading ? (
+            <Skeleton className="h-52 w-full rounded-2xl" />
+          ) : manifest.isError ? (
+            <InfoBanner tone="destructive">
+              {(manifest.error as Error)?.message || 'Failed to load Teams manifest'}
+            </InfoBanner>
+          ) : manifest.data ? (
+            <div className="max-h-[26rem] overflow-auto rounded-2xl">
+              <CodeSnippet code={manifest.data} language="json" />
+            </div>
+          ) : null}
+          <ol className="space-y-2">
+            {[
+              'Grant admin consent so the Kortix bot can run in your tenant.',
+              'In Teams Admin Center (or Teams → Apps → Manage your apps → Upload), upload an app package built from the manifest above (plus color.png + outline.png icons).',
+              'Add the app to a chat or channel, then paste your Azure AD tenant ID below to bind it to this project.',
+            ].map((step, index) => (
+              <li key={step} className="text-muted-foreground flex gap-2 text-xs">
+                <span className="border-border/60 bg-muted/40 text-foreground flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
+                  {index + 1}
+                </span>
+                <span className="pt-0.5">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+
+      <div className="space-y-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 px-0"
+          onClick={() => setByoOpen((open) => !open)}
+        >
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showByo && 'rotate-180')} />
+          Use custom Azure bot
+        </Button>
+        {showByo ? (
+          <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="teams-app-id">Bot app (client) ID</FieldLabel>
+                <Input
+                  id="teams-app-id"
+                  value={appId}
+                  onChange={(e) => setAppId(e.target.value)}
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="teams-app-password">Bot client secret</FieldLabel>
+                <Input
+                  id="teams-app-password"
+                  type="password"
+                  value={appPassword}
+                  onChange={(e) => setAppPassword(e.target.value)}
+                  placeholder="Client secret value"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="teams-tenant-id">Azure AD tenant ID</FieldLabel>
+          <Input
+            id="teams-tenant-id"
+            value={tenantId}
+            onChange={(e) => setTenantId(e.target.value)}
+            placeholder="00000000-0000-0000-0000-000000000000 or contoso.onmicrosoft.com"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <p className="text-muted-foreground text-xs">
+            Found in Azure Portal → Microsoft Entra ID → Overview → Tenant ID.
+          </p>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="teams-team-name">Team name (optional)</FieldLabel>
+          <Input
+            id="teams-team-name"
+            value={teamName}
+            onChange={(e) => setTeamName(e.target.value)}
+            placeholder="Acme Corp"
+            autoComplete="off"
+          />
+        </Field>
+      </div>
+
+      {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
+      <div className="flex justify-end">
+        <Button size="sm" onClick={submit} disabled={connect.isPending || !canSubmit}>
+          {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
+          Connect Teams
+        </Button>
       </div>
     </div>
   );
@@ -2902,10 +3244,13 @@ function ChannelCatalogue({
   emailChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
 }) {
+  const teamsMode = useTeamsMode(projectId);
+  const teamsEnabled = teamsMode.data?.enabled === true;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}
       <AddSlackProfileCard projectId={projectId} onAdded={onAdded} />
+      {teamsEnabled && <AddTeamsProfileCard projectId={projectId} onAdded={onAdded} />}
     </div>
   );
 }
@@ -2936,6 +3281,14 @@ function SlackIconTile() {
   return (
     <span className="border-border/60 bg-card relative flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
       <SlackLogo className="size-3.5" />
+    </span>
+  );
+}
+
+function TeamsIconTile() {
+  return (
+    <span className="border-border/60 bg-card relative flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
+      <Icon.MicrosoftTeams className="size-3.5" />
     </span>
   );
 }
@@ -3088,6 +3441,53 @@ function AddSlackProfileCard({
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
             <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </>
+  );
+}
+
+function AddTeamsProfileCard({
+  projectId,
+  onAdded,
+}: {
+  projectId: string;
+  onAdded: (slug?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const handleConnected = () => {
+    successToast('Teams connected');
+    setOpen(false);
+    onAdded(TEAMS_CONNECTOR_SLUG);
+  };
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
+        <div className="flex items-center gap-3">
+          <TeamsIconTile />
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-medium">Microsoft Teams</div>
+            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
+          </div>
+        </div>
+        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
+          Add Kortix to Microsoft Teams so mentions in a chat or channel route into Kortix agent
+          sessions.
+        </p>
+      </button>
+      <Modal open={open} onOpenChange={setOpen}>
+        <ModalContent className="lg:max-w-2xl">
+          <ModalHeader>
+            <ModalTitle>Add Kortix to Microsoft Teams</ModalTitle>
+            <ModalDescription>
+              Connect the built-in Teams channel. The connector profile appears automatically after
+              installation.
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="max-h-[60vh] overflow-y-auto">
+            <TeamsConnectForm projectId={projectId} onConnected={handleConnected} />
           </ModalBody>
         </ModalContent>
       </Modal>
@@ -3484,7 +3884,9 @@ function ConnectorConfigFields({
                 : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
             }
             disabled={readOnly}
-            onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
+            onValueChange={(v) =>
+              set({ platform: v as 'slack' | 'email', auth: { type: 'none' } })
+            }
           >
             <SelectTrigger>
               <SelectValue />

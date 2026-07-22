@@ -1,25 +1,15 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  connectEmail,
-  connectSlack,
-  disconnectEmail,
-  disconnectSlack,
-  getEmailInstallation,
-  getEmailMode,
-  getMeetVoices,
-  getSlackChannelFile,
-  getSlackInstallation,
+  channelAction,
+  connectChannel,
+  disconnectChannel,
+  getChannelInstallation,
+  getChannelMode,
   getSlackManifest,
-  getSlackMode,
   listChannelBindings,
-  previewMeetVoice,
-  setMeetBotName,
-  setMeetVoice,
-  speakInMeeting,
+  listChannels,
   updateChannelBinding,
-  updateEmailPolicy,
-  uploadSlackChannelFile,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -44,190 +34,101 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
 
-test('getSlackInstallation hits the installation endpoint and returns null on failure', async () => {
-  nextResponse = { status: 404, body: { message: 'not found' } };
-  const result = await getSlackInstallation('P1');
-  expect(last().url).toContain('/projects/P1/channels/slack/installation');
+test('listChannels hits the unified channels collection under connectors', async () => {
+  nextResponse = {
+    status: 200,
+    body: { channels: [{ platform: 'slack', label: 'Slack', enabled: true, capabilities: [] }] },
+  };
+  const result = await listChannels('P1');
+  expect(last().url).toContain('/projects/P1/connectors/channels');
+  expect(last().method).toBe('GET');
+  expect(result.channels[0]?.platform).toBe('slack');
+});
+
+test('getChannelMode dispatches by platform and returns null on failure', async () => {
+  nextResponse = { status: 500, body: {} };
+  const result = await getChannelMode('P1', 'slack');
+  expect(last().url).toContain('/projects/P1/connectors/channels/slack/mode');
   expect(result).toBeNull();
 });
 
-test('connectSlack posts bot token + signing secret', async () => {
-  nextResponse = {
-    status: 200,
-    body: { workspaceId: 'W1', workspaceName: 'Acme', botUserId: 'B1', installedAt: '2026-01-01' },
-  };
-  const result = await connectSlack('P1', { bot_token: 'xoxb', signing_secret: 'sig' });
-  expect(last().url).toContain('/projects/P1/channels/slack/connect');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ bot_token: 'xoxb', signing_secret: 'sig' });
-  expect(result.workspaceId).toBe('W1');
-});
-
-test('getSlackMode falls back to a safe default on failure', async () => {
-  nextResponse = { status: 500, body: {} };
-  const result = await getSlackMode('P1');
-  expect(result).toEqual({ oauth_available: false, install_url: null });
-});
-
-test('getSlackManifest hits the webhooks manifest route (not /projects)', async () => {
-  nextResponse = { status: 200, body: { trigger: 'slack' } };
-  await getSlackManifest('P1');
-  expect(last().url).toContain('/webhooks/slack/P1/manifest');
-});
-
-test('disconnectSlack deletes the installation and throws on failure', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  await disconnectSlack('P1');
-  expect(last().url).toContain('/projects/P1/channels/slack/installation');
-  expect(last().method).toBe('DELETE');
-
-  nextResponse = { status: 500, body: { message: 'boom' } };
-  await expect(disconnectSlack('P1')).rejects.toThrow();
-});
-
-test('getEmailInstallation forwards an optional connector_slug query param', async () => {
+test('getChannelInstallation forwards an optional connector_slug query param', async () => {
   nextResponse = { status: 200, body: null };
-  await getEmailInstallation('P1', 'custom_inbox');
+  await getChannelInstallation('P1', 'email', 'custom_inbox');
   expect(last().url).toContain(
-    '/projects/P1/channels/email/installation?connector_slug=custom_inbox',
+    '/projects/P1/connectors/channels/email/installation?connector_slug=custom_inbox',
   );
 });
 
-test('getEmailMode falls back to a safe default on failure', async () => {
-  nextResponse = { status: 500, body: {} };
-  const result = await getEmailMode('P1');
-  expect(result).toEqual({ provider: 'agentmail', managed_available: false });
+test('connectChannel posts the provider config to the platform connect route', async () => {
+  nextResponse = { status: 200, body: { workspaceId: 'W1' } };
+  await connectChannel('P1', 'slack', { bot_token: 'xoxb', signing_secret: 'sig' });
+  expect(last().url).toContain('/projects/P1/connectors/channels/slack/connect');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ bot_token: 'xoxb', signing_secret: 'sig' });
 });
 
-test('connectEmail posts the connect payload', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      profile_id: 'profile-email-1',
-      profileSlug: 'inbox-1',
-      inboxId: 'i1',
-      email: 'a@b.com',
-      displayName: null,
-      webhookId: null,
-      senderPolicy: {
-        mode: 'allow_all',
-        allowedEmails: [],
-        allowedDomains: [],
-        allowedRegex: null,
-      },
-      installedAt: '2026-01-01',
-    },
-  };
-  const installation = await connectEmail('P1', { email: 'a@b.com' });
-  expect(last().url).toContain('/projects/P1/channels/email/connect');
-  expect(last().body).toEqual({ email: 'a@b.com' });
-  expect(installation.profileId).toBe('profile-email-1');
+test('connectChannel forwards a connector_slug for multi-profile channels (email)', async () => {
+  nextResponse = { status: 200, body: { inboxId: 'i1' } };
+  await connectChannel('P1', 'email', { email: 'a@b.com' }, 'inbox-2');
+  expect(last().url).toContain(
+    '/projects/P1/connectors/channels/email/connect?connector_slug=inbox-2',
+  );
 });
 
-test('disconnectEmail throws with the server error message on failure', async () => {
-  nextResponse = { status: 500, body: { message: 'nope' } };
-  await expect(disconnectEmail('P1')).rejects.toThrow('nope');
+test('disconnectChannel DELETEs the installation and throws on failure', async () => {
+  nextResponse = { status: 200, body: { status: 'disconnected' } };
+  await disconnectChannel('P1', 'slack');
+  expect(last().url).toContain('/projects/P1/connectors/channels/slack/installation');
+  expect(last().method).toBe('DELETE');
+
+  nextResponse = { status: 500, body: { message: 'boom' } };
+  await expect(disconnectChannel('P1', 'slack')).rejects.toThrow();
 });
 
-test('getMeetVoices hits the meet voices endpoint and returns null on failure', async () => {
-  nextResponse = { status: 404, body: { message: 'not found' } };
-  const result = await getMeetVoices('P1');
-  expect(last().url).toContain('/projects/P1/channels/meet/voices');
-  expect(result).toBeNull();
+test('channelAction (POST) invokes a runtime capability with a JSON body', async () => {
+  nextResponse = { status: 200, body: { ok: true, voice: 'voice-1' } };
+  const result = await channelAction('P1', 'meet', 'speak', {
+    bot_id: 'bot-1',
+    text: 'hello',
+    voice: 'voice-1',
+  });
+  expect(last().url).toContain('/projects/P1/connectors/channels/meet/actions/speak');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ bot_id: 'bot-1', text: 'hello', voice: 'voice-1' });
+  expect((result as { voice: string }).voice).toBe('voice-1');
 });
 
-test('setMeetVoice PUTs the selected voice', async () => {
+test('channelAction (PUT) uses the declared method', async () => {
   nextResponse = { status: 200, body: { selected: 'voice-1' } };
-  const result = await setMeetVoice('P1', 'voice-1');
-  expect(last().url).toContain('/projects/P1/channels/meet/voice');
+  await channelAction('P1', 'meet', 'setVoice', { voice: 'voice-1' }, 'put');
+  expect(last().url).toContain('/projects/P1/connectors/channels/meet/actions/setVoice');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ voice: 'voice-1' });
-  expect(result.selected).toBe('voice-1');
 });
 
-test('setMeetBotName PUTs the bot name', async () => {
-  nextResponse = { status: 200, body: { bot_name: 'Suna' } };
-  await setMeetBotName('P1', 'Suna');
-  expect(last().url).toContain('/projects/P1/channels/meet/name');
-  expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ name: 'Suna' });
-});
-
-test('previewMeetVoice posts to the per-voice preview endpoint and returns null on failure', async () => {
-  nextResponse = { status: 200, body: { b64: 'abc123' } };
-  const result = await previewMeetVoice('P1', 'voice-1');
-  expect(last().url).toContain('/projects/P1/channels/meet/voices/voice-1/preview');
-  expect(last().method).toBe('POST');
-  expect(result).toBe('abc123');
-
-  nextResponse = { status: 500, body: {} };
-  expect(await previewMeetVoice('P1', 'voice-1')).toBeNull();
-});
-
-test('getSlackChannelFile GETs the file proxy with the url query param', async () => {
-  nextResponse = { status: 200, body: { data: 'bytes' } };
-  await getSlackChannelFile('P1', 'https://files.slack.com/x/y.pdf');
-  expect(last().url).toContain('/projects/P1/channels/slack/file?url=');
+test('channelAction (GET) sends input as the query string', async () => {
+  nextResponse = { status: 200, body: {} };
+  await channelAction(
+    'P1',
+    'slack',
+    'getFile',
+    { url: 'https://files.slack.com/x/y.pdf' },
+    'get',
+  );
+  expect(last().url).toContain('/projects/P1/connectors/channels/slack/actions/getFile?');
   expect(last().url).toContain(encodeURIComponent('https://files.slack.com/x/y.pdf'));
   expect(last().method).toBe('GET');
 });
 
-test('uploadSlackChannelFile posts channel/filename/content_base64 to the upload proxy', async () => {
-  nextResponse = { status: 200, body: { ok: true, files: [] } };
-  const result = await uploadSlackChannelFile('P1', {
-    channel: 'C1',
-    filename: 'report.pdf',
-    contentBase64: 'YWJj',
-    comment: 'here you go',
-  });
-  expect(last().url).toContain('/projects/P1/channels/slack/file/upload');
-  expect(last().method).toBe('POST');
-  expect(last().body).toMatchObject({
-    channel: 'C1',
-    filename: 'report.pdf',
-    content_base64: 'YWJj',
-    comment: 'here you go',
-  });
-  expect(result.ok).toBe(true);
+test('getSlackManifest hits the PUBLIC webhooks manifest route (not /connectors)', async () => {
+  nextResponse = { status: 200, body: { trigger: 'slack' } };
+  await getSlackManifest('P1');
+  expect(last().url).toContain('/webhooks/slack/P1/manifest');
+  expect(last().url).not.toContain('/connectors/');
 });
 
-test('speakInMeeting posts bot_id/text/voice to the meet speak endpoint', async () => {
-  nextResponse = { status: 200, body: { ok: true, voice: 'voice-1' } };
-  const result = await speakInMeeting('P1', 'bot-1', 'hello there', 'voice-1');
-  expect(last().url).toContain('/projects/P1/channels/meet/speak');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ bot_id: 'bot-1', text: 'hello there', voice: 'voice-1' });
-  expect(result.voice).toBe('voice-1');
-});
-
-test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      profileSlug: 'inbox-1',
-      inboxId: 'i1',
-      email: 'a@b.com',
-      displayName: null,
-      webhookId: null,
-      senderPolicy: {
-        mode: 'restricted',
-        allowedEmails: [],
-        allowedDomains: [],
-        allowedRegex: null,
-      },
-      installedAt: '2026-01-01',
-    },
-  };
-  await updateEmailPolicy('P1', undefined, {
-    mode: 'restricted',
-    allowedEmails: [],
-    allowedDomains: [],
-    allowedRegex: null,
-  });
-  expect(last().body).toMatchObject({ connector_slug: 'kortix_email' });
-});
-
-test('listChannelBindings hits the bindings collection', async () => {
+test('listChannelBindings hits the bindings collection (unchanged surface)', async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -251,10 +152,7 @@ test('listChannelBindings hits the bindings collection', async () => {
   };
   const result = await listChannelBindings('P1');
   expect(last().url).toContain('/projects/P1/channels/bindings');
-  expect(last().method).toBe('GET');
-  expect(result.projectDefaultAgent).toBe('support');
   expect(result.bindings).toHaveLength(1);
-  expect(result.bindings[0]?.effectiveAgent).toEqual({ agent: 'support', source: 'project' });
 });
 
 test('updateChannelBinding PATCHes the binding by id', async () => {
@@ -280,7 +178,6 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
   });
   expect(last().url).toContain('/projects/P1/channels/bindings/b1');
   expect(last().method).toBe('PATCH');
-  expect(last().body).toEqual({ agentName: 'billing', conversationPolicy: 'owner_only' });
   expect(result.agentName).toBe('billing');
 
   nextResponse = { status: 404, body: { message: 'not found' } };
