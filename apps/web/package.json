@@ -82,7 +82,6 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-use-controllable-state": "^1.2.3",
     "@radix-ui/react-visually-hidden": "^1.2.4",
-    "@scalar/api-reference-react": "^0.9.59",
     "@sentry/nextjs": "^10.47.0",
     "@shikijs/transformers": "^3.12.0",
     "@supabase/ssr": "latest",
