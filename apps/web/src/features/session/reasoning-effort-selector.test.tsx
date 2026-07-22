@@ -162,10 +162,10 @@ describe('ReasoningEffortSelector — trigger', () => {
 });
 
 describe('ReasoningEffortSelector — popover', () => {
-  test('heading reads "Thinking level"', async () => {
+  test('heading names the scope up-front: "Thinking level · this project"', async () => {
     setup({ current: undefined, canWrite: true });
     await openSelector();
-    expect(screen.getByText('Thinking level')).toBeTruthy();
+    expect(screen.getByText('Thinking level · this project')).toBeTruthy();
   });
 
   test('first item reads "Auto — model default"', async () => {
@@ -209,6 +209,6 @@ describe('ReasoningEffortSelector — locked state', () => {
 
     fireEvent.click(trigger);
     await flush();
-    expect(screen.queryByText('Thinking level')).toBeNull();
+    expect(screen.queryByText('Thinking level · this project')).toBeNull();
   });
 });

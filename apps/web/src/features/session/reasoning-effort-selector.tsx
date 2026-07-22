@@ -220,7 +220,11 @@ export function ReasoningEffortSelector({
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[180px]">
         <CommandList>
-          <CommandGroup heading="Thinking level">
+          {/* Scope stated up-front: this control writes a project-wide setting
+              (see the file header for why per-session isn't reachable today), so
+              the heading names the scope the moment the popover opens — not only
+              in the hover tooltip / footer. */}
+          <CommandGroup heading="Thinking level · this project">
             <CommandItem
               value="reasoning-effort-default"
               onSelect={() => {
