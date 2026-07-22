@@ -103,8 +103,14 @@ describe('composer capability auth resolution', () => {
       'openai_api_key',
       'openai_compatible',
     ]);
+    // 2026-07-22 Codex-subscription widening: Pi gains codex_subscription (it
+    // speaks OpenAI Responses natively and the credential relays server-side —
+    // docs/specs/2026-07-21-llm-credential-and-model-management.md D1). The
+    // sorted set therefore includes codex_subscription; every other pi kind is
+    // unchanged.
     expect(kindsFor('pi')).toEqual([
       'anthropic_api_key',
+      'codex_subscription',
       'managed_gateway',
       'native_config',
       'openai_api_key',

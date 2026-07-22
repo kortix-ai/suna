@@ -67,11 +67,16 @@ export const PROJECT_PROVIDER_CONNECTIONS: ProjectProviderConnectionDefinition[]
   {
     id: 'codex_subscription',
     label: 'ChatGPT / Codex subscription',
-    description: 'ChatGPT Plus, Pro, Business, Edu, or Enterprise through Codex.',
+    description: 'ChatGPT Plus, Pro, Business, Edu, or Enterprise through Codex or Pi.',
     providerId: 'openai',
     mode: 'oauth',
     secretNames: ['CODEX_AUTH_JSON'],
-    compatibleHarnesses: ['codex'],
+    // 2026-07-22 Codex-subscription widening: usable on Pi as well as Codex
+    // (docs/specs/2026-07-21-llm-credential-and-model-management.md D1). This
+    // hardcoded copy does NOT auto-derive from @kortix/shared's authKinds the
+    // way the web/API surfaces do, so it must be updated by hand to stay in
+    // sync with compatibleHarnessesFor('codex_subscription') === ['codex','pi'].
+    compatibleHarnesses: ['codex', 'pi'],
     helpUrl: 'https://developers.openai.com/codex/auth',
   },
   {

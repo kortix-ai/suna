@@ -37,6 +37,7 @@ import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
 import { gatewayModelCatalog } from '../models/catalog-models';
+import { codexModelIds } from '../models/codex-models';
 import { RUNTIME_MANAGED_MODELS } from '../models/managed-models';
 import { projectPickerCatalog } from '../models/picker-catalog';
 
@@ -287,6 +288,37 @@ function directOrCustomModels(kind: HarnessAuthKind, env: Record<string, string>
   return [];
 }
 
+/** `gpt-5.6-sol` → `GPT-5.6-Sol`; a readable display name derived from the bare
+ *  advertised id so this module never hand-maintains a second name table. */
+function codexModelDisplayName(id: string): string {
+  return id
+    .split('-')
+    .map((part) => (/^gpt$/i.test(part) ? 'GPT' : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join('-');
+}
+
+/**
+ * The model set a connected Codex/ChatGPT subscription unlocks — the
+ * ChatGPT-BACKEND advertised list (`codexModelIds()`, the SAME source the
+ * `codex` harness and the composer pills use), NOT the gateway/models.dev
+ * catalog. The subscription relay (`/router/codex-subscription`) forwards a
+ * model id VERBATIM to the ChatGPT backend, which only accepts these BARE ids
+ * (a gateway-style `openai/…`-prefixed id is rejected 400), so the ids stay
+ * bare here — the provider tag (`openai-codex`, matching `codexDescriptor`)
+ * carries the routing fact so no consumer parses the id. This is what makes a
+ * catalog-driven harness (`ownsDefaultModel: false` — Pi) resolve to a real,
+ * non-empty, subscription-correct list instead of falling through to the
+ * gateway catalog (which knows nothing of the ChatGPT-backend model set) and
+ * landing in `healthy_but_no_models`.
+ */
+function codexSubscriptionModels(): ResolvedModel[] {
+  return codexModelIds().map((id) => ({
+    id,
+    name: codexModelDisplayName(id),
+    provider: 'openai-codex',
+  }));
+}
+
 /**
  * The narrowed, credential-conditioned, provider-tagged catalog for a
  * catalog-driven harness (`ownsDefaultModel === false` — OpenCode, and per
@@ -471,22 +503,29 @@ export async function resolveHarnessModels(
       : false;
 
   const models =
-    kind === 'openai_compatible' || kind === 'anthropic_compatible' || kind === 'native_config'
-      ? directOrCustomModels(kind, input.env)
-      : await conditionedCatalogModels({
-          projectId: input.projectId,
-          env: input.env,
-          gatewayEnabled: input.gatewayEnabled,
-          freeModelsOnly,
-          probeManagedModelServable:
-            input.probeManagedModelServable ??
-            (await defaultProbeManagedModelServable({
-              accountId: input.accountId,
-              userId: input.userId,
-              projectId: input.projectId,
-              freeModelsOnly,
-            })),
-        });
+    kind === 'codex_subscription'
+      ? // Reached only for a catalog-driven harness (Pi) — the `codex` harness
+        // (`ownsDefaultModel: true`) already returned `ready` with an empty
+        // list above and advertises its own models over ACP. A Codex
+        // subscription's models are the ChatGPT-backend set, never the gateway
+        // catalog, so this bypasses `conditionedCatalogModels` entirely.
+        codexSubscriptionModels()
+      : kind === 'openai_compatible' || kind === 'anthropic_compatible' || kind === 'native_config'
+        ? directOrCustomModels(kind, input.env)
+        : await conditionedCatalogModels({
+            projectId: input.projectId,
+            env: input.env,
+            gatewayEnabled: input.gatewayEnabled,
+            freeModelsOnly,
+            probeManagedModelServable:
+              input.probeManagedModelServable ??
+              (await defaultProbeManagedModelServable({
+                accountId: input.accountId,
+                userId: input.userId,
+                projectId: input.projectId,
+                freeModelsOnly,
+              })),
+          });
 
   if (models.length === 0) {
     return {

@@ -513,6 +513,74 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // PATH from the host env always wins.
     const native = { ...outerNative, PATH: env.PATH?.trim() || HARNESS_DEFAULT_PATH }
     if (authKind === 'native_config') return Object.keys(native).length ? native : undefined
+    if (authKind === 'codex_subscription') {
+      // 2026-07-22 Codex-subscription widening. Pi speaks OpenAI Responses
+      // natively (`api: 'openai-responses'`), the SAME wire shape codex-acp's
+      // subscription session uses — so Pi is pointed at the SAME dedicated
+      // relay (`/router/codex-subscription`), NOT the generic Kortix-managed
+      // `/router/openai` proxy of the default branch below. That default path
+      // injects KORTIX'S OWN OPENAI_API_KEY/OPENROUTER_API_KEY and bills Kortix
+      // credits at 1.2x, bypassing the connected subscription entirely; the
+      // subscription relay instead resolves the CALLER's OWN Codex OAuth
+      // credential server-side (resolveCodexCredential — the token never leaves
+      // the API process, never reaches this sandbox) and bills nothing
+      // (codexDescriptor's `billingMode: 'none'`). Mirrors the `id === 'codex'`
+      // codex_subscription branch above; see
+      // apps/api/src/router/routes/proxy/codex-subscription.ts.
+      //
+      // Authenticates with the per-session EXECUTOR token (kortix_pat_…, carries
+      // the launching user's project/user id), never the bare sandbox token
+      // (KORTIX_TOKEN, kortix_sb_…): the relay route only accepts an account
+      // token that resolves to a projectId/userId (validateAccountToken).
+      const executorToken = (env.KORTIX_EXECUTOR_TOKEN || env.KORTIX_CLI_TOKEN)?.trim()
+      if (!apiUrl || !executorToken) {
+        // Fail loudly instead of silently falling through to the generic
+        // Kortix-managed-gateway default below — that silent fallback IS the
+        // billing leak this branch exists to close, so it must never happen
+        // for a subscription-authenticated session, missing credential or not.
+        throw new Error(
+          'Codex subscription auth requires KORTIX_API_URL and a session executor token ' +
+            '(KORTIX_EXECUTOR_TOKEN/KORTIX_CLI_TOKEN); refusing to fall back to the ' +
+            'Kortix-managed gateway key for a subscription-authenticated Pi session.',
+        )
+      }
+      // The relay forwards this model id VERBATIM to the ChatGPT/Codex backend,
+      // which only accepts codex-acp's own BARE advertised ids (gpt-5.6-sol,
+      // gpt-5.5, …) — a gateway-style `openai/…`- or `codex/…`-prefixed id is
+      // REJECTED (400). A caller-selected `runtimeModel` (fed from the same
+      // advertised list the composer resolves via resolveHarnessModels) wins;
+      // strip any `codex/` prefix defensively so a canonical-grammar id from
+      // the composer still lands as a bare, backend-accepted value.
+      const codexModel = (runtimeModel || 'gpt-5.6-sol').replace(/^codex\//, '')
+      return {
+        ...native,
+        KORTIX_PI_MODELS_JSON: JSON.stringify({
+          providers: {
+            kortix: {
+              baseUrl: `${apiUrl}/router/codex-subscription`,
+              api: 'openai-responses',
+              // Embedded literally (not a `$VAR` ref) so Pi sends
+              // `Authorization: Bearer <executorToken>` to the relay, matching
+              // the codex branch's DEFAULT_AUTH_REQUEST header. The relay
+              // replaces this with the resolved Codex OAuth token server-side.
+              apiKey: executorToken,
+              authHeader: true,
+              models: [
+                {
+                  id: codexModel,
+                  name: codexModel,
+                  reasoning: true,
+                  input: ['text', 'image'],
+                  contextWindow: 400000,
+                  maxTokens: 128000,
+                },
+              ],
+            },
+          },
+        }),
+        PI_TELEMETRY: '0',
+      }
+    }
     if (custom?.protocol === 'openai') {
       return {
         ...native,

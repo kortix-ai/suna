@@ -137,9 +137,28 @@ export const HARNESSES: Record<HarnessId, HarnessDescriptor> = {
     // its own fast-follow, tracked separately.
     ownsDefaultModel: false,
     liveModelChange: false,
+    // 2026-07-22 Codex-subscription widening (docs/specs/2026-07-21-llm-
+    // credential-and-model-management.md D1, verdict: SAFE for Codex only).
+    // `codex_subscription` is added here — beyond its origin harness `codex` —
+    // because Pi speaks OpenAI Responses natively (the same wire shape the
+    // Codex subscription relay speaks) and the credential never reaches the
+    // sandbox: the user's OAuth token is resolved + refreshed entirely
+    // server-side and relayed through `/v1/router/codex-subscription`
+    // (`billingMode:'none'`, fail-closed, no Kortix-key fallback), exactly as
+    // it already is for the `codex` harness (`resolveAcpHarnessLaunchEnv`'s
+    // `codex_subscription` branch). This is a pure `authKinds` edit — every
+    // fan-out (the API's `compatibleHarnessesFor` projection, the web two-door
+    // modal's `METHOD_COMPATIBLE_HARNESSES`, `/auth-providers`'
+    // `compatibleHarnesses`, `composer-capabilities`' `CONNECTIONS`) derives
+    // from this one table, so Pi now appears wherever Codex does for this
+    // kind, automatically. `claude_subscription` stays pinned to `claude`
+    // only: Anthropic's ToS forbids relaying that token and it is handed
+    // verbatim to the harness process (`CREDENTIAL_CUSTODY.claude_subscription
+    // === 'direct-only'`), so the same widening is NOT safe there.
     authKinds: [
       'managed_gateway',
       'anthropic_api_key',
+      'codex_subscription',
       'openai_api_key',
       'openai_compatible',
       'native_config',

@@ -123,6 +123,54 @@ describe('resolveHarnessModels — the closed state union', () => {
     expect(result.upstreamKind).toBe('gateway'); // codex_subscription is relay-eligible
   });
 
+  test('ready: pi + codex_subscription — the ChatGPT-backend model set (NOT the gateway catalog), bare ids, provider-tagged', async () => {
+    // The 2026-07-22 Codex-subscription widening. Pi is catalog-driven
+    // (ownsDefaultModel: false), so unlike the `codex` harness it does NOT
+    // return an empty list — it must resolve to the models a Codex
+    // subscription actually unlocks: the ChatGPT-backend advertised set, never
+    // the gateway/models.dev catalog (which knows nothing of them). The relay
+    // forwards a model id verbatim to the ChatGPT backend, so the ids must be
+    // BARE (no `openai/`/`kortix/` prefix), and the default must be the first
+    // advertised value.
+    const { codexModelIds } = await import('../models/codex-models');
+    const result = await resolveHarnessModels({
+      harness: 'pi',
+      projectId: 'proj-1',
+      userId: 'user-1',
+      env: { CODEX_AUTH_JSON: '{"openai":{}}' },
+      gatewayEnabled: false,
+      nativeConfigReady: false,
+      resolveCodex: async () => ({ access: 'token', accountId: undefined }),
+    });
+    expect(result.state).toBe('ready');
+    expect(result.ownsDefaultModel).toBe(false);
+    expect(result.credentialRef).toEqual({ kind: 'codex_subscription', scope: 'shared' });
+    expect(result.upstreamKind).toBe('gateway'); // codex_subscription is relay-eligible
+    expect(result.models.length).toBeGreaterThan(0);
+    expect(result.models.map((m) => m.id)).toEqual(codexModelIds());
+    // Bare, ChatGPT-accepted ids — never a gateway-prefixed id the backend 400s.
+    for (const model of result.models) {
+      expect(model.provider).toBe('openai-codex');
+      expect(model.id.includes('/')).toBe(false);
+    }
+    expect(result.default).toBe(codexModelIds()[0]);
+    expect(result.default).toBe('gpt-5.6-sol');
+  });
+
+  test('pi + codex_subscription whose credential resolves to nothing usable is no_credential, never a bogus catalog', async () => {
+    const result = await resolveHarnessModels({
+      harness: 'pi',
+      projectId: 'proj-1',
+      userId: 'user-1',
+      env: { CODEX_AUTH_JSON: '{}' },
+      gatewayEnabled: false,
+      nativeConfigReady: false,
+      resolveCodex: async () => null,
+    });
+    expect(result.state).toBe('no_credential');
+    expect(result.models).toEqual([]);
+  });
+
   test('ready: claude via anthropic_api_key (not subscription) still owns its default, no catalog', async () => {
     const result = await resolveHarnessModels({
       harness: 'claude',

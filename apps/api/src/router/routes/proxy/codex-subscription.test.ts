@@ -308,4 +308,52 @@ describe('POST /router/codex-subscription/responses', () => {
     expect(headers.get('ChatGPT-Account-ID')).toBe('chatgpt_acct_9');
     expect(headers.get('originator')).toBe('codex_cli_rs');
   });
+
+  // 2026-07-22 Codex-subscription widening: this relay is now also reached by
+  // the Pi harness (pi-acp speaks OpenAI Responses natively). A Pi request is
+  // MINIMAL — content-type + accept + the inbound Kortix bearer, and NONE of
+  // codex-rs's session-id/thread-id/x-codex-* wire headers. Pin that the relay
+  // is harness-AGNOSTIC: a Pi-shaped request passes the allowlist and is
+  // forwarded to the same Codex backend with the same server-resolved
+  // credential + descriptor headers, so nothing here needs a per-harness
+  // branch. The upstream-required headers (originator / User-Agent / OpenAI-Beta
+  // / ChatGPT-Account-ID) come from the descriptor, not the client, so Pi never
+  // needing to send them is exactly right.
+  test('accepts a minimal Pi-shaped Responses request (no codex-rs wire headers) and forwards it with the descriptor headers', async () => {
+    accountTokenResult = {
+      isValid: true,
+      userId: 'user_1',
+      accountId: 'acct_1',
+      projectId: 'proj_1',
+    };
+    codexCredential = { access: 'user-own-oauth-access-token', accountId: 'chatgpt_acct_9' };
+    const app = buildApp();
+    const res = await app.request('/codex-subscription/responses', {
+      method: 'POST',
+      headers: {
+        // Exactly what pi-acp's openai-responses client sends: the bearer it
+        // was configured with (the executor PAT) + content-type + accept.
+        Authorization: 'Bearer kortix_pat_test',
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({ model: 'gpt-5.6-sol', input: [], stream: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(resolveCodexCredential).toHaveBeenCalledWith('proj_1', 'user_1');
+    expect(fetchCalls).toHaveLength(1);
+    const call = fetchCalls.at(0);
+    if (!call) throw new Error('expected a captured fetch call');
+    expect(call.url).toBe('https://chatgpt.test/backend-api/codex/responses');
+    const headers = new Headers(call.init.headers as HeadersInit);
+    // Client headers that ARE in the allowlist pass through.
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('Accept')).toBe('text/event-stream');
+    // The user's own resolved credential + descriptor-supplied upstream headers
+    // are applied server-side — Pi never sends them, the relay adds them.
+    expect(headers.get('Authorization')).toBe('Bearer user-own-oauth-access-token');
+    expect(headers.get('Authorization')).not.toContain('kortix_pat_test');
+    expect(headers.get('originator')).toBe('codex_cli_rs');
+    expect(headers.get('ChatGPT-Account-ID')).toBe('chatgpt_acct_9');
+  });
 });
