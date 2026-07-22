@@ -199,12 +199,39 @@ export function applyAcpSessionDefaults(
   }
 }
 
-// Sane fallback PATH matching what the Dockerfile actually installs into
-// (`/usr/local/bin` for npm-global harness binaries and the toolchain, plus
-// the standard Debian/Ubuntu system dirs). Only used when the process env's
-// own PATH is empty/unset — see the `id === 'pi'` and `id === 'opencode'`
-// branches of resolveAcpHarnessLaunchEnv for why that happens on Platinum.
+// The dirs the Dockerfile actually installs into: `/usr/local/bin` for the
+// npm-global harness binaries (`pi`, `opencode`, …) and the toolchain, plus the
+// standard Debian/Ubuntu system dirs. `mergeHarnessPath` guarantees every one of
+// these is on the PATH of a bare-command harness launch.
 const HARNESS_DEFAULT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+// UNION the inherited PATH with HARNESS_DEFAULT_PATH so `/usr/local/bin` (where
+// `pi` and `opencode` install) is ALWAYS resolvable, no matter what the inherited
+// PATH looks like. Two live failure modes this closes, both surfacing as
+// `spawn('pi')`/`spawn('opencode')` ENOENT ("executable not found (command: pi)"):
+//   1. EMPTY PATH — Platinum microVMs have booted the whole sandbox process tree
+//      with no PATH at all; Node's execvp() then falls back to a bare
+//      `/bin:/usr/bin` glibc default that excludes `/usr/local/bin`.
+//   2. NON-EMPTY-BUT-WRONG PATH — an inherited PATH that is present yet missing
+//      `/usr/local/bin`. The old `env.PATH?.trim() || HARNESS_DEFAULT_PATH`
+//      fallback only fired on an EMPTY PATH, so this case slipped through and the
+//      binary still failed to resolve.
+// The inherited PATH's own entries keep their order and precedence (a customized
+// host PATH still wins for shadowing); the default dirs are appended only where
+// not already present. This runs for the `id === 'pi'` and `id === 'opencode'`
+// branches of resolveAcpHarnessLaunchEnv — the harnesses launched by (or that
+// shell out to) a bare command name, for EVERY auth kind.
+function mergeHarnessPath(envPath: string | undefined): string {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const dir of `${envPath ?? ''}:${HARNESS_DEFAULT_PATH}`.split(':')) {
+    const trimmed = dir.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    merged.push(trimmed)
+  }
+  return merged.join(':')
+}
 
 const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   claude: {
@@ -299,11 +326,12 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // === 'opencode'`, resolved via runtime.ts's `spawn()`) — with no PATH at
     // all, that lookup fails immediately with Bun's own
     // `Executable not found in $PATH: "opencode"`, before the harness ever
-    // gets a chance to run. Only inject a fallback when PATH is genuinely
-    // absent; a real (possibly customized) PATH from the host env always
-    // wins. Reassigned (not mutated) so every return path below — including
-    // the two early returns — carries it.
-    const native = { ...outerNative, PATH: env.PATH?.trim() || HARNESS_DEFAULT_PATH }
+    // gets a chance to run. `mergeHarnessPath` unions the inherited PATH with
+    // the Dockerfile install dirs so `/usr/local/bin` is always present (empty
+    // OR non-empty-but-wrong inherited PATH); a customized host PATH keeps its
+    // precedence. Reassigned (not mutated) so every return path below —
+    // including the two early returns — carries it.
+    const native = { ...outerNative, PATH: mergeHarnessPath(env.PATH) }
     const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
     if (authKind === 'codex_subscription') {
       // 2026-07-22 Codex-subscription widening. OpenCode is NOT pointed at a
@@ -605,10 +633,14 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // glibc default (`/bin:/usr/bin`) that excludes `/usr/local/bin` — where
     // this Dockerfile actually installs `pi` — so the spawn fails ENOENT and
     // pi-acp surfaces it as "Could not start pi: executable not found
-    // (command: pi)" even though the binary is present on disk. Only inject a
-    // fallback when PATH is genuinely absent; a real (possibly customized)
-    // PATH from the host env always wins.
-    const native = { ...outerNative, PATH: env.PATH?.trim() || HARNESS_DEFAULT_PATH }
+    // (command: pi)" even though the binary is present on disk. The same
+    // ENOENT also appears when the inherited PATH is present but simply lacks
+    // `/usr/local/bin`. `mergeHarnessPath` unions the inherited PATH with the
+    // Dockerfile install dirs so `/usr/local/bin` is guaranteed either way,
+    // for EVERY auth kind (the codex_subscription branch below returns
+    // `{ ...native }`, inheriting this PATH); a customized host PATH keeps its
+    // precedence.
+    const native = { ...outerNative, PATH: mergeHarnessPath(env.PATH) }
     if (authKind === 'native_config') return Object.keys(native).length ? native : undefined
     if (authKind === 'codex_subscription') {
       // 2026-07-22 Codex-subscription widening. Pi speaks OpenAI Responses

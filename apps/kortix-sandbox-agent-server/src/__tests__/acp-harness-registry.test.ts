@@ -291,6 +291,64 @@ describe('ACP harness registry', () => {
     ).toThrow(/gateway/);
   });
 
+  // Regression test for the live `session/new` -32603 "Could not start pi:
+  // executable not found (command: pi)" ENOENT on a Codex subscription. pi-acp
+  // shells out to the bare `pi` CLI, so its launch env MUST expose a PATH
+  // containing `/usr/local/bin` (the Dockerfile install dir) — exactly like the
+  // working managed_gateway pi launch. This asserts BOTH branches emit the same
+  // usable PATH so the codex_subscription lane can never silently drop it.
+  test('a codex_subscription pi launch carries a PATH that resolves the pi binary, identical to the managed_gateway pi launch', () => {
+    const base = {
+      KORTIX_API_URL: 'https://api.example.test/v1',
+      KORTIX_TOKEN: 'sandbox-token',
+      KORTIX_EXECUTOR_TOKEN: 'kortix_pat_executor-token',
+    };
+    const managed = resolveAcpHarnessLaunchEnv(
+      'pi',
+      isolateHarnessAuthEnv({ ...base, KORTIX_RUNTIME_AUTH_KIND: 'managed_gateway' }),
+    );
+    const codexSub = resolveAcpHarnessLaunchEnv(
+      'pi',
+      isolateHarnessAuthEnv({
+        ...base,
+        KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
+        CODEX_AUTH_JSON: '{"openai":{"type":"oauth"}}',
+      }),
+    );
+    expect(codexSub?.PATH).toContain('/usr/local/bin');
+    // The subscription lane's PATH must match the working managed lane's PATH.
+    expect(codexSub?.PATH).toBe(managed?.PATH);
+    // And it must point at the subscription relay, proving the PATH is present
+    // on the real codex_subscription config (not some unrelated fallthrough).
+    expect(codexSub?.KORTIX_PI_MODELS_JSON).toContain('/router/codex-subscription');
+  });
+
+  // The specific live failure mode: an inherited PATH that is PRESENT but does
+  // not contain `/usr/local/bin`. The old `env.PATH || HARNESS_DEFAULT_PATH`
+  // fallback only fired on an EMPTY PATH, so this slipped through and `pi` still
+  // failed to resolve. `mergeHarnessPath` now unions the default dirs in, while
+  // preserving the inherited PATH's own entries and their precedence.
+  test('a codex_subscription pi launch adds /usr/local/bin to a non-empty inherited PATH that lacks it', () => {
+    const env = resolveAcpHarnessLaunchEnv(
+      'pi',
+      isolateHarnessAuthEnv({
+        KORTIX_RUNTIME_AUTH_KIND: 'codex_subscription',
+        CODEX_AUTH_JSON: '{"openai":{"type":"oauth"}}',
+        KORTIX_API_URL: 'https://api.example.test/v1',
+        KORTIX_TOKEN: 'sandbox-token',
+        KORTIX_EXECUTOR_TOKEN: 'kortix_pat_executor-token',
+        // A real, non-empty PATH that does NOT include /usr/local/bin.
+        PATH: '/custom/tools/bin:/usr/bin:/bin',
+      }),
+    );
+    const dirs = env?.PATH?.split(':') ?? [];
+    expect(dirs).toContain('/usr/local/bin');
+    // The inherited entries keep their leading precedence (custom PATH wins for
+    // shadowing), with the missing default dirs appended after — no duplicates.
+    expect(dirs[0]).toBe('/custom/tools/bin');
+    expect(dirs.filter((dir) => dir === '/usr/bin')).toHaveLength(1);
+  });
+
   test('routes Codex through the scoped Kortix Responses gateway by default', () => {
     const registry = createAcpHarnessRegistry({
       KORTIX_API_URL: 'https://api.test/v1',
