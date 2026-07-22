@@ -58,6 +58,56 @@ describe('web mcp tool definitions', () => {
       globalThis.fetch = original;
     }
   });
+
+  test('page markdown rejects a same-origin path outside the public allowlist without fetching', async () => {
+    const fetchMock = mock(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response('should not run'),
+    );
+    const original = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const tool = WEB_MCP_TOOLS.find((t) => t.name === 'get_kortix_page_markdown')!;
+      const result = (await tool.execute({ path: '/accounts/billing' })) as { error: string };
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.error).toContain('/accounts/billing');
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test('page markdown rejects an absolute URL without fetching', async () => {
+    const fetchMock = mock(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response(''),
+    );
+    const original = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const tool = WEB_MCP_TOOLS.find((t) => t.name === 'get_kortix_page_markdown')!;
+      const result = (await tool.execute({ path: 'https://evil.example/pricing' })) as {
+        error: string;
+      };
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.error).toContain('root-relative');
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test('page markdown rejects a protocol-relative URL without fetching', async () => {
+    const fetchMock = mock(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response(''),
+    );
+    const original = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const tool = WEB_MCP_TOOLS.find((t) => t.name === 'get_kortix_page_markdown')!;
+      const result = (await tool.execute({ path: '//evil.com/x' })) as { error: string };
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.error).toContain('root-relative');
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
 
 describe('registerWebMcpTools', () => {

@@ -1,9 +1,39 @@
+import { MARKDOWN_ROUTE_PATHS } from './markdown-negotiation';
+
 export type WebMcpTool = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
   execute: (input: Record<string, unknown>) => Promise<unknown>;
 };
+
+// `WEB_MCP_TOOLS` registers on every route via the root layout, including
+// authenticated ones, and runs in the visitor's own browser — so `fetch`
+// carries their real session cookies (default `credentials: 'same-origin'`).
+// A path-taking tool must never be allowed to reach anything other than the
+// generated public markdown routes, or it becomes a credentialed same-origin
+// page reader for any WebMCP-capable agent that can supply tool input.
+const ALLOWED_MARKDOWN_PATHS = new Set(MARKDOWN_ROUTE_PATHS);
+
+/**
+ * Root-relative check is defence in depth on top of the allowlist: without it
+ * a value like `https://evil.com` or `//evil.com` would still fail the Set
+ * lookup, but we reject it here first so the reason is unambiguous and the
+ * allowlist never has to reason about non-path input.
+ */
+function isRootRelativePath(path: string): boolean {
+  return path.startsWith('/') && !path.startsWith('//');
+}
+
+function assertAllowedMarkdownPath(path: string): string | undefined {
+  if (!isRootRelativePath(path)) {
+    return `"${path}" is not a root-relative page path. Pass a path like /pricing, not a full URL.`;
+  }
+  if (!ALLOWED_MARKDOWN_PATHS.has(path)) {
+    return `"${path}" is not a public Kortix page. Call list_kortix_pages to see valid paths.`;
+  }
+  return undefined;
+}
 
 /**
  * Every tool is read-only, unauthenticated, and backed by an endpoint that
@@ -52,14 +82,20 @@ export const WEB_MCP_TOOLS: WebMcpTool[] = [
   {
     name: 'get_kortix_page_markdown',
     description:
-      'Fetch any public Kortix page as markdown instead of HTML. Pass the page path, e.g. /pricing.',
+      'Fetch one of the public Kortix pages as markdown instead of HTML. Pass a root-relative ' +
+      'path from list_kortix_pages, e.g. /pricing — paths outside the public page set are rejected.',
     inputSchema: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Root-relative page path.' } },
+      properties: { path: { type: 'string', description: 'Root-relative public page path.' } },
       required: ['path'],
     },
     execute: async (input) => {
       const path = String(input.path ?? '/');
+      const rejection = assertAllowedMarkdownPath(path);
+      // A rejection is a normal tool result, not a thrown error: an agent that
+      // gets a text explanation can retry with a valid path, whereas a thrown
+      // error or a silent empty string gives it nothing to act on.
+      if (rejection) return { error: rejection };
       const response = await fetch(path, { headers: { Accept: 'text/markdown' } });
       return response.text();
     },
