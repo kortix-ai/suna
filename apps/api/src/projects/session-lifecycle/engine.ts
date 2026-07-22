@@ -534,6 +534,11 @@ async function executeQueuedCreate(
     enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
+    // Replay the origin-derivation signals captured at enqueue time so a
+    // queued backend create keeps origin 'backend' (and its origin_ref).
+    authType: payload.authType,
+    apiKeyType: payload.apiKeyType,
+    inSession: payload.inSession,
   });
 }
 
@@ -554,6 +559,9 @@ async function executeCreateSession(
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
+    authType: command.authType,
+    apiKeyType: command.apiKeyType,
+    inSession: command.inSession,
     mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
   });
 

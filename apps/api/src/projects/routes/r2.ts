@@ -783,10 +783,19 @@ projectsApp.openapi(
     userId,
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
+    // Platform-maintenance session — stamp the system source at the TOP-LEVEL
+    // metadata (the trusted, server-set channel resolveSessionOrigin reads), so
+    // its origin resolves to 'system' (source wins first). Under body.metadata
+    // it would persist but NOT drive the origin, since derivation never trusts
+    // the request body.
+    metadata: { source: 'system:sandbox-build-fix' },
     body: {
       initial_prompt: prompt,
       name: 'Fix sandbox build',
-      metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
+      metadata: {
+        kind: 'sandbox-build-fix',
+        failed_slug: failed.slug,
+      },
       // hostBuild.slug is a BUILD slug — for a warm bake it reads `default-warm`,
       // which names no template, so session creation rejected it with a 400.
       sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
