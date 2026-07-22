@@ -1,5 +1,9 @@
 # Kortix Robots.txt
+# Content usage preferences (contentsignals.org). In prose: Kortix content may
+# be indexed and cited, and may be used to ground AI answers, but may not be
+# used to train models.
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no
 Allow: /
 Allow: /api/ai
 
