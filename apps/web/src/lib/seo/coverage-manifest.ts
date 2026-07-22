@@ -4,9 +4,10 @@ export const SEO_COVERAGE_MANIFEST = {
   machineRoutes: ['/llms.txt', '/llms-full.txt', '/api/ai'],
   markdownFamilies: ['marketing', 'blog', 'docs', 'use-case'],
   requiredMarkdownHeaders: {
-    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Type': 'text/markdown; charset=utf-8',
     'Content-Disposition': 'inline',
     'X-Robots-Tag': 'index, follow',
+    Vary: 'Accept',
   },
   maximumAgentApiPageSize: 50,
 } as const;

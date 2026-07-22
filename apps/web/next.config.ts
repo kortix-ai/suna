@@ -7,7 +7,17 @@ import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import './scripts/build-content-timestamps.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
-import { SITE_LINK_HEADER } from './src/lib/agent-discovery/link-header';
+import {
+  SITE_LINK_HEADER,
+  markdownAlternateLinkValue,
+} from './src/lib/agent-discovery/link-header';
+
+// Task 7's generated htmlPath -> markdownPath map, read directly rather than
+// imported so `headers()` (evaluated outside the Next module graph) doesn't
+// need `resolveJsonModule`.
+const MARKDOWN_ROUTES: Record<string, string> = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'src', 'lib', 'seo', 'markdown-routes.json'), 'utf8'),
+);
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -332,6 +342,20 @@ const nextConfig = (): NextConfig => ({
         source: '/:path*',
         headers: [{ key: 'Link', value: SITE_LINK_HEADER }],
       },
+      // Negotiable public pages. `Vary: Accept` is scoped to exactly these
+      // paths — setting it site-wide would fragment every CDN cache entry by
+      // request header. The Link value repeats SITE_LINK_HEADER because a later
+      // matching entry replaces the earlier one rather than appending to it.
+      ...Object.entries(MARKDOWN_ROUTES).map(([htmlPath, markdownPath]) => ({
+        source: htmlPath,
+        headers: [
+          { key: 'Vary', value: 'Accept' },
+          {
+            key: 'Link',
+            value: `${SITE_LINK_HEADER}, ${markdownAlternateLinkValue(markdownPath)}`,
+          },
+        ],
+      })),
       {
         source: '/:path*',
         headers: [

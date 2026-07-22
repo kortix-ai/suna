@@ -114,8 +114,14 @@ describe('public SEO/AEO content coverage', () => {
       },
     );
     expect(routeResponse.status).toBe(200);
-    expect(routeResponse.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(routeResponse.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
     expect(await routeResponse.text()).toContain(`# ${record!.title}`);
+  });
+
+  test('markdown responses carry a token-budget hint', () => {
+    const record = getPublicContentRecords()[0];
+    const response = markdownResponse('# Title\n\nBody text.\n', record);
+    expect(Number(response.headers.get('x-markdown-tokens'))).toBeGreaterThan(0);
   });
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {

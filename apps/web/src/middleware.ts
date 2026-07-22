@@ -1,4 +1,8 @@
 import { locales, type Locale } from '@/i18n/config';
+import {
+  markdownRouteFor,
+  prefersMarkdown,
+} from '@/lib/agent-discovery/markdown-negotiation';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
@@ -121,6 +125,15 @@ const DESKTOP_ALLOWED_ROUTES = [
 ];
 
 export async function middleware(request: NextRequest) {
+  // Agents asking for markdown get the markdown twin of a public page. Only
+  // paths in the generated route map qualify, all of which are public content,
+  // so this can never expose an authenticated page. Browsers rank text/html
+  // at least as high as text/markdown and fall through to HTML.
+  const markdownPath = markdownRouteFor(request.nextUrl.pathname);
+  if (markdownPath && prefersMarkdown(request.headers.get('accept'))) {
+    return NextResponse.rewrite(new URL(markdownPath, request.url));
+  }
+
   const { pathname } = request.nextUrl;
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
