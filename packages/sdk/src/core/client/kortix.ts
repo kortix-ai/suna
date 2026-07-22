@@ -676,9 +676,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * cache the resolved runtime for THIS handle. Also points the app's shared
      * "current runtime" store there, for React hosts that still read it.
      */
-    async function ensureReady(): Promise<SessionRuntimeEntry> {
+    async function ensureReady(opts?: { readyTimeoutMs?: number }): Promise<SessionRuntimeEntry> {
       const cached = tryResolveReady();
       if (cached) return cached;
+      const readyTimeoutMs = opts?.readyTimeoutMs ?? 180_000;
 
       // Dedup concurrent starts for this (projectId, sessionId) — see
       // `inFlightSessionStarts`'s doc comment. If another call (this handle or
@@ -692,7 +693,27 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       }
 
       const startPromise = (async (): Promise<SessionRuntimeEntry> => {
-        const started = await P.startProjectSession(projectId, sessionId, 30_000);
+        // Poll /start (each call long-polls up to 30s) until the runtime is
+        // ready. `/start` returns `retriable: true` while the sandbox is still
+        // provisioning/starting — a cold start can outlast a single long-poll —
+        // so keep polling until it's ready, hits a terminal stage, or the
+        // deadline. A single check would spuriously throw RUNTIME_UNAVAILABLE
+        // on a slow boot, which is exactly what a backend waiting to send the
+        // first turn must not do.
+        const deadline = Date.now() + readyTimeoutMs;
+        let started = await P.startProjectSession(projectId, sessionId, 30_000);
+        // Keep polling only while the runtime is still coming up
+        // (provisioning/starting) and the server says it's retriable; a
+        // terminal stage (ready/failed/stopped) or the deadline ends the loop.
+        while (
+          started &&
+          (started.stage === 'provisioning' || started.stage === 'starting') &&
+          started.retriable &&
+          Date.now() < deadline
+        ) {
+          await new Promise((r) => setTimeout(r, 1_000));
+          started = await P.startProjectSession(projectId, sessionId, 30_000);
+        }
         if (
           !started ||
           started.stage !== 'ready' ||
