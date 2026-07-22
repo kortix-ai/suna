@@ -436,6 +436,16 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
 `OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
 
+### Auth-provider registry (the two-door connect surface — projects/routes/auth-providers.ts)
+
+The registry both the web modal and the CLI (`kortix providers`) read (docs/specs/2026-07-22-unified-auth-gateway.md §8.3). It STORES/POLLS upstream-provider credentials (Anthropic, OpenAI/Codex); distinct from the OAU-* OAuth2 *server* above. IDs are `AUTHP-*` — `AUTH-1` is `POST /auth/logout`. Deterministic slice only: no external provider round-trip (a live Codex device happy-path needs OpenAI + human approval).
+
+`AUTHP-1` `GET /projects/:id/auth-providers` (`read`, `PROJECT_CONNECTOR_READ`) → `{providers, byok}`: every registry door with `compatibleHarnesses` + live `status` (`CredentialRecord|null`), plus the ~165-entry BYOK catalog tail. ANON → 401. OWNER → 200 with **both** doors (`account` + `api-key`) present and a non-empty `byok`.
+`AUTHP-2` `GET /projects/:id/auth-providers/:providerId/status` → typed `CredentialRecord` for one door (optional `?door=`). ANON → 401. Known provider → 200 `{status:{status}}`. Unknown provider → 404.
+`AUTHP-3` `POST /projects/:id/oauth-credentials/:providerId/start` — device-code start (opaque encrypted handle). ANON → 401. A **paste-token** provider (Anthropic) has no device flow → 400 (`{error, flow:"paste-token"}`). Unknown account provider → 404.
+`AUTHP-4` `POST /projects/:id/oauth-credentials/:providerId/poll` — decrypt the handle, poll upstream, persist on success. ANON → 401. A garbage/foreign handle opens to null → 200 `{status:"expired"}` (never 500).
+`AUTHP-5` `GET /projects/:id/oauth-credentials` (`read`) lists connected account-door credentials → `{items}`; `DELETE /projects/:id/oauth-credentials/:providerId` (`manage`, `PROJECT_CONNECTOR_WRITE`) disconnects. List ANON → 401; OWNER → 200 `{items}`. Delete ANON → 401.
+
 ### Tunnel (reverse tunnel to local machines)
 
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
