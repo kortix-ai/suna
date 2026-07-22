@@ -73,29 +73,43 @@ import {
   withAllAcpHarnesses,
 } from '@/features/workspace/customize/sections/view/runtime-profile-options';
 import {
+  agentsOnProfile,
   buildRuntimeRows,
+  carryReferencesThroughRename,
+  listAgentNames,
   connectedHarnessesFromModelsPage,
   nextAgentBlockForRuntime,
+  orphanedAgentRefs,
+  pickFallbackProfile,
+  planRuntimeProfilesSave,
+  runtimeManifestQueryKeys,
   runtimeSelectOptions,
   savingBarStyle,
+  type RuntimeAgentRef,
+  type RuntimeReassignments,
   type RuntimeRowViewModel,
+  type RuntimeSaveStep,
   type SavePhase,
 } from '@/features/workspace/customize/sections/view/runtime-view-model';
 import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   enableAcpRuntimeProfiles,
+  getAgentConfig,
   getProject,
   getProjectDetail,
   getRuntimeProfiles,
+  updateAgentConfig,
   updateRuntimeProfiles,
+  type AgentConfigBlock,
   type RuntimeProfile,
 } from '@kortix/sdk/projects-client';
 import { useModelsPage } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cpu, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { ArrowRight, Cpu, FolderOpen, Plus, Trash2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
@@ -451,11 +465,11 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
       // stay unselected until the project opts into "Experimental
       // harnesses" (Settings → Experimental) and adds a profile for one.
       successToast('OpenCode runtime profile is ready to select');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId) }),
-        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
-        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
-      ]);
+      await Promise.all(
+        runtimeManifestQueryKeys(projectId).map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        ),
+      );
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to enable runtime profiles'),
   });
@@ -481,6 +495,97 @@ function EnableHarnessesCard({ projectId, canWrite }: { projectId: string; canWr
           Enable runtime profiles
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The half of the manifest the profile editor used to be blind to: agents whose
+ * `runtime` no longer names a declared profile, and where each is headed.
+ *
+ * This exists because a v3 manifest is one document with one referential rule —
+ * every `agents.<name>.runtime` must be a key of `runtimes` — and the PUT
+ * re-validates the whole thing. Editing only the profile list could therefore
+ * build a draft the server was guaranteed to refuse, and the only signal was a
+ * 400 toast naming a manifest path. The constraint now has a face and a
+ * control: the agent, an arrow, and the runtime it lands on.
+ *
+ * It renders inside the editor's own body rather than in the removal confirm,
+ * so a move stays visible and changeable right up until Save — a decision you
+ * can review, not a modal you had to get right in one pass.
+ */
+function MovingAgentsPanel({
+  agents,
+  reassignments,
+  orphanNames,
+  targets,
+  onChange,
+}: {
+  agents: string[];
+  reassignments: Record<string, string>;
+  orphanNames: string[];
+  targets: Array<{ value: string; label: string }>;
+  onChange: (agent: string, runtime: string) => void;
+}) {
+  const unresolved = orphanNames.length > 0;
+
+  return (
+    <div
+      className={cn(
+        'animate-in fade-in-0 slide-in-from-top-1 rounded-md border px-4 py-3',
+        unresolved ? 'border-kortix-yellow/25 bg-kortix-yellow/5' : 'bg-popover',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            'flex size-6 shrink-0 items-center justify-center rounded-sm',
+            unresolved ? 'bg-kortix-yellow/10 text-kortix-yellow' : 'text-muted-foreground',
+          )}
+        >
+          <ArrowRight className="size-3.5" />
+        </span>
+        <p className="text-foreground text-sm font-medium">
+          {agents.length === 1 ? '1 agent moves' : `${agents.length} agents move`}
+        </p>
+      </div>
+      <p className="text-muted-foreground mt-1 text-xs text-pretty">
+        {unresolved
+          ? 'Pick what runs these before saving — an agent can’t point at a runtime this project no longer has.'
+          : 'These move when you save. Change where they land at any point before then.'}
+      </p>
+      <ul className="mt-3 space-y-1.5">
+        {agents.map((agent, index) => (
+          <li
+            key={agent}
+            // Same stagger idiom as the primary row list — 40ms apart, capped
+            // so a long list never front-loads a visible wait.
+            className="animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both flex items-center gap-2"
+            style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+          >
+            <Badge variant="outline" size="xs" className="shrink-0 font-mono">
+              {agent}
+            </Badge>
+            <ArrowRight className="text-muted-foreground size-3 shrink-0" />
+            <Select value={reassignments[agent] ?? ''} onValueChange={(next) => onChange(agent, next)}>
+              <SelectTrigger
+                variant="popover"
+                aria-label={`Runtime for ${agent}`}
+                className="h-9 w-full sm:w-56"
+              >
+                <SelectValue placeholder="Choose a runtime" />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -512,22 +617,96 @@ function RuntimeProfilesAdvancedEditor({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, RuntimeProfile>>({});
   const [removeName, setRemoveName] = useState<string | null>(null);
+  // Which agents this editing session has re-pointed, and where. The manifest
+  // half this editor never used to know about — see `orphanedAgentRefs`.
+  const [reassignments, setReassignments] = useState<RuntimeReassignments>({});
+
+  // The other end of the invariant. `agents.<name>.runtime` must name a key of
+  // `runtimes`, so the profile list cannot be edited safely without knowing
+  // who points at what. Read from the SAME `['project-detail', projectId]`
+  // entry `ActiveRuntimeSelector` already fetched — one request, two readers.
+  const detailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 20_000,
+  });
+  const agentRefs = useMemo<RuntimeAgentRef[]>(
+    () =>
+      (detailQuery.data?.config?.agents ?? [])
+        .filter((agent) => typeof agent.runtime === 'string' && agent.runtime !== '')
+        .map((agent) => ({ name: agent.name, runtime: agent.runtime })),
+    [detailQuery.data],
+  );
+  // `draft` is only meaningful once `beginEdit` has seeded it; measured while
+  // closed it is `{}`, which would read as "every agent is stranded".
+  const orphans = open ? orphanedAgentRefs(agentRefs, draft, reassignments) : [];
+  const moveTargets = runtimeSelectOptions(draft);
+  // Every agent this save has to speak for: the ones already re-pointed, plus
+  // any left dangling. Rendered as one list so a move and a problem look like
+  // the same kind of thing to resolve, because they are.
+  const movingAgents = [
+    ...new Set([...Object.keys(reassignments), ...orphans.map((orphan) => orphan.name)]),
+  ];
+
+  // Who the pending removal would strand, and where they'd land — resolved
+  // here so the confirm can state the consequence in the same breath as the
+  // question, rather than after the fact.
+  const stranded = removeName ? agentsOnProfile(agentRefs, reassignments, removeName) : [];
+  const removeFallbackLabel = (() => {
+    if (!removeName) return null;
+    const remaining = { ...draft };
+    delete remaining[removeName];
+    const fallback = pickFallbackProfile(remaining, draft[removeName]?.harness);
+    return fallback
+      ? (runtimeSelectOptions(remaining).find((option) => option.value === fallback)?.label ??
+          fallback)
+      : null;
+  })();
+
   const mutation = useMutation({
-    mutationFn: (runtimes: Record<string, RuntimeProfile>) =>
-      updateRuntimeProfiles(projectId, runtimes),
+    mutationFn: async (steps: RuntimeSaveStep[]) => {
+      // Sequential on purpose: each step is only valid against the manifest
+      // the previous one left behind (see `planRuntimeProfilesSave`).
+      for (const step of steps) {
+        if (step.kind === 'runtimes') {
+          await updateRuntimeProfiles(projectId, step.runtimes);
+          continue;
+        }
+        // Trap 1 again: the agent PUT rebuilds the whole governance block
+        // from the body, so the agent's current grants have to be read back
+        // and carried over. Read at write time rather than holding a query
+        // per agent open for a modal that usually moves nothing.
+        const current = await getAgentConfig(projectId, step.agent);
+        await updateAgentConfig(
+          projectId,
+          step.agent,
+          nextAgentBlockForRuntime(
+            current.block as Record<string, unknown> | null,
+            step.runtime,
+            step.harness,
+          ) as AgentConfigBlock,
+        );
+      }
+    },
     onSuccess: async () => {
       successToast('Runtime profiles saved');
       setOpen(false);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: RUNTIME_PROFILES_QUERY_KEY(projectId) }),
-        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
-      ]);
+      setReassignments({});
+      // Adding/renaming/removing a profile changes what the "Coding harness"
+      // Select can offer — `agent-config` carries that option list, so it has
+      // to go stale here too (see `runtimeManifestQueryKeys`).
+      await Promise.all(
+        runtimeManifestQueryKeys(projectId).map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        ),
+      );
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to save runtime profiles'),
   });
 
   const beginEdit = () => {
     setDraft(query.data?.runtimes ?? {});
+    setReassignments({});
     setOpen(true);
   };
   const addProfile = () => {
@@ -548,6 +727,10 @@ function RuntimeProfilesAdvancedEditor({
       delete next[from];
       return next;
     });
+    // A rename is not a removal — an agent on the old key plainly means the
+    // same profile, so its reference follows instead of dangling (which used
+    // to 400 exactly like a removal did, with nothing on screen to say why).
+    setReassignments((current) => carryReferencesThroughRename(agentRefs, current, from, to));
   };
 
   if (!query.data?.editable) return null;
@@ -596,6 +779,17 @@ function RuntimeProfilesAdvancedEditor({
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-3 overflow-y-auto">
+            {movingAgents.length > 0 ? (
+              <MovingAgentsPanel
+                agents={movingAgents}
+                reassignments={reassignments}
+                orphanNames={orphans.map((orphan) => orphan.name)}
+                targets={moveTargets}
+                onChange={(agent, runtime) =>
+                  setReassignments((current) => ({ ...current, [agent]: runtime }))
+                }
+              />
+            ) : null}
             {Object.entries(draft).map(([name, profile]) => (
               <div key={name} className="bg-popover rounded-md border px-4 py-3">
                 <div className="grid gap-3 sm:grid-cols-[1fr_150px_1.4fr_auto] sm:items-end">
@@ -684,8 +878,27 @@ function RuntimeProfilesAdvancedEditor({
             </Button>
             <Button
               type="button"
-              disabled={mutation.isPending || Object.keys(draft).length === 0}
-              onClick={() => mutation.mutate(draft)}
+              // Blocked on a dangling reference rather than sent and refused:
+              // the panel above already names the agent and offers the fix, so
+              // the button says "not yet" instead of the server saying "400".
+              // `detailQuery` is what makes a dangling reference detectable at
+              // all — saving before it lands would be saving blind, which is
+              // the exact state the 400 came from.
+              disabled={
+                mutation.isPending ||
+                detailQuery.isLoading ||
+                Object.keys(draft).length === 0 ||
+                orphans.length > 0
+              }
+              onClick={() =>
+                mutation.mutate(
+                  planRuntimeProfilesSave({
+                    savedRuntimes: query.data?.runtimes ?? {},
+                    draftRuntimes: draft,
+                    reassignments,
+                  }),
+                )
+              }
             >
               {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}Save profiles
             </Button>
@@ -705,17 +918,33 @@ function RuntimeProfilesAdvancedEditor({
               if (!next) setRemoveName(null);
             }}
             title={`Remove ${removeName ?? 'runtime'}?`}
-            description="Agents that reference this profile must be moved before the manifest can be saved."
-            confirmLabel="Remove profile"
+            // Names the consequence instead of stating the constraint. The old
+            // copy ("agents that reference this profile must be moved before
+            // the manifest can be saved") described a rule and handed the user
+            // no way to satisfy it — the only control that could move an agent
+            // lives outside this modal.
+            description={
+              removeName && stranded.length > 0
+                ? `${listAgentNames(stranded)} ${stranded.length === 1 ? 'runs' : 'run'} on it. Removing it moves ${stranded.length === 1 ? 'that agent' : 'them'} to ${removeFallbackLabel ?? 'another runtime'} — you can change that before saving.`
+                : 'Nothing runs on this profile, so removing it changes no agent.'
+            }
+            confirmLabel={stranded.length > 0 ? 'Move & remove' : 'Remove profile'}
             confirmVariant="destructive"
             confirmIcon={<Trash2 className="size-4" />}
             onConfirm={() => {
               if (!removeName) return;
-              setDraft((current) => {
-                const next = { ...current };
-                delete next[removeName];
-                return next;
-              });
+              const remaining = { ...draft };
+              delete remaining[removeName];
+              // Removal and reassignment are ONE gesture. Splitting them is
+              // what produced a draft the server would always reject.
+              const fallback = pickFallbackProfile(remaining, draft[removeName]?.harness);
+              if (fallback) {
+                setReassignments((current) => ({
+                  ...current,
+                  ...Object.fromEntries(stranded.map((name) => [name, fallback])),
+                }));
+              }
+              setDraft(remaining);
               setRemoveName(null);
             }}
           />

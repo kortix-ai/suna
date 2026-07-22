@@ -99,6 +99,200 @@ export function runtimeSelectOptions(
 }
 
 /**
+ * Every cached read derived from the project manifest's runtime profiles —
+ * i.e. everything a write to `runtimes` makes stale. Returned as query-key
+ * PREFIXES for `invalidateQueries`, which matches partially by default.
+ *
+ * This exists because the Runtime section reads one manifest through four
+ * separate cache entries, and the two write paths (`updateRuntimeProfiles`
+ * in the Advanced editor, `enableAcpRuntimeProfiles` in the enable card)
+ * each invalidated their own ad-hoc subset. Both omitted `agent-config` —
+ * which is precisely the entry the "Coding harness" `Select` builds its
+ * options from — so adding a profile or "Enable all harnesses" refreshed the
+ * row list while the Select kept serving its stale `runtimes` map for the
+ * whole 15s `staleTime`. One list, one place to add to.
+ *
+ * `['agent-config', projectId]` is intentionally two segments, not three:
+ * every agent in the project routes through these profiles, not just the
+ * default one, so all of them go stale together.
+ */
+export function runtimeManifestQueryKeys(projectId: string): Array<readonly unknown[]> {
+  return [
+    // The primary row list + the Advanced editor's own profile list.
+    ['runtime-profiles', projectId],
+    // Compiled project config (composer capabilities, harness gating).
+    ['project-config', projectId],
+    // The agents list, and `runtime_default_agent` for the Select's target.
+    ['project-detail', projectId],
+    // `ActiveRuntimeSelector`'s option list AND its current value — the one
+    // that used to be missed.
+    ['agent-config', projectId],
+  ];
+}
+
+/**
+ * One agent's declared routing, as the project-detail summary reports it
+ * (`ProjectConfigSummary['agents']`). `runtime` is null/absent for
+ * runtime-discovered agents, which `agents:` doesn't govern and the manifest
+ * therefore never validates against `runtimes`.
+ */
+export interface RuntimeAgentRef {
+  name: string;
+  runtime?: string | null;
+}
+
+/** A pending "this agent moves to that profile" edit, keyed by agent name.
+ * Lives only for the duration of one Advanced-editor session. */
+export type RuntimeReassignments = Record<string, string>;
+
+/** The profile an agent would run on if the draft were saved right now —
+ * its pending reassignment if it has one, otherwise what the manifest says. */
+function effectiveRuntime(
+  agent: RuntimeAgentRef,
+  reassignments: RuntimeReassignments,
+): string | null {
+  return reassignments[agent.name] ?? agent.runtime ?? null;
+}
+
+/**
+ * Agents that a draft would strand — i.e. whose effective `runtime` names a
+ * profile the draft no longer declares.
+ *
+ * This is the frontend mirror of the single manifest rule that produced the
+ * unexplained 400: `manifest-schema`'s v3 validator walks every
+ * `agents.<name>.runtime` and errors with `runtime "<x>" does not match a
+ * declared runtime profile` when it isn't a key of `runtimes`. `PUT
+ * /runtime-profiles` re-validates the WHOLE manifest after swapping the
+ * `runtimes` map in (`applyRuntimeProfilesV3`), so removing a referenced
+ * profile is rejected wholesale — the write never lands, which is why the
+ * Coding harness Select appeared "stuck" on the removed harness.
+ *
+ * Pending reassignments are re-checked against the draft rather than trusted:
+ * a user can record "move `coding` to `opencode`" and then remove `opencode`
+ * too, and that agent is stranded again.
+ */
+export function orphanedAgentRefs(
+  agents: readonly RuntimeAgentRef[],
+  draftRuntimes: Record<string, RuntimeProfile>,
+  reassignments: RuntimeReassignments,
+): Array<{ name: string; runtime: string }> {
+  const declared = new Set(Object.keys(draftRuntimes));
+  return agents.flatMap((agent) => {
+    const runtime = effectiveRuntime(agent, reassignments);
+    return runtime && !declared.has(runtime) ? [{ name: agent.name, runtime }] : [];
+  });
+}
+
+/** The agents that would run on `profileName` if the draft were saved now —
+ * i.e. exactly who a removal of that profile has to speak for. */
+export function agentsOnProfile(
+  agents: readonly RuntimeAgentRef[],
+  reassignments: RuntimeReassignments,
+  profileName: string,
+): string[] {
+  return agents
+    .filter((agent) => effectiveRuntime(agent, reassignments) === profileName)
+    .map((agent) => agent.name);
+}
+
+/** Agent names as prose, for copy that has to name them in a sentence
+ * ("coding and review run on it"). Oxford comma at three or more. */
+export function listAgentNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+/**
+ * Where agents should go when their profile is removed: a surviving profile on
+ * the SAME harness if one exists (the move nobody has to think about — same
+ * runtime, different key), otherwise the first surviving profile. Null when the
+ * draft has nothing left to move to.
+ */
+export function pickFallbackProfile(
+  draftRuntimes: Record<string, RuntimeProfile>,
+  harness: AcpHarness | undefined,
+): string | null {
+  const entries = Object.entries(draftRuntimes);
+  const sameHarness = entries.find(([, profile]) => profile.harness === harness);
+  return (sameHarness ?? entries[0])?.[0] ?? null;
+}
+
+/**
+ * Renaming a profile is not removing it: an agent pointing at the old key
+ * plainly means the same profile, so it follows the rename instead of being
+ * stranded by it. Returns the next reassignment map.
+ *
+ * Without this, `rename('codex', 'codex-sandbox')` produced exactly the same
+ * dangling reference — and the same 400 — as a removal, with no dialog
+ * anywhere to explain it.
+ */
+export function carryReferencesThroughRename(
+  agents: readonly RuntimeAgentRef[],
+  reassignments: RuntimeReassignments,
+  from: string,
+  to: string,
+): RuntimeReassignments {
+  const next = { ...reassignments };
+  for (const [name, target] of Object.entries(next)) {
+    if (target === from) next[name] = to;
+  }
+  for (const agent of agents) {
+    if (effectiveRuntime(agent, next) === from) next[agent.name] = to;
+  }
+  return next;
+}
+
+/** One write in a runtime-profiles save. `harness` rides along on an agent
+ * step so the caller can hand it to {@link nextAgentBlockForRuntime}, which
+ * needs it to drop a stale `agent` field. */
+export type RuntimeSaveStep =
+  | { kind: 'runtimes'; runtimes: Record<string, RuntimeProfile> }
+  | { kind: 'agent'; agent: string; runtime: string; harness: AcpHarness | undefined };
+
+/**
+ * Order the writes a runtime-profiles save needs so that EVERY intermediate
+ * state is a manifest the v3 validator accepts. This is the fix for the 400:
+ * the editor used to emit one PUT of the `runtimes` map and leave the agents
+ * that referenced a removed profile dangling.
+ *
+ * The ordering rule is forced by which document each route validates:
+ *
+ * 1. **Bridge** (only when needed) — an agent write is validated against the
+ *    manifest as it stands on the server, so moving an agent onto a profile
+ *    that exists only in this draft would 400 in its own right. Declaring the
+ *    UNION of saved and draft profiles first is always valid: every existing
+ *    reference still resolves and the new target now exists.
+ * 2. **Move the agents** — reassignment is legal while the old profile is
+ *    still declared. This is the step that never existed.
+ * 3. **Write the draft** — now that nothing references the removed profiles,
+ *    dropping them validates.
+ *
+ * The common case (no removals, so no reassignments) still plans to a single
+ * PUT — the bridge and the agent writes are paid for only when a reference
+ * actually has to move.
+ */
+export function planRuntimeProfilesSave(input: {
+  savedRuntimes: Record<string, RuntimeProfile>;
+  draftRuntimes: Record<string, RuntimeProfile>;
+  reassignments: RuntimeReassignments;
+}): RuntimeSaveStep[] {
+  const { savedRuntimes, draftRuntimes, reassignments } = input;
+  const moves = Object.entries(reassignments);
+  if (moves.length === 0) return [{ kind: 'runtimes', runtimes: draftRuntimes }];
+
+  const steps: RuntimeSaveStep[] = [];
+  if (moves.some(([, target]) => !savedRuntimes[target])) {
+    steps.push({ kind: 'runtimes', runtimes: { ...savedRuntimes, ...draftRuntimes } });
+  }
+  for (const [agent, runtime] of moves) {
+    steps.push({ kind: 'agent', agent, runtime, harness: draftRuntimes[runtime]?.harness });
+  }
+  steps.push({ kind: 'runtimes', runtimes: draftRuntimes });
+  return steps;
+}
+
+/**
  * Build the agent block to PUT when the Runtime section's harness `Select`
  * changes. Pure so the two traps below are unit-testable without a DOM.
  *
