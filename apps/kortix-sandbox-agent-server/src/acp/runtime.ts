@@ -36,6 +36,10 @@ type PendingRequest = {
    *  content. A prompt with nothing in it legitimately CAN end in a
    *  zero-token turn — only a real prompt going hollow is suspicious. */
   promptHadContent?: boolean
+  /** The `params.sessionId` an outbound `session/prompt` targeted. Used to
+   *  look up the assembled agent-message text for that turn when checking
+   *  the codex error-as-content pattern (see `upstreamErrorDetail`). */
+  promptSessionId?: string
 }
 
 type Subscriber = {
@@ -194,6 +198,83 @@ function toHollowPromptError(envelope: JsonRpcEnvelope): JsonRpcEnvelope {
   }
 }
 
+/** The small set of keys an upstream JSON error envelope is allowed to carry
+ *  and still be treated as "an error delivered as content" — not a real
+ *  answer. The proven-live Codex/ChatGPT rejection shape is exactly
+ *  `{"detail":"…"}`; the others are conservative room for the same class of
+ *  provider error body without ever matching a domain answer. */
+const UPSTREAM_ERROR_ENVELOPE_KEYS = new Set(['detail', 'error', 'code', 'type', 'status', 'message'])
+
+/**
+ * Returns the human-readable `detail` when `text` is, IN ITS ENTIRETY, an
+ * upstream error envelope that a harness delivered as assistant message
+ * content instead of surfacing as a JSON-RPC error — else `null`.
+ *
+ * This is the codex-path blind spot the hollow guard cannot see: when the
+ * Codex/ChatGPT backend rejects a request (e.g. an unsupported model), the
+ * subscription relay forwards its `{"detail":"…"}` body and codex-acp streams
+ * that raw JSON as an `agent_message_chunk` + `end_turn` — a turn WITH content
+ * and (often) non-zero usage, so it reads as a normal successful answer.
+ *
+ * Deliberately STRICT so it can never clip a real answer that merely contains
+ * JSON: the WHOLE trimmed turn must parse to a plain object that carries a
+ * non-empty string `detail`, and every one of its keys must be an
+ * error-envelope key (never a domain field). A real coding answer — even one
+ * that is itself valid JSON — carries domain keys and fails this check.
+ */
+export function upstreamErrorDetail(text: string): string | null {
+  const trimmed = text.trim()
+  if (trimmed.length < 2 || trimmed[0] !== '{' || trimmed[trimmed.length - 1] !== '}') return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return null
+  }
+  if (!isObject(parsed)) return null
+  const detail = parsed.detail
+  if (typeof detail !== 'string' || detail.trim().length === 0) return null
+  if (!Object.keys(parsed).every((key) => UPSTREAM_ERROR_ENVELOPE_KEYS.has(key))) return null
+  return detail.trim()
+}
+
+/** Rewrites a turn whose entire assistant message was an upstream error
+ *  envelope (see `upstreamErrorDetail`) into a genuine JSON-RPC error, so the
+ *  UI shows a real failure instead of rendering the raw provider rejection as
+ *  if it were the model's answer. Rides the same existing `AcpRpcError` rail
+ *  as `toHollowPromptError` — no client/composer change needed. */
+function toUpstreamContentError(envelope: JsonRpcEnvelope, detail: string): JsonRpcEnvelope {
+  return {
+    jsonrpc: '2.0',
+    id: envelope.id,
+    error: {
+      code: -32002,
+      message: `The model provider rejected this request: ${detail}`,
+      data: { kortix: { reason: 'upstream_error_content' } },
+    },
+  }
+}
+
+/** The `params.sessionId` an outbound `session/prompt` targets, if any. */
+function promptSessionId(envelope: JsonRpcEnvelope): string | undefined {
+  const params = isObject(envelope.params) ? envelope.params : {}
+  return typeof params.sessionId === 'string' ? params.sessionId : undefined
+}
+
+/** The assistant text carried by an inbound `agent_message_chunk` update
+ *  (the only content kind whose accumulation matters for the error-as-content
+ *  check), keyed for accumulation by its `params.sessionId`. */
+function agentMessageChunkText(envelope: JsonRpcEnvelope): { sessionId: string; text: string } | null {
+  if (envelope.method !== 'session/update') return null
+  const params = isObject(envelope.params) ? envelope.params : null
+  if (!params || typeof params.sessionId !== 'string') return null
+  const update = isObject(params.update) ? params.update : null
+  if (!update || update.sessionUpdate !== 'agent_message_chunk') return null
+  const content = isObject(update.content) ? update.content : null
+  if (!content || content.type !== 'text' || typeof content.text !== 'string') return null
+  return { sessionId: params.sessionId, text: content.text }
+}
+
 class AcpProcess {
   readonly createdAt = new Date()
   readonly descriptor: AcpHarnessDescriptor
@@ -201,6 +282,12 @@ class AcpProcess {
 
   private readonly child: ChildProcessWithoutNullStreams
   private readonly pending = new Map<string, PendingRequest>()
+  /** Accumulated `agent_message_chunk` text for the in-flight prompt turn of
+   *  each session, keyed by sessionId. Only populated for the codex harness —
+   *  the one path whose adapter leaks upstream error bodies as message content
+   *  (see `upstreamErrorDetail`). Reset when a prompt starts, read + cleared
+   *  when it completes. */
+  private readonly codexTurnText = new Map<string, string>()
   private readonly subscribers = new Set<Subscriber>()
   private readonly replay: AcpStreamEvent[] = []
   private readonly stderrTail: string[] = []
@@ -294,12 +381,17 @@ class AcpProcess {
 
     const method = typeof outbound.method === 'string' ? outbound.method : undefined
     const promptHadContent = method === 'session/prompt' ? promptHasContent(outbound) : undefined
+    const promptSession = method === 'session/prompt' ? promptSessionId(outbound) : undefined
+    // A new codex prompt turn starts here: clear whatever assistant text a
+    // previous turn on this session left behind so the error-as-content check
+    // only ever inspects THIS turn's message.
+    if (this.descriptor.id === 'codex' && promptSession) this.codexTurnText.set(promptSession, '')
     const response = new Promise<JsonRpcEnvelope>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(key)
         reject(new AcpUpstreamError(`timed out waiting for ACP response to id ${key}`))
       }, DEFAULT_REQUEST_TIMEOUT_MS)
-      this.pending.set(key, { resolve, reject, timer, method, promptHadContent })
+      this.pending.set(key, { resolve, reject, timer, method, promptHadContent, promptSessionId: promptSession })
     })
 
     try {
@@ -386,13 +478,44 @@ class AcpProcess {
           pending.resolve(toHollowPromptError(envelope))
           return
         }
+        const errorContent = this.codexPromptErrorContent(pending, envelope)
+        if (errorContent) {
+          logger.warn('[acp] codex session/prompt delivered an upstream error envelope as message content; surfacing as an error instead of a fake answer', {
+            serverId: this.serverId,
+            harness: this.descriptor.id,
+          })
+          pending.resolve(toUpstreamContentError(envelope, errorContent))
+          return
+        }
         pending.resolve(envelope)
         return
       }
     }
 
+    if (this.descriptor.id === 'codex') {
+      const chunk = agentMessageChunkText(envelope)
+      if (chunk && this.codexTurnText.has(chunk.sessionId)) {
+        this.codexTurnText.set(chunk.sessionId, (this.codexTurnText.get(chunk.sessionId) ?? '') + chunk.text)
+      }
+    }
     this.publish(envelope)
     this.outputScan.noteInbound(envelope)
+  }
+
+  /** For a completing codex `session/prompt`, returns the upstream error
+   *  `detail` when this turn's ENTIRE assistant message was an error envelope
+   *  the adapter leaked as content (see `upstreamErrorDetail`), else `null`.
+   *  Always consumes this turn's accumulated text so it never leaks into the
+   *  next turn (or memory). Never touches a response that already carries an
+   *  `error` — that failure is already surfaced correctly. */
+  private codexPromptErrorContent(pending: PendingRequest, envelope: JsonRpcEnvelope): string | null {
+    if (this.descriptor.id !== 'codex' || pending.method !== 'session/prompt') return null
+    const sessionId = pending.promptSessionId
+    const turnText = sessionId ? this.codexTurnText.get(sessionId) : undefined
+    if (sessionId) this.codexTurnText.delete(sessionId)
+    if (Object.prototype.hasOwnProperty.call(envelope, 'error')) return null
+    if (!turnText) return null
+    return upstreamErrorDetail(turnText)
   }
 
   private publish(envelope: JsonRpcEnvelope): void {

@@ -421,7 +421,21 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
       return {
         ...native,
         NO_BROWSER: '1',
-        CODEX_CONFIG: JSON.stringify(withModel(runtimeModel, 'openai/gpt-5.4')),
+        // The subscription relay forwards this model id VERBATIM to the
+        // ChatGPT/Codex backend, which only accepts codex-acp's own BARE
+        // advertised ids (gpt-5.6-sol, gpt-5.5, …). A gateway-style
+        // `openai/…`-prefixed id — correct for the Kortix-managed
+        // `/router/openai` default branch below — is REJECTED here with
+        // `{"detail":"The 'openai/gpt-5.4' model is not supported when using
+        // Codex with a ChatGPT account."}` (400), which codex-acp then leaks
+        // to the user as a normal assistant message. So the subscription
+        // fallback must be a bare, ChatGPT-accepted, ADVERTISED value:
+        // `gpt-5.6-sol` is the first option codex-acp itself advertises at
+        // session/new (see kortix.acp_session_envelopes) and is proven-good
+        // against the live relay (200 + streamed SSE, 2026-07-22). A
+        // caller-selected `runtimeModel` (an advertised value the composer
+        // fed from the same list) always wins.
+        CODEX_CONFIG: JSON.stringify(withModel(runtimeModel, 'gpt-5.6-sol')),
         DEFAULT_AUTH_REQUEST: JSON.stringify({
           methodId: 'gateway',
           _meta: {
