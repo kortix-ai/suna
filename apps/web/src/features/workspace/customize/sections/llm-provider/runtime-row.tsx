@@ -9,6 +9,7 @@ import type { ModelsPageConnection, ModelsPageRuntime } from '@kortix/sdk/react'
 import type { ReactNode } from 'react';
 
 import { ConnectionSelect } from './connection-select';
+import { runtimeStatusBadge } from './connection-status';
 
 const HARNESS_ICON_PROVIDER_ID: Record<HarnessId, string> = {
   claude: 'anthropic',
@@ -18,40 +19,12 @@ const HARNESS_ICON_PROVIDER_ID: Record<HarnessId, string> = {
 };
 
 function statusBadge(runtime: ModelsPageRuntime) {
-  switch (runtime.status) {
-    case 'ready':
-      return (
-        <Badge variant="success" size="sm">
-          Connected
-        </Badge>
-      );
-    case 'checking':
-      return (
-        <Badge variant="secondary" size="sm">
-          Checking
-        </Badge>
-      );
-    case 'needs-attention':
-    case 'unavailable':
-      return (
-        <Badge variant="destructive" size="sm">
-          {runtime.status === 'needs-attention' ? 'Needs attention' : 'Unavailable'}
-        </Badge>
-      );
-    case 'ambiguous':
-      return (
-        <Badge variant="warning" size="sm">
-          Choose connection
-        </Badge>
-      );
-    case 'missing':
-    default:
-      return (
-        <Badge variant="warning" size="sm">
-          Needs connection
-        </Badge>
-      );
-  }
+  const badge = runtimeStatusBadge(runtime.status);
+  return (
+    <Badge variant={badge.variant} size="sm">
+      {badge.label}
+    </Badge>
+  );
 }
 
 export function RuntimeRow({

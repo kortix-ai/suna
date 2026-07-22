@@ -34,6 +34,7 @@ import {
   LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
+import { connectionStatusBadge } from './connection-status';
 
 const SUBSCRIPTION_COPY: Partial<Record<HarnessAuthKind, string>> = {
   claude_subscription:
@@ -168,8 +169,8 @@ export function ManageConnectionModal({
                     (connection.status === 'ready' ? 'Connected' : 'Checking…')}
                 </p>
               </div>
-              <Badge variant={connection.status === 'ready' ? 'success' : 'destructive'} size="sm">
-                {connection.status === 'ready' ? 'Connected' : 'Needs attention'}
+              <Badge variant={connectionStatusBadge(connection.status).variant} size="sm">
+                {connectionStatusBadge(connection.status).label}
               </Badge>
             </div>
 
@@ -233,7 +234,7 @@ export function ManageConnectionModal({
             {otherRuntimesAffected.length > 0 ? (
               <>
                 {otherRuntimesAffected.map((r) => r.label).join(', ')} will fall back to a Harness
-                default connection, or show &ldquo;Needs connection&rdquo; if none is available.{' '}
+                default connection, or show &ldquo;Not connected&rdquo; if none is available.{' '}
               </>
             ) : null}
             You&rsquo;ll need to reconnect to use it again.

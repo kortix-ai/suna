@@ -8,9 +8,9 @@
  *
  * `variant` maps onto `Badge`'s tokens (kortix-* semantics, never raw palette).
  */
-import type { ModelsPageConnectionStatus } from '@kortix/sdk/react';
+import type { ModelsPageConnectionStatus, ModelsPageRuntimeStatus } from '@kortix/sdk/react';
 
-export type StatusBadgeVariant = 'success' | 'destructive' | 'secondary';
+export type StatusBadgeVariant = 'success' | 'destructive' | 'secondary' | 'warning';
 
 export interface StatusBadge {
   label: string;
@@ -23,6 +23,11 @@ export const CONNECTION_STATUS = {
   expired: { label: 'Expired', variant: 'destructive' } satisfies StatusBadge,
   needsAttention: { label: 'Needs attention', variant: 'destructive' } satisfies StatusBadge,
   unavailable: { label: 'Unavailable', variant: 'destructive' } satisfies StatusBadge,
+  // The one word for "no working connection is in place yet" — replaces the two
+  // separate jargon phrases the runtime rows used to speak ("Choose connection"
+  // for ambiguous, "Needs connection" for missing). Both are the same thing to
+  // a user: nothing is connected, do something about it.
+  notConnected: { label: 'Not connected', variant: 'warning' } satisfies StatusBadge,
   checking: { label: 'Checking', variant: 'secondary' } satisfies StatusBadge,
 } as const;
 
@@ -38,6 +43,22 @@ export function connectionStatusBadge(status: ModelsPageConnectionStatus): Statu
       return CONNECTION_STATUS.unavailable;
     default:
       return CONNECTION_STATUS.checking;
+  }
+}
+
+/** The per-agent runtime status (`ModelsPageRuntime.status`) resolved into the
+ *  SAME vocabulary as the connection rows — so one Models page never teaches
+ *  two status languages. The four states a connection can be in map straight
+ *  through `connectionStatusBadge`; the two runtime-only states
+ *  (`ambiguous` = several ready connections but none chosen, `missing` = none)
+ *  both collapse to the single honest "Not connected" word. */
+export function runtimeStatusBadge(status: ModelsPageRuntimeStatus): StatusBadge {
+  switch (status) {
+    case 'ambiguous':
+    case 'missing':
+      return CONNECTION_STATUS.notConnected;
+    default:
+      return connectionStatusBadge(status);
   }
 }
 
